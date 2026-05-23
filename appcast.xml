@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Limpid</title>
+    <link>https://nek0der.github.io/limpid/appcast.xml</link>
+    <description>Auto-update feed for the Limpid macOS terminal.</description>
+    <language>en</language>
+    <!--
+      Releases are appended here by `generate_appcast` once a signed,
+      notarized dmg lands on the GitHub Releases page.
+    -->
+  </channel>
+</rss>
