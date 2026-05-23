@@ -4,6 +4,19 @@
     <title>Limpid</title>
     <link>https://nek0der.github.io/limpid/appcast.xml</link>
     <description>Auto-update feed for the Limpid macOS terminal.</description>
+  <item>
+    <title>v0.0.0-test</title>
+    <link>https://github.com/nek0der/limpid/releases/tag/v0.0.0-test</link>
+    <sparkle:version>0.0.0-test</sparkle:version>
+    <sparkle:shortVersionString>0.0.0-test</sparkle:shortVersionString>
+    <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+    <pubDate>Sat, 23 May 2026 19:55:33 +0000</pubDate>
+    <enclosure
+      url="https://github.com/nek0der/limpid/releases/download/v0.0.0-test/Limpid-0.0.0-test.dmg"
+      type="application/octet-stream"
+      length="8900228"
+      sparkle:edSignature="FfWVZ6IxitMBwJJdXkKER/UqHSDpi25QEj/vY0//GOQdf9WVgy1N4igcOkEM52uNpFo4+OZ+elh+81Fws95WBQ==" length="8900228"/>
+  </item>
     <language>en</language>
     <!--
       Releases are appended here by `generate_appcast` once a signed,
