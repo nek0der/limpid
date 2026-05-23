@@ -1,26 +1,17 @@
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-  <channel>
-    <title>Limpid</title>
-    <link>https://nek0der.github.io/limpid/appcast.xml</link>
-    <description>Auto-update feed for the Limpid macOS terminal.</description>
-  <item>
-    <title>v0.0.0-test</title>
-    <link>https://github.com/nek0der/limpid/releases/tag/v0.0.0-test</link>
-    <sparkle:version>0.0.0-test</sparkle:version>
-    <sparkle:shortVersionString>0.0.0-test</sparkle:shortVersionString>
-    <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-    <pubDate>Sat, 23 May 2026 19:55:33 +0000</pubDate>
-    <enclosure
-      url="https://github.com/nek0der/limpid/releases/download/v0.0.0-test/Limpid-0.0.0-test.dmg"
-      type="application/octet-stream"
-      length="8900228"
-      sparkle:edSignature="FfWVZ6IxitMBwJJdXkKER/UqHSDpi25QEj/vY0//GOQdf9WVgy1N4igcOkEM52uNpFo4+OZ+elh+81Fws95WBQ==" length="8900228"/>
-  </item>
-    <language>en</language>
-    <!--
-      Releases are appended here by `generate_appcast` once a signed,
-      notarized dmg lands on the GitHub Releases page.
-    -->
-  </channel>
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Limpid</title>
+        <item>
+            <title>0.0.0-test</title>
+            <pubDate>Sat, 23 May 2026 20:26:28 +0000</pubDate>
+            <link>https://github.com/nek0der/limpid</link>
+            <sparkle:version>0.0.0-test</sparkle:version>
+            <sparkle:shortVersionString>0.0.0-test</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <sparkle:releaseNotesLink>https://nek0der.github.io/limpid/Limpid-0.0.0-test.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/nek0der/limpid/releases/download/v0.0.0-test/Limpid-0.0.0-test.dmg" length="8900343" type="application/octet-stream" sparkle:edSignature="zaAUyY5Q13WCxJAI3R54QpSgsGTynznHPvbvYEiLFKGfvVF/3uSp4mMZGKxWEwVZWxzQEfcBFY+cQmVkrcOHCw=="/>
+        </item>
+    </channel>
 </rss>
