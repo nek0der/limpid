@@ -44,11 +44,6 @@ jobs:
           path: vendor/ghostty/macos/GhosttyKit.xcframework
           key: ghostty-${{ runner.os }}-${{ hashFiles('vendor/ghostty/build.zig.zon', 'vendor/ghostty/build.zig', 'scripts/build-ghostty.sh') }}-${{ hashFiles('.gitmodules') }}
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
-        with:
-          languages: swift
-
       - name: Build libghostty xcframework
         if: steps.cache-ghostty.outputs.cache-hit != 'true'
         run: |
@@ -66,6 +61,18 @@ jobs:
 
       - name: Generate Xcode project
         run: xcodegen generate
+
+      # Initialize CodeQL AFTER libghostty + xcodegen so the Swift
+      # tracer only wraps the Limpid build below. When init ran before
+      # libghostty, CodeQL's compiler wrappers intercepted Zig's
+      # invocation of `metal` for Ghostty's shaders and the shader
+      # compile failed. We don't need to analyze vendor/ghostty
+      # (it's Zig, not Swift), so tracing only the final xcodebuild
+      # is both correct and avoids the conflict.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
+        with:
+          languages: swift
 
       - name: Build for CodeQL
         run: |
