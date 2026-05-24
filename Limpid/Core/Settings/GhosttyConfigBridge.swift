@@ -118,6 +118,14 @@ enum GhosttyConfigBridge {
         // not race AppKit's standard terminate path (which fires
         // `applicationWillTerminate` and persists scrollback).
         lines.append("keybind = super+q=unbind")
+        // Send a literal newline on shift+enter. Legacy XTerm key
+        // encoding emits the same bytes for Enter and Shift+Enter, so
+        // TUIs like Claude Code can't tell them apart — Shift+Enter
+        // submits instead of inserting a newline. Mapping it to
+        // `text:\n` here makes Limpid behave like the recommended
+        // bare-ghostty workaround out of the box. (See ghostty
+        // discussion #7780 and claude-code issues #1282 / #5757.)
+        lines.append(#"keybind = shift+enter=text:\n"#)
 
         return lines.joined(separator: "\n") + "\n"
     }
