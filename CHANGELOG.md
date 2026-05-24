@@ -2,14 +2,11 @@
 
 All notable changes to Limpid are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.1.0 (2026-05-24)
-
-
-### Features
-
-* initial Limpid implementation ([#1](https://github.com/nek0der/limpid/issues/1)) ([4b0512e](https://github.com/nek0der/limpid/commit/4b0512ebecf9391f85f4a79cba4157d5af5494e1))
-
 ## [Unreleased]
+
+## [0.1.0] - 2026-05-24
+
+Initial public release.
 
 ### Added
 
@@ -44,4 +41,5 @@ Baseline implementation:
 - `SurfaceView.syncLayerOnly` short-circuits when bounds + backing scale haven't changed, killing redundant `CATransaction`s during window drag.
 - `SessionStore` / `NotificationHistoryStore` encode and write on a background queue and skip `.prettyPrinted` in Release builds.
 
-[Unreleased]: https://github.com/nek0der/limpid/commits/main
+[Unreleased]: https://github.com/nek0der/limpid/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/nek0der/limpid/releases/tag/v0.1.0
