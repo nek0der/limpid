@@ -4,14 +4,14 @@
         <title>Limpid</title>
         <item>
             <title>0.0.0-test</title>
-            <pubDate>Sat, 23 May 2026 20:26:28 +0000</pubDate>
+            <pubDate>Sun, 24 May 2026 01:33:02 +0000</pubDate>
             <link>https://github.com/nek0der/limpid</link>
             <sparkle:version>0.0.0-test</sparkle:version>
             <sparkle:shortVersionString>0.0.0-test</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <sparkle:releaseNotesLink>https://nek0der.github.io/limpid/Limpid-0.0.0-test.md</sparkle:releaseNotesLink>
-            <enclosure url="https://github.com/nek0der/limpid/releases/download/v0.0.0-test/Limpid-0.0.0-test.dmg" length="8900343" type="application/octet-stream" sparkle:edSignature="zaAUyY5Q13WCxJAI3R54QpSgsGTynznHPvbvYEiLFKGfvVF/3uSp4mMZGKxWEwVZWxzQEfcBFY+cQmVkrcOHCw=="/>
+            <enclosure url="https://github.com/nek0der/limpid/releases/download/v0.0.0-test/Limpid-0.0.0-test.dmg" length="8901383" type="application/octet-stream" sparkle:edSignature="Z1Xt/z3NODRhM8slTDOs1xf60I+cnDWPvod7i5/OU5YtrVw6OKFS1PfY0Rwops3LwUXXsmnsBrcDL1E5dhXwAg=="/>
         </item>
     </channel>
 </rss>
