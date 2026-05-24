@@ -1,0 +1,8 @@
+[submodule "vendor/ghostty"]
+	path = vendor/ghostty
+	url = https://github.com/ghostty-org/ghostty.git
+	# Don't surface untracked build artefacts (default.profraw, zig-pkg/, etc.)
+	# in `git status`. We never push back to ghostty-org/ghostty, so anything
+	# the local zig build drops inside the submodule is noise from our POV.
+	# Submodule SHA bumps are still reported.
+	ignore = untracked

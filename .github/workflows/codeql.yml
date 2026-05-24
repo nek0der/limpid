@@ -1,0 +1,80 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'   # Weekly: Mondays at 06:00 UTC
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze Swift
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+
+      - name: Select latest Xcode
+        run: |
+          set -euo pipefail
+          XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Install tooling
+        run: brew install xcodegen zig@0.15
+
+      - name: Restore GhosttyKit.xcframework cache
+        id: cache-ghostty
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: vendor/ghostty/macos/GhosttyKit.xcframework
+          key: ghostty-${{ runner.os }}-${{ hashFiles('vendor/ghostty/build.zig.zon', 'vendor/ghostty/build.zig', 'scripts/build-ghostty.sh') }}-${{ hashFiles('.gitmodules') }}
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
+        with:
+          languages: swift
+
+      - name: Build libghostty xcframework
+        if: steps.cache-ghostty.outputs.cache-hit != 'true'
+        run: |
+          # Ghostty's Xcode target needs zig-out/share/locale to
+          # exist even with -Di18n=false. Seed it.
+          mkdir -p vendor/ghostty/zig-out/share/locale
+          ./scripts/build-ghostty.sh
+
+      - name: Save GhosttyKit.xcframework cache
+        if: always() && steps.cache-ghostty.outputs.cache-hit != 'true' && hashFiles('vendor/ghostty/macos/GhosttyKit.xcframework/**') != ''
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: vendor/ghostty/macos/GhosttyKit.xcframework
+          key: ${{ steps.cache-ghostty.outputs.cache-primary-key }}
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for CodeQL
+        run: |
+          xcodebuild \
+            -project Limpid.xcodeproj \
+            -scheme Limpid \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3

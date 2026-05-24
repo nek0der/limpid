@@ -1,0 +1,34 @@
+# SwiftFormat configuration
+# https://github.com/nicklockwood/SwiftFormat
+
+--swiftversion 6.0
+
+# Paths
+--exclude vendor,build,.build,Limpid.xcodeproj,DerivedData
+
+# Formatting
+--indent 4
+--maxwidth 140
+--linebreaks lf
+--trimwhitespace always
+--commas inline
+--semicolons never
+--self remove
+--stripunusedargs closure-only
+
+# Wrapping
+--wraparguments before-first
+--wrapparameters before-first
+--wrapcollections before-first
+--closingparen balanced
+
+# Spacing
+--ranges spaced
+--operatorfunc spaced
+--nospaceoperators ...,..<
+
+# Imports
+--importgrouping testable-last
+
+# Disabled rules (let SwiftLint or developer decide)
+--disable redundantSelf,blankLinesAtStartOfScope,blankLinesAtEndOfScope

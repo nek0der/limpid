@@ -1,0 +1,119 @@
+// SessionSnapshot.swift
+// Limpid — Codable mirror of WindowSession used for on-disk persistence.
+//
+// Schema v4 — `Tab.container: ContainerID` model. The 3-pane redesign
+// (Notes 2026-style L1 / L2 / L3) replaced the old TabOwnership /
+// section split. v3 snapshots and older are dropped silently on load;
+// the app is still pre-release so a fresh session is acceptable.
+
+import Foundation
+
+struct SessionSnapshot: Codable {
+    static let currentVersion: Int = 4
+
+    var version: Int
+    var groups: [TabGroup]
+    var projects: [Project]
+    var tabs: [Tab]
+    var activeTabID: UUID?
+    var activeContainerID: ContainerID
+    var sidebarWidth: Double
+    var l2Width: Double = LimpidLayout.l2Width
+    var sidebarHidden: Bool
+    var windowFrame: WindowFrame?
+    var recentProjectPaths: [URL]
+
+    init(
+        version: Int = SessionSnapshot.currentVersion,
+        groups: [TabGroup],
+        projects: [Project],
+        tabs: [Tab],
+        activeTabID: UUID?,
+        activeContainerID: ContainerID = .loose,
+        sidebarWidth: Double,
+        l2Width: Double = LimpidLayout.l2Width,
+        sidebarHidden: Bool = false,
+        windowFrame: WindowFrame? = nil,
+        recentProjectPaths: [URL] = []
+    ) {
+        self.version = version
+        self.groups = groups
+        self.projects = projects
+        self.tabs = tabs
+        self.activeTabID = activeTabID
+        self.activeContainerID = activeContainerID
+        self.sidebarWidth = sidebarWidth
+        self.l2Width = l2Width
+        self.sidebarHidden = sidebarHidden
+        self.windowFrame = windowFrame
+        self.recentProjectPaths = recentProjectPaths
+    }
+}
+
+/// CGRect isn't Codable out of the box; this mirror keeps the JSON
+/// stable (and human-readable) across builds.
+struct WindowFrame: Codable, Equatable {
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+
+    init(_ rect: CGRect) {
+        x = Double(rect.origin.x)
+        y = Double(rect.origin.y)
+        width = Double(rect.size.width)
+        height = Double(rect.size.height)
+    }
+
+    var cgRect: CGRect {
+        CGRect(x: x, y: y, width: width, height: height)
+    }
+}
+
+@MainActor
+extension WindowSession {
+    func makeSnapshot() -> SessionSnapshot {
+        SessionSnapshot(
+            groups: groups,
+            projects: projects,
+            tabs: tabs,
+            activeTabID: activeTabID,
+            activeContainerID: activeContainerID,
+            sidebarWidth: Double(sidebarWidth),
+            l2Width: Double(l2Width),
+            sidebarHidden: sidebarHidden,
+            windowFrame: windowFrame.map(WindowFrame.init),
+            recentProjectPaths: recentProjectPaths
+        )
+    }
+
+    func restore(from snapshot: SessionSnapshot) {
+        guard snapshot.version == SessionSnapshot.currentVersion else { return }
+        groups = snapshot.groups
+        projects = snapshot.projects
+        sidebarWidth = CGFloat(snapshot.sidebarWidth)
+        l2Width = CGFloat(snapshot.l2Width)
+        sidebarHidden = snapshot.sidebarHidden
+        recentProjectPaths = snapshot.recentProjectPaths
+        activeContainerID = snapshot.activeContainerID
+        // Transient pane bits (bell ring / child exit) live on
+        // `paneTransients` now, not on `Tab.paneStates`, so the
+        // snapshot's tab list already excludes them. Wiping
+        // `paneTransients` here keeps a stale bell flash from
+        // surviving the next launch.
+        paneTransients = [:]
+        tabs = snapshot.tabs
+        // Rebuild the unread cache from the restored snapshot so the
+        // dock badge reflects reality before the first mutation.
+        cachedWindowUnreadCount = tabs.reduce(0) { sum, tab in
+            sum + tab.paneStates.values.reduce(0) { $0 + $1.unreadCount }
+        }
+        windowFrame = snapshot.windowFrame?.cgRect
+
+        if let id = snapshot.activeTabID, tabs.contains(where: { $0.id == id }) {
+            activeTabID = id
+        } else {
+            activeTabID = tabs.first?.id
+        }
+    }
+}
