@@ -110,6 +110,14 @@ enum GhosttyConfigBridge {
         // #3836 / #5144 / #8681 — the long-standing pitfall behind
         // "cursor-style doesn't change on existing shells".)
         lines.append("shell-integration-features = no-cursor")
+        // libghostty's default macOS keybinds map super+q to its own
+        // `quit` action. We already route ⌘Q to the main menu via
+        // `SurfaceView.performKeyEquivalent`, but unbind here as
+        // defense-in-depth — if a future change to the keystroke
+        // path lets libghostty see the event, its `quit` action must
+        // not race AppKit's standard terminate path (which fires
+        // `applicationWillTerminate` and persists scrollback).
+        lines.append("keybind = super+q=unbind")
 
         return lines.joined(separator: "\n") + "\n"
     }

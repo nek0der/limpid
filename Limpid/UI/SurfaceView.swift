@@ -329,6 +329,34 @@ final class SurfaceView: NSView {
         return true
     }
 
+    /// Route ⌘Q to `NSApplication.terminate(_:)` so the standard
+    /// termination chain (including `applicationWillTerminate`) runs.
+    ///
+    /// Without this override, libghostty's surface key pipeline
+    /// consumes the keystroke before AppKit gets a chance to ask the
+    /// main menu, so the SwiftUI-auto-generated Quit shortcut never
+    /// fires. The save handler in `LimpidApp` (registered for
+    /// `willTerminateNotification`) is therefore skipped on every
+    /// ⌘Q quit — silent data loss. Sending the event straight to
+    /// `terminate` reproduces what a mouse click on "Quit Limpid"
+    /// already does correctly.
+    ///
+    /// Companion fix in `Info.plist`: `NSSupportsSuddenTermination`
+    /// and `NSSupportsAutomaticTermination` are now `false` so macOS
+    /// actually fires `applicationWillTerminate` instead of
+    /// short-circuiting to `_exit`. Companion fix in
+    /// `GhosttyConfigBridge`: `keybind = super+q=unbind` so
+    /// libghostty's own `.quit` action can't race the terminate path.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command),
+           event.charactersIgnoringModifiers == "q"
+        {
+            NSApp.terminate(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags
 
