@@ -54,17 +54,11 @@ struct ProjectSectionView: View {
             isActive: session.activeContainerID.projectID == project.id,
             hasUnread: session.hasUnreadInProject(project.id),
             isRinging: session.isRingingInProject(project.id),
-            // Single tap on a project header is a fold toggle (Notes
-            // pattern) — the header itself isn't a selectable
-            // container, only the "general" row + each worktree row
-            // underneath are. Saves a redundant `setActiveContainer`
-            // (which used to fire both here and from the general row,
-            // mapping to the same `.project(...)` container).
-            onActivate: {
-                withAnimation(LimpidMotion.expand) {
-                    session.toggleProjectExpanded(project.id)
-                }
-            },
+            // Body taps are inert; the chevron is the sole expand
+            // control. Single-tap-to-fold conflicted with the rename
+            // double-tap — rapid clicks stacked `withAnimation`
+            // transactions until SwiftUI's layout deadlocked.
+            onActivate: {},
             onToggleExpand: {
                 withAnimation(LimpidMotion.expand) {
                     session.toggleProjectExpanded(project.id)
