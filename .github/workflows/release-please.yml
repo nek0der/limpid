@@ -7,12 +7,39 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # Needed so the dispatch step below can fire release.yml. The
+  # default GITHUB_TOKEN cannot launch downstream workflows from
+  # tag-pushes it creates itself; instead we explicitly call
+  # createWorkflowDispatch, which the docs allow with `actions:
+  # write` even on the default token. Avoids the PAT / GitHub App
+  # rotation overhead a single-maintainer OSS doesn't want.
+  actions: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+      - id: release
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
+
+      # release-please pushes tags using GITHUB_TOKEN, which by GitHub
+      # policy does NOT trigger downstream workflows. We dispatch
+      # release.yml explicitly so the dmg / notarize / Sparkle
+      # pipeline runs as soon as the Release PR is merged.
+      - name: Dispatch release.yml
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'release.yml',
+              ref: 'main',
+              inputs: {
+                tag: '${{ steps.release.outputs.tag_name }}',
+              },
+            });
