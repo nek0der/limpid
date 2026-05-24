@@ -2,6 +2,13 @@
 
 All notable changes to Limpid are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3](https://github.com/nek0der/limpid/compare/v0.1.2...v0.1.3) (2026-05-24)
+
+
+### Bug Fixes
+
+* **ci:** drop dispatch step so release.yml fires only once per tag ([#22](https://github.com/nek0der/limpid/issues/22)) ([85b85bd](https://github.com/nek0der/limpid/commit/85b85bd2cdb4d238e22a58d3bc76b5dc7d03715f))
+
 ## [0.1.2](https://github.com/nek0der/limpid/compare/v0.1.1...v0.1.2) (2026-05-24)
 
 
