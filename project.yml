@@ -90,8 +90,15 @@ targets:
         # update dialog. Localize via InfoPlist.xcstrings for ja.
         NSHumanReadableCopyright: "© 2026 nek0der. MIT License."
         LSApplicationCategoryType: public.app-category.developer-tools
-        NSSupportsAutomaticTermination: YES
-        NSSupportsSuddenTermination: YES
+        # `NO` for both: with sudden / automatic termination enabled
+        # macOS can `_exit` the process without firing the
+        # `applicationWillTerminate` notification. We rely on that
+        # notification to dump scrollback and persist state, so the
+        # flags must stay off. (Sparkle / Apple's defaults both
+        # suggest these, but they assume an app with no save-on-quit
+        # work — which Limpid clearly isn't.)
+        NSSupportsAutomaticTermination: NO
+        NSSupportsSuddenTermination: NO
         # Reference the MARKETING_VERSION / CURRENT_PROJECT_VERSION
         # build settings (set in the base settings, overridden by CI)
         # so a single source of truth flows into the bundle.
