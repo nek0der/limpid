@@ -3,10 +3,13 @@ name: CodeQL
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   schedule:
     - cron: '0 6 * * 1'   # Weekly: Mondays at 06:00 UTC
+  # We deliberately don't run on `pull_request`. The Swift analyzer
+  # needs a full build (Zig + libghostty + xcodebuild), which costs
+  # 15-30 minutes per PR — disproportionate for a single-maintainer
+  # OSS where security alerts are reviewed in batch off the main
+  # branch anyway. Post-merge + weekly is enough coverage.
 
 permissions:
   actions: read
