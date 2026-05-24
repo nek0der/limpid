@@ -31,7 +31,7 @@ jobs:
       # pipeline runs as soon as the Release PR is merged.
       - name: Dispatch release.yml
         if: ${{ steps.release.outputs.release_created == 'true' }}
-        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({
