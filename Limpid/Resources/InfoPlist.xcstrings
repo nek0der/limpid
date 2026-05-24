@@ -1,0 +1,91 @@
+{
+  "sourceLanguage" : "en",
+  "version" : "1.0",
+  "strings" : {
+    "NSDocumentsFolderUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpid runs a shell that may access files under your Documents folder."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpid のシェルが書類フォルダ内のファイルにアクセスする可能性があります。"
+          }
+        }
+      }
+    },
+    "NSDownloadsFolderUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpid runs a shell that may access files under your Downloads folder."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpid のシェルがダウンロードフォルダ内のファイルにアクセスする可能性があります。"
+          }
+        }
+      }
+    },
+    "NSDesktopFolderUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpid runs a shell that may access files on your Desktop."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpid のシェルがデスクトップ上のファイルにアクセスする可能性があります。"
+          }
+        }
+      }
+    },
+    "NSRemovableVolumesUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpid runs a shell that may access removable volumes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpid のシェルがリムーバブルメディアにアクセスする可能性があります。"
+          }
+        }
+      }
+    },
+    "NSNetworkVolumesUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpid runs a shell that may access network volumes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpid のシェルがネットワークボリュームにアクセスする可能性があります。"
+          }
+        }
+      }
+    }
+  }
+}

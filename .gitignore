@@ -1,0 +1,75 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode
+build/
+DerivedData/
+# XcodeGen generates Limpid.xcodeproj — don't commit it
+*.xcodeproj/
+*.xcworkspace/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+*.swp
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+Packages/
+
+# CocoaPods / Carthage
+Pods/
+Carthage/Build/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Ghostty submodule build artifacts
+vendor/ghostty/zig-cache/
+vendor/ghostty/zig-out/
+*.xcframework/
+
+# Editor / OS
+.idea/
+.vscode/
+*.iml
+
+# Local env
+.env
+.env.local
+*.local
+
+# Secrets / signing material (belt-and-braces; we ship none of these
+# via git today — certs and notarytool creds live in GH Actions
+# secrets — but these patterns prevent accidental adds)
+*.p12
+*.pem
+*.key
+secrets/
+
+# Claude / agent artifacts
+.claude/local/
+.claude/worktrees/
+
+# Local-only docs (managed outside git, not for publication)
+docs/
+
+# Distribution artifacts (dmg, zip, etc.)
+dist/

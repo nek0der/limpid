@@ -1,0 +1,668 @@
+// ContainerRow.swift
+// Limpid — single row in the L1 container slab. All five row shapes
+// (Loose / Group / Project header / Worktree leaf / project-direct
+// "general" leaf) render through the same view. Layout follows the
+// reference screenshot:
+//
+//   [● palette-dot] [Label]               [count]  [chevron]
+//
+// Selection draws a rounded pill stroke + fill around the row.
+// Section indents stay shallow (just slab padding); nested rows under
+// an expanded Project / Group indent by an extra step so the
+// hierarchy reads at a glance.
+
+import SwiftUI
+
+/// What a single row in L1 represents. The view picks indent, icon,
+/// chevron behaviour, and trailing accessories from this.
+enum ContainerRowKind: Equatable {
+    case loose(count: Int)
+    case group(TabGroup, count: Int, isExpanded: Bool)
+    case projectHeader(Project, totalCount: Int, isExpanded: Bool)
+    case worktree(projectID: UUID, Worktree, count: Int)
+    /// "general" — tabs sitting directly under a Project (no worktree).
+    /// Always nested under an expanded `.projectHeader`.
+    case projectGeneral(Project, count: Int)
+    /// Single tab inline-listed under an expanded Group. Lets users
+    /// peek into a Group from L1 without leaving the current container.
+    case groupTab(Tab)
+}
+
+/// Bundle of optional callbacks + flags a `ContainerRow` may carry.
+/// Splitting them off the view's argument list keeps call sites
+/// readable (the slab used to thread 11 named closures) and gives
+/// new affordances a single struct to land on instead of growing
+/// `ContainerRow.init`'s signature each time.
+struct ContainerRowActions {
+    /// Hover-revealed trailing button + context-menu close. Nil means
+    /// the row can't be removed.
+    var onDelete: (() -> Void)?
+    /// Palette-index setter for the color picker popover. Only Group
+    /// / Project header rows pass a real closure.
+    var onChangePalette: ((Int) -> Void)?
+    /// Reorder within the sibling list (single-slot move). Nil hides
+    /// that context-menu entry.
+    var onMoveUp: (() -> Void)?
+    var onMoveDown: (() -> Void)?
+    var canMoveUp: Bool = true
+    var canMoveDown: Bool = true
+    /// Project header only — "New Worktree…" context menu entry and
+    /// hover-revealed "+" affordance.
+    var onCreateWorktree: (() -> Void)?
+    /// Project header only — "Show Hidden Worktrees" entry, surfaced
+    /// only when at least one row is hidden.
+    var onShowHiddenWorktrees: (() -> Void)?
+    /// Project header only — "Project Settings…" context menu entry.
+    var onOpenSettings: (() -> Void)?
+    /// Project header only — "Sync Worktrees" entry.
+    var onSyncWorktrees: (() -> Void)?
+    /// Project header only — "Remove Missing Worktrees" entry, only
+    /// when at least one row is currently flagged `isMissing`.
+    var onPruneMissingWorktrees: (() -> Void)?
+    /// Worktree row only — destructive "Delete Worktree…" that runs
+    /// `git worktree remove`. Distinct from `onDelete` (which hides
+    /// the row without touching disk).
+    var onDeleteOnDisk: (() -> Void)?
+    /// Worktree row only — "Reveal in Finder" entry.
+    var onRevealInFinder: (() -> Void)?
+    /// Tooltip on hover (typically the full path for worktree rows).
+    var helpText: String?
+}
+
+struct ContainerRow: View {
+    /// Drag descriptor consumed by `ContainerRow` to attach the
+    /// `.limpidDraggable` modifier from *inside* the row's view body.
+    ///
+    /// Applying `.limpidDraggable` at the call site (outside
+    /// `ContainerRow`) regressed on macOS 26: the row's internal
+    /// `.contentShape(Rectangle())` + `.simultaneousGesture(TapGesture)`
+    /// + `.contextMenu` claim the hit area first, so the outer
+    /// `.draggable` long-press recognizer never wins arbitration and
+    /// the drag session never starts. L2 `TabRow` does not regress
+    /// because it applies `.limpidDraggable` at the *end* of its own
+    /// body — we mirror that pattern here.
+    struct DragDescriptor {
+        let kind: LimpidDragState.Kind
+        let prefix: String
+        let id: String
+        let dragState: LimpidDragState
+    }
+
+    let kind: ContainerRowKind
+    let isActive: Bool
+    /// True if any tab in this container (or any container nested
+    /// under it for project headers) has unread notifications.
+    let hasUnread: Bool
+    /// True while a bell is actively flashing inside this container.
+    /// Drives the `symbolEffect(.bounce)` animation on the bell.
+    var isRinging: Bool = false
+    let onActivate: () -> Void
+    /// Chevron click for Project / Group rows. Nil disables.
+    let onToggleExpand: (() -> Void)?
+    /// Rename submit. Nil disables inline rename for that kind.
+    let onRename: ((String) -> Void)?
+    /// Optional callbacks + flags — see `ContainerRowActions`.
+    var actions: ContainerRowActions = .init()
+    /// When non-nil, attaches `.limpidDraggable` to the row body from
+    /// *inside* the view so the drag recognizer can win against the
+    /// row's own tap / context-menu gestures. See `DragDescriptor`.
+    var dragDescriptor: DragDescriptor?
+
+    // MARK: - Action passthroughs
+
+    //
+    // Internal code reads these via the short name; storing them on a
+    // bundle keeps `ContainerRow.init` callers from passing eleven
+    // optional closures by name.
+
+    private var onDelete: (() -> Void)? {
+        actions.onDelete
+    }
+
+    private var onChangePalette: ((Int) -> Void)? {
+        actions.onChangePalette
+    }
+
+    private var onMoveUp: (() -> Void)? {
+        actions.onMoveUp
+    }
+
+    private var onMoveDown: (() -> Void)? {
+        actions.onMoveDown
+    }
+
+    private var canMoveUp: Bool {
+        actions.canMoveUp
+    }
+
+    private var canMoveDown: Bool {
+        actions.canMoveDown
+    }
+
+    private var onCreateWorktree: (() -> Void)? {
+        actions.onCreateWorktree
+    }
+
+    private var onShowHiddenWorktrees: (() -> Void)? {
+        actions.onShowHiddenWorktrees
+    }
+
+    private var onOpenSettings: (() -> Void)? {
+        actions.onOpenSettings
+    }
+
+    private var onSyncWorktrees: (() -> Void)? {
+        actions.onSyncWorktrees
+    }
+
+    private var onPruneMissingWorktrees: (() -> Void)? {
+        actions.onPruneMissingWorktrees
+    }
+
+    private var onDeleteOnDisk: (() -> Void)? {
+        actions.onDeleteOnDisk
+    }
+
+    private var onRevealInFinder: (() -> Void)? {
+        actions.onRevealInFinder
+    }
+
+    private var helpText: String? {
+        actions.helpText
+    }
+
+    @State private var isHovering = false
+    @State private var isEditing = false
+    @State private var draft = ""
+    @State private var isColorPickerPresented = false
+
+    var body: some View {
+        // Two top-level branches instead of routing `.draggable` through
+        // a `@ViewBuilder` helper. The helper version (`_ConditionalContent`
+        // wrapping the modifier) appears to drop SwiftUI's drag-gesture
+        // registration on macOS 26 — drags never started even with the
+        // chain otherwise identical to L2 TabRow. Splitting at body level
+        // keeps each branch a concrete chain so `.draggable` lands on the
+        // real view.
+        if let descriptor = dragDescriptor {
+            rowContent
+                .opacity(rowOpacity(draggingID: descriptor.dragState.currentSourceID, myID: descriptor.id))
+                .limpidDraggable(
+                    kind: descriptor.kind,
+                    prefix: descriptor.prefix,
+                    id: descriptor.id,
+                    dragState: descriptor.dragState
+                )
+        } else {
+            rowContent
+                .opacity(isMissingWorktree ? 0.5 : 1.0)
+        }
+    }
+
+    /// Dim the row to ~0.4 while it's the active drag source so the
+    /// user can tell *which* row is following the cursor. Live reorder
+    /// moves the row into its hovered position immediately, so without
+    /// this dim cue the dragged row looks indistinguishable from the
+    /// rest of the list.
+    private func rowOpacity(draggingID: String?, myID: String) -> Double {
+        let baseline = isMissingWorktree ? 0.5 : 1.0
+        return draggingID == myID ? min(baseline, 0.4) : baseline
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: 8) {
+            leadingMarker
+            if onRename != nil {
+                // Renameable kinds use `InlineRenameField` (Text↔
+                // SwiftUI-TextField swap — see that file for why the
+                // swap pattern beats a persistent TextField on macOS
+                // 26: the `NSWindow` shared field editor leaks scroll
+                // state between rows when the same `NSTextField` backing
+                // is reused).
+                InlineRenameField(
+                    text: $draft,
+                    isEditing: $isEditing,
+                    font: .system(size: 13, weight: .semibold, design: .rounded),
+                    foregroundColor: labelColor,
+                    onCommit: { value in commitRename(value) },
+                    onCancel: { cancelRename() }
+                )
+                .layoutPriority(1)
+                .onTapGesture(count: 2) {
+                    if !isEditing { beginRename() }
+                }
+                .onChange(of: label) { _, newValue in
+                    if !isEditing { draft = newValue }
+                }
+                .onAppear {
+                    if !isEditing { draft = label }
+                }
+            } else {
+                // `maxWidth: .infinity` so the label takes the row's
+                // full free width even when the text itself is short —
+                // otherwise the trailing accessories collapse left
+                // toward the label and the count drifts away from the
+                // right edge (visible on Quick Tabs / general rows).
+                Text(label)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(labelColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+            }
+            trailingAccessory
+        }
+        .padding(.leading, indent)
+        .padding(.trailing, 18)
+        .frame(height: rowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .selectablePillBackground(isActive: isActive, isHovering: isHovering)
+        .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
+        // `.simultaneousGesture(TapGesture)` instead of `.onTapGesture`
+        // because the latter waits for macOS's double-click resolution
+        // window (~250 ms) before firing — the inner
+        // `.onTapGesture(count: 2)` on the rename field puts the whole
+        // row into "could still be a double-click" territory. The
+        // `simultaneous` variant short-circuits that wait and feels
+        // immediate. Drag is unaffected: the real cause of the earlier
+        // drag regression was `.glassEffect` blocking hit-testing
+        // (fixed separately), not the tap recognizer.
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                if isEditing { return }
+                onActivate()
+            }
+        )
+        .contextMenu {
+            if onMoveUp != nil || onMoveDown != nil {
+                if let onMoveUp {
+                    Button(action: onMoveUp) {
+                        Label("Move Up", systemImage: "arrow.up")
+                    }
+                    .disabled(!canMoveUp)
+                }
+                if let onMoveDown {
+                    Button(action: onMoveDown) {
+                        Label("Move Down", systemImage: "arrow.down")
+                    }
+                    .disabled(!canMoveDown)
+                }
+                Divider()
+            }
+            if onChangePalette != nil {
+                Button {
+                    isColorPickerPresented = true
+                } label: {
+                    Label("Change Color", systemImage: "paintpalette")
+                }
+            }
+            if onRename != nil {
+                Button {
+                    beginRename()
+                } label: {
+                    Label("Rename…", systemImage: "pencil")
+                }
+            }
+            if let onCreateWorktree {
+                Divider()
+                Button(action: onCreateWorktree) {
+                    Label("New Worktree…", systemImage: "arrow.triangle.branch")
+                }
+            }
+            if let onShowHiddenWorktrees {
+                Button(action: onShowHiddenWorktrees) {
+                    Label("Show Hidden Worktrees", systemImage: "eye")
+                }
+            }
+            if let onSyncWorktrees {
+                Button(action: onSyncWorktrees) {
+                    Label("Sync Worktrees", systemImage: "arrow.clockwise")
+                }
+            }
+            if let onPruneMissingWorktrees {
+                Button(action: onPruneMissingWorktrees) {
+                    Label("Remove Missing Worktrees", systemImage: "exclamationmark.triangle")
+                }
+            }
+            if let onOpenSettings {
+                Divider()
+                Button(action: onOpenSettings) {
+                    Label("Project Settings…", systemImage: "folder.badge.gearshape")
+                }
+            }
+            if let onRevealInFinder {
+                Divider()
+                Button(action: onRevealInFinder) {
+                    Label("Reveal in Finder", systemImage: "folder")
+                }
+            }
+            if let onDelete {
+                Divider()
+                Button(role: .destructive, action: onDelete) {
+                    Label {
+                        Text(closeLabel)
+                    } icon: {
+                        Image(systemName: closeIcon)
+                    }
+                }
+            }
+            if let onDeleteOnDisk {
+                Button(role: .destructive, action: onDeleteOnDisk) {
+                    Label("Delete Worktree…", systemImage: "trash")
+                }
+            }
+        }
+        .modifier(OptionalHelp(text: helpText))
+    }
+
+    // MARK: - Leading marker (palette dot, branch icon, or unread)
+
+    private var leadingMarker: some View {
+        ZStack {
+            switch kind {
+            case .loose:
+                Image(systemName: "tray")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+            case let .group(g, _, _):
+                paletteDotButton(paletteColor(g.paletteIndex), current: g.paletteIndex)
+            case let .projectHeader(p, _, _):
+                paletteDotButton(paletteColor(p.paletteIndex), current: p.paletteIndex)
+            case .worktree:
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            case .projectGeneral:
+                Image(systemName: "circle.dotted")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            case .groupTab:
+                Circle()
+                    .fill(Color.secondary.opacity(0.5))
+                    .frame(width: 6, height: 6)
+            }
+        }
+        .frame(width: LimpidLayout.l1MarkerSlot, height: LimpidLayout.l1MarkerSlot)
+    }
+
+    private func paletteColor(_ idx: Int?) -> Color {
+        LimpidColor.paletteColor(idx)
+    }
+
+    /// 8px dot. When `onChangePalette` is set, the slot becomes
+    /// tappable (high-priority so the row's `onActivate` tap doesn't
+    /// swallow it) and anchors the color-picker popover. Hover ring
+    /// hints that the dot is interactive.
+    @ViewBuilder
+    private func paletteDotButton(_ color: Color, current: Int?) -> some View {
+        if onChangePalette != nil {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+                .padding(4)
+                .contentShape(Rectangle())
+                .highPriorityGesture(
+                    TapGesture().onEnded {
+                        isColorPickerPresented = true
+                    }
+                )
+                .help("Change Color")
+                .popover(isPresented: $isColorPickerPresented, arrowEdge: .bottom) {
+                    ContainerColorPicker(current: current) { idx in
+                        onChangePalette?(idx)
+                        isColorPickerPresented = false
+                    }
+                }
+        } else {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+        }
+    }
+
+    // MARK: - Label
+
+    private var label: String {
+        switch kind {
+        case .loose: String(localized: "Quick Tabs")
+        case let .group(g, _, _): g.name
+        case let .projectHeader(p, _, _): p.name
+        case let .worktree(_, w, _): w.label
+        case .projectGeneral: String(localized: "Default")
+        case let .groupTab(t): t.displayTitle
+        }
+    }
+
+    private var labelColor: Color {
+        // Tahoe dark mode pushes `.secondary` to ~55% white which the
+        // user flagged as too dim. Use full primary for active and
+        // ~85% for everything else so labels stay legible without the
+        // contrast leaking into the active highlight.
+        if isActive { return .primary }
+        switch kind {
+        case .worktree, .projectGeneral, .groupTab:
+            return Color.primary.opacity(0.78)
+        default:
+            return Color.primary.opacity(0.92)
+        }
+    }
+
+    // MARK: - Trailing (count + chevron)
+
+    /// True when this row represents a worktree that has been
+    /// externally removed from disk. Drives the dim + warning badge.
+    private var isMissingWorktree: Bool {
+        if case let .worktree(_, w, _) = kind { return w.isMissing }
+        return false
+    }
+
+    /// Trailing accessory — bell + count always in layout; hover
+    /// action buttons (delete / new-worktree) join the HStack only
+    /// while the row is hovered. That means the label reflows on
+    /// hover enter/leave: ~32pt of label width shrinks to make room
+    /// for the buttons. We chose this over an `.overlay` after the
+    /// overlay landed icons on top of the label tail (truncated "…"
+    /// would sit under the buttons), which read badly. The reflow
+    /// chirsplay is a tradeoff: the label is fuller at rest, and
+    /// hover icons sit cleanly in their own slot during interaction.
+    private var trailingAccessory: some View {
+        HStack(spacing: 6) {
+            if isMissingWorktree {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.orange)
+                    .help("Worktree not found on disk")
+            }
+            if isHovering, !isEditing {
+                if let onDelete {
+                    Button(action: onDelete) {
+                        Image(systemName: hoverDeleteIcon)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16, height: 16)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(String(localized: hoverDeleteHelp))
+                }
+                if let onCreateWorktree {
+                    Button(action: onCreateWorktree) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16, height: 16)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("New Worktree…")
+                }
+            }
+            NotificationBell(isUnread: hasUnread, isRinging: isRinging)
+            countOrChevron
+        }
+    }
+
+    @ViewBuilder
+    private var countOrChevron: some View {
+        switch kind {
+        case let .loose(count),
+             let .group(_, count, _),
+             let .worktree(_, _, count),
+             let .projectGeneral(_, count):
+            if count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.primary.opacity(0.55))
+                    .frame(width: LimpidLayout.l1TrailingSlot, alignment: .trailing)
+            }
+        case let .projectHeader(_, _, expanded):
+            // Wrap chevron in the same 16×16 slot the hover icons
+            // use so the trailing icons sit on a uniform grid (was
+            // l1TrailingSlot/right-aligned, which left ~8pt of empty
+            // space between create-worktree (Y) and the chevron).
+            Button(action: { onToggleExpand?() }) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.primary.opacity(0.70))
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        case .groupTab:
+            EmptyView()
+        }
+    }
+
+    // MARK: - Geometry
+
+    private var indent: CGFloat {
+        // All rows share the same leading inset; hierarchy reads from
+        // the slab tree structure + marker icon change, not from
+        // horizontal indent.
+        LimpidLayout.l1IndentTop
+    }
+
+    private var rowHeight: CGFloat {
+        switch kind {
+        case .loose, .group, .projectHeader:
+            LimpidLayout.l1RowHeightTop
+        case .worktree, .projectGeneral, .groupTab:
+            LimpidLayout.l1RowHeightNested
+        }
+    }
+
+    // MARK: - Rename
+
+    private func beginRename() {
+        draft = label
+        isEditing = true
+    }
+
+    private func commitRename(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            onRename?(trimmed)
+        }
+        isEditing = false
+    }
+
+    private func cancelRename() {
+        draft = label
+        isEditing = false
+    }
+
+    /// "Close" reads more accurately than "Delete" for Projects (the
+    /// folder on disk lives on) and Groups (purely a Limpid grouping).
+    /// Tabs ("groupTab") still use Close as well — it ends the
+    /// session, not destructive in the on-disk sense.
+    ///
+    /// Returns `LocalizedStringResource` (not `String`) so the resolved
+    /// text is taken from the String Catalog on render — passing a
+    /// plain `String` to `Button(_:)` bypasses SwiftUI's localization
+    /// path (catalog only kicks in for literal `LocalizedStringKey`).
+    private var closeLabel: LocalizedStringResource {
+        switch kind {
+        case .projectHeader: "Close Project"
+        case .group: "Close Group"
+        case let .worktree(_, w, _):
+            // For an orphan whose disk-side worktree is gone, the
+            // verb is just "Remove Row" — there's nothing to hide
+            // because the disk state is already "gone".
+            w.isMissing ? "Remove Row" : "Remove from Sidebar"
+        case .groupTab: "Close"
+        case .projectGeneral, .loose:
+            "Close"
+        }
+    }
+
+    /// SF Symbol paired with `closeLabel`. Worktree rows use the
+    /// "hide" metaphor (the disk-side worktree stays put) so we pick
+    /// an eye-with-slash; everything else genuinely closes/destroys
+    /// the entity in Limpid, so the standard ✕ reads correctly.
+    /// Single icon used by BOTH the context-menu destructive entry
+    /// and the hover-revealed trailing button. Apple convention is
+    /// simple symbols (no `.circle`) in context menus and inline
+    /// actions, so we drop the suffixed forms entirely.
+    private var closeIcon: String {
+        switch kind {
+        case let .worktree(_, w, _):
+            w.isMissing ? "xmark" : "eye.slash"
+        default:
+            "xmark"
+        }
+    }
+
+    /// Hover-revealed trailing button uses the same icon as the
+    /// context menu — keeping the two affordances visually identical
+    /// avoids the "are these different actions?" confusion.
+    private var hoverDeleteIcon: String {
+        closeIcon
+    }
+
+    private var hoverDeleteHelp: LocalizedStringResource {
+        switch kind {
+        case let .worktree(_, w, _):
+            w.isMissing ? "Remove Row" : "Hide from Sidebar"
+        default:
+            "Delete"
+        }
+    }
+}
+
+// GitOverlayBadge moved to Limpid/UI/Git/GitOverlayBadge.swift.
+
+extension View {
+    /// Conditionally attaches `.limpidDraggable` from inside the
+    /// container row's body. Used by `ContainerRow` to win gesture
+    /// arbitration against its own tap / context-menu recognizers —
+    /// see `ContainerRow.DragDescriptor` for the full rationale.
+    @ViewBuilder
+    @MainActor
+    func applyLimpidDraggable(_ descriptor: ContainerRow.DragDescriptor?) -> some View {
+        if let descriptor {
+            limpidDraggable(
+                kind: descriptor.kind,
+                prefix: descriptor.prefix,
+                id: descriptor.id,
+                dragState: descriptor.dragState
+            )
+        } else {
+            self
+        }
+    }
+}
+
+private struct OptionalHelp: ViewModifier {
+    let text: String?
+    func body(content: Content) -> some View {
+        if let text, !text.isEmpty {
+            content.help(text)
+        } else {
+            content
+        }
+    }
+}
