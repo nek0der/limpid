@@ -2,6 +2,13 @@
 
 All notable changes to Limpid are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.0.0 (2026-05-24)
+
+
+### Features
+
+* initial Limpid implementation ([#1](https://github.com/nek0der/limpid/issues/1)) ([4b0512e](https://github.com/nek0der/limpid/commit/4b0512ebecf9391f85f4a79cba4157d5af5494e1))
+
 ## [Unreleased]
 
 ### Added
