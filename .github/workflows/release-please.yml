@@ -7,12 +7,12 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  # Needed so the dispatch step below can fire release.yml. The
-  # default GITHUB_TOKEN cannot launch downstream workflows from
-  # tag-pushes it creates itself; instead we explicitly call
-  # createWorkflowDispatch, which the docs allow with `actions:
-  # write` even on the default token. Avoids the PAT / GitHub App
-  # rotation overhead a single-maintainer OSS doesn't want.
+  # `actions: write` is kept for the dispatch step. It's a no-op when
+  # we pass a PAT to release-please-action (the action then uses the
+  # PAT, not GITHUB_TOKEN, so `permissions:` is irrelevant for those
+  # API calls) but `actions/github-script` below still uses the
+  # default `GITHUB_TOKEN`, which needs this permission to call
+  # `createWorkflowDispatch`.
   actions: write
 
 jobs:
@@ -22,13 +22,24 @@ jobs:
       - id: release
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         with:
+          # Use a fine-grained PAT so the commits and PR release-please
+          # creates count as "human"-authored events. The default
+          # GITHUB_TOKEN is explicitly disallowed from triggering
+          # downstream workflows (GitHub's anti-recursion rule), which
+          # meant the release PR's CI never ran and required checks
+          # stayed empty forever — every release had to be unblocked
+          # with a manual empty-commit push. PAT-authored events go
+          # through the normal trigger path so ci.yml + pr-lint.yml
+          # fire on the release PR like any other PR.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
 
-      # release-please pushes tags using GITHUB_TOKEN, which by GitHub
-      # policy does NOT trigger downstream workflows. We dispatch
-      # release.yml explicitly so the dmg / notarize / Sparkle
-      # pipeline runs as soon as the Release PR is merged.
+      # Tags pushed by release-please still go through GITHUB_TOKEN
+      # in some configurations, and GITHUB_TOKEN-pushed tags don't
+      # fire `push: tags:` triggers. Dispatch release.yml explicitly
+      # so the dmg / notarize / Sparkle pipeline runs as soon as the
+      # Release PR is merged.
       - name: Dispatch release.yml
         if: ${{ steps.release.outputs.release_created == 'true' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
