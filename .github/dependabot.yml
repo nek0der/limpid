@@ -1,9 +1,13 @@
 version: 2
 updates:
+  # GitHub Actions: monthly, no major bumps. Majors tend to introduce
+  # breaking changes that need a hand-review (e.g. `actions/cache` v5,
+  # `apple-actions/import-codesign-certs` v7) and a release pipeline
+  # this small can survive being a release behind.
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
     commit-message:
       prefix: chore
@@ -11,11 +15,18 @@ updates:
     labels:
       - dependencies
       - github-actions
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
 
+  # Swift packages: monthly. Sparkle is the only entry today; a
+  # Sparkle major bump would need active review anyway, but keep
+  # majors visible so we don't miss a security release.
   - package-ecosystem: swift
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
     commit-message:
       prefix: chore
@@ -24,13 +35,18 @@ updates:
       - dependencies
       - swift
 
+  # Submodules: monthly, no auto-updates of any kind. `vendor/ghostty`
+  # tracks a fast-moving upstream that frequently breaks our build at
+  # the Zig / Metal layer; bumps are vetted manually in a dedicated PR.
   - package-ecosystem: gitsubmodule
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 1
     commit-message:
       prefix: chore
     labels:
       - dependencies
       - submodule
+    ignore:
+      - dependency-name: "*"
