@@ -43,9 +43,9 @@
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>Limpid runs a shell that may access removable volumes.</string>
 	<key>NSSupportsAutomaticTermination</key>
-	<true/>
+	<false/>
 	<key>NSSupportsSuddenTermination</key>
-	<true/>
+	<false/>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
