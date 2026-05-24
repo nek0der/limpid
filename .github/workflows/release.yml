@@ -255,15 +255,20 @@ jobs:
             --maximum-deltas 0 \
             "$INBOX"
 
-          # Replace the appcast.xml on the gh-pages branch. Each release
-          # ships its own one-item appcast; Sparkle clients only need the
-          # newest entry to decide whether to update.
+          # Replace the appcast.xml on the gh-pages branch and publish
+          # the matching release-notes .md alongside it. Sparkle clients
+          # follow `sparkle:releaseNotesLink` in the appcast to fetch the
+          # notes — without the .md the link 404s and the update sheet
+          # shows an empty body. Each release ships its own one-item
+          # appcast; Sparkle clients only need the newest entry to
+          # decide whether to update.
           git worktree add /tmp/pages gh-pages
           cp "$INBOX/appcast.xml" /tmp/pages/appcast.xml
+          cp "$INBOX/${DMG_BASENAME}.md" "/tmp/pages/${DMG_BASENAME}.md"
           cd /tmp/pages
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add appcast.xml
+          git add appcast.xml "${DMG_BASENAME}.md"
           if git diff --cached --quiet; then
             echo "No appcast changes to commit."
           else
