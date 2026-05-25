@@ -1409,6 +1409,26 @@
         }
       }
     },
+    "Rename Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブの名前を変更"
+          }
+        }
+      }
+    },
+    "Reopen Closed Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じたタブを再度開く"
+          }
+        }
+      }
+    },
     "Rename…": {
       "localizations": {
         "ja": {

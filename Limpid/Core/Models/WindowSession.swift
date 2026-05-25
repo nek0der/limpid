@@ -40,6 +40,15 @@ final class WindowSession {
     var navBackStack: [NavTarget] = []
     var navForwardStack: [NavTarget] = []
 
+    /// Capped stack of tabs the user has closed since launch, ordered
+    /// oldest-first. ⌘⇧T pops the back of the stack to bring a tab
+    /// back at its old container + cwd, with the captured scrollback
+    /// replayed into the fresh surface (the shell itself is a new
+    /// process — there's nothing to revive). Transient: not persisted
+    /// across launches, so a quit-restart wipes the history.
+    var closedTabStack: [ClosedTab] = []
+    static let closedTabStackLimit = 20
+
     /// L1 section fold state. The chevron lives on the section header
     /// ("GROUPS" / "PROJECTS"); individual rows don't expose their own.
     var groupsSectionExpanded: Bool = true

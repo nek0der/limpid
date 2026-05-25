@@ -54,6 +54,11 @@ struct TabRow: View {
             .onAppear {
                 if !isEditing { draft = tab.displayTitle }
             }
+            // ⌘⇧R posts this; only the matching row reacts so cross-
+            // container renames don't fire the wrong row.
+            .onReceive(NotificationCenter.default.publisher(for: .limpidRenameActiveTab)) { note in
+                if (note.object as? UUID) == tab.id, !isEditing { beginRename() }
+            }
             Spacer(minLength: 4)
             NotificationBell(isUnread: hasUnread, isRinging: isRinging)
             if isZoomed {
