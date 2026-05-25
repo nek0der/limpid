@@ -26,6 +26,12 @@ struct Tab: Codable, Equatable, Identifiable {
     /// Pane layout inside the tab.
     var splitTree: SplitTree
 
+    /// When non-nil, the L3 pane area renders only this leaf at full size
+    /// instead of `splitTree`. tmux Prefix+z equivalent. Persisted so a
+    /// zoomed tab survives quit/restore. Cleared automatically when the
+    /// referenced pane goes away (split, close, etc.).
+    var zoomedLeafID: UUID?
+
     /// Per-pane persisted state (unread count). Transient bits (bell
     /// flash, last child-exit code) live on `WindowSession.paneTransients`
     /// so flipping them doesn't reassign `tabs[idx]` and trip autosave.
@@ -60,6 +66,7 @@ struct Tab: Codable, Equatable, Identifiable {
         pwd: String? = nil,
         splitTree: SplitTree,
         paneStates: [UUID: PaneState] = [:],
+        zoomedLeafID: UUID? = nil,
         container: ContainerID
     ) {
         self.id = id
@@ -69,6 +76,7 @@ struct Tab: Codable, Equatable, Identifiable {
         self.pwd = pwd
         self.splitTree = splitTree
         self.paneStates = paneStates
+        self.zoomedLeafID = zoomedLeafID
         self.container = container
     }
 

@@ -12,6 +12,7 @@ struct TabRow: View {
     let onActivate: () -> Void
     let onClose: () -> Void
     let onRename: (String) -> Void
+    let onUnzoom: () -> Void
 
     @State private var isEditing = false
     @State private var isHovering = false
@@ -27,6 +28,10 @@ struct TabRow: View {
 
     private var isRinging: Bool {
         session.isRinging(in: tab)
+    }
+
+    private var isZoomed: Bool {
+        tab.zoomedLeafID != nil
     }
 
     var body: some View {
@@ -51,6 +56,21 @@ struct TabRow: View {
             }
             Spacer(minLength: 4)
             NotificationBell(isUnread: hasUnread, isRinging: isRinging)
+            if isZoomed {
+                // Always-visible state indicator with a tap target so the
+                // user can leave zoom mode without remembering ⌘⇧Return.
+                // Sits between the bell (passive status) and the close
+                // button (action) since it's an actionable affordance.
+                Button(action: onUnzoom) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 14, height: 14)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Unzoom Pane")
+            }
             Button(action: onClose) {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
@@ -147,6 +167,14 @@ struct TabsListView: View {
                             },
                             onRename: { newName in
                                 renameTab(tab.id, to: newName)
+                            },
+                            onUnzoom: {
+                                // Activate the tab so the user can see the
+                                // restored split layout, then clear zoom.
+                                session.setActiveTab(tab.id)
+                                session.update(tab.id) { t in
+                                    t.zoomedLeafID = nil
+                                }
                             }
                         )
                         .insertionLine(beforeTabID: tab.id, container: container, session: session)
