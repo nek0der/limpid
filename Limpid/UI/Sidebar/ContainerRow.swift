@@ -519,19 +519,26 @@ struct ContainerRow: View {
                     .frame(width: LimpidLayout.l1TrailingSlot, alignment: .trailing)
             }
         case let .projectHeader(_, _, expanded):
-            // Wrap chevron in the same 16×16 slot the hover icons
-            // use so the trailing icons sit on a uniform grid (was
-            // l1TrailingSlot/right-aligned, which left ~8pt of empty
-            // space between create-worktree (Y) and the chevron).
-            Button(action: { onToggleExpand?() }, label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.primary.opacity(0.70))
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .frame(width: 16, height: 16)
-                    .contentShape(Rectangle())
-            })
-            .buttonStyle(.plain)
+            // Hide the chevron entirely when the row carries no
+            // expand callback — a non-git project (or one that hasn't
+            // synced its worktree list yet) has nothing to disclose,
+            // so the disclosure affordance would be a dead control.
+            if onToggleExpand != nil {
+                // Wrap chevron in the same 16×16 slot the hover icons
+                // use so the trailing icons sit on a uniform grid
+                // (was l1TrailingSlot/right-aligned, which left ~8pt
+                // of empty space between create-worktree (Y) and the
+                // chevron).
+                Button(action: { onToggleExpand?() }, label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.primary.opacity(0.70))
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                })
+                .buttonStyle(.plain)
+            }
         case .groupTab:
             EmptyView()
         }

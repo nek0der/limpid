@@ -26,9 +26,19 @@ struct ProjectSectionView: View {
     @Binding var removingProject: ContainerSlabView.RemoveProjectTarget?
     @Binding var worktreeOperationError: String?
 
+    /// `true` when there's nothing to nest under the project header —
+    /// either the project isn't a git repository or `GitSyncCoordinator`
+    /// hasn't run its first pass yet. In flat mode the header itself
+    /// navigates to `.project(id)`, the chevron is hidden, and the
+    /// `projectGeneralRow` / worktree rows don't render (the
+    /// `projectGeneralRow` would have duplicated the header anyway).
+    private var isFlat: Bool {
+        project.worktrees.allSatisfy(\.isHidden)
+    }
+
     var body: some View {
         projectHeader
-        if project.isExpanded {
+        if !isFlat, project.isExpanded {
             // Wrap the nested children in a single Group so SwiftUI
             // applies one slide-up transition to the whole subtree —
             // matches the GROUPS section's collapse animation.
@@ -54,12 +64,18 @@ struct ProjectSectionView: View {
             isActive: session.activeContainerID.projectID == project.id,
             hasUnread: session.hasUnreadInProject(project.id),
             isRinging: session.isRingingInProject(project.id),
-            // Body taps are inert; the chevron is the sole expand
-            // control. Single-tap-to-fold conflicted with the rename
-            // double-tap — rapid clicks stacked `withAnimation`
-            // transactions until SwiftUI's layout deadlocked.
-            onActivate: {},
-            onToggleExpand: {
+            // Flat mode (no visible worktrees) collapses the header
+            // and the would-be `projectGeneralRow` into a single
+            // tappable row that navigates straight to `.project(id)`.
+            // With worktrees the header stays inert and the chevron
+            // remains the sole expand control — that legacy carve-out
+            // avoids the rename double-tap conflict (single-tap-to-
+            // fold stacked withAnimation transactions until SwiftUI's
+            // layout deadlocked).
+            onActivate: isFlat
+                ? { session.setActiveContainer(.project(project.id)) }
+                : {},
+            onToggleExpand: isFlat ? nil : {
                 withAnimation(LimpidMotion.expand) {
                     session.toggleProjectExpanded(project.id)
                 }
@@ -87,7 +103,14 @@ struct ProjectSectionView: View {
                 },
                 canMoveUp: session.canMoveProjectUp(project.id),
                 canMoveDown: session.canMoveProjectDown(project.id),
-                onCreateWorktree: { creatingWorktreeFor = project.id },
+                // Hide "New Worktree…" when the project has no git
+                // worktree list to grow — `git worktree add` would
+                // fail on a non-repo anyway. The menu item reappears
+                // after the user runs `git init` and `GitSyncCoordinator`
+                // picks up the new repo on its next pass.
+                onCreateWorktree: project.mainBranchName == nil
+                    ? nil
+                    : { creatingWorktreeFor = project.id },
                 onShowHiddenWorktrees: session.hasHiddenWorktrees(projectID: project.id)
                     ? { session.unhideAllWorktrees(projectID: project.id) }
                     : nil,
