@@ -40,7 +40,8 @@ final class GhosttyApp {
         let resourcesDir = GhosttyApp.resolveResourcesDir()
         if let path = GhosttyConfigBridge.writeConfigFile(
             settings: settings,
-            resourcesDir: resourcesDir
+            resourcesDir: resourcesDir,
+            appearance: GhosttyApp.currentAppearance()
         ) {
             path.withCString { ghostty_config_load_file(cfg, $0) }
         }
@@ -146,6 +147,18 @@ final class GhosttyApp {
             }
         }
         return nil
+    }
+
+    /// Resolve the user's current macOS interface style. Reads
+    /// `AppleInterfaceStyle` from `NSGlobalDomain` rather than
+    /// `NSApp.effectiveAppearance` because this runs during
+    /// `GhosttyApp.init`, before NSApplication has finished its
+    /// appearance graph. Used at startup to pick the initial theme
+    /// and again on `AppleInterfaceThemeChangedNotification` to
+    /// rebuild the config.
+    static func currentAppearance() -> GhosttyConfigBridge.Appearance {
+        let style = UserDefaults.standard.string(forKey: "AppleInterfaceStyle")
+        return style == "Dark" ? .dark : .light
     }
 
     // MARK: - One-time global bootstrap

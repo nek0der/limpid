@@ -214,7 +214,8 @@ final class AppState {
                 app: ghosttyApp,
                 settings: current,
                 resourcesDir: GhosttyApp.resolveResourcesDir(),
-                includeUserConfig: current.advanced.useGhosttyConfigFile
+                includeUserConfig: current.advanced.useGhosttyConfigFile,
+                appearance: GhosttyApp.currentAppearance()
             )
         }
     }
@@ -300,6 +301,28 @@ final class AppState {
         } onChange: { [weak self] in
             guard let self else { return }
             self.store.scheduleSave(self.session.makeSnapshot())
+        }
+
+        // Live light/dark switching. libghostty can't follow macOS
+        // appearance on its own when embedded (cmux#2922 /
+        // ghostty#11017), so we listen for the distributed
+        // `AppleInterfaceThemeChangedNotification` and rebuild the
+        // config so every surface re-picks its theme. Surfaces
+        // refresh through the existing `ghostty_app_update_config`
+        // path that Settings → Appearance already uses.
+        DistributedNotificationCenter.default.addObserver(
+            forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, let app = self.ghosttyApp else { return }
+            GhosttyConfigBridge.reloadConfig(
+                app: app,
+                settings: self.settingsStore.settings,
+                resourcesDir: GhosttyApp.resolveResourcesDir(),
+                includeUserConfig: self.settingsStore.settings.advanced.useGhosttyConfigFile,
+                appearance: GhosttyApp.currentAppearance()
+            )
         }
     }
 }

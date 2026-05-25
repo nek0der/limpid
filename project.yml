@@ -71,6 +71,15 @@ targets:
     platform: macOS
     sources:
       - path: Limpid
+        excludes:
+          - "Resources/ghostty"
+      # Bundle libghostty's shell-integration scripts + the themes
+      # we ship as Limpid's defaults (Apple System Colors Light/Dark).
+      # `type: folder` keeps the directory structure intact under
+      # `.app/Contents/Resources/ghostty/`, which is where
+      # `GhosttyApp.resolveResourcesDir()` looks first.
+      - path: Limpid/Resources/ghostty
+        type: folder
     # Explicit Info.plist (not the GENERATE_INFOPLIST_FILE auto-version)
     # because Sparkle's `SU*` keys aren't on Xcode's INFOPLIST_KEY_*
     # allow-list. XcodeGen fills in the standard CFBundle keys for us.
