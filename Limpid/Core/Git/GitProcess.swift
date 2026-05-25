@@ -163,6 +163,31 @@ enum GitProcess {
         return try await run(args, cwd: repoRoot)
     }
 
+    /// If `url` is a linked worktree of a larger git repo, return
+    /// the main checkout's working-tree root. Used at "Add Project"
+    /// time so the Project's `rootURL` doesn't end up listed inside
+    /// its own `git worktree list` output — a self-reference that
+    /// confused both the sidebar's worktree rows and any L1 logic
+    /// that compares container paths.
+    ///
+    /// Non-git folders, main checkouts, bare repos, arbitrary
+    /// subdirectories under any working tree, and lookup failures
+    /// all fall through to `url` unchanged. Promotion only triggers
+    /// when the user pointed at an *exact* linked-worktree root —
+    /// staying anchored at `/repo/subdir` (where the user explicitly
+    /// picked a deeper anchor) is intentional.
+    static func resolveMainCheckout(of url: URL) async -> URL {
+        guard let worktrees = try? await GitWorktreeList.fetch(repoRoot: url),
+              let main = worktrees.first,
+              !main.isBare
+        else { return url }
+        let standardized = url.standardizedFileURL
+        let isLinked = worktrees.dropFirst().contains {
+            $0.path.standardizedFileURL == standardized
+        }
+        return isLinked ? main.path.standardizedFileURL : url
+    }
+
     /// Quick check: does `git` find a repository rooted at `url`?
     /// Returns false for non-git folders and on launch errors.
     static func isGitRepository(_ url: URL) async -> Bool {
