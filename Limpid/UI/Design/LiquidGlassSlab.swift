@@ -62,11 +62,17 @@ private struct LiquidGlassSlabModifier: ViewModifier {
                     lineWidth: solid ? 0.5 : 1
                 )
             )
+            // `.glassEffect` on macOS 26 supplies its own depth cues
+            // (specular highlight, lensing, soft system shadow), so we
+            // skip the manual drop shadow in glass mode — stacking one
+            // on top read as a dark cloud under the sidebar in light
+            // mode. Solid mode still needs a hand-drawn shadow because
+            // the windowBackground fill is flat.
             .shadow(
-                color: Color.black.opacity(solid ? 0.18 : 0.35),
-                radius: solid ? 8 : 16,
+                color: Color.black.opacity(solid ? 0.12 : 0),
+                radius: solid ? 6 : 0,
                 x: 0,
-                y: solid ? 2 : 4
+                y: solid ? 2 : 0
             )
             .compositingGroup()
     }
