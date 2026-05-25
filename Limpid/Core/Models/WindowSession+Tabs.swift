@@ -156,12 +156,21 @@ extension WindowSession {
     func moveTab(_ tabID: UUID, to target: ContainerID) {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         if tabs[index].container == target { return }
+        let sourceContainer = tabs[index].container
+        let wasActive = (activeTabID == tabID)
         var moved = tabs.remove(at: index)
         moved.container = target
         tabs.append(moved)
-        // Force L1 to follow the move and keep this tab active.
-        activeContainerID = target
-        setActiveTab(moved.id)
+        // Stay on the source container — yanking the user across
+        // to the destination on every drag feels like a bug. For
+        // active-tab drags promote the sibling that slid into the
+        // vacated slot (Chrome/VSCode "tab to the right"); empty
+        // source falls through to `setActiveTab(nil)`.
+        if wasActive {
+            let nextAfter = tabs[index...].first { $0.container == sourceContainer }
+            let prevBefore = tabs[..<index].last { $0.container == sourceContainer }
+            setActiveTab((nextAfter ?? prevBefore)?.id)
+        }
     }
 
     /// Reorder a tab within the same container — `tabID` is moved so it

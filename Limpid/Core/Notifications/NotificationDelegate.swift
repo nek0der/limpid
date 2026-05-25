@@ -130,7 +130,7 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
 /// notification may outlive the originating pane, tab, or container —
 /// keeping each as an optional lets `AppState` fall back step by step
 /// instead of silently failing when the deepest target is gone.
-struct NotificationTapPayload: Sendable {
+struct NotificationTapPayload {
     let paneID: UUID?
     let tabID: UUID?
     let containerID: ContainerID?
