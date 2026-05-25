@@ -48,6 +48,8 @@ final class LimpidNotificationManager {
         title: String,
         body: String,
         paneID: UUID,
+        tabID: UUID? = nil,
+        containerID: ContainerID? = nil,
         requireFocus: Bool = true,
         kind: NotificationEntry.Kind = .desktop,
         tabTitleSnapshot: String? = nil,
@@ -83,10 +85,27 @@ final class LimpidNotificationManager {
         content.title = sanitizedTitle
         content.body = sanitizedBody
         content.sound = .default
-        content.userInfo = [
+        // userInfo carries the routing keys the tap handler needs:
+        // paneID first, then tabID, then containerID as a JSON blob
+        // (ContainerID is an enum with associated values, so it can't
+        // ride in userInfo as a primitive). `kind` is informational
+        // for now — kept so future tap categories (bell vs command
+        // finished vs OSC 9/777) can branch without re-deriving the
+        // origin.
+        var userInfo: [String: Any] = [
             "paneID": paneID.uuidString,
-            "requireFocus": requireFocus
+            "requireFocus": requireFocus,
+            "kind": kind.rawValue
         ]
+        if let tabID {
+            userInfo["tabID"] = tabID.uuidString
+        }
+        if let containerID,
+           let data = try? JSONEncoder().encode(containerID),
+           let json = String(data: data, encoding: .utf8) {
+            userInfo["containerJSON"] = json
+        }
+        content.userInfo = userInfo
 
         let request = UNNotificationRequest(
             identifier: UUID().uuidString,

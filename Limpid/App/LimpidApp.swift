@@ -146,6 +146,16 @@ final class AppState {
         // window / responder actually has focus. Without this it
         // falls back to the older "is any Limpid window key" check.
         LimpidNotificationDelegate.registry = registry
+        // Tap-to-jump: when the user clicks a delivered notification,
+        // route through `jumpToPane` so we land on the originating
+        // pane — the active-tab observer further down takes care of
+        // markRead / Dock badge decrement on the resulting tab swap.
+        // Closure body lives in `handleNotificationTap` so `init`'s
+        // cyclomatic complexity doesn't balloon.
+        LimpidNotificationDelegate.onTap = { [weak session, registry] payload in
+            guard let session else { return }
+            AppState.handleNotificationTap(payload, session: session, registry: registry)
+        }
         delegate.install()
 
         let coordinator = GhosttyEventCoordinator(
@@ -353,6 +363,31 @@ final class AppState {
         // can be called from `AppState.init` before SwiftUI has forced
         // the singleton, leaving `NSApp` nil.
         NSApplication.shared.appearance = appearance
+    }
+
+    /// Resolve a notification tap to the most-specific surviving
+    /// target. `NSApp.activate` already ran in the delegate, so when
+    /// every level has been deleted between fire and tap we leave
+    /// the user on whatever they had open instead of navigating to
+    /// a phantom container.
+    static func handleNotificationTap(
+        _ payload: NotificationTapPayload,
+        session: WindowSession,
+        registry: any SurfaceViewProviding
+    ) {
+        if let paneID = payload.paneID,
+           session.tab(containing: paneID) != nil {
+            jumpToPane(paneID, session: session, registry: registry)
+            return
+        }
+        if let tabID = payload.tabID, session.tab(tabID) != nil {
+            session.setActiveTab(tabID)
+            return
+        }
+        if let containerID = payload.containerID,
+           session.containerExists(containerID) {
+            session.setActiveContainer(containerID)
+        }
     }
 }
 
