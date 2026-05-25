@@ -174,6 +174,91 @@ struct SplitTree: Codable, Equatable {
         return ids
     }
 
+    /// `true` when `leafID` is present somewhere in the tree.
+    func contains(leafID: UUID) -> Bool {
+        guard let root else { return false }
+        return Self.containsLeaf(root, id: leafID)
+    }
+
+    /// Nearest leaf adjacent to `leafID` in the requested direction, or
+    /// nil. tmux-style: smallest gap along the direction axis, breaking
+    /// ties by perpendicular center distance. Used by ⌥⌘←↑↓→.
+    func neighborLeaf(of leafID: UUID, direction: SpatialDirection) -> UUID? {
+        guard let root else { return nil }
+        var rects: [(id: UUID, rect: CGRect)] = []
+        Self.collectLeafRects(root, in: CGRect(x: 0, y: 0, width: 1, height: 1), into: &rects)
+        guard let focused = rects.first(where: { $0.id == leafID })?.rect else { return nil }
+        let candidates = rects.filter { $0.id != leafID }.filter { entry in
+            switch direction {
+            case .left:
+                entry.rect.maxX <= focused.minX + 1e-6
+                    && Self.overlaps(entry.rect.minY...entry.rect.maxY, focused.minY...focused.maxY)
+            case .right:
+                entry.rect.minX + 1e-6 >= focused.maxX
+                    && Self.overlaps(entry.rect.minY...entry.rect.maxY, focused.minY...focused.maxY)
+            case .up:
+                entry.rect.maxY <= focused.minY + 1e-6
+                    && Self.overlaps(entry.rect.minX...entry.rect.maxX, focused.minX...focused.maxX)
+            case .down:
+                entry.rect.minY + 1e-6 >= focused.maxY
+                    && Self.overlaps(entry.rect.minX...entry.rect.maxX, focused.minX...focused.maxX)
+            }
+        }
+        // Gap primary → perpendicular distance secondary. The primary
+        // sort is what makes the 3-column case land on column 2, not 1.
+        let focusedCenter = CGPoint(x: focused.midX, y: focused.midY)
+        func axisGap(_ rect: CGRect) -> CGFloat {
+            switch direction {
+            case .left: focused.minX - rect.maxX
+            case .right: rect.minX - focused.maxX
+            case .up: focused.minY - rect.maxY
+            case .down: rect.minY - focused.maxY
+            }
+        }
+        func perpDistance(_ rect: CGRect) -> CGFloat {
+            switch direction {
+            case .left, .right: abs(rect.midY - focusedCenter.y)
+            case .up, .down: abs(rect.midX - focusedCenter.x)
+            }
+        }
+        return candidates.min { lhs, rhs in
+            let gl = axisGap(lhs.rect)
+            let gr = axisGap(rhs.rect)
+            if gl != gr { return gl < gr }
+            return perpDistance(lhs.rect) < perpDistance(rhs.rect)
+        }?.id
+    }
+
+    private static func collectLeafRects(
+        _ node: SplitNode,
+        in bounds: CGRect,
+        into rects: inout [(id: UUID, rect: CGRect)]
+    ) {
+        switch node {
+        case let .leaf(id):
+            rects.append((id, bounds))
+        case let .split(data):
+            switch data.direction {
+            case .horizontal:
+                let w1 = bounds.width * data.ratio
+                let first = CGRect(x: bounds.minX, y: bounds.minY, width: w1, height: bounds.height)
+                let second = CGRect(x: bounds.minX + w1, y: bounds.minY, width: bounds.width - w1, height: bounds.height)
+                collectLeafRects(data.first, in: first, into: &rects)
+                collectLeafRects(data.second, in: second, into: &rects)
+            case .vertical:
+                let h1 = bounds.height * data.ratio
+                let first = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: h1)
+                let second = CGRect(x: bounds.minX, y: bounds.minY + h1, width: bounds.width, height: bounds.height - h1)
+                collectLeafRects(data.first, in: first, into: &rects)
+                collectLeafRects(data.second, in: second, into: &rects)
+            }
+        }
+    }
+
+    private static func overlaps(_ a: ClosedRange<CGFloat>, _ b: ClosedRange<CGFloat>) -> Bool {
+        a.lowerBound < b.upperBound - 1e-6 && b.lowerBound < a.upperBound - 1e-6
+    }
+
     /// Remap every leaf id through the given mapping. Used when restoring
     /// a tree whose ids need to be renumbered (e.g. cloning a session).
     func remapLeafIDs(_ mapping: [UUID: UUID]) -> SplitTree {
