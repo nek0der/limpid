@@ -376,7 +376,8 @@ final class AppState {
         registry: any SurfaceViewProviding
     ) {
         if let paneID = payload.paneID,
-           session.tab(containing: paneID) != nil {
+           session.tab(containing: paneID) != nil
+        {
             jumpToPane(paneID, session: session, registry: registry)
             return
         }
@@ -385,7 +386,8 @@ final class AppState {
             return
         }
         if let containerID = payload.containerID,
-           session.containerExists(containerID) {
+           session.containerExists(containerID)
+        {
             session.setActiveContainer(containerID)
         }
     }
