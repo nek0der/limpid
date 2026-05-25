@@ -14,6 +14,17 @@ struct AppearancePane: View {
         SettingsForm(title: "Appearance") {
             Section {
                 Picker(
+                    "Appearance",
+                    selection: $store.settings.appearance.colorScheme
+                ) {
+                    Text("Follow System").tag(ColorSchemePreference.system)
+                    Text("Light").tag(ColorSchemePreference.light)
+                    Text("Dark").tag(ColorSchemePreference.dark)
+                }
+            }
+
+            Section {
+                Picker(
                     "Window tint",
                     selection: $store.settings.appearance.windowTint
                 ) {

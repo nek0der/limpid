@@ -2390,6 +2390,26 @@
           }
         }
       }
+    },
+    "Light": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライト"
+          }
+        }
+      }
+    },
+    "Dark": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダーク"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
