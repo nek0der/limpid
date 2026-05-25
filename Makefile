@@ -33,7 +33,6 @@ run:
 	@app="$(APP_PATH)"; \
 	if [ ! -d "$$app" ]; then echo "App not found: $$app (run 'make build' first)"; exit 1; fi; \
 	osascript -e 'tell application "Limpid Dev" to quit' >/dev/null 2>&1 || true; \
-	osascript -e 'tell application "Limpid" to quit'     >/dev/null 2>&1 || true; \
 	open "$$app"
 
 dev: build run
