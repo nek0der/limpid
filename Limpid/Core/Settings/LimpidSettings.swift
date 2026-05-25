@@ -62,12 +62,46 @@ struct AppearanceSettings: Codable, Equatable {
     /// `.off` ignore the system setting and force translucent / opaque
     /// respectively.
     var transparency: TransparencyMode = .system
+
+    /// User-chosen colour scheme. `.system` follows the macOS
+    /// Appearance preference; `.light` / `.dark` pin Limpid (both
+    /// SwiftUI chrome via `NSApp.appearance` and libghostty's bundled
+    /// theme) regardless of the OS setting.
+    var colorScheme: ColorSchemePreference = .system
+
+    // We diverge from the other settings structs (Font/Terminal/Advanced)
+    // and write a custom `init(from:)` so older `settings.json` files
+    // (no `colorScheme` key) decode cleanly with the new field
+    // defaulted, instead of throwing and falling back to a fresh
+    // defaults document that would also wipe the user's `windowTint`,
+    // `backgroundOpacity`, and `transparency`. This struct is the
+    // only one that's worth defending because every field here is a
+    // visible Settings choice — losing them mid-upgrade is the kind
+    // of regression a user notices immediately.
+    init() {}
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.windowTint = try c.decodeIfPresent(WindowTint.self, forKey: .windowTint) ?? .default
+        self.backgroundOpacity = try c.decodeIfPresent(Double.self, forKey: .backgroundOpacity) ?? 0.92
+        self.transparency = try c.decodeIfPresent(TransparencyMode.self, forKey: .transparency) ?? .system
+        self.colorScheme = try c.decodeIfPresent(ColorSchemePreference.self, forKey: .colorScheme) ?? .system
+    }
 }
 
 enum TransparencyMode: String, Codable, CaseIterable {
     case system
     case on
     case off
+}
+
+/// User Appearance preference, mirrored after macOS 26 System
+/// Settings ("Appearance"). `.system` follows the OS; the other two
+/// pin Limpid regardless of the OS setting.
+enum ColorSchemePreference: String, Codable, CaseIterable {
+    case system
+    case light
+    case dark
 }
 
 /// Curated tints layered onto the L2 / L3 column fills. Each case

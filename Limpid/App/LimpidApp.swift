@@ -101,6 +101,10 @@ final class AppState {
         let resolver = ReduceTransparencyResolver()
         resolver.apply(userMode: settingsStore.settings.appearance.transparency)
         self.reduceTransparencyResolver = resolver
+        // Pin `NSApp.appearance` to the user's preference before the
+        // first window appears so SwiftUI chrome doesn't briefly
+        // render under the OS appearance and then snap.
+        Self.applyColorScheme(settingsStore.settings.appearance.colorScheme)
 
         do {
             self.ghosttyApp = try GhosttyApp(settings: settingsStore.settings)
@@ -210,12 +214,15 @@ final class AppState {
             self.reduceTransparencyResolver.apply(
                 userMode: current.appearance.transparency
             )
+            Self.applyColorScheme(current.appearance.colorScheme)
             GhosttyConfigBridge.reloadConfig(
                 app: ghosttyApp,
                 settings: current,
                 resourcesDir: GhosttyApp.resolveResourcesDir(),
                 includeUserConfig: current.advanced.useGhosttyConfigFile,
-                appearance: GhosttyApp.currentAppearance()
+                appearance: GhosttyApp.currentAppearance(
+                    preference: current.appearance.colorScheme
+                )
             )
         }
     }
@@ -316,14 +323,36 @@ final class AppState {
             queue: .main
         ) { [weak self] _ in
             guard let self, let app = self.ghosttyApp else { return }
+            // OS-side change matters only when the user is set to
+            // `.system`; `.light` / `.dark` overrides ignore the OS
+            // signal (libghostty stays on the pinned theme, NSApp
+            // appearance was already applied in init / settings sync).
+            let pref = self.settingsStore.settings.appearance.colorScheme
+            guard pref == .system else { return }
             GhosttyConfigBridge.reloadConfig(
                 app: app,
                 settings: self.settingsStore.settings,
                 resourcesDir: GhosttyApp.resolveResourcesDir(),
                 includeUserConfig: self.settingsStore.settings.advanced.useGhosttyConfigFile,
-                appearance: GhosttyApp.currentAppearance()
+                appearance: GhosttyApp.currentAppearance(preference: pref)
             )
         }
+    }
+
+    /// Pin `NSApp.appearance` to the user's Appearance preference.
+    /// `.system` clears the override so AppKit resolves it from the
+    /// OS Appearance setting; `.light` / `.dark` force aqua /
+    /// dark-aqua across every Limpid window (including Settings).
+    private static func applyColorScheme(_ pref: ColorSchemePreference) {
+        let appearance: NSAppearance? = switch pref {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+        // Reach for `NSApplication.shared` (not `NSApp`) because this
+        // can be called from `AppState.init` before SwiftUI has forced
+        // the singleton, leaving `NSApp` nil.
+        NSApplication.shared.appearance = appearance
     }
 }
 
