@@ -1619,6 +1619,76 @@
         }
       }
     },
+    "Focus Left Pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左のペインへフォーカス"
+          }
+        }
+      }
+    },
+    "Focus Pane Above": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上のペインへフォーカス"
+          }
+        }
+      }
+    },
+    "Focus Pane Below": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下のペインへフォーカス"
+          }
+        }
+      }
+    },
+    "Focus Right Pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右のペインへフォーカス"
+          }
+        }
+      }
+    },
+    "Equalize Splits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スプリットを均等化"
+          }
+        }
+      }
+    },
+    "Unzoom Pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインのズームを解除"
+          }
+        }
+      }
+    },
+    "Zoom Pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを最大化"
+          }
+        }
+      }
+    },
     "Split Down": {
       "localizations": {
         "ja": {

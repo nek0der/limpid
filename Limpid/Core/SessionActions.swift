@@ -99,6 +99,9 @@ enum SessionActions {
         session.update(tab.id) { t in
             let result = t.splitTree.insert(at: pivotID, direction: direction)
             t.splitTree = result.tree
+            // Splitting while zoomed makes the new pane invisible — exit
+            // zoom so the user sees the freshly-created sibling.
+            t.zoomedLeafID = nil
         }
     }
 
@@ -113,6 +116,10 @@ enum SessionActions {
         session.update(tab.id) { t in
             let result = t.splitTree.remove(leafID)
             t.splitTree = result.tree
+            // Clear zoom if the zoomed pane just disappeared.
+            if let z = t.zoomedLeafID, !t.splitTree.contains(leafID: z) {
+                t.zoomedLeafID = nil
+            }
         }
         session.paneSearchStates.removeValue(forKey: leafID)
         registry.unregister(leafID)
@@ -125,8 +132,75 @@ enum SessionActions {
         }
     }
 
-    // Focus-by-direction (left/right/up/down) deferred to a later phase;
-    // tap-to-focus is wired in SplitContainerView.onLeafFocus for now.
+    /// ⌥⌘←/↑/↓/→ — move keyboard focus to the adjacent pane in the
+    /// requested direction. tmux `select-pane -L/U/D/R` analogue. Pulls
+    /// the surface's NSView into firstResponder so subsequent typing
+    /// lands in the new pane immediately.
+    static func focusPane(
+        _ session: WindowSession,
+        registry: any SurfaceViewProviding,
+        direction: SpatialDirection
+    ) {
+        guard let tab = session.activeTab else { return }
+        // Zoom hides every leaf except the zoomed one — there's nothing
+        // to navigate to while it's engaged.
+        guard tab.zoomedLeafID == nil else { return }
+        guard let current = tab.splitTree.focusedLeafID
+            ?? tab.splitTree.allLeafIDs().first
+        else { return }
+        guard let next = tab.splitTree.neighborLeaf(of: current, direction: direction)
+        else { return }
+        session.update(tab.id) { t in
+            t.splitTree.focusedLeafID = next
+            // Mirror SplitContainerView.onLeafFocus — pull the new pane's
+            // last-known title up so the window/tab label snaps to it.
+            if let pulledTitle = registry.view(for: next)?.paneTitle {
+                t.title = pulledTitle
+            }
+        }
+        // View may not be registered yet when focusPane fires the same
+        // runloop tick as a split — SwiftUI hasn't mounted the new
+        // pane's SurfaceView. Skip the firstResponder push in that
+        // case; SurfaceView.viewDidMoveToWindow will grab it once the
+        // view mounts. Do *not* "fix" this to crash on a missing view.
+        if let view = registry.view(for: next) {
+            view.window?.makeFirstResponder(view)
+        }
+    }
+
+    /// Toggle full-screen "zoom" for the focused pane within its tab.
+    /// tmux Prefix+z — while zoomed, the L3 pane area renders only the
+    /// zoomed leaf; the rest of the SplitTree stays intact so a second
+    /// invocation restores the previous layout untouched.
+    ///
+    /// No-op when the active tab has a single leaf (nothing to zoom).
+    static func toggleZoom(_ session: WindowSession) {
+        guard let tab = session.activeTab else { return }
+        guard tab.splitTree.allLeafIDs().count > 1 else { return }
+        guard let focusID = tab.splitTree.focusedLeafID
+            ?? tab.splitTree.allLeafIDs().first
+        else { return }
+        session.update(tab.id) { t in
+            let entering = t.zoomedLeafID == nil
+            t.zoomedLeafID = entering ? focusID : nil
+            // When entering zoom, pin focusedLeafID to the same leaf so
+            // the "zoomed leaf is the focused leaf" invariant holds even
+            // if focusedLeafID was nil and we fell back to allLeafIDs.first.
+            // Without this, a later closeActivePane could resolve focus
+            // to a different leaf than the one the user sees zoomed.
+            if entering { t.splitTree.focusedLeafID = focusID }
+        }
+    }
+
+    /// Reset every split divider in the active tab back to 50/50. tmux
+    /// `select-layout even-*` equivalent — most useful after one pane
+    /// has drifted dominant from interactive drags.
+    static func equalizeSplits(_ session: WindowSession) {
+        guard let tab = session.activeTab else { return }
+        session.update(tab.id) { t in
+            t.splitTree = t.splitTree.equalize()
+        }
+    }
 
     // MARK: - Closed-tab restore (⌘⇧T)
 
