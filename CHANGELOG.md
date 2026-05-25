@@ -2,6 +2,26 @@
 
 All notable changes to Limpid are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4](https://github.com/nek0der/limpid/compare/v0.1.3...v0.1.4) (2026-05-25)
+
+
+### Features
+
+* **pane:** equalize splits, zoom toggle, directional focus ([#26](https://github.com/nek0der/limpid/issues/26)) ([9b2eb06](https://github.com/nek0der/limpid/commit/9b2eb060b7f5da98e94e3610e56aa1e272180eba))
+* **tab:** rename and reopen closed tab ([#31](https://github.com/nek0der/limpid/issues/31)) ([9ee8884](https://github.com/nek0der/limpid/commit/9ee88843ffa689b779cfd09572d2bf26c8d27e18))
+
+
+### Bug Fixes
+
+* **keybind:** map shift+enter to a literal newline ([#24](https://github.com/nek0der/limpid/issues/24)) ([849305b](https://github.com/nek0der/limpid/commit/849305b61987a94351cd735da8a6b659aa47759b))
+* **makefile:** stop quitting the installed Release app on `make run` ([#29](https://github.com/nek0der/limpid/issues/29)) ([6f1da9f](https://github.com/nek0der/limpid/commit/6f1da9f2e0d3ceabd59022d142f98fd1433d2191))
+* **resize:** drop the 150 ms debounce on libghostty surface size pushes ([#30](https://github.com/nek0der/limpid/issues/30)) ([b199a8d](https://github.com/nek0der/limpid/commit/b199a8d5ecf97efde847e0d0a156c02d55edc3cb))
+
+
+### Documentation
+
+* **rules:** commit + PR body English-only, PR must follow template ([#27](https://github.com/nek0der/limpid/issues/27)) ([8091a63](https://github.com/nek0der/limpid/commit/8091a63ed6c6525e6b5fafc6db4443cc748611c1))
+
 ## [0.1.3](https://github.com/nek0der/limpid/compare/v0.1.2...v0.1.3) (2026-05-24)
 
 
