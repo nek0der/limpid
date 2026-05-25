@@ -138,14 +138,15 @@ struct ProjectSectionView: View {
                 case .before: return srcIdx == tgtIdx - 1
                 case .after: return srcIdx == tgtIdx + 1
                 }
+            },
+            onDrop: { prefix, sourceID, position in
+                if prefix == "tab:" {
+                    session.moveTab(sourceID, to: .project(project.id))
+                } else if prefix == "project:" {
+                    session.reorderProject(sourceID: sourceID, target: project.id, position: position)
+                }
             }
-        ) { prefix, sourceID, position in
-            if prefix == "tab:" {
-                session.moveTab(sourceID, to: .project(project.id))
-            } else if prefix == "project:" {
-                session.reorderProject(sourceID: sourceID, target: project.id, position: position)
-            }
-        }
+        )
     }
 
     // MARK: - "general" row
@@ -168,10 +169,11 @@ struct ProjectSectionView: View {
                 guard let src = session.tab(sourceID) else { return false }
                 if case let .project(pid) = src.container, pid == project.id { return true }
                 return false
+            },
+            onDrop: { _, sourceID, _ in
+                session.moveTab(sourceID, to: .project(project.id))
             }
-        ) { _, sourceID, _ in
-            session.moveTab(sourceID, to: .project(project.id))
-        }
+        )
     }
 
     // MARK: - Worktree row
@@ -274,21 +276,22 @@ struct ProjectSectionView: View {
                     }
                 }
                 return false
-            }
-        ) { prefix, sourceID, position in
-            if prefix == "tab:" {
-                session.moveTab(sourceID, to: .worktree(projectID: project.id, worktreeID: wt.id))
-            } else if prefix == "worktree:" {
-                if session.projectID(forWorktree: sourceID) == project.id {
-                    session.reorderWorktree(
-                        projectID: project.id,
-                        sourceID: sourceID,
-                        target: wt.id,
-                        position: position
-                    )
+            },
+            onDrop: { prefix, sourceID, position in
+                if prefix == "tab:" {
+                    session.moveTab(sourceID, to: .worktree(projectID: project.id, worktreeID: wt.id))
+                } else if prefix == "worktree:" {
+                    if session.projectID(forWorktree: sourceID) == project.id {
+                        session.reorderWorktree(
+                            projectID: project.id,
+                            sourceID: sourceID,
+                            target: wt.id,
+                            position: position
+                        )
+                    }
                 }
             }
-        }
+        )
     }
 
     /// Hide path with an Undo toast. The hide itself runs immediately

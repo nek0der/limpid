@@ -21,8 +21,8 @@ extension WindowSession {
     /// Walks the tab's leaves against `paneTransients` because bell
     /// state now lives on the session, not on `Tab.paneStates`.
     func isRinging(in tab: Tab) -> Bool {
-        for paneID in tab.splitTree.allLeafIDs() {
-            if paneTransients[paneID]?.isBellRinging == true { return true }
+        for paneID in tab.splitTree.allLeafIDs() where paneTransients[paneID]?.isBellRinging == true {
+            return true
         }
         return false
     }
