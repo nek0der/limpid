@@ -347,12 +347,22 @@ struct ContainerSlabView: View {
     }
 
     private func openProject(at url: URL) {
-        withAnimation(LimpidMotion.reorder) {
-            session.projectsSectionExpanded = true
-        }
-        let project = session.addOrActivateProject(rootURL: url)
-        if session.tabs.first(where: { $0.projectID == project.id }) == nil {
-            session.openTab(container: .project(project.id))
+        // Resolve linked-worktree paths to the main checkout before
+        // handing off to the session — otherwise a Project added by
+        // pointing at `/repo-feature-x` ends up self-referencing
+        // inside its own `git worktree list` output. The resolver
+        // returns `url` unchanged for non-git folders, main
+        // checkouts, and arbitrary subdirectories, so wrapping every
+        // call in the Task is harmless for those paths.
+        Task { @MainActor in
+            let resolved = await GitProcess.resolveMainCheckout(of: url)
+            withAnimation(LimpidMotion.reorder) {
+                session.projectsSectionExpanded = true
+            }
+            let project = session.addOrActivateProject(rootURL: resolved)
+            if session.tabs.first(where: { $0.projectID == project.id }) == nil {
+                session.openTab(container: .project(project.id))
+            }
         }
     }
 
