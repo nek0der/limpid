@@ -178,13 +178,13 @@ final class WindowSession {
     func containerExists(_ container: ContainerID) -> Bool {
         switch container {
         case .loose:
-            return true
+            true
         case let .group(gid):
-            return group(gid) != nil
+            group(gid) != nil
         case let .project(pid):
-            return project(pid) != nil
+            project(pid) != nil
         case let .worktree(pid, wid):
-            return worktree(projectID: pid, worktreeID: wid) != nil
+            worktree(projectID: pid, worktreeID: wid) != nil
         }
     }
 
