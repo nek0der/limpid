@@ -16,6 +16,11 @@ extension Notification.Name {
     /// keyboard focus when ⌘F is hit a second time while the overlay
     /// is already on screen.
     static let limpidSearchFocus = Notification.Name("dev.limpid.searchFocus")
+
+    /// Posted by ⌘⇧R to start an inline rename on the active L2 tab.
+    /// TabRow observes and flips its `isEditing` state when the
+    /// notification carries its own tab id.
+    static let limpidRenameActiveTab = Notification.Name("dev.limpid.renameActiveTab")
 }
 
 @MainActor
@@ -25,6 +30,15 @@ enum SessionActions {
 
     static func newTab(_ session: WindowSession) {
         session.openTabInActiveScope()
+    }
+
+    /// ⌘⇧R — start inline rename on the active L2 tab. Posts a
+    /// notification with the tab id so the matching TabRow flips into
+    /// edit mode without us having to plumb an `@State` binding through
+    /// the L2 list / row hierarchy.
+    static func renameActiveTab(_ session: WindowSession) {
+        guard let tabID = session.activeTabID else { return }
+        NotificationCenter.default.post(name: .limpidRenameActiveTab, object: tabID)
     }
 
     /// Single entry point for closing a tab so the "snapshot leaves →
@@ -37,11 +51,77 @@ enum SessionActions {
         registry: any SurfaceViewProviding,
         tabID: UUID
     ) {
-        let leafIDs = session.tab(tabID)?.splitTree.allLeafIDs() ?? []
+        guard let tab = session.tab(tabID) else { return }
+        let leafIDs = tab.splitTree.allLeafIDs()
+
+        // Capture every pane's scrollback so reopen rebuilds the full
+        // split layout, not just the focused leaf. Routes through the
+        // shared helper so ⌘Q and per-tab close stay in lock-step on
+        // filename / permissions / directory creation.
+        var snapshot = tab
+        var paths: [UUID: String] = [:]
+        for pid in leafIDs {
+            guard let view = registry.view(for: pid),
+                  let url = WindowSession.captureScrollback(paneID: pid, view: view)
+            else { continue }
+            paths[pid] = url.path
+        }
+        snapshot.scrollbackPaths = paths
+        session.recordClosedTab(snapshot)
+
         session.closeTab(tabID)
         for leafID in leafIDs {
             registry.unregister(leafID)
         }
+    }
+
+    /// ⌘⇧T — pop the most-recently-closed tab back. Mints fresh pane
+    /// IDs (the old SurfaceViews are gone, and Limpid uses paneID as
+    /// the surface registry key — collisions would point at nothing),
+    /// remaps every paneID-keyed field on the Tab, and appends it.
+    /// SwiftUI then mounts a new PaneHostView per leaf and the
+    /// existing `stageScrollback` path replays each `.vt` above the
+    /// fresh shell prompt — the same machinery ⌘Q + restart uses.
+    static func reopenClosedTab(_ session: WindowSession) {
+        guard let closed = session.popClosedTab() else { return }
+
+        let oldLeafIDs = closed.tab.splitTree.allLeafIDs()
+        let idMap: [UUID: UUID] = Dictionary(
+            uniqueKeysWithValues: oldLeafIDs.map { ($0, UUID()) }
+        )
+
+        var revived = Tab(
+            id: UUID(),
+            title: closed.tab.title,
+            titleOverride: closed.tab.titleOverride,
+            workingDirectory: closed.tab.workingDirectory,
+            pwd: closed.tab.pwd,
+            splitTree: closed.tab.splitTree.remapLeafIDs(idMap),
+            paneStates: remapKeys(closed.tab.paneStates, using: idMap),
+            zoomedLeafID: closed.tab.zoomedLeafID.flatMap { idMap[$0] },
+            container: closed.tab.container
+        )
+        // `scrollbackPaths` / `initialCommands` aren't in the Tab init
+        // signature, so assign them after construction.
+        revived.scrollbackPaths = remapKeys(closed.tab.scrollbackPaths, using: idMap)
+        revived.initialCommands = remapKeys(closed.tab.initialCommands, using: idMap)
+
+        session.tabs.append(revived)
+        session.setActiveTab(revived.id)
+    }
+
+    /// Rewrite the keys of a `[UUID: T]` through the given mapping.
+    /// Used by `reopenClosedTab` to renumber every paneID-keyed slot
+    /// on a revived `Tab` in lock-step with the split tree.
+    private static func remapKeys<T>(
+        _ source: [UUID: T],
+        using mapping: [UUID: UUID]
+    ) -> [UUID: T] {
+        var result: [UUID: T] = [:]
+        for (old, value) in source {
+            if let new = mapping[old] { result[new] = value }
+        }
+        return result
     }
 
     static func closeActiveTab(
