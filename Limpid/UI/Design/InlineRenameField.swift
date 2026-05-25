@@ -97,6 +97,13 @@ struct InlineRenameField: View {
                     .truncationMode(.tail)
                     .padding(.leading, Self.fieldEditorLeadingPadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    // SwiftUI's `Text` hit-tests only the drawn glyphs,
+                    // so callers that attach `.onTapGesture(count: 2)`
+                    // to start a rename get a target the width of the
+                    // label itself — a one-character tab name was
+                    // basically un-double-clickable. Expand hits to the
+                    // full row-wide frame the parent already laid out.
+                    .contentShape(Rectangle())
             }
         }
         .font(font)
