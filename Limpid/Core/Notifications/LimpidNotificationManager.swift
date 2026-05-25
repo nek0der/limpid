@@ -102,7 +102,8 @@ final class LimpidNotificationManager {
         }
         if let containerID,
            let data = try? JSONEncoder().encode(containerID),
-           let json = String(data: data, encoding: .utf8) {
+           let json = String(data: data, encoding: .utf8)
+        {
             userInfo["containerJSON"] = json
         }
         content.userInfo = userInfo
