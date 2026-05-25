@@ -184,27 +184,9 @@ struct WindowSessionTests {
         #expect(s.activeTabID == tab.id)
     }
 
-    @Test("moveTab across containers updates container + makes the moved tab active")
-    func moveTab_acrossContainers_followsAndActivates() {
-        let s = WindowSession()
-        let a = s.addGroup(name: "A")
-        let b = s.addGroup(name: "B")
-        let tab = s.openTab(container: .group(a.id))
-        s.moveTab(tab.id, to: .group(b.id))
-        #expect(s.tabs.first { $0.id == tab.id }?.container == .group(b.id))
-        #expect(s.activeContainerID == .group(b.id))
-        #expect(s.activeTabID == tab.id)
-    }
-
-    @Test("moveTab to the same container is a no-op")
-    func moveTab_sameContainer_isNoOp() {
-        let s = WindowSession()
-        let a = s.addGroup(name: "A")
-        let tab = s.openTab(container: .group(a.id))
-        let before = s.tabs.map(\.id)
-        s.moveTab(tab.id, to: .group(a.id))
-        #expect(s.tabs.map(\.id) == before)
-    }
+    // moveTab cross-container and same-container coverage moved to
+    // `WindowSessionTabsTests` after the "stay on source on active
+    // drag" contract change — see that suite for the full matrix.
 
     // MARK: - Notification aggregation
 
