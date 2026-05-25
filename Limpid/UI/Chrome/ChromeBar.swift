@@ -279,7 +279,6 @@ struct ChromeActionCapsule<Content: View>: View {
         .clipShape(Capsule())
         .glassEffect(.regular, in: Capsule())
         .overlay(Capsule().stroke(LimpidColor.chromeHairline, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.10), radius: 4, y: 1)
     }
 }
 
@@ -299,7 +298,6 @@ struct ChromeActionTile<Content: View>: View {
         .clipShape(shape)
         .glassEffect(.regular, in: shape)
         .overlay(shape.stroke(LimpidColor.chromeHairline, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.10), radius: 4, y: 1)
     }
 }
 

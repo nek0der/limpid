@@ -70,19 +70,15 @@ private struct LimpidGlassModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         // macOS 26 / iOS 26 ships the native Liquid Glass material via
-        // `.glassEffect(_:in:)`. Use it; it provides the refraction, depth,
-        // and motion responsiveness that hand-rolled Materials can't.
-        content
-            .glassEffect(
-                layer.glass,
-                in: RoundedRectangle(cornerRadius: layer.cornerRadius, style: .continuous)
-            )
-            .shadow(
-                color: layer.shadow.color,
-                radius: layer.shadow.radius,
-                x: 0,
-                y: layer.shadow.y
-            )
+        // `.glassEffect(_:in:)`. Use it; it provides the refraction,
+        // depth, and built-in shadow that hand-rolled Materials can't.
+        // The standalone `Shadow` recipe is preserved on `LimpidGlassLayer`
+        // for non-Liquid-Glass containers that still want a matching
+        // drop shadow.
+        content.glassEffect(
+            layer.glass,
+            in: RoundedRectangle(cornerRadius: layer.cornerRadius, style: .continuous)
+        )
     }
 }
 
