@@ -28,31 +28,45 @@ extension WindowSession {
     /// from `applicationWillTerminate`; crashes only retain whatever
     /// was last debounce-saved (which has no scrollback yet).
     func captureScrollbackPaths(from registry: any SurfaceViewProviding) {
-        let baseDir = Self.scrollbackDir()
-        SecureFileWrite.ensureUserOnlyDirectory(baseDir)
         var liveFiles: Set<String> = []
         for tabIdx in tabs.indices {
             let paneIDs = tabs[tabIdx].splitTree.allLeafIDs()
             var paths: [UUID: String] = [:]
             for pid in paneIDs {
-                guard let view = registry.view(for: pid) else { continue }
-                let url = baseDir.appendingPathComponent("\(pid.uuidString).vt")
-                if view.writeScrollback(to: url.path) {
-                    // libghostty writes the `.vt` file directly via
-                    // its C API, so it lands with the platform-default
-                    // umask permissions (typically 0644). Tighten to
-                    // 0600 after the fact — scrollback contents
-                    // include any command output the shell printed,
-                    // which can carry secrets the user pasted or
-                    // env vars that leaked into stdout.
-                    SecureFileWrite.tightenPermissions(url)
-                    paths[pid] = url.path
-                    liveFiles.insert(url.path)
-                }
+                guard let view = registry.view(for: pid),
+                      let url = Self.captureScrollback(paneID: pid, view: view)
+                else { continue }
+                paths[pid] = url.path
+                liveFiles.insert(url.path)
             }
             tabs[tabIdx].scrollbackPaths = paths
         }
+        // Keep `.vt` files referenced by the reopen-closed-tab stack
+        // too — they're about to be replayed when the user hits ⌘⇧T.
+        for closed in closedTabStack {
+            for path in closed.tab.scrollbackPaths.values {
+                liveFiles.insert(path)
+            }
+        }
         Self.pruneScrollbackDir(keeping: liveFiles)
+    }
+
+    /// Write one pane's scrollback to `<scrollbackDir>/<paneID>.vt`
+    /// and return the path, or nil if libghostty refused (surface
+    /// already gone). Centralises filename convention, directory
+    /// creation, and permission tightening so ⌘Q capture and per-tab
+    /// close-time capture stay in lock-step.
+    static func captureScrollback(paneID: UUID, view: SurfaceView) -> URL? {
+        let baseDir = scrollbackDir()
+        SecureFileWrite.ensureUserOnlyDirectory(baseDir)
+        let url = baseDir.appendingPathComponent("\(paneID.uuidString).vt")
+        guard view.writeScrollback(to: url.path) else { return nil }
+        // libghostty writes the `.vt` directly via its C API, so it
+        // lands with the platform-default umask (typically 0644).
+        // Tighten to 0600 — scrollback can carry secrets the user
+        // pasted or env vars that leaked into stdout.
+        SecureFileWrite.tightenPermissions(url)
+        return url
     }
 
     /// Remove any `.vt` file in the scrollback dir that no live or
@@ -68,7 +82,7 @@ extension WindowSession {
         }
     }
 
-    private static func scrollbackDir() -> URL {
+    static func scrollbackDir() -> URL {
         LimpidPaths.applicationSupportDirectory()
             .appendingPathComponent("scrollback", isDirectory: true)
     }
