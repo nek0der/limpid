@@ -102,13 +102,18 @@ final class LimpidNotificationManager {
         }
         if let containerID,
            let data = try? JSONEncoder().encode(containerID),
-           let json = String(data: data, encoding: .utf8) {
+           let json = String(data: data, encoding: .utf8)
+        {
             userInfo["containerJSON"] = json
         }
         content.userInfo = userInfo
 
+        // Pin the request identifier to the pane id so back-to-back
+        // alerts from the same pane replace the previous banner in
+        // place instead of stacking up in Notification Center. This is
+        // the same coalescing strategy cmux and kitty use.
         let request = UNNotificationRequest(
-            identifier: UUID().uuidString,
+            identifier: paneID.uuidString,
             content: content,
             trigger: nil
         )
