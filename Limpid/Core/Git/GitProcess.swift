@@ -88,7 +88,11 @@ enum GitProcess {
         if !result.succeeded {
             log
                 .debug(
-                    "git \(args.joined(separator: " "), privacy: .public) exited \(result.exitCode, privacy: .public): \(result.stderr, privacy: .public)"
+                    """
+                    git \(args.joined(separator: " "), privacy: .public) \
+                    exited \(result.exitCode, privacy: .public): \
+                    \(result.stderr, privacy: .public)
+                    """
                 )
         }
         return result

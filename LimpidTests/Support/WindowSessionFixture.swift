@@ -25,6 +25,10 @@ enum WindowSessionFixture {
         return (session, project)
     }
 
+    // Tuple returns keep test destructuring idiomatic; swiftlint's
+    // 2-tuple ceiling is too tight for fixture return shapes here.
+    // swiftlint:disable large_tuple
+
     /// A blank session with one group + one tab inside it. Returns the
     /// IDs callers most often need.
     static func withGroupAndOneTab(
@@ -48,4 +52,6 @@ enum WindowSessionFixture {
         let paneID = tab.splitTree.allLeafIDs().first!
         return (session, tab, paneID)
     }
+
+    // swiftlint:enable large_tuple
 }

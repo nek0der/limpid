@@ -23,7 +23,8 @@ enum GhosttyFFI {
         let info = ghostty_info()
         guard let cstr = info.version else { return "unknown" }
         let bytes = UnsafeBufferPointer(start: cstr, count: Int(info.version_len))
-        return String(decoding: bytes.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        let data = Data(bytes.map { UInt8(bitPattern: $0) })
+        return String(bytes: data, encoding: .utf8) ?? "unknown"
     }
 
     /// Ask libghostty for a `surface_config_s` that inherits the source

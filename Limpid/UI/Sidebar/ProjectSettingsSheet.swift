@@ -169,7 +169,10 @@ struct ProjectSettingsSheet: View {
             Text("Worktrees")
         } footer: {
             Text(
-                "Used for new worktrees created from this project. Applies to future creations only — existing worktrees stay where they are."
+                """
+                Used for new worktrees created from this project. \
+                Applies to future creations only — existing worktrees stay where they are.
+                """
             )
         }
     }

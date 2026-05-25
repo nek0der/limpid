@@ -237,10 +237,8 @@ extension WindowSession {
     /// Which project (if any) currently owns the given worktree id.
     /// Used by drop targets to reject cross-project worktree drags.
     func projectID(forWorktree worktreeID: UUID) -> UUID? {
-        for project in projects {
-            if project.worktrees.contains(where: { $0.id == worktreeID }) {
-                return project.id
-            }
+        for project in projects where project.worktrees.contains(where: { $0.id == worktreeID }) {
+            return project.id
         }
         return nil
     }
@@ -297,7 +295,11 @@ private func ensureLocalExcludeCoversWorktreesDir(repoRoot: URL) {
     } catch {
         log
             .error(
-                "Failed to update .git/info/exclude at \(excludeURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                """
+                Failed to update .git/info/exclude at \
+                \(excludeURL.path, privacy: .public): \
+                \(error.localizedDescription, privacy: .public)
+                """
             )
     }
 }
