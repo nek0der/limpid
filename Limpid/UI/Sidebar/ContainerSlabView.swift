@@ -58,10 +58,11 @@ struct ContainerSlabView: View {
                     isNoOp: { sourceID, _ in
                         guard let src = session.tab(sourceID) else { return false }
                         return src.container == .loose
+                    },
+                    onDrop: { _, sourceID, _ in
+                        session.moveTab(sourceID, to: .loose)
                     }
-                ) { _, sourceID, _ in
-                    session.moveTab(sourceID, to: .loose)
-                }
+                )
 
                 sectionHeader(
                     "GROUPS",
@@ -174,14 +175,15 @@ struct ContainerSlabView: View {
                                     case .before: return srcIdx == tgtIdx - 1
                                     case .after: return srcIdx == tgtIdx + 1
                                     }
+                                },
+                                onDrop: { prefix, sourceID, position in
+                                    if prefix == "tab:" {
+                                        session.moveTab(sourceID, to: .group(group.id))
+                                    } else if prefix == "group:" {
+                                        session.reorderGroup(sourceID: sourceID, target: group.id, position: position)
+                                    }
                                 }
-                            ) { prefix, sourceID, position in
-                                if prefix == "tab:" {
-                                    session.moveTab(sourceID, to: .group(group.id))
-                                } else if prefix == "group:" {
-                                    session.reorderGroup(sourceID: sourceID, target: group.id, position: position)
-                                }
-                            }
+                            )
                         }
                     }
                     .transition(.move(edge: .top).combined(with: .opacity))

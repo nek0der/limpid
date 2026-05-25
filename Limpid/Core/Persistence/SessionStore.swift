@@ -59,7 +59,11 @@ final class SessionStore {
             guard snapshot.version == SessionSnapshot.currentVersion else {
                 log
                     .notice(
-                        "snapshot version mismatch (got \(snapshot.version, privacy: .public), want \(SessionSnapshot.currentVersion, privacy: .public))"
+                        """
+                        snapshot version mismatch (got \
+                        \(snapshot.version, privacy: .public), want \
+                        \(SessionSnapshot.currentVersion, privacy: .public))
+                        """
                     )
                 // Move the unsupported snapshot aside so the next save
                 // doesn't destroy it — a future migration may want it.
