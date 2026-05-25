@@ -486,6 +486,20 @@ struct LimpidApp: App {
                 }
                 .keyboardShortcut("n", modifiers: [.command, .option])
                 .disabled(state.session.activeContainerID.projectID == nil)
+                Button {
+                    SessionActions.renameActiveTab(state.session)
+                } label: {
+                    Label("Rename Tab", systemImage: "pencil")
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(state.session.activeTab == nil)
+                Button {
+                    SessionActions.reopenClosedTab(state.session)
+                } label: {
+                    Label("Reopen Closed Tab", systemImage: "arrow.uturn.backward.square")
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(state.session.closedTabStack.isEmpty)
             }
             CommandGroup(after: .newItem) {
                 // iTerm2-style ⌘W — closes the focused pane, cascades

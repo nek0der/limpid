@@ -248,8 +248,7 @@ final class GhosttyApp {
     /// could silently read or overwrite the system clipboard. Same
     /// MainActor hop + liveness check as `readClipboardCallback` to
     /// avoid touching a freed `SurfaceView`.
-    private static let confirmReadClipboardCallback: ghostty_runtime_confirm_read_clipboard_cb = {
-        userdata, str, state, request in
+    private static let confirmReadClipboardCallback: ghostty_runtime_confirm_read_clipboard_cb = { userdata, str, state, request in
         guard let userdata, let str else { return }
         nonisolated(unsafe) let ud = userdata
         nonisolated(unsafe) let s = str
@@ -283,8 +282,7 @@ final class GhosttyApp {
 
     /// libghostty wants to write to the clipboard. Take the first
     /// text/plain entry (or fall back to the first entry).
-    private static let writeClipboardCallback: ghostty_runtime_write_clipboard_cb = {
-        _, _, contents, count, _ in
+    private static let writeClipboardCallback: ghostty_runtime_write_clipboard_cb = { _, _, contents, count, _ in
         guard let contents, count > 0 else { return }
         var text: String?
         for i in 0..<count {

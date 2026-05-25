@@ -145,15 +145,24 @@ struct SplitTree: Codable, Equatable {
         minSize: CGFloat
     ) -> SplitTree {
         guard let root else { return self }
-        let newRoot = Self.resizeSplit(
-            in: root,
+        let op = ResizeOp(
             leafID: leafID,
             direction: direction,
             amount: amount,
             bounds: bounds,
             minSize: minSize
         )
-        return SplitTree(root: newRoot, focusedLeafID: focusedLeafID)
+        return SplitTree(root: Self.resizeSplit(in: root, op: op), focusedLeafID: focusedLeafID)
+    }
+
+    /// Carries the per-call inputs through the recursive resize walk so
+    /// the helper stays under the 5-parameter cap.
+    private struct ResizeOp {
+        let leafID: UUID
+        let direction: SplitDirection
+        let amount: Double
+        let bounds: CGSize
+        let minSize: CGFloat
     }
 
     /// Reset every split in the tree to a 50/50 ratio.
@@ -369,31 +378,24 @@ struct SplitTree: Codable, Equatable {
         }
     }
 
-    private static func resizeSplit(
-        in node: SplitNode,
-        leafID: UUID,
-        direction: SplitDirection,
-        amount: Double,
-        bounds: CGSize,
-        minSize: CGFloat
-    ) -> SplitNode {
+    private static func resizeSplit(in node: SplitNode, op: ResizeOp) -> SplitNode {
         switch node {
         case .leaf:
             return node
         case let .split(data):
             // Only adjust the split whose direction matches the drag and
             // whose subtree contains the dragged leaf on its `first` side.
-            if data.direction == direction,
-               containsLeaf(data.first, id: leafID)
+            if data.direction == op.direction,
+               containsLeaf(data.first, id: op.leafID)
             {
-                let extent: CGFloat = switch direction {
-                case .horizontal: bounds.width
-                case .vertical: bounds.height
+                let extent: CGFloat = switch op.direction {
+                case .horizontal: op.bounds.width
+                case .vertical: op.bounds.height
                 }
                 let safeExtent = max(extent, 1)
-                let ratioDelta = amount / Double(safeExtent)
+                let ratioDelta = op.amount / Double(safeExtent)
                 let proposed = data.ratio + ratioDelta
-                let minRatio = Double(minSize / safeExtent)
+                let minRatio = Double(op.minSize / safeExtent)
                 let maxRatio = 1.0 - minRatio
                 let newRatio = min(max(proposed, minRatio), maxRatio)
                 return .split(SplitData(
@@ -406,22 +408,8 @@ struct SplitTree: Codable, Equatable {
             return .split(SplitData(
                 direction: data.direction,
                 ratio: data.ratio,
-                first: resizeSplit(
-                    in: data.first,
-                    leafID: leafID,
-                    direction: direction,
-                    amount: amount,
-                    bounds: bounds,
-                    minSize: minSize
-                ),
-                second: resizeSplit(
-                    in: data.second,
-                    leafID: leafID,
-                    direction: direction,
-                    amount: amount,
-                    bounds: bounds,
-                    minSize: minSize
-                )
+                first: resizeSplit(in: data.first, op: op),
+                second: resizeSplit(in: data.second, op: op)
             ))
         }
     }

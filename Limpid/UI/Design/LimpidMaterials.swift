@@ -46,13 +46,19 @@ enum LimpidGlassLayer {
     }
 
     /// Shadow recipe §2.1.
-    fileprivate var shadow: (color: Color, radius: CGFloat, y: CGFloat) {
+    fileprivate var shadow: Shadow {
         switch self {
-        case .palette: (.black.opacity(0.18), 24, 12)
-        case .innerCard: (.black.opacity(0.04), 6, 2)
-        case .statusBar: (.black.opacity(0.06), 10, -2)
-        default: (.black.opacity(0.08), 12, 4)
+        case .palette: Shadow(color: .black.opacity(0.18), radius: 24, y: 12)
+        case .innerCard: Shadow(color: .black.opacity(0.04), radius: 6, y: 2)
+        case .statusBar: Shadow(color: .black.opacity(0.06), radius: 10, y: -2)
+        default: Shadow(color: .black.opacity(0.08), radius: 12, y: 4)
         }
+    }
+
+    fileprivate struct Shadow {
+        let color: Color
+        let radius: CGFloat
+        let y: CGFloat
     }
 }
 

@@ -54,6 +54,11 @@ struct TabRow: View {
             .onAppear {
                 if !isEditing { draft = tab.displayTitle }
             }
+            // ⌘⇧R posts this; only the matching row reacts so cross-
+            // container renames don't fire the wrong row.
+            .onReceive(NotificationCenter.default.publisher(for: .limpidRenameActiveTab)) { note in
+                if (note.object as? UUID) == tab.id, !isEditing { beginRename() }
+            }
             Spacer(minLength: 4)
             NotificationBell(isUnread: hasUnread, isRinging: isRinging)
             if isZoomed {
@@ -227,20 +232,21 @@ private extension View {
                     // immediate successor.
                     return srcIdx == targetIdx + 1
                 }
+            },
+            onDrop: { _, sourceID, position in
+                if let src = session.tab(sourceID),
+                   src.container != container
+                {
+                    session.moveTab(sourceID, to: container)
+                }
+                switch position {
+                case .before:
+                    session.reorderTab(sourceID, before: beforeTabID)
+                case .after:
+                    session.reorderTab(sourceID, after: beforeTabID)
+                }
             }
-        ) { _, sourceID, position in
-            if let src = session.tab(sourceID),
-               src.container != container
-            {
-                session.moveTab(sourceID, to: container)
-            }
-            switch position {
-            case .before:
-                session.reorderTab(sourceID, before: beforeTabID)
-            case .after:
-                session.reorderTab(sourceID, after: beforeTabID)
-            }
-        }
+        )
     }
 }
 
