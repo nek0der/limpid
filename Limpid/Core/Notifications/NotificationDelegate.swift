@@ -106,9 +106,10 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
     /// responder of the key window. The previous heuristic just checked
     /// "is *some* Limpid window key", which suppressed banners for
     /// background panes in the same window — a tab the user wasn't
-    /// looking at would silently lose its notification. Falls back to
-    /// the loose check when the pane id is missing (older notifications
-    /// pre-dating this plumbing) or the registry isn't wired up.
+    /// looking at would silently lose its notification. Fails closed
+    /// (returns `false`) when the pane id is missing or the registry
+    /// isn't wired yet: a banner we maybe didn't need to show is
+    /// recoverable, but a notification dropped on the floor is gone.
     @MainActor
     static func isPaneFocused(paneIDString: String?) -> Bool {
         guard NSApp.isActive, let keyWindow = NSApp.keyWindow else { return false }
@@ -117,9 +118,12 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
               let registry,
               let view = registry.view(for: paneID)
         else {
-            // No pane plumbing — degrade to "is any Limpid window
-            // key" so we don't regress the pre-F4 behaviour.
-            return true
+            // No pane plumbing — fail-closed (treat the pane as not
+            // focused) so the banner shows. Suppressing on missing
+            // metadata loses notifications silently, which is the
+            // worse failure mode; showing one we maybe didn't need to
+            // is recoverable (the user sees + dismisses it).
+            return false
         }
         return view.window === keyWindow && keyWindow.firstResponder === view
     }
