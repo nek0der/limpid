@@ -20,7 +20,6 @@ private let log = Logger(subsystem: "dev.limpid", category: "notifications")
 final class LimpidNotificationManager {
     private let center = UNUserNotificationCenter.current()
     private var rateLimiter = RateLimiter(maxPerSecond: 5)
-    private var permissionGranted = false
     private let historyStore: NotificationHistoryStore
 
     init(historyStore: NotificationHistoryStore) {
@@ -29,12 +28,16 @@ final class LimpidNotificationManager {
     }
 
     private func requestPermission() {
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            Task { @MainActor in
-                self.permissionGranted = granted
-                if let error {
-                    log.error("notification permission error: \(error.localizedDescription, privacy: .public)")
-                }
+        // We fire the OS prompt at init time, but intentionally do not
+        // cache the `granted` result. Gating `send()` on a cached flag
+        // races with the async callback — notifications that arrive
+        // before the user answers (rapid command finishes at launch,
+        // OSC 9 from a restored session) would be silently dropped.
+        // `center.add(request:)` already rejects unauthorized requests
+        // and surfaces them through the existing error log there.
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, error in
+            if let error {
+                log.error("notification permission error: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
@@ -74,7 +77,6 @@ final class LimpidNotificationManager {
                 durationSeconds: durationSeconds
             )
         )
-        guard permissionGranted else { return }
 
         guard rateLimiter.allow(key: paneID) else {
             log.debug("rate-limited notification for pane \(paneID, privacy: .public)")
