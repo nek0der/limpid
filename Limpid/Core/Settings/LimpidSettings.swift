@@ -69,15 +69,15 @@ struct AppearanceSettings: Codable, Equatable {
     /// theme) regardless of the OS setting.
     var colorScheme: ColorSchemePreference = .system
 
-    // We diverge from the other settings structs (Font/Terminal/Advanced)
-    // and write a custom `init(from:)` so older `settings.json` files
-    // (no `colorScheme` key) decode cleanly with the new field
-    // defaulted, instead of throwing and falling back to a fresh
-    // defaults document that would also wipe the user's `windowTint`,
-    // `backgroundOpacity`, and `transparency`. This struct is the
-    // only one that's worth defending because every field here is a
-    // visible Settings choice — losing them mid-upgrade is the kind
-    // of regression a user notices immediately.
+    /// We diverge from the other settings structs (Font/Terminal/Advanced)
+    /// and write a custom `init(from:)` so older `settings.json` files
+    /// (no `colorScheme` key) decode cleanly with the new field
+    /// defaulted, instead of throwing and falling back to a fresh
+    /// defaults document that would also wipe the user's `windowTint`,
+    /// `backgroundOpacity`, and `transparency`. This struct is the
+    /// only one that's worth defending because every field here is a
+    /// visible Settings choice — losing them mid-upgrade is the kind
+    /// of regression a user notices immediately.
     init() {}
 
     init(from decoder: any Decoder) throws {

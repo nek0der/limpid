@@ -90,7 +90,7 @@ enum GhosttyConfigBridge {
         // checks `~/.config/ghostty/themes/` and a hardcoded
         // `Ghostty.app/...` — neither sees our Limpid.app bundle.
         if let resourcesDir {
-            let themePath: String = switch appearance {
+            let themePath = switch appearance {
             case .light: "\(resourcesDir)/themes/Apple System Colors Light"
             case .dark: "\(resourcesDir)/themes/Apple System Colors"
             }

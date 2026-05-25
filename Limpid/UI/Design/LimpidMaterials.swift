@@ -45,21 +45,6 @@ enum LimpidGlassLayer {
         }
     }
 
-    /// Shadow recipe §2.1.
-    fileprivate var shadow: Shadow {
-        switch self {
-        case .palette: Shadow(color: .black.opacity(0.18), radius: 24, y: 12)
-        case .innerCard: Shadow(color: .black.opacity(0.04), radius: 6, y: 2)
-        case .statusBar: Shadow(color: .black.opacity(0.06), radius: 10, y: -2)
-        default: Shadow(color: .black.opacity(0.08), radius: 12, y: 4)
-        }
-    }
-
-    fileprivate struct Shadow {
-        let color: Color
-        let radius: CGFloat
-        let y: CGFloat
-    }
 }
 
 // MARK: - View modifier
@@ -77,10 +62,9 @@ private struct LimpidGlassModifier: ViewModifier {
     func body(content: Content) -> some View {
         // macOS 26 / iOS 26 ships the native Liquid Glass material via
         // `.glassEffect(_:in:)`. Use it; it provides the refraction,
-        // depth, and built-in shadow that hand-rolled Materials can't.
-        // The standalone `Shadow` recipe is preserved on `LimpidGlassLayer`
-        // for non-Liquid-Glass containers that still want a matching
-        // drop shadow.
+        // depth, and built-in shadow that hand-rolled Materials can't —
+        // stacking a manual `.shadow` underneath read as a dark cloud
+        // in light mode, so we leave depth entirely to the system.
         content.glassEffect(
             layer.glass,
             in: RoundedRectangle(cornerRadius: layer.cornerRadius, style: .continuous)

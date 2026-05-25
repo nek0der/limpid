@@ -19,7 +19,7 @@ struct GhosttyConfigBridgeTests {
     /// Convenience to inspect the generated config without pulling in
     /// the resources-dir noise.
     private func generate(_ settings: LimpidSettings) -> String {
-        GhosttyConfigBridge.makeConfigString(settings: settings, resourcesDir: nil)
+        GhosttyConfigBridge.makeConfigString(settings: settings, resourcesDir: nil, appearance: .dark)
     }
 
     /// Look up the first `key = value` line; returns the value with
@@ -130,14 +130,14 @@ struct GhosttyConfigBridgeTests {
 
     @Test("resources-dir is omitted when no path is supplied")
     func makeConfig_nilResourcesDir_omitsLine() {
-        let config = GhosttyConfigBridge.makeConfigString(settings: .default, resourcesDir: nil)
+        let config = GhosttyConfigBridge.makeConfigString(settings: .default, resourcesDir: nil, appearance: .dark)
         #expect(value(of: "resources-dir", in: config) == nil)
     }
 
     @Test("resources-dir is emitted verbatim when supplied")
     func makeConfig_withResourcesDir_emitsLine() {
         let path = "/tmp/limpid-resources/\(UUID().uuidString)"
-        let config = GhosttyConfigBridge.makeConfigString(settings: .default, resourcesDir: path)
+        let config = GhosttyConfigBridge.makeConfigString(settings: .default, resourcesDir: path, appearance: .dark)
         #expect(value(of: "resources-dir", in: config) == path)
     }
 
