@@ -14,6 +14,15 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
     /// SwiftUI environment.
     nonisolated(unsafe) static var registry: (any SurfaceViewProviding)?
 
+    /// Tap-handler closure invoked from `didReceive` with the full
+    /// routing payload the notification's `userInfo` carried —
+    /// AppState walks `paneID → tabID → containerID` in order so a
+    /// stale notification (pane / tab / container deleted before
+    /// the user tapped) still lands somewhere sensible instead of
+    /// silently no-op'ing. Same `nonisolated(unsafe)` rationale as
+    /// `registry`.
+    nonisolated(unsafe) static var onTap: (@MainActor @Sendable (NotificationTapPayload) -> Void)?
+
     override init() {
         super.init()
     }
@@ -57,6 +66,32 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
         }
     }
 
+    /// Called when the user taps a delivered notification (banner,
+    /// Notification Center entry, or Lock-Screen alert). We pull the
+    /// pane id out of `userInfo` and hand off to the `onTap` closure
+    /// that AppState wired up — it switches tabs, focuses the
+    /// SurfaceView, and the existing active-tab observer handles
+    /// markRead + Dock badge decrement. Without this handler the
+    /// system default fires (just activates the app), so taps never
+    /// reach the originating pane.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping @Sendable () -> Void
+    ) {
+        let payload = NotificationTapPayload(userInfo: response.notification.request.content.userInfo)
+        let onTap = LimpidNotificationDelegate.onTap
+        Task { @MainActor in
+            // Bring Limpid forward even if the payload is empty — a
+            // stale notification (pre-tap-plumbing or after the
+            // origin pane / tab / container was deleted) should
+            // still act like the system default.
+            NSApp.activate(ignoringOtherApps: true)
+            onTap?(payload)
+            completionHandler()
+        }
+    }
+
     /// Coarse "is some Limpid window currently focused" check.
     /// Kept around for the GhosttyEventCoordinator paths that already
     /// own a `SurfaceView` and want to refine with their own
@@ -87,5 +122,24 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
             return true
         }
         return view.window === keyWindow && keyWindow.firstResponder === view
+    }
+}
+
+/// Routing payload the tap handler walks from most-specific to least-
+/// specific. We re-derive every field from `userInfo` because the
+/// notification may outlive the originating pane, tab, or container —
+/// keeping each as an optional lets `AppState` fall back step by step
+/// instead of silently failing when the deepest target is gone.
+struct NotificationTapPayload: Sendable {
+    let paneID: UUID?
+    let tabID: UUID?
+    let containerID: ContainerID?
+
+    init(userInfo: [AnyHashable: Any]) {
+        self.paneID = (userInfo["paneID"] as? String).flatMap(UUID.init(uuidString:))
+        self.tabID = (userInfo["tabID"] as? String).flatMap(UUID.init(uuidString:))
+        self.containerID = (userInfo["containerJSON"] as? String)
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode(ContainerID.self, from: $0) }
     }
 }

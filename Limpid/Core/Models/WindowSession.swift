@@ -169,6 +169,25 @@ final class WindowSession {
         tabs.first(where: { $0.id == id })
     }
 
+    /// `true` when the container is still reachable from the current
+    /// session graph. `.loose` is always reachable; the others have
+    /// to resolve through `groups` / `projects` / `worktrees` because
+    /// a stale `ContainerID` (notification fired before a group or
+    /// worktree was removed) would otherwise point the sidebar at a
+    /// phantom row.
+    func containerExists(_ container: ContainerID) -> Bool {
+        switch container {
+        case .loose:
+            return true
+        case let .group(gid):
+            return group(gid) != nil
+        case let .project(pid):
+            return project(pid) != nil
+        case let .worktree(pid, wid):
+            return worktree(projectID: pid, worktreeID: wid) != nil
+        }
+    }
+
     /// Human-friendly label for the container. Used by the
     /// NotificationHistoryView and snapshotted onto entries so closed
     /// panes still surface "Servers" / "myapp / main".
