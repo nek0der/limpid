@@ -23,7 +23,10 @@ struct AdvancedPane: View {
                 Text("Ghostty Config")
             } footer: {
                 Text(
-                    "Layers ~/.config/ghostty/config beneath the values above. Limpid always overrides window background, opacity, and decoration. Restart required."
+                    """
+                    Layers ~/.config/ghostty/config beneath the values above. \
+                    Limpid always overrides window background, opacity, and decoration. Restart required.
+                    """
                 )
             }
 
@@ -39,7 +42,10 @@ struct AdvancedPane: View {
                 }
             } footer: {
                 Text(
-                    "Resets every Limpid preference to its factory default. The app language and your settings.json on disk are both rewritten."
+                    """
+                    Resets every Limpid preference to its factory default. \
+                    The app language and your settings.json on disk are both rewritten.
+                    """
                 )
             }
         }
