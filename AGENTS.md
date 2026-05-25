@@ -126,8 +126,9 @@ Short index of load-bearing files. Skim these before touching their domain.
 - Branch names use conventional prefixes: `feat/<short>`, `fix/<short>`,
   `chore/<short>`, `docs/<short>`.
 - Commit messages follow Conventional Commits: `feat(scope): summary`,
-  `fix(scope): summary`, etc. The body may be Japanese; the summary line stays
-  English.
+  `fix(scope): summary`, etc. English-only (subject and body).
+- PRs must follow `.github/pull_request_template.md`. Use
+  `gh pr create --body-file` so the template is honored.
 - CI runs PR title check, CodeQL, release-please, and dependabot auto-merge.
   See `.github/workflows/` for the exact matrix.
 - Contributor checklist lives in `CONTRIBUTING.md`; security disclosures in
