@@ -74,7 +74,10 @@ struct ClipboardConfirmationSheet: View {
         switch request.kind {
         case .osc52Read:
             String(
-                localized: "The terminal is requesting to read the contents of your clipboard. Only allow this if you recognise the program that issued the request."
+                localized: """
+                The terminal is requesting to read the contents of your clipboard. \
+                Only allow this if you recognise the program that issued the request.
+                """
             )
         case .osc52Write:
             String(localized: "The terminal is requesting to replace your clipboard with the text shown below.")

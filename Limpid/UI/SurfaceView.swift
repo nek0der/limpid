@@ -159,18 +159,7 @@ final class SurfaceView: NSView {
 
     @objc private func frameDidChange(_ note: Notification) {
         syncLayerOnly()
-        scheduleSurfaceSizePush()
-    }
-
-    private var pendingSurfaceResize: DispatchWorkItem?
-
-    private func scheduleSurfaceSizePush() {
-        pendingSurfaceResize?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.pushSurfaceSize()
-        }
-        pendingSurfaceResize = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(150), execute: work)
+        pushSurfaceSize()
     }
 
     private func syncLayerOnly() {
@@ -201,13 +190,32 @@ final class SurfaceView: NSView {
         CATransaction.commit()
     }
 
+    /// Push the current backing-pixel size + scale into libghostty.
+    /// Used to live behind a 150 ms debounce, which left the Metal
+    /// layer running ahead of the cell grid during a divider drag —
+    /// characters appeared stretched until the user paused. Both
+    /// ghostty's own macOS app and cmux call set_size on every layout
+    /// pass with no debounce, relying on AppKit's natural ≤60 Hz cap.
+    /// Idempotent guards below avoid duplicate calls when the size or
+    /// scale hasn't actually changed since the last push.
+    private var lastPushedSize: (width: UInt32, height: UInt32)?
+    private var lastPushedScale: Double?
+
     private func pushSurfaceSize() {
         guard let surface, let window else { return }
         let backing = convertToBacking(bounds).size
         guard backing.width > 0, backing.height > 0 else { return }
         let scale = Double(window.backingScaleFactor)
-        ghostty_surface_set_content_scale(surface, scale, scale)
-        ghostty_surface_set_size(surface, UInt32(backing.width), UInt32(backing.height))
+        if scale != lastPushedScale {
+            ghostty_surface_set_content_scale(surface, scale, scale)
+            lastPushedScale = scale
+        }
+        let width = UInt32(backing.width)
+        let height = UInt32(backing.height)
+        if lastPushedSize?.width != width || lastPushedSize?.height != height {
+            ghostty_surface_set_size(surface, width, height)
+            lastPushedSize = (width, height)
+        }
     }
 
     @available(*, unavailable)
@@ -258,7 +266,7 @@ final class SurfaceView: NSView {
             // MainActor explicitly before touching SurfaceView state.
             MainActor.assumeIsolated {
                 self?.syncLayerOnly()
-                self?.scheduleSurfaceSizePush()
+                self?.pushSurfaceSize()
             }
         }
     }
@@ -282,20 +290,21 @@ final class SurfaceView: NSView {
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         syncLayerOnly()
-        scheduleSurfaceSizePush()
+        pushSurfaceSize()
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         syncLayerOnly()
-        scheduleSurfaceSizePush()
+        pushSurfaceSize()
     }
 
     /// Mutation-driven sync path: the SwiftUI host (`PaneHostView`)
     /// passes the measured size via `GeometryReader` so we can push a
     /// fresh content size to libghostty without waiting on AppKit's
     /// frame-change cascade. The notification-driven channels still
-    /// fire too — `pushSurfaceSize` is debounced so duplicates collapse.
+    /// fire too — `pushSurfaceSize` skips duplicates via its cached
+    /// last-push size.
     func applyExpectedSize(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
         // Only re-push if the new size differs from what AppKit
@@ -306,7 +315,7 @@ final class SurfaceView: NSView {
         {
             return
         }
-        scheduleSurfaceSizePush()
+        pushSurfaceSize()
     }
 
     // MARK: - First responder / keyboard

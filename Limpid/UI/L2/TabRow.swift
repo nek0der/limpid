@@ -232,20 +232,21 @@ private extension View {
                     // immediate successor.
                     return srcIdx == targetIdx + 1
                 }
+            },
+            onDrop: { _, sourceID, position in
+                if let src = session.tab(sourceID),
+                   src.container != container
+                {
+                    session.moveTab(sourceID, to: container)
+                }
+                switch position {
+                case .before:
+                    session.reorderTab(sourceID, before: beforeTabID)
+                case .after:
+                    session.reorderTab(sourceID, after: beforeTabID)
+                }
             }
-        ) { _, sourceID, position in
-            if let src = session.tab(sourceID),
-               src.container != container
-            {
-                session.moveTab(sourceID, to: container)
-            }
-            switch position {
-            case .before:
-                session.reorderTab(sourceID, before: beforeTabID)
-            case .after:
-                session.reorderTab(sourceID, after: beforeTabID)
-            }
-        }
+        )
     }
 }
 

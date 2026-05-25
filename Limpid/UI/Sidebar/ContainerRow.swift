@@ -523,14 +523,14 @@ struct ContainerRow: View {
             // use so the trailing icons sit on a uniform grid (was
             // l1TrailingSlot/right-aligned, which left ~8pt of empty
             // space between create-worktree (Y) and the chevron).
-            Button(action: { onToggleExpand?() }) {
+            Button(action: { onToggleExpand?() }, label: {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color.primary.opacity(0.70))
                     .rotationEffect(.degrees(expanded ? 90 : 0))
                     .frame(width: 16, height: 16)
                     .contentShape(Rectangle())
-            }
+            })
             .buttonStyle(.plain)
         case .groupTab:
             EmptyView()
