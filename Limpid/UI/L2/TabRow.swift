@@ -153,10 +153,23 @@ struct TabRow: View {
         .selectablePillBackground(isActive: isActive, isHovering: isHovering)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
-        .onTapGesture {
-            if isEditing { return }
-            onActivate()
-        }
+        // `.simultaneousGesture(TapGesture)` instead of `.onTapGesture`
+        // because the latter waits for macOS's double-click resolution
+        // window (~250 ms) before firing — the inner
+        // `.onTapGesture(count: 2)` on the rename field puts the whole
+        // row into "could still be a double-click" territory. The
+        // `simultaneous` variant short-circuits that wait and feels
+        // immediate. Mirrors the pattern `ContainerRow` already uses
+        // on L1; without it, switching tabs in L2 felt one tempo late
+        // and would occasionally land on a momentarily-empty L3
+        // because the delayed handler dispatched while SwiftUI was
+        // still settling the previous frame.
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                if isEditing { return }
+                onActivate()
+            }
+        )
         .contextMenu {
             Button {
                 beginRename()
