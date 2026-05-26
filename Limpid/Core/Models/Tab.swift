@@ -76,14 +76,6 @@ struct Tab: Codable, Equatable, Identifiable {
     /// status icons. Optional default = `[:]` for backward compat.
     var claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:]
 
-    /// Per-pane prompt history aggregated from the hook's
-    /// `<paneID>.prompts.json`. Surfaced by the prompt-history
-    /// sidebar; the array index doubles as the matching OSC 133;A
-    /// marker index so tapping a row maps to ghostty's
-    /// `jump_to_prompt:-N`. Optional default = `[:]` so existing
-    /// `state.json` decodes without a snapshot version bump.
-    var claudePrompts: [UUID: [ClaudePromptEntry]] = [:]
-
     init(
         id: UUID = UUID(),
         title: String,
@@ -95,8 +87,7 @@ struct Tab: Codable, Equatable, Identifiable {
         zoomedLeafID: UUID? = nil,
         container: ContainerID,
         claudeSessions: [UUID: ClaudeSessionInfo] = [:],
-        claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:],
-        claudePrompts: [UUID: [ClaudePromptEntry]] = [:]
+        claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:]
     ) {
         self.id = id
         self.title = title
@@ -109,7 +100,6 @@ struct Tab: Codable, Equatable, Identifiable {
         self.container = container
         self.claudeSessions = claudeSessions
         self.claudeAgentBadges = claudeAgentBadges
-        self.claudePrompts = claudePrompts
     }
 
     /// Custom decoding so a `state.json` written before
@@ -137,10 +127,6 @@ struct Tab: Codable, Equatable, Identifiable {
         self.claudeAgentBadges = try c.decodeIfPresent(
             [UUID: ClaudeAgentBadge].self,
             forKey: .claudeAgentBadges
-        ) ?? [:]
-        self.claudePrompts = try c.decodeIfPresent(
-            [UUID: [ClaudePromptEntry]].self,
-            forKey: .claudePrompts
         ) ?? [:]
     }
 

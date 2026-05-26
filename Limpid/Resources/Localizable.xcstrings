@@ -2983,56 +2983,6 @@
         }
       }
     },
-    "Prompts": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロンプト"
-          }
-        }
-      }
-    },
-    "No prompts yet": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロンプトはまだありません"
-          }
-        }
-      }
-    },
-    "Show Prompt History": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロンプト履歴を表示"
-          }
-        }
-      }
-    },
-    "Hide Prompt History": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロンプト履歴を隠す"
-          }
-        }
-      }
-    },
-    "(empty prompt)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "（空のプロンプト）"
-          }
-        }
-      }
-    },
     "—": {},
     "日本語": {}
   },

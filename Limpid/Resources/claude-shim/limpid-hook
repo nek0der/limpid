@@ -38,10 +38,8 @@ esac
 
 sessions_dir="${LIMPID_SESSIONS_DIR:-$HOME/Library/Application Support/Limpid/sessions}"
 states_dir="${LIMPID_AGENT_STATES_DIR:-$HOME/Library/Application Support/Limpid/agent-states}"
-prompts_dir="${LIMPID_PROMPTS_DIR:-$HOME/Library/Application Support/Limpid/claude-prompts}"
 mkdir -p "$sessions_dir" 2>/dev/null
 mkdir -p "$states_dir" 2>/dev/null
-mkdir -p "$prompts_dir" 2>/dev/null
 
 # Extract fields out of the JSON payload with sed. We intentionally
 # avoid jq — it's not in the base macOS install and we don't want a
@@ -221,80 +219,6 @@ if [ -n "$new_state" ]; then
       "$pid_field" \
       "$prompt_field"
   } > "$state_tmp" 2>/dev/null && mv -f "$state_tmp" "$state_final" 2>/dev/null || rm -f "$state_tmp" 2>/dev/null
-fi
-
-# ----- Prompt history (per-pane sidebar) -----
-# `UserPromptSubmit` appends the freshly captured prompt to the
-# pane's `prompts.json` and emits an OSC 133;A marker into the
-# terminal stream so ghostty can later jump back to that row via
-# `jump_to_prompt:-N`. The OSC 133 emit needs to land *before*
-# ghostty has rendered anything new from claude's response, so we
-# do it from the hook's stdout (which Claude Code pipes back into
-# the terminal session) instead of waiting for the Swift side.
-if [ "$hook_event" = "UserPromptSubmit" ]; then
-  # Ghostty's `jump_to_prompt` binding scrolls between OSC 133;A
-  # markers in the scrollback. Emitting unconditionally is safe —
-  # OSC 133 is parsed by every modern VT and any terminal that
-  # doesn't recognise it strips the sequence silently. We don't
-  # bother with OSC 133;B/C/D because we only need a single
-  # boundary marker per prompt.
-  printf '\033]133;A\007'
-
-  raw_prompt="$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1)"
-  prompt_safe="$(sanitize "$raw_prompt")"
-  prompt_final="$prompts_dir/$pane_id.prompts.json"
-  prompt_tmp="$prompts_dir/.$pane_id.prompts.json.tmp.$$"
-  # Re-read existing `prompts` array, peel off the closing `]}`,
-  # append the new entry, re-close. Pure sed because the hook must
-  # not depend on jq. The format is single-line on disk; sed is
-  # well-behaved against that.
-  existing=""
-  next_index=0
-  if [ -f "$prompt_final" ]; then
-    existing="$(cat "$prompt_final" 2>/dev/null || true)"
-    # Highest seen index + 1 (the latest entry is the trailing
-    # `"index":N` before the closing brace). Default to 0 when no
-    # entries match.
-    last_index="$(printf '%s' "$existing" | sed -n 's/.*"index":\([0-9][0-9]*\).*/\1/p' | tail -n1)"
-    if [ -n "$last_index" ]; then
-      next_index=$((last_index + 1))
-    fi
-  fi
-  entry="{\"index\":$next_index,\"submittedAt\":\"$ts\",\"text\":\"$prompt_safe\"}"
-  if [ -z "$existing" ]; then
-    new_body="[$entry]"
-  else
-    # Strip everything from the closing `"prompts":[...]}` so we
-    # can append the entry. The closing pattern looks like `]}\n`;
-    # we peel `]}` and re-add it after the new entry.
-    new_body="$(printf '%s' "$existing" \
-      | sed -n 's/.*"prompts"[[:space:]]*:[[:space:]]*\(\[.*\]\).*/\1/p' | head -n1)"
-    if [ -z "$new_body" ]; then
-      new_body="[$entry]"
-    else
-      # Trim the trailing `]` and append the new entry + `]`.
-      stem="${new_body%]}"
-      new_body="$stem,$entry]"
-    fi
-  fi
-  {
-    printf '{"schemaVersion":1,"paneId":"%s","updatedAt":"%s","prompts":%s}\n' \
-      "$pane_id" "$ts" "$new_body"
-  } > "$prompt_tmp" 2>/dev/null && mv -f "$prompt_tmp" "$prompt_final" 2>/dev/null \
-    || rm -f "$prompt_tmp" 2>/dev/null
-fi
-
-# `SessionEnd` cleans up the prompt history alongside the session
-# record, but only when the reason indicates an explicit user exit;
-# resumable ends keep the history so the next launch's sidebar can
-# show it next to a resumed conversation.
-if [ "$hook_event" = "SessionEnd" ]; then
-  case "$reason" in
-    clear|logout|exit|prompt_input_exit|quit)
-      rm -f "$prompts_dir/$pane_id.prompts.json" 2>/dev/null
-      ;;
-    *) : ;;
-  esac
 fi
 
 # ----- Session record (claude --resume) -----

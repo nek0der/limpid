@@ -35,10 +35,6 @@ final class AppState {
     /// `Tab.claudeAgentBadges` so the L1 / L2 status icons reflect
     /// the live state of every running `claude` process.
     let claudeAgentStateTracker: ClaudeAgentStateTracker
-    /// Mirrors the on-disk prompt history records into
-    /// `Tab.claudePrompts` so the prompt-history sidebar reflects
-    /// every UserPromptSubmit hook write within a few hundred ms.
-    let claudePromptTracker: ClaudePromptTracker
     /// User preferences store (font / theme / scrollback / …).
     /// Owned by AppState so libghostty receives the initial values
     /// at boot and live-reload requests can route through here.
@@ -163,10 +159,6 @@ final class AppState {
         // deferred until after it's available so "Claude finished"
         // notifications can route through it.
         self.claudeAgentStateTracker = claudeAgentStateTracker
-
-        let claudePromptTracker = ClaudePromptTracker()
-        claudePromptTracker.bootstrap(into: session)
-        self.claudePromptTracker = claudePromptTracker
 
         self.session = session
 

@@ -40,14 +40,6 @@ enum LimpidLayout {
     static let l2MinWidth: CGFloat = 200
     static let l2MaxWidth: CGFloat = 500
 
-    /// L3 prompt-history sidebar (right of the terminal column).
-    /// Width is drag-resizable; double-clicking the divider resets
-    /// to this default. Clamps mirror L2 so the sidebar can neither
-    /// bury the terminal nor shrink to a sliver.
-    static let promptSidebarWidth: CGFloat = 280
-    static let promptSidebarMinWidth: CGFloat = 220
-    static let promptSidebarMaxWidth: CGFloat = 480
-
     /// Distance from a column's top edge to where chrome content (the
     /// action capsule / container title) starts. Aligns L1 / L2 / L3
     /// chrome content with the AppKit traffic-light row (center
