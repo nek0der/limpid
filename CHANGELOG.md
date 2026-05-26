@@ -2,6 +2,13 @@
 
 All notable changes to Limpid are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7](https://github.com/nek0der/limpid/compare/v0.1.6...v0.1.7) (2026-05-26)
+
+
+### Features
+
+* **update:** replace Sparkle modal with inline chrome bubble + state machine ([#53](https://github.com/nek0der/limpid/issues/53)) ([457ff18](https://github.com/nek0der/limpid/commit/457ff187ccce0780d0ab62d56d710a8e7640e55d))
+
 ## [0.1.6](https://github.com/nek0der/limpid/compare/v0.1.5...v0.1.6) (2026-05-26)
 
 

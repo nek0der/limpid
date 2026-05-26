@@ -66,6 +66,7 @@ private struct AboutSection: View {
 private struct UpdatesSection: View {
     let updater: SPUUpdater
     @State private var autoCheck: Bool
+    @Environment(UpdateStateModel.self) private var stateModel
 
     init(updater: SPUUpdater) {
         self.updater = updater
@@ -93,8 +94,34 @@ private struct UpdatesSection: View {
                 // re-entrant `checkForUpdates()` calls internally,
                 // so an always-enabled button is safe.
                 Button("Check Now…") {
-                    updater.checkForUpdates()
+                    #if DEBUG
+                        // Mirror the App-menu "Check for Updates…"
+                        // mock routing so design iteration still
+                        // reaches both entry points without a real
+                        // Sparkle round-trip.
+                        MockUpdateAvailability.simulate(into: stateModel)
+                    #else
+                        updater.checkForUpdates()
+                    #endif
                 }
+                .disabled(stateModel.isBusy)
+            }
+            // Inline the same state-driven popover content underneath
+            // the button so a user who initiated the check from
+            // Settings sees the result here, not just on the L3 chrome
+            // of the main window. The view is hidden while `.idle` so
+            // the section collapses back to its resting size when no
+            // check is in flight.
+            if case .idle = stateModel.state {
+                EmptyView()
+            } else {
+                UpdatePopover(updater: updater, dismiss: {
+                    stateModel.state = .idle
+                }, width: nil)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(.background.tertiary)
+                    )
             }
         } header: {
             Text("Software Update")
