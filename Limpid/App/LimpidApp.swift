@@ -502,10 +502,16 @@ struct LimpidApp: App {
     /// Without this gate a Debug session running alongside the
     /// installed dmg could replace its own DerivedData binary with
     /// the latest release mid-debug.
-    private let updaterController = SPUStandardUpdaterController(
-        startingUpdater: !LimpidPaths.isDevBuild,
-        updaterDelegate: nil,
-        userDriverDelegate: nil
+    /// Owns the `SPUStandardUpdaterController` plus the gentle-reminder
+    /// user-driver delegate (which suppresses Sparkle's standard "found
+    /// update" alert and writes the appcast item into `availability`
+    /// instead, so the L3 chrome can surface its own shippingbox
+    /// affordance). Once the user clicks the chrome button we hand
+    /// back to Sparkle's standard install / progress / restart UI by
+    /// calling `updater.checkForUpdates()` — Sparkle re-uses the
+    /// cached appcast item, so there's no second network round-trip.
+    private let updaterStack = UpdaterStack(
+        allowsAutomaticChecks: !LimpidPaths.isDevBuild
     )
 
     var body: some Scene {
@@ -513,6 +519,12 @@ struct LimpidApp: App {
             ContentView(state: state)
                 .frame(minWidth: 640, minHeight: 400)
                 .containerBackground(.regularMaterial, for: .window)
+                // Tag this window's underlying NSWindow as a Limpid
+                // main window so `LimpidUpdateDriver.hasInlineTarget`
+                // can distinguish it from the Settings window when
+                // deciding whether to surface the inline updater UI
+                // vs. fall back to Sparkle's standard alert.
+                .background(LimpidMainWindowMarker())
                 .environment(state.session)
                 .environment(state.historyStore)
                 .environment(state.historyPresentation)
@@ -523,6 +535,8 @@ struct LimpidApp: App {
                 .environment(\.surfaceRegistry, state.registry)
                 .environment(\.claudeSessionTracker, state.claudeSessionTracker)
                 .environment(\.notificationManager, state.notificationManager)
+                .environment(\.sparkleUpdater, updaterStack.updater)
+                .environment(updaterStack.stateModel)
                 .environment(\.locale, state.settingsStore.appLanguage.locale ?? .current)
         }
         .windowStyle(.hiddenTitleBar)
@@ -530,7 +544,12 @@ struct LimpidApp: App {
             // ── App menu ──────────────────────────────────────
             // "Check for Updates…" lives just under "About Limpid".
             CommandGroup(after: .appInfo) {
-                CheckForUpdatesView(updater: updaterController.updater)
+                // Debug routes through the mock pipeline so design
+                // tweaks reach both entry points without a real
+                // Sparkle round-trip. Both branches share a single
+                // busy-state disable via `UpdateStateModel.isBusy` so
+                // the user can't kick off concurrent pipelines.
+                CheckForUpdatesMenuItem(updaterStack: updaterStack)
             }
             // Replace the auto-generated "Settings…" item with one
             // that opens our `Window(id:)` Settings scene instead of
@@ -779,7 +798,8 @@ struct LimpidApp: App {
             SettingsScene()
                 .environment(state.settingsStore)
                 .environment(state.reduceTransparencyResolver)
-                .environment(\.sparkleUpdater, updaterController.updater)
+                .environment(\.sparkleUpdater, updaterStack.updater)
+                .environment(updaterStack.stateModel)
         }
         // `.hiddenTitleBar` pulls the traffic-light triad down
         // inside the sidebar slab (matches Notes / Mail / the main
