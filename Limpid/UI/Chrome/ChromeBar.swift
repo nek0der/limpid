@@ -134,27 +134,6 @@ struct ChromeL3Segment: View {
                     SessionActions.split(session, direction: .vertical)
                 }
             }
-            // Prompt-history sidebar toggle. Sits on the far right
-            // of the L3 chrome so it visually anchors to the panel
-            // it controls; the icon flips fill-state when the
-            // sidebar is open so the chrome reads as
-            // pressed-or-not without an extra label.
-            ChromeActionCapsule {
-                ChromeCapsuleButton(
-                    systemImage: session.promptSidebarVisible
-                        ? "list.bullet.rectangle.fill"
-                        : "list.bullet.rectangle",
-                    help: session.promptSidebarVisible
-                        ? "Hide Prompt History"
-                        : "Show Prompt History",
-                    isEnabled: session.activeTab != nil
-                ) {
-                    @Bindable var session = session
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        session.promptSidebarVisible.toggle()
-                    }
-                }
-            }
         }
         .padding(.trailing, 12)
     }
