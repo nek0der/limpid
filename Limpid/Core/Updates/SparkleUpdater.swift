@@ -335,7 +335,7 @@ final class UpdaterStack {
             cancel: OneShot<Void>,
             in model: UpdateStateModel
         ) async {
-            for step in 1 ... 10 {
+            for step in 1...10 {
                 try? await Task.sleep(for: .milliseconds(220))
                 guard case .downloading = model.state else { return }
                 let received = UInt64(Double(total) * Double(step) / 10.0)
@@ -351,7 +351,7 @@ final class UpdaterStack {
         private static func runFakeExtract(in model: UpdateStateModel) async {
             try? await Task.sleep(for: .milliseconds(180))
             model.state = .extracting(progress: 0)
-            for step in 1 ... 6 {
+            for step in 1...6 {
                 try? await Task.sleep(for: .milliseconds(180))
                 guard case .extracting = model.state else { return }
                 model.state = .extracting(progress: Double(step) / 6.0)
