@@ -77,8 +77,13 @@ enum GhosttyConfigBridge {
         lines.append("cursor-style-blink = \(settings.terminal.cursorBlink)")
         lines.append("bell-features = \(mapBellFeatures(settings.terminal.bellAction))")
 
-        // MARK: Resources dir (so shell-integration scripts resolve)
+        // MARK: Resources dir (theme lookup only)
 
+        // The `resources-dir` config key only affects libghostty's
+        // bundled-theme resolution (see the absolute theme path below).
+        // It does NOT feed shell integration — that path comes from
+        // `$GHOSTTY_RESOURCES_DIR`, which we export before `ghostty_init`
+        // in `GhosttyApp.bootstrap`. Keep both in sync if the layout moves.
         if let resourcesDir {
             lines.append("resources-dir = \(resourcesDir)")
         }
