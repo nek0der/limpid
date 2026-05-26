@@ -132,17 +132,31 @@ private struct L2Column: View {
     }
 }
 
-/// L3 column — terminal pane area with its own chrome on top.
+/// L3 column — terminal pane area with its own chrome on top. The
+/// optional prompt-history sidebar attaches to the column's right
+/// edge, inside the same background tint so it reads as part of the
+/// column rather than a separate panel.
 private struct L3Column: View {
     let ghosttyApp: GhosttyApp
+    @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settings
 
     var body: some View {
-        VStack(spacing: 0) {
-            ChromeL3Segment()
-                .frame(height: LimpidLayout.topStripHeight)
-            L3DetailView(ghosttyApp: ghosttyApp)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                ChromeL3Segment()
+                    .frame(height: LimpidLayout.topStripHeight)
+                L3DetailView(ghosttyApp: ghosttyApp)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if session.promptSidebarVisible {
+                ZStack(alignment: .leading) {
+                    PromptHistorySidebar()
+                    PromptSidebarResizeHandle(session: session)
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
         .frame(maxWidth: .infinity)
         .background(
