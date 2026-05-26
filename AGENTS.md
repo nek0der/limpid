@@ -68,8 +68,8 @@ project.yml    xcodegen source of truth for the .xcodeproj
 
 ## 3. Code conventions
 
-- **Language**: all source code, comments, and doc strings are **English only**.
-  Japanese is fine in chat, planning notes, and commit message bodies.
+- **Language**: source code, comments, doc strings, commit messages,
+  branch names, and PR titles / bodies are **English only**.
 - **SwiftUI first**: reach for SwiftUI before AppKit. AppKit is reserved for
   cases SwiftUI cannot express (e.g. `NSVisualEffectView` behind-window blur,
   `NSTextInputClient`, `NSWindow` chrome tweaks).
@@ -126,7 +126,13 @@ Short index of load-bearing files. Skim these before touching their domain.
 - Branch names use conventional prefixes: `feat/<short>`, `fix/<short>`,
   `chore/<short>`, `docs/<short>`.
 - Commit messages follow Conventional Commits: `feat(scope): summary`,
-  `fix(scope): summary`, etc. English-only (subject and body).
+  `fix(scope): summary`, etc. Scopes are lowercase (kebab-case if
+  multi-word); re-use a scope that already appears in `git log` when
+  one fits, and coin a new one only when nothing matches. Singular
+  vs. plural follows what reads naturally for the area
+  (`fix(tab)`, `chore(deps)`).
+- Do not append `Co-Authored-By` trailers — no AI / agent attribution
+  in commits.
 - PRs must follow `.github/pull_request_template.md`. Use
   `gh pr create --body-file` so the template is honored.
 - CI runs PR title check, CodeQL, release-please, and dependabot auto-merge.
