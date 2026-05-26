@@ -11,7 +11,7 @@ struct ClaudePromptEntry: Codable, Equatable, Identifiable, Hashable {
     /// Stable id for SwiftUI ForEach diffing. Generated client-side
     /// when decoding because the on-disk record only carries the
     /// array position.
-    var id: UUID = UUID()
+    var id: UUID = .init()
     /// Zero-based position in the pane's prompt history. Tapping
     /// entry N when the history has total prompts T means
     /// `jump_to_prompt:-(T - 1 - N)` — the cursor sits at the latest

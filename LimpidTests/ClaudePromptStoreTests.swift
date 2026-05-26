@@ -22,7 +22,7 @@ struct ClaudePromptStoreTests {
                 updatedAt: "2026-05-27T00:00:00Z",
                 prompts: [
                     ClaudePromptEntry(index: 0, submittedAt: "2026-05-27T00:00:00Z", text: "Write tests"),
-                    ClaudePromptEntry(index: 1, submittedAt: "2026-05-27T00:01:00Z", text: "Run lint"),
+                    ClaudePromptEntry(index: 1, submittedAt: "2026-05-27T00:01:00Z", text: "Run lint")
                 ]
             )
             try store.save(original)
