@@ -135,11 +135,12 @@ private struct NotificationHistoryRow: View {
                             .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                        if !entry.isRead {
-                            Circle()
-                                .fill(LimpidColor.notificationBell)
-                                .frame(width: 6, height: 6)
-                        }
+                        // The leading `kindIcon` (filled / outlined
+                        // circle) already conveys read state, so the
+                        // small accent dot that used to sit next to
+                        // the title has been removed — keeping two
+                        // unread markers in the same row was visual
+                        // duplication.
                         Spacer(minLength: 4)
                         // Timestamp and the per-row delete X share the
                         // same slot — toggling between them with `if`
@@ -183,14 +184,17 @@ private struct NotificationHistoryRow: View {
         .help(isSourceAlive ? "" : "Source pane was closed")
     }
 
-    /// Compact chip strip beneath the body — tab title, container,
-    /// and exit-code badge. Each chip self-hides when its data isn't
-    /// available, so simpler notifications still render compactly.
+    /// Compact chip stack beneath the body — tab title on its own
+    /// line, container on the next. Each chip self-hides when its
+    /// data isn't available, so simpler notifications still render
+    /// compactly. Stacking vertically (instead of side-by-side) keeps
+    /// long tab titles and container paths readable without forcing
+    /// the popover row to wrap or truncate mid-label.
     @ViewBuilder
     private var metaRow: some View {
         let chips = buildMetaChips()
         if !chips.isEmpty {
-            HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(chips.enumerated()), id: \.offset) { _, chip in
                     metaChip(chip)
                 }
@@ -228,6 +232,12 @@ private struct NotificationHistoryRow: View {
                 .font(.system(size: 9, weight: .medium))
             Text(chip.text)
                 .font(LimpidFont.caption)
+                // Long worktree paths or tab titles otherwise wrap
+                // to a second line; we want each chip on exactly one
+                // line, with the tail of the path collapsing to "…"
+                // instead of pushing the row taller.
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
         .foregroundStyle(chip.color)
     }
@@ -239,28 +249,24 @@ private struct NotificationHistoryRow: View {
         return .clear
     }
 
+    /// Leading read-state indicator — solid orange `circle.fill` for
+    /// unread, hollow `circle` outline for read. Same SF Symbol slot
+    /// in either state so the title's leading edge stays put when an
+    /// entry is acknowledged. The popover header already says
+    /// "Notifications", so dropping the per-row bell that used to
+    /// live here removes redundant signal without losing information —
+    /// `commandFinished` exit-code status is still conveyed by the
+    /// `(exit N)` suffix the coordinator appends to the body.
     private var kindIcon: some View {
-        let name: String
-        let color: Color
-        switch entry.kind {
-        case .desktop:
-            name = "bell.fill"
-            color = LimpidColor.notificationBell
-        case .commandFinished:
-            if let code = entry.exitCode, code != 0 {
-                name = "xmark.circle.fill"
-                color = LimpidColor.error
-            } else {
-                name = "checkmark.circle.fill"
-                color = LimpidColor.success
-            }
-        case .bell:
-            name = "bell.fill"
-            color = LimpidColor.notificationBell
-        }
+        let name = entry.isRead ? "circle" : "circle.fill"
+        let color = entry.isRead
+            ? LimpidColor.tertiaryText
+            : LimpidColor.notificationBell
         return Image(systemName: name)
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: 8, weight: .semibold))
             .foregroundStyle(color)
+            .frame(width: 16, height: 16)
+            .accessibilityLabel(entry.isRead ? "Read" : "Unread")
     }
 
     private var timeLabel: String {

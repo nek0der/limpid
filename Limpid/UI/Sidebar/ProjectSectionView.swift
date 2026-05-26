@@ -28,10 +28,10 @@ struct ProjectSectionView: View {
 
     /// `true` when there's nothing to nest under the project header —
     /// either the project isn't a git repository or `GitSyncCoordinator`
-    /// hasn't run its first pass yet. In flat mode the header itself
-    /// navigates to `.project(id)`, the chevron is hidden, and the
-    /// `projectGeneralRow` / worktree rows don't render (the
-    /// `projectGeneralRow` would have duplicated the header anyway).
+    /// hasn't run its first pass yet. The header navigates to
+    /// `.project(id)` regardless; in flat mode we additionally hide
+    /// the disclosure chevron and skip rendering the (empty)
+    /// worktree list.
     private var isFlat: Bool {
         project.worktrees.allSatisfy(\.isHidden)
     }
@@ -42,8 +42,13 @@ struct ProjectSectionView: View {
             // Wrap the nested children in a single Group so SwiftUI
             // applies one slide-up transition to the whole subtree —
             // matches the GROUPS section's collapse animation.
+            //
+            // The project-general ("Default") row used to live here
+            // but was redundant — tapping the project header itself
+            // already activates `.project(id)`. Removing it keeps
+            // the worktree-yes / worktree-no behaviour symmetrical
+            // and shaves one row off every expanded project.
             Group {
-                projectGeneralRow
                 ForEach(project.worktrees.filter { !$0.isHidden }) { wt in
                     worktreeRow(wt)
                 }
@@ -66,17 +71,14 @@ struct ProjectSectionView: View {
             isRinging: session.isRingingInProject(project.id),
             agentState: session.aggregateAgentStateInProject(project.id),
             agentBreakdown: session.agentStateBreakdownInProject(project.id),
-            // Flat mode (no visible worktrees) collapses the header
-            // and the would-be `projectGeneralRow` into a single
-            // tappable row that navigates straight to `.project(id)`.
-            // With worktrees the header stays inert and the chevron
-            // remains the sole expand control — that legacy carve-out
-            // avoids the rename double-tap conflict (single-tap-to-
-            // fold stacked withAnimation transactions until SwiftUI's
-            // layout deadlocked).
-            onActivate: isFlat
-                ? { session.setActiveContainer(.project(project.id)) }
-                : {},
+            // Header tap always activates `.project(id)` — the
+            // project-direct ("Default") container. With worktrees,
+            // chevron expansion is a separate 16×16 hit target on
+            // the row's right edge, so the rename double-tap conflict
+            // that used to require an inert header is no longer in
+            // play. Worktree-yes / worktree-no rows now behave the
+            // same on body tap.
+            onActivate: { session.setActiveContainer(.project(project.id)) },
             onToggleExpand: isFlat ? nil : {
                 withAnimation(LimpidMotion.expand) {
                     session.toggleProjectExpanded(project.id)
@@ -170,35 +172,6 @@ struct ProjectSectionView: View {
                 } else if prefix == "project:" {
                     session.reorderProject(sourceID: sourceID, target: project.id, position: position)
                 }
-            }
-        )
-    }
-
-    // MARK: - "general" row
-
-    private var projectGeneralRow: some View {
-        ContainerRow(
-            kind: .projectGeneral(project, count: session.directTabs(in: project.id).count),
-            isActive: session.activeContainerID == .project(project.id),
-            hasUnread: session.hasUnread(in: .project(project.id)),
-            isRinging: session.isRinging(in: .project(project.id)),
-            agentState: session.aggregateAgentState(in: .project(project.id)),
-            agentBreakdown: session.agentStateBreakdown(in: .project(project.id)),
-            onActivate: { session.setActiveContainer(.project(project.id)) },
-            onToggleExpand: nil,
-            onRename: nil
-        )
-        .reorderableDropTarget(
-            targetID: "general-\(project.id)",
-            acceptedPrefixes: ["tab:"],
-            tabAsContainerAssignment: true,
-            isNoOp: { sourceID, _ in
-                guard let src = session.tab(sourceID) else { return false }
-                if case let .project(pid) = src.container, pid == project.id { return true }
-                return false
-            },
-            onDrop: { _, sourceID, _ in
-                session.moveTab(sourceID, to: .project(project.id))
             }
         )
     }

@@ -115,7 +115,11 @@ struct TabRow: View {
                     .frame(width: 16, height: 16)
                     .help(agentTooltip(for: state))
             }
-            NotificationBell(isUnread: hasUnread, isRinging: isRinging)
+            NotificationBell(
+                isUnread: hasUnread,
+                isRinging: isRinging,
+                reservesSlot: true
+            )
             if isZoomed {
                 // Always-visible state indicator with a tap target so the
                 // user can leave zoom mode without remembering ⌘⇧Return.
@@ -125,7 +129,7 @@ struct TabRow: View {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 14, height: 14)
+                        .frame(width: 16, height: 16)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
