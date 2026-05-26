@@ -163,6 +163,33 @@ struct TerminalSettings: Codable, Equatable {
     /// Cursor blink. Set false for power users who find blinking
     /// distracting.
     var cursorBlink: Bool = true
+
+    /// Default working-directory strategy for tabs opened in the
+    /// Quick Tabs scope (the implicit `.loose` container). Defaults to
+    /// `.inheritPrevious`, which preserves the historical "open where
+    /// I left off, else home" behaviour.
+    var quickTabCwdMode: WorkingDirectoryMode = .inheritPrevious
+
+    /// Fixed directory used only when `quickTabCwdMode == .fixed`.
+    var quickTabCwdPath: URL?
+
+    /// Hand-rolled decoder so existing `settings.json` files (written
+    /// before these keys existed) decode cleanly with the new fields
+    /// defaulted, instead of throwing and discarding the user's other
+    /// terminal choices. Mirrors `AppearanceSettings`.
+    init() {}
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.scrollbackLines = try c.decodeIfPresent(Int.self, forKey: .scrollbackLines) ?? 10000
+        self.bellAction = try c.decodeIfPresent(BellAction.self, forKey: .bellAction) ?? .visual
+        self.cursorStyle = try c.decodeIfPresent(CursorStyle.self, forKey: .cursorStyle) ?? .block
+        self.cursorBlink = try c.decodeIfPresent(Bool.self, forKey: .cursorBlink) ?? true
+        self.quickTabCwdMode = try c.decodeIfPresent(
+            WorkingDirectoryMode.self, forKey: .quickTabCwdMode
+        ) ?? .inheritPrevious
+        self.quickTabCwdPath = try c.decodeIfPresent(URL.self, forKey: .quickTabCwdPath)
+    }
 }
 
 enum BellAction: String, Codable, CaseIterable {

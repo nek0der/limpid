@@ -76,6 +76,17 @@ extension WindowSession {
         projects[i].paletteIndex = index
     }
 
+    // MARK: - Group working-directory helpers
+
+    /// Update a group's default working-directory strategy. When the
+    /// mode isn't `.fixed` we clear the companion path so a stale fixed
+    /// directory can't linger and resurface if the user toggles back.
+    func setGroupCwdMode(_ id: UUID, to mode: WorkingDirectoryMode, path: URL? = nil) {
+        guard let i = groups.firstIndex(where: { $0.id == id }) else { return }
+        groups[i].cwdMode = mode
+        groups[i].cwdPath = mode == .fixed ? path : nil
+    }
+
     /// Toggle a project header's expanded / collapsed state. Keeps the
     /// mutation out of views so they don't have to index into
     /// `session.projects` directly.

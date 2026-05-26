@@ -98,6 +98,32 @@ struct LimpidSettingsTests {
         }
     }
 
+    @Test("terminal section without quickTab keys decodes with cwd defaults")
+    func decode_terminalMissingQuickTabKeys_defaults() throws {
+        let data = Data(#"""
+        {"schemaVersion":1,
+         "appearance":{"windowTint":"default","backgroundOpacity":0.92,"transparency":"system"},
+         "font":{"size":13,"ligatures":false,"lineHeight":0},
+         "terminal":{"scrollbackLines":10000,"bellAction":"visual","cursorStyle":"block","cursorBlink":true},
+         "advanced":{"useGhosttyConfigFile":false}}
+        """#.utf8)
+        let decoded = try JSONDecoder().decode(LimpidSettings.self, from: data)
+        #expect(decoded.terminal.quickTabCwdMode == .inheritPrevious)
+        #expect(decoded.terminal.quickTabCwdPath == nil)
+    }
+
+    @Test("terminal quickTab cwd fields round-trip", .tags(.persistence))
+    func quickTabCwd_roundTrips() throws {
+        var s = LimpidSettings.default
+        s.terminal.quickTabCwdMode = .fixed
+        s.terminal.quickTabCwdPath = URL(fileURLWithPath: "/tmp/limpid-quicktab")
+        let decoded = try JSONDecoder().decode(
+            LimpidSettings.self, from: JSONEncoder().encode(s)
+        )
+        #expect(decoded.terminal.quickTabCwdMode == .fixed)
+        #expect(decoded.terminal.quickTabCwdPath == URL(fileURLWithPath: "/tmp/limpid-quicktab"))
+    }
+
     // MARK: - Equatable sanity
 
     @Test("mutating any field breaks Equatable equality with the default")

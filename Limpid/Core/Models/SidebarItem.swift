@@ -14,6 +14,26 @@
 
 import Foundation
 
+// MARK: - WorkingDirectoryMode
+
+/// How a container (or the Quick Tabs scope) decides the working
+/// directory for a freshly opened tab when the caller doesn't pass an
+/// explicit one. Stored as a string `rawValue` so the JSON stays
+/// stable across renames; `.fixed` keeps its path in a *separate*
+/// field rather than an associated value so the enum itself remains a
+/// trivially Codable `String` enum (no custom enum coding needed).
+enum WorkingDirectoryMode: String, Codable, Equatable, CaseIterable {
+    /// The user's home directory.
+    case home
+    /// Inherit the currently active tab's cwd; falls back to the
+    /// existing nil-cwd behaviour (home-on-launch) when there's no
+    /// active tab or it has no recorded cwd.
+    case inheritPrevious
+    /// A fixed path carried in a companion field (`cwdPath` /
+    /// `quickTabCwdPath`).
+    case fixed
+}
+
 // MARK: - TabGroup
 
 //
@@ -27,19 +47,64 @@ struct TabGroup: Codable, Equatable, Identifiable {
     var paletteIndex: Int?
     var isExpanded: Bool
     var lastActiveTabID: UUID?
+    /// Default working-directory strategy for tabs opened under this
+    /// group. We default to `.inheritPrevious` rather than `.home`:
+    /// before this field existed a group tab opened with no explicit
+    /// cwd (nil → libghostty's home-on-launch). `.inheritPrevious`
+    /// preserves that home fallback when there's no active tab, while
+    /// giving the more useful "continue where I was" behaviour once a
+    /// tab is in play — a strictly nicer default that doesn't surprise
+    /// existing users.
+    var cwdMode: WorkingDirectoryMode = .inheritPrevious
+    /// Fixed directory used only when `cwdMode == .fixed`.
+    var cwdPath: URL?
 
     init(
         id: UUID = UUID(),
         name: String,
         paletteIndex: Int? = nil,
         isExpanded: Bool = true,
-        lastActiveTabID: UUID? = nil
+        lastActiveTabID: UUID? = nil,
+        cwdMode: WorkingDirectoryMode = .inheritPrevious,
+        cwdPath: URL? = nil
     ) {
         self.id = id
         self.name = name
         self.paletteIndex = paletteIndex
         self.isExpanded = isExpanded
         self.lastActiveTabID = lastActiveTabID
+        self.cwdMode = cwdMode
+        self.cwdPath = cwdPath
+    }
+
+    /// We hand-roll the decoder so older snapshots (no `cwdMode` /
+    /// `cwdPath` keys) rehydrate with the defaults instead of throwing.
+    /// Mirrors the `Worktree` CodingKeys + `AppearanceSettings`
+    /// `decodeIfPresent` back-compat pattern.
+    private enum CodingKeys: String, CodingKey {
+        case id, name, paletteIndex, isExpanded, lastActiveTabID, cwdMode, cwdPath
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.paletteIndex = try c.decodeIfPresent(Int.self, forKey: .paletteIndex)
+        self.isExpanded = try c.decodeIfPresent(Bool.self, forKey: .isExpanded) ?? true
+        self.lastActiveTabID = try c.decodeIfPresent(UUID.self, forKey: .lastActiveTabID)
+        self.cwdMode = try c.decodeIfPresent(WorkingDirectoryMode.self, forKey: .cwdMode) ?? .inheritPrevious
+        self.cwdPath = try c.decodeIfPresent(URL.self, forKey: .cwdPath)
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(paletteIndex, forKey: .paletteIndex)
+        try c.encode(isExpanded, forKey: .isExpanded)
+        try c.encodeIfPresent(lastActiveTabID, forKey: .lastActiveTabID)
+        try c.encode(cwdMode, forKey: .cwdMode)
+        try c.encodeIfPresent(cwdPath, forKey: .cwdPath)
     }
 }
 
