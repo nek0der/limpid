@@ -30,4 +30,11 @@ extension EnvironmentValues {
     /// scenes so the Settings → General pane can drive the auto-check
     /// toggle + "Check Now" button without re-creating a controller.
     @Entry var sparkleUpdater: SPUUpdater?
+
+    /// Tracks per-tab Claude Code session ids written by the shim's
+    /// hook. `SessionActions.closeTab` calls into it so the on-disk
+    /// record is dropped when the user closes a tab. `nil` in Previews
+    /// / tests is fine — the optional parameter on the close helpers
+    /// just skips the cleanup step.
+    @Entry var claudeSessionTracker: ClaudeSessionTracker?
 }

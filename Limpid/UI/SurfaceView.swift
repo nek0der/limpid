@@ -101,6 +101,17 @@ final class SurfaceView: NSView {
     /// `Tab.initialCommands` for the model-level documentation.
     var initialCommand: String?
 
+    /// Extra environment variables merged into the pty environment when
+    /// libghostty spawns the shell. Pre-existing entries with the same
+    /// key are overridden (PATH-prepending is the caller's job). Set by
+    /// `PaneHostView` before `viewDidMoveToWindow` triggers
+    /// `createSurface`. C buffers are kept alive for ghostty's internal
+    /// copy and freed in deinit alongside the cwd/scrollback buffers.
+    var extraEnvironment: [String: String] = [:]
+    nonisolated(unsafe) var envKeyBuffers: [UnsafeMutablePointer<CChar>] = []
+    nonisolated(unsafe) var envValueBuffers: [UnsafeMutablePointer<CChar>] = []
+    nonisolated(unsafe) var envVarsBuffer: UnsafeMutablePointer<ghostty_env_var_s>?
+
     /// Latest title libghostty reported for *this* surface (regardless
     /// of whether the surface is the focused leaf of its tab). The
     /// coordinator records it on every SET_TITLE so switching focus
@@ -279,11 +290,21 @@ final class SurfaceView: NSView {
         let obs = windowResizeObserver
         let wdBuf = workingDirectoryCStr
         let sbBuf = scrollbackPathCStr
+        let envKeys = envKeyBuffers
+        let envValues = envValueBuffers
+        let envArray = envVarsBuffer
         Task { @MainActor in
             if let s { ghostty_surface_free(s) }
             if let obs { NotificationCenter.default.removeObserver(obs) }
             if let wdBuf { free(wdBuf) }
             if let sbBuf { free(sbBuf) }
+            for buf in envKeys {
+                free(buf)
+            }
+            for buf in envValues {
+                free(buf)
+            }
+            if let envArray { envArray.deallocate() }
         }
     }
 
@@ -786,6 +807,8 @@ extension SurfaceView: @preconcurrency NSTextInputClient {
                 log.error("strdup(scrollback path) returned NULL — skipping replay")
             }
         }
+
+        applyExtraEnvironment(into: &config)
 
         guard let s = ghostty_surface_new(app.handle, &config) else {
             log.fault("ghostty_surface_new returned NULL")

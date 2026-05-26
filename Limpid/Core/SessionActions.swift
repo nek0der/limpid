@@ -49,7 +49,8 @@ enum SessionActions {
     static func closeTab(
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
-        tabID: UUID
+        tabID: UUID,
+        claudeSessionTracker: ClaudeSessionTracker? = nil
     ) {
         guard let tab = session.tab(tabID) else { return }
         let leafIDs = tab.splitTree.allLeafIDs()
@@ -72,6 +73,13 @@ enum SessionActions {
         session.closeTab(tabID)
         for leafID in leafIDs {
             registry.unregister(leafID)
+            // Drop each leaf's on-disk Claude session record. The
+            // snapshot above still carries `claudeSessions` for an
+            // in-session `reopenClosedTab` to honor; once the user
+            // quits, the closed-tab stack is gone anyway and stale
+            // records would sit there until the next bootstrap
+            // cleanup pass swept them.
+            claudeSessionTracker?.didClosePane(leafID)
         }
     }
 
@@ -99,7 +107,12 @@ enum SessionActions {
             splitTree: closed.tab.splitTree.remapLeafIDs(idMap),
             paneStates: remapKeys(closed.tab.paneStates, using: idMap),
             zoomedLeafID: closed.tab.zoomedLeafID.flatMap { idMap[$0] },
-            container: closed.tab.container
+            container: closed.tab.container,
+            // Carry the per-pane Claude session map across the
+            // pane id remap so an in-session ⌘⇧T can still try a
+            // resume on the revived leaf (best-effort — the disk
+            // record was already dropped at close time).
+            claudeSessions: remapKeys(closed.tab.claudeSessions, using: idMap)
         )
         // `scrollbackPaths` / `initialCommands` aren't in the Tab init
         // signature, so assign them after construction.
@@ -126,21 +139,33 @@ enum SessionActions {
 
     static func closeActiveTab(
         _ session: WindowSession,
-        registry: any SurfaceViewProviding
+        registry: any SurfaceViewProviding,
+        claudeSessionTracker: ClaudeSessionTracker? = nil
     ) {
         guard let id = session.activeTabID else { return }
-        closeTab(session, registry: registry, tabID: id)
+        closeTab(
+            session,
+            registry: registry,
+            tabID: id,
+            claudeSessionTracker: claudeSessionTracker
+        )
     }
 
     /// Close every tab in the active L1 container. Triggered from the
     /// L2 chrome ellipsis menu.
     static func closeAllTabsInActiveContainer(
         _ session: WindowSession,
-        registry: any SurfaceViewProviding
+        registry: any SurfaceViewProviding,
+        claudeSessionTracker: ClaudeSessionTracker? = nil
     ) {
         let ids = session.tabs(in: session.activeContainerID).map(\.id)
         for tabID in ids {
-            closeTab(session, registry: registry, tabID: tabID)
+            closeTab(
+                session,
+                registry: registry,
+                tabID: tabID,
+                claudeSessionTracker: claudeSessionTracker
+            )
         }
     }
 
@@ -187,7 +212,8 @@ enum SessionActions {
 
     static func closeActivePane(
         _ session: WindowSession,
-        registry: any SurfaceViewProviding
+        registry: any SurfaceViewProviding,
+        claudeSessionTracker: ClaudeSessionTracker? = nil
     ) {
         guard let tab = session.activeTab else { return }
         guard let leafID = tab.splitTree.focusedLeafID
@@ -200,9 +226,13 @@ enum SessionActions {
             if let z = t.zoomedLeafID, !t.splitTree.contains(leafID: z) {
                 t.zoomedLeafID = nil
             }
+            // Drop the in-memory mirror for the closed leaf so a
+            // future bootstrap doesn't keep resurrecting the entry.
+            t.claudeSessions[leafID] = nil
         }
         session.paneSearchStates.removeValue(forKey: leafID)
         registry.unregister(leafID)
+        claudeSessionTracker?.didClosePane(leafID)
         // If the tab is now empty, close it altogether.
         if let refreshed = session.activeTab, refreshed.splitTree.isEmpty {
             session.closeTab(refreshed.id)
@@ -365,14 +395,23 @@ enum SessionActions {
     /// terminal users expect from ⌘W.
     static func closeActivePaneOrTab(
         _ session: WindowSession,
-        registry: any SurfaceViewProviding
+        registry: any SurfaceViewProviding,
+        claudeSessionTracker: ClaudeSessionTracker? = nil
     ) {
         guard let tab = session.activeTab else { return }
         let leafCount = tab.splitTree.allLeafIDs().count
         if leafCount <= 1 {
-            closeActiveTab(session, registry: registry)
+            closeActiveTab(
+                session,
+                registry: registry,
+                claudeSessionTracker: claudeSessionTracker
+            )
         } else {
-            closeActivePane(session, registry: registry)
+            closeActivePane(
+                session,
+                registry: registry,
+                claudeSessionTracker: claudeSessionTracker
+            )
         }
     }
 

@@ -298,6 +298,31 @@ final class GhosttyEventCoordinator {
         else { return }
 
         let owningTab = session.tab(containing: paneID)
+
+        // Suppress Claude Code's generic OSC 9 / 777 broadcast when
+        // our agent-state tracker is already publishing an enriched
+        // "Claude needs input" notification for this pane (Limpid's
+        // banner carries container + permission / question context;
+        // the OSC version is just "Claude is waiting for your input"
+        // — duplicate noise).
+        //
+        // We deliberately do NOT suppress for `.idle` — Claude's
+        // own OSC channel is already off via
+        // `preferredNotifChannel: notifications_disabled` in
+        // `settings.template.json`, so any OSC that reaches this
+        // path while the pane is `.idle` is **not from Claude**
+        // (a user-run script, `make test`, etc.) and should reach
+        // the user. The freshness window (60 s) follows cmux PR
+        // #4028 — stale badges shouldn't keep gating unrelated
+        // notifications.
+        if let badge = owningTab?.claudeAgentBadges[paneID],
+           badge.state == .needsInput,
+           Date().timeIntervalSince(badge.updatedAt) < 60
+        {
+            log.notice("DESKTOP_NOTIFICATION suppressed (needsInput badge active)")
+            return
+        }
+
         let title = explicitTitle.isEmpty
             ? (owningTab?.displayTitle ?? "Limpid")
             : explicitTitle

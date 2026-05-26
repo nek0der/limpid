@@ -34,6 +34,51 @@ struct TabRow: View {
         tab.zoomedLeafID != nil
     }
 
+    /// Aggregate `claudeAgentBadges` across every split leaf in the
+    /// tab and pick the most-urgent state for the L2 icon. Returns
+    /// `nil` when nothing warrants a visible badge (all idle / no
+    /// claude running). Same shape as the L1 aggregation.
+    private var aggregateAgentState: ClaudeAgentState? {
+        tab.splitTree.allLeafIDs()
+            .compactMap { tab.claudeAgentBadges[$0]?.state }
+            .aggregateClaudeState()
+    }
+
+    /// Build the hover tooltip for the agent-state icon. Includes
+    /// the dominant pane's detail and elapsed seconds when a single
+    /// pane is involved; falls back to a count summary for multi-
+    /// pane mixes.
+    private func agentTooltip(for state: ClaudeAgentState) -> String {
+        let leaves = tab.splitTree.allLeafIDs()
+        let badges = leaves.compactMap { tab.claudeAgentBadges[$0] }
+        let matching = badges.filter { $0.state == state }
+        let dominant = matching.max { lhs, rhs in
+            (lhs.updatedAt) < (rhs.updatedAt)
+        }
+        let stateLabel = switch state {
+        case .running, .compacting: "Running"
+        case .needsInput: "Needs input"
+        case .error: "Error"
+        case .idle, .unknown: ""
+        }
+        var pieces: [String] = [stateLabel]
+        if matching.count > 1 {
+            pieces.append("(\(matching.count) of \(badges.count) panes)")
+        }
+        if let detail = dominant?.detail, !detail.isEmpty {
+            pieces.append("· \(detail)")
+        }
+        if state == .running || state == .compacting,
+           let started = dominant?.runStartedAt
+        {
+            let elapsed = Int(Date().timeIntervalSince(started))
+            if elapsed >= 0 {
+                pieces.append("· \(elapsed)s")
+            }
+        }
+        return pieces.joined(separator: " ")
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             InlineRenameField(
@@ -60,6 +105,16 @@ struct TabRow: View {
                 if (note.object as? UUID) == tab.id, !isEditing { beginRename() }
             }
             Spacer(minLength: 4)
+            if let state = aggregateAgentState,
+               let iconName = state.iconName,
+               let iconColor = state.iconColor
+            {
+                Image(systemName: iconName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 16, height: 16)
+                    .help(agentTooltip(for: state))
+            }
             NotificationBell(isUnread: hasUnread, isRinging: isRinging)
             if isZoomed {
                 // Always-visible state indicator with a tap target so the
@@ -146,6 +201,7 @@ struct TabRow: View {
 struct TabsListView: View {
     @Environment(WindowSession.self) private var session
     @Environment(\.surfaceRegistry) private var registry
+    @Environment(\.claudeSessionTracker) private var claudeSessionTracker
     let container: ContainerID
 
     var body: some View {
@@ -168,7 +224,12 @@ struct TabsListView: View {
                                 session.setActiveTab(tab.id)
                             },
                             onClose: {
-                                SessionActions.closeTab(session, registry: registry, tabID: tab.id)
+                                SessionActions.closeTab(
+                                    session,
+                                    registry: registry,
+                                    tabID: tab.id,
+                                    claudeSessionTracker: claudeSessionTracker
+                                )
                             },
                             onRename: { newName in
                                 renameTab(tab.id, to: newName)

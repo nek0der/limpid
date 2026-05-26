@@ -73,12 +73,20 @@ targets:
       - path: Limpid
         excludes:
           - "Resources/ghostty"
+          - "Resources/claude-shim"
       # Bundle libghostty's shell-integration scripts + the themes
       # we ship as Limpid's defaults (Apple System Colors Light/Dark).
       # `type: folder` keeps the directory structure intact under
       # `.app/Contents/Resources/ghostty/`, which is where
       # `GhosttyApp.resolveResourcesDir()` looks first.
       - path: Limpid/Resources/ghostty
+        type: folder
+      # Bundle the Claude Code shim + hook receiver. `type: folder`
+      # preserves the executable bit so the scripts stay runnable
+      # inside `.app/Contents/Resources/claude-shim/`. Limpid prepends
+      # this directory to `PATH` for every pty it spawns so `claude`
+      # invocations are intercepted.
+      - path: Limpid/Resources/claude-shim
         type: folder
     # Explicit Info.plist (not the GENERATE_INFOPLIST_FILE auto-version)
     # because Sparkle's `SU*` keys aren't on Xcode's INFOPLIST_KEY_*

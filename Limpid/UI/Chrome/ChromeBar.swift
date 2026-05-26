@@ -20,6 +20,7 @@ struct ChromeL2Segment: View {
     @Environment(WindowSession.self) private var session
     @Environment(NotificationHistoryStore.self) private var historyStore
     @Environment(\.surfaceRegistry) private var registry
+    @Environment(\.claudeSessionTracker) private var claudeSessionTracker
 
     var body: some View {
         ChromeRow(position: .l2) {
@@ -49,7 +50,8 @@ struct ChromeL2Segment: View {
                         Button(role: .destructive) {
                             SessionActions.closeAllTabsInActiveContainer(
                                 session,
-                                registry: registry
+                                registry: registry,
+                                claudeSessionTracker: claudeSessionTracker
                             )
                         } label: {
                             Label("Close All Sessions", systemImage: "xmark")

@@ -96,6 +96,13 @@ struct ContainerRow: View {
     /// True while a bell is actively flashing inside this container.
     /// Drives the `symbolEffect(.bounce)` animation on the bell.
     var isRinging: Bool = false
+    /// Aggregated Claude agent state across the container's panes.
+    /// `nil` means no claude is running / all idle — the row stays
+    /// quiet. The caller computes it from `WindowSession.aggregateAgentState`.
+    var agentState: ClaudeAgentState?
+    /// Per-state pane counts used for the agent icon's hover tooltip.
+    /// Empty dict when no claude is running.
+    var agentBreakdown: [ClaudeAgentState: Int] = [:]
     let onActivate: () -> Void
     /// Chevron click for Project / Group rows. Nil disables.
     let onToggleExpand: (() -> Void)?
@@ -499,9 +506,42 @@ struct ContainerRow: View {
                     .help("New Worktree…")
                 }
             }
+            if let state = agentState,
+               let iconName = state.iconName,
+               let iconColor = state.iconColor
+            {
+                Image(systemName: iconName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 16, height: 16)
+                    .help(agentTooltip(for: state))
+            }
             NotificationBell(isUnread: hasUnread, isRinging: isRinging)
             countOrChevron
         }
+    }
+
+    /// Build the "1 error · 2 needsInput · 1 running · 3 idle" tooltip
+    /// from `agentBreakdown`. 0-count states are omitted so the string
+    /// stays scannable.
+    private func agentTooltip(for dominant: ClaudeAgentState) -> String {
+        let order: [ClaudeAgentState] = [.error, .needsInput, .running, .compacting, .idle, .unknown]
+        var parts: [String] = []
+        for state in order {
+            let count = agentBreakdown[state] ?? 0
+            guard count > 0 else { continue }
+            let label = switch state {
+            case .error: "error"
+            case .needsInput: "needsInput"
+            case .running, .compacting: "running"
+            case .idle: "idle"
+            case .unknown: "unknown"
+            }
+            parts.append("\(count) \(label)")
+        }
+        return parts.isEmpty
+            ? String(describing: dominant)
+            : parts.joined(separator: " · ")
     }
 
     @ViewBuilder

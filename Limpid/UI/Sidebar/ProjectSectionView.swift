@@ -64,6 +64,8 @@ struct ProjectSectionView: View {
             isActive: session.activeContainerID.projectID == project.id,
             hasUnread: session.hasUnreadInProject(project.id),
             isRinging: session.isRingingInProject(project.id),
+            agentState: session.aggregateAgentStateInProject(project.id),
+            agentBreakdown: session.agentStateBreakdownInProject(project.id),
             // Flat mode (no visible worktrees) collapses the header
             // and the would-be `projectGeneralRow` into a single
             // tappable row that navigates straight to `.project(id)`.
@@ -180,6 +182,8 @@ struct ProjectSectionView: View {
             isActive: session.activeContainerID == .project(project.id),
             hasUnread: session.hasUnread(in: .project(project.id)),
             isRinging: session.isRinging(in: .project(project.id)),
+            agentState: session.aggregateAgentState(in: .project(project.id)),
+            agentBreakdown: session.agentStateBreakdown(in: .project(project.id)),
             onActivate: { session.setActiveContainer(.project(project.id)) },
             onToggleExpand: nil,
             onRename: nil
@@ -211,6 +215,8 @@ struct ProjectSectionView: View {
             isActive: session.activeContainerID == .worktree(projectID: project.id, worktreeID: wt.id),
             hasUnread: session.hasUnread(in: .worktree(projectID: project.id, worktreeID: wt.id)),
             isRinging: session.isRinging(in: .worktree(projectID: project.id, worktreeID: wt.id)),
+            agentState: session.aggregateAgentState(in: .worktree(projectID: project.id, worktreeID: wt.id)),
+            agentBreakdown: session.agentStateBreakdown(in: .worktree(projectID: project.id, worktreeID: wt.id)),
             onActivate: {
                 session.setActiveContainer(.worktree(projectID: project.id, worktreeID: wt.id))
             },

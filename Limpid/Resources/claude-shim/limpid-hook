@@ -1,0 +1,264 @@
+#!/bin/sh
+# Limpid claude hook receiver — invoked by Claude Code on every hook
+# event we subscribe to (SessionStart, UserPromptSubmit, PreToolUse,
+# Notification, PreCompact, Stop, StopFailure, SessionEnd). Keyed by
+# LIMPID_PANE_ID (= split-tree leaf UUID, one per pane).
+#
+# Two persistence paths:
+#   - $LIMPID_SESSIONS_DIR/<pane>.json — session id for `claude --resume`.
+#     Authoritative on SessionStart, dropped on user-initiated SessionEnd
+#     (reason ∈ clear/logout/exit/prompt_input_exit/quit).
+#   - $LIMPID_AGENT_STATES_DIR/<pane>.state.json — agent lifecycle state
+#     for the L1/L2 status icons. Rewritten on every hook event so
+#     `Tab.claudeAgentBadges[paneID]` mirrors the current lifecycle.
+#
+# Failure policy: ALWAYS exit 0. A broken hook must never block Claude
+# from running. We drop stderr to /dev/null in production so the hook
+# is observably silent; tooling that needs diagnostics can set
+# LIMPID_HOOK_LOG=<path> to capture stderr into a file.
+
+set -u
+
+if [ -n "${LIMPID_HOOK_LOG:-}" ]; then
+  exec 2>>"$LIMPID_HOOK_LOG" || exec 2>/dev/null
+else
+  exec 2>/dev/null
+fi
+
+payload="$(cat 2>/dev/null || true)"
+
+pane_id="${LIMPID_PANE_ID:-}"
+# Accept only UUID-shaped pane ids (hex + dash + max 64 chars) so a
+# hostile env can't traverse the filesystem via crafted PANE_ID values.
+case "$pane_id" in
+  '') exit 0 ;;
+  *[!0-9A-Fa-f-]*) exit 0 ;;
+esac
+[ "${#pane_id}" -le 64 ] || exit 0
+
+sessions_dir="${LIMPID_SESSIONS_DIR:-$HOME/Library/Application Support/Limpid/sessions}"
+states_dir="${LIMPID_AGENT_STATES_DIR:-$HOME/Library/Application Support/Limpid/agent-states}"
+mkdir -p "$sessions_dir" 2>/dev/null
+mkdir -p "$states_dir" 2>/dev/null
+
+# Extract fields out of the JSON payload with sed. We intentionally
+# avoid jq — it's not in the base macOS install and we don't want a
+# runtime dependency for a hook that must never fail.
+extract() {
+  printf '%s' "$payload" | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1
+}
+extract_int() {
+  printf '%s' "$payload" | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n1
+}
+
+session_id="$(extract session_id)"
+cwd="$(extract cwd)"
+hook_event="$(extract hook_event_name)"
+reason="$(extract reason)"
+tool_name="$(extract tool_name)"
+notification_type="$(extract notification_type)"
+notification_message="$(extract message)"
+# AskUserQuestion's tool_input carries the question text under a
+# `question` field. Pull whichever string-shaped `question` field is
+# in the payload — depth-agnostic sed because the value usually
+# lives nested inside `tool_input.question`.
+ask_question="$(extract question)"
+error_type="$(extract error_type)"
+current_token_count="$(extract_int current_token_count)"
+
+ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+# Strip control chars / quotes from values that we emit verbatim into
+# JSON. Belt-and-suspenders — the extract regex already excludes
+# `"` and `\` but we re-check before write.
+sanitize() {
+  case "$1" in
+    *[\"\\]*) printf '%s' "" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+cwd_safe="$(sanitize "$cwd")"
+tool_safe="$(sanitize "$tool_name")"
+error_safe="$(sanitize "$error_type")"
+message_safe="$(sanitize "$notification_message")"
+question_safe="$(sanitize "$ask_question")"
+detail_safe=""
+
+# Compute the lifecycle state for the L1/L2 status icons. Order
+# matters: AskUserQuestion is a PreToolUse subtype but maps to
+# `.needsInput`, so check it before the generic running branch.
+new_state=""
+case "$hook_event" in
+  SessionStart)
+    new_state="idle"
+    ;;
+  UserPromptSubmit)
+    new_state="running"
+    ;;
+  PreToolUse)
+    if [ "$tool_safe" = "AskUserQuestion" ]; then
+      new_state="needsInput"
+      # Use the actual question text when we managed to extract it;
+      # fall back to the tool name so the user at least knows *which*
+      # tool blocked. The Limpid notification body and the L2 tooltip
+      # both read this field.
+      if [ -n "$question_safe" ]; then
+        detail_safe="$question_safe"
+      else
+        detail_safe="AskUserQuestion"
+      fi
+    else
+      new_state="running"
+      detail_safe="$tool_safe"
+    fi
+    ;;
+  Notification)
+    # Only `permission_prompt` requires user attention. `idle_prompt`,
+    # `auth_success`, `elicitation_dialog` etc are noise from a
+    # status-icon perspective (cmux #1027 root cause).
+    case "$notification_type" in
+      permission_prompt)
+        new_state="needsInput"
+        # Use the payload's `message` (e.g. "Allow Bash command:
+        # rm -rf node_modules ?") so the Limpid-emitted notification
+        # has the actual prompt instead of a generic "permission"
+        # placeholder. Fall back to "permission" when the message
+        # field was empty / unparseable.
+        if [ -n "$message_safe" ]; then
+          detail_safe="$message_safe"
+        else
+          detail_safe="permission"
+        fi
+        ;;
+      *)
+        new_state=""
+        ;;
+    esac
+    ;;
+  PreCompact)
+    new_state="compacting"
+    ;;
+  Stop)
+    new_state="idle"
+    ;;
+  StopFailure)
+    new_state="error"
+    detail_safe="$error_safe"
+    ;;
+  SessionEnd)
+    new_state="unknown"
+    ;;
+esac
+
+if [ -n "$new_state" ]; then
+  state_final="$states_dir/$pane_id.state.json"
+  state_tmp="$states_dir/.$pane_id.state.json.tmp.$$"
+  # `runStartedAt` is set at UserPromptSubmit and cleared on Stop /
+  # SessionStart / SessionEnd so the L2 tooltip can compute elapsed
+  # seconds without extra bookkeeping. `lastPrompt` follows the same
+  # carry-through model — captured at UserPromptSubmit so the Stop
+  # notification body can say *what* finished, not just *that*
+  # something finished. We re-read the previous file each event so
+  # PreToolUse / Notification / PreCompact preserve both fields.
+  prev_run_started=""
+  prev_last_prompt=""
+  if [ -f "$state_final" ]; then
+    prev_run_started="$(sed -n 's/.*"runStartedAt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
+    prev_last_prompt="$(sed -n 's/.*"lastPrompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
+  fi
+  case "$hook_event" in
+    UserPromptSubmit)
+      run_started="$ts"
+      # Extract the user's prompt from this event's payload so the
+      # next Stop hook's notification body can reference it. sed is
+      # fragile against embedded quotes / newlines / escapes — typical
+      # prompts work, edge cases truncate to whatever sed could match,
+      # and the notification falls back to a generic string when the
+      # extracted text is empty. Good enough for MVP.
+      raw_prompt="$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1)"
+      last_prompt="$(sanitize "$raw_prompt")"
+      ;;
+    Stop|SessionStart|SessionEnd|StopFailure)
+      run_started=""
+      # Stop keeps `lastPrompt` so the Tracker's diff (running→idle)
+      # can read it once before the next UserPromptSubmit overwrites.
+      # SessionStart / SessionEnd reset; StopFailure is fatal so also
+      # reset.
+      if [ "$hook_event" = "Stop" ]; then
+        last_prompt="$prev_last_prompt"
+      else
+        last_prompt=""
+      fi
+      ;;
+    *)
+      run_started="$prev_run_started"
+      last_prompt="$prev_last_prompt"
+      ;;
+  esac
+  tokens_field=""
+  if [ -n "$current_token_count" ]; then
+    tokens_field=",\"contextTokens\":$current_token_count"
+  fi
+  pid_field=""
+  if [ -n "${LIMPID_CLAUDE_PID:-}" ]; then
+    pid_field=",\"pid\":\"$LIMPID_CLAUDE_PID\""
+  fi
+  prompt_field=""
+  if [ -n "$last_prompt" ]; then
+    prompt_field=",\"lastPrompt\":\"$last_prompt\""
+  fi
+  {
+    printf '{"schemaVersion":1,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s}\n' \
+      "$pane_id" \
+      "$new_state" \
+      "$detail_safe" \
+      "$run_started" \
+      "$ts" \
+      "$hook_event" \
+      "$tokens_field" \
+      "$pid_field" \
+      "$prompt_field"
+  } > "$state_tmp" 2>/dev/null && mv -f "$state_tmp" "$state_final" 2>/dev/null || rm -f "$state_tmp" 2>/dev/null
+fi
+
+# ----- Session record (claude --resume) -----
+# Independent of the lifecycle state file above; SessionStart writes
+# the record, user-initiated SessionEnd drops it. Other events are
+# no-ops on this path.
+if [ "$hook_event" = "SessionEnd" ]; then
+  case "$reason" in
+    clear|logout|exit|prompt_input_exit|quit)
+      rm -f "$sessions_dir/$pane_id.json" 2>/dev/null
+      ;;
+    *)
+      # SIGTERM-driven end or any reason we don't recognise. Keep
+      # the record so Limpid's next launch can auto-resume.
+      :
+      ;;
+  esac
+  exit 0
+fi
+
+# Only write a session record when SessionStart fires (we have a real
+# session_id we want to remember). Other events would write stale
+# data — the existing record is the authority for resume.
+if [ "$hook_event" != "SessionStart" ]; then
+  exit 0
+fi
+
+case "$session_id" in
+  '') exit 0 ;;
+  *[\"\\]*) exit 0 ;;
+esac
+
+session_final="$sessions_dir/$pane_id.json"
+session_tmp="$sessions_dir/.$pane_id.json.tmp.$$"
+
+{
+  printf '{"schemaVersion":1,"paneId":"%s","sessionId":"%s","cwd":"%s","updatedAt":"%s","lastHookEvent":"%s"}\n' \
+    "$pane_id" "$session_id" "$cwd_safe" "$ts" "$hook_event"
+} > "$session_tmp" 2>/dev/null || exit 0
+
+mv -f "$session_tmp" "$session_final" 2>/dev/null || rm -f "$session_tmp" 2>/dev/null
+
+exit 0
