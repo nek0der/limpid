@@ -14,6 +14,7 @@ All notable changes to Limpid are documented here. Format follows [Keep a Change
 
 ### Bug Fixes
 
+* **l2:** make tab activation tap fire immediately ([#50](https://github.com/nek0der/limpid/issues/50)) ([52ee818](https://github.com/nek0der/limpid/commit/52ee818a010fa0ee0447fa8a9e110d0713826a7c))
 * **shell:** activate ghostty shell integration for OSC 7 cwd reporting ([#47](https://github.com/nek0der/limpid/issues/47)) ([becc37e](https://github.com/nek0der/limpid/commit/becc37ea1ed51ad479f687f35f47a897a6a60d2b))
 
 
