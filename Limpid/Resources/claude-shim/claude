@@ -108,4 +108,14 @@ settings_json=$(sed "s|@@HOOK@@|$hook_link|g" "$template")
 # claude process's pid, which is exactly what the hook is run under.
 export LIMPID_CLAUDE_PID="$$"
 
+# Claude Code writes its title + spinner to the terminal via OSC 2
+# ("✳ Claude Code" with an animating Braille glyph). The animation
+# constantly bounces tab widths and Limpid surfaces the OSC-derived
+# title in its sidebar, so we suppress it at source. The flag is
+# undocumented (only mentioned in issue threads) but stable on macOS
+# since v1.x — users can re-enable by exporting the variable as `0`
+# in their shell rc.
+: "${CLAUDE_CODE_DISABLE_TERMINAL_TITLE:=1}"
+export CLAUDE_CODE_DISABLE_TERMINAL_TITLE
+
 exec "$real_claude" --settings "$settings_json" "$@"
