@@ -39,6 +39,15 @@ enum ClaudeShimLocator {
             .appendingPathComponent("agent-states", isDirectory: true)
     }
 
+    /// Where the hook receiver appends per-pane prompt history.
+    /// Mirrors `ClaudePromptStore.directory`; injected for the same
+    /// Dev / Release Application-Support reason as the agent-states
+    /// dir.
+    static var promptsDirectoryURL: URL {
+        LimpidPaths.applicationSupportDirectory()
+            .appendingPathComponent("claude-prompts", isDirectory: true)
+    }
+
     /// Build the env-var dictionary that `PaneHostView` stages on a
     /// fresh `SurfaceView`. We always inject `LIMPID_PANE_ID` and the
     /// sessions dir (even when `paneID` is nil, the shim itself just
@@ -79,6 +88,7 @@ enum ClaudeShimLocator {
 
         env["LIMPID_SESSIONS_DIR"] = sessionsDirectoryURL.path
         env["LIMPID_AGENT_STATES_DIR"] = agentStatesDirectoryURL.path
+        env["LIMPID_PROMPTS_DIR"] = promptsDirectoryURL.path
         return env
     }
 }

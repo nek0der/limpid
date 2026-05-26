@@ -64,6 +64,17 @@ final class WindowSession {
     /// Whether the sidebar is collapsed.
     var sidebarHidden: Bool = false
 
+    /// Per-pane Claude prompt-history sidebar — visibility, width,
+    /// and the currently-selected pane id. Persisted across launches
+    /// because the user typically reads prompt history alongside the
+    /// same tab they were last in. `promptSidebarSelectedPaneID` is
+    /// also tracked here (not on `Tab`) so split-pane tab strip
+    /// selection survives an app restart without growing `Tab`'s
+    /// persistent surface.
+    var promptSidebarVisible: Bool = false
+    var promptSidebarWidth: CGFloat = LimpidLayout.promptSidebarWidth
+    var promptSidebarSelectedPaneID: UUID?
+
     /// Last-known `NSWindow` frame in screen coordinates.
     var windowFrame: CGRect?
 

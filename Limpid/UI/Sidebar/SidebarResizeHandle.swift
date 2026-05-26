@@ -16,6 +16,10 @@ struct DividerResizeHandle: View {
     let minWidth: CGFloat
     let maxWidth: CGFloat
     let defaultWidth: CGFloat
+    /// `true` when the panel grows by dragging *left* (e.g. a right
+    /// sidebar whose handle hugs its leading edge). Default `false`
+    /// matches the L1/L2 columns which grow by dragging right.
+    var invertDrag: Bool = false
 
     @State private var dragStart: CGFloat?
 
@@ -48,7 +52,7 @@ struct DividerResizeHandle: View {
                         DragGesture(minimumDistance: 1, coordinateSpace: .global)
                             .onChanged { value in
                                 if dragStart == nil { dragStart = currentWidth() }
-                                let delta = value.translation.width
+                                let delta = invertDrag ? -value.translation.width : value.translation.width
                                 let next = (dragStart ?? currentWidth()) + delta
                                 setWidth(next.clampedToResizeRange(min: minWidth, max: maxWidth))
                             }
@@ -86,6 +90,25 @@ struct L2ResizeHandle: View {
             minWidth: LimpidLayout.l2MinWidth,
             maxWidth: LimpidLayout.l2MaxWidth,
             defaultWidth: LimpidLayout.l2Width
+        )
+    }
+}
+
+/// Drop-in for the prompt-history sidebar's *leading* edge — the
+/// sidebar sits to the right of the terminal, so the drag handle is
+/// on its left. Width grows when the user drags leftward; the closure
+/// inverts the delta to match that orientation.
+struct PromptSidebarResizeHandle: View {
+    @Bindable var session: WindowSession
+
+    var body: some View {
+        DividerResizeHandle(
+            currentWidth: { session.promptSidebarWidth },
+            setWidth: { session.promptSidebarWidth = $0 },
+            minWidth: LimpidLayout.promptSidebarMinWidth,
+            maxWidth: LimpidLayout.promptSidebarMaxWidth,
+            defaultWidth: LimpidLayout.promptSidebarWidth,
+            invertDrag: true
         )
     }
 }

@@ -20,6 +20,9 @@ struct SessionSnapshot: Codable {
     var sidebarWidth: Double
     var l2Width: Double = LimpidLayout.l2Width
     var sidebarHidden: Bool
+    var promptSidebarVisible: Bool = false
+    var promptSidebarWidth: Double = LimpidLayout.promptSidebarWidth
+    var promptSidebarSelectedPaneID: UUID?
     var windowFrame: WindowFrame?
     var recentProjectPaths: [URL]
 
@@ -33,6 +36,9 @@ struct SessionSnapshot: Codable {
         sidebarWidth: Double,
         l2Width: Double = LimpidLayout.l2Width,
         sidebarHidden: Bool = false,
+        promptSidebarVisible: Bool = false,
+        promptSidebarWidth: Double = LimpidLayout.promptSidebarWidth,
+        promptSidebarSelectedPaneID: UUID? = nil,
         windowFrame: WindowFrame? = nil,
         recentProjectPaths: [URL] = []
     ) {
@@ -45,6 +51,9 @@ struct SessionSnapshot: Codable {
         self.sidebarWidth = sidebarWidth
         self.l2Width = l2Width
         self.sidebarHidden = sidebarHidden
+        self.promptSidebarVisible = promptSidebarVisible
+        self.promptSidebarWidth = promptSidebarWidth
+        self.promptSidebarSelectedPaneID = promptSidebarSelectedPaneID
         self.windowFrame = windowFrame
         self.recentProjectPaths = recentProjectPaths
     }
@@ -82,6 +91,9 @@ extension WindowSession {
             sidebarWidth: Double(sidebarWidth),
             l2Width: Double(l2Width),
             sidebarHidden: sidebarHidden,
+            promptSidebarVisible: promptSidebarVisible,
+            promptSidebarWidth: Double(promptSidebarWidth),
+            promptSidebarSelectedPaneID: promptSidebarSelectedPaneID,
             windowFrame: windowFrame.map(WindowFrame.init),
             recentProjectPaths: recentProjectPaths
         )
@@ -94,6 +106,9 @@ extension WindowSession {
         sidebarWidth = CGFloat(snapshot.sidebarWidth)
         l2Width = CGFloat(snapshot.l2Width)
         sidebarHidden = snapshot.sidebarHidden
+        promptSidebarVisible = snapshot.promptSidebarVisible
+        promptSidebarWidth = CGFloat(snapshot.promptSidebarWidth)
+        promptSidebarSelectedPaneID = snapshot.promptSidebarSelectedPaneID
         recentProjectPaths = snapshot.recentProjectPaths
         activeContainerID = snapshot.activeContainerID
         // Transient pane bits (bell ring / child exit) live on
