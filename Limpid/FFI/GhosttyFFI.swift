@@ -41,6 +41,27 @@ enum GhosttyFFI {
         InheritedSurfaceConfig(raw: ghostty_surface_inherited_config(surface, context))
     }
 
+    /// Fire one of libghostty's named binding actions against the
+    /// given surface. The wrapped C function understands the same
+    /// action grammar as the user's keybind config — `scroll_to_top`,
+    /// `scroll_to_bottom`, `scroll_to_row:42`, `jump_to_prompt:-3`,
+    /// etc. Returns `true` when libghostty recognised and handled
+    /// the action; `false` for unknown strings.
+    ///
+    /// Used by the prompt-history sidebar to scroll a terminal back
+    /// to the line of a previously submitted prompt (paired with the
+    /// OSC 133;A markers the hook emits on `UserPromptSubmit`).
+    @discardableResult
+    static func bindingAction(_ surface: ghostty_surface_t, action: String) -> Bool {
+        let bytes = Array(action.utf8)
+        return bytes.withUnsafeBufferPointer { buf in
+            guard let base = buf.baseAddress else { return false }
+            return base.withMemoryRebound(to: CChar.self, capacity: buf.count) { cstr in
+                ghostty_surface_binding_action(surface, cstr, UInt(buf.count))
+            }
+        }
+    }
+
     /// Build mode libghostty was compiled with.
     static func buildMode() -> String {
         switch ghostty_info().build_mode {
