@@ -1,24 +1,39 @@
-// ProjectSettingsSheet.swift
-// Limpid — per-project settings sheet. Mirrors the Liquid Glass
-// pattern of CreateWorktreeSheet (NavigationStack + Form +
-// `.scrollContentBackground(.hidden)`) so the two sheets feel like
-// siblings. Auto-saves on every change — the only button is "Done".
+// ContainerSettingsSheet.swift
+// Limpid — unified settings sheet for both Projects and Groups.
+// Mirrors the Liquid Glass pattern of CreateWorktreeSheet
+// (NavigationStack + Form + `.scrollContentBackground(.hidden)`) so the
+// sheets feel like siblings. Auto-saves on every change — the only
+// button is "Done".
 //
-// Sections:
-//   1. General        — project name, palette colour, root path
-//   2. Worktrees      — placement strategy for `git worktree add`
-//                       (sibling / inside-hidden / custom parent)
-//   3. Hidden Worktrees — list of rows the user hid from the sidebar
-//                         with one-click "Show" per row + "Show All"
+// The sheet adapts to its `target`:
+//   • Common (Project + Group): name, palette colour, Working Directory
+//     (mode Picker + a path field shown only for the `.fixed` mode,
+//     iTerm2-style).
+//   • Project only: Root path, Worktrees placement, Hidden Worktrees.
+//   • Group only: no extra sections — its cwd lives in the common block.
 
 import AppKit
 import SwiftUI
 
-struct ProjectSettingsSheet: View {
+/// Which container the sheet is editing. Carrying the kind (rather than
+/// a bare UUID) lets one sheet drive both the Project and Group entry
+/// points from a single `.sheet(item:)`.
+enum ContainerSettingsTarget: Identifiable, Equatable {
+    case project(UUID)
+    case group(UUID)
+
+    var id: UUID {
+        switch self {
+        case let .project(id), let .group(id): id
+        }
+    }
+}
+
+struct ContainerSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(WindowSession.self) private var session
 
-    let projectID: UUID
+    let target: ContainerSettingsTarget
 
     @State private var nameDraft: String = ""
     @State private var customParentText: String = ""
@@ -31,6 +46,28 @@ struct ProjectSettingsSheet: View {
         case siblingPrefixed, insideHidden, custom
     }
 
+    private var projectID: UUID? {
+        if case let .project(id) = target { return id }
+        return nil
+    }
+
+    private var groupID: UUID? {
+        if case let .group(id) = target { return id }
+        return nil
+    }
+
+    private var project: Project? {
+        projectID.flatMap { id in session.projects.first(where: { $0.id == id }) }
+    }
+
+    private var group: TabGroup? {
+        groupID.flatMap { id in session.groups.first(where: { $0.id == id }) }
+    }
+
+    private var paletteIndex: Int? {
+        project?.paletteIndex ?? group?.paletteIndex
+    }
+
     private var currentTag: PlacementTag {
         switch project?.worktreePlacement ?? .siblingPrefixed {
         case .siblingPrefixed: .siblingPrefixed
@@ -39,21 +76,27 @@ struct ProjectSettingsSheet: View {
         }
     }
 
-    private var project: Project? {
-        session.projects.first(where: { $0.id == projectID })
-    }
-
     private var hiddenWorktrees: [Worktree] {
         project?.worktrees.filter(\.isHidden) ?? []
+    }
+
+    private var titleText: LocalizedStringResource {
+        projectID != nil ? "Project Settings" : "Group Settings"
+    }
+
+    private var titleIcon: String {
+        projectID != nil ? "folder.badge.gearshape" : "square.stack.3d.up"
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 generalSection
-                worktreesSection
-                if !hiddenWorktrees.isEmpty {
-                    hiddenSection
+                if projectID != nil {
+                    worktreesSection
+                    if !hiddenWorktrees.isEmpty {
+                        hiddenSection
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -61,10 +104,10 @@ struct ProjectSettingsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Label {
-                        Text("Project Settings")
+                        Text(titleText)
                             .font(.system(size: 14, weight: .semibold))
                     } icon: {
-                        Image(systemName: "folder.badge.gearshape")
+                        Image(systemName: titleIcon)
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -76,7 +119,7 @@ struct ProjectSettingsSheet: View {
         .onAppear(perform: loadDrafts)
     }
 
-    // MARK: - General
+    // MARK: - General (common: Project + Group)
 
     private var generalSection: some View {
         Section("General") {
@@ -88,11 +131,6 @@ struct ProjectSettingsSheet: View {
                     .textFieldStyle(.plain)
                     .frame(maxWidth: 260)
                     .onSubmit { commitName() }
-                    .onChange(of: nameDraft) { _, _ in
-                        // Commit lazily on blur so each keystroke
-                        // isn't a persistence event, but reflect
-                        // immediately to the UI via the draft.
-                    }
                     .onDisappear { commitName() }
             }
             HStack {
@@ -102,19 +140,19 @@ struct ProjectSettingsSheet: View {
                     paletteOpen.toggle()
                 } label: {
                     Circle()
-                        .fill(LimpidColor.paletteColor(project?.paletteIndex))
+                        .fill(LimpidColor.paletteColor(paletteIndex))
                         .frame(width: 16, height: 16)
                 }
                 .buttonStyle(.plain)
                 .popover(isPresented: $paletteOpen, arrowEdge: .bottom) {
-                    ContainerColorPicker(current: project?.paletteIndex) { idx in
-                        session.setProjectPaletteIndex(projectID, to: idx)
+                    ContainerColorPicker(current: paletteIndex) { idx in
+                        applyPaletteIndex(idx)
                         paletteOpen = false
                     }
                 }
             }
-            LabeledContent("Root") {
-                if let project {
+            if let project {
+                LabeledContent("Root") {
                     Text(project.rootURL.path)
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(.secondary)
@@ -123,10 +161,48 @@ struct ProjectSettingsSheet: View {
                         .textSelection(.enabled)
                 }
             }
+            // Working Directory only applies to Groups. Project tabs
+            // already derive their cwd from the project root / worktree,
+            // so a mode Picker there would be redundant.
+            if groupID != nil {
+                WorkingDirectoryField(
+                    label: "Working Directory",
+                    mode: groupCwdModeBinding,
+                    path: groupCwdPathBinding
+                )
+            }
         }
     }
 
-    // MARK: - Worktrees
+    // MARK: - Working Directory (Group)
+
+    //
+    // The shared `WorkingDirectoryField` drives two independent
+    // bindings; we route both through `setGroupCwdMode` (which
+    // auto-saves and keeps mode/path consistent) by combining each
+    // write with the group's other current value.
+
+    private var groupCwdModeBinding: Binding<WorkingDirectoryMode> {
+        Binding(
+            get: { group?.cwdMode ?? .inheritPrevious },
+            set: { newMode in
+                guard let groupID else { return }
+                session.setGroupCwdMode(groupID, to: newMode, path: group?.cwdPath)
+            }
+        )
+    }
+
+    private var groupCwdPathBinding: Binding<URL?> {
+        Binding(
+            get: { group?.cwdPath },
+            set: { newPath in
+                guard let groupID else { return }
+                session.setGroupCwdMode(groupID, to: group?.cwdMode ?? .fixed, path: newPath)
+            }
+        )
+    }
+
+    // MARK: - Worktrees (Project only)
 
     private var worktreesSection: some View {
         Section {
@@ -202,7 +278,7 @@ struct ProjectSettingsSheet: View {
         return PathFormatting.abbreviateHome(trimmed)
     }
 
-    // MARK: - Hidden Worktrees
+    // MARK: - Hidden Worktrees (Project only)
 
     private var hiddenSection: some View {
         Section {
@@ -213,14 +289,18 @@ struct ProjectSettingsSheet: View {
                     Text(wt.label)
                     Spacer()
                     Button("Show") {
-                        session.unhideWorktree(projectID: projectID, worktreeID: wt.id)
+                        if let projectID {
+                            session.unhideWorktree(projectID: projectID, worktreeID: wt.id)
+                        }
                     }
                     .buttonStyle(.borderless)
                 }
             }
             if hiddenWorktrees.count > 1 {
                 Button("Show All") {
-                    session.unhideAllWorktrees(projectID: projectID)
+                    if let projectID {
+                        session.unhideAllWorktrees(projectID: projectID)
+                    }
                 }
             }
         } header: {
@@ -231,22 +311,44 @@ struct ProjectSettingsSheet: View {
     // MARK: - Persistence helpers
 
     private func loadDrafts() {
-        guard let project else { return }
-        nameDraft = project.name
-        if case let .custom(url) = project.worktreePlacement {
-            customParentText = url.path
-        } else {
-            customParentText = ""
+        if let project {
+            nameDraft = project.name
+            if case let .custom(url) = project.worktreePlacement {
+                customParentText = url.path
+            } else {
+                customParentText = ""
+            }
+        } else if let group {
+            nameDraft = group.name
         }
+    }
+
+    private var currentName: String? {
+        project?.name ?? group?.name
     }
 
     private func commitName() {
         let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != project?.name else { return }
-        session.renameProject(projectID, to: trimmed)
+        guard !trimmed.isEmpty, trimmed != currentName else { return }
+        if let projectID {
+            session.renameProject(projectID, to: trimmed)
+        } else if let groupID {
+            session.renameGroup(groupID, to: trimmed)
+        }
     }
 
+    private func applyPaletteIndex(_ idx: Int) {
+        if let projectID {
+            session.setProjectPaletteIndex(projectID, to: idx)
+        } else if let groupID {
+            session.setGroupPaletteIndex(groupID, to: idx)
+        }
+    }
+
+    // MARK: - Worktree placement mutations (Project)
+
     private func applyPlacementTag(_ tag: PlacementTag) {
+        guard let projectID else { return }
         switch tag {
         case .siblingPrefixed:
             session.setProjectWorktreePlacement(projectID, to: .siblingPrefixed)
@@ -270,6 +372,7 @@ struct ProjectSettingsSheet: View {
     }
 
     private func chooseCustomParent() {
+        guard let projectID else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false

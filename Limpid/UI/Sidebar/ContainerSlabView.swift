@@ -16,8 +16,9 @@ struct ContainerSlabView: View {
 
     /// Project whose Create-Worktree sheet should be presented, if any.
     @State private var creatingWorktreeFor: UUID?
-    /// Project whose Settings sheet should be presented, if any.
-    @State private var openSettingsFor: UUID?
+    /// Container (Project or Group) whose Settings sheet should be
+    /// presented, if any. One sheet serves both kinds.
+    @State private var openSettingsFor: ContainerSettingsTarget?
     /// Pending "Delete Worktree" target. Presents a confirmation alert
     /// before invoking git. Force-retry state lives separately so the
     /// alert can offer a one-click escalation when git rejects the
@@ -141,7 +142,8 @@ struct ContainerSlabView: View {
                                         }
                                     },
                                     canMoveUp: session.canMoveGroupUp(group.id),
-                                    canMoveDown: session.canMoveGroupDown(group.id)
+                                    canMoveDown: session.canMoveGroupDown(group.id),
+                                    onOpenSettings: { openSettingsFor = .group(group.id) }
                                 ),
                                 // Drag must attach from inside the
                                 // row body so the row's tap /
@@ -237,11 +239,8 @@ struct ContainerSlabView: View {
             CreateWorktreeSheet(projectID: wrapped.id)
                 .environment(session)
         }
-        .sheet(item: Binding(
-            get: { openSettingsFor.map { IdentifiedUUID(id: $0) } },
-            set: { openSettingsFor = $0?.id }
-        )) { wrapped in
-            ProjectSettingsSheet(projectID: wrapped.id)
+        .sheet(item: $openSettingsFor) { target in
+            ContainerSettingsSheet(target: target)
                 .environment(session)
         }
         .worktreeOperationAlerts(

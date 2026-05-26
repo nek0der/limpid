@@ -46,6 +46,21 @@ struct TerminalPane: View {
                 }
                 Toggle("Cursor blink", isOn: $store.settings.terminal.cursorBlink)
             }
+
+            Section {
+                // Reuses the same control the Group settings sheet uses
+                // so the Quick Tabs default reads identically wherever
+                // a working-directory mode is configurable.
+                WorkingDirectoryField(
+                    label: "Default working directory",
+                    mode: $store.settings.terminal.quickTabCwdMode,
+                    path: $store.settings.terminal.quickTabCwdPath
+                )
+            } header: {
+                Text("Quick Tabs")
+            } footer: {
+                Text("Where new Quick Tabs open. Containers can override this in their own settings.")
+            }
         }
     }
 }

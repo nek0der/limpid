@@ -39,6 +39,73 @@ enum ContainerRowKind: Equatable {
     }
 }
 
+extension ContainerRowKind {
+    /// Context-menu label for the "…Settings…" entry. Reads "Group
+    /// Settings…" on group rows and "Project Settings…" everywhere else
+    /// it's exposed (project headers).
+    var settingsMenuLabel: LocalizedStringResource {
+        switch self {
+        case .group: "Group Settings…"
+        default: "Project Settings…"
+        }
+    }
+
+    var settingsMenuIcon: String {
+        switch self {
+        case .group: "square.stack.3d.up"
+        default: "folder.badge.gearshape"
+        }
+    }
+
+    /// "Close" reads more accurately than "Delete" for Projects (the
+    /// folder on disk lives on) and Groups (purely a Limpid grouping).
+    /// Tabs ("groupTab") still use Close as well — it ends the
+    /// session, not destructive in the on-disk sense.
+    ///
+    /// Returns `LocalizedStringResource` (not `String`) so the resolved
+    /// text is taken from the String Catalog on render — passing a
+    /// plain `String` to `Button(_:)` bypasses SwiftUI's localization
+    /// path (catalog only kicks in for literal `LocalizedStringKey`).
+    var closeLabel: LocalizedStringResource {
+        switch self {
+        case .projectHeader: "Close Project"
+        case .group: "Close Group"
+        case let .worktree(_, w, _):
+            // For an orphan whose disk-side worktree is gone, the
+            // verb is just "Remove Row" — there's nothing to hide
+            // because the disk state is already "gone".
+            w.isMissing ? "Remove Row" : "Remove from Sidebar"
+        case .groupTab, .loose: "Close"
+        }
+    }
+
+    /// SF Symbol paired with `closeLabel`. Worktree rows use the
+    /// "hide" metaphor (the disk-side worktree stays put) so we pick
+    /// an eye-with-slash; everything else genuinely closes/destroys
+    /// the entity in Limpid, so the standard ✕ reads correctly.
+    /// Single icon used by BOTH the context-menu destructive entry
+    /// and the hover-revealed trailing button. Apple convention is
+    /// simple symbols (no `.circle`) in context menus and inline
+    /// actions, so we drop the suffixed forms entirely.
+    var closeIcon: String {
+        switch self {
+        case let .worktree(_, w, _):
+            w.isMissing ? "xmark" : "eye.slash"
+        default:
+            "xmark"
+        }
+    }
+
+    var hoverDeleteHelp: LocalizedStringResource {
+        switch self {
+        case let .worktree(_, w, _):
+            w.isMissing ? "Remove Row" : "Hide from Sidebar"
+        default:
+            "Delete"
+        }
+    }
+}
+
 /// Bundle of optional callbacks + flags a `ContainerRow` may carry.
 /// Splitting them off the view's argument list keeps call sites
 /// readable (the slab used to thread 11 named closures) and gives
@@ -347,7 +414,11 @@ struct ContainerRow: View {
             if let onOpenSettings {
                 Divider()
                 Button(action: onOpenSettings) {
-                    Label("Project Settings…", systemImage: "folder.badge.gearshape")
+                    Label {
+                        Text(kind.settingsMenuLabel)
+                    } icon: {
+                        Image(systemName: kind.settingsMenuIcon)
+                    }
                 }
             }
             if let onRevealInFinder {
@@ -643,59 +714,23 @@ struct ContainerRow: View {
         isEditing = false
     }
 
-    /// "Close" reads more accurately than "Delete" for Projects (the
-    /// folder on disk lives on) and Groups (purely a Limpid grouping).
-    /// Tabs ("groupTab") still use Close as well — it ends the
-    /// session, not destructive in the on-disk sense.
-    ///
-    /// Returns `LocalizedStringResource` (not `String`) so the resolved
-    /// text is taken from the String Catalog on render — passing a
-    /// plain `String` to `Button(_:)` bypasses SwiftUI's localization
-    /// path (catalog only kicks in for literal `LocalizedStringKey`).
+    /// `closeLabel` / `closeIcon` / `hoverDeleteIcon` / `hoverDeleteHelp`
+    /// are kind-derived and live on `ContainerRowKind` (below) so the
+    /// view's struct body stays within the lint length budget.
     private var closeLabel: LocalizedStringResource {
-        switch kind {
-        case .projectHeader: "Close Project"
-        case .group: "Close Group"
-        case let .worktree(_, w, _):
-            // For an orphan whose disk-side worktree is gone, the
-            // verb is just "Remove Row" — there's nothing to hide
-            // because the disk state is already "gone".
-            w.isMissing ? "Remove Row" : "Remove from Sidebar"
-        case .groupTab, .loose: "Close"
-        }
+        kind.closeLabel
     }
 
-    /// SF Symbol paired with `closeLabel`. Worktree rows use the
-    /// "hide" metaphor (the disk-side worktree stays put) so we pick
-    /// an eye-with-slash; everything else genuinely closes/destroys
-    /// the entity in Limpid, so the standard ✕ reads correctly.
-    /// Single icon used by BOTH the context-menu destructive entry
-    /// and the hover-revealed trailing button. Apple convention is
-    /// simple symbols (no `.circle`) in context menus and inline
-    /// actions, so we drop the suffixed forms entirely.
     private var closeIcon: String {
-        switch kind {
-        case let .worktree(_, w, _):
-            w.isMissing ? "xmark" : "eye.slash"
-        default:
-            "xmark"
-        }
+        kind.closeIcon
     }
 
-    /// Hover-revealed trailing button uses the same icon as the
-    /// context menu — keeping the two affordances visually identical
-    /// avoids the "are these different actions?" confusion.
     private var hoverDeleteIcon: String {
-        closeIcon
+        kind.closeIcon
     }
 
     private var hoverDeleteHelp: LocalizedStringResource {
-        switch kind {
-        case let .worktree(_, w, _):
-            w.isMissing ? "Remove Row" : "Hide from Sidebar"
-        default:
-            "Delete"
-        }
+        kind.hoverDeleteHelp
     }
 }
 

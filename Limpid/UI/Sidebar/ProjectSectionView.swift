@@ -21,7 +21,7 @@ struct ProjectSectionView: View {
 
     let project: Project
     @Binding var creatingWorktreeFor: UUID?
-    @Binding var openSettingsFor: UUID?
+    @Binding var openSettingsFor: ContainerSettingsTarget?
     @Binding var deletingWorktree: ContainerSlabView.DeleteWorktreeTarget?
     @Binding var removingProject: ContainerSlabView.RemoveProjectTarget?
     @Binding var worktreeOperationError: String?
@@ -118,7 +118,7 @@ struct ProjectSectionView: View {
                 onShowHiddenWorktrees: session.hasHiddenWorktrees(projectID: project.id)
                     ? { session.unhideAllWorktrees(projectID: project.id) }
                     : nil,
-                onOpenSettings: { openSettingsFor = project.id },
+                onOpenSettings: { openSettingsFor = .project(project.id) },
                 onSyncWorktrees: {
                     NotificationCenter.default.post(
                         name: .limpidGitSyncRequested,

@@ -92,6 +92,17 @@ final class WindowSession {
     /// is the consumer (skips reconciliation for in-flight ids).
     @ObservationIgnored private(set) var worktreeMutationsInFlight: Set<UUID> = []
 
+    /// Live read of the Quick Tabs working-directory defaults. Injected
+    /// by the app layer so `WindowSession` (Core) doesn't have to import
+    /// the UI-side `SettingsStore`; left at a home-on-launch-preserving
+    /// default for tests and any caller that hasn't wired it up. Read at
+    /// `openTab` time so settings changes take effect on the next tab
+    /// without re-plumbing the closure.
+    @ObservationIgnored
+    var quickTabDefaultsProvider: () -> (mode: WorkingDirectoryMode, path: URL?) = {
+        (.inheritPrevious, nil)
+    }
+
     /// Per-pane in-pane search state (⌘F). Non-nil entry = overlay
     /// visible for that pane. Transient — not Codable, not persisted.
     /// Keyed by pane (split-tree leaf) id.

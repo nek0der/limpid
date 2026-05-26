@@ -17,9 +17,14 @@ extension WindowSession {
         let resolvedWD: URL?
         switch container {
         case .loose:
-            resolvedWD = workingDirectory
-        case .group:
-            resolvedWD = workingDirectory
+            let defaults = quickTabDefaultsProvider()
+            resolvedWD = workingDirectory ?? resolveCwdMode(defaults.mode, path: defaults.path)
+        case let .group(gid):
+            let group = groups.first(where: { $0.id == gid })
+            resolvedWD = workingDirectory ?? resolveCwdMode(
+                group?.cwdMode ?? .inheritPrevious,
+                path: group?.cwdPath
+            )
         case let .project(pid):
             let project = projects.first(where: { $0.id == pid })
             resolvedWD = workingDirectory ?? project?.rootURL
@@ -42,6 +47,26 @@ extension WindowSession {
         tabs.append(tab)
         setActiveTab(tab.id)
         return tab
+    }
+
+    /// Resolve a `WorkingDirectoryMode` to a concrete cwd URL, or nil
+    /// to fall through to libghostty's home-on-launch default.
+    ///   - `.home`            → the user's home directory.
+    ///   - `.inheritPrevious` → the active tab's *live* cwd. We prefer
+    ///     `pwd` (kept current by libghostty's PWD action as the shell
+    ///     `cd`s) and fall back to the tab's launch `workingDirectory`
+    ///     before the first PWD report. Nil when there's no active tab
+    ///     or it has neither (preserves the home-on-launch behaviour).
+    ///   - `.fixed`           → `path` (nil when unset).
+    func resolveCwdMode(_ mode: WorkingDirectoryMode, path: URL?) -> URL? {
+        switch mode {
+        case .home:
+            FileManager.default.homeDirectoryForCurrentUser
+        case .inheritPrevious:
+            (activeTab?.pwd ?? activeTab?.workingDirectory).map { URL(fileURLWithPath: $0) }
+        case .fixed:
+            path
+        }
     }
 
     /// Open a tab in the currently-selected container (L1). Honours

@@ -129,6 +129,12 @@ final class AppState {
         self.store = store
 
         let session = WindowSession()
+        // Let the session read the live Quick Tabs cwd defaults at
+        // `openTab` time without importing `SettingsStore` into Core.
+        session.quickTabDefaultsProvider = { [settingsStore] in
+            let t = settingsStore.settings.terminal
+            return (t.quickTabCwdMode, t.quickTabCwdPath)
+        }
         switch store.load() {
         case .absent:
             break
