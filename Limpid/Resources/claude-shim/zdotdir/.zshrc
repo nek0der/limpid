@@ -16,3 +16,22 @@ if [[ -n "$LIMPID_SHIM_DIR" && -d "$LIMPID_SHIM_DIR" ]]; then
   path=("$LIMPID_SHIM_DIR" $path)
   export PATH
 fi
+
+# Chain Ghostty's zsh shell integration. Relocating ZDOTDIR for the
+# shim bypasses libghostty's own integration (it also injects via
+# ZDOTDIR), which otherwise silently disables OSC 7 cwd reporting,
+# prompt marks (OSC 133), and title updates. We run the integration
+# script ourselves — it is explicitly safe to source manually (unlike
+# Ghostty's own zdotdir/.zshenv) and re-orders its hooks last, so it
+# coexists with the user's starship/fnm/zsh-* precmd hooks loaded
+# above. `GHOSTTY_RESOURCES_DIR` is exported by Limpid before
+# `ghostty_init` (see `GhosttyApp.bootstrap`).
+if [[ -o interactive && -n "$GHOSTTY_RESOURCES_DIR" ]]; then
+  _limpid_gi="$GHOSTTY_RESOURCES_DIR/shell-integration/zsh/ghostty-integration"
+  if [[ -r "$_limpid_gi" ]]; then
+    builtin autoload -Uz -- "$_limpid_gi"
+    ghostty-integration
+    builtin unfunction -- ghostty-integration 2>/dev/null
+  fi
+  builtin unset _limpid_gi
+fi

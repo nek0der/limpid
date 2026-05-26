@@ -173,6 +173,24 @@ final class GhosttyApp {
     /// its allocator + state. Using a lazy `static let` guarantees a
     /// single execution even across concurrent first-touchers.
     private static let bootstrap: Void = {
+        // libghostty resolves its resources dir during `ghostty_init`:
+        // first from `$GHOSTTY_RESOURCES_DIR`, otherwise by walking up
+        // from the executable looking for a `terminfo/.../xterm-ghostty`
+        // sentinel. Our bundle ships the shell-integration scripts under
+        // `Resources/ghostty` but no `terminfo`, so the walk-up never
+        // matches and libghostty disables shell integration entirely
+        // ("no resources dir set") — which kills OSC 7 cwd reporting,
+        // prompt marks, and title updates. Export the path explicitly
+        // before init so the env branch resolves it without needing the
+        // terminfo sentinel. Note the `resources-dir` *config* key does
+        // NOT feed this path (it only resolves bundled themes); the two
+        // are independent in libghostty. (cmux solves this the same way
+        // in its `configureGhosttyEnvironment`.)
+        if getenv("GHOSTTY_RESOURCES_DIR") == nil,
+           let dir = GhosttyApp.resolveResourcesDir()
+        {
+            setenv("GHOSTTY_RESOURCES_DIR", dir, 1)
+        }
         let args = CommandLine.unsafeArgv
         let rc = ghostty_init(UInt(CommandLine.argc), args)
         if rc != 0 {
