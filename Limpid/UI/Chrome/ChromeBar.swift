@@ -8,6 +8,7 @@
 // the columns underneath.
 
 import AppKit
+import Sparkle
 import SwiftUI
 
 // MARK: - L2 chrome segment
@@ -76,6 +77,8 @@ struct ChromeL2Segment: View {
 
 struct ChromeL3Segment: View {
     @Environment(WindowSession.self) private var session
+    @Environment(UpdateStateModel.self) private var updateState
+    @Environment(\.sparkleUpdater) private var updater
 
     var body: some View {
         ChromeRow(position: .l3) {
@@ -93,6 +96,16 @@ struct ChromeL3Segment: View {
                 ChromeContainerTitle()
             }
             Spacer()
+            // Sparkle reported an update-cycle event — surface a
+            // tinted affordance left of the nav cluster. The badge
+            // itself changes shape depending on `UpdateState`:
+            // shippingbox while available, spinner while checking,
+            // progress ring while downloading / extracting, check on
+            // install completion, warning on error. Tap opens the
+            // popover; only Skip / Install transitions clear it.
+            if updateState.showsBadge, let updater {
+                ChromeUpdateButton(updater: updater)
+            }
             // VS Code-style back/forward through the user's navigation
             // history. Sits left of the action capsule (new tab /
             // split) so the chrome flows: nav → actions.
@@ -136,6 +149,141 @@ struct ChromeL3Segment: View {
             }
         }
         .padding(.trailing, 12)
+    }
+}
+
+/// State-driven affordance rendered in the L3 chrome whenever the
+/// updater isn't `.idle`. The badge icon, tint, and animation switch
+/// based on `UpdateState` so the chrome tells the user at-a-glance
+/// what phase the update is in (available → downloading → installing
+/// → done). Tap opens `UpdatePopover`, which is also state-driven.
+///
+/// We intentionally keep this as its own capsule (not a member of
+/// the back/forward capsule) so the affordance reads as distinct
+/// from navigation — the visual rhythm becomes
+/// `[update] [< | >] [split | split]`, with the tinted box pulling
+/// the eye independently of the chevrons.
+struct ChromeUpdateButton: View {
+    let updater: SPUUpdater
+
+    @Environment(UpdateStateModel.self) private var model
+    @State private var isOpen = false
+    @State private var isHovering = false
+
+    var body: some View {
+        Button {
+            isOpen.toggle()
+        } label: {
+            badgeIcon
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(
+                    width: LimpidLayout.chromeCapsuleButtonWidth,
+                    height: LimpidLayout.chromeCapsuleButtonHeight
+                )
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(
+            .regular.tint(tintColor.opacity(isHovering ? 0.85 : 0.65)),
+            in: Capsule()
+        )
+        .overlay(Capsule().stroke(LimpidColor.chromeHairline, lineWidth: 0.5))
+        .onHover { isHovering = $0 }
+        .help(Text(helpText))
+        .popover(isPresented: $isOpen, arrowEdge: .top) {
+            UpdatePopover(updater: updater) {
+                isOpen = false
+            }
+        }
+    }
+
+    /// Pick a SwiftUI view for the current state. Progress states embed
+    /// a `ProgressRing` (drawn over the capsule); the rest are plain
+    /// SF Symbols.
+    @ViewBuilder
+    private var badgeIcon: some View {
+        switch model.state {
+        case .checking:
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .symbolEffect(.rotate, options: .repeating)
+        case let .downloading(_, expected, received, _):
+            ProgressRing(progress: ratio(received: received, expected: expected))
+        case let .extracting(progress):
+            ProgressRing(progress: progress)
+        case .installing:
+            Image(systemName: "arrow.down.circle.fill")
+                .symbolEffect(.pulse, options: .repeating)
+        case .installed:
+            Image(systemName: "checkmark.circle.fill")
+        case .notFound:
+            Image(systemName: "checkmark.circle")
+        case .error:
+            Image(systemName: "exclamationmark.triangle.fill")
+        case .available, .readyToInstall, .idle:
+            Image(systemName: "shippingbox.fill")
+        }
+    }
+
+    /// Tint color tracks state severity ── accent for normal flow,
+    /// green for completion, red for errors. Keeps the urgency
+    /// signal readable without text.
+    private var tintColor: Color {
+        switch model.state {
+        case .error: .red
+        case .installed, .notFound: .green
+        default: .accentColor
+        }
+    }
+
+    private var helpText: String {
+        switch model.state {
+        case .idle:
+            ""
+        case .checking:
+            String(localized: "Checking for updates…")
+        case let .available(item, _):
+            String(localized: "Update available: \(item.displayVersion)")
+        case let .downloading(item, _, _, _):
+            String(localized: "Downloading \(item.displayVersion)…")
+        case .extracting:
+            String(localized: "Preparing update…")
+        case let .readyToInstall(item, _):
+            String(localized: "Ready to install \(item.displayVersion)")
+        case .installing:
+            String(localized: "Installing update…")
+        case .installed:
+            String(localized: "Update installed")
+        case .notFound:
+            String(localized: "You're up to date")
+        case .error:
+            String(localized: "Update failed")
+        }
+    }
+
+    private func ratio(received: UInt64, expected: UInt64?) -> Double {
+        guard let expected, expected > 0 else { return 0 }
+        return min(1.0, Double(received) / Double(expected))
+    }
+}
+
+/// Thin progress ring rendered inside the chrome capsule. Two
+/// strokes — faint track + accent foreground — match macOS 26's
+/// inline progress styling without needing a full `ProgressView`.
+struct ProgressRing: View {
+    let progress: Double
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.3), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: max(0.02, progress))
+                .stroke(Color.white, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.easeOut(duration: 0.2), value: progress)
+        }
+        .frame(width: 14, height: 14)
     }
 }
 
