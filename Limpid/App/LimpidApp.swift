@@ -27,6 +27,14 @@ final class AppState {
     /// (and future "undoable lite" actions) to surface a transient
     /// banner with an Undo button instead of a blocking confirm.
     let toastCenter: ToastCenter
+    /// Owns the per-tab Claude Code session record file. Bootstrapped
+    /// after the snapshot restore so `Tab.claudeSessionId` is repopulated
+    /// before any pane mounts try to resume.
+    let claudeSessionTracker: ClaudeSessionTracker
+    /// Mirrors the on-disk agent lifecycle records into
+    /// `Tab.claudeAgentBadges` so the L1 / L2 status icons reflect
+    /// the live state of every running `claude` process.
+    let claudeAgentStateTracker: ClaudeAgentStateTracker
     /// User preferences store (font / theme / scrollback / …).
     /// Owned by AppState so libghostty receives the initial values
     /// at boot and live-reload requests can route through here.
@@ -131,11 +139,36 @@ final class AppState {
         if session.tabs.isEmpty {
             session.openTabInActiveScope()
         }
+
+        // Re-attach Claude Code sessions captured by the shim's hook
+        // on the previous run. Must happen before we hand `session`
+        // to the rest of the graph so any pane that mounts can read
+        // `Tab.claudeSessionId` immediately.
+        let claudeSessionTracker = ClaudeSessionTracker()
+        claudeSessionTracker.bootstrap(into: session)
+        self.claudeSessionTracker = claudeSessionTracker
+
+        let claudeAgentStateTracker = ClaudeAgentStateTracker()
+        // notificationManager is constructed below; bootstrap is
+        // deferred until after it's available so "Claude finished"
+        // notifications can route through it.
+        self.claudeAgentStateTracker = claudeAgentStateTracker
+
         self.session = session
 
         let historyStore = NotificationHistoryStore()
         self.historyStore = historyStore
-        self.notificationManager = LimpidNotificationManager(historyStore: historyStore)
+        let notificationManager = LimpidNotificationManager(historyStore: historyStore)
+        self.notificationManager = notificationManager
+        // Defer the agent-state tracker bootstrap to here so it can
+        // route "Claude finished" macOS notifications through the
+        // freshly-constructed manager. The tracker itself was
+        // initialised above with the session graph; only the bootstrap
+        // call had to wait.
+        claudeAgentStateTracker.bootstrap(
+            into: session,
+            notificationManager: notificationManager
+        )
         self.historyPresentation = NotificationHistoryPresentation()
         self.dragState = LimpidDragState()
         self.toastCenter = ToastCenter()
@@ -482,6 +515,7 @@ struct LimpidApp: App {
                 .environment(state.settingsStore)
                 .environment(state.reduceTransparencyResolver)
                 .environment(\.surfaceRegistry, state.registry)
+                .environment(\.claudeSessionTracker, state.claudeSessionTracker)
                 .environment(\.notificationManager, state.notificationManager)
                 .environment(\.locale, state.settingsStore.appLanguage.locale ?? .current)
         }
@@ -544,7 +578,11 @@ struct LimpidApp: App {
                 // family across the whole app (plain `xmark`) so
                 // every "close X" affordance reads as the same verb.
                 Button {
-                    SessionActions.closeActivePaneOrTab(state.session, registry: state.registry)
+                    SessionActions.closeActivePaneOrTab(
+                        state.session,
+                        registry: state.registry,
+                        claudeSessionTracker: state.claudeSessionTracker
+                    )
                 } label: {
                     Label("Close Pane", systemImage: "xmark")
                 }
@@ -553,7 +591,11 @@ struct LimpidApp: App {
                 // many panes it contains. "Force" prefix disambiguates
                 // from the cascade variant above.
                 Button {
-                    SessionActions.closeActiveTab(state.session, registry: state.registry)
+                    SessionActions.closeActiveTab(
+                        state.session,
+                        registry: state.registry,
+                        claudeSessionTracker: state.claudeSessionTracker
+                    )
                 } label: {
                     Label("Close Tab", systemImage: "xmark.rectangle")
                 }

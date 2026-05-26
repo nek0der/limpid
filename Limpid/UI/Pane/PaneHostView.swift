@@ -66,7 +66,17 @@ private struct PaneHostRepresentable: NSViewRepresentable {
             view = SurfaceView(ghosttyApp: ghosttyApp)
             let owningTab = session.tab(containing: paneID)
             view.initialWorkingDirectory = owningTab?.workingDirectory
-            view.initialCommand = owningTab?.initialCommands[paneID]
+            view.initialCommand = Self.resolveInitialCommand(
+                tab: owningTab,
+                paneID: paneID
+            )
+            // Wire the Claude shim into every pty: prepends our
+            // bundled shim dir to PATH, exports LIMPID_PANE_ID (=
+            // this split leaf's UUID, so two panes in one tab keep
+            // independent sessions), and points the hook at our
+            // sessions directory. Done unconditionally — if the
+            // user never runs `claude`, these vars are inert.
+            view.extraEnvironment = ClaudeShimLocator.environment(forPaneID: paneID)
             stageScrollback(for: view, tab: owningTab, paneID: paneID)
             registry.register(view, for: paneID)
         }
@@ -84,6 +94,25 @@ private struct PaneHostRepresentable: NSViewRepresentable {
             session?.clearUnread(paneID: paneID)
         }
         nsView.applyExpectedSize(size)
+    }
+
+    /// Pick the initial shell command for a freshly-created surface.
+    /// Prefers the user-staged command in `tab.initialCommands[paneID]`
+    /// (demo mode, future "new tab running X" actions). When that slot
+    /// is empty, falls back to a Claude resume command if the tab has
+    /// a remembered session id. Split out of the NSViewRepresentable
+    /// body — the chained optionals + nil-coalescing + flatMap version
+    /// inline blew up Swift 6's SwiftUI type checker into a
+    /// multi-minute compile.
+    private static func resolveInitialCommand(
+        tab: Tab?,
+        paneID: UUID
+    ) -> String? {
+        if let staged = tab?.initialCommands[paneID], !staged.isEmpty {
+            return staged
+        }
+        guard let tab else { return nil }
+        return ClaudeResumeCommandBuilder.initialCommand(for: tab, paneID: paneID)
     }
 
     /// Stage the saved scrollback path for replay and clear it from the

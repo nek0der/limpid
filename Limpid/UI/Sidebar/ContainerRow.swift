@@ -20,12 +20,23 @@ enum ContainerRowKind: Equatable {
     case group(TabGroup, count: Int, isExpanded: Bool)
     case projectHeader(Project, totalCount: Int, isExpanded: Bool)
     case worktree(projectID: UUID, Worktree, count: Int)
-    /// "general" — tabs sitting directly under a Project (no worktree).
-    /// Always nested under an expanded `.projectHeader`.
-    case projectGeneral(Project, count: Int)
     /// Single tab inline-listed under an expanded Group. Lets users
     /// peek into a Group from L1 without leaving the current container.
     case groupTab(Tab)
+
+    /// `true` when the row should expose a hover-revealed delete (×)
+    /// at its right edge. Daily / weekly destructive actions
+    /// (closing a tab, hiding a worktree, dropping an empty group)
+    /// belong here. Long-lived top-level rows — currently only
+    /// project headers — opt out so the delete affordance doesn't
+    /// invite accidental teardown; users still reach it from the
+    /// row's context menu, which carries the proper confirm flow.
+    var allowsHoverDelete: Bool {
+        switch self {
+        case .projectHeader: false
+        default: true
+        }
+    }
 }
 
 /// Bundle of optional callbacks + flags a `ContainerRow` may carry.
@@ -96,6 +107,13 @@ struct ContainerRow: View {
     /// True while a bell is actively flashing inside this container.
     /// Drives the `symbolEffect(.bounce)` animation on the bell.
     var isRinging: Bool = false
+    /// Aggregated Claude agent state across the container's panes.
+    /// `nil` means no claude is running / all idle — the row stays
+    /// quiet. The caller computes it from `WindowSession.aggregateAgentState`.
+    var agentState: ClaudeAgentState?
+    /// Per-state pane counts used for the agent icon's hover tooltip.
+    /// Empty dict when no claude is running.
+    var agentBreakdown: [ClaudeAgentState: Int] = [:]
     let onActivate: () -> Void
     /// Chevron click for Project / Group rows. Nil disables.
     let onToggleExpand: (() -> Void)?
@@ -374,10 +392,6 @@ struct ContainerRow: View {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
-            case .projectGeneral:
-                Image(systemName: "circle.dotted")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
             case .groupTab:
                 Circle()
                     .fill(Color.secondary.opacity(0.5))
@@ -430,7 +444,6 @@ struct ContainerRow: View {
         case let .group(g, _, _): g.name
         case let .projectHeader(p, _, _): p.name
         case let .worktree(_, w, _): w.label
-        case .projectGeneral: String(localized: "Default")
         case let .groupTab(t): t.displayTitle
         }
     }
@@ -442,7 +455,7 @@ struct ContainerRow: View {
         // contrast leaking into the active highlight.
         if isActive { return .primary }
         switch kind {
-        case .worktree, .projectGeneral, .groupTab:
+        case .worktree, .groupTab:
             return Color.primary.opacity(0.78)
         default:
             return Color.primary.opacity(0.92)
@@ -475,61 +488,107 @@ struct ContainerRow: View {
                     .foregroundStyle(.orange)
                     .help("Worktree not found on disk")
             }
-            if isHovering, !isEditing {
-                if let onDelete {
-                    Button(action: onDelete) {
-                        Image(systemName: hoverDeleteIcon)
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16, height: 16)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(String(localized: hoverDeleteHelp))
+            if isHovering, !isEditing, let onCreateWorktree {
+                // Create-worktree (Y) stays inside the trailing group
+                // — it sits next to the project header it belongs to,
+                // not at the row edge, so it never collides with a
+                // sibling row's delete affordance.
+                Button(action: onCreateWorktree) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
                 }
-                if let onCreateWorktree {
-                    Button(action: onCreateWorktree) {
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16, height: 16)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("New Worktree…")
-                }
+                .buttonStyle(.plain)
+                .help("New Worktree…")
             }
-            NotificationBell(isUnread: hasUnread, isRinging: isRinging)
-            countOrChevron
+            if let state = agentState,
+               let iconName = state.iconName,
+               let iconColor = state.iconColor
+            {
+                Image(systemName: iconName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 16, height: 16)
+                    .help(agentTooltip(for: state))
+            }
+            NotificationBell(
+                isUnread: hasUnread,
+                isRinging: isRinging,
+                reservesSlot: true
+            )
+            trailingControl
+            // Delete (×) lives at the absolute right edge of the row
+            // when hovered — matches the L2 TabRow close affordance
+            // and gives worktree / group rows a consistent "destructive
+            // action on the far right" mental model. The slot is
+            // unconditionally rendered (only the image is hidden when
+            // not hovered) so the right edge of the row doesn't shift
+            // on hover-in / hover-out.
+            //
+            // Project headers opt out via `kind.allowsHoverDelete`
+            // because removing a project is a year-scale operation
+            // that belongs in the context menu, not on a quick
+            // hover slip.
+            if let onDelete, kind.allowsHoverDelete {
+                Button(action: onDelete) {
+                    Image(systemName: hoverDeleteIcon)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                        .opacity(isHovering && !isEditing ? 1 : 0)
+                }
+                .buttonStyle(.plain)
+                .allowsHitTesting(isHovering && !isEditing)
+                .help(String(localized: hoverDeleteHelp))
+            }
         }
     }
 
-    @ViewBuilder
-    private var countOrChevron: some View {
-        switch kind {
-        case let .loose(count),
-             let .group(_, count, _),
-             let .worktree(_, _, count),
-             let .projectGeneral(_, count):
-            if count > 0 {
-                Text("\(count)")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(Color.primary.opacity(0.55))
-                    .frame(width: LimpidLayout.l1TrailingSlot, alignment: .trailing)
+    /// Build the "1 error · 2 needsInput · 1 running · 3 idle" tooltip
+    /// from `agentBreakdown`. 0-count states are omitted so the string
+    /// stays scannable.
+    private func agentTooltip(for dominant: ClaudeAgentState) -> String {
+        let order: [ClaudeAgentState] = [.error, .needsInput, .running, .compacting, .idle, .unknown]
+        var parts: [String] = []
+        for state in order {
+            let count = agentBreakdown[state] ?? 0
+            guard count > 0 else { continue }
+            let label = switch state {
+            case .error: "error"
+            case .needsInput: "needsInput"
+            case .running, .compacting: "running"
+            case .idle: "idle"
+            case .unknown: "unknown"
             }
+            parts.append("\(count) \(label)")
+        }
+        return parts.isEmpty
+            ? String(describing: dominant)
+            : parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private var trailingControl: some View {
+        switch kind {
+        case .loose, .group, .worktree:
+            // Tab count is intentionally not surfaced on L1 any more
+            // — the agent-state icon owns the trailing "at-a-glance"
+            // role, and the tab count is one click away in L2. Keeps
+            // the trailing grid pure (state · bell · chevron, all 16x16).
+            EmptyView()
         case let .projectHeader(_, _, expanded):
-            // Hide the chevron entirely when the row carries no
-            // expand callback — a non-git project (or one that hasn't
-            // synced its worktree list yet) has nothing to disclose,
-            // so the disclosure affordance would be a dead control.
-            if onToggleExpand != nil {
-                // Wrap chevron in the same 16×16 slot the hover icons
-                // use so the trailing icons sit on a uniform grid
-                // (was l1TrailingSlot/right-aligned, which left ~8pt
-                // of empty space between create-worktree (Y) and the
-                // chevron).
-                Button(action: { onToggleExpand?() }, label: {
+            // Project headers always reserve a 16×16 slot in the
+            // chevron position so worktree rows below align with the
+            // header even on non-git projects. Without `onToggleExpand`
+            // the slot stays empty (no glyph, no hit target — a
+            // disclosure that doesn't disclose would be a dead
+            // control); with it, the same slot carries the chevron
+            // button.
+            if let onToggleExpand {
+                Button(action: { onToggleExpand() }, label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Color.primary.opacity(0.70))
@@ -538,6 +597,8 @@ struct ContainerRow: View {
                         .contentShape(Rectangle())
                 })
                 .buttonStyle(.plain)
+            } else {
+                Color.clear.frame(width: 16, height: 16)
             }
         case .groupTab:
             EmptyView()
@@ -557,7 +618,7 @@ struct ContainerRow: View {
         switch kind {
         case .loose, .group, .projectHeader:
             LimpidLayout.l1RowHeightTop
-        case .worktree, .projectGeneral, .groupTab:
+        case .worktree, .groupTab:
             LimpidLayout.l1RowHeightNested
         }
     }
@@ -600,9 +661,7 @@ struct ContainerRow: View {
             // verb is just "Remove Row" — there's nothing to hide
             // because the disk state is already "gone".
             w.isMissing ? "Remove Row" : "Remove from Sidebar"
-        case .groupTab: "Close"
-        case .projectGeneral, .loose:
-            "Close"
+        case .groupTab, .loose: "Close"
         }
     }
 

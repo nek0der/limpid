@@ -1,0 +1,29 @@
+{
+  "preferredNotifChannel": "notifications_disabled",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
+    "PreToolUse": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
+    "StopFailure": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ]
+  }
+}

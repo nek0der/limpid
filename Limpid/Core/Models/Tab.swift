@@ -58,6 +58,24 @@ struct Tab: Codable, Equatable, Identifiable {
     /// membership.
     var container: ContainerID
 
+    /// Per-pane Claude Code session info captured by
+    /// `claude-shim/limpid-hook`. Keyed by split-tree leaf UUID
+    /// (= `LIMPID_PANE_ID`) so two splits running `claude`
+    /// concurrently each remember their own conversation.
+    /// `ClaudeSessionTracker` reconciles this map with the on-disk
+    /// records at launch. Optional default = `[:]` so an existing
+    /// `state.json` decodes without a snapshot version bump.
+    var claudeSessions: [UUID: ClaudeSessionInfo] = [:]
+
+    /// Per-pane Claude agent lifecycle badges. Mirrors the on-disk
+    /// state records written by `limpid-hook` on every event we
+    /// subscribe to (SessionStart / UserPromptSubmit / PreToolUse /
+    /// Notification / PreCompact / Stop / StopFailure / SessionEnd).
+    /// `ClaudeAgentStateTracker` keeps this in sync with disk via
+    /// FSEvents; `TabRow` / `ContainerRow` aggregate it for L2 / L1
+    /// status icons. Optional default = `[:]` for backward compat.
+    var claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:]
+
     init(
         id: UUID = UUID(),
         title: String,
@@ -67,7 +85,9 @@ struct Tab: Codable, Equatable, Identifiable {
         splitTree: SplitTree,
         paneStates: [UUID: PaneState] = [:],
         zoomedLeafID: UUID? = nil,
-        container: ContainerID
+        container: ContainerID,
+        claudeSessions: [UUID: ClaudeSessionInfo] = [:],
+        claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:]
     ) {
         self.id = id
         self.title = title
@@ -78,6 +98,36 @@ struct Tab: Codable, Equatable, Identifiable {
         self.paneStates = paneStates
         self.zoomedLeafID = zoomedLeafID
         self.container = container
+        self.claudeSessions = claudeSessions
+        self.claudeAgentBadges = claudeAgentBadges
+    }
+
+    /// Custom decoding so a `state.json` written before
+    /// `claudeSessions` existed (or by a build that pre-dates the
+    /// pane-keyed refactor) keeps decoding instead of throwing
+    /// `keyNotFound`. We only need to special-case the brand-new key
+    /// — every other field has always been present.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.title = try c.decode(String.self, forKey: .title)
+        self.titleOverride = try c.decodeIfPresent(String.self, forKey: .titleOverride)
+        self.workingDirectory = try c.decodeIfPresent(String.self, forKey: .workingDirectory)
+        self.pwd = try c.decodeIfPresent(String.self, forKey: .pwd)
+        self.splitTree = try c.decode(SplitTree.self, forKey: .splitTree)
+        self.zoomedLeafID = try c.decodeIfPresent(UUID.self, forKey: .zoomedLeafID)
+        self.paneStates = try c.decodeIfPresent([UUID: PaneState].self, forKey: .paneStates) ?? [:]
+        self.scrollbackPaths = try c.decodeIfPresent([UUID: String].self, forKey: .scrollbackPaths) ?? [:]
+        self.initialCommands = try c.decodeIfPresent([UUID: String].self, forKey: .initialCommands) ?? [:]
+        self.container = try c.decode(ContainerID.self, forKey: .container)
+        self.claudeSessions = try c.decodeIfPresent(
+            [UUID: ClaudeSessionInfo].self,
+            forKey: .claudeSessions
+        ) ?? [:]
+        self.claudeAgentBadges = try c.decodeIfPresent(
+            [UUID: ClaudeAgentBadge].self,
+            forKey: .claudeAgentBadges
+        ) ?? [:]
     }
 
     /// Title actually rendered in the UI. Honors a manual override; falls

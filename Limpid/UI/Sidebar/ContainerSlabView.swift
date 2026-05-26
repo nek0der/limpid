@@ -47,6 +47,8 @@ struct ContainerSlabView: View {
                     isActive: isActiveContainer(.loose),
                     hasUnread: hasUnread(in: .loose),
                     isRinging: isRinging(in: .loose),
+                    agentState: agentState(in: .loose),
+                    agentBreakdown: agentBreakdown(in: .loose),
                     onActivate: { session.setActiveContainer(.loose) },
                     onToggleExpand: nil,
                     onRename: nil
@@ -99,6 +101,8 @@ struct ContainerSlabView: View {
                                 isActive: isActiveContainer(.group(group.id)),
                                 hasUnread: hasUnread(in: .group(group.id)),
                                 isRinging: isRinging(in: .group(group.id)),
+                                agentState: agentState(in: .group(group.id)),
+                                agentBreakdown: agentBreakdown(in: .group(group.id)),
                                 onActivate: { session.setActiveContainer(.group(group.id)) },
                                 onToggleExpand: nil,
                                 onRename: { session.renameGroup(group.id, to: $0) },
@@ -390,6 +394,14 @@ struct ContainerSlabView: View {
 
     private func isRingingInProject(_ projectID: UUID) -> Bool {
         session.isRingingInProject(projectID)
+    }
+
+    fileprivate func agentState(in container: ContainerID) -> ClaudeAgentState? {
+        session.aggregateAgentState(in: container)
+    }
+
+    fileprivate func agentBreakdown(in container: ContainerID) -> [ClaudeAgentState: Int] {
+        session.agentStateBreakdown(in: container)
     }
 
 }

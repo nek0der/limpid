@@ -80,8 +80,6 @@ enum LimpidLayout {
     /// Fixed-width slot for the leading marker (icon/dot). Every row
     /// reserves the same width so labels align across kinds.
     static let l1MarkerSlot: CGFloat = 14
-    /// Fixed-width slot for the trailing count / chevron.
-    static let l1TrailingSlot: CGFloat = 18
     /// Row heights — slightly shorter for nested rows.
     static let l1RowHeightTop: CGFloat = 30
     static let l1RowHeightNested: CGFloat = 26
