@@ -43,17 +43,30 @@ enum SessionActions {
 
     /// Single entry point for closing a tab so the "snapshot leaves →
     /// closeTab → unregister leaves" cleanup pattern lives in one
-    /// place. All call sites (TabRow's per-row close button,
-    /// closeActiveTab from ⌘W, closeAllTabsInActiveContainer from the
-    /// ellipsis menu) funnel through here.
+    /// place. All user-initiated call sites (TabRow's ×, ⌘W cascade,
+    /// libghostty's ⌘⌥W, the ellipsis "Close All" menu) funnel
+    /// through here, which is also the single chokepoint that
+    /// consults `CloseConfirmer` — so the agent-aware modal is
+    /// impossible to bypass from a new caller.
     static func closeTab(
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
         tabID: UUID,
+        source: CloseConfirmer.Source = .keyboard,
+        confirm: Bool = true,
         claudeSessionTracker: ClaudeSessionTracker? = nil
     ) {
         guard let tab = session.tab(tabID) else { return }
         let leafIDs = tab.splitTree.allLeafIDs()
+        // `confirm: false` is reserved for batch callers (e.g.
+        // `closeAllTabsInActiveContainer`) that already showed an
+        // aggregate prompt — without the opt-out we'd nag the user
+        // once per tab inside the loop.
+        if confirm,
+           !CloseConfirmer.allow(.tab, source: source, paneIDs: leafIDs)
+        {
+            return
+        }
 
         // Capture every pane's scrollback so reopen rebuilds the full
         // split layout, not just the focused leaf. Routes through the
@@ -140,6 +153,7 @@ enum SessionActions {
     static func closeActiveTab(
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
+        source: CloseConfirmer.Source = .keyboard,
         claudeSessionTracker: ClaudeSessionTracker? = nil
     ) {
         guard let id = session.activeTabID else { return }
@@ -147,23 +161,31 @@ enum SessionActions {
             session,
             registry: registry,
             tabID: id,
+            source: source,
             claudeSessionTracker: claudeSessionTracker
         )
     }
 
     /// Close every tab in the active L1 container. Triggered from the
-    /// L2 chrome ellipsis menu.
+    /// L2 chrome ellipsis menu. Shows one aggregate confirm
+    /// (`CloseConfirmer.allow(.allTabs, ...)`) up front, then loops
+    /// with `confirm: false` so the per-tab `closeTab` doesn't
+    /// re-prompt for every iteration.
     static func closeAllTabsInActiveContainer(
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
         claudeSessionTracker: ClaudeSessionTracker? = nil
     ) {
-        let ids = session.tabs(in: session.activeContainerID).map(\.id)
-        for tabID in ids {
+        let tabs = session.tabs(in: session.activeContainerID)
+        guard !tabs.isEmpty else { return }
+        let allLeafIDs = tabs.flatMap { $0.splitTree.allLeafIDs() }
+        guard CloseConfirmer.allow(.allTabs, source: .mouse, paneIDs: allLeafIDs) else { return }
+        for tab in tabs {
             closeTab(
                 session,
                 registry: registry,
-                tabID: tabID,
+                tabID: tab.id,
+                confirm: false,
                 claudeSessionTracker: claudeSessionTracker
             )
         }
@@ -213,12 +235,14 @@ enum SessionActions {
     static func closeActivePane(
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
+        source: CloseConfirmer.Source = .keyboard,
         claudeSessionTracker: ClaudeSessionTracker? = nil
     ) {
         guard let tab = session.activeTab else { return }
         guard let leafID = tab.splitTree.focusedLeafID
             ?? tab.splitTree.allLeafIDs().first
         else { return }
+        guard CloseConfirmer.allow(.pane, source: source, paneIDs: [leafID]) else { return }
         session.update(tab.id) { t in
             let result = t.splitTree.remove(leafID)
             t.splitTree = result.tree
@@ -391,11 +415,13 @@ enum SessionActions {
     // MARK: - Pane close that cascades into the tab when last (⌘W)
 
     /// iTerm2-style ⌘W: close the focused pane; if the tab has only
-    /// one pane left after that, close the tab too. Matches what most
-    /// terminal users expect from ⌘W.
+    /// one pane left after that, close the tab too. Both branches
+    /// flow through `CloseConfirmer` so the confirm policy is honored
+    /// regardless of which branch we end up taking.
     static func closeActivePaneOrTab(
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
+        source: CloseConfirmer.Source = .keyboard,
         claudeSessionTracker: ClaudeSessionTracker? = nil
     ) {
         guard let tab = session.activeTab else { return }
@@ -404,12 +430,14 @@ enum SessionActions {
             closeActiveTab(
                 session,
                 registry: registry,
+                source: source,
                 claudeSessionTracker: claudeSessionTracker
             )
         } else {
             closeActivePane(
                 session,
                 registry: registry,
+                source: source,
                 claudeSessionTracker: claudeSessionTracker
             )
         }

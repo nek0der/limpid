@@ -315,6 +315,26 @@
         }
       }
     },
+    "Active agents may lose unsaved work.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行中のエージェントが未保存の作業を失う可能性があります。"
+          }
+        }
+      }
+    },
+    "Always": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "常に"
+          }
+        }
+      }
+    },
     "Cancel": {
       "localizations": {
         "en": {
@@ -429,6 +449,26 @@
         }
       }
     },
+    "An agent is active in this pane.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペインでエージェントが動作中です。"
+          }
+        }
+      }
+    },
+    "An agent is active in this tab.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このタブでエージェントが動作中です。"
+          }
+        }
+      }
+    },
     "Close": {
       "localizations": {
         "ja": {
@@ -489,6 +529,46 @@
         }
       }
     },
+    "Close tab?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを閉じますか？"
+          }
+        }
+      }
+    },
+    "Close Tab (Keyboard)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを閉じる（キーボード）"
+          }
+        }
+      }
+    },
+    "Close Tab (X Button)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを閉じる（× ボタン）"
+          }
+        }
+      }
+    },
+    "Confirmations": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認"
+          }
+        }
+      }
+    },
     "Close Tab": {
       "localizations": {
         "ja": {
@@ -505,6 +585,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "グループを閉じますか?"
+          }
+        }
+      }
+    },
+    "Close pane?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを閉じますか？"
+          }
+        }
+      }
+    },
+    "Close all tabs?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのタブを閉じますか？"
           }
         }
       }
@@ -1257,6 +1357,16 @@
         }
       }
     },
+    "Never": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "なし"
+          }
+        }
+      }
+    },
     "Name": {
       "localizations": {
         "en": {
@@ -1500,6 +1610,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "不透明度"
+          }
+        }
+      }
+    },
+    "Only when an agent is active": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが動作中のみ"
+          }
+        }
+      }
+    },
+    "\"Only when an agent is active\" prompts only when a tracked agent is live in the affected pane.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「エージェントが動作中のみ」は、追跡対象のエージェントが対象ペインで稼働している時のみ確認します。"
           }
         }
       }
@@ -1765,6 +1895,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "プロジェクト: %@"
+          }
+        }
+      }
+    },
+    "Quit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了"
+          }
+        }
+      }
+    },
+    "Quit Limpid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid の終了"
+          }
+        }
+      }
+    },
+    "Quit Limpid?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid を終了しますか？"
           }
         }
       }
