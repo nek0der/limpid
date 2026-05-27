@@ -346,6 +346,41 @@ final class SurfaceView: NSView {
         return true
     }
 
+    // MARK: - Clipboard (responder-chain selectors)
+
+    /// `paste:` / `copy:` are the macOS-standard responder-chain
+    /// selectors AppKit dispatches when the user picks Edit > Paste /
+    /// Edit > Copy or presses ⌘V / ⌘C. By implementing them on
+    /// `SurfaceView`, the keystroke automatically reaches the
+    /// **focused** pane (the first responder), instead of being
+    /// claimed by whichever surface NSWindow's `performKeyEquivalent`
+    /// traversal happens to visit first. Pre-#57 libghostty supplied
+    /// `super+c=copy_to_clipboard` / `super+v=paste_from_clipboard`
+    /// from its built-in macOS defaults; #57 added `keybind = clear`
+    /// which wiped those, and re-adding them as ordinary keybind
+    /// lines reintroduces the wrong-pane bug because libghostty's
+    /// binding table is per-surface but the trigger is identical
+    /// across all of them. Routing through the responder chain
+    /// solves both problems: focused-pane routing falls out of
+    /// AppKit's existing dispatch, and Edit menu clicks work for
+    /// free.
+    ///
+    /// We forward to libghostty via `ghostty_surface_binding_action`
+    /// (the same path `SessionActions.endSearch/searchNext/...` uses)
+    /// so libghostty's clipboard plumbing — including its prompt for
+    /// suspicious paste content — still runs.
+    @objc func paste(_ sender: Any?) {
+        guard let surface else { return }
+        let action = "paste_from_clipboard"
+        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+    }
+
+    @objc func copy(_ sender: Any?) {
+        guard let surface else { return }
+        let action = "copy_to_clipboard"
+        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+    }
+
     /// Route ⌘Q to `NSApplication.terminate(_:)` so the standard
     /// termination chain (including `applicationWillTerminate`) runs.
     ///
