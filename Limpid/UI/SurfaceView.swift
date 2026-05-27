@@ -407,6 +407,19 @@ final class SurfaceView: NSView {
             return true
         }
 
+        // Focus guard: only the focused surface intercepts libghostty
+        // keybinds. `NSWindow.performKeyEquivalent` traverses every
+        // subview, so without this check the first SurfaceView the
+        // traversal visits would claim the event regardless of which
+        // pane the user is actually working in — ⌘+ would resize the
+        // wrong split, etc. Routing through the responder chain
+        // (firstResponder === self) re-aligns the fast-path with
+        // focus, the same property the new `paste:` / `copy:`
+        // selectors get for free from AppKit's built-in dispatch.
+        guard self.window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
+
         // libghostty keybind fast-path. Lets the binding fire before
         // the menu bar / IME chain swallows it (notably JIS Kotoeri
         // grabbing ⌘⇧- in `interpretKeyEvents`). We redispatch via
