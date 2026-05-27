@@ -93,6 +93,7 @@ struct SettingsScene: View {
         case .appearance: AppearancePane()
         case .font: FontPane()
         case .terminal: TerminalPane()
+        case .keyboard: KeyboardPane()
         case .advanced: AdvancedPane()
         }
     }

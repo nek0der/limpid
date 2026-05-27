@@ -12,6 +12,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case appearance
     case font
     case terminal
+    case keyboard
     case advanced
 
     var id: String {
@@ -24,6 +25,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: "Appearance"
         case .font: "Font"
         case .terminal: "Terminal"
+        case .keyboard: "Keyboard"
         case .advanced: "Advanced"
         }
     }
@@ -34,6 +36,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: "paintbrush"
         case .font: "textformat"
         case .terminal: "terminal"
+        case .keyboard: "keyboard"
         case .advanced: "wrench.and.screwdriver"
         }
     }

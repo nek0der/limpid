@@ -132,6 +132,27 @@ enum GhosttyConfigBridge {
         // #3836 / #5144 / #8681 — the long-standing pitfall behind
         // "cursor-style doesn't change on existing shells".)
         lines.append("shell-integration-features = no-cursor")
+
+        // MARK: Pattern A — single source of truth for keybinds
+
+        //
+        // `keybind = clear` wipes libghostty's built-in macOS
+        // defaults so the menu bar can be the canonical owner of
+        // every shortcut. Without `clear`, libghostty would still
+        // honour its own `super+t=new_tab` etc. and the user
+        // remapping "New Tab" to ⌘⇧T would leave ⌘T firing
+        // libghostty's old binding behind the user's back.
+        //
+        // After `clear` we re-emit:
+        //   1. Limpid's two forced keybinds (`super+q` unbind to
+        //      protect AppKit terminate, and `shift+enter=text:\n`
+        //      for the TUI newline workaround).
+        //   2. Every action where `ghosttyAction != nil`, using the
+        //      user-effective shortcut from `KeyboardSettings`.
+        // Actions with `ghosttyAction == nil` are Limpid-only
+        // (menu callback owns them) and don't need libghostty's
+        // keybind table to know about the key.
+        lines.append("keybind = clear")
         // libghostty's default macOS keybinds map super+q to its own
         // `quit` action. We already route ⌘Q to the main menu via
         // `SurfaceView.performKeyEquivalent`, but unbind here as
@@ -148,6 +169,17 @@ enum GhosttyConfigBridge {
         // bare-ghostty workaround out of the box. (See ghostty
         // discussion #7780 and claude-code issues #1282 / #5757.)
         lines.append(#"keybind = shift+enter=text:\n"#)
+
+        // Emit a keybind only for actions whose `ghosttyAction` is
+        // non-nil — those are the ones libghostty can dispatch
+        // without Limpid silently dropping the result. Menu-owned
+        // actions are nil and flow through AppKit's menu instead.
+        for action in LimpidShortcutAction.allCases {
+            guard let ghosttyAction = action.ghosttyAction,
+                  let shortcut = settings.keyboard.shortcut(for: action)
+            else { continue }
+            lines.append("keybind = \(shortcut.ghosttyTrigger)=\(ghosttyAction)")
+        }
 
         return lines.joined(separator: "\n") + "\n"
     }
