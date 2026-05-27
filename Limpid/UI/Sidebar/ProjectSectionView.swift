@@ -59,6 +59,17 @@ struct ProjectSectionView: View {
 
     // MARK: - Project header
 
+    /// `true` when the header should aggregate state across the
+    /// project-direct container *and* every worktree. Only while the
+    /// worktree list is hidden — once expanded, each worktree row
+    /// carries its own bell / agent badge, so a project-wide aggregate
+    /// on the header would double-count and visually compete with the
+    /// children. When expanded we narrow scope to the project-direct
+    /// container the header itself activates.
+    private var aggregatesWholeProject: Bool {
+        isFlat || !project.isExpanded
+    }
+
     private var projectHeader: some View {
         ContainerRow(
             kind: .projectHeader(
@@ -66,11 +77,31 @@ struct ProjectSectionView: View {
                 totalCount: session.tabs.count(where: { $0.container.projectID == project.id }),
                 isExpanded: project.isExpanded
             ),
-            isActive: session.activeContainerID.projectID == project.id,
-            hasUnread: session.hasUnreadInProject(project.id),
-            isRinging: session.isRingingInProject(project.id),
-            agentState: session.aggregateAgentStateInProject(project.id),
-            agentBreakdown: session.agentStateBreakdownInProject(project.id),
+            // Strict match: the header's strong "selected" pill only
+            // fires when the project-direct container is active. When a
+            // worktree under this project is active we fall through to
+            // `isDescendantActive` for a softer ancestor-active pill,
+            // so the actual selection (the worktree row) stays the
+            // dominant visual.
+            isActive: session.activeContainerID == .project(project.id),
+            isDescendantActive: {
+                if case let .worktree(pid, _) = session.activeContainerID {
+                    return pid == project.id
+                }
+                return false
+            }(),
+            hasUnread: aggregatesWholeProject
+                ? session.hasUnreadInProject(project.id)
+                : session.hasUnread(in: .project(project.id)),
+            isRinging: aggregatesWholeProject
+                ? session.isRingingInProject(project.id)
+                : session.isRinging(in: .project(project.id)),
+            agentState: aggregatesWholeProject
+                ? session.aggregateAgentStateInProject(project.id)
+                : session.aggregateAgentState(in: .project(project.id)),
+            agentBreakdown: aggregatesWholeProject
+                ? session.agentStateBreakdownInProject(project.id)
+                : session.agentStateBreakdown(in: .project(project.id)),
             // Header tap always activates `.project(id)` — the
             // project-direct ("Default") container. With worktrees,
             // chevron expansion is a separate 16×16 hit target on
