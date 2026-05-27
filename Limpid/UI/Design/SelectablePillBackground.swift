@@ -10,12 +10,14 @@ extension View {
     func selectablePillBackground(
         isActive: Bool,
         isHovering: Bool,
+        isDescendantActive: Bool = false,
         cornerRadius: CGFloat = 12,
         horizontalPadding: CGFloat = 10
     ) -> some View {
         modifier(SelectablePillBackground(
             isActive: isActive,
             isHovering: isHovering,
+            isDescendantActive: isDescendantActive,
             cornerRadius: cornerRadius,
             horizontalPadding: horizontalPadding
         ))
@@ -25,6 +27,12 @@ extension View {
 private struct SelectablePillBackground: ViewModifier {
     let isActive: Bool
     let isHovering: Bool
+    /// `true` when a *descendant* of this row owns selection (e.g. a
+    /// worktree selected under its project header). We dim the pill to
+    /// a softer fill and drop the white stroke so the ancestor reads
+    /// as "in the path of selection" without competing with the actual
+    /// selected row below it.
+    let isDescendantActive: Bool
     let cornerRadius: CGFloat
     let horizontalPadding: CGFloat
 
@@ -43,6 +51,7 @@ private struct SelectablePillBackground: ViewModifier {
 
     private var fill: Color {
         if isActive { return LimpidColor.rowActiveFill }
+        if isDescendantActive { return LimpidColor.rowAncestorActiveFill }
         if isHovering { return LimpidColor.rowHoverFill }
         return .clear
     }

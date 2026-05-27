@@ -168,6 +168,11 @@ struct ContainerRow: View {
 
     let kind: ContainerRowKind
     let isActive: Bool
+    /// `true` when a descendant of this row owns selection — e.g. a
+    /// project header whose worktree is the active container. Draws a
+    /// softer "in-the-path" pill (lighter fill, no stroke) so the
+    /// descendant's selection remains the dominant visual cue.
+    var isDescendantActive: Bool = false
     /// True if any tab in this container (or any container nested
     /// under it for project headers) has unread notifications.
     let hasUnread: Bool
@@ -342,7 +347,11 @@ struct ContainerRow: View {
         .padding(.trailing, 18)
         .frame(height: rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .selectablePillBackground(isActive: isActive, isHovering: isHovering)
+        .selectablePillBackground(
+            isActive: isActive,
+            isHovering: isHovering,
+            isDescendantActive: isDescendantActive
+        )
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         // `.simultaneousGesture(TapGesture)` instead of `.onTapGesture`

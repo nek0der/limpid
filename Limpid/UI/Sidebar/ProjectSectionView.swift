@@ -66,7 +66,19 @@ struct ProjectSectionView: View {
                 totalCount: session.tabs.count(where: { $0.container.projectID == project.id }),
                 isExpanded: project.isExpanded
             ),
-            isActive: session.activeContainerID.projectID == project.id,
+            // Strict match: the header's strong "selected" pill only
+            // fires when the project-direct container is active. When a
+            // worktree under this project is active we fall through to
+            // `isDescendantActive` for a softer ancestor-active pill,
+            // so the actual selection (the worktree row) stays the
+            // dominant visual.
+            isActive: session.activeContainerID == .project(project.id),
+            isDescendantActive: {
+                if case let .worktree(pid, _) = session.activeContainerID {
+                    return pid == project.id
+                }
+                return false
+            }(),
             hasUnread: session.hasUnreadInProject(project.id),
             isRinging: session.isRingingInProject(project.id),
             agentState: session.aggregateAgentStateInProject(project.id),

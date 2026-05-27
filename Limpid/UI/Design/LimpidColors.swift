@@ -44,6 +44,11 @@ enum LimpidColor {
     /// stroke on top of it carries most of the "selected" signal.
     static let rowActiveFill: Color = .primary.opacity(0.08)
     static let rowHoverFill: Color = .primary.opacity(0.04)
+    /// Subdued fill used on a parent row when one of its descendants
+    /// owns selection (e.g. a project header whose worktree is the
+    /// active container). Lighter than `rowActiveFill` and paired with
+    /// no stroke so the descendant's pill remains the dominant cue.
+    static let rowAncestorActiveFill: Color = .primary.opacity(0.03)
     static let tabActiveFill: Color = .primary.opacity(0.10)
     /// Stroke colour applied to the *active* sidebar group pill so the
     /// selection stands out without leaning on the accent palette.
