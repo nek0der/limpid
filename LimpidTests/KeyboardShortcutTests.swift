@@ -124,30 +124,28 @@ struct KeyboardShortcutTests {
         }
     }
 
-    /// The set of `ghosttyAction` strings we emit must match the
-    /// actions libghostty either performs internally or Limpid's
-    /// `GhosttyActionRouter` handles. Snapshot test — when someone
-    /// adds a new non-`nil` `ghosttyAction`, this fails until they
-    /// either update the expected set or wire up the router case,
-    /// preventing a repeat of the NEW_TAB silent-drop regression.
-    @Test("Emitted libghostty actions stay in lockstep with handlers")
+    /// The set of `ghosttyAction` strings we emit must stay limited
+    /// to actions with **no menu item** — otherwise the menu's
+    /// `keyboardShortcut` and libghostty's keybind both fire for the
+    /// same keystroke, producing duplicate actions (e.g. ⌘D
+    /// splitting twice). Snapshot test — when someone adds a new
+    /// non-`nil` `ghosttyAction`, this fails until they confirm the
+    /// action has no menu Button.
+    @Test("Emitted libghostty actions stay limited to menu-less actions")
     func bridge_emittedActionsMatchHandlers() {
         let emitted = Set(LimpidShortcutAction.allCases.compactMap(\.ghosttyAction))
         let expected: Set = [
-            // libghostty completes these internally.
+            // Font-size actions are the only ones libghostty owns —
+            // they have no menu item, so there's no risk of the menu
+            // path also firing.
             "increase_font_size:1",
             "decrease_font_size:1",
-            "reset_font_size",
-            // Limpid handles these via GhosttyActionRouter.
-            "new_split:right",
-            "new_split:down",
-            "close_tab:this",
-            "start_search"
+            "reset_font_size"
         ]
         #expect(emitted == expected, """
-        `ghosttyAction` set drifted. Adding a binding here without a \
-        matching GhosttyActionRouter case (or libghostty-internal \
-        action) causes silent drops on focused surfaces. See \
+        `ghosttyAction` set drifted. Adding a binding for an action \
+        that also has a menu Button reintroduces the double-fire bug \
+        (two splits per ⌘D, two tab closes per ⌘⌥W, etc.). See \
         `LimpidShortcutAction.ghosttyAction` doc.
         """)
     }
@@ -328,10 +326,10 @@ struct KeyboardShortcutTests {
         )
         guard
             let clearIdx = config.range(of: "keybind = clear"),
-            // `.splitRight` routes through libghostty (NEW_SPLIT
-            // handler exists in `GhosttyActionRouter`), so its
-            // default ⌘D shortcut shows up in the emitted config.
-            let userIdx = config.range(of: "keybind = super+d=new_split:right")
+            // `.increaseFontSize` is one of the few actions still
+            // routed through libghostty (no menu item), so its
+            // default ⌘+ shortcut shows up in the emitted config.
+            let userIdx = config.range(of: "keybind = super+shift+==increase_font_size:1")
         else {
             Issue.record("expected `keybind = clear` and a default user binding to appear")
             return

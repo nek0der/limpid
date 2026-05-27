@@ -23,12 +23,6 @@ protocol SurfaceViewProviding: AnyObject {
     /// used by SessionActions when a pane close mutates the tree so
     /// orphaned SurfaceViews don't pile up.
     func reconcile(activeIDs: Set<UUID>)
-    @discardableResult
-    func createInheritedSurface(
-        ghosttyApp: GhosttyApp,
-        from inherited: InheritedSurfaceConfig,
-        paneID: UUID
-    ) -> UUID
 }
 
 @MainActor
@@ -66,22 +60,6 @@ final class SurfaceRegistry: SurfaceViewProviding {
         }
     }
 
-    /// Pre-create a `SurfaceView` for a soon-to-be-inserted SplitTree
-    /// leaf, inheriting libghostty config from another live surface.
-    /// Used by `GhosttyEventCoordinator.handleNewSplit`: the coordinator
-    /// adds the leaf id to the SplitTree, and when SwiftUI eventually
-    /// asks `PaneHostView.makeNSView` for this id, the registry already
-    /// holds the right view.
-    @discardableResult
-    func createInheritedSurface(
-        ghosttyApp: GhosttyApp,
-        from inherited: InheritedSurfaceConfig,
-        paneID: UUID = UUID()
-    ) -> UUID {
-        let view = SurfaceView(ghosttyApp: ghosttyApp, inheritedFrom: inherited.raw)
-        views[paneID] = view
-        return paneID
-    }
 }
 
 /// `SurfaceViewProviding` fallback used as the `EnvironmentValues`
@@ -102,12 +80,4 @@ final class NoopSurfaceRegistry: SurfaceViewProviding {
     func register(_ view: SurfaceView, for id: UUID) {}
     func unregister(_ id: UUID) {}
     func reconcile(activeIDs: Set<UUID>) {}
-    @discardableResult
-    func createInheritedSurface(
-        ghosttyApp: GhosttyApp,
-        from inherited: InheritedSurfaceConfig,
-        paneID: UUID = UUID()
-    ) -> UUID {
-        paneID
-    }
 }

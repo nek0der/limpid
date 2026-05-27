@@ -123,31 +123,32 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     }
 
     /// libghostty action string for `keybind = trigger=action`, or
-    /// `nil` when the menu bar owns the shortcut. Non-`nil` is a
-    /// commitment: libghostty either performs the action entirely
-    /// on its own (font size, start_search) **or** Limpid has a
-    /// matching `action_cb` case in `GhosttyActionRouter` (splits,
-    /// close_tab). Adding a new non-`nil` case without a handler
-    /// would silently drop the keystroke when a terminal surface
-    /// has focus.
+    /// `nil` when the menu bar owns the shortcut. Only actions with
+    /// **no menu item** get a non-`nil` value: the menu bar's
+    /// `keyboardShortcut` and libghostty's keybind table would
+    /// otherwise both match the same keystroke and fire their
+    /// handlers in parallel (menu → `SessionActions.…`, libghostty
+    /// → `GhosttyActionRouter` callback), producing two splits per
+    /// ⌘D / two tab closes per ⌘⌥W / etc. So `splitRight`,
+    /// `splitDown`, `closeTab`, and `find` — all of which have menu
+    /// items — route exclusively through the menu Button. Only the
+    /// three font-size actions stay on the libghostty path because
+    /// they have no menu equivalent.
     var ghosttyAction: String? {
         switch self {
-        case .closeTab: "close_tab:this"
-        case .splitRight: "new_split:right"
-        case .splitDown: "new_split:down"
-        case .find: "start_search"
         case .increaseFontSize: "increase_font_size:1"
         case .decreaseFontSize: "decrease_font_size:1"
         case .resetFontSize: "reset_font_size"
         // Menu-owned + Limpid-only actions: the menu Button or a
         // notification fires `SessionActions.…` directly.
         case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
-             .closeSurface, .toggleSidebar, .notificationHistory,
+             .closeSurface, .closeTab, .toggleSidebar, .notificationHistory,
              .nextSection, .previousSection, .nextTab, .previousTab,
+             .splitRight, .splitDown,
              .equalizeSplits, .toggleSplitZoom,
              .focusPaneLeft, .focusPaneRight,
              .focusPaneUp, .focusPaneDown,
-             .findNext, .findPrevious: nil
+             .find, .findNext, .findPrevious: nil
         }
     }
 

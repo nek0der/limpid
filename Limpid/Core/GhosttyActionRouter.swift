@@ -23,16 +23,14 @@ enum GhosttyEvent {
     case setTitle(SurfaceView, title: String)
     case setPwd(SurfaceView, pwd: String)
     case gotoTab(rawIndex: Int32)
-    case newSplit(origin: SurfaceView, direction: SplitDirection, inherited: InheritedSurfaceConfig)
-    case closeTab(origin: SurfaceView, mode: ghostty_action_close_tab_mode_e)
     case childExited(SurfaceView, exitCode: UInt32, atMs: UInt64)
     case desktopNotification(SurfaceView, title: String, body: String)
     case ringBell(SurfaceView)
     case commandFinished(SurfaceView, exitCode: Int, durationNs: UInt64)
-    /// libghostty asks the apprt to show the in-pane search overlay
-    /// for this surface. `needle` is the initial query (may be empty).
-    case startSearch(SurfaceView, needle: String)
     /// libghostty asks the apprt to dismiss the search overlay.
+    /// Fires in response to Limpid driving `end_search` via
+    /// `ghostty_surface_binding_action` (no libghostty keybind owns
+    /// it anymore — `SessionActions.endSearch` is the only trigger).
     case endSearch(SurfaceView)
     /// Updated total-matches counter for the current search.
     case searchTotal(SurfaceView, total: Int?)
@@ -111,26 +109,6 @@ enum GhosttyActionRouter {
             log.notice("GOTO_TAB raw=\(raw, privacy: .public)")
             return .gotoTab(rawIndex: raw)
 
-        case GHOSTTY_ACTION_NEW_SPLIT:
-            guard target.tag == GHOSTTY_TARGET_SURFACE,
-                  let surface = target.target.surface,
-                  let userdata = ghostty_surface_userdata(surface)
-            else { return nil }
-            let view = SurfaceView.from(userdata: userdata)
-            let inherited = GhosttyFFI.inheritedConfig(from: surface)
-            let payload = action.action.new_split
-            let direction: SplitDirection = (payload.rawValue == GHOSTTY_SPLIT_DIRECTION_DOWN.rawValue
-                || payload.rawValue == GHOSTTY_SPLIT_DIRECTION_UP.rawValue)
-                ? .vertical : .horizontal
-            log.notice("NEW_SPLIT direction=\(payload.rawValue, privacy: .public)")
-            return .newSplit(origin: view, direction: direction, inherited: inherited)
-
-        case GHOSTTY_ACTION_CLOSE_TAB:
-            guard let view = surfaceView(from: target) else { return nil }
-            let mode = action.action.close_tab_mode
-            log.notice("CLOSE_TAB mode=\(mode.rawValue, privacy: .public)")
-            return .closeTab(origin: view, mode: mode)
-
         case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
             guard let view = surfaceView(from: target) else { return nil }
             let payload = action.action.child_exited
@@ -152,14 +130,6 @@ enum GhosttyActionRouter {
             guard let view = surfaceView(from: target) else { return nil }
             log.notice("RING_BELL")
             return .ringBell(view)
-
-        case GHOSTTY_ACTION_START_SEARCH:
-            guard let view = surfaceView(from: target) else { return nil }
-            let needle = action.action.start_search.needle.map { String(cString: $0) } ?? ""
-            // Search needles routinely include API key fragments,
-            // hostnames, or filenames — keep them out of the log.
-            log.notice("START_SEARCH needle=\(needle, privacy: .private)")
-            return .startSearch(view, needle: needle)
 
         case GHOSTTY_ACTION_END_SEARCH:
             guard let view = surfaceView(from: target) else { return nil }
