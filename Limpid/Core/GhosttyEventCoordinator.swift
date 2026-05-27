@@ -14,7 +14,6 @@ private let log = Logger(subsystem: "dev.limpid", category: "ghostty.events")
 @MainActor
 final class GhosttyEventCoordinator {
     private weak var session: WindowSession?
-    private weak var ghosttyApp: GhosttyApp?
     private let registry: any SurfaceViewProviding
     private let notificationManager: LimpidNotificationManager
 
@@ -27,12 +26,10 @@ final class GhosttyEventCoordinator {
     init(
         session: WindowSession,
         registry: any SurfaceViewProviding,
-        ghosttyApp: GhosttyApp?,
         notificationManager: LimpidNotificationManager
     ) {
         self.session = session
         self.registry = registry
-        self.ghosttyApp = ghosttyApp
         self.notificationManager = notificationManager
     }
 
@@ -47,10 +44,6 @@ final class GhosttyEventCoordinator {
             handleSetPwd(view: view, pwd: pwd)
         case let .gotoTab(rawIndex):
             handleGotoTab(rawIndex: rawIndex)
-        case let .newSplit(origin, direction, inherited):
-            handleNewSplit(origin: origin, direction: direction, inherited: inherited)
-        case let .closeTab(origin, mode):
-            handleCloseTab(origin: origin, mode: mode)
         case let .childExited(view, exitCode, _):
             handleChildExited(view: view, exitCode: exitCode)
         case let .desktopNotification(view, title, body):
@@ -59,8 +52,6 @@ final class GhosttyEventCoordinator {
             handleRingBell(view: view)
         case let .commandFinished(view, exitCode, durationNs):
             handleCommandFinished(view: view, exitCode: exitCode, durationNs: durationNs)
-        case let .startSearch(view, needle):
-            handleStartSearch(view: view, needle: needle)
         case let .endSearch(view):
             handleEndSearch(view: view)
         case let .searchTotal(view, total):
@@ -73,13 +64,6 @@ final class GhosttyEventCoordinator {
     }
 
     // MARK: - Search handlers
-
-    private func handleStartSearch(view: SurfaceView, needle: String) {
-        guard let session, let id = registry.id(for: view) else { return }
-        let state = session.paneSearchStates[id] ?? PaneSearchState()
-        state.needle = needle
-        session.paneSearchStates[id] = state
-    }
 
     private func handleEndSearch(view: SurfaceView) {
         guard let session, let id = registry.id(for: view) else { return }
@@ -351,71 +335,6 @@ final class GhosttyEventCoordinator {
     private func handleChildExited(view: SurfaceView, exitCode: UInt32) {
         guard let paneID = registry.id(for: view) else { return }
         session?.setChildExited(paneID: paneID, code: exitCode)
-    }
-
-    /// CLOSE_TAB — libghostty's ⌘W keybind.
-    private func handleCloseTab(origin view: SurfaceView, mode: ghostty_action_close_tab_mode_e) {
-        guard let session,
-              let paneID = registry.id(for: view),
-              let owningTab = session.tab(containing: paneID)
-        else { return }
-
-        let projectID = owningTab.projectID
-        let visible = session.tabs.filter { $0.projectID == projectID }
-        guard let originIdx = visible.firstIndex(where: { $0.id == owningTab.id }) else { return }
-
-        let doomed: [Tab]
-        switch mode {
-        case GHOSTTY_ACTION_CLOSE_TAB_MODE_THIS:
-            doomed = [owningTab]
-        case GHOSTTY_ACTION_CLOSE_TAB_MODE_OTHER:
-            doomed = visible.filter { $0.id != owningTab.id }
-        case GHOSTTY_ACTION_CLOSE_TAB_MODE_RIGHT:
-            doomed = Array(visible[(originIdx + 1)...])
-        default:
-            return
-        }
-
-        for tab in doomed {
-            let leafIDs = tab.splitTree.allLeafIDs()
-            session.closeTab(tab.id)
-            for id in leafIDs {
-                registry.unregister(id)
-            }
-        }
-        log.notice("CLOSE_TAB mode=\(mode.rawValue, privacy: .public) closed \(doomed.count, privacy: .public) tabs")
-    }
-
-    /// NEW_SPLIT — libghostty's ⌘D / ⌘⇧D keybind.
-    private func handleNewSplit(
-        origin originView: SurfaceView,
-        direction dir: SplitDirection,
-        inherited: InheritedSurfaceConfig
-    ) {
-        guard let session,
-              let ghosttyApp,
-              let originPaneID = registry.id(for: originView),
-              let owningTab = session.tab(containing: originPaneID)
-        else {
-            log.debug("NEW_SPLIT dropped (missing context)")
-            return
-        }
-
-        let newPaneID = registry.createInheritedSurface(
-            ghosttyApp: ghosttyApp,
-            from: inherited,
-            paneID: UUID()
-        )
-        session.update(owningTab.id) { tab in
-            let result = tab.splitTree.insert(
-                at: originPaneID,
-                direction: dir,
-                newID: newPaneID
-            )
-            tab.splitTree = result.tree
-            tab.splitTree.focusedLeafID = newPaneID
-        }
-        log.notice("NEW_SPLIT inserted \(newPaneID, privacy: .public) (\(dir == .vertical ? "vertical" : "horizontal", privacy: .public))")
     }
 
     /// CLOSE_SURFACE — fired by `GhosttyApp.closeSurfaceCallback`.

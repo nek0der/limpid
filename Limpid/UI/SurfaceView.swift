@@ -74,24 +74,16 @@ final class SurfaceView: NSView {
         return nil
     }
 
-    /// Optional inherited config provided when a libghostty NEW_SPLIT
-    /// builds the surface — carries the origin pane's cwd, command,
-    /// font etc. so the split lands in the parent's environment.
-    private var inheritedConfig: ghostty_surface_config_s?
-
     /// Initial working directory for the first shell launched inside
     /// this surface. Set by `PaneHostView` from `Tab.workingDirectory`
-    /// before `viewDidMoveToWindow` triggers `createSurface`. Ignored
-    /// when `inheritedConfig` is set (the parent split's cwd wins).
+    /// before `viewDidMoveToWindow` triggers `createSurface`.
     /// Owned C buffer kept alive for ghostty's internal copy.
     var initialWorkingDirectory: String?
     private nonisolated(unsafe) var workingDirectoryCStr: UnsafeMutablePointer<CChar>?
 
     /// Path to a `.vt` file written by `ghostty_surface_write_scrollback`
-    /// on a previous quit. When set on a fresh top-level surface, ghostty
-    /// replays it before the shell starts so the visible state survives
-    /// an app restart. Splits ignore this — they inherit the parent's
-    /// running terminal state instead.
+    /// on a previous quit. When set, ghostty replays it before the
+    /// shell starts so the visible state survives an app restart.
     var initialScrollbackPath: String?
     private nonisolated(unsafe) var scrollbackPathCStr: UnsafeMutablePointer<CChar>?
 
@@ -123,11 +115,6 @@ final class SurfaceView: NSView {
     /// acknowledged (clears the unread dot). Set by `PaneHostView` —
     /// SurfaceView itself doesn't know its pane id or the WindowSession.
     var onUserAcknowledge: (() -> Void)?
-
-    convenience init(ghosttyApp: GhosttyApp, inheritedFrom config: ghostty_surface_config_s) {
-        self.init(ghosttyApp: ghosttyApp)
-        self.inheritedConfig = config
-    }
 
     init(ghosttyApp: GhosttyApp) {
         self.ghosttyApp = ghosttyApp
@@ -751,27 +738,18 @@ extension SurfaceView: @preconcurrency NSTextInputClient {
         let scale = window?.backingScaleFactor ?? 1.0
         let viewPtr = Unmanaged.passUnretained(self).toOpaque()
 
-        // Start from libghostty's inherited config when this surface
-        // descends from a split (so cwd / command / font carry over),
-        // otherwise build a fresh top-level window config.
-        var config: ghostty_surface_config_s
-        if let inherited = inheritedConfig {
-            config = inherited
-        } else {
-            config = ghostty_surface_config_new()
-            config.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
-        }
+        var config = ghostty_surface_config_new()
+        config.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
         config.platform_tag = GHOSTTY_PLATFORM_MACOS
         config.platform.macos.nsview = viewPtr
         config.userdata = viewPtr
         config.scale_factor = scale
 
-        // For fresh top-level surfaces (no inherited config), point
-        // ghostty at the tab's stored cwd so the shell starts in the
-        // project / worktree directory instead of $HOME. The C string
-        // must outlive `ghostty_surface_new`; we stash it on self and
-        // free it in deinit.
-        if inheritedConfig == nil, let wd = initialWorkingDirectory, !wd.isEmpty {
+        // Point ghostty at the tab's stored cwd so the shell starts in
+        // the project / worktree directory instead of $HOME. The C
+        // string must outlive `ghostty_surface_new`; we stash it on
+        // self and free it in deinit.
+        if let wd = initialWorkingDirectory, !wd.isEmpty {
             // `strdup` returns NULL on OOM; handing that NULL to
             // libghostty would crash inside the C side. Skip the cwd
             // override and let the shell fall back to $HOME.
@@ -783,11 +761,9 @@ extension SurfaceView: @preconcurrency NSTextInputClient {
             }
         }
 
-        // Scrollback replay — only on fresh top-level surfaces. Splits
-        // inherit a live terminal state so a replay would corrupt it.
-        // The C string must outlive `ghostty_surface_new`.
-        if inheritedConfig == nil,
-           let path = initialScrollbackPath,
+        // Scrollback replay. The C string must outlive
+        // `ghostty_surface_new`.
+        if let path = initialScrollbackPath,
            !path.isEmpty,
            FileManager.default.fileExists(atPath: path)
         {

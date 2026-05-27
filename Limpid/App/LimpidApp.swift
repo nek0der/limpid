@@ -200,7 +200,6 @@ final class AppState {
         let coordinator = GhosttyEventCoordinator(
             session: session,
             registry: registry,
-            ghosttyApp: ghosttyApp,
             notificationManager: notificationManager
         )
         self.eventCoordinator = coordinator

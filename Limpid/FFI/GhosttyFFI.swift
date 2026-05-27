@@ -10,13 +10,6 @@ import GhosttyKit
 /// All C API access lives here. Upper layers must not call `ghostty_*`
 /// symbols directly — extend this enum with a Swift-friendly signature
 /// instead.
-/// Opaque carrier for `ghostty_surface_config_s`. Lets Core / UI layers
-/// pass an inherited config around without depending on the C struct
-/// directly. Only `GhosttyFFI` and the AppKit surface bridge unwrap it.
-struct InheritedSurfaceConfig: @unchecked Sendable {
-    var raw: ghostty_surface_config_s
-}
-
 enum GhosttyFFI {
     /// Returns the embedded libghostty version string (e.g. "1.3.1").
     static func version() -> String {
@@ -25,20 +18,6 @@ enum GhosttyFFI {
         let bytes = UnsafeBufferPointer(start: cstr, count: Int(info.version_len))
         let data = Data(bytes.map { UInt8(bitPattern: $0) })
         return String(bytes: data, encoding: .utf8) ?? "unknown"
-    }
-
-    /// Ask libghostty for a `surface_config_s` that inherits the source
-    /// surface's environment (cwd, command, font, scroll history) for a
-    /// new sibling. Used when libghostty fires `NEW_SPLIT` so the new
-    /// pane starts in the same directory as the originating pane.
-    /// The result is wrapped in `InheritedSurfaceConfig` so layers above
-    /// FFI never need to import `GhosttyKit` just to pass the value
-    /// around.
-    static func inheritedConfig(
-        from surface: ghostty_surface_t,
-        context: ghostty_surface_context_e = GHOSTTY_SURFACE_CONTEXT_SPLIT
-    ) -> InheritedSurfaceConfig {
-        InheritedSurfaceConfig(raw: ghostty_surface_inherited_config(surface, context))
     }
 
     /// Build mode libghostty was compiled with.
