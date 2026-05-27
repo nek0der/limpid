@@ -240,6 +240,24 @@ final class AppState {
         let watcher = SettingsFileWatcher(store: settingsStore)
         watcher.start()
         self.settingsWatcher = watcher
+
+        // Register the ⌘Q + tab/pane close gates. Gate bodies live in
+        // `AppState+QuitGate.swift`.
+        registerConfirmGates()
+    }
+
+    /// Wire the static gate slots that AppKit / `CloseConfirmer`
+    /// consult on user-initiated terminate / close. Done after init
+    /// so `session` and `settingsStore` are fully wired before any
+    /// close attempt can route through here. Weak self keeps the
+    /// static slots from extending AppState's lifetime.
+    private func registerConfirmGates() {
+        LimpidAppDelegate.quitGate = { [weak self] in
+            self?.shouldAllowQuit() ?? true
+        }
+        CloseConfirmer.gate = { [weak self] request in
+            self?.shouldAllowClose(request) ?? true
+        }
     }
 
     /// Bridge `SettingsStore.settings` → libghostty live reload.
@@ -479,6 +497,7 @@ private struct OpenSettingsCommand: View {
 
 @main
 struct LimpidApp: App {
+    @NSApplicationDelegateAdaptor(LimpidAppDelegate.self) private var appDelegate
     @State private var state = AppState()
 
     /// Direction-focus actions need >1 leaf AND no active zoom — the

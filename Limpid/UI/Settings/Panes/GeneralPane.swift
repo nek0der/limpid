@@ -27,11 +27,63 @@ struct GeneralPane: View {
                 Text("App content updates immediately. The macOS menu bar updates on next launch.")
             }
 
+            ConfirmationsSection()
+
             if let updater {
                 UpdatesSection(updater: updater)
             }
 
             AboutSection()
+        }
+    }
+}
+
+/// Four pickers. The keyboard / mouse split for tab close is
+/// intentional — the × button is the most mis-clicked affordance in
+/// the app, so users tend to want it stricter than the deliberate
+/// ⌘W / ⌘⌥W keystroke. ⌘Q is app-wide. Pane close has no mouse
+/// path, so it sits as a single knob.
+private struct ConfirmationsSection: View {
+    @Environment(SettingsStore.self) private var settings
+
+    var body: some View {
+        @Bindable var settings = settings
+        Section {
+            policyPicker("Quit Limpid", binding: $settings.settings.confirmations.quit)
+            policyPicker(
+                "Close Tab (Keyboard)",
+                binding: $settings.settings.confirmations.closeTabKeyboard
+            )
+            policyPicker(
+                "Close Tab (X Button)",
+                binding: $settings.settings.confirmations.closeTabMouse
+            )
+            policyPicker("Close Pane", binding: $settings.settings.confirmations.closePane)
+        } header: {
+            Text("Confirmations")
+        } footer: {
+            Text("\"Only when an agent is active\" prompts only when a tracked agent is live in the affected pane.")
+        }
+    }
+
+    private func policyPicker(
+        _ title: LocalizedStringKey,
+        binding: Binding<ConfirmPolicy>
+    ) -> some View {
+        Picker(title, selection: binding) {
+            ForEach(ConfirmPolicy.allCases, id: \.self) { policy in
+                Text(policy.localizedTitle).tag(policy)
+            }
+        }
+    }
+}
+
+extension ConfirmPolicy {
+    var localizedTitle: String {
+        switch self {
+        case .never: String(localized: "Never")
+        case .onlyWhenAgent: String(localized: "Only when an agent is active")
+        case .always: String(localized: "Always")
         }
     }
 }
