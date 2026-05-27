@@ -8,20 +8,21 @@ import Foundation
 
 enum ClaudeResumeCommandBuilder {
     /// Shell command that tries the persisted session first, then
-    /// falls back to `--continue` (cwd's most recent session), then to
-    /// a fresh `claude`. The chain uses `||` against exit codes so a
-    /// stale or pruned session id (Claude rotates them, and the
-    /// default 30-day cleanup eventually drops the on-disk JSONL)
-    /// transparently degrades instead of leaving the user staring at
-    /// a "No conversation found" error.
+    /// falls back to a fresh `claude` if the id is stale or pruned
+    /// (Claude rotates them, and the default 30-day cleanup eventually
+    /// drops the on-disk JSONL). We deliberately do *not* chain
+    /// `claude --continue` in between: it picks the cwd's most recent
+    /// session, which means several panes in the same cwd would all
+    /// land on the same conversation and silently collapse into one.
+    /// A fresh shell is more predictable; the user can run
+    /// `claude --continue` themselves if that's what they wanted.
     ///
     /// When `cwd` is non-nil and non-empty, we prepend
     /// `cd '<cwd>' && …` so `claude --resume` runs in the same dir
     /// the session was originally captured in — Claude rejects resume
-    /// otherwise and `--continue` would silently grab the wrong
-    /// session.
+    /// otherwise.
     static func resumeCommand(sessionId: String, cwd: String? = nil) -> String {
-        let base = "claude --resume \(sessionId) 2>/dev/null || claude --continue 2>/dev/null || claude"
+        let base = "claude --resume \(sessionId) 2>/dev/null || claude"
         guard let cwd, !cwd.isEmpty else { return base }
         return "cd \(singleQuote(cwd)) && \(base)"
     }

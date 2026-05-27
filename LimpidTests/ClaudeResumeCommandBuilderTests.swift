@@ -10,10 +10,10 @@ import Testing
 @MainActor
 @Suite("ClaudeResumeCommandBuilder")
 struct ClaudeResumeCommandBuilderTests {
-    @Test("resumeCommand emits the resume → continue → claude fallback chain when no cwd is given")
+    @Test("resumeCommand emits the resume → fresh-claude fallback chain when no cwd is given")
     func resumeCommand_emitsFallbackChain_withoutCwd() {
         let cmd = ClaudeResumeCommandBuilder.resumeCommand(sessionId: "abc-123")
-        #expect(cmd == "claude --resume abc-123 2>/dev/null || claude --continue 2>/dev/null || claude")
+        #expect(cmd == "claude --resume abc-123 2>/dev/null || claude")
     }
 
     @Test("resumeCommand prepends a quoted cd when a cwd is supplied")
@@ -22,7 +22,7 @@ struct ClaudeResumeCommandBuilderTests {
             sessionId: "abc-123",
             cwd: "/tmp/repo"
         )
-        #expect(cmd == "cd '/tmp/repo' && claude --resume abc-123 2>/dev/null || claude --continue 2>/dev/null || claude")
+        #expect(cmd == "cd '/tmp/repo' && claude --resume abc-123 2>/dev/null || claude")
     }
 
     @Test("resumeCommand single-quote-escapes spaces and apostrophes in cwd")
