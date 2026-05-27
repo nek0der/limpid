@@ -44,6 +44,23 @@ struct TabRow: View {
             .aggregateClaudeState()
     }
 
+    /// Leading identity icon: does an AI agent (currently only Claude,
+    /// via the shim hooks) have a live session in any of this tab's
+    /// panes — whether actively working or sitting idle? Distinct from
+    /// `aggregateAgentState`, which drives the trailing *activity*
+    /// badge: a tab where Claude sits idle waiting for the next prompt
+    /// is still an agent tab (`.idle` counts) even though it shows no
+    /// activity badge. We key off badge *presence* with a non-`.unknown`
+    /// state so the icon flips back to a plain terminal once the session
+    /// ends (`.unknown`) or the badge is dropped — independent of how
+    /// SessionEnd is recorded.
+    private var isAgentTab: Bool {
+        tab.splitTree.allLeafIDs().contains { leaf in
+            guard let state = tab.claudeAgentBadges[leaf]?.state else { return false }
+            return state != .unknown
+        }
+    }
+
     /// Build the hover tooltip for the agent-state icon. Includes
     /// the dominant pane's detail and elapsed seconds when a single
     /// pane is involved; falls back to a count summary for multi-
@@ -81,6 +98,16 @@ struct TabRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // Leading identity glyph: a sparkles mark when an agent has
+            // a live session in the tab (currently Claude, via the shim
+            // hooks), otherwise a plain terminal mark. Always present so
+            // the row reads as "AI vs plain terminal" at a glance. We
+            // distinguish by glyph only — both share the same monochrome
+            // tint so the AI rows don't shout with an accent colour.
+            Image(systemName: isAgentTab ? "sparkles" : "terminal")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16, height: 16)
             InlineRenameField(
                 text: $draft,
                 isEditing: $isEditing,
