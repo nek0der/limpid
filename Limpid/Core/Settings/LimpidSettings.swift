@@ -29,11 +29,34 @@ struct LimpidSettings: Codable, Equatable {
     var appearance: AppearanceSettings = .init()
     var font: FontSettings = .init()
     var terminal: TerminalSettings = .init()
+    var keyboard: KeyboardSettings = .init()
     var advanced: AdvancedSettings = .init()
 
     static let currentSchemaVersion = 1
 
     static let `default` = LimpidSettings()
+
+    init() {}
+
+    /// Hand-rolled decoder specifically so a `settings.json` written
+    /// before `keyboard` existed still loads cleanly — synthesized
+    /// Codable would throw `keyNotFound` and discard every other
+    /// section the user has carefully tuned. Note that `appearance`
+    /// / `font` / `terminal` / `advanced` are still `decode` (not
+    /// `decodeIfPresent`): they predate this PR and are always
+    /// written by `saveNow`, so a missing one means the file is
+    /// genuinely corrupt. New optional sections added later should
+    /// follow `keyboard`'s pattern (decodeIfPresent + default init).
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion)
+            ?? Self.currentSchemaVersion
+        self.appearance = try c.decode(AppearanceSettings.self, forKey: .appearance)
+        self.font = try c.decode(FontSettings.self, forKey: .font)
+        self.terminal = try c.decode(TerminalSettings.self, forKey: .terminal)
+        self.keyboard = try c.decodeIfPresent(KeyboardSettings.self, forKey: .keyboard) ?? .init()
+        self.advanced = try c.decode(AdvancedSettings.self, forKey: .advanced)
+    }
 }
 
 // MARK: - Appearance
@@ -203,6 +226,99 @@ enum CursorStyle: String, Codable, CaseIterable {
     case block
     case bar
     case underline
+}
+
+// MARK: - Keyboard
+
+/// Outcome of `KeyboardSettings.validate`. The recorder surfaces
+/// these to the user as a small warning under the row; `.ok` is the
+/// only outcome that commits.
+enum ShortcutValidation: Equatable {
+    case ok
+    /// Another action is already bound to the same trigger.
+    case conflict(LimpidShortcutAction)
+    /// Trigger collides with a parametric range Limpid reserves
+    /// (⌘1…⌘9, ⌘⌃1…⌘⌃9). See `ReservedShortcuts`.
+    case reserved
+    /// Modifier-less binding — would hijack every plain keystroke
+    /// of that character and break terminal input. The recorder
+    /// requires at least one of ⌘/⌥/⌃/⇧.
+    case missingModifier
+}
+
+/// User-bound shortcuts. Each entry overrides libghostty's default
+/// for the same action; entries omitted from this map keep the
+/// `LimpidShortcutAction.defaultShortcut` value, which itself
+/// mirrors Ghostty's macOS defaults. Storing only the overrides
+/// (instead of the full table) keeps `settings.json` short and
+/// makes "reset to default" a `removeValue(forKey:)`.
+struct KeyboardSettings: Codable, Equatable {
+    /// Action rawValue → override. Stored keyed by `String` so the
+    /// on-disk JSON is a readable map (`{"newTab": {…}}`) instead
+    /// of the array shape Swift uses for non-String-keyed enum
+    /// dictionaries. Unknown rawValues (e.g. an action removed in
+    /// a future version) decode silently to nothing.
+    var overrides: [String: StoredShortcut] = [:]
+
+    /// Defensive decoder so settings.json files written before this
+    /// key existed still load cleanly. Same pattern other sections
+    /// use.
+    init() {}
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.overrides = try c.decodeIfPresent(
+            [String: StoredShortcut].self,
+            forKey: .overrides
+        ) ?? [:]
+    }
+
+    /// Effective shortcut for `action`: user override if present,
+    /// otherwise the action's built-in default. Returns `nil` only
+    /// when the user has explicitly cleared the binding (reserved
+    /// for a future "Unbind" affordance — currently every action
+    /// has a default).
+    func shortcut(for action: LimpidShortcutAction) -> StoredShortcut? {
+        overrides[action.rawValue] ?? action.defaultShortcut
+    }
+
+    /// Conflict-check `proposed` against every other action's
+    /// effective shortcut. Returns `.ok` if safe to assign, or the
+    /// reason we can't. Called by the recorder before committing —
+    /// Pattern A means two actions sharing a trigger would silently
+    /// pick one winner in libghostty's last-write-wins, which is
+    /// always surprising; we reject up front instead.
+    func validate(
+        _ proposed: StoredShortcut,
+        for action: LimpidShortcutAction
+    ) -> ShortcutValidation {
+        // Require at least one of ⌘/⌥/⌃/⇧. A bare letter would
+        // hijack every plain keypress of that character and make
+        // the terminal untypeable.
+        if proposed.modifiers.isEmpty {
+            return .missingModifier
+        }
+        if ReservedShortcuts.triggers.contains(proposed.ghosttyTrigger) {
+            return .reserved
+        }
+        for other in LimpidShortcutAction.allCases where other != action {
+            if shortcut(for: other) == proposed {
+                return .conflict(other)
+            }
+        }
+        return .ok
+    }
+
+    /// Replace (or set) the override for `action`.
+    mutating func setOverride(_ shortcut: StoredShortcut, for action: LimpidShortcutAction) {
+        overrides[action.rawValue] = shortcut
+    }
+
+    /// Drop the user override so the action falls back to its
+    /// built-in default.
+    mutating func resetOverride(for action: LimpidShortcutAction) {
+        overrides.removeValue(forKey: action.rawValue)
+    }
 }
 
 // MARK: - Advanced

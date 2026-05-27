@@ -384,44 +384,52 @@ final class SurfaceView: NSView {
             NSApp.terminate(nil)
             return true
         }
+
+        // libghostty keybind fast-path. Lets the binding fire before
+        // the menu bar / IME chain swallows it (notably JIS Kotoeri
+        // grabbing ⌘⇧- in `interpretKeyEvents`). We redispatch via
+        // `keyDown` rather than calling `ghostty_surface_key`
+        // directly — calling it from `performKeyEquivalent` looks
+        // like it works but the action callback never fires.
+        // Same pattern as Ghostty's macOS app.
+        if event.type == .keyDown,
+           let surface,
+           Self.eventHitsKeybind(event: event, surface: surface)
+        {
+            self.keyDown(with: event)
+            return true
+        }
+
         return super.performKeyEquivalent(with: event)
     }
 
     override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags
 
-        // Fast path for control-modified terminal input (Ctrl+C, Ctrl+D, …).
-        // These are terminal control input, not text composition: bypass
-        // AppKit's text interpretation and route directly through libghostty,
-        // exactly how cmux does it (see cmux: GhosttyTerminalView.keyDown).
+        // Fast path for control-modified terminal input (Ctrl+C,
+        // Ctrl+D, …). These are terminal control input, not text
+        // composition: bypass AppKit's text interpretation and route
+        // directly through libghostty. Mirrors cmux's pattern. Gated
+        // on `!hasMarkedText()` so an active IME composition can
+        // still own Ctrl-keys it cares about (e.g. cancel).
         if flags.contains(.control),
            !flags.contains(.command),
            !flags.contains(.option),
            !hasMarkedText(),
            let surface
         {
-            var keyEvent = ghostty_input_key_s()
-            keyEvent.action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
-            keyEvent.keycode = UInt32(event.keyCode)
-            keyEvent.mods = Self.translateMods(flags)
-            keyEvent.consumed_mods = GHOSTTY_MODS_NONE
-            keyEvent.composing = false
-            keyEvent.unshifted_codepoint = 0
-            if let unshifted = event.characters(byApplyingModifiers: []),
-               let scalar = unshifted.unicodeScalars.first
-            {
-                keyEvent.unshifted_codepoint = scalar.value
-            }
+            var key = Self.makeKeyEvent(
+                from: event,
+                action: GHOSTTY_ACTION_PRESS,
+                consumedMods: GHOSTTY_MODS_NONE
+            )
+            // libghostty encodes the actual control byte itself
+            // (Ctrl+C → 0x03), so we hand it the unshifted character
+            // and let its encoder do the work.
             let text = event.charactersIgnoringModifiers ?? event.characters ?? ""
-            let handled: Bool
-            if text.isEmpty {
-                keyEvent.text = nil
-                handled = ghostty_surface_key(surface, keyEvent)
-            } else {
-                handled = text.withCString { ptr in
-                    keyEvent.text = ptr
-                    return ghostty_surface_key(surface, keyEvent)
-                }
+            let handled = text.withCString { ptr in
+                key.text = text.isEmpty ? nil : ptr
+                return ghostty_surface_key(surface, key)
             }
             if handled { return }
             // Otherwise fall through and let IME try.
@@ -446,21 +454,24 @@ final class SurfaceView: NSView {
         keyTextAccumulator = []
         defer { keyTextAccumulator = nil }
 
-        let consumed = inputContext?.handleEvent(event) ?? false
+        _ = inputContext?.handleEvent(event)
         let accumulated = keyTextAccumulator ?? []
 
         if !accumulated.isEmpty {
-            // IME committed text via insertText: — forward each chunk as a
-            // key event so libghostty's encoder runs normally.
+            // IME committed text via insertText: — forward each chunk
+            // as a key event so libghostty's encoder runs normally.
             for text in accumulated {
                 forward(event, action: GHOSTTY_ACTION_PRESS, overrideText: text)
             }
-        } else if !consumed {
-            // Plain key (no IME consumption, no commit) — forward as-is.
+        } else if !hasMarkedText() {
+            // No accumulated text, no preedit — forward as-is.
+            // Ignoring `handleEvent`'s return value matches Ghostty /
+            // cmux: Kotoeri returns "consumed" for Shift+⌘ combos
+            // with no committed text, which would otherwise drop
+            // legitimate keybinds.
             forward(event, action: GHOSTTY_ACTION_PRESS)
         }
-        // else: IME consumed but emitted no text (e.g. dead-key composing,
-        // or cancelOperation: which `doCommand:` already re-forwarded).
+        // else: preedit active — the keystroke belongs to the IME.
     }
 
     /// Returns true for keys that the input context tends to swallow as
@@ -495,26 +506,20 @@ final class SurfaceView: NSView {
         overrideText: String? = nil
     ) -> Bool {
         guard let surface else { return false }
-
-        var key = ghostty_input_key_s()
-        key.action = (event.type == .keyDown && event.isARepeat) ? GHOSTTY_ACTION_REPEAT : action
-        key.keycode = UInt32(event.keyCode)
-        key.mods = Self.translateMods(event.modifierFlags)
-        key.consumed_mods = Self.translateMods(
+        let consumedMods = Self.translateMods(
             event.modifierFlags.subtracting([.control, .command])
         )
-        key.unshifted_codepoint = 0
-        if let unshifted = event.characters(byApplyingModifiers: []),
-           let scalar = unshifted.unicodeScalars.first
-        {
-            key.unshifted_codepoint = scalar.value
+        var key = Self.makeKeyEvent(from: event, action: action, consumedMods: consumedMods)
+        // Text source: explicit override (IME accumulator) wins;
+        // otherwise re-encode with only text-shaping mods so JIS
+        // Shift+⌘+- surfaces as "=" (see `bindingText` for why).
+        let textSource: String? = if let overrideText {
+            overrideText
+        } else if suppressText {
+            nil
+        } else {
+            Self.bindingText(from: event)
         }
-        key.composing = false
-
-        // Pick text source: explicit override (IME accumulator), otherwise
-        // event.characters unless suppressed.
-        let textSource: String? = if let overrideText { overrideText } else if suppressText { nil } else { event.characters }
-
         var handled = false
         if let chars = textSource, !chars.isEmpty {
             chars.withCString { ptr in
@@ -630,16 +635,6 @@ final class SurfaceView: NSView {
         let x = Double(p.x)
         let y = Double(bounds.height - p.y)
         ghostty_surface_mouse_pos(surface, x, y, Self.translateMods(event.modifierFlags))
-    }
-
-    private static func translateMods(_ flags: NSEvent.ModifierFlags) -> ghostty_input_mods_e {
-        var mods: UInt32 = GHOSTTY_MODS_NONE.rawValue
-        if flags.contains(.shift) { mods |= GHOSTTY_MODS_SHIFT.rawValue }
-        if flags.contains(.control) { mods |= GHOSTTY_MODS_CTRL.rawValue }
-        if flags.contains(.option) { mods |= GHOSTTY_MODS_ALT.rawValue }
-        if flags.contains(.command) { mods |= GHOSTTY_MODS_SUPER.rawValue }
-        if flags.contains(.capsLock) { mods |= GHOSTTY_MODS_CAPS.rawValue }
-        return ghostty_input_mods_e(mods)
     }
 
     fileprivate func pushPreedit() {

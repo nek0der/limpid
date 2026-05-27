@@ -564,7 +564,7 @@ struct LimpidApp: App {
                 } label: {
                     Label("New Tab", systemImage: "plus.rectangle")
                 }
-                .keyboardShortcut("t", modifiers: .command)
+                .limpidShortcut(.newTab, in: state.settingsStore)
                 // ⌘⌥N raises the Create Worktree sheet for the active
                 // project. Routed through a Notification so the
                 // sidebar (which owns the sheet state) can present it
@@ -580,21 +580,21 @@ struct LimpidApp: App {
                 } label: {
                     Label("New Worktree…", systemImage: "arrow.triangle.branch")
                 }
-                .keyboardShortcut("n", modifiers: [.command, .option])
+                .limpidShortcut(.newWorktree, in: state.settingsStore)
                 .disabled(state.session.activeContainerID.projectID == nil)
                 Button {
                     SessionActions.renameActiveTab(state.session)
                 } label: {
                     Label("Rename Tab", systemImage: "pencil")
                 }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .limpidShortcut(.renameTab, in: state.settingsStore)
                 .disabled(state.session.activeTab == nil)
                 Button {
                     SessionActions.reopenClosedTab(state.session)
                 } label: {
                     Label("Reopen Closed Tab", systemImage: "arrow.uturn.backward.square")
                 }
-                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .limpidShortcut(.reopenClosedTab, in: state.settingsStore)
                 .disabled(state.session.closedTabStack.isEmpty)
             }
             CommandGroup(after: .newItem) {
@@ -611,10 +611,9 @@ struct LimpidApp: App {
                 } label: {
                     Label("Close Pane", systemImage: "xmark")
                 }
-                .keyboardShortcut("w", modifiers: .command)
-                // ⌘⌥W → force-close the entire tab regardless of how
-                // many panes it contains. "Force" prefix disambiguates
-                // from the cascade variant above.
+                .limpidShortcut(.closeSurface, in: state.settingsStore)
+                // ⌘⌥W → close the entire tab regardless of how many
+                // panes it contains (no per-pane cascade).
                 Button {
                     SessionActions.closeActiveTab(
                         state.session,
@@ -624,7 +623,7 @@ struct LimpidApp: App {
                 } label: {
                     Label("Close Tab", systemImage: "xmark.rectangle")
                 }
-                .keyboardShortcut("w", modifiers: [.command, .option])
+                .limpidShortcut(.closeTab, in: state.settingsStore)
             }
             // ── View menu ─────────────────────────────────────
             CommandGroup(after: .sidebar) {
@@ -635,7 +634,7 @@ struct LimpidApp: App {
                 } label: {
                     Label("Toggle Sidebar", systemImage: "sidebar.left")
                 }
-                .keyboardShortcut("b", modifiers: .command)
+                .limpidShortcut(.toggleSidebar, in: state.settingsStore)
             }
             // ⌘1 … ⌘9 → jump to the Nth tab in the active container.
             CommandGroup(after: .windowList) {
@@ -653,13 +652,13 @@ struct LimpidApp: App {
                 } label: {
                     Label("Next Section", systemImage: "chevron.right")
                 }
-                .keyboardShortcut("]", modifiers: .command)
+                .limpidShortcut(.nextSection, in: state.settingsStore)
                 Button {
                     SessionActions.cycleContainer(state.session, forward: false)
                 } label: {
                     Label("Previous Section", systemImage: "chevron.left")
                 }
-                .keyboardShortcut("[", modifiers: .command)
+                .limpidShortcut(.previousSection, in: state.settingsStore)
                 // ⌘⌃1 … ⌘⌃9 → jump to the Nth top-level container.
                 ForEach(1...9, id: \.self) { n in
                     Button {
@@ -676,7 +675,7 @@ struct LimpidApp: App {
                 } label: {
                     Label("Notification History", systemImage: "bell")
                 }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .limpidShortcut(.notificationHistory, in: state.settingsStore)
             }
             CommandGroup(after: .textEditing) {
                 // Find affordances are pane-scoped — the in-pane
@@ -690,19 +689,19 @@ struct LimpidApp: App {
                     } label: {
                         Label("Find…", systemImage: "magnifyingglass")
                     }
-                    .keyboardShortcut("f", modifiers: .command)
+                    .limpidShortcut(.find, in: state.settingsStore)
                     Button {
                         SessionActions.searchNext(state.session, registry: state.registry)
                     } label: {
                         Label("Find Next", systemImage: "chevron.down")
                     }
-                    .keyboardShortcut("g", modifiers: .command)
+                    .limpidShortcut(.findNext, in: state.settingsStore)
                     Button {
                         SessionActions.searchPrevious(state.session, registry: state.registry)
                     } label: {
                         Label("Find Previous", systemImage: "chevron.up")
                     }
-                    .keyboardShortcut("g", modifiers: [.command, .shift])
+                    .limpidShortcut(.findPrevious, in: state.settingsStore)
                 }
                 .disabled(state.session.activeTab == nil)
             }
@@ -712,19 +711,19 @@ struct LimpidApp: App {
                 } label: {
                     Label("Split Right", systemImage: "rectangle.split.2x1")
                 }
-                .keyboardShortcut("d", modifiers: .command)
+                .limpidShortcut(.splitRight, in: state.settingsStore)
                 Button {
                     SessionActions.split(state.session, direction: .vertical)
                 } label: {
                     Label("Split Down", systemImage: "rectangle.split.1x2")
                 }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .limpidShortcut(.splitDown, in: state.settingsStore)
                 Button {
                     SessionActions.equalizeSplits(state.session)
                 } label: {
                     Label("Equalize Splits", systemImage: "rectangle.split.2x1.slash")
                 }
-                .keyboardShortcut("=", modifiers: [.command, .option])
+                .limpidShortcut(.equalizeSplits, in: state.settingsStore)
                 .disabled(state.session.activeTab?.splitTree.isSplit != true)
                 Button {
                     SessionActions.toggleZoom(state.session)
@@ -737,7 +736,7 @@ struct LimpidApp: App {
                 }
                 // ⌘⇧Return matches cmux + iTerm2's "maximize pane" key.
                 // ⌘⇧Z would steal the system Redo shortcut.
-                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .limpidShortcut(.toggleSplitZoom, in: state.settingsStore)
                 .disabled(state.session.activeTab?.splitTree.isSplit != true)
                 Divider()
                 Button {
@@ -745,28 +744,28 @@ struct LimpidApp: App {
                 } label: {
                     Label("Focus Left Pane", systemImage: "arrow.left")
                 }
-                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                .limpidShortcut(.focusPaneLeft, in: state.settingsStore)
                 .disabled(!canFocusAdjacentPane)
                 Button {
                     SessionActions.focusPane(state.session, registry: state.registry, direction: .right)
                 } label: {
                     Label("Focus Right Pane", systemImage: "arrow.right")
                 }
-                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                .limpidShortcut(.focusPaneRight, in: state.settingsStore)
                 .disabled(!canFocusAdjacentPane)
                 Button {
                     SessionActions.focusPane(state.session, registry: state.registry, direction: .up)
                 } label: {
                     Label("Focus Pane Above", systemImage: "arrow.up")
                 }
-                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                .limpidShortcut(.focusPaneUp, in: state.settingsStore)
                 .disabled(!canFocusAdjacentPane)
                 Button {
                     SessionActions.focusPane(state.session, registry: state.registry, direction: .down)
                 } label: {
                     Label("Focus Pane Below", systemImage: "arrow.down")
                 }
-                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                .limpidShortcut(.focusPaneDown, in: state.settingsStore)
                 .disabled(!canFocusAdjacentPane)
                 Divider()
                 Button {
@@ -774,13 +773,13 @@ struct LimpidApp: App {
                 } label: {
                     Label("Next Tab", systemImage: "arrow.right")
                 }
-                .keyboardShortcut("]", modifiers: [.command, .shift])
+                .limpidShortcut(.nextTab, in: state.settingsStore)
                 Button {
                     SessionActions.cycleTab(state.session, forward: false)
                 } label: {
                     Label("Previous Tab", systemImage: "arrow.left")
                 }
-                .keyboardShortcut("[", modifiers: [.command, .shift])
+                .limpidShortcut(.previousTab, in: state.settingsStore)
             }
         }
 

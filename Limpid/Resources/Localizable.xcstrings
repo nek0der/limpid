@@ -2185,6 +2185,206 @@
         }
       }
     },
+    "Keyboard": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーボード"
+          }
+        }
+      }
+    },
+    "Navigation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ナビゲーション"
+          }
+        }
+      }
+    },
+    "Splits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分割"
+          }
+        }
+      }
+    },
+    "File": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイル"
+          }
+        }
+      }
+    },
+    "View": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示"
+          }
+        }
+      }
+    },
+    "Find": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索"
+          }
+        }
+      }
+    },
+    "Increase Font Size": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォントを大きく"
+          }
+        }
+      }
+    },
+    "Decrease Font Size": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォントを小さく"
+          }
+        }
+      }
+    },
+    "Reset Font Size": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォントサイズをリセット"
+          }
+        }
+      }
+    },
+    "Toggle Split Zoom": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分割ズームの切り替え"
+          }
+        }
+      }
+    },
+    "Press a key…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーを押してください…"
+          }
+        }
+      }
+    },
+    "Unbound": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未割り当て"
+          }
+        }
+      }
+    },
+    "Reset to default": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトに戻す"
+          }
+        }
+      }
+    },
+    "Click a shortcut to rebind it. Press ⎋ to cancel, ⌫ to clear back to default. ⌘1–⌘9 and ⌘⌃1–⌘⌃9 are reserved for tab and section jumps.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ショートカットをクリックして再割り当て。⎋ でキャンセル、⌫ でデフォルトに戻す。⌘1–⌘9 と ⌘⌃1–⌘⌃9 はタブ/セクション切替に予約されています。"
+          }
+        }
+      }
+    },
+    "Restore Defaults": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトに戻す"
+          }
+        }
+      }
+    },
+    "Restore all keyboard shortcuts to defaults?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのショートカットをデフォルトに戻しますか？"
+          }
+        }
+      }
+    },
+    "This cannot be undone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この操作は取り消せません。"
+          }
+        }
+      }
+    },
+    "Shortcut must include ⌘, ⌥, ⌃, or ⇧": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ショートカットには ⌘, ⌥, ⌃, または ⇧ を含める必要があります"
+          }
+        }
+      }
+    },
+    "Already bound to %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に既に割り当て済み"
+          }
+        }
+      }
+    },
+    "Reserved by Limpid (⌘1–⌘9, ⌘⌃1–⌘⌃9)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid 予約 (⌘1–⌘9, ⌘⌃1–⌘⌃9)"
+          }
+        }
+      }
+    },
     "Terminal": {
       "localizations": {
         "ja": {
