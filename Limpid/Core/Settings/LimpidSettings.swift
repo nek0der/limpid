@@ -30,6 +30,7 @@ struct LimpidSettings: Codable, Equatable {
     var font: FontSettings = .init()
     var terminal: TerminalSettings = .init()
     var keyboard: KeyboardSettings = .init()
+    var confirmations: ConfirmationSettings = .init()
     var advanced: AdvancedSettings = .init()
 
     static let currentSchemaVersion = 1
@@ -55,7 +56,61 @@ struct LimpidSettings: Codable, Equatable {
         self.font = try c.decode(FontSettings.self, forKey: .font)
         self.terminal = try c.decode(TerminalSettings.self, forKey: .terminal)
         self.keyboard = try c.decodeIfPresent(KeyboardSettings.self, forKey: .keyboard) ?? .init()
+        self.confirmations = try c.decodeIfPresent(
+            ConfirmationSettings.self, forKey: .confirmations
+        ) ?? .init()
         self.advanced = try c.decode(AdvancedSettings.self, forKey: .advanced)
+    }
+}
+
+// MARK: - Confirmations
+
+/// Tri-state policy for destructive actions (⌘Q, tab/pane close).
+/// `onlyWhenAgent` consults the live-agent predicate; the modal body
+/// always reflects actual state (agent-specific copy iff an agent is
+/// live), so `always` without an agent renders a plain "Close tab?"
+/// without misleading agent copy.
+enum ConfirmPolicy: String, Codable, CaseIterable {
+    case never
+    /// Raw value kept as `dirtyOnly` so existing `settings.json` files
+    /// written under the prior name still decode cleanly.
+    case onlyWhenAgent = "dirtyOnly"
+    case always
+}
+
+/// Per-action confirmation policy. The keyboard / mouse split for tab
+/// close is intentional: the × button is the most mis-clicked
+/// affordance in the app and warrants its own knob so the user can
+/// keep it strict while leaving deliberate ⌘W / ⌘⌥W untouched. Pane
+/// close has only a keyboard path today, so there's no mouse twin.
+///
+/// Every close path — SwiftUI menu, libghostty's `close_tab` action,
+/// L2's × button — funnels through `CloseConfirmer`, which consults
+/// the right field below based on the request's `(kind, source)`. So
+/// a new caller can't accidentally bypass confirmation by reaching
+/// for `session.closeTab` directly.
+struct ConfirmationSettings: Codable, Equatable {
+    var quit: ConfirmPolicy = .onlyWhenAgent
+    var closeTabKeyboard: ConfirmPolicy = .onlyWhenAgent
+    var closeTabMouse: ConfirmPolicy = .onlyWhenAgent
+    var closePane: ConfirmPolicy = .onlyWhenAgent
+
+    init() {}
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.quit = try c.decodeIfPresent(
+            ConfirmPolicy.self, forKey: .quit
+        ) ?? .onlyWhenAgent
+        self.closeTabKeyboard = try c.decodeIfPresent(
+            ConfirmPolicy.self, forKey: .closeTabKeyboard
+        ) ?? .onlyWhenAgent
+        self.closeTabMouse = try c.decodeIfPresent(
+            ConfirmPolicy.self, forKey: .closeTabMouse
+        ) ?? .onlyWhenAgent
+        self.closePane = try c.decodeIfPresent(
+            ConfirmPolicy.self, forKey: .closePane
+        ) ?? .onlyWhenAgent
     }
 }
 

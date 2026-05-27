@@ -272,6 +272,7 @@ struct TabsListView: View {
                                     session,
                                     registry: registry,
                                     tabID: tab.id,
+                                    source: .mouse,
                                     claudeSessionTracker: claudeSessionTracker
                                 )
                             },
