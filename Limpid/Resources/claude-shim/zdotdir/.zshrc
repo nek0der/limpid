@@ -9,6 +9,22 @@ if [[ -f "$HOME/.zshrc" ]]; then
   source "$HOME/.zshrc"
 fi
 
+# /etc/zshrc (system-wide, loaded before this file) does
+#   HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history
+# unconditionally. Because we relocated ZDOTDIR to the read-only
+# `claude-shim/zdotdir/` directory inside the signed app bundle,
+# that resolves to a path zsh can't lock — every interactive shell
+# prints `locking failed for .../zsh_history: operation not
+# permitted: reading anyway` and silently fails to persist history.
+# Redirect to $HOME/.zsh_history after both /etc/zshrc and the
+# user's ~/.zshrc have had their say, but only when the value
+# still looks like /etc/zshrc's untouched default — that way a
+# user who explicitly set HISTFILE in their own dotfile keeps
+# their choice.
+if [[ "$HISTFILE" == "$ZDOTDIR/.zsh_history" ]]; then
+  HISTFILE="$HOME/.zsh_history"
+fi
+
 # Re-prepend the shim. `typeset -aU` keeps PATH unique-on-the-fly so
 # repeated tabs / sourcing won't grow it unbounded.
 if [[ -n "$LIMPID_SHIM_DIR" && -d "$LIMPID_SHIM_DIR" ]]; then
