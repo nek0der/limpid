@@ -498,37 +498,6 @@ final class AppState {
     }
 }
 
-/// One-line summary of why the persisted session couldn't be
-/// restored. Carried on `AppState` until `ContentView` surfaces it
-/// as an alert (then cleared).
-enum SessionLoadIssue: Equatable, Identifiable {
-    case versionMismatch(found: Int, expected: Int)
-    case decodeFailed(message: String)
-
-    var id: String {
-        switch self {
-        case let .versionMismatch(f, e): "vm:\(f)→\(e)"
-        case let .decodeFailed(m): "df:\(m)"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .versionMismatch: String(localized: "Previous session not restored")
-        case .decodeFailed: String(localized: "Failed to restore previous session")
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case let .versionMismatch(found, expected):
-            String(localized: "Saved session uses schema v\(found); Limpid expected v\(expected). A fresh window was opened instead.")
-        case let .decodeFailed(message):
-            message
-        }
-    }
-}
-
 /// Wraps the "Settings…" menu button so we can capture
 /// `\.openWindow` (only available inside a `View`, not `App`'s
 /// body) and route ⌘, to our `Window(id:)` Settings scene.
@@ -920,8 +889,6 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
-
-
         .overlay(alignment: .bottom) {
             ToastHost()
         }
@@ -1018,32 +985,5 @@ struct ContentView: View {
         } message: { issue in
             Text(issue.detail)
         }
-    }
-}
-
-// MARK: - Pane navigation helpers
-
-/// Jump-to-pane helper — switches the active tab, repoints the
-/// SplitTree's focused leaf, focuses the SurfaceView, and runs a flash
-/// so the destination pane is visually surfaced after a tab switch.
-@MainActor
-func jumpToPane(_ paneID: UUID, session: WindowSession, registry: any SurfaceViewProviding) {
-    guard let tab = session.tab(containing: paneID) else { return }
-    session.setActiveTab(tab.id)
-    session.update(tab.id) { t in
-        t.splitTree.focusedLeafID = paneID
-    }
-    if let view = registry.view(for: paneID) {
-        view.window?.makeFirstResponder(view)
-    }
-    flashPane(paneID, session: session)
-}
-
-@MainActor
-func flashPane(_ paneID: UUID, session: WindowSession) {
-    session.setBell(paneID: paneID, ringing: true)
-    Task { @MainActor [weak session] in
-        try? await Task.sleep(nanoseconds: LimpidMotion.bellFlashNanoseconds)
-        session?.setBell(paneID: paneID, ringing: false)
     }
 }

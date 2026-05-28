@@ -628,6 +628,36 @@ enum SessionActions {
         claudeSessionTracker: ClaudeSessionTracker?,
         codexSessionTracker: CodexSessionTracker?
     ) {
+        switch action.category {
+        case .file:
+            dispatchFileAction(
+                action,
+                session: session,
+                registry: registry,
+                claudeSessionTracker: claudeSessionTracker,
+                codexSessionTracker: codexSessionTracker
+            )
+        case .view:
+            dispatchViewAction(action, session: session)
+        case .navigation:
+            dispatchNavigationAction(action, session: session)
+        case .splits:
+            dispatchSplitAction(action, session: session, registry: registry)
+        case .search:
+            dispatchSearchAction(action, session: session, registry: registry)
+        case .terminal, .font:
+            guard let ghosttyAction = action.ghosttyAction else { return }
+            dispatchGhosttyAction(ghosttyAction, session: session, registry: registry)
+        }
+    }
+
+    private static func dispatchFileAction(
+        _ action: LimpidShortcutAction,
+        session: WindowSession,
+        registry: any SurfaceViewProviding,
+        claudeSessionTracker: ClaudeSessionTracker?,
+        codexSessionTracker: CodexSessionTracker?
+    ) {
         switch action {
         case .newTab: newTab(session)
         case .newWorktree:
@@ -648,16 +678,42 @@ enum SessionActions {
                 claudeSessionTracker: claudeSessionTracker,
                 codexSessionTracker: codexSessionTracker
             )
+        default: break
+        }
+    }
+
+    private static func dispatchViewAction(
+        _ action: LimpidShortcutAction,
+        session: WindowSession
+    ) {
+        switch action {
         case .toggleSidebar: session.sidebarHidden.toggle()
         case .notificationHistory:
-            NotificationCenter.default.post(
-                name: .limpidToggleNotificationHistory,
-                object: nil
-            )
+            NotificationCenter.default.post(name: .limpidToggleNotificationHistory, object: nil)
+        case .commandPalette: break
+        default: break
+        }
+    }
+
+    private static func dispatchNavigationAction(
+        _ action: LimpidShortcutAction,
+        session: WindowSession
+    ) {
+        switch action {
         case .nextSection: cycleContainer(session, forward: true)
         case .previousSection: cycleContainer(session, forward: false)
         case .nextTab: cycleTab(session, forward: true)
         case .previousTab: cycleTab(session, forward: false)
+        default: break
+        }
+    }
+
+    private static func dispatchSplitAction(
+        _ action: LimpidShortcutAction,
+        session: WindowSession,
+        registry: any SurfaceViewProviding
+    ) {
+        switch action {
         case .splitRight: split(session, direction: .horizontal)
         case .splitDown: split(session, direction: .vertical)
         case .equalizeSplits: equalizeSplits(session)
@@ -666,14 +722,20 @@ enum SessionActions {
         case .focusPaneRight: focusPane(session, registry: registry, direction: .right)
         case .focusPaneUp: focusPane(session, registry: registry, direction: .up)
         case .focusPaneDown: focusPane(session, registry: registry, direction: .down)
+        default: break
+        }
+    }
+
+    private static func dispatchSearchAction(
+        _ action: LimpidShortcutAction,
+        session: WindowSession,
+        registry: any SurfaceViewProviding
+    ) {
+        switch action {
         case .find: beginSearch(session)
         case .findNext: searchNext(session, registry: registry)
         case .findPrevious: searchPrevious(session, registry: registry)
-        case .nextPrompt, .previousPrompt,
-             .increaseFontSize, .decreaseFontSize, .resetFontSize:
-            guard let ghosttyAction = action.ghosttyAction else { break }
-            dispatchGhosttyAction(ghosttyAction, session: session, registry: registry)
-        case .commandPalette: break
+        default: break
         }
     }
 

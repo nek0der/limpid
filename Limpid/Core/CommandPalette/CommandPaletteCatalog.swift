@@ -61,43 +61,11 @@ enum CommandPaletteCatalog {
                 title: localizedTitle,
                 searchAlias: localizedTitle != englishTitle ? englishTitle : nil,
                 subtitle: nil,
-                icon: icon(for: action),
+                icon: action.iconName,
                 shortcutDisplay: shortcut?.displayString,
                 action: .shortcutAction(action),
                 isEnabled: enabled
             ))
-        }
-    }
-
-    private static func icon(for action: LimpidShortcutAction) -> String {
-        switch action {
-        case .newTab: "plus"
-        case .newWorktree: "arrow.triangle.branch"
-        case .renameTab: "pencil"
-        case .reopenClosedTab: "arrow.uturn.backward"
-        case .closeSurface: "xmark.square"
-        case .closeTab: "xmark"
-        case .toggleSidebar: "sidebar.left"
-        case .notificationHistory: "bell"
-        case .nextSection, .previousSection: "chevron.left.chevron.right"
-        case .nextTab, .previousTab: "arrow.left.arrow.right"
-        case .splitRight: "rectangle.split.2x1"
-        case .splitDown: "rectangle.split.1x2"
-        case .equalizeSplits: "equal.square"
-        case .toggleSplitZoom: "arrow.up.left.and.arrow.down.right"
-        case .focusPaneLeft: "arrow.left"
-        case .focusPaneRight: "arrow.right"
-        case .focusPaneUp: "arrow.up"
-        case .focusPaneDown: "arrow.down"
-        case .find: "magnifyingglass"
-        case .findNext: "chevron.down"
-        case .findPrevious: "chevron.up"
-        case .nextPrompt: "arrow.down.to.line"
-        case .previousPrompt: "arrow.up.to.line"
-        case .increaseFontSize: "textformat.size.larger"
-        case .decreaseFontSize: "textformat.size.smaller"
-        case .resetFontSize: "textformat.size"
-        case .commandPalette: "text.magnifyingglass"
         }
     }
 
