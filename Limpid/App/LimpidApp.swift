@@ -722,6 +722,18 @@ struct LimpidApp: App {
                 .limpidShortcut(.commandPalette, in: state.settingsStore)
 
                 Button {
+                    SessionActions.openCommandPalette(
+                        state.session,
+                        settings: state.settingsStore,
+                        frecencyStore: state.frecencyStore,
+                        initialQuery: ""
+                    )
+                } label: {
+                    Label("Quick Open", systemImage: "magnifyingglass")
+                }
+                .limpidShortcut(.quickOpen, in: state.settingsStore)
+
+                Button {
                     state.historyPresentation.isPresented.toggle()
                 } label: {
                     Label("Notification History", systemImage: "bell")

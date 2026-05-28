@@ -112,6 +112,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
 
     /// General
     case commandPalette
+    case quickOpen
 
     // Copy / Paste are intentionally absent: macOS's standard Edit
     // menu owns ⌘C / ⌘V via the responder chain (NSResponder's
@@ -135,7 +136,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .find, .findNext, .findPrevious: .search
         case .nextPrompt, .previousPrompt: .terminal
         case .increaseFontSize, .decreaseFontSize, .resetFontSize: .font
-        case .commandPalette: .view
+        case .commandPalette, .quickOpen: .view
         }
     }
 
@@ -168,7 +169,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
              .focusPaneLeft, .focusPaneRight,
              .focusPaneUp, .focusPaneDown,
              .find, .findNext, .findPrevious,
-             .commandPalette: nil
+             .commandPalette, .quickOpen: nil
         }
     }
 
@@ -206,6 +207,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .decreaseFontSize: "Decrease Font Size"
         case .resetFontSize: "Reset Font Size"
         case .commandPalette: "Command Palette"
+        case .quickOpen: "Quick Open"
         }
     }
 
@@ -295,6 +297,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .decreaseFontSize: .init(key: "-", modifiers: [.command])
         case .resetFontSize: .init(key: "0", modifiers: [.command])
         case .commandPalette: .init(key: "p", modifiers: [.command, .shift])
+        case .quickOpen: .init(key: "p", modifiers: [.command])
         }
     }
 }

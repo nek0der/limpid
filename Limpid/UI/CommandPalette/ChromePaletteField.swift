@@ -91,7 +91,7 @@ private struct ActivePill: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
-            TextField("Type a command or search...", text: $state.query)
+            TextField(String(localized: state.placeholder), text: $state.query)
                 .textFieldStyle(.plain)
                 .font(LimpidFont.bodySecondary)
                 .focused($fieldFocused)
@@ -123,11 +123,18 @@ private struct ActivePill: View {
 
     /// Two-tick delay: the first tick lets SwiftUI mount the TextField;
     /// the second lets the responder chain settle after the terminal
-    /// surface relinquishes firstResponder.
+    /// surface relinquishes firstResponder. The initialQuery is applied
+    /// after focus so the cursor lands at the end, not selecting all.
     private func grabFocus() {
         DispatchQueue.main.async {
             DispatchQueue.main.async {
                 fieldFocused = true
+                if let initial = state.initialQuery {
+                    state.initialQuery = nil
+                    DispatchQueue.main.async {
+                        state.query = initial
+                    }
+                }
             }
         }
     }
@@ -147,6 +154,13 @@ private struct ActivePill: View {
         else { return }
         let selected = state.results[state.selectedIndex].item
         guard selected.isEnabled else { return }
+
+        // insertPrefix swaps the query instead of dismissing.
+        if case let .insertPrefix(mode) = selected.action {
+            state.query = String(mode.character)
+            return
+        }
+
         debounceTask?.cancel()
         NotificationCenter.default.post(
             name: .limpidCommandPaletteExecute,
