@@ -86,6 +86,7 @@ private struct PaneHostRepresentable: NSViewRepresentable {
         view.onUserAcknowledge = { [weak session] in
             session?.clearUnread(paneID: paneID)
         }
+        wireContextMenuCallbacks(on: view)
         view.applyExpectedSize(size)
         return view
     }
@@ -96,6 +97,42 @@ private struct PaneHostRepresentable: NSViewRepresentable {
             session?.clearUnread(paneID: paneID)
         }
         nsView.applyExpectedSize(size)
+    }
+
+    /// Bridge the right-click menu's Focus / Split / Close / Find items
+    /// to `SessionActions`. The callbacks let `SurfaceView` stay
+    /// ignorant of `WindowSession` and the surface registry — same
+    /// pattern as `onUserAcknowledge`. Wired once in `makeNSView`; the
+    /// closures only weakly capture `session` so SwiftUI re-renders
+    /// don't need to reinstall them.
+    @MainActor
+    private func wireContextMenuCallbacks(on view: SurfaceView) {
+        let registry = registry
+        let paneID = paneID
+        view.onRequestFocus = { [weak session] in
+            guard let session else { return }
+            guard let tab = session.tab(containing: paneID) else { return }
+            guard tab.splitTree.focusedLeafID != paneID else { return }
+            session.update(tab.id) { t in
+                t.splitTree.focusedLeafID = paneID
+            }
+        }
+        view.onRequestSplit = { [weak session] direction in
+            guard let session else { return }
+            SessionActions.split(session, direction: direction)
+        }
+        view.onRequestCloseActivePane = { [weak session] in
+            guard let session else { return }
+            SessionActions.closeActivePaneOrTab(
+                session,
+                registry: registry,
+                source: .mouse
+            )
+        }
+        view.onRequestBeginSearch = { [weak session] in
+            guard let session else { return }
+            SessionActions.beginSearch(session)
+        }
     }
 
     /// Pick the initial shell command for a freshly-created surface.
