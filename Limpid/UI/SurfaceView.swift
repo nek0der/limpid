@@ -34,6 +34,14 @@ final class SurfaceView: NSView {
     /// text straight through.
     private var keyTextAccumulator: [String]?
 
+    /// Set by `menu(for:)` and consumed by `rightMouseDown` to avoid
+    /// double-sending the press to libghostty. `menu(for:)` fires first
+    /// on physical right-click; on a trackpad two-finger tap, AppKit may
+    /// skip `menu(for:)` and fall through to `rightMouseDown` → `super`
+    /// which calls `menu(for:)` a second time — the flag prevents that
+    /// from re-emitting the button press.
+    var didSendMenuPress = false
+
     /// Last bounds + backing scale we already pushed to the layer.
     /// `syncLayerOnly` short-circuits when these match the current
     /// values so a window drag doesn't fan out into a CATransaction
@@ -115,6 +123,17 @@ final class SurfaceView: NSView {
     /// acknowledged (clears the unread dot). Set by `PaneHostView` —
     /// SurfaceView itself doesn't know its pane id or the WindowSession.
     var onUserAcknowledge: (() -> Void)?
+
+    /// Context-menu plumbing back to `SessionActions`. Set by
+    /// `PaneHostView`; `SurfaceView` calls into the focused pane via
+    /// these so we don't have to thread a `WindowSession` reference
+    /// through AppKit. `onRequestFocus` MUST run before the others —
+    /// they read `splitTree.focusedLeafID` and would otherwise target
+    /// whichever pane was focused before the right-click.
+    var onRequestFocus: (() -> Void)?
+    var onRequestSplit: ((SplitDirection) -> Void)?
+    var onRequestCloseActivePane: (() -> Void)?
+    var onRequestBeginSearch: (() -> Void)?
 
     init(ghosttyApp: GhosttyApp) {
         self.ghosttyApp = ghosttyApp
@@ -587,109 +606,7 @@ final class SurfaceView: NSView {
         return handled
     }
 
-    // MARK: - Mouse
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        for area in trackingAreas {
-            removeTrackingArea(area)
-        }
-        let options: NSTrackingArea.Options = [
-            .mouseEnteredAndExited,
-            .mouseMoved,
-            .activeInKeyWindow,
-            .inVisibleRect
-        ]
-        addTrackingArea(NSTrackingArea(rect: .zero, options: options, owner: self, userInfo: nil))
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        // A click inside the pane is the user acknowledging it — clear
-        // any pending unread ring/dot now. This is the trigger instead
-        // of `becomeFirstResponder` because tab switches re-focus the
-        // pane automatically and would otherwise dismiss the ring
-        // before the user has even looked.
-        onUserAcknowledge?()
-        sendMouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_LEFT)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        sendMouseButton(event, state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_LEFT)
-    }
-
-    override func rightMouseDown(with event: NSEvent) {
-        sendMouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_RIGHT)
-    }
-
-    override func rightMouseUp(with event: NSEvent) {
-        sendMouseButton(event, state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_RIGHT)
-    }
-
-    override func otherMouseDown(with event: NSEvent) {
-        sendMouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_MIDDLE)
-    }
-
-    override func otherMouseUp(with event: NSEvent) {
-        sendMouseButton(event, state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_MIDDLE)
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        sendMousePos(event)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        sendMousePos(event)
-    }
-
-    override func rightMouseDragged(with event: NSEvent) {
-        sendMousePos(event)
-    }
-
-    override func otherMouseDragged(with event: NSEvent) {
-        sendMousePos(event)
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        guard let surface else { return }
-        // Convert wheel delta to ghostty's "lines" convention.
-        var scrollMods: Int32 = 0
-        if event.hasPreciseScrollingDeltas { scrollMods |= 1 << 0 }
-        switch event.momentumPhase {
-        case .began: scrollMods |= Int32(GHOSTTY_MOUSE_MOMENTUM_BEGAN.rawValue) << 1
-        case .stationary: scrollMods |= Int32(GHOSTTY_MOUSE_MOMENTUM_STATIONARY.rawValue) << 1
-        case .changed: scrollMods |= Int32(GHOSTTY_MOUSE_MOMENTUM_CHANGED.rawValue) << 1
-        case .ended: scrollMods |= Int32(GHOSTTY_MOUSE_MOMENTUM_ENDED.rawValue) << 1
-        case .cancelled: scrollMods |= Int32(GHOSTTY_MOUSE_MOMENTUM_CANCELLED.rawValue) << 1
-        case .mayBegin: scrollMods |= Int32(GHOSTTY_MOUSE_MOMENTUM_MAY_BEGIN.rawValue) << 1
-        default: break
-        }
-        ghostty_surface_mouse_scroll(
-            surface,
-            event.scrollingDeltaX,
-            event.scrollingDeltaY,
-            scrollMods
-        )
-    }
-
-    private func sendMouseButton(
-        _ event: NSEvent,
-        state: ghostty_input_mouse_state_e,
-        button: ghostty_input_mouse_button_e
-    ) {
-        guard let surface else { return }
-        _ = ghostty_surface_mouse_button(surface, state, button, Self.translateMods(event.modifierFlags))
-    }
-
-    private func sendMousePos(_ event: NSEvent) {
-        guard let surface else { return }
-        let p = convert(event.locationInWindow, from: nil)
-        // Pass POINTS (not pixels): libghostty handles the content-scale
-        // conversion internally. AppKit's origin is bottom-left, libghostty
-        // expects top-left.
-        let x = Double(p.x)
-        let y = Double(bounds.height - p.y)
-        ghostty_surface_mouse_pos(surface, x, y, Self.translateMods(event.modifierFlags))
-    }
+    // Mouse event handlers live in `SurfaceView+Mouse.swift`.
 
     fileprivate func pushPreedit() {
         guard let surface else { return }
