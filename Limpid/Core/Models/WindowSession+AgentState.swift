@@ -1,32 +1,50 @@
 // WindowSession+AgentState.swift
 // Limpid — aggregate Claude agent lifecycle states up the hierarchy.
 //
-//   pane (ClaudeAgentBadge) → tab → container → project → window
+//   pane (ClaudeAgentBadge | CodexAgentBadge) → tab → container → project → window
 //
 // Mirrors the unread / ringing helpers in `WindowSession+Notifications`.
 // L2 (TabRow) and L1 (ContainerRow) read these so the icons stay in
-// lock-step with the underlying badges.
+// lock-step with the underlying badges. Both Claude and Codex badges
+// contribute — the enums share raw values, so we collapse a Codex
+// state to the equivalent Claude one and run them through the existing
+// reducer. PR-2 introduces per-kind iconography; for PR-1 the icon
+// shape stays the same so a Codex pane lights up the same blue bolt
+// the user already recognises.
 
 import Foundation
 
 @MainActor
 extension WindowSession {
+    /// Collect every observed agent state (Claude + Codex) for a tab,
+    /// mapped to the unified `ClaudeAgentState` enum that drives the
+    /// L1 / L2 reducer. The two enums share rawValues so the
+    /// conversion is total.
+    private func allAgentStates(in tab: Tab) -> [ClaudeAgentState] {
+        var states: [ClaudeAgentState] = []
+        for paneID in tab.splitTree.allLeafIDs() {
+            if let c = tab.claudeAgentBadges[paneID]?.state {
+                states.append(c)
+            }
+            if let cdx = tab.codexAgentBadges[paneID]?.state,
+               let mapped = ClaudeAgentState(rawValue: cdx.rawValue)
+            {
+                states.append(mapped)
+            }
+        }
+        return states
+    }
+
     /// Aggregate state for a single tab — runs every split leaf's
     /// badge through the shared `aggregateClaudeState()` reducer.
     func aggregateAgentState(in tab: Tab) -> ClaudeAgentState? {
-        tab.splitTree.allLeafIDs()
-            .compactMap { tab.claudeAgentBadges[$0]?.state }
-            .aggregateClaudeState()
+        allAgentStates(in: tab).aggregateClaudeState()
     }
 
     /// Aggregate across every tab in the given container.
     func aggregateAgentState(in container: ContainerID) -> ClaudeAgentState? {
         tabs(in: container)
-            .flatMap { tab in
-                tab.splitTree.allLeafIDs().compactMap { paneID in
-                    tab.claudeAgentBadges[paneID]?.state
-                }
-            }
+            .flatMap { allAgentStates(in: $0) }
             .aggregateClaudeState()
     }
 
@@ -35,23 +53,19 @@ extension WindowSession {
     func aggregateAgentStateInProject(_ projectID: UUID) -> ClaudeAgentState? {
         tabs
             .filter { $0.container.projectID == projectID }
-            .flatMap { tab in
-                tab.splitTree.allLeafIDs().compactMap { paneID in
-                    tab.claudeAgentBadges[paneID]?.state
-                }
-            }
+            .flatMap { allAgentStates(in: $0) }
             .aggregateClaudeState()
     }
 
     /// Breakdown counts used in the L1 hover tooltip
     /// (`"1 error · 2 needsInput · 1 running · 3 idle"`). Returns
-    /// each state's pane count across the container's tabs.
+    /// each state's pane count across the container's tabs. Both
+    /// Claude and Codex panes contribute.
     func agentStateBreakdown(in container: ContainerID) -> [ClaudeAgentState: Int] {
         var out: [ClaudeAgentState: Int] = [:]
         for tab in tabs(in: container) {
-            for paneID in tab.splitTree.allLeafIDs() {
-                guard let badge = tab.claudeAgentBadges[paneID] else { continue }
-                out[badge.state, default: 0] += 1
+            for state in allAgentStates(in: tab) {
+                out[state, default: 0] += 1
             }
         }
         return out
@@ -75,8 +89,13 @@ extension WindowSession {
     /// torn down, so the question is whether *that* leaf carries a
     /// tracked agent, not the tab as a whole.
     func hasLiveAgent(pane paneID: UUID, in tab: Tab) -> Bool {
-        guard let state = tab.claudeAgentBadges[paneID]?.state else { return false }
-        return state != .unknown
+        if let state = tab.claudeAgentBadges[paneID]?.state, state != .unknown {
+            return true
+        }
+        if let state = tab.codexAgentBadges[paneID]?.state, state != .unknown {
+            return true
+        }
+        return false
     }
 
     /// Window-wide twin of `hasLiveAgent(in:)`. Used by ⌘Q's
@@ -111,9 +130,8 @@ extension WindowSession {
     func agentStateBreakdownInProject(_ projectID: UUID) -> [ClaudeAgentState: Int] {
         var out: [ClaudeAgentState: Int] = [:]
         for tab in tabs where tab.container.projectID == projectID {
-            for paneID in tab.splitTree.allLeafIDs() {
-                guard let badge = tab.claudeAgentBadges[paneID] else { continue }
-                out[badge.state, default: 0] += 1
+            for state in allAgentStates(in: tab) {
+                out[state, default: 0] += 1
             }
         }
         return out

@@ -70,13 +70,15 @@ private struct PaneHostRepresentable: NSViewRepresentable {
                 tab: owningTab,
                 paneID: paneID
             )
-            // Wire the Claude shim into every pty: prepends our
-            // bundled shim dir to PATH, exports LIMPID_PANE_ID (=
-            // this split leaf's UUID, so two panes in one tab keep
-            // independent sessions), and points the hook at our
-            // sessions directory. Done unconditionally — if the
-            // user never runs `claude`, these vars are inert.
-            view.extraEnvironment = ClaudeShimLocator.environment(forPaneID: paneID)
+            // Wire the Claude shim + Codex shadow CODEX_HOME into every
+            // pty. Both layers are inert when the user never runs the
+            // matching CLI; injecting unconditionally keeps spawn paths
+            // uniform across panes.
+            var env = ClaudeShimLocator.environment(forPaneID: paneID)
+            for (k, v) in CodexHomeRedirector.shared.environment(forPaneID: paneID) {
+                env[k] = v
+            }
+            view.extraEnvironment = env
             stageScrollback(for: view, tab: owningTab, paneID: paneID)
             registry.register(view, for: paneID)
         }
@@ -112,7 +114,10 @@ private struct PaneHostRepresentable: NSViewRepresentable {
             return staged
         }
         guard let tab else { return nil }
-        return ClaudeResumeCommandBuilder.initialCommand(for: tab, paneID: paneID)
+        if let claude = ClaudeResumeCommandBuilder.initialCommand(for: tab, paneID: paneID) {
+            return claude
+        }
+        return CodexResumeCommandBuilder.initialCommand(for: tab, paneID: paneID)
     }
 
     /// Stage the saved scrollback path for replay and clear it from the

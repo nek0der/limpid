@@ -37,4 +37,8 @@ extension EnvironmentValues {
     /// / tests is fine — the optional parameter on the close helpers
     /// just skips the cleanup step.
     @Entry var claudeSessionTracker: ClaudeSessionTracker?
+
+    /// Tracks per-tab Codex CLI session ids written by the codex hook.
+    /// Mirror of `claudeSessionTracker` for the Codex integration.
+    @Entry var codexSessionTracker: CodexSessionTracker?
 }

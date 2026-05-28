@@ -34,43 +34,69 @@ struct TabRow: View {
         tab.zoomedLeafID != nil
     }
 
-    /// Aggregate `claudeAgentBadges` across every split leaf in the
-    /// tab and pick the most-urgent state for the L2 icon. Returns
-    /// `nil` when nothing warrants a visible badge (all idle / no
-    /// claude running). Same shape as the L1 aggregation.
+    /// Aggregate agent state across every split leaf in the tab and
+    /// pick the most-urgent state for the L2 icon. Pulls from both
+    /// `claudeAgentBadges` and `codexAgentBadges` via the shared
+    /// session helper so a Codex pane lights up the badge too.
     private var aggregateAgentState: ClaudeAgentState? {
-        tab.splitTree.allLeafIDs()
-            .compactMap { tab.claudeAgentBadges[$0]?.state }
-            .aggregateClaudeState()
+        session.aggregateAgentState(in: tab)
     }
 
-    /// Leading identity icon: does an AI agent (currently only Claude,
-    /// via the shim hooks) have a live session in any of this tab's
-    /// panes — whether actively working or sitting idle? Distinct from
-    /// `aggregateAgentState`, which drives the trailing *activity*
-    /// badge: a tab where Claude sits idle waiting for the next prompt
-    /// is still an agent tab (`.idle` counts) even though it shows no
-    /// activity badge. We key off badge *presence* with a non-`.unknown`
-    /// state so the icon flips back to a plain terminal once the session
-    /// ends (`.unknown`) or the badge is dropped — independent of how
-    /// SessionEnd is recorded.
+    /// Leading identity icon: does an AI agent (Claude or Codex) have
+    /// a live session in any of this tab's panes — whether actively
+    /// working or sitting idle? Distinct from `aggregateAgentState`,
+    /// which drives the trailing *activity* badge: a tab where the
+    /// agent sits idle waiting for the next prompt is still an agent
+    /// tab (`.idle` counts) even though it shows no activity badge.
+    /// We key off badge *presence* with a non-`.unknown` state so the
+    /// icon flips back to a plain terminal once the session ends or
+    /// the badge is dropped.
     private var isAgentTab: Bool {
         tab.splitTree.allLeafIDs().contains { leaf in
-            guard let state = tab.claudeAgentBadges[leaf]?.state else { return false }
-            return state != .unknown
+            if let s = tab.claudeAgentBadges[leaf]?.state, s != .unknown { return true }
+            if let s = tab.codexAgentBadges[leaf]?.state, s != .unknown { return true }
+            return false
         }
     }
 
     /// Build the hover tooltip for the agent-state icon. Includes
     /// the dominant pane's detail and elapsed seconds when a single
     /// pane is involved; falls back to a count summary for multi-
-    /// pane mixes.
+    /// pane mixes. Treats Claude and Codex badges as one set — the
+    /// states share rawValues so the user-visible enum collapses
+    /// onto `ClaudeAgentState`.
     private func agentTooltip(for state: ClaudeAgentState) -> String {
+        struct UnifiedBadge {
+            let state: ClaudeAgentState
+            let detail: String?
+            let runStartedAt: Date?
+            let updatedAt: Date
+        }
         let leaves = tab.splitTree.allLeafIDs()
-        let badges = leaves.compactMap { tab.claudeAgentBadges[$0] }
+        var badges: [UnifiedBadge] = []
+        for leaf in leaves {
+            if let b = tab.claudeAgentBadges[leaf] {
+                badges.append(UnifiedBadge(
+                    state: b.state,
+                    detail: b.detail,
+                    runStartedAt: b.runStartedAt,
+                    updatedAt: b.updatedAt
+                ))
+            }
+            if let b = tab.codexAgentBadges[leaf],
+               let mapped = ClaudeAgentState(rawValue: b.state.rawValue)
+            {
+                badges.append(UnifiedBadge(
+                    state: mapped,
+                    detail: b.detail,
+                    runStartedAt: b.runStartedAt,
+                    updatedAt: b.updatedAt
+                ))
+            }
+        }
         let matching = badges.filter { $0.state == state }
         let dominant = matching.max { lhs, rhs in
-            (lhs.updatedAt) < (rhs.updatedAt)
+            lhs.updatedAt < rhs.updatedAt
         }
         let stateLabel = switch state {
         case .running, .compacting: "Running"
@@ -246,6 +272,7 @@ struct TabsListView: View {
     @Environment(WindowSession.self) private var session
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.claudeSessionTracker) private var claudeSessionTracker
+    @Environment(\.codexSessionTracker) private var codexSessionTracker
     let container: ContainerID
 
     var body: some View {
@@ -273,7 +300,8 @@ struct TabsListView: View {
                                     registry: registry,
                                     tabID: tab.id,
                                     source: .mouse,
-                                    claudeSessionTracker: claudeSessionTracker
+                                    claudeSessionTracker: claudeSessionTracker,
+                                    codexSessionTracker: codexSessionTracker
                                 )
                             },
                             onRename: { newName in

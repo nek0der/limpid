@@ -1,0 +1,235 @@
+#!/bin/sh
+# Limpid codex hook receiver — invoked by Codex CLI on every hook
+# event we subscribe to (SessionStart, UserPromptSubmit, PreToolUse,
+# PostToolUse, PermissionRequest, PreCompact, PostCompact, Stop).
+# Keyed by LIMPID_PANE_ID (= split-tree leaf UUID, one per pane).
+#
+# Two persistence paths:
+#   - $LIMPID_CODEX_SESSIONS_DIR/<pane>.json — session id for
+#     `codex resume`. Written on SessionStart only.
+#   - $LIMPID_CODEX_AGENT_STATES_DIR/<pane>.state.json — agent
+#     lifecycle state for the L1/L2 status icons. Rewritten on every
+#     hook event so `Tab.codexAgentBadges[paneID]` mirrors the
+#     current lifecycle.
+#
+# Failure policy: ALWAYS exit 0. A broken hook must never block Codex
+# from running. We drop stderr to /dev/null in production; set
+# LIMPID_HOOK_LOG=<path> to capture stderr into a file.
+
+set -u
+
+if [ -n "${LIMPID_HOOK_LOG:-}" ]; then
+  exec 2>>"$LIMPID_HOOK_LOG" || exec 2>/dev/null
+else
+  exec 2>/dev/null
+fi
+
+# Find codex's actual PID by walking the parent process chain.
+# Codex spawns hooks through one or more intermediate shells (e.g.
+# `sh -c "/bin/sh '/path/to/script'"`), so $PPID points at the
+# wrapper shell, not codex itself. We walk up to 10 hops looking
+# for a process whose `comm` contains "codex" — matches both
+# `codex` (Rust binary) and `codex-darwin-arm64` (some installs).
+# Pattern borrowed from SuperIsland & notchi (both 1k+ stars), the
+# OSS de-facto for Codex hook PID detection.
+#
+# We persist the captured PID in the agent state record so the
+# Swift-side `kill(pid, 0)` sweep can clear the session + badge
+# when the process exits. Codex has no SessionEnd-equivalent hook
+# in v0.134, so /quit / Ctrl-C / crash all look identical to us —
+# the PID liveness check is our only detection signal.
+find_codex_pid() {
+  # Exact-match allow list. A `*codex*` glob would also catch
+  # wrappers such as `codex-fmt`, `codexica`, or a user-authored
+  # `codex.sh` symlinked into PATH — picking those up and then
+  # watching the wrong pid leads to spurious "process died"
+  # cleanups when the wrapper exec's away. The real Rust binary
+  # appears under one of these two names depending on install
+  # method (npm vs Homebrew vs direct binary download).
+  fcp_pid="$PPID"
+  fcp_max=10
+  while [ -n "$fcp_pid" ] && [ "$fcp_pid" != "1" ] && [ "$fcp_max" -gt 0 ]; do
+    fcp_comm=$(ps -o comm= -p "$fcp_pid" 2>/dev/null | sed 's|^.*/||')
+    case "$fcp_comm" in
+      codex|codex-darwin-arm64)
+        printf '%s' "$fcp_pid"
+        return 0
+        ;;
+    esac
+    fcp_pid=$(ps -o ppid= -p "$fcp_pid" 2>/dev/null | tr -d ' ')
+    fcp_max=$((fcp_max - 1))
+  done
+  return 1
+}
+codex_pid="$(find_codex_pid || true)"
+
+payload="$(cat 2>/dev/null || true)"
+
+pane_id="${LIMPID_PANE_ID:-}"
+case "$pane_id" in
+  '') exit 0 ;;
+  *[!0-9A-Fa-f-]*) exit 0 ;;
+esac
+[ "${#pane_id}" -le 64 ] || exit 0
+
+sessions_dir="${LIMPID_CODEX_SESSIONS_DIR:-$HOME/Library/Application Support/Limpid/codex-sessions}"
+states_dir="${LIMPID_CODEX_AGENT_STATES_DIR:-$HOME/Library/Application Support/Limpid/codex-agent-states}"
+mkdir -p "$sessions_dir" 2>/dev/null
+mkdir -p "$states_dir" 2>/dev/null
+
+# Extract string field via sed. Avoid jq — not in base macOS install.
+extract() {
+  printf '%s' "$payload" | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1
+}
+extract_int() {
+  printf '%s' "$payload" | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n1
+}
+
+session_id="$(extract session_id)"
+cwd="$(extract cwd)"
+hook_event="$(extract hook_event_name)"
+tool_name="$(extract tool_name)"
+permission_message="$(extract message)"
+error_type="$(extract error_type)"
+current_token_count="$(extract_int current_token_count)"
+
+ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+# Strip control chars / quotes from values that we emit verbatim into
+# JSON. Belt-and-suspenders — extract regex already excludes `"`
+# and `\` but we re-check before write.
+sanitize() {
+  case "$1" in
+    *[\"\\]*) printf '%s' "" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+cwd_safe="$(sanitize "$cwd")"
+tool_safe="$(sanitize "$tool_name")"
+message_safe="$(sanitize "$permission_message")"
+error_safe="$(sanitize "$error_type")"
+detail_safe=""
+
+# Compute the lifecycle state. PermissionRequest is its own event in
+# Codex (unlike Claude where it nests inside Notification).
+new_state=""
+case "$hook_event" in
+  SessionStart)
+    new_state="idle"
+    ;;
+  UserPromptSubmit)
+    new_state="running"
+    ;;
+  PreToolUse)
+    new_state="running"
+    detail_safe="$tool_safe"
+    ;;
+  PostToolUse)
+    # Stay running — the turn isn't over until Stop. Updating
+    # `updatedAt` keeps the tracker's out-of-order guard happy.
+    new_state="running"
+    ;;
+  PermissionRequest)
+    new_state="needsInput"
+    if [ -n "$message_safe" ]; then
+      detail_safe="$message_safe"
+    else
+      detail_safe="permission"
+    fi
+    ;;
+  PreCompact)
+    new_state="compacting"
+    ;;
+  PostCompact)
+    new_state="running"
+    ;;
+  Stop)
+    # Codex emits Stop on both successful and failed turns. We could
+    # inspect `error_type` to disambiguate `.error` vs `.idle`; for
+    # MVP we treat both as idle and let the user notice via TUI.
+    if [ -n "$error_safe" ]; then
+      new_state="error"
+      detail_safe="$error_safe"
+    else
+      new_state="idle"
+    fi
+    ;;
+esac
+
+if [ -n "$new_state" ]; then
+  state_final="$states_dir/$pane_id.state.json"
+  state_tmp="$states_dir/.$pane_id.state.json.tmp.$$"
+  prev_run_started=""
+  prev_last_prompt=""
+  if [ -f "$state_final" ]; then
+    prev_run_started="$(sed -n 's/.*"runStartedAt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
+    prev_last_prompt="$(sed -n 's/.*"lastPrompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
+  fi
+  case "$hook_event" in
+    UserPromptSubmit)
+      run_started="$ts"
+      raw_prompt="$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1)"
+      last_prompt="$(sanitize "$raw_prompt")"
+      ;;
+    Stop|SessionStart)
+      run_started=""
+      if [ "$hook_event" = "Stop" ]; then
+        last_prompt="$prev_last_prompt"
+      else
+        last_prompt=""
+      fi
+      ;;
+    *)
+      run_started="$prev_run_started"
+      last_prompt="$prev_last_prompt"
+      ;;
+  esac
+  tokens_field=""
+  if [ -n "$current_token_count" ]; then
+    tokens_field=",\"contextTokens\":$current_token_count"
+  fi
+  pid_field=""
+  if [ -n "$codex_pid" ]; then
+    pid_field=",\"pid\":\"$codex_pid\""
+  fi
+  prompt_field=""
+  if [ -n "$last_prompt" ]; then
+    prompt_field=",\"lastPrompt\":\"$last_prompt\""
+  fi
+  {
+    printf '{"schemaVersion":1,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s}\n' \
+      "$pane_id" \
+      "$new_state" \
+      "$detail_safe" \
+      "$run_started" \
+      "$ts" \
+      "$hook_event" \
+      "$tokens_field" \
+      "$pid_field" \
+      "$prompt_field"
+  } > "$state_tmp" 2>/dev/null && mv -f "$state_tmp" "$state_final" 2>/dev/null || rm -f "$state_tmp" 2>/dev/null
+fi
+
+# ----- Session record (codex resume) -----
+# Capture on SessionStart so `Tab.codexSessions[paneID]` knows what id
+# to pass to `codex resume`.
+if [ "$hook_event" != "SessionStart" ]; then
+  exit 0
+fi
+
+case "$session_id" in
+  '') exit 0 ;;
+  *[\"\\]*) exit 0 ;;
+esac
+
+session_final="$sessions_dir/$pane_id.json"
+session_tmp="$sessions_dir/.$pane_id.json.tmp.$$"
+
+{
+  printf '{"schemaVersion":1,"paneId":"%s","sessionId":"%s","cwd":"%s","updatedAt":"%s","lastHookEvent":"%s"}\n' \
+    "$pane_id" "$session_id" "$cwd_safe" "$ts" "$hook_event"
+} > "$session_tmp" 2>/dev/null || exit 0
+
+mv -f "$session_tmp" "$session_final" 2>/dev/null || rm -f "$session_tmp" 2>/dev/null
+
+exit 0

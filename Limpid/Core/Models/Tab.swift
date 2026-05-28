@@ -76,6 +76,18 @@ struct Tab: Codable, Equatable, Identifiable {
     /// status icons. Optional default = `[:]` for backward compat.
     var claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:]
 
+    /// Per-pane Codex session info captured by
+    /// `codex-shim/limpid-codex-hook`. Mirror of `claudeSessions` for
+    /// the Codex CLI (OpenAI's `codex` binary). `CodexSessionTracker`
+    /// reconciles this map with the on-disk records at launch.
+    var codexSessions: [UUID: CodexSessionInfo] = [:]
+
+    /// Per-pane Codex agent lifecycle badges. Mirror of
+    /// `claudeAgentBadges` for the Codex CLI. Populated by
+    /// `CodexAgentStateTracker` from on-disk state records written by
+    /// `limpid-codex-hook` on every subscribed hook event.
+    var codexAgentBadges: [UUID: CodexAgentBadge] = [:]
+
     init(
         id: UUID = UUID(),
         title: String,
@@ -87,7 +99,9 @@ struct Tab: Codable, Equatable, Identifiable {
         zoomedLeafID: UUID? = nil,
         container: ContainerID,
         claudeSessions: [UUID: ClaudeSessionInfo] = [:],
-        claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:]
+        claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:],
+        codexSessions: [UUID: CodexSessionInfo] = [:],
+        codexAgentBadges: [UUID: CodexAgentBadge] = [:]
     ) {
         self.id = id
         self.title = title
@@ -100,6 +114,8 @@ struct Tab: Codable, Equatable, Identifiable {
         self.container = container
         self.claudeSessions = claudeSessions
         self.claudeAgentBadges = claudeAgentBadges
+        self.codexSessions = codexSessions
+        self.codexAgentBadges = codexAgentBadges
     }
 
     /// Custom decoding so a `state.json` written before
@@ -127,6 +143,14 @@ struct Tab: Codable, Equatable, Identifiable {
         self.claudeAgentBadges = try c.decodeIfPresent(
             [UUID: ClaudeAgentBadge].self,
             forKey: .claudeAgentBadges
+        ) ?? [:]
+        self.codexSessions = try c.decodeIfPresent(
+            [UUID: CodexSessionInfo].self,
+            forKey: .codexSessions
+        ) ?? [:]
+        self.codexAgentBadges = try c.decodeIfPresent(
+            [UUID: CodexAgentBadge].self,
+            forKey: .codexAgentBadges
         ) ?? [:]
     }
 
