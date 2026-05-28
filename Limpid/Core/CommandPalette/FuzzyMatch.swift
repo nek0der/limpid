@@ -43,10 +43,10 @@ enum FuzzyMatch {
 
         if qLen > cLen { return nil }
 
-        // S[i][j] = best score aligning query[0..<i] ending at candidate[j-1].
-        // D[i][j] = diagonal score (last move was a match) — tracks consecutive.
-        var S = [[Int]](repeating: [Int](repeating: 0, count: cLen + 1), count: qLen + 1)
-        var D = [[Int]](repeating: [Int](repeating: 0, count: cLen + 1), count: qLen + 1)
+        // scores[i][j] = best score aligning query[0..<i] ending at candidate[j-1].
+        // diagonal[i][j] = diagonal score (last move was a match) — tracks consecutive.
+        var scores = [[Int]](repeating: [Int](repeating: 0, count: cLen + 1), count: qLen + 1)
+        var diagonal = [[Int]](repeating: [Int](repeating: 0, count: cLen + 1), count: qLen + 1)
 
         for i in 1...qLen {
             // We need every query char to match, so row-minimum stays 0
@@ -72,18 +72,18 @@ enum FuzzyMatch {
                     }
 
                     // Consecutive: previous query char matched at j-1.
-                    let diag = D[i - 1][j - 1]
-                    if diag > 0 {
+                    let prev = diagonal[i - 1][j - 1]
+                    if prev > 0 {
                         bonus += consecutiveBonus
                     }
 
-                    let matchScore = max(0, S[i - 1][j - 1] + bonus)
-                    D[i][j] = matchScore
-                    S[i][j] = max(S[i][j - 1] + gapPenalty, matchScore)
-                    S[i][j] = max(S[i][j], 0)
+                    let matchScore = max(0, scores[i - 1][j - 1] + bonus)
+                    diagonal[i][j] = matchScore
+                    scores[i][j] = max(scores[i][j - 1] + gapPenalty, matchScore)
+                    scores[i][j] = max(scores[i][j], 0)
                 } else {
-                    D[i][j] = 0
-                    S[i][j] = max(0, S[i][j - 1] + gapPenalty)
+                    diagonal[i][j] = 0
+                    scores[i][j] = max(0, scores[i][j - 1] + gapPenalty)
                 }
             }
         }
@@ -92,8 +92,8 @@ enum FuzzyMatch {
         var bestScore = 0
         var bestJ = 0
         for j in 1...cLen {
-            if S[qLen][j] > bestScore {
-                bestScore = S[qLen][j]
+            if scores[qLen][j] > bestScore {
+                bestScore = scores[qLen][j]
                 bestJ = j
             }
         }
@@ -105,7 +105,7 @@ enum FuzzyMatch {
         var i = qLen
         var j = bestJ
         while i > 0, j > 0 {
-            if q[i - 1] == cLower[j - 1], D[i][j] > 0 {
+            if q[i - 1] == cLower[j - 1], diagonal[i][j] > 0 {
                 matched.append(j - 1)
                 i -= 1
                 j -= 1

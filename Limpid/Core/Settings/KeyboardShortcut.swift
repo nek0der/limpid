@@ -110,7 +110,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     case decreaseFontSize
     case resetFontSize
 
-    // General
+    /// General
     case commandPalette
 
     // Copy / Paste are intentionally absent: macOS's standard Edit
@@ -207,6 +207,42 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .resetFontSize: "Reset Font Size"
         case .commandPalette: "Command Palette"
         }
+    }
+
+    private static let iconNames: [LimpidShortcutAction: String] = [
+        .newTab: "plus",
+        .newWorktree: "arrow.triangle.branch",
+        .renameTab: "pencil",
+        .reopenClosedTab: "arrow.uturn.backward",
+        .closeSurface: "xmark.square",
+        .closeTab: "xmark",
+        .toggleSidebar: "sidebar.left",
+        .notificationHistory: "bell",
+        .nextSection: "chevron.left.chevron.right",
+        .previousSection: "chevron.left.chevron.right",
+        .nextTab: "arrow.left.arrow.right",
+        .previousTab: "arrow.left.arrow.right",
+        .splitRight: "rectangle.split.2x1",
+        .splitDown: "rectangle.split.1x2",
+        .equalizeSplits: "equal.square",
+        .toggleSplitZoom: "arrow.up.left.and.arrow.down.right",
+        .focusPaneLeft: "arrow.left",
+        .focusPaneRight: "arrow.right",
+        .focusPaneUp: "arrow.up",
+        .focusPaneDown: "arrow.down",
+        .find: "magnifyingglass",
+        .findNext: "chevron.down",
+        .findPrevious: "chevron.up",
+        .nextPrompt: "arrow.down.to.line",
+        .previousPrompt: "arrow.up.to.line",
+        .increaseFontSize: "textformat.size.larger",
+        .decreaseFontSize: "textformat.size.smaller",
+        .resetFontSize: "textformat.size",
+        .commandPalette: "text.magnifyingglass"
+    ]
+
+    var iconName: String {
+        Self.iconNames[self] ?? "questionmark"
     }
 
     /// Default shortcut. Mirrors the bindings the macOS menu shipped
