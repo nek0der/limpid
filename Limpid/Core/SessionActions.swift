@@ -4,6 +4,7 @@
 // surface. Each method is small and pure: pull the active tab, mutate its
 // split tree, write it back.
 
+import AppKit
 import Foundation
 import GhosttyKit
 import OSLog
@@ -21,6 +22,19 @@ extension Notification.Name {
     /// TabRow observes and flips its `isEditing` state when the
     /// notification carries its own tab id.
     static let limpidRenameActiveTab = Notification.Name("dev.limpid.renameActiveTab")
+
+    /// Posted when the command palette opens so the overlay grabs focus.
+    static let limpidCommandPaletteFocus = Notification.Name("dev.limpid.commandPaletteFocus")
+
+    /// Posted by the chrome palette field when the user presses Enter.
+    /// The `object` carries the `CommandPaletteAction` to execute.
+    static let limpidCommandPaletteExecute = Notification.Name("dev.limpid.commandPaletteExecute")
+
+    /// Toggle the notification history popover from the palette.
+    static let limpidToggleNotificationHistory = Notification.Name("dev.limpid.toggleNotificationHistory")
+
+    /// Open the Settings window from the palette.
+    static let limpidOpenSettings = Notification.Name("dev.limpid.openSettings")
 }
 
 @MainActor
@@ -105,8 +119,13 @@ enum SessionActions {
     /// SwiftUI then mounts a new PaneHostView per leaf and the
     /// existing `stageScrollback` path replays each `.vt` above the
     /// fresh shell prompt — the same machinery ⌘Q + restart uses.
-    static func reopenClosedTab(_ session: WindowSession) {
-        guard let closed = session.popClosedTab() else { return }
+    static func reopenClosedTab(_ session: WindowSession, specificID: UUID? = nil) {
+        let closed: ClosedTab? = if let specificID {
+            session.popClosedTab(id: specificID)
+        } else {
+            session.popClosedTab()
+        }
+        guard let closed else { return }
 
         let oldLeafIDs = closed.tab.splitTree.allLeafIDs()
         let idMap: [UUID: UUID] = Dictionary(
@@ -310,6 +329,7 @@ enum SessionActions {
         if let view = registry.view(for: next) {
             view.window?.makeFirstResponder(view)
         }
+        flashPane(next, session: session)
     }
 
     /// Toggle full-screen "zoom" for the focused pane within its tab.
@@ -530,6 +550,144 @@ enum SessionActions {
         for id in leafIDs {
             registry.unregister(id)
         }
+    }
+
+    // MARK: - Command Palette
+
+    static func openCommandPalette(
+        _ session: WindowSession,
+        settings: SettingsStore,
+        frecencyStore: FrecencyStore
+    ) {
+        if session.commandPaletteState != nil {
+            NotificationCenter.default.post(name: .limpidCommandPaletteFocus, object: nil)
+            return
+        }
+        let state = CommandPaletteState()
+        state.allItems = CommandPaletteCatalog.buildItems(session: session, settings: settings)
+        state.applyFilter(query: "", frecencyStore: frecencyStore)
+        session.commandPaletteState = state
+    }
+
+    static func closeCommandPalette(_ session: WindowSession) {
+        session.commandPaletteState = nil
+    }
+
+    static func executeCommandPaletteAction(
+        _ action: CommandPaletteAction,
+        session: WindowSession,
+        registry: any SurfaceViewProviding,
+        frecencyStore: FrecencyStore,
+        claudeSessionTracker: ClaudeSessionTracker? = nil,
+        codexSessionTracker: CodexSessionTracker? = nil
+    ) {
+        closeCommandPalette(session)
+        frecencyStore.record(action.frecencyKey)
+
+        switch action {
+        case let .shortcutAction(shortcut):
+            dispatchShortcutAction(
+                shortcut,
+                session: session,
+                registry: registry,
+                claudeSessionTracker: claudeSessionTracker,
+                codexSessionTracker: codexSessionTracker
+            )
+        case let .jumpToTab(tabID):
+            if let tab = session.tab(tabID) {
+                session.setActiveContainer(tab.container)
+                session.setActiveTab(tabID)
+            }
+        case let .activateGroup(groupID):
+            session.setActiveContainer(.group(groupID))
+        case let .activateProject(projectID):
+            session.setActiveContainer(.project(projectID))
+        case let .activateWorktree(pid, wid):
+            session.setActiveContainer(.worktree(projectID: pid, worktreeID: wid))
+        case let .reopenClosedTab(tabID):
+            reopenClosedTab(session, specificID: tabID)
+        case let .openRecentProject(url):
+            session.addOrActivateProject(rootURL: url)
+        case .openSettings:
+            NotificationCenter.default.post(name: .limpidOpenSettings, object: nil)
+        }
+
+        // Restore focus to the terminal surface.
+        if let tab = session.activeTab,
+           let leafID = tab.splitTree.focusedLeafID ?? tab.splitTree.allLeafIDs().first,
+           let view = registry.view(for: leafID)
+        {
+            view.window?.makeFirstResponder(view)
+        }
+    }
+
+    private static func dispatchShortcutAction(
+        _ action: LimpidShortcutAction,
+        session: WindowSession,
+        registry: any SurfaceViewProviding,
+        claudeSessionTracker: ClaudeSessionTracker?,
+        codexSessionTracker: CodexSessionTracker?
+    ) {
+        switch action {
+        case .newTab: newTab(session)
+        case .newWorktree:
+            NotificationCenter.default.post(name: .limpidCreateWorktreeRequested, object: nil)
+        case .renameTab: renameActiveTab(session)
+        case .reopenClosedTab: reopenClosedTab(session)
+        case .closeSurface:
+            closeActivePaneOrTab(
+                session,
+                registry: registry,
+                claudeSessionTracker: claudeSessionTracker,
+                codexSessionTracker: codexSessionTracker
+            )
+        case .closeTab:
+            closeActiveTab(
+                session,
+                registry: registry,
+                claudeSessionTracker: claudeSessionTracker,
+                codexSessionTracker: codexSessionTracker
+            )
+        case .toggleSidebar: session.sidebarHidden.toggle()
+        case .notificationHistory:
+            NotificationCenter.default.post(
+                name: .limpidToggleNotificationHistory,
+                object: nil
+            )
+        case .nextSection: cycleContainer(session, forward: true)
+        case .previousSection: cycleContainer(session, forward: false)
+        case .nextTab: cycleTab(session, forward: true)
+        case .previousTab: cycleTab(session, forward: false)
+        case .splitRight: split(session, direction: .horizontal)
+        case .splitDown: split(session, direction: .vertical)
+        case .equalizeSplits: equalizeSplits(session)
+        case .toggleSplitZoom: toggleZoom(session)
+        case .focusPaneLeft: focusPane(session, registry: registry, direction: .left)
+        case .focusPaneRight: focusPane(session, registry: registry, direction: .right)
+        case .focusPaneUp: focusPane(session, registry: registry, direction: .up)
+        case .focusPaneDown: focusPane(session, registry: registry, direction: .down)
+        case .find: beginSearch(session)
+        case .findNext: searchNext(session, registry: registry)
+        case .findPrevious: searchPrevious(session, registry: registry)
+        case .nextPrompt, .previousPrompt,
+             .increaseFontSize, .decreaseFontSize, .resetFontSize:
+            guard let ghosttyAction = action.ghosttyAction else { break }
+            dispatchGhosttyAction(ghosttyAction, session: session, registry: registry)
+        case .commandPalette: break
+        }
+    }
+
+    private static func dispatchGhosttyAction(
+        _ action: String,
+        session: WindowSession,
+        registry: any SurfaceViewProviding
+    ) {
+        guard let tab = session.activeTab,
+              let leafID = tab.splitTree.focusedLeafID ?? tab.splitTree.allLeafIDs().first,
+              let view = registry.view(for: leafID),
+              let surface = view.surface
+        else { return }
+        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
     }
 
 }

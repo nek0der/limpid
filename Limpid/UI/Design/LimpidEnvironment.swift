@@ -41,4 +41,8 @@ extension EnvironmentValues {
     /// Tracks per-tab Codex CLI session ids written by the codex hook.
     /// Mirror of `claudeSessionTracker` for the Codex integration.
     @Entry var codexSessionTracker: CodexSessionTracker?
+
+    /// Command palette frecency scoring store. `nil` in Previews /
+    /// tests; LimpidApp installs the real instance at the scene root.
+    @Entry var frecencyStore: FrecencyStore?
 }

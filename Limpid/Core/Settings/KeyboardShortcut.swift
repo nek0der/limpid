@@ -49,12 +49,18 @@ enum LimpidShortcutCategory: Int, CaseIterable, Identifiable {
 
 // MARK: - Actions
 
-/// Every action the user can rebind. Add a case here, pick a
-/// `defaultShortcut`, a `localizedTitle`, a `category`, and (if
-/// libghostty already knows how to perform it) the matching
-/// `ghosttyAction` string. The menu bar pulls its shortcut via
-/// `View.limpidShortcut(_:in:)`; libghostty pulls keybinds via
-/// `GhosttyConfigBridge`. Both branches read the same store.
+/// Every action the user can rebind. When adding a new case,
+/// update these locations:
+///   1. `defaultShortcut`, `localizedTitle`, `category`, `ghosttyAction`
+///   2. `SessionActions.dispatchShortcutAction` (palette dispatch)
+///   3. `CommandPaletteCatalog.icon(for:)` + `isActionEnabled`
+///   4. `LimpidApp.commands` block (menu bar Button)
+///
+/// 1--3 are compiler-enforced via switch exhaustiveness; 4 is manual.
+///
+/// The menu bar pulls its shortcut via `View.limpidShortcut(_:in:)`;
+/// libghostty pulls keybinds via `GhosttyConfigBridge`. Both branches
+/// read the same store.
 ///
 /// Note on ⌘1…⌘9 / ⌘⌃1…⌘⌃9: per-tab and per-section jumps stay
 /// hardcoded in the menu (see `LimpidApp`). They're not in this
@@ -104,6 +110,9 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     case decreaseFontSize
     case resetFontSize
 
+    // General
+    case commandPalette
+
     // Copy / Paste are intentionally absent: macOS's standard Edit
     // menu owns ⌘C / ⌘V via the responder chain (NSResponder's
     // `copy:` / `paste:` selectors), and we can't reliably suppress
@@ -126,6 +135,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .find, .findNext, .findPrevious: .search
         case .nextPrompt, .previousPrompt: .terminal
         case .increaseFontSize, .decreaseFontSize, .resetFontSize: .font
+        case .commandPalette: .view
         }
     }
 
@@ -157,7 +167,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
              .equalizeSplits, .toggleSplitZoom,
              .focusPaneLeft, .focusPaneRight,
              .focusPaneUp, .focusPaneDown,
-             .find, .findNext, .findPrevious: nil
+             .find, .findNext, .findPrevious,
+             .commandPalette: nil
         }
     }
 
@@ -194,6 +205,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .increaseFontSize: "Increase Font Size"
         case .decreaseFontSize: "Decrease Font Size"
         case .resetFontSize: "Reset Font Size"
+        case .commandPalette: "Command Palette"
         }
     }
 
@@ -246,6 +258,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .increaseFontSize: .init(key: "=", modifiers: [.command, .shift])
         case .decreaseFontSize: .init(key: "-", modifiers: [.command])
         case .resetFontSize: .init(key: "0", modifiers: [.command])
+        case .commandPalette: .init(key: "p", modifiers: [.command, .shift])
         }
     }
 }

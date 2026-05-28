@@ -511,6 +511,12 @@
     },
     "Close Pane": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close Pane"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
@@ -645,46 +651,8 @@
         }
       }
     },
-    "Clear": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clear"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "クリア"
-          }
-        }
-      }
-    },
-    "Close Pane": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Close Pane"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ペインを閉じる"
-          }
-        }
-      }
-    },
     "Copy": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copy"
-          }
-        },
         "ja": {
           "stringUnit": {
             "state": "translated",
@@ -2261,16 +2229,10 @@
     },
     "Select All": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select All"
-          }
-        },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "すべて選択"
+            "value": "すべてを選択"
           }
         }
       }
@@ -3420,16 +3382,6 @@
         }
       }
     },
-    "Copy": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "コピー"
-          }
-        }
-      }
-    },
     "Next Prompt": {
       "localizations": {
         "ja": {
@@ -3450,12 +3402,72 @@
         }
       }
     },
-    "Select All": {
+    "Command Palette": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "すべてを選択"
+            "value": "コマンドパレット"
+          }
+        }
+      }
+    },
+    "Type a command or search...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コマンドを入力または検索..."
+          }
+        }
+      }
+    },
+    "Navigate": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移動"
+          }
+        }
+      }
+    },
+    "Actions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクション"
+          }
+        }
+      }
+    },
+    "Reopen": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再度開く"
+          }
+        }
+      }
+    },
+    "Open Settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を開く"
+          }
+        }
+      }
+    },
+    "No results": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結果なし"
           }
         }
       }

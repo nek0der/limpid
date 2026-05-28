@@ -30,4 +30,13 @@ extension WindowSession {
     func popClosedTab() -> ClosedTab? {
         closedTabStack.popLast()
     }
+
+    /// Remove a specific closed tab by its original tab id. Used by
+    /// the command palette when the user picks a non-latest entry.
+    func popClosedTab(id: UUID) -> ClosedTab? {
+        guard let idx = closedTabStack.firstIndex(where: { $0.tab.id == id }) else {
+            return nil
+        }
+        return closedTabStack.remove(at: idx)
+    }
 }

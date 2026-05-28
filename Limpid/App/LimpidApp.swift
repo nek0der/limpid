@@ -49,6 +49,9 @@ final class AppState {
     /// Owned by AppState so libghostty receives the initial values
     /// at boot and live-reload requests can route through here.
     let settingsStore: SettingsStore
+    /// Command palette frecency scoring. Debounce-saved alongside
+    /// notifications; flushed synchronously on app termination.
+    let frecencyStore: FrecencyStore
     /// Hosts the OSC 52 / unsafe-paste confirmation sheet. The
     /// libghostty C callback reaches it via the static
     /// `ClipboardConfirmationCoordinator.shared` we set during init.
@@ -195,6 +198,7 @@ final class AppState {
 
         let historyStore = NotificationHistoryStore()
         self.historyStore = historyStore
+        self.frecencyStore = FrecencyStore()
         let notificationManager = LimpidNotificationManager(historyStore: historyStore)
         self.notificationManager = notificationManager
         // Defer the agent-state tracker bootstrap to here so it can
@@ -253,7 +257,7 @@ final class AppState {
             forName: NSApplication.willTerminateNotification,
             object: nil,
             queue: .main
-        ) { [weak session, store, historyStore, registry, codexAgentStateTracker] _ in
+        ) { [weak session, store, historyStore, frecencyStore, registry, codexAgentStateTracker] _ in
             guard let session else { return }
             MainActor.assumeIsolated {
                 // Ask libghostty to dump every live surface's scrollback
@@ -272,6 +276,7 @@ final class AppState {
                 codexAgentStateTracker.preserveLiveSessionsOnTerminate()
                 store.saveSynchronously(session.makeSnapshot())
                 historyStore.flushSynchronously()
+                frecencyStore.flushSynchronously()
             }
         }
 
@@ -597,6 +602,7 @@ struct LimpidApp: App {
                 .environment(\.surfaceRegistry, state.registry)
                 .environment(\.claudeSessionTracker, state.claudeSessionTracker)
                 .environment(\.codexSessionTracker, state.codexSessionTracker)
+                .environment(\.frecencyStore, state.frecencyStore)
                 .environment(\.notificationManager, state.notificationManager)
                 .environment(\.sparkleUpdater, updaterStack.updater)
                 .environment(updaterStack.stateModel)
@@ -735,6 +741,17 @@ struct LimpidApp: App {
                 }
             }
             CommandGroup(after: .toolbar) {
+                Button {
+                    SessionActions.openCommandPalette(
+                        state.session,
+                        settings: state.settingsStore,
+                        frecencyStore: state.frecencyStore
+                    )
+                } label: {
+                    Label("Command Palette", systemImage: "text.magnifyingglass")
+                }
+                .limpidShortcut(.commandPalette, in: state.settingsStore)
+
                 Button {
                     state.historyPresentation.isPresented.toggle()
                 } label: {
@@ -883,6 +900,7 @@ struct LimpidApp: App {
 struct ContentView: View {
     let state: AppState
     @State private var loadIssue: SessionLoadIssue?
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Group {
@@ -902,8 +920,60 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+
+
         .overlay(alignment: .bottom) {
             ToastHost()
+        }
+        .overlay {
+            if let paletteState = state.session.commandPaletteState,
+               state.session.paletteFieldFrame.width > 0
+            {
+                GeometryReader { overlayGeo in
+                    let overlayOrigin = overlayGeo.frame(in: .global).origin
+                    let fieldFrame = state.session.paletteFieldFrame
+                    let dropX = fieldFrame.midX - overlayOrigin.x - 200
+                    let dropY = fieldFrame.maxY - overlayOrigin.y + 6
+
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            SessionActions.closeCommandPalette(state.session)
+                        }
+
+                    CommandPaletteDropdown(
+                        state: paletteState,
+                        onDismiss: {
+                            SessionActions.closeCommandPalette(state.session)
+                        }
+                    )
+                    .frame(width: 400)
+                    .frame(maxHeight: 360)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .offset(x: dropX, y: dropY)
+                }
+                .ignoresSafeArea()
+                .transition(.opacity)
+                .zIndex(100)
+            }
+        }
+        .animation(LimpidMotion.paletteToggle, value: state.session.commandPaletteState != nil)
+        .onReceive(NotificationCenter.default.publisher(for: .limpidCommandPaletteExecute)) { note in
+            guard let action = note.object as? CommandPaletteAction else { return }
+            SessionActions.executeCommandPaletteAction(
+                action,
+                session: state.session,
+                registry: state.registry,
+                frecencyStore: state.frecencyStore,
+                claudeSessionTracker: state.claudeSessionTracker,
+                codexSessionTracker: state.codexSessionTracker
+            )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .limpidToggleNotificationHistory)) { _ in
+            state.historyPresentation.isPresented.toggle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .limpidOpenSettings)) { _ in
+            openWindow(id: LimpidApp.settingsWindowID)
         }
         .sheet(item: Binding(
             get: { state.clipboardConfirmation.pending },
