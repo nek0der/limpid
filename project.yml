@@ -74,6 +74,7 @@ targets:
         excludes:
           - "Resources/ghostty"
           - "Resources/claude-shim"
+          - "Resources/codex-shim"
       # Bundle libghostty's shell-integration scripts + the themes
       # we ship as Limpid's defaults (Apple System Colors Light/Dark).
       # `type: folder` keeps the directory structure intact under
@@ -87,6 +88,12 @@ targets:
       # this directory to `PATH` for every pty it spawns so `claude`
       # invocations are intercepted.
       - path: Limpid/Resources/claude-shim
+        type: folder
+      # Bundle the Codex CLI hook receiver. Unlike `claude-shim` we
+      # don't intercept the codex binary via PATH — we manage a shadow
+      # `CODEX_HOME` per `CodexHomeRedirector` and point Codex's own
+      # `hooks.json` discovery at the bundled receiver script.
+      - path: Limpid/Resources/codex-shim
         type: folder
     # Explicit Info.plist (not the GENERATE_INFOPLIST_FILE auto-version)
     # because Sparkle's `SU*` keys aren't on Xcode's INFOPLIST_KEY_*

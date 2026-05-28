@@ -35,6 +35,16 @@ final class AppState {
     /// `Tab.claudeAgentBadges` so the L1 / L2 status icons reflect
     /// the live state of every running `claude` process.
     let claudeAgentStateTracker: ClaudeAgentStateTracker
+    /// Owns the per-tab Codex CLI session record file. Mirror of
+    /// `claudeSessionTracker` for OpenAI's `codex` binary.
+    let codexSessionTracker: CodexSessionTracker
+    /// Mirrors the on-disk Codex agent lifecycle records into
+    /// `Tab.codexAgentBadges`.
+    let codexAgentStateTracker: CodexAgentStateTracker
+    /// Builds and refreshes the shadow `CODEX_HOME` Limpid hands to
+    /// every Codex pty. Owns the symlink farm + the Limpid-managed
+    /// `hooks.json` / `config.toml` mirror.
+    let codexHomeRedirector: CodexHomeRedirector
     /// User preferences store (font / theme / scrollback / …).
     /// Owned by AppState so libghostty receives the initial values
     /// at boot and live-reload requests can route through here.
@@ -160,6 +170,27 @@ final class AppState {
         // notifications can route through it.
         self.claudeAgentStateTracker = claudeAgentStateTracker
 
+        // Codex CLI mirror trackers. The redirector also builds the
+        // shadow CODEX_HOME synchronously so the first pty we spawn
+        // already sees the Limpid-managed `hooks.json`.
+        let codexHomeRedirector = CodexHomeRedirector.shared
+        codexHomeRedirector.refresh()
+        self.codexHomeRedirector = codexHomeRedirector
+
+        // Order matters: the agent state tracker's PID liveness sweep
+        // has to run *before* the session tracker reflects records into
+        // `Tab.codexSessions`, otherwise a Codex that the user `/quit`
+        // between Limpid sessions would auto-resume on next launch.
+        // Codex has no SessionEnd-equivalent hook, so the only signal
+        // for "user closed this session" is that the process is gone.
+        let codexAgentStateTracker = CodexAgentStateTracker()
+        codexAgentStateTracker.cleanupDeadSessionsOnLaunch()
+        self.codexAgentStateTracker = codexAgentStateTracker
+
+        let codexSessionTracker = CodexSessionTracker()
+        codexSessionTracker.bootstrap(into: session)
+        self.codexSessionTracker = codexSessionTracker
+
         self.session = session
 
         let historyStore = NotificationHistoryStore()
@@ -172,6 +203,10 @@ final class AppState {
         // initialised above with the session graph; only the bootstrap
         // call had to wait.
         claudeAgentStateTracker.bootstrap(
+            into: session,
+            notificationManager: notificationManager
+        )
+        codexAgentStateTracker.bootstrap(
             into: session,
             notificationManager: notificationManager
         )
@@ -218,7 +253,7 @@ final class AppState {
             forName: NSApplication.willTerminateNotification,
             object: nil,
             queue: .main
-        ) { [weak session, store, historyStore, registry] _ in
+        ) { [weak session, store, historyStore, registry, codexAgentStateTracker] _ in
             guard let session else { return }
             MainActor.assumeIsolated {
                 // Ask libghostty to dump every live surface's scrollback
@@ -226,6 +261,15 @@ final class AppState {
                 // crashes lose anything since the last debounced auto-save
                 // (which doesn't include scrollback).
                 session.captureScrollbackPaths(from: registry)
+                // Blank out the `pid` field on every codex state record
+                // that points at a still-running codex. Limpid is about to
+                // kill those processes alongside its own exit; without
+                // this step the next launch's PID sweep would mistake the
+                // forced kill for a `/quit` and drop the resume record.
+                // Records whose codex already exited (user typed `/quit`
+                // before ⌘Q) keep their dead pid → sweep deletes →
+                // session correctly not restored.
+                codexAgentStateTracker.preserveLiveSessionsOnTerminate()
                 store.saveSynchronously(session.makeSnapshot())
                 historyStore.flushSynchronously()
             }
@@ -552,6 +596,7 @@ struct LimpidApp: App {
                 .environment(state.reduceTransparencyResolver)
                 .environment(\.surfaceRegistry, state.registry)
                 .environment(\.claudeSessionTracker, state.claudeSessionTracker)
+                .environment(\.codexSessionTracker, state.codexSessionTracker)
                 .environment(\.notificationManager, state.notificationManager)
                 .environment(\.sparkleUpdater, updaterStack.updater)
                 .environment(updaterStack.stateModel)
@@ -624,7 +669,8 @@ struct LimpidApp: App {
                     SessionActions.closeActivePaneOrTab(
                         state.session,
                         registry: state.registry,
-                        claudeSessionTracker: state.claudeSessionTracker
+                        claudeSessionTracker: state.claudeSessionTracker,
+                        codexSessionTracker: state.codexSessionTracker
                     )
                 } label: {
                     Label("Close Pane", systemImage: "xmark")
@@ -636,7 +682,8 @@ struct LimpidApp: App {
                     SessionActions.closeActiveTab(
                         state.session,
                         registry: state.registry,
-                        claudeSessionTracker: state.claudeSessionTracker
+                        claudeSessionTracker: state.claudeSessionTracker,
+                        codexSessionTracker: state.codexSessionTracker
                     )
                 } label: {
                     Label("Close Tab", systemImage: "xmark.rectangle")

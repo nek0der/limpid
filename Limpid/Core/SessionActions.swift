@@ -54,7 +54,8 @@ enum SessionActions {
         tabID: UUID,
         source: CloseConfirmer.Source = .keyboard,
         confirm: Bool = true,
-        claudeSessionTracker: ClaudeSessionTracker? = nil
+        claudeSessionTracker: ClaudeSessionTracker? = nil,
+        codexSessionTracker: CodexSessionTracker? = nil
     ) {
         guard let tab = session.tab(tabID) else { return }
         let leafIDs = tab.splitTree.allLeafIDs()
@@ -93,6 +94,7 @@ enum SessionActions {
             // records would sit there until the next bootstrap
             // cleanup pass swept them.
             claudeSessionTracker?.didClosePane(leafID)
+            codexSessionTracker?.didClosePane(leafID)
         }
     }
 
@@ -125,7 +127,8 @@ enum SessionActions {
             // pane id remap so an in-session ⌘⇧T can still try a
             // resume on the revived leaf (best-effort — the disk
             // record was already dropped at close time).
-            claudeSessions: remapKeys(closed.tab.claudeSessions, using: idMap)
+            claudeSessions: remapKeys(closed.tab.claudeSessions, using: idMap),
+            codexSessions: remapKeys(closed.tab.codexSessions, using: idMap)
         )
         // `scrollbackPaths` / `initialCommands` aren't in the Tab init
         // signature, so assign them after construction.
@@ -154,7 +157,8 @@ enum SessionActions {
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
-        claudeSessionTracker: ClaudeSessionTracker? = nil
+        claudeSessionTracker: ClaudeSessionTracker? = nil,
+        codexSessionTracker: CodexSessionTracker? = nil
     ) {
         guard let id = session.activeTabID else { return }
         closeTab(
@@ -162,7 +166,8 @@ enum SessionActions {
             registry: registry,
             tabID: id,
             source: source,
-            claudeSessionTracker: claudeSessionTracker
+            claudeSessionTracker: claudeSessionTracker,
+            codexSessionTracker: codexSessionTracker
         )
     }
 
@@ -174,7 +179,8 @@ enum SessionActions {
     static func closeAllTabsInActiveContainer(
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
-        claudeSessionTracker: ClaudeSessionTracker? = nil
+        claudeSessionTracker: ClaudeSessionTracker? = nil,
+        codexSessionTracker: CodexSessionTracker? = nil
     ) {
         let tabs = session.tabs(in: session.activeContainerID)
         guard !tabs.isEmpty else { return }
@@ -186,7 +192,8 @@ enum SessionActions {
                 registry: registry,
                 tabID: tab.id,
                 confirm: false,
-                claudeSessionTracker: claudeSessionTracker
+                claudeSessionTracker: claudeSessionTracker,
+                codexSessionTracker: codexSessionTracker
             )
         }
     }
@@ -236,7 +243,8 @@ enum SessionActions {
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
-        claudeSessionTracker: ClaudeSessionTracker? = nil
+        claudeSessionTracker: ClaudeSessionTracker? = nil,
+        codexSessionTracker: CodexSessionTracker? = nil
     ) {
         guard let tab = session.activeTab else { return }
         guard let leafID = tab.splitTree.focusedLeafID
@@ -253,10 +261,12 @@ enum SessionActions {
             // Drop the in-memory mirror for the closed leaf so a
             // future bootstrap doesn't keep resurrecting the entry.
             t.claudeSessions[leafID] = nil
+            t.codexSessions[leafID] = nil
         }
         session.paneSearchStates.removeValue(forKey: leafID)
         registry.unregister(leafID)
         claudeSessionTracker?.didClosePane(leafID)
+        codexSessionTracker?.didClosePane(leafID)
         // If the tab is now empty, close it altogether.
         if let refreshed = session.activeTab, refreshed.splitTree.isEmpty {
             session.closeTab(refreshed.id)
@@ -422,7 +432,8 @@ enum SessionActions {
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
-        claudeSessionTracker: ClaudeSessionTracker? = nil
+        claudeSessionTracker: ClaudeSessionTracker? = nil,
+        codexSessionTracker: CodexSessionTracker? = nil
     ) {
         guard let tab = session.activeTab else { return }
         let leafCount = tab.splitTree.allLeafIDs().count
@@ -431,14 +442,16 @@ enum SessionActions {
                 session,
                 registry: registry,
                 source: source,
-                claudeSessionTracker: claudeSessionTracker
+                claudeSessionTracker: claudeSessionTracker,
+                codexSessionTracker: codexSessionTracker
             )
         } else {
             closeActivePane(
                 session,
                 registry: registry,
                 source: source,
-                claudeSessionTracker: claudeSessionTracker
+                claudeSessionTracker: claudeSessionTracker,
+                codexSessionTracker: codexSessionTracker
             )
         }
     }
