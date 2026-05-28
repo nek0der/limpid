@@ -97,6 +97,16 @@ final class WindowSession {
     /// Keyed by pane (split-tree leaf) id.
     var paneSearchStates: [UUID: PaneSearchState] = [:]
 
+    /// Command palette visibility state. Non-nil = overlay shown.
+    /// Transient — not Codable, not persisted.
+    var commandPaletteState: CommandPaletteState?
+
+    /// Global frame of the palette search field, used to anchor the
+    /// dropdown. Updated by ChromePaletteField via onGeometryChange.
+    /// Excluded from observation so window resizes don't fan out to
+    /// every WindowSession observer.
+    @ObservationIgnored var paletteFieldFrame: CGRect = .zero
+
     /// Per-pane transient UI state (bell ringing, child exit code).
     /// Lives here, *not* on `Tab.paneStates`, so flipping a bell flash
     /// or stamping a child-exit code doesn't reassign `tabs[idx]` —

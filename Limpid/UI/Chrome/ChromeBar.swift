@@ -90,27 +90,17 @@ struct ChromeL3Segment: View {
 
     private var l3Content: some View {
         HStack(spacing: 8) {
-            // When the sidebar is hidden the L2 chrome's title is
-            // obscured by the floating chrome capsule, so move the
-            // container title here so the user can still see where
-            // they are.
             if session.sidebarHidden {
                 ChromeContainerTitle()
             }
-            Spacer()
-            // Sparkle reported an update-cycle event — surface a
-            // tinted affordance left of the nav cluster. The badge
-            // itself changes shape depending on `UpdateState`:
-            // shippingbox while available, spinner while checking,
-            // progress ring while downloading / extracting, check on
-            // install completion, warning on error. Tap opens the
-            // popover; only Skip / Install transitions clear it.
+
+            ChromePaletteField()
+
+            Spacer(minLength: 0)
+
             if updateState.showsBadge, let updater {
                 ChromeUpdateButton(updater: updater)
             }
-            // VS Code-style back/forward through the user's navigation
-            // history. Sits left of the action capsule (new tab /
-            // split) so the chrome flows: nav → actions.
             ChromeActionCapsule {
                 ChromeCapsuleButton(
                     systemImage: "chevron.backward",
@@ -128,10 +118,6 @@ struct ChromeL3Segment: View {
                     session.navigateForward()
                 }
             }
-            // New Tab moved to the L2 chrome action capsule (next to
-            // the ellipsis menu) so it sits adjacent to the tab list.
-            // L3 keeps split actions only — they target the focused
-            // pane, which is naturally on the L3 side.
             ChromeActionCapsule {
                 ChromeCapsuleButton(
                     systemImage: "rectangle.split.2x1",

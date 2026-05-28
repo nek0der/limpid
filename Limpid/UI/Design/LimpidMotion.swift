@@ -27,6 +27,9 @@ enum LimpidMotion {
     /// Expand/collapse a Project header in the sidebar.
     static let expand: Animation = .easeInOut(duration: 0.2)
 
+    /// Command palette show/hide.
+    static let paletteToggle: Animation = .easeOut(duration: 0.15)
+
     /// How long a pane's bell-ring highlight stays lit. One token so
     /// the libghostty bell handler and the manual `flashPane` helper
     /// agree on the duration — pre-token they drifted to 350 ms and
