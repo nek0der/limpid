@@ -136,7 +136,7 @@ struct ChromeL3Segment: View {
                 }
             }
         }
-        .padding(.trailing, 12)
+        .padding(.horizontal, 12)
     }
 }
 

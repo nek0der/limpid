@@ -114,6 +114,10 @@ private struct L2Column: View {
             L2ResizeHandle(session: session)
         }
         .frame(width: leadingInset + session.l2Width)
+        .overlay(alignment: .trailing) {
+            LimpidColor.l2TrailingDivider
+                .frame(width: 0.5)
+        }
         // Tint sits *over* the behind-window Liquid Glass material
         // (see `ThreePaneLayout.windowBaseFill`). Cap its alpha so
         // the glass blur underneath stays visible — without the

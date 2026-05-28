@@ -83,6 +83,13 @@ enum LimpidColor {
         dark: Color.black.opacity(0.28)
     )
 
+    /// Vertical hairline between the L2 and L3 columns. Visible only
+    /// in light mode where the two column tints are nearly identical.
+    static let l2TrailingDivider: Color = .init(
+        light: Color.black.opacity(0.08),
+        dark: Color.clear
+    )
+
     /// Rim highlight along the top of glass panels (§2.2).
     static let rimLight: Color = .init(
         light: Color.white.opacity(0.15),
