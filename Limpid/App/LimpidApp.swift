@@ -919,7 +919,6 @@ struct ContentView: View {
                         .onTapGesture {
                             SessionActions.closeCommandPalette(state.session)
                         }
-
                     CommandPaletteDropdown(
                         state: paletteState,
                         onDismiss: {

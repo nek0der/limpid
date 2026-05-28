@@ -12,6 +12,7 @@ concurrency:
 jobs:
   build:
     name: Build (macOS 26)
+    needs: [format, lint]
     runs-on: macos-26
 
     steps:
