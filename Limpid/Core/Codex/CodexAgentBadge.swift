@@ -7,10 +7,10 @@
 
 import Foundation
 
-struct CodexAgentBadge: Codable, Equatable {
+struct CodexAgentBadge: Codable, Equatable, AgentNotificationBadge {
     /// Strict lifecycle. The icon shape + tint come from
     /// `state.iconName` / `state.iconColor`.
-    var state: CodexAgentState
+    var state: AgentState
 
     /// Free-form tag used by the hover tooltip: `tool_name` (PreToolUse),
     /// the permission request message, etc. Empty / nil when there is

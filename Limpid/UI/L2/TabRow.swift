@@ -38,7 +38,7 @@ struct TabRow: View {
     /// pick the most-urgent state for the L2 icon. Pulls from both
     /// `claudeAgentBadges` and `codexAgentBadges` via the shared
     /// session helper so a Codex pane lights up the badge too.
-    private var aggregateAgentState: ClaudeAgentState? {
+    private var aggregateAgentState: AgentState? {
         session.aggregateAgentState(in: tab)
     }
 
@@ -62,12 +62,11 @@ struct TabRow: View {
     /// Build the hover tooltip for the agent-state icon. Includes
     /// the dominant pane's detail and elapsed seconds when a single
     /// pane is involved; falls back to a count summary for multi-
-    /// pane mixes. Treats Claude and Codex badges as one set — the
-    /// states share rawValues so the user-visible enum collapses
-    /// onto `ClaudeAgentState`.
-    private func agentTooltip(for state: ClaudeAgentState) -> String {
+    /// pane mixes. Claude and Codex badges share `AgentState` so we
+    /// project both kinds onto a single tuple list for the reducer.
+    private func agentTooltip(for state: AgentState) -> String {
         struct UnifiedBadge {
-            let state: ClaudeAgentState
+            let state: AgentState
             let detail: String?
             let runStartedAt: Date?
             let updatedAt: Date
@@ -83,11 +82,9 @@ struct TabRow: View {
                     updatedAt: b.updatedAt
                 ))
             }
-            if let b = tab.codexAgentBadges[leaf],
-               let mapped = ClaudeAgentState(rawValue: b.state.rawValue)
-            {
+            if let b = tab.codexAgentBadges[leaf] {
                 badges.append(UnifiedBadge(
-                    state: mapped,
+                    state: b.state,
                     detail: b.detail,
                     runStartedAt: b.runStartedAt,
                     updatedAt: b.updatedAt

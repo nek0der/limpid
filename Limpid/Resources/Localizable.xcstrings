@@ -3718,7 +3718,71 @@
       }
     },
     "—": {},
-    "日本語": {}
+    "日本語": {},
+    "Claude finished" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude finished"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude が応答完了"
+          }
+        }
+      }
+    },
+    "Claude needs input" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude needs input"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude が入力待ち"
+          }
+        }
+      }
+    },
+    "Codex finished" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex finished"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex が応答完了"
+          }
+        }
+      }
+    },
+    "Codex needs input" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex needs input"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex が入力待ち"
+          }
+        }
+      }
+    }
   },
   "version": "1.0"
 }

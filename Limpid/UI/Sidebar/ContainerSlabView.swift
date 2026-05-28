@@ -395,11 +395,11 @@ struct ContainerSlabView: View {
         session.isRingingInProject(projectID)
     }
 
-    fileprivate func agentState(in container: ContainerID) -> ClaudeAgentState? {
+    fileprivate func agentState(in container: ContainerID) -> AgentState? {
         session.aggregateAgentState(in: container)
     }
 
-    fileprivate func agentBreakdown(in container: ContainerID) -> [ClaudeAgentState: Int] {
+    fileprivate func agentBreakdown(in container: ContainerID) -> [AgentState: Int] {
         session.agentStateBreakdown(in: container)
     }
 

@@ -182,10 +182,10 @@ struct ContainerRow: View {
     /// Aggregated Claude agent state across the container's panes.
     /// `nil` means no claude is running / all idle — the row stays
     /// quiet. The caller computes it from `WindowSession.aggregateAgentState`.
-    var agentState: ClaudeAgentState?
+    var agentState: AgentState?
     /// Per-state pane counts used for the agent icon's hover tooltip.
     /// Empty dict when no claude is running.
-    var agentBreakdown: [ClaudeAgentState: Int] = [:]
+    var agentBreakdown: [AgentState: Int] = [:]
     let onActivate: () -> Void
     /// Chevron click for Project / Group rows. Nil disables.
     let onToggleExpand: (() -> Void)?
@@ -630,8 +630,8 @@ struct ContainerRow: View {
     /// Build the "1 error · 2 needsInput · 1 running · 3 idle" tooltip
     /// from `agentBreakdown`. 0-count states are omitted so the string
     /// stays scannable.
-    private func agentTooltip(for dominant: ClaudeAgentState) -> String {
-        let order: [ClaudeAgentState] = [.error, .needsInput, .running, .compacting, .idle, .unknown]
+    private func agentTooltip(for dominant: AgentState) -> String {
+        let order: [AgentState] = [.error, .needsInput, .running, .compacting, .idle, .unknown]
         var parts: [String] = []
         for state in order {
             let count = agentBreakdown[state] ?? 0
