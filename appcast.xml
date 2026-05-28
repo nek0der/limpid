@@ -3,15 +3,15 @@
     <channel>
         <title>Limpid</title>
         <item>
-            <title>0.1.8</title>
-            <pubDate>Wed, 27 May 2026 00:58:19 +0000</pubDate>
+            <title>0.1.9</title>
+            <pubDate>Thu, 28 May 2026 16:30:45 +0000</pubDate>
             <link>https://github.com/nek0der/limpid</link>
-            <sparkle:version>0.1.8</sparkle:version>
-            <sparkle:shortVersionString>0.1.8</sparkle:shortVersionString>
+            <sparkle:version>0.1.9</sparkle:version>
+            <sparkle:shortVersionString>0.1.9</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <sparkle:releaseNotesLink>https://nek0der.github.io/limpid/Limpid-0.1.8.md</sparkle:releaseNotesLink>
-            <enclosure url="https://github.com/nek0der/limpid/releases/download/v0.1.8/Limpid-0.1.8.dmg" length="9148960" type="application/octet-stream" sparkle:edSignature="XMa2n+eAb1f2CLVr11LSf6nl0VuhK4BTlgqXc2uDOUA10GT+T4EdL8+kkESbyUEzNlycFx43WXQ1HCuVyhqJDw=="/>
+            <sparkle:releaseNotesLink>https://nek0der.github.io/limpid/Limpid-0.1.9.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/nek0der/limpid/releases/download/v0.1.9/Limpid-0.1.9.dmg" length="9346266" type="application/octet-stream" sparkle:edSignature="/lFSZ8Kq4ty9ZEQsGTDEQTgaMsnVGYzfvYgdQk+E97paca5vjMy/Fxv1T/GsME+wlxrXFur5SXPz5Q1lL8jJAA=="/>
         </item>
     </channel>
 </rss>
