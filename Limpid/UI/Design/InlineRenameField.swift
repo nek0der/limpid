@@ -22,6 +22,18 @@
 // padding the display `Text` so the static label sits at the same
 // x as the editing field — no jump when the row enters / leaves
 // edit mode.
+//
+// Outside-click dismissal: SwiftUI's `@FocusState` only fires when a
+// new view *takes* first responder. Clicking on the slab gutter or any
+// non-focusable region leaves the field editor as first responder and
+// the rename UI feels stuck open. We install an `NSEvent` local monitor
+// while editing and use AppKit `hitTest` to ask "did this click land
+// inside our field's NSTextField subtree?" — anything else commits.
+// `hitTest` works in native AppKit view coords, so we avoid the
+// SwiftUI-`.global` vs `NSWindow.contentLayoutRect` flip math entirely
+// (that flip was off by the title-bar height under `.fullSizeContentView`,
+// which caused inside clicks to be misclassified as outside and the
+// field to collapse on every keystroke-adjacent tap).
 
 import AppKit
 import SwiftUI
@@ -37,17 +49,7 @@ struct InlineRenameField: View {
     @FocusState private var fieldFocused: Bool
     @State private var rollback: String = ""
     @State private var didFinalize: Bool = false
-    /// NSEvent monitor that finalizes the edit when the user clicks
-    /// anywhere outside this `TextField`'s frame. SwiftUI's
-    /// `@FocusState` only fires when a new view *takes* first
-    /// responder — clicking on the slab gutter or any non-focusable
-    /// region leaves the field editor as first responder and the
-    /// rename UI feels stuck open. The monitor compares the click
-    /// position against the field's window-coordinate frame
-    /// (captured via `GeometryReader`) and commits whenever the
-    /// click misses.
     @State private var outsideClickMonitor: Any?
-    @State private var fieldFrameInWindow: CGRect = .zero
 
     /// Match the field editor's default `lineFragmentPadding` so the
     /// static `Text` lines up with the editing TextField's first
@@ -60,17 +62,6 @@ struct InlineRenameField: View {
                 TextField("", text: $text)
                     .textFieldStyle(.plain)
                     .focused($fieldFocused)
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear
-                                .onAppear {
-                                    fieldFrameInWindow = geo.frame(in: .global)
-                                }
-                                .onChange(of: geo.frame(in: .global)) { _, new in
-                                    fieldFrameInWindow = new
-                                }
-                        }
-                    )
                     .onSubmit { finalize(commit: true) }
                     .onExitCommand { finalize(commit: false) }
                     .onAppear {
@@ -128,26 +119,35 @@ struct InlineRenameField: View {
         outsideClickMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { event in
-            // Compare the click location against the field's frame in
-            // SwiftUI window coordinates. SwiftUI's `.global` space and
-            // `event.locationInWindow` both use AppKit window-local
-            // coords but with opposite y axes — flip the y before the
-            // hit test. Inside-frame clicks (positioning the caret) are
-            // ignored; everything else commits, including clicks on
-            // empty slab area that AppKit otherwise ignores (those
-            // never reach `@FocusState`, which is why the field used
-            // to feel stuck in edit mode).
-            if let win = event.window {
-                let flipped = CGPoint(
-                    x: event.locationInWindow.x,
-                    y: win.contentLayoutRect.height - event.locationInWindow.y
-                )
-                if !fieldFrameInWindow.contains(flipped) {
-                    DispatchQueue.main.async {
-                        guard isEditing, !didFinalize else { return }
-                        finalize(commit: true)
-                    }
+            // Ask AppKit directly: does this click land on the
+            // NSTextField we're editing (or its field editor)? We get
+            // the field via the window's current first responder — when
+            // we own focus, that's the shared field editor and its
+            // `delegate` is our backing `NSTextField`. `hitTest` returns
+            // the deepest descendant view at the click point, so an
+            // ancestry check tells us "click landed somewhere within
+            // our text field's visual subtree" reliably regardless of
+            // window chrome (`.fullSizeContentView`, toolbar height,
+            // etc.).
+            guard let win = event.window,
+                  let contentView = win.contentView,
+                  let hit = contentView.hitTest(event.locationInWindow)
+            else {
+                return event
+            }
+            if let editor = win.firstResponder as? NSText {
+                if hit === editor || hit.isDescendant(of: editor) {
+                    return event
                 }
+                if let textField = editor.delegate as? NSTextField,
+                   hit === textField || hit.isDescendant(of: textField)
+                {
+                    return event
+                }
+            }
+            DispatchQueue.main.async {
+                guard isEditing, !didFinalize else { return }
+                finalize(commit: true)
             }
             return event
         }

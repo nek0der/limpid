@@ -318,9 +318,16 @@ struct ContainerRow: View {
                     onCancel: { cancelRename() }
                 )
                 .layoutPriority(1)
-                .onTapGesture(count: 2) {
-                    if !isEditing { beginRename() }
-                }
+                // `simultaneousGesture` (not `.onTapGesture`) so the
+                // double-tap recognizer doesn't gate single-click
+                // delivery to the inner TextField while editing — same
+                // lesson as PR #50 for the row's activation tap. The
+                // closure still no-ops when already editing.
+                .simultaneousGesture(
+                    TapGesture(count: 2).onEnded {
+                        if !isEditing { beginRename() }
+                    }
+                )
                 .onChange(of: label) { _, newValue in
                     if !isEditing { draft = newValue }
                 }
