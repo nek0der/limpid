@@ -21,6 +21,7 @@ enum LimpidShortcutCategory: Int, CaseIterable, Identifiable {
     case navigation
     case splits
     case search
+    case terminal
     case font
 
     var id: Int {
@@ -40,6 +41,7 @@ enum LimpidShortcutCategory: Int, CaseIterable, Identifiable {
         case .navigation: "Navigation"
         case .splits: "Splits"
         case .search: "Find"
+        case .terminal: "Terminal"
         case .font: "Font"
         }
     }
@@ -93,6 +95,10 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     case findNext
     case findPrevious
 
+    // Terminal (libghostty)
+    case nextPrompt
+    case previousPrompt
+
     // Font (libghostty)
     case increaseFontSize
     case decreaseFontSize
@@ -118,6 +124,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .splitRight, .splitDown, .equalizeSplits, .toggleSplitZoom,
              .focusPaneLeft, .focusPaneRight, .focusPaneUp, .focusPaneDown: .splits
         case .find, .findNext, .findPrevious: .search
+        case .nextPrompt, .previousPrompt: .terminal
         case .increaseFontSize, .decreaseFontSize, .resetFontSize: .font
         }
     }
@@ -136,6 +143,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// they have no menu equivalent.
     var ghosttyAction: String? {
         switch self {
+        case .nextPrompt: "jump_to_prompt:1"
+        case .previousPrompt: "jump_to_prompt:-1"
         case .increaseFontSize: "increase_font_size:1"
         case .decreaseFontSize: "decrease_font_size:1"
         case .resetFontSize: "reset_font_size"
@@ -180,6 +189,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .find: "Find…"
         case .findNext: "Find Next"
         case .findPrevious: "Find Previous"
+        case .nextPrompt: "Next Prompt"
+        case .previousPrompt: "Previous Prompt"
         case .increaseFontSize: "Increase Font Size"
         case .decreaseFontSize: "Decrease Font Size"
         case .resetFontSize: "Reset Font Size"
@@ -223,6 +234,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .find: .init(key: "f", modifiers: [.command])
         case .findNext: .init(key: "g", modifiers: [.command])
         case .findPrevious: .init(key: "g", modifiers: [.command, .shift])
+        case .nextPrompt: .init(key: "down", modifiers: [.command])
+        case .previousPrompt: .init(key: "up", modifiers: [.command])
         // ⌘+ is the cross-app convention (iTerm2 / Ghostty /
         // Terminal.app / Safari / Chrome all use shift+equal).
         // Stored as `= + [.command, .shift]` because libghostty's
