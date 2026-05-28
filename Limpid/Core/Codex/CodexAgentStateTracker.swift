@@ -283,130 +283,29 @@ final class CodexAgentStateTracker {
         store.cleanup(keeping: alive)
     }
 
+    /// Diff every leaf's prior badge against its current badge and
+    /// hand the transition to `AgentNotificationEmitter`. See the
+    /// emitter file header for the per-transition rules — Claude and
+    /// Codex use the exact same logic now, only the localized titles
+    /// differ.
     private func emitFinishedNotifications(session: WindowSession) {
         guard let notificationManager else { return }
+        let emitter = AgentNotificationEmitter(
+            kind: .codex,
+            notificationManager: notificationManager
+        )
         for tab in session.tabs {
             for paneID in tab.splitTree.allLeafIDs() {
                 guard let current = tab.codexAgentBadges[paneID] else { continue }
-                let previous = previousBadges[paneID]
-                if current.state == .needsInput,
-                   previous?.state != .needsInput
-                {
-                    emitNeedsInputNotification(
-                        tab: tab,
-                        paneID: paneID,
-                        badge: current,
-                        session: session,
-                        notificationManager: notificationManager
-                    )
-                    continue
-                }
-                guard current.state == .idle else { continue }
-                guard let previous else { continue }
-                guard previous.state == .running || previous.state == .compacting else {
-                    continue
-                }
-                let containerLabel = session.containerLabel(for: tab.container)
-                let title: String = if containerLabel.isEmpty {
-                    String(localized: "Codex finished")
-                } else {
-                    containerLabel
-                }
-                let body: String = if let prompt = previous.lastPrompt,
-                                      let cleaned = truncatedPrompt(prompt)
-                {
-                    cleaned
-                } else {
-                    String(localized: "Codex finished")
-                }
-                notificationManager.send(
-                    title: title,
-                    body: body,
-                    paneID: paneID,
-                    tabID: tab.id,
-                    containerID: tab.container,
-                    requireFocus: true,
-                    kind: .desktop,
-                    tabTitleSnapshot: tab.displayTitle,
-                    containerLabel: containerLabel
-                )
-                markUnreadUnlessFocused(
-                    session: session,
+                emitter.handleTransition(
                     tab: tab,
-                    paneID: paneID
+                    paneID: paneID,
+                    previous: previousBadges[paneID],
+                    current: current,
+                    session: session
                 )
             }
         }
-    }
-
-    private func emitNeedsInputNotification(
-        tab: Tab,
-        paneID: UUID,
-        badge: CodexAgentBadge,
-        session: WindowSession,
-        notificationManager: LimpidNotificationManager
-    ) {
-        let containerLabel = session.containerLabel(for: tab.container)
-        let title: String = if containerLabel.isEmpty {
-            String(localized: "Codex needs input")
-        } else {
-            containerLabel
-        }
-        let body: String = {
-            if let detail = badge.detail, let cleaned = truncatedPrompt(detail) {
-                return cleaned
-            }
-            if let prompt = badge.lastPrompt, let cleaned = truncatedPrompt(prompt) {
-                return cleaned
-            }
-            return String(localized: "Codex needs input")
-        }()
-        notificationManager.send(
-            title: title,
-            body: body,
-            paneID: paneID,
-            tabID: tab.id,
-            containerID: tab.container,
-            requireFocus: true,
-            kind: .desktop,
-            tabTitleSnapshot: tab.displayTitle,
-            containerLabel: containerLabel
-        )
-        markUnreadUnlessFocused(
-            session: session,
-            tab: tab,
-            paneID: paneID
-        )
-    }
-
-    private func markUnreadUnlessFocused(
-        session: WindowSession,
-        tab: Tab,
-        paneID: UUID
-    ) {
-        let isActiveTab = session.activeTabID == tab.id
-        let isFocusedLeaf = tab.splitTree.focusedLeafID == paneID
-        if isActiveTab,
-           isFocusedLeaf,
-           LimpidNotificationDelegate.isKeyAndFocused
-        {
-            return
-        }
-        session.markUnread(paneID: paneID)
-    }
-
-    private func truncatedPrompt(_ raw: String) -> String? {
-        let collapsed = raw
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\r", with: " ")
-            .split(separator: " ", omittingEmptySubsequences: true)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !collapsed.isEmpty else { return nil }
-        let limit = 80
-        if collapsed.count <= limit { return collapsed }
-        let cutoff = collapsed.index(collapsed.startIndex, offsetBy: limit - 1)
-        return collapsed[..<cutoff] + "…"
     }
 
     private func rebuildPreviousBadges(session: WindowSession) {
@@ -420,7 +319,7 @@ final class CodexAgentStateTracker {
     }
 
     private func makeBadge(from record: CodexAgentStateRecord) -> CodexAgentBadge? {
-        guard let state = CodexAgentState(rawValue: record.state) else { return nil }
+        guard let state = AgentState(rawValue: record.state) else { return nil }
         let detail = (record.detail?.isEmpty == false) ? record.detail : nil
         let updatedAt = Self.parseISO8601(record.updatedAt) ?? Date()
         let runStartedAt: Date? = if let raw = record.runStartedAt, !raw.isEmpty {

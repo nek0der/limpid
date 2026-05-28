@@ -237,175 +237,28 @@ final class ClaudeAgentStateTracker {
         store.cleanup(keeping: alive)
     }
 
-    /// Compare `previousBadges` against the current session state and
-    /// fire macOS notifications on meaningful state transitions:
-    ///
-    /// - `(running|compacting) → idle` → "Claude finished" with the
-    ///   last user prompt as body.
-    /// - `(running|compacting|unknown) → needsInput` → "Claude needs
-    ///   input" with the permission / question text as body. The
-    ///   generic OSC 9 "Claude is waiting for your input" that Claude
-    ///   emits in parallel is suppressed inside
-    ///   `GhosttyEventCoordinator.handleDesktopNotification` while the
-    ///   pane carries a fresh `.needsInput` badge.
-    ///
-    /// The `.error` state already shows a red icon and a sound-less
-    /// `StopFailure` is best surfaced via the icon — we don't fire a
-    /// banner there to avoid duplicating with Anthropic's own rate-
-    /// limit / billing dialogs.
+    /// Diff every leaf's prior badge against its current badge and
+    /// hand the transition to `AgentNotificationEmitter` to decide
+    /// whether a banner should fire. The emitter owns the title /
+    /// body / unread logic — see its file header for the rules.
     private func emitFinishedNotifications(session: WindowSession) {
         guard let notificationManager else { return }
+        let emitter = AgentNotificationEmitter(
+            kind: .claude,
+            notificationManager: notificationManager
+        )
         for tab in session.tabs {
             for paneID in tab.splitTree.allLeafIDs() {
                 guard let current = tab.claudeAgentBadges[paneID] else { continue }
-                let previous = previousBadges[paneID]
-                // Detect running → needsInput transitions before
-                // running → idle so a single tick that walks both
-                // states still fires the right notification.
-                if current.state == .needsInput,
-                   previous?.state != .needsInput
-                {
-                    emitNeedsInputNotification(
-                        tab: tab,
-                        paneID: paneID,
-                        badge: current,
-                        session: session,
-                        notificationManager: notificationManager
-                    )
-                    continue
-                }
-                guard current.state == .idle else { continue }
-                guard let previous else { continue }
-                guard previous.state == .running || previous.state == .compacting else {
-                    continue
-                }
-                // Use the container label (project / worktree path) as
-                // the notification title — `tab.displayTitle` tends to
-                // be "Claude Code" because Claude itself sets the OSC 0
-                // title, so it carries no signal. Fall back to a
-                // generic "Claude finished" string for loose tabs
-                // without a meaningful container.
-                let containerLabel = session.containerLabel(for: tab.container)
-                let title: String = if containerLabel.isEmpty {
-                    String(localized: "Claude finished")
-                } else {
-                    containerLabel
-                }
-                // Body uses the user's own prompt so they instantly
-                // recognise which request just completed. Truncate to
-                // ~80 chars and collapse whitespace; the macOS banner
-                // only shows a few lines anyway.
-                let body: String = if let prompt = previous.lastPrompt,
-                                      let cleaned = truncatedPrompt(prompt)
-                {
-                    cleaned
-                } else {
-                    String(localized: "Claude finished")
-                }
-                notificationManager.send(
-                    title: title,
-                    body: body,
-                    paneID: paneID,
-                    tabID: tab.id,
-                    containerID: tab.container,
-                    requireFocus: true,
-                    kind: .desktop,
-                    tabTitleSnapshot: tab.displayTitle,
-                    containerLabel: containerLabel
-                )
-                markUnreadUnlessFocused(
-                    session: session,
+                emitter.handleTransition(
                     tab: tab,
-                    paneID: paneID
+                    paneID: paneID,
+                    previous: previousBadges[paneID],
+                    current: current,
+                    session: session
                 )
             }
         }
-    }
-
-    /// Fire the macOS "Claude needs input" banner. Body prefers the
-    /// hook's `detail` (permission message text or AskUserQuestion's
-    /// question) and falls back to the user's last prompt when that
-    /// was sanitised away — at least the user can tell *which* prompt
-    /// is blocked. If even that's empty, drop to a generic string.
-    private func emitNeedsInputNotification(
-        tab: Tab,
-        paneID: UUID,
-        badge: ClaudeAgentBadge,
-        session: WindowSession,
-        notificationManager: LimpidNotificationManager
-    ) {
-        let containerLabel = session.containerLabel(for: tab.container)
-        let title: String = if containerLabel.isEmpty {
-            String(localized: "Claude needs input")
-        } else {
-            containerLabel
-        }
-        let body: String = {
-            if let detail = badge.detail, let cleaned = truncatedPrompt(detail) {
-                return cleaned
-            }
-            if let prompt = badge.lastPrompt, let cleaned = truncatedPrompt(prompt) {
-                return cleaned
-            }
-            return String(localized: "Claude needs input")
-        }()
-        notificationManager.send(
-            title: title,
-            body: body,
-            paneID: paneID,
-            tabID: tab.id,
-            containerID: tab.container,
-            requireFocus: true,
-            kind: .desktop,
-            tabTitleSnapshot: tab.displayTitle,
-            containerLabel: containerLabel
-        )
-        markUnreadUnlessFocused(
-            session: session,
-            tab: tab,
-            paneID: paneID
-        )
-    }
-
-    /// Match the OSC 9 / 777 path's "only flag unread when the user
-    /// isn't already watching the pane" rule. We can't reach the
-    /// underlying `SurfaceView` from here, so we approximate by
-    /// checking the model's active tab + focused leaf + whether the
-    /// app is the key window. Close enough: when the user is staring
-    /// at a different tab or another app, we mark unread; when they
-    /// are looking at this exact pane, we leave the bell alone.
-    private func markUnreadUnlessFocused(
-        session: WindowSession,
-        tab: Tab,
-        paneID: UUID
-    ) {
-        let isActiveTab = session.activeTabID == tab.id
-        let isFocusedLeaf = tab.splitTree.focusedLeafID == paneID
-        if isActiveTab,
-           isFocusedLeaf,
-           LimpidNotificationDelegate.isKeyAndFocused
-        {
-            return
-        }
-        session.markUnread(paneID: paneID)
-    }
-
-    /// Trim leading / trailing whitespace, collapse runs of inner
-    /// whitespace to a single space, and clip the result to ~80
-    /// characters with an ellipsis. Returns `nil` if nothing usable
-    /// remains so callers fall back to a generic notification body.
-    private func truncatedPrompt(_ raw: String) -> String? {
-        let collapsed = raw
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\r", with: " ")
-            .split(separator: " ", omittingEmptySubsequences: true)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !collapsed.isEmpty else { return nil }
-        let limit = 80
-        if collapsed.count <= limit { return collapsed }
-        let cutoff = collapsed.index(collapsed.startIndex, offsetBy: limit - 1)
-        return collapsed[..<cutoff] + "…"
     }
 
     private func rebuildPreviousBadges(session: WindowSession) {
@@ -419,7 +272,7 @@ final class ClaudeAgentStateTracker {
     }
 
     private func makeBadge(from record: ClaudeAgentStateRecord) -> ClaudeAgentBadge? {
-        guard let state = ClaudeAgentState(rawValue: record.state) else { return nil }
+        guard let state = AgentState(rawValue: record.state) else { return nil }
         let detail = (record.detail?.isEmpty == false) ? record.detail : nil
         let updatedAt = parseISO8601(record.updatedAt) ?? Date()
         let runStartedAt: Date? = if let raw = record.runStartedAt, !raw.isEmpty {
