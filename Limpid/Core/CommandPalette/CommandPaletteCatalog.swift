@@ -69,7 +69,6 @@ enum CommandPaletteCatalog {
         }
     }
 
-
     // MARK: - Tabs
 
     private static func appendTabs(

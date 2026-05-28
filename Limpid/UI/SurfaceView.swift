@@ -518,6 +518,7 @@ final class SurfaceView: NSView {
         keyTextAccumulator = []
         defer { keyTextAccumulator = nil }
 
+        let wasComposing = hasMarkedText()
         let consumed = inputContext?.handleEvent(event) ?? false
         let accumulated = keyTextAccumulator ?? []
         // Treat ⌘ / ⌃ / ⌥ as "this is a keybind, not text composition".
@@ -532,10 +533,23 @@ final class SurfaceView: NSView {
             .isDisjoint(with: [.command, .control, .option])
 
         if !accumulated.isEmpty {
-            // IME committed text via insertText: — forward each chunk
-            // as a key event so libghostty's encoder runs normally.
-            for text in accumulated {
-                forward(event, action: GHOSTTY_ACTION_PRESS, overrideText: text)
+            if wasComposing, let surface {
+                // IME committed composed text — send via the paste
+                // path (ghostty_surface_text) to bypass keybind
+                // matching. forward() would match keybinds like
+                // shift+enter=text:\n on the underlying key event
+                // and discard the composed text.
+                for text in accumulated {
+                    text.withCString { ptr in
+                        ghostty_surface_text(surface, ptr, UInt(text.utf8.count))
+                    }
+                }
+            } else {
+                // Regular (non-IME) text — forward as a key event
+                // so libghostty's encoder runs normally.
+                for text in accumulated {
+                    forward(event, action: GHOSTTY_ACTION_PRESS, overrideText: text)
+                }
             }
         } else if !hasMarkedText(), !consumed || hasKeybindModifiers {
             forward(event, action: GHOSTTY_ACTION_PRESS)
@@ -564,6 +578,9 @@ final class SurfaceView: NSView {
     }
 
     override func flagsChanged(with event: NSEvent) {
+        // Bare modifier presses during IME composition clear the
+        // preedit visually (Ghostty #4634). Suppress them.
+        if hasMarkedText() { return }
         forward(event, action: GHOSTTY_ACTION_PRESS)
     }
 
@@ -749,10 +766,27 @@ extension SurfaceView: @preconcurrency NSTextInputClient {
     }
 
     override func doCommand(by selector: Selector) {
-        // IME consumed the keyDown and dispatched an editor selector
-        // (insertNewline:, deleteBackward:, …). Forward the exact event
-        // we're routing (captured in keyDown) so the terminal still
-        // sees the key while IME is active.
+        if hasMarkedText() {
+            // Newline selectors during composition: commit the text
+            // via the paste path (ghostty_surface_text) to bypass
+            // keybind matching — forward() would hit the
+            // shift+enter=text:\n bind and discard the text.
+            guard selector == #selector(insertNewline(_:))
+                || selector == #selector(insertLineBreak(_:))
+            else { return }
+
+            let text = markedText
+            unmarkText()
+            if let surface, !text.isEmpty {
+                text.withCString { ptr in
+                    ghostty_surface_text(surface, ptr, UInt(text.utf8.count))
+                }
+            }
+            // Clear the accumulator so keyDown doesn't re-send.
+            keyTextAccumulator = []
+            // Fall through to also forward the newline key event.
+        }
+
         if let event = activeKeyEvent ?? NSApp.currentEvent, event.type == .keyDown {
             forward(event, action: GHOSTTY_ACTION_PRESS)
         }
