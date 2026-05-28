@@ -33,9 +33,9 @@ final class GhosttyEventCoordinator {
         self.notificationManager = notificationManager
     }
 
-    /// Single entry point invoked by `GhosttyActionRouter.sink`. Switch
-    /// on the event tag and apply the resulting mutation to the
-    /// session.
+    // Single entry point invoked by `GhosttyActionRouter.sink`. Switch
+    // on the event tag and apply the resulting mutation to the session.
+    // swiftlint:disable:next cyclomatic_complexity
     func dispatch(_ event: GhosttyEvent) {
         switch event {
         case let .setTitle(view, title):
@@ -60,6 +60,12 @@ final class GhosttyEventCoordinator {
             handleSearchSelected(view: view, selected: selected)
         case let .closeSurface(view, _):
             handleCloseSurface(view: view)
+        case let .mouseOverLink(view, url):
+            handleMouseOverLink(view: view, url: url)
+        case let .openUrl(url):
+            handleOpenUrl(url: url)
+        case let .mouseShape(view, shape):
+            handleMouseShape(view: view, shape: shape)
         }
     }
 
@@ -392,5 +398,35 @@ final class GhosttyEventCoordinator {
                 t.pwd = pwd
             }
         }
+    }
+
+    // MARK: - Link / cursor handlers
+
+    private func handleMouseOverLink(view: SurfaceView, url: String?) {
+        view.hoverUrl = url
+    }
+
+    private func handleOpenUrl(url: String) {
+        guard let nsURL = URL(string: url) else {
+            log.warning("OPEN_URL invalid URL: \(url, privacy: .private)")
+            return
+        }
+        NSWorkspace.shared.open(nsURL)
+    }
+
+    private func handleMouseShape(view: SurfaceView, shape: ghostty_action_mouse_shape_e) {
+        let cursor: NSCursor = switch shape {
+        case GHOSTTY_MOUSE_SHAPE_POINTER: .pointingHand
+        case GHOSTTY_MOUSE_SHAPE_TEXT: .iBeam
+        case GHOSTTY_MOUSE_SHAPE_CROSSHAIR: .crosshair
+        case GHOSTTY_MOUSE_SHAPE_NOT_ALLOWED: .operationNotAllowed
+        case GHOSTTY_MOUSE_SHAPE_GRAB: .openHand
+        case GHOSTTY_MOUSE_SHAPE_GRABBING: .closedHand
+        case GHOSTTY_MOUSE_SHAPE_COL_RESIZE: .resizeLeftRight
+        case GHOSTTY_MOUSE_SHAPE_ROW_RESIZE: .resizeUpDown
+        default: .arrow
+        }
+        view.currentCursor = cursor
+        view.window?.invalidateCursorRects(for: view)
     }
 }

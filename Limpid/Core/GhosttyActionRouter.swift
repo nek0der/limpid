@@ -40,6 +40,15 @@ enum GhosttyEvent {
     /// callback). Lives in the same enum so all libghostty-driven
     /// session mutations flow through a single dispatch point.
     case closeSurface(SurfaceView, processAlive: Bool)
+    /// libghostty detected a link under the mouse cursor (or nil when
+    /// the cursor left the link region).
+    case mouseOverLink(SurfaceView, url: String?)
+    /// libghostty asks us to open a URL (Cmd+click on a detected link
+    /// or OSC 8 hyperlink).
+    case openUrl(url: String)
+    /// libghostty wants the cursor shape changed (e.g. pointing hand
+    /// over a link).
+    case mouseShape(SurfaceView, shape: ghostty_action_mouse_shape_e)
 }
 
 @MainActor
@@ -76,7 +85,7 @@ enum GhosttyActionRouter {
 
     // MARK: - Decoding
 
-    // swiftlint:disable:next cyclomatic_complexity
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     private static func decode(
         target: ghostty_target_s,
         action: ghostty_action_s
@@ -155,6 +164,41 @@ enum GhosttyActionRouter {
             let payload = action.action.command_finished
             log.notice("COMMAND_FINISHED exit=\(payload.exit_code, privacy: .public) duration=\(payload.duration, privacy: .public)ns")
             return .commandFinished(view, exitCode: Int(payload.exit_code), durationNs: payload.duration)
+
+        case GHOSTTY_ACTION_MOUSE_OVER_LINK:
+            guard let view = surfaceView(from: target) else { return nil }
+            let payload = action.action.mouse_over_link
+            let url: String? = if let ptr = payload.url, payload.len > 0 {
+                String(
+                    bytesNoCopy: UnsafeMutableRawPointer(mutating: ptr),
+                    length: Int(payload.len),
+                    encoding: .utf8,
+                    freeWhenDone: false
+                )
+            } else {
+                nil
+            }
+            log.debug("MOUSE_OVER_LINK url=\(url ?? "nil", privacy: .private)")
+            return .mouseOverLink(view, url: url)
+
+        case GHOSTTY_ACTION_OPEN_URL:
+            let payload = action.action.open_url
+            guard let ptr = payload.url, payload.len > 0,
+                  let url = String(
+                      bytesNoCopy: UnsafeMutableRawPointer(mutating: ptr),
+                      length: Int(payload.len),
+                      encoding: .utf8,
+                      freeWhenDone: false
+                  )
+            else { return nil }
+            log.notice("OPEN_URL url=\(url, privacy: .private)")
+            return .openUrl(url: url)
+
+        case GHOSTTY_ACTION_MOUSE_SHAPE:
+            guard let view = surfaceView(from: target) else { return nil }
+            let shape = action.action.mouse_shape
+            log.debug("MOUSE_SHAPE \(shape.rawValue, privacy: .public)")
+            return .mouseShape(view, shape: shape)
 
         default:
             return nil

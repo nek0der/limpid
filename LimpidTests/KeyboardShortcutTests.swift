@@ -135,12 +135,14 @@ struct KeyboardShortcutTests {
     func bridge_emittedActionsMatchHandlers() {
         let emitted = Set(LimpidShortcutAction.allCases.compactMap(\.ghosttyAction))
         let expected: Set = [
-            // Font-size actions are the only ones libghostty owns —
-            // they have no menu item, so there's no risk of the menu
-            // path also firing.
+            // Font-size and prompt-navigation actions are the only ones
+            // libghostty owns — they have no menu item, so there's no
+            // risk of the menu path also firing.
             "increase_font_size:1",
             "decrease_font_size:1",
-            "reset_font_size"
+            "reset_font_size",
+            "jump_to_prompt:1",
+            "jump_to_prompt:-1"
         ]
         #expect(emitted == expected, """
         `ghosttyAction` set drifted. Adding a binding for an action \
