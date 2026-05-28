@@ -3420,6 +3420,16 @@
         }
       }
     },
+    "Copy": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コピー"
+          }
+        }
+      }
+    },
     "Next Prompt": {
       "localizations": {
         "ja": {
@@ -3436,16 +3446,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "前のプロンプト"
-          }
-        }
-      }
-    },
-    "Copy": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "コピー"
           }
         }
       }

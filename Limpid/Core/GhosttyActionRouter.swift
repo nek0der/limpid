@@ -178,7 +178,7 @@ enum GhosttyActionRouter {
             } else {
                 nil
             }
-            log.notice("MOUSE_OVER_LINK url=\(url ?? "nil", privacy: .private)")
+            log.debug("MOUSE_OVER_LINK url=\(url ?? "nil", privacy: .private)")
             return .mouseOverLink(view, url: url)
 
         case GHOSTTY_ACTION_OPEN_URL:
