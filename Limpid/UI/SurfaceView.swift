@@ -489,8 +489,18 @@ final class SurfaceView: NSView {
         keyTextAccumulator = []
         defer { keyTextAccumulator = nil }
 
-        _ = inputContext?.handleEvent(event)
+        let consumed = inputContext?.handleEvent(event) ?? false
         let accumulated = keyTextAccumulator ?? []
+        // Treat ⌘ / ⌃ / ⌥ as "this is a keybind, not text composition".
+        // Kotoeri returns `consumed = true` for Shift+⌘ combos without
+        // emitting committed text, so a pure `!consumed` gate would
+        // drop legitimate keybinds — we forward those anyway when a
+        // modifier is held. Plain (non-modifier) keystrokes that the
+        // IME consumes — including synthetic / accessibility events
+        // whose `characters` is a bare `\r` after every prompt — stay
+        // dropped, which is what fixes the double-prompt bug.
+        let hasKeybindModifiers = !event.modifierFlags
+            .isDisjoint(with: [.command, .control, .option])
 
         if !accumulated.isEmpty {
             // IME committed text via insertText: — forward each chunk
@@ -498,12 +508,7 @@ final class SurfaceView: NSView {
             for text in accumulated {
                 forward(event, action: GHOSTTY_ACTION_PRESS, overrideText: text)
             }
-        } else if !hasMarkedText() {
-            // No accumulated text, no preedit — forward as-is.
-            // Ignoring `handleEvent`'s return value matches Ghostty /
-            // cmux: Kotoeri returns "consumed" for Shift+⌘ combos
-            // with no committed text, which would otherwise drop
-            // legitimate keybinds.
+        } else if !hasMarkedText(), !consumed || hasKeybindModifiers {
             forward(event, action: GHOSTTY_ACTION_PRESS)
         }
         // else: preedit active — the keystroke belongs to the IME.
@@ -555,8 +560,22 @@ final class SurfaceView: NSView {
         } else {
             Self.bindingText(from: event)
         }
+        // Only attach `key.text` when the candidate text is printable
+        // (first byte ≥ 0x20). Control characters (`\r`, `\n`, `\t`,
+        // ctrl-modified keys) are encoded by libghostty itself from
+        // the keycode + mods — passing them through `key.text`
+        // overrides that encoder and breaks `ctrl+enter`. It also
+        // lets synthetic / accessibility keyDown events whose
+        // `characters` is a bare `\r` write a literal carriage
+        // return into the pty after every command, triggering zsh's
+        // `accept-line` on an empty buffer and drawing a second
+        // prompt.
         var handled = false
-        if let chars = textSource, !chars.isEmpty {
+        if let chars = textSource,
+           !chars.isEmpty,
+           let firstByte = chars.utf8.first,
+           firstByte >= 0x20
+        {
             chars.withCString { ptr in
                 key.text = ptr
                 handled = ghostty_surface_key(surface, key)
