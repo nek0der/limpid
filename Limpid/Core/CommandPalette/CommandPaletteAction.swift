@@ -12,6 +12,7 @@ enum CommandPaletteAction: Equatable {
     case reopenClosedTab(UUID)
     case openRecentProject(URL)
     case openSettings
+    case insertPrefix(PalettePrefix)
 
     var frecencyKey: String {
         switch self {
@@ -23,6 +24,7 @@ enum CommandPaletteAction: Equatable {
         case let .reopenClosedTab(id): "reopen.\(id.uuidString)"
         case let .openRecentProject(url): "recent.\(url.path)"
         case .openSettings: "settings.open"
+        case let .insertPrefix(mode): "prefix.\(mode.character)"
         }
     }
 }

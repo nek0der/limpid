@@ -3471,6 +3471,116 @@
           }
         }
       }
+    },
+    "Type an action name...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクション名を入力..."
+          }
+        }
+      }
+    },
+    "Type a tab name...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ名を入力..."
+          }
+        }
+      }
+    },
+    "Type a project or worktree name...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト名を入力..."
+          }
+        }
+      }
+    },
+    "Type a setting name...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定項目を入力..."
+          }
+        }
+      }
+    },
+    "Select a mode...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モードを選択..."
+          }
+        }
+      }
+    },
+    "Filter by actions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクションで絞り込み"
+          }
+        }
+      }
+    },
+    "Go to tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブに移動"
+          }
+        }
+      }
+    },
+    "Go to project or worktree": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト/ワークツリーに移動"
+          }
+        }
+      }
+    },
+    "Open settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を開く"
+          }
+        }
+      }
+    },
+    "Show all prefix modes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全プレフィックスモードを表示"
+          }
+        }
+      }
+    },
+    "Quick Open": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイックオープン"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

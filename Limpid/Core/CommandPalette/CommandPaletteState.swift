@@ -9,6 +9,11 @@ import Observation
 final class CommandPaletteState {
     var query: String = ""
     var selectedIndex: Int = 0
+    /// Deferred initial query. Set before the view mounts so
+    /// `onAppear` can apply it after the TextField is ready,
+    /// avoiding the full-text-selection that comes from setting
+    /// the value before mount.
+    var initialQuery: String?
     var results: [ScoredItem] = []
     var allItems: [CommandPaletteItem] = []
 
@@ -22,18 +27,58 @@ final class CommandPaletteState {
         }
     }
 
+    /// The active prefix mode, derived from the current query.
+    var activePrefix: PalettePrefix? {
+        PalettePrefix.from(query).prefix
+    }
+
+    /// Placeholder text for the search field, changes per mode.
+    var placeholder: LocalizedStringResource {
+        activePrefix?.placeholder ?? "Type a command or search..."
+    }
+
     /// Single source of truth for filtering + ranking. Called on every
     /// query change and once at open time (with empty query).
     func applyFilter(query: String, frecencyStore: FrecencyStore?) {
-        if query.isEmpty {
-            results = allItems
+        let (prefix, filterQuery) = PalettePrefix.from(query)
+
+        // Help mode: show all available prefixes.
+        if prefix == .help {
+            results = PalettePrefix.allCases.map { mode in
+                ScoredItem(
+                    item: CommandPaletteItem(
+                        id: "help.\(mode.character)",
+                        category: .actions,
+                        title: String(mode.character),
+                        subtitle: String(localized: mode.description),
+                        icon: "questionmark.circle",
+                        shortcutDisplay: nil,
+                        action: .insertPrefix(mode)
+                    ),
+                    matchedIndices: [],
+                    score: 0
+                )
+            }
+            selectedIndex = 0
+            return
+        }
+
+        // Filter items by prefix category.
+        let candidates: [CommandPaletteItem] = if let prefix {
+            allItems.filter { prefix.matchesItem($0) }
+        } else {
+            allItems
+        }
+
+        if filterQuery.isEmpty {
+            results = candidates
                 .sorted { (frecencyStore?.score(for: $0.id) ?? 0) > (frecencyStore?.score(for: $1.id) ?? 0) }
                 .map { ScoredItem(item: $0, matchedIndices: [], score: 0) }
         } else {
-            results = allItems.compactMap { item -> ScoredItem? in
-                let titleResult = FuzzyMatch.score(query: query, candidate: item.title)
+            results = candidates.compactMap { item -> ScoredItem? in
+                let titleResult = FuzzyMatch.score(query: filterQuery, candidate: item.title)
                 let aliasResult = item.searchAlias.flatMap {
-                    FuzzyMatch.score(query: query, candidate: $0)
+                    FuzzyMatch.score(query: filterQuery, candidate: $0)
                 }
                 guard let best = [titleResult, aliasResult]
                     .compactMap(\.self)

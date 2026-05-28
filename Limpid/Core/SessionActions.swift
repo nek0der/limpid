@@ -329,7 +329,6 @@ enum SessionActions {
         if let view = registry.view(for: next) {
             view.window?.makeFirstResponder(view)
         }
-        flashPane(next, session: session)
     }
 
     /// Toggle full-screen "zoom" for the focused pane within its tab.
@@ -557,7 +556,8 @@ enum SessionActions {
     static func openCommandPalette(
         _ session: WindowSession,
         settings: SettingsStore,
-        frecencyStore: FrecencyStore
+        frecencyStore: FrecencyStore,
+        initialQuery: String = ">"
     ) {
         if session.commandPaletteState != nil {
             NotificationCenter.default.post(name: .limpidCommandPaletteFocus, object: nil)
@@ -565,6 +565,7 @@ enum SessionActions {
         }
         let state = CommandPaletteState()
         state.allItems = CommandPaletteCatalog.buildItems(session: session, settings: settings)
+        state.initialQuery = initialQuery.isEmpty ? nil : initialQuery
         state.applyFilter(query: "", frecencyStore: frecencyStore)
         session.commandPaletteState = state
     }
@@ -610,6 +611,8 @@ enum SessionActions {
             session.addOrActivateProject(rootURL: url)
         case .openSettings:
             NotificationCenter.default.post(name: .limpidOpenSettings, object: nil)
+        case .insertPrefix:
+            break // Handled in ChromePaletteField, never reaches here.
         }
 
         // Restore focus to the terminal surface.
@@ -690,7 +693,7 @@ enum SessionActions {
         case .toggleSidebar: session.sidebarHidden.toggle()
         case .notificationHistory:
             NotificationCenter.default.post(name: .limpidToggleNotificationHistory, object: nil)
-        case .commandPalette: break
+        case .commandPalette, .quickOpen: break
         default: break
         }
     }
