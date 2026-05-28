@@ -49,6 +49,15 @@ final class SurfaceView: NSView {
     private var lastSyncedBounds: NSRect = .zero
     private var lastSyncedScale: CGFloat = 0
 
+    /// URL the mouse is currently hovering over (set by
+    /// `GhosttyEventCoordinator` in response to `MOUSE_OVER_LINK`).
+    var hoverUrl: String?
+
+    /// Cursor shape requested by libghostty (e.g. pointing hand over
+    /// a link). Updated by `GhosttyEventCoordinator` on
+    /// `MOUSE_SHAPE` actions.
+    var currentCursor: NSCursor = .iBeam
+
     /// Recover a SurfaceView from a libghostty surface userdata pointer.
     /// libghostty hands back whatever pointer we stored in
     /// `surface_config.userdata` (we set it to `Unmanaged.passUnretained(self)`).
@@ -161,6 +170,7 @@ final class SurfaceView: NSView {
             object: self
         )
         Self.liveViews.add(self)
+        registerForDraggedTypes([.fileURL])
     }
 
     /// Dump the current scrollback state to `path` via libghostty's new
@@ -613,6 +623,43 @@ final class SurfaceView: NSView {
         markedText.withCString { ptr in
             ghostty_surface_preedit(surface, ptr, UInt(strlen(ptr)))
         }
+    }
+
+    // MARK: - Drag and drop
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard sender.draggingPasteboard.canReadObject(forClasses: [NSURL.self], options: fileOnlyOptions) else {
+            return []
+        }
+        return .copy
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard let surface,
+              let urls = sender.draggingPasteboard.readObjects(
+                  forClasses: [NSURL.self],
+                  options: fileOnlyOptions
+              ) as? [URL],
+              !urls.isEmpty
+        else { return false }
+
+        let paths = urls.map { shellEscape($0.path) }
+        let joined = paths.joined(separator: " ")
+        joined.withCString { ptr in
+            ghostty_surface_text(surface, ptr, UInt(strlen(ptr)))
+        }
+        return true
+    }
+
+    private var fileOnlyOptions: [NSPasteboard.ReadingOptionKey: Any] {
+        [.urlReadingFileURLsOnly: true]
+    }
+
+    /// Shell-escape a file path so spaces and special characters don't
+    /// break the command line. Wraps in single quotes with internal
+    /// single quotes escaped via the `'\''` idiom.
+    private func shellEscape(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 

@@ -22,6 +22,10 @@ extension SurfaceView {
         addTrackingArea(NSTrackingArea(rect: .zero, options: options, owner: self, userInfo: nil))
     }
 
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: currentCursor)
+    }
+
     // MARK: - Button events
 
     override func mouseDown(with event: NSEvent) {
