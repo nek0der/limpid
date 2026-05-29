@@ -31,6 +31,14 @@ enum LimpidConfirm {
         alert.alertStyle = .warning
         alert.addButton(withTitle: confirmLabel)
         alert.addButton(withTitle: cancelLabel)
+        // A Dock right-click "Quit" (or any terminate while we are in the
+        // background) routes through here while another app is frontmost.
+        // At the normal window level a background app's window stays behind
+        // the active app, so we raise the alert to the modal-panel level so
+        // it sits above other apps. We do this instead of `NSApp.activate()`
+        // so cancelling doesn't pull every Limpid window in front of the
+        // user's other work.
+        alert.window.level = .modalPanel
         return alert.runModal() == .alertFirstButtonReturn
     }
 }
