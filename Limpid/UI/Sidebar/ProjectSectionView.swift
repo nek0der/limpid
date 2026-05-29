@@ -15,6 +15,7 @@ import SwiftUI
 
 struct ProjectSectionView: View {
     @Environment(WindowSession.self) private var session
+    @Environment(ConflictDetector.self) private var conflictDetector
     @Environment(LimpidDragState.self) private var dragState
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.surfaceRegistry) private var registry
@@ -70,6 +71,59 @@ struct ProjectSectionView: View {
         isFlat || !project.isExpanded
     }
 
+    /// Whether the project header should show the conflict ⚠. Mirrors
+    /// the agent-state aggregation: when the worktree list is collapsed
+    /// the header speaks for the whole project (primary + every visible
+    /// worktree); when expanded it narrows to the project-direct
+    /// (primary) container, since each worktree row carries its own ⚠.
+    /// Conflict ⚠ state for a single worktree: whether to show a mark at
+    /// all, and whether it's muted (ignored — a discreet re-entry rather
+    /// than an active alarm). Active wins over ignored.
+    private func conflictPresence(_ id: WorktreeID) -> (has: Bool, muted: Bool) {
+        let active = conflictDetector.isParty(id)
+        let ignored = !conflictDetector.ignoredConflicts(involving: id).isEmpty
+        return (active || ignored, !active && ignored)
+    }
+
+    /// Aggregated ⚠ state for the project header. Collapsed/flat → whole
+    /// project (primary + visible worktrees); expanded → primary only
+    /// (each worktree row carries its own).
+    private var projectConflictPresence: (has: Bool, muted: Bool) {
+        var active = false
+        var ignored = false
+        var ids = [ConflictWorktreeBridge.id(forProject: project.id)]
+        if aggregatesWholeProject {
+            ids += project.worktrees
+                .filter { !$0.isHidden && !$0.isMissing }
+                .map { ConflictWorktreeBridge.id(forWorktree: $0.id) }
+        }
+        for id in ids {
+            if conflictDetector.isParty(id) { active = true }
+            if !conflictDetector.ignoredConflicts(involving: id).isEmpty { ignored = true }
+        }
+        return (active || ignored, !active && ignored)
+    }
+
+    /// Open the modal for the first openable (visible OR ignored)
+    /// conflict the worktree is a party in.
+    private func requestConflict(for worktreeID: WorktreeID) {
+        guard let id = conflictDetector.anyOpenableConflict(involving: worktreeID)?.id else { return }
+        NotificationCenter.default.post(name: .limpidShowConflictRequested, object: id.raw)
+    }
+
+    /// Header tap target: primary checkout's conflict, else the first
+    /// conflicting worktree under the project.
+    private func requestProjectConflict() {
+        var ids = [ConflictWorktreeBridge.id(forProject: project.id)]
+        ids += project.worktrees
+            .filter { !$0.isHidden && !$0.isMissing }
+            .map { ConflictWorktreeBridge.id(forWorktree: $0.id) }
+        for id in ids where conflictDetector.anyOpenableConflict(involving: id) != nil {
+            requestConflict(for: id)
+            return
+        }
+    }
+
     private var projectHeader: some View {
         ContainerRow(
             kind: .projectHeader(
@@ -93,6 +147,8 @@ struct ProjectSectionView: View {
             hasUnread: aggregatesWholeProject
                 ? session.hasUnreadInProject(project.id)
                 : session.hasUnread(in: .project(project.id)),
+            hasConflict: projectConflictPresence.has,
+            conflictMuted: projectConflictPresence.muted,
             isRinging: aggregatesWholeProject
                 ? session.isRingingInProject(project.id)
                 : session.isRinging(in: .project(project.id)),
@@ -166,7 +222,8 @@ struct ProjectSectionView: View {
                             )
                         }
                     }
-                    : nil
+                    : nil,
+                onConflictTap: { requestProjectConflict() }
             ),
             // Drag attaches from inside the row body so the row's
             // tap / context-menu gestures don't claim the hit area
@@ -218,6 +275,8 @@ struct ProjectSectionView: View {
             ),
             isActive: session.activeContainerID == .worktree(projectID: project.id, worktreeID: wt.id),
             hasUnread: session.hasUnread(in: .worktree(projectID: project.id, worktreeID: wt.id)),
+            hasConflict: conflictPresence(ConflictWorktreeBridge.id(forWorktree: wt.id)).has,
+            conflictMuted: conflictPresence(ConflictWorktreeBridge.id(forWorktree: wt.id)).muted,
             isRinging: session.isRinging(in: .worktree(projectID: project.id, worktreeID: wt.id)),
             agentState: session.aggregateAgentState(in: .worktree(projectID: project.id, worktreeID: wt.id)),
             agentBreakdown: session.agentStateBreakdown(in: .worktree(projectID: project.id, worktreeID: wt.id)),
@@ -274,7 +333,8 @@ struct ProjectSectionView: View {
                 onRevealInFinder: {
                     NSWorkspace.shared.activateFileViewerSelecting([wt.workingDirectory])
                 },
-                helpText: wt.workingDirectory.path
+                helpText: wt.workingDirectory.path,
+                onConflictTap: { requestConflict(for: ConflictWorktreeBridge.id(forWorktree: wt.id)) }
             ),
             // Drag attaches from inside the row body so the row's
             // tap / context-menu gestures don't claim the hit area

@@ -1225,6 +1225,160 @@
         }
       }
     },
+    "Conflicting with %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicting with %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ と衝突"
+          }
+        }
+      }
+    },
+    "Conflicting with %@ in %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicting with %@ in %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ と %2$@ で衝突"
+          }
+        }
+      }
+    },
+    "Conflicting with %@ in %lld files": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicting with %@ in %lld files"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ と %2$lld 個のファイルで衝突"
+          }
+        }
+      }
+    },
+    "(binary file)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "(binary file)" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "(バイナリファイル)" } }
+      }
+    },
+    "(detached)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "(detached)" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "(切り離し)" } }
+      }
+    },
+    "(file not available in this worktree)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "(file not available in this worktree)" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "(このワークツリーにファイルがありません)" } }
+      }
+    },
+    "(file too large to preview)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "(file too large to preview)" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "(プレビューするには大きすぎます)" } }
+      }
+    },
+    "%lld files": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld files" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "%lld ファイル" } }
+      }
+    },
+    "%lld files · %lld real conflicts": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld files · %lld real conflicts" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "%1$lld ファイル中 %2$lld 件が実衝突" } }
+      }
+    },
+    "%lld more conflicts": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld more conflicts" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "他に %lld 件の衝突" } }
+      }
+    },
+    "Compare files": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Compare files" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "差分を並べて見る" } }
+      }
+    },
+    "Ignore conflict": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ignore conflict" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "この衝突を無視" } }
+      }
+    },
+    "Show %lld more": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show %lld more" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "他 %lld 件を表示" } }
+      }
+    },
+    "Stop ignoring": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Stop ignoring" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "無視を解除" } }
+      }
+    },
+    "This conflict was resolved.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This conflict was resolved." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "この衝突は解消されました。" } }
+      }
+    },
+    "conflict": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "conflict" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "実衝突" } }
+      }
+    },
+    "Last edited a conflicting file": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Last edited a conflicting file" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "衝突ファイルを最後に編集した時刻" } }
+      }
+    },
+    "Ignored conflict — tap to review": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ignored conflict — tap to review" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "無視中の衝突 — タップで確認" } }
+      }
+    },
+    "In conflict with another worktree": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In conflict with another worktree"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のワークツリーと衝突しています"
+          }
+        }
+      }
+    },
     "Inherit from previous tab": {
       "localizations": {
         "en": {

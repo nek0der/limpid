@@ -6,6 +6,7 @@
 // reach the very top of the window.
 
 import AppKit
+import Combine
 import SwiftUI
 
 // `WindowVibrancyBackground` now lives in `Limpid/UI/Design/` so the
@@ -15,14 +16,37 @@ struct ThreePaneLayout: View {
     let state: AppState
     let app: GhosttyApp
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
+    /// Conflict whose detail sheet is open, set by the
+    /// `.limpidShowConflictRequested` notification (party bar / sidebar ⚠).
+    @State private var presentedConflict: ConflictID?
+
+    /// Party-bar summary for the worktree the user is currently in, or
+    /// nil when there's nothing to show. Reading the detector here tracks
+    /// it, so the bar appears / updates as conflicts change.
+    private var conflictSummary: ConflictBarSummary? {
+        ConflictBarSummary.make(
+            activeContainer: state.session.activeContainerID,
+            detector: state.conflictService.detector
+        )
+    }
+
+    /// Left edge of the party bar — the tree's right edge, so the band
+    /// spans tabs + pane only.
+    private var conflictBarLeadingInset: CGFloat {
+        state.session.sidebarHidden ? 0 : L1Footprint.width(for: state.session)
+    }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        let summary = conflictSummary
+        let barReserve: CGFloat = summary == nil ? 0 : ConflictBar.height
+        return ZStack(alignment: .topLeading) {
             // Background plane: L2 + L3 columns, each carrying its own
-            // chrome strip at the top.
+            // chrome strip at the top. When the party bar is showing, the
+            // columns reserve a matching top inset so content sits below
+            // it rather than under it.
             HStack(spacing: 0) {
-                L2Column()
-                L3Column(ghosttyApp: app)
+                L2Column(topReserve: barReserve)
+                L3Column(ghosttyApp: app, topReserve: barReserve)
             }
             .ignoresSafeArea(.container)
             // Liquid Glass base under the entire window body — promotes
@@ -65,8 +89,28 @@ struct ThreePaneLayout: View {
                     .ignoresSafeArea(.all, edges: .top)
                     .transition(.opacity)
             }
+
+            // Party bar — spans the reserved strip across tabs + pane,
+            // below the chrome and right of the tree. Topmost so it
+            // covers the L2/L3 divider in its band.
+            if let summary {
+                ConflictBar(summary: summary)
+                    .padding(.leading, conflictBarLeadingInset)
+                    .padding(.top, LimpidLayout.topStripHeight)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea(.all, edges: .top)
+            }
         }
         .ignoresSafeArea(.all)
+        .onReceive(NotificationCenter.default.publisher(for: .limpidShowConflictRequested)) { note in
+            if let raw = note.object as? String {
+                presentedConflict = ConflictID(raw: raw)
+            }
+        }
+        .sheet(item: $presentedConflict) { id in
+            ConflictModal(conflictID: id)
+                .environment(state.conflictService.detector)
+        }
     }
 
     @ViewBuilder
@@ -95,6 +139,8 @@ struct ThreePaneLayout: View {
 /// body content is offset right past the slab so it never collides.
 /// The right edge carries a drag-resize divider; double-click resets.
 private struct L2Column: View {
+    /// Top inset reserved for the party bar overlay (0 when no bar).
+    var topReserve: CGFloat = 0
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settings
 
@@ -106,6 +152,9 @@ private struct L2Column: View {
                     ChromeL2Segment()
                 }
                 .frame(height: LimpidLayout.topStripHeight)
+                if topReserve > 0 {
+                    Color.clear.frame(height: topReserve)
+                }
                 HStack(spacing: 0) {
                     Spacer().frame(width: leadingInset)
                     L2View()
@@ -139,12 +188,17 @@ private struct L2Column: View {
 /// L3 column — terminal pane area with its own chrome on top.
 private struct L3Column: View {
     let ghosttyApp: GhosttyApp
+    /// Top inset reserved for the party bar overlay (0 when no bar).
+    var topReserve: CGFloat = 0
     @Environment(SettingsStore.self) private var settings
 
     var body: some View {
         VStack(spacing: 0) {
             ChromeL3Segment()
                 .frame(height: LimpidLayout.topStripHeight)
+            if topReserve > 0 {
+                Color.clear.frame(height: topReserve)
+            }
             L3DetailView(ghosttyApp: ghosttyApp)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

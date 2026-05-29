@@ -8,6 +8,11 @@ import OSLog
 import Sparkle
 import SwiftUI
 
+// This central coordinator file sits at the file_length cap; the global
+// 1000-line limit stays in force for every other file. Splitting AppState
+// further (beyond the existing AppState+QuitGate) is a separate refactor.
+// swiftlint:disable file_length
+
 private let log = Logger(subsystem: "dev.limpid", category: "boot")
 
 @MainActor
@@ -75,6 +80,8 @@ final class AppState {
     private var frameSync: WindowFrameSync?
     private var dockBadgeSync: DockBadgeSync?
     private var gitSync: GitSyncCoordinator?
+    /// Cross-worktree conflict detection; views observe `.detector`.
+    let conflictService: ConflictService
     /// Set when the on-disk snapshot couldn't be restored at boot.
     /// A version mismatch or decode failure normally just dropped the
     /// file silently; surfacing it as an alert lets the user notice
@@ -250,6 +257,7 @@ final class AppState {
             notificationManager: notificationManager
         )
         self.gitSync = GitSyncCoordinator(session: session)
+        self.conflictService = ConflictService()
 
         store.scheduleSave(session.makeSnapshot())
 
@@ -283,6 +291,7 @@ final class AppState {
         startAutoSave()
         startActiveTabSync()
         startSettingsConfigSync()
+        startConflictDetection()
 
         // Arm the settings.json watcher last so the store + sync
         // hook are both ready before an external edit can fire.
@@ -339,6 +348,36 @@ final class AppState {
                     preference: current.appearance.colorScheme
                 )
             )
+        }
+    }
+
+    /// Start cross-worktree conflict detection and keep its watched set
+    /// aligned with the sidebar model. `GitSyncCoordinator` already
+    /// reconciles `session.projects[*].worktrees` against `git worktree
+    /// list`; we follow that, so adding / removing a worktree (or a
+    /// branch / path change) re-syncs the detector. The detection itself
+    /// is FS-event driven inside `ConflictService`.
+    private func startConflictDetection() {
+        conflictService.start()
+        // Initial sync so worktrees restored at launch are watched.
+        let projects = session.projects
+        Task { await conflictService.updateWorktrees(from: projects) }
+
+        observeRepeatedly { [weak self] in
+            guard let self else { return }
+            // Touch the fields the bridge maps so any worktree add /
+            // remove / hide / branch / path change re-arms us.
+            for project in session.projects {
+                _ = project.rootURL
+                _ = project.mainBranchName
+                _ = project.worktrees.map {
+                    [$0.id.uuidString, $0.workingDirectory.path, "\($0.isHidden)", "\($0.isMissing)", $0.gitRef?.branchName ?? ""]
+                }
+            }
+        } onChange: { [weak self] in
+            guard let self else { return }
+            let projects = session.projects
+            Task { await self.conflictService.updateWorktrees(from: projects) }
         }
     }
 
@@ -562,6 +601,7 @@ struct LimpidApp: App {
                 // vs. fall back to Sparkle's standard alert.
                 .background(LimpidMainWindowMarker())
                 .environment(state.session)
+                .environment(state.conflictService.detector)
                 .environment(state.historyStore)
                 .environment(state.historyPresentation)
                 .environment(state.dragState)

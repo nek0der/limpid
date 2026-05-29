@@ -145,6 +145,9 @@ struct ContainerRowActions {
     var onRevealInFinder: (() -> Void)?
     /// Tooltip on hover (typically the full path for worktree rows).
     var helpText: String?
+    /// Tap on the conflict ⚠ — opens the conflict modal. Only wired for
+    /// rows that can carry a conflict (worktree / project header).
+    var onConflictTap: (() -> Void)?
 }
 
 struct ContainerRow: View {
@@ -176,6 +179,14 @@ struct ContainerRow: View {
     /// True if any tab in this container (or any container nested
     /// under it for project headers) has unread notifications.
     let hasUnread: Bool
+    /// True when this worktree (or, for a project header, the project /
+    /// any of its worktrees) should show a conflict ⚠. Mark-only — no
+    /// count, no file names (spec §8); detail lives in the modal.
+    var hasConflict: Bool = false
+    /// When `hasConflict`, draw the ⚠ muted (gray) instead of warning
+    /// yellow: the conflict is ignored, so the mark is just a discreet
+    /// re-entry to the modal (un-ignore) rather than an active alarm.
+    var conflictMuted: Bool = false
     /// True while a bell is actively flashing inside this container.
     /// Drives the `symbolEffect(.bounce)` animation on the bell.
     var isRinging: Bool = false
@@ -574,6 +585,24 @@ struct ContainerRow: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.orange)
                     .help("Worktree not found on disk")
+            }
+            // Conflict ⚠ — mark only. A missing worktree is never a
+            // conflict party (the bridge excludes it), so this can't
+            // collide with the orange "missing" triangle above. Warning
+            // yellow keeps the two visually distinct.
+            if hasConflict {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(conflictMuted ? Color.secondary : LimpidColor.warning)
+                    .help(conflictMuted
+                        ? "Ignored conflict — tap to review"
+                        : "In conflict with another worktree")
+                    .contentShape(Rectangle())
+                    // High-priority so tapping the ⚠ opens the modal
+                    // rather than the row's activate-container tap.
+                    .highPriorityGesture(
+                        TapGesture().onEnded { actions.onConflictTap?() }
+                    )
             }
             if isHovering, !isEditing, let onCreateWorktree {
                 // Create-worktree (Y) stays inside the trailing group
