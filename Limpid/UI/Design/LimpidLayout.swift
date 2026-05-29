@@ -121,6 +121,18 @@ enum LimpidLayout {
     /// two strips align at the top of the window.
     static let tabPillHeight: CGFloat = 32
 
+    // MARK: - Horizontal tab bar (L2 horizontal mode)
+
+    /// Height of the horizontal tab strip shown above L3 in horizontal
+    /// mode. Sized to fit a pill (icon + title with vertical padding)
+    /// plus the strip's own vertical padding.
+    static let horizontalTabBarHeight: CGFloat = 52
+
+    /// Minimum width a tab keeps in horizontal mode. When the tabs no
+    /// longer fit the strip at this width, the strip becomes
+    /// horizontally scrollable instead of squeezing them narrower.
+    static let horizontalTabMinWidth: CGFloat = 180
+
     // MARK: - Pane
 
     /// Minimum size a pane can be resized to via the split divider.

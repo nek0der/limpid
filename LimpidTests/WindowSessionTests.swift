@@ -128,6 +128,33 @@ struct WindowSessionTests {
         #expect(s.activeTabID == a.id)
     }
 
+    @Test("closeTab focuses the next tab (one down/right)")
+    func closeTab_active_focusesNext() {
+        let s = WindowSession()
+        let a = s.openTab(container: .loose)
+        let b = s.openTab(container: .loose)
+        let c = s.openTab(container: .loose)
+        s.setActiveTab(b.id)
+        s.closeTab(b.id)
+        // Closing the middle tab hands focus to the next one (c),
+        // not the container's last tab.
+        #expect(s.activeTabID == c.id)
+        _ = a
+    }
+
+    @Test("closeTab on the last tab falls back to the previous one")
+    func closeTab_active_lastFallsBackToPrevious() {
+        let s = WindowSession()
+        let a = s.openTab(container: .loose)
+        let b = s.openTab(container: .loose)
+        let c = s.openTab(container: .loose)
+        s.setActiveTab(c.id)
+        s.closeTab(c.id)
+        // No next tab exists, so focus moves to the previous (b).
+        #expect(s.activeTabID == b.id)
+        _ = a
+    }
+
     // MARK: - Projects
 
     @Test("addOrActivateProject is idempotent on the same path")

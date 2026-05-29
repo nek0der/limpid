@@ -20,6 +20,7 @@ struct SessionSnapshot: Codable {
     var sidebarWidth: Double
     var l2Width: Double = LimpidLayout.l2Width
     var sidebarHidden: Bool
+    var l2Horizontal: Bool
     var windowFrame: WindowFrame?
     var recentProjectPaths: [URL]
 
@@ -33,6 +34,7 @@ struct SessionSnapshot: Codable {
         sidebarWidth: Double,
         l2Width: Double = LimpidLayout.l2Width,
         sidebarHidden: Bool = false,
+        l2Horizontal: Bool = false,
         windowFrame: WindowFrame? = nil,
         recentProjectPaths: [URL] = []
     ) {
@@ -45,8 +47,31 @@ struct SessionSnapshot: Codable {
         self.sidebarWidth = sidebarWidth
         self.l2Width = l2Width
         self.sidebarHidden = sidebarHidden
+        self.l2Horizontal = l2Horizontal
         self.windowFrame = windowFrame
         self.recentProjectPaths = recentProjectPaths
+    }
+
+    /// Hand-rolled so optional fields added after a snapshot was first
+    /// written (l2Width, l2Horizontal, windowFrame, recentProjectPaths)
+    /// decode as their defaults instead of throwing — synthesized
+    /// Codable would treat every property as required. Keep this in sync
+    /// with the stored properties above: a new field needs a matching
+    /// `decodeIfPresent` here, or old snapshots fail to load.
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.version = try c.decode(Int.self, forKey: .version)
+        self.groups = try c.decode([TabGroup].self, forKey: .groups)
+        self.projects = try c.decode([Project].self, forKey: .projects)
+        self.tabs = try c.decode([Tab].self, forKey: .tabs)
+        self.activeTabID = try c.decodeIfPresent(UUID.self, forKey: .activeTabID)
+        self.activeContainerID = try c.decode(ContainerID.self, forKey: .activeContainerID)
+        self.sidebarWidth = try c.decode(Double.self, forKey: .sidebarWidth)
+        self.l2Width = try c.decodeIfPresent(Double.self, forKey: .l2Width) ?? LimpidLayout.l2Width
+        self.sidebarHidden = try c.decode(Bool.self, forKey: .sidebarHidden)
+        self.l2Horizontal = try c.decodeIfPresent(Bool.self, forKey: .l2Horizontal) ?? false
+        self.windowFrame = try c.decodeIfPresent(WindowFrame.self, forKey: .windowFrame)
+        self.recentProjectPaths = try c.decodeIfPresent([URL].self, forKey: .recentProjectPaths) ?? []
     }
 }
 
@@ -82,6 +107,7 @@ extension WindowSession {
             sidebarWidth: Double(sidebarWidth),
             l2Width: Double(l2Width),
             sidebarHidden: sidebarHidden,
+            l2Horizontal: l2Horizontal,
             windowFrame: windowFrame.map(WindowFrame.init),
             recentProjectPaths: recentProjectPaths
         )
@@ -94,6 +120,7 @@ extension WindowSession {
         sidebarWidth = CGFloat(snapshot.sidebarWidth)
         l2Width = CGFloat(snapshot.l2Width)
         sidebarHidden = snapshot.sidebarHidden
+        l2Horizontal = snapshot.l2Horizontal
         recentProjectPaths = snapshot.recentProjectPaths
         activeContainerID = snapshot.activeContainerID
         // Transient pane bits (bell ring / child exit) live on

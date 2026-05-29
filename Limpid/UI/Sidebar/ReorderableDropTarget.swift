@@ -40,6 +40,7 @@ extension View {
     func reorderableDropTarget(
         targetID: String,
         acceptedPrefixes: Set<String>,
+        axis: Axis = .vertical,
         tabAsContainerAssignment: Bool = false,
         isNoOp: ((UUID, DropPosition) -> Bool)? = nil,
         onDrop: @escaping (String, UUID, DropPosition) -> Void
@@ -47,6 +48,7 @@ extension View {
         modifier(ReorderableDropTarget(
             targetID: targetID,
             acceptedPrefixes: acceptedPrefixes,
+            axis: axis,
             tabAsContainerAssignment: tabAsContainerAssignment,
             isNoOp: isNoOp,
             onDrop: onDrop
@@ -59,19 +61,23 @@ private struct ReorderableDropTarget: ViewModifier {
     @Environment(WindowSession.self) private var session
     let targetID: String
     let acceptedPrefixes: Set<String>
+    let axis: Axis
     let tabAsContainerAssignment: Bool
     let isNoOp: ((UUID, DropPosition) -> Bool)?
     let onDrop: (String, UUID, DropPosition) -> Void
 
-    @State private var rowHeight: CGFloat = 0
+    /// Length of the row along `axis` — height for a vertical list,
+    /// width for a horizontal strip. The delegate splits this at its
+    /// midpoint to decide before / after.
+    @State private var rowExtent: CGFloat = 0
 
     func body(content: Content) -> some View {
         content
             .background(
                 GeometryReader { geo in
                     Color.clear
-                        .onAppear { rowHeight = geo.size.height }
-                        .onChange(of: geo.size.height) { _, new in rowHeight = new }
+                        .onAppear { rowExtent = extent(of: geo.size) }
+                        .onChange(of: extent(of: geo.size)) { _, new in rowExtent = new }
                 }
             )
             .overlay {
@@ -90,13 +96,18 @@ private struct ReorderableDropTarget: ViewModifier {
             .onDrop(of: [.text], delegate: UnifiedReorderDelegate(
                 targetID: targetID,
                 acceptedPrefixes: acceptedPrefixes,
+                axis: axis,
                 tabAsContainerAssignment: tabAsContainerAssignment,
                 isNoOp: isNoOp,
                 dragState: dragState,
                 session: session,
-                rowHeightProvider: { rowHeight },
+                extentProvider: { rowExtent },
                 onDrop: onDrop
             ))
+    }
+
+    private func extent(of size: CGSize) -> CGFloat {
+        axis == .vertical ? size.height : size.width
     }
 
     private var isHoveredHere: Bool {
@@ -136,11 +147,12 @@ private struct ReorderableDropTarget: ViewModifier {
 private struct UnifiedReorderDelegate: DropDelegate {
     let targetID: String
     let acceptedPrefixes: Set<String>
+    let axis: Axis
     let tabAsContainerAssignment: Bool
     let isNoOp: ((UUID, DropPosition) -> Bool)?
     let dragState: LimpidDragState
     let session: WindowSession
-    let rowHeightProvider: () -> CGFloat
+    let extentProvider: () -> CGFloat
     let onDrop: (String, UUID, DropPosition) -> Void
 
     func validateDrop(info: DropInfo) -> Bool {
@@ -294,8 +306,9 @@ private struct UnifiedReorderDelegate: DropDelegate {
     }
 
     private func computePosition(_ info: DropInfo) -> DropPosition {
-        let h = rowHeightProvider()
-        guard h > 0 else { return .before }
-        return info.location.y < h / 2 ? .before : .after
+        let extent = extentProvider()
+        guard extent > 0 else { return .before }
+        let location = axis == .vertical ? info.location.y : info.location.x
+        return location < extent / 2 ? .before : .after
     }
 }

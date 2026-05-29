@@ -64,6 +64,10 @@ final class WindowSession {
     /// Whether the sidebar is collapsed.
     var sidebarHidden: Bool = false
 
+    /// L2 tab orientation. When true the tab list renders as a
+    /// horizontal bar above L3 instead of the default vertical column.
+    var l2Horizontal: Bool = false
+
     /// Last-known `NSWindow` frame in screen coordinates.
     var windowFrame: CGRect?
 

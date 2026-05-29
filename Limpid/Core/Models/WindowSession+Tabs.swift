@@ -85,6 +85,10 @@ extension WindowSession {
     func closeTab(_ tabID: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         let closing = tabs[index]
+        // Position of the closing tab within its container, captured
+        // before removal so we can hand focus to its neighbour.
+        let positionInContainer = tabs(in: closing.container)
+            .firstIndex(where: { $0.id == tabID })
         // Drop any in-pane search state for the panes inside this
         // tab — without this the entries linger in
         // `paneSearchStates` after the SurfaceView is unregistered.
@@ -94,11 +98,21 @@ extension WindowSession {
         tabs.remove(at: index)
 
         if activeTabID == tabID {
-            // Pick the last remaining tab in the *same* container, or
-            // nil if it now has none. We never jump to a different
-            // container — that would silently switch the user out of
-            // the container they were looking at.
-            let successor = tabs.last(where: { $0.container == closing.container })
+            // Hand focus to the neighbour in the *same* container: the
+            // next tab (one down / right), falling back to the
+            // previous (one up / left) when we closed the last one.
+            // After removal the next tab has shifted into the closing
+            // tab's index, so the same position points at it; an
+            // out-of-range position means we closed the tail, so use
+            // the new last tab. We never jump to a different container
+            // — that would silently switch the user out of the
+            // container they were looking at.
+            let remaining = tabs(in: closing.container)
+            let successor: Tab? = if let pos = positionInContainer, pos < remaining.count {
+                remaining[pos]
+            } else {
+                remaining.last
+            }
             setActiveTab(successor?.id)
         }
         forgetLastActive(tabID: tabID, container: closing.container)
