@@ -173,11 +173,18 @@ private struct UnifiedReorderDelegate: DropDelegate {
             dragState.end()
             return false
         }
-        // Live reorder already mutated the model the moment the
-        // cursor crossed a neighbour. Commit those changes by
-        // discarding the snapshot before `end()` runs.
+        // Same-list reorder is already committed by `applyLiveReorder`
+        // during the drag. Re-running `onDrop` here would re-resolve the
+        // target relative to the *moved* rows — and the dragged row has
+        // slid under the cursor, so `onDrop` lands on the source's own
+        // target (`reorderTab(src, before/after: src)`), corrupting the
+        // order. Only cross-container assignment still needs `performDrop`
+        // to commit, since `update` deliberately deferred its mutation.
+        let needsCommitOnDrop = isCrossContainerTabAssignment
+        // Discard the snapshot before `end()` so the live mutations stick.
         dragState.commitLiveReorder()
         dragState.end()
+        guard needsCommitOnDrop else { return true }
         _ = provider.loadObject(ofClass: NSString.self) { item, _ in
             guard let raw = item as? String else { return }
             for prefix in acceptedPrefixes {
@@ -185,12 +192,8 @@ private struct UnifiedReorderDelegate: DropDelegate {
                    let id = UUID(uuidString: String(raw.dropFirst(prefix.count)))
                 {
                     Task { @MainActor in
-                        // Cross-container assignment (e.g. tab into a
-                        // group / project row) still flows through
-                        // `performDrop` — live reorder only handles
-                        // same-list reorder. Animate this last leg so
-                        // the L2/L3 transition matches the live
-                        // animation curve.
+                        // Animate this last leg so the L2/L3 transition
+                        // matches the live animation curve.
                         withAnimation(LimpidMotion.reorder) {
                             onDrop(prefix, id, position)
                         }
