@@ -76,11 +76,16 @@ jobs:
 
       - name: Build for CodeQL
         run: |
+          # `generic/platform=macOS` (Any Mac), not `platform=macOS`.
+          # CodeQL's Swift tracer wraps xcodebuild in an x86_64 process, so a
+          # device-specific destination resolves the runner as x86_64 and can't
+          # match our arm64-only scheme — destination resolution fails before
+          # compilation. A generic destination is arch-agnostic and builds arm64.
           xcodebuild \
             -project Limpid.xcodeproj \
             -scheme Limpid \
             -configuration Debug \
-            -destination 'platform=macOS' \
+            -destination 'generic/platform=macOS' \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
