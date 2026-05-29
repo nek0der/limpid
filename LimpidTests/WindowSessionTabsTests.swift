@@ -104,4 +104,42 @@ struct WindowSessionTabsTests {
         #expect(fx.session.tabs.map(\.id) == snapshotBefore)
         #expect(fx.session.activeTabID == fx.tabs[0].id)
     }
+
+    // MARK: - reorderTab
+
+    // `performDrop` re-fires `onDrop` for a same-list reorder when the
+    // dragged row has slid under the cursor, calling
+    // `reorderTab(src, before/after: src)`. Without the self-guard the
+    // source is removed first, the target ID is then not found, and the
+    // tab is appended to the very end — so a drag to the top silently
+    // bounced back to the bottom. These pin that guard.
+
+    @Test("reordering a tab before itself leaves the order unchanged")
+    func reorderTab_beforeSelf_isNoOp() {
+        let fx = makeSession(sourceTabCount: 3)
+        let before = fx.session.tabs.map(\.id)
+
+        fx.session.reorderTab(fx.tabs[2].id, before: fx.tabs[2].id)
+
+        #expect(fx.session.tabs.map(\.id) == before)
+    }
+
+    @Test("reordering a tab after itself leaves the order unchanged")
+    func reorderTab_afterSelf_isNoOp() {
+        let fx = makeSession(sourceTabCount: 3)
+        let before = fx.session.tabs.map(\.id)
+
+        fx.session.reorderTab(fx.tabs[2].id, after: fx.tabs[2].id)
+
+        #expect(fx.session.tabs.map(\.id) == before)
+    }
+
+    @Test("dragging the bottom tab to the top lands it at the front, not the end")
+    func reorderTab_bottomToTop_movesToFront() {
+        let fx = makeSession(sourceTabCount: 3)
+        // [0, 1, 2] — drop 2 before 0 — expect [2, 0, 1], not [0, 1, 2].
+        fx.session.reorderTab(fx.tabs[2].id, before: fx.tabs[0].id)
+
+        #expect(fx.session.tabs.map(\.id) == [fx.tabs[2].id, fx.tabs[0].id, fx.tabs[1].id])
+    }
 }

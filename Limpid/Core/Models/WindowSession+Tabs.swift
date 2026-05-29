@@ -202,6 +202,11 @@ extension WindowSession {
     /// sits immediately before `beforeID` in the global `tabs` array.
     /// Passing `beforeID == nil` appends to the end.
     func reorderTab(_ tabID: UUID, before beforeID: UUID?) {
+        // Dropping before yourself is a no-op. Guard it explicitly:
+        // otherwise `remove` drops the source first, `beforeID` is then
+        // not found, and we'd `append` it to the very end. Mirrors the
+        // `sourceID != targetID` guard in `reorderInPlace`.
+        guard beforeID != tabID else { return }
         guard let from = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         let moved = tabs.remove(at: from)
         if let beforeID,
@@ -216,6 +221,9 @@ extension WindowSession {
     /// Reorder a tab so it sits immediately *after* `afterID` in the
     /// global `tabs` array. Mirror of `reorderTab(_:before:)`.
     func reorderTab(_ tabID: UUID, after afterID: UUID) {
+        // Dropping after yourself is a no-op — same append-to-end hazard
+        // as the `before` overload.
+        guard afterID != tabID else { return }
         guard let from = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         let moved = tabs.remove(at: from)
         guard let toBase = tabs.firstIndex(where: { $0.id == afterID }) else {
