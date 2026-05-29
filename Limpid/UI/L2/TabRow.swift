@@ -13,6 +13,10 @@ struct TabRow: View {
     let onClose: () -> Void
     let onRename: (String) -> Void
     let onUnzoom: () -> Void
+    /// Fires when the row enters / leaves inline-rename. The horizontal
+    /// tab strip uses this to widen a narrow tab while it's being
+    /// edited; the vertical list leaves it unset (no width change).
+    var onEditingChanged: ((Bool) -> Void)?
 
     @State private var isEditing = false
     @State private var isHovering = false
@@ -210,6 +214,9 @@ struct TabRow: View {
         .selectablePillBackground(isActive: isActive, isHovering: isHovering)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
+        .onChange(of: isEditing) { _, editing in
+            onEditingChanged?(editing)
+        }
         // `.simultaneousGesture(TapGesture)` instead of `.onTapGesture`
         // because the latter waits for macOS's double-click resolution
         // window (~250 ms) before firing — the inner
@@ -282,7 +289,9 @@ struct TabsListView: View {
     var body: some View {
         let tabs = session.tabs(in: container)
         if tabs.isEmpty {
-            L2EmptyState(container: container)
+            // Empty-state moved to L3 so it stays centered in the main
+            // area across both tab layouts (see `L3EmptyState`).
+            Color.clear
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: LimpidLayout.reorderRowSpacing) {
@@ -320,7 +329,7 @@ struct TabsListView: View {
                                 }
                             }
                         )
-                        .insertionLine(beforeTabID: tab.id, container: container, session: session)
+                        .tabReorderTarget(beforeTabID: tab.id, container: container, session: session)
                     }
                 }
                 .padding(.vertical, 8)
@@ -337,19 +346,23 @@ struct TabsListView: View {
 
 // MARK: - In-list reorder helper (uses the shared insertion-line modifier)
 
-private extension View {
+extension View {
     /// Treat this tab row as a reorder target. The `isNoOp` closure
     /// hides the indicator for "drop where you already are" cases —
     /// dropping ON yourself, just before the next tab (= current
     /// position), or just after the previous tab (= current position).
-    func insertionLine(
+    /// `axis` matches the layout: `.vertical` for the L2 list,
+    /// `.horizontal` for the horizontal tab strip.
+    func tabReorderTarget(
         beforeTabID: UUID,
         container: ContainerID,
-        session: WindowSession
+        session: WindowSession,
+        axis: Axis = .vertical
     ) -> some View {
         reorderableDropTarget(
             targetID: "tab-\(beforeTabID)",
             acceptedPrefixes: ["tab:"],
+            axis: axis,
             isNoOp: { sourceID, position in
                 guard sourceID != beforeTabID else { return true }
                 // Cross-container drops always change something.
@@ -385,34 +398,5 @@ private extension View {
                 }
             }
         )
-    }
-}
-
-// MARK: - Empty state
-
-private struct L2EmptyState: View {
-    @Environment(WindowSession.self) private var session
-    let container: ContainerID
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("No sessions")
-                .font(.system(size: 16, weight: .regular, design: .rounded))
-                .foregroundStyle(LimpidColor.tertiaryText)
-            Button {
-                _ = session.openTab(container: container)
-            } label: {
-                Label("New Session", systemImage: "plus")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-            }
-            .buttonStyle(.plain)
-            .background(
-                Capsule().fill(LimpidColor.rowHoverFill)
-            )
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

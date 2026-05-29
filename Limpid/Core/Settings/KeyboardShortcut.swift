@@ -78,6 +78,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
 
     // View
     case toggleSidebar
+    case toggleTabLayout
     case notificationHistory
 
     // Navigation (container + tab cycling)
@@ -129,7 +130,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
              .closeSurface, .closeTab: .file
-        case .toggleSidebar, .notificationHistory: .view
+        case .toggleSidebar, .toggleTabLayout, .notificationHistory: .view
         case .nextSection, .previousSection, .nextTab, .previousTab: .navigation
         case .splitRight, .splitDown, .equalizeSplits, .toggleSplitZoom,
              .focusPaneLeft, .focusPaneRight, .focusPaneUp, .focusPaneDown: .splits
@@ -162,7 +163,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         // Menu-owned + Limpid-only actions: the menu Button or a
         // notification fires `SessionActions.…` directly.
         case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
-             .closeSurface, .closeTab, .toggleSidebar, .notificationHistory,
+             .closeSurface, .closeTab, .toggleSidebar, .toggleTabLayout,
+             .notificationHistory,
              .nextSection, .previousSection, .nextTab, .previousTab,
              .splitRight, .splitDown,
              .equalizeSplits, .toggleSplitZoom,
@@ -185,6 +187,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .closeSurface: "Close Pane"
         case .closeTab: "Close Tab"
         case .toggleSidebar: "Toggle Sidebar"
+        case .toggleTabLayout: "Toggle Tab Layout"
         case .notificationHistory: "Notification History"
         case .nextSection: "Next Section"
         case .previousSection: "Previous Section"
@@ -219,6 +222,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         .closeSurface: "xmark.square",
         .closeTab: "xmark",
         .toggleSidebar: "sidebar.left",
+        .toggleTabLayout: "rectangle.topthird.inset.filled",
         .notificationHistory: "bell",
         .nextSection: "chevron.left.chevron.right",
         .previousSection: "chevron.left.chevron.right",
@@ -268,6 +272,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .closeSurface: .init(key: "w", modifiers: [.command])
         case .closeTab: .init(key: "w", modifiers: [.command, .option])
         case .toggleSidebar: .init(key: "b", modifiers: [.command])
+        case .toggleTabLayout: .init(key: "t", modifiers: [.command, .option])
         case .notificationHistory: .init(key: "n", modifiers: [.command, .shift])
         case .nextSection: .init(key: "]", modifiers: [.command])
         case .previousSection: .init(key: "[", modifiers: [.command])

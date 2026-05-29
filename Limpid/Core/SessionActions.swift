@@ -691,6 +691,7 @@ enum SessionActions {
     ) {
         switch action {
         case .toggleSidebar: session.sidebarHidden.toggle()
+        case .toggleTabLayout: session.l2Horizontal.toggle()
         case .notificationHistory:
             NotificationCenter.default.post(name: .limpidToggleNotificationHistory, object: nil)
         case .commandPalette, .quickOpen: break

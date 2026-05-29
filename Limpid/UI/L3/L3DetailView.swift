@@ -43,12 +43,31 @@ struct TerminalDetailProvider: L3DetailProvider {
     }
 }
 
-/// Shown when no tab is active. Intentionally empty — the L2 already
-/// explains "no session" via its own empty-state, so the L3 simply
-/// shows the column background.
+/// Shown when no tab is active. Lives in L3 (not L2) so it appears
+/// centered in the main area in both vertical and horizontal tab
+/// layouts — in horizontal mode L2 has no body to host it.
 private struct L3EmptyState: View {
+    @Environment(WindowSession.self) private var session
+
     var body: some View {
-        Color.clear
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 12) {
+            Text("No sessions")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(LimpidColor.tertiaryText)
+            Button {
+                _ = session.openTab(container: session.activeContainerID)
+            } label: {
+                Label("New Session", systemImage: "plus")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+            .background(
+                Capsule().fill(LimpidColor.rowHoverFill)
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
