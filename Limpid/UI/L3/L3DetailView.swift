@@ -43,31 +43,119 @@ struct TerminalDetailProvider: L3DetailProvider {
     }
 }
 
-/// Shown when no tab is active. Lives in L3 (not L2) so it appears
-/// centered in the main area in both vertical and horizontal tab
-/// layouts — in horizontal mode L2 has no body to host it.
+/// Shown when no tab is active. A welcome list: each row is a command
+/// the user is likely to reach for from an empty workspace, labeled
+/// with its current keybinding and clickable to run.
+/// Lives in L3 (not L2) so it stays centered in the main area in both
+/// vertical and horizontal tab layouts — in horizontal mode L2 has no
+/// body to host it.
 private struct L3EmptyState: View {
     @Environment(WindowSession.self) private var session
+    @Environment(SettingsStore.self) private var settings
+    @Environment(\.frecencyStore) private var frecencyStore
 
     var body: some View {
-        VStack(spacing: 12) {
-            Text("No sessions")
-                .font(.system(size: 16, weight: .regular, design: .rounded))
-                .foregroundStyle(LimpidColor.tertiaryText)
-            Button {
-                _ = session.openTab(container: session.activeContainerID)
-            } label: {
-                Label("New Session", systemImage: "plus")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(commands.enumerated()), id: \.offset) { _, command in
+                WelcomeCommandRow(command: command, settings: settings)
             }
-            .buttonStyle(.plain)
+        }
+        .frame(width: 320)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The welcome menu, top to bottom. We reuse the exact menu-bar
+    /// labels (already localized) and route each row through the same
+    /// action its menu item / shortcut fires, so there's one source of
+    /// truth per command.
+    private var commands: [WelcomeCommand] {
+        [
+            WelcomeCommand(title: "New Session", action: .newTab, isEnabled: true) {
+                SessionActions.newTab(session)
+            },
+            WelcomeCommand(
+                title: "Reopen Closed Tab",
+                action: .reopenClosedTab,
+                isEnabled: !session.closedTabStack.isEmpty
+            ) {
+                SessionActions.reopenClosedTab(session)
+            },
+            WelcomeCommand(title: "Command Palette", action: .commandPalette, isEnabled: true) {
+                guard let frecencyStore else { return }
+                SessionActions.openCommandPalette(
+                    session, settings: settings, frecencyStore: frecencyStore
+                )
+            },
+            WelcomeCommand(title: "Toggle Sidebar", action: .toggleSidebar, isEnabled: true) {
+                withAnimation(LimpidMotion.sidebarToggle) {
+                    session.sidebarHidden.toggle()
+                }
+            }
+        ]
+    }
+}
+
+/// One welcome-list entry: a localized label, the action whose
+/// keybinding to surface, whether it's currently runnable, and the
+/// closure to fire on click.
+private struct WelcomeCommand {
+    let title: LocalizedStringKey
+    let action: LimpidShortcutAction
+    let isEnabled: Bool
+    let run: () -> Void
+}
+
+private struct WelcomeCommandRow: View {
+    let command: WelcomeCommand
+    let settings: SettingsStore
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: command.run) {
+            HStack(spacing: 8) {
+                Text(command.title)
+                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .foregroundStyle(
+                        command.isEnabled ? LimpidColor.secondaryText : LimpidColor.tertiaryText
+                    )
+                    .lineLimit(1)
+                Spacer(minLength: 24)
+                HStack(spacing: 4) {
+                    ForEach(Array(keycaps.enumerated()), id: \.offset) { _, token in
+                        WelcomeKeycap(symbol: token)
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
             .background(
-                Capsule().fill(LimpidColor.rowHoverFill)
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(hovering && command.isEnabled ? LimpidColor.rowHoverFill : .clear)
             )
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .buttonStyle(.plain)
+        .disabled(!command.isEnabled)
+        .onHover { hovering = $0 }
+    }
+
+    private var keycaps: [String] {
+        settings.settings.keyboard.shortcut(for: command.action)?.displayTokens ?? []
+    }
+}
+
+/// A single keycap chip — one modifier symbol or the key glyph.
+private struct WelcomeKeycap: View {
+    let symbol: String
+
+    var body: some View {
+        Text(symbol)
+            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .foregroundStyle(LimpidColor.secondaryText)
+            .frame(minWidth: 20, minHeight: 20)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(LimpidColor.rowActiveFill)
+            )
     }
 }
