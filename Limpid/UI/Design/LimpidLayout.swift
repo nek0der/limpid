@@ -40,6 +40,23 @@ enum LimpidLayout {
     static let l2MinWidth: CGFloat = 200
     static let l2MaxWidth: CGFloat = 500
 
+    /// L1 WAITING region height as a fraction of the slab height.
+    /// Drag-resizable via the divider above it (persisted on
+    /// `WindowSession.attentionHeightFraction`); double-click resets to
+    /// `attentionHeightFraction`. A fraction (not points) so the region
+    /// keeps its proportion when the window resizes.
+    static let attentionHeightFraction: CGFloat = 0.25
+    static let attentionMinFraction: CGFloat = 0.08
+    static let attentionMaxFraction: CGFloat = 0.6
+    /// Floor for the WAITING region in points — regardless of the
+    /// fraction, the region never shrinks below this so the header + the
+    /// 0-item message ("All clear" / "N hidden by filter") stay visible
+    /// in small sidebars. Eyeballed from the header padding (top 18 +
+    /// bottom 10), the divider hit area, and one 11pt hint row.
+    static let attentionMinHeight: CGFloat = 100
+    /// Vertical drag handle hit-area height (the WAITING divider).
+    static let attentionResizeHandleHeight: CGFloat = 8
+
     /// Distance from a column's top edge to where chrome content (the
     /// action capsule / container title) starts. Aligns L1 / L2 / L3
     /// chrome content with the AppKit traffic-light row (center

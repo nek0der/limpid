@@ -7,6 +7,7 @@ import SwiftUI
 
 struct TabRow: View {
     @Environment(WindowSession.self) private var session
+    @Environment(TriageState.self) private var triage
     @Environment(LimpidDragState.self) private var dragState
     let tab: Tab
     let onActivate: () -> Void
@@ -43,7 +44,13 @@ struct TabRow: View {
     /// `claudeAgentBadges` and `codexAgentBadges` via the shared
     /// session helper so a Codex pane lights up the badge too.
     private var aggregateAgentState: AgentState? {
-        session.aggregateAgentState(in: tab)
+        triage.aggregateAgentState(in: tab)
+    }
+
+    /// Whether the tab's finished turn(s) are all viewed — drives the
+    /// grey (vs green) check on the activity badge.
+    private var aggregateViewed: Bool {
+        triage.isFinishedAggregateViewed(in: tab)
     }
 
     /// Leading identity icon: does an AI agent (Claude or Codex) have
@@ -103,6 +110,7 @@ struct TabRow: View {
         case .running, .compacting: "Running"
         case .needsInput: "Needs input"
         case .error: "Error"
+        case .finished: "Finished"
         case .idle, .unknown: ""
         }
         var pieces: [String] = [stateLabel]
@@ -170,17 +178,26 @@ struct TabRow: View {
                let iconName = state.iconName,
                let iconColor = state.iconColor
             {
+                // Agent rows show the lifecycle badge as their single
+                // status mark. The bell is suppressed here so we don't
+                // stack two indicators for the same event — the agent's
+                // OS notification + history entry still fire; the bell
+                // is reserved for non-agent unread (terminal OSC 9/777,
+                // child-exit, etc.) on rows that have no agent badge.
                 Image(systemName: iconName)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(iconColor)
+                    .foregroundStyle(state == .finished && aggregateViewed
+                        ? Color.secondary
+                        : iconColor)
                     .frame(width: 16, height: 16)
                     .help(agentTooltip(for: state))
+            } else {
+                NotificationBell(
+                    isUnread: hasUnread,
+                    isRinging: isRinging,
+                    reservesSlot: true
+                )
             }
-            NotificationBell(
-                isUnread: hasUnread,
-                isRinging: isRinging,
-                reservesSlot: true
-            )
             if isZoomed {
                 // Always-visible state indicator with a tap target so the
                 // user can leave zoom mode without remembering ⌘⇧Return.
@@ -281,6 +298,7 @@ struct TabRow: View {
 /// the tabs list survived, so this view is now the entire L2 body.
 struct TabsListView: View {
     @Environment(WindowSession.self) private var session
+    @Environment(TriageState.self) private var triage
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.claudeSessionTracker) private var claudeSessionTracker
     @Environment(\.codexSessionTracker) private var codexSessionTracker
@@ -313,6 +331,7 @@ struct TabsListView: View {
                                     registry: registry,
                                     tabID: tab.id,
                                     source: .mouse,
+                                    triage: triage,
                                     claudeSessionTracker: claudeSessionTracker,
                                     codexSessionTracker: codexSessionTracker
                                 )

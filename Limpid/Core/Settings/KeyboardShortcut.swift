@@ -86,6 +86,12 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     case previousSection
     case nextTab
     case previousTab
+    /// Jump focus to the next / previous pane whose agent needs the
+    /// user (needsInput / error) — cross-tab triage cursor. Displayed
+    /// as "Next/Previous Action" (the agent is waiting on the user to
+    /// act); the symbol keeps the "attention" intent.
+    case nextAttention
+    case previousAttention
 
     // Splits
     case splitRight
@@ -131,7 +137,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
              .closeSurface, .closeTab: .file
         case .toggleSidebar, .toggleTabLayout, .notificationHistory: .view
-        case .nextSection, .previousSection, .nextTab, .previousTab: .navigation
+        case .nextSection, .previousSection, .nextTab, .previousTab,
+             .nextAttention, .previousAttention: .navigation
         case .splitRight, .splitDown, .equalizeSplits, .toggleSplitZoom,
              .focusPaneLeft, .focusPaneRight, .focusPaneUp, .focusPaneDown: .splits
         case .find, .findNext, .findPrevious: .search
@@ -166,6 +173,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
              .closeSurface, .closeTab, .toggleSidebar, .toggleTabLayout,
              .notificationHistory,
              .nextSection, .previousSection, .nextTab, .previousTab,
+             .nextAttention, .previousAttention,
              .splitRight, .splitDown,
              .equalizeSplits, .toggleSplitZoom,
              .focusPaneLeft, .focusPaneRight,
@@ -193,6 +201,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .previousSection: "Previous Section"
         case .nextTab: "Next Tab"
         case .previousTab: "Previous Tab"
+        case .nextAttention: "Next Action"
+        case .previousAttention: "Previous Action"
         case .splitRight: "Split Right"
         case .splitDown: "Split Down"
         case .equalizeSplits: "Equalize Splits"
@@ -228,6 +238,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         .previousSection: "chevron.left.chevron.right",
         .nextTab: "arrow.left.arrow.right",
         .previousTab: "arrow.left.arrow.right",
+        .nextAttention: "bell.badge",
+        .previousAttention: "bell.badge",
         .splitRight: "rectangle.split.2x1",
         .splitDown: "rectangle.split.1x2",
         .equalizeSplits: "equal.square",
@@ -278,6 +290,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .previousSection: .init(key: "[", modifiers: [.command])
         case .nextTab: .init(key: "]", modifiers: [.command, .shift])
         case .previousTab: .init(key: "[", modifiers: [.command, .shift])
+        case .nextAttention: .init(key: "j", modifiers: [.command])
+        case .previousAttention: .init(key: "j", modifiers: [.command, .shift])
         case .splitRight: .init(key: "d", modifiers: [.command])
         case .splitDown: .init(key: "d", modifiers: [.command, .shift])
         case .equalizeSplits: .init(key: "=", modifiers: [.command, .option])

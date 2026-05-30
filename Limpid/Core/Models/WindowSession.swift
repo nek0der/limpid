@@ -61,6 +61,13 @@ final class WindowSession {
     /// divider; double-click resets to `LimpidLayout.l2Width`.
     var l2Width: CGFloat = LimpidLayout.l2Width
 
+    /// Height of the L1 WAITING region as a fraction of the slab
+    /// height; persisted. Drag-resizable via the divider above it;
+    /// double-click resets to `LimpidLayout.attentionHeightFraction`.
+    /// A fraction (not points) so it keeps its proportion across window
+    /// resizes. Clamped to `attentionMinFraction ... attentionMaxFraction`.
+    var attentionHeightFraction: CGFloat = LimpidLayout.attentionHeightFraction
+
     /// Whether the sidebar is collapsed.
     var sidebarHidden: Bool = false
 

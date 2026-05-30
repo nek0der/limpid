@@ -183,6 +183,9 @@ struct ContainerRow: View {
     /// `nil` means no claude is running / all idle — the row stays
     /// quiet. The caller computes it from `WindowSession.aggregateAgentState`.
     var agentState: AgentState?
+    /// True when the aggregate `.finished` is fully viewed — render the
+    /// check grey ("seen, not yet replied") instead of green.
+    var agentStateViewed: Bool = false
     /// Per-state pane counts used for the agent icon's hover tooltip.
     /// Empty dict when no claude is running.
     var agentBreakdown: [AgentState: Int] = [:]
@@ -596,7 +599,9 @@ struct ContainerRow: View {
             {
                 Image(systemName: iconName)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(iconColor)
+                    .foregroundStyle(state == .finished && agentStateViewed
+                        ? Color.secondary
+                        : iconColor)
                     .frame(width: 16, height: 16)
                     .help(agentTooltip(for: state))
             }
@@ -638,7 +643,7 @@ struct ContainerRow: View {
     /// from `agentBreakdown`. 0-count states are omitted so the string
     /// stays scannable.
     private func agentTooltip(for dominant: AgentState) -> String {
-        let order: [AgentState] = [.error, .needsInput, .running, .compacting, .idle, .unknown]
+        let order: [AgentState] = [.error, .needsInput, .finished, .running, .compacting, .idle, .unknown]
         var parts: [String] = []
         for state in order {
             let count = agentBreakdown[state] ?? 0
@@ -646,6 +651,7 @@ struct ContainerRow: View {
             let label = switch state {
             case .error: "error"
             case .needsInput: "needsInput"
+            case .finished: "finished"
             case .running, .compacting: "running"
             case .idle: "idle"
             case .unknown: "unknown"

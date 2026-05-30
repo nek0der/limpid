@@ -23,6 +23,9 @@ final class CodexAgentStateTracker {
     /// would auto-resume a session the user explicitly closed.
     private let sessionStore: CodexSessionStore
     private weak var session: WindowSession?
+    /// Auto-marks the focused pane's finished turn as viewed when it
+    /// lands in place (no focus change). Mirrors the Claude tracker.
+    private weak var triage: TriageState?
     private weak var notificationManager: LimpidNotificationManager?
     private var previousBadges: [UUID: CodexAgentBadge] = [:]
     private var hasBootstrapped = false
@@ -51,9 +54,11 @@ final class CodexAgentStateTracker {
 
     func bootstrap(
         into session: WindowSession,
+        triage: TriageState? = nil,
         notificationManager: LimpidNotificationManager? = nil
     ) {
         self.session = session
+        self.triage = triage
         self.notificationManager = notificationManager
         applyAllRecordsToSession()
         hasBootstrapped = true
@@ -257,6 +262,14 @@ final class CodexAgentStateTracker {
         }
         rebuildPreviousBadges(session: session)
 
+        // Mirror the Claude tracker: a finished turn landing on the
+        // currently-focused pane should grey the L1 / L2 check on the
+        // spot, without waiting for the next focus change. The helper
+        // bails on the bootstrap pass (a restored finished pane stays
+        // unviewed on relaunch); routing unconditionally keeps the
+        // caller's branch count down.
+        markCurrentlyFocusedViewed(session: session)
+
         store.cleanup(keeping: alive)
     }
 
@@ -312,6 +325,19 @@ final class CodexAgentStateTracker {
               tab.title != prompt
         else { return }
         tab.title = prompt
+    }
+
+    private func markCurrentlyFocusedViewed(session: WindowSession) {
+        // Skip on the bootstrap pass: a restored finished pane mustn't
+        // be silently marked viewed (the user hasn't actually seen it
+        // this run yet).
+        guard hasBootstrapped,
+              let triage,
+              let activeTabID = session.activeTabID,
+              let tab = session.tab(activeTabID),
+              let paneID = tab.splitTree.focusedLeafID
+        else { return }
+        triage.markViewed(paneID: paneID, in: session)
     }
 
     /// Diff every leaf's prior badge against its current badge and
