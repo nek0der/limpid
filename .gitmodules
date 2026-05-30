@@ -1,8 +1,11 @@
 [submodule "vendor/ghostty"]
 	path = vendor/ghostty
-	url = https://github.com/ghostty-org/ghostty.git
-	# Don't surface untracked build artefacts (default.profraw, zig-pkg/, etc.)
-	# in `git status`. We never push back to ghostty-org/ghostty, so anything
-	# the local zig build drops inside the submodule is noise from our POV.
-	# Submodule SHA bumps are still reported.
+	url = https://github.com/nek0der/ghostty.git
+	# Our libghostty C ABI patches (scrollback save/restore, and more) live on
+	# the `limpid` branch of our fork, not on ghostty-org/ghostty. The submodule
+	# must resolve from the fork or a fresh clone / CI cannot fetch the pinned
+	# SHA. We track upstream for rebases via a separate `upstream` remote.
+	#
+	# `ignore = untracked` keeps local zig build artefacts (default.profraw,
+	# zig-pkg/, etc.) out of `git status`; submodule SHA bumps still report.
 	ignore = untracked

@@ -59,8 +59,9 @@ Limpid/
   UI/          SwiftUI views (sidebar, L2, L3, chrome, design system, clipboard sheet)
   Resources/   Info.plist, Localizable.xcstrings, assets
 LimpidTests/   Swift Testing (new) + XCTest (legacy, being migrated)
-vendor/ghostty/  submodule of github.com/ghostty-org/ghostty, currently pinned to
-                 `ce986eead "Add scrollback save/restore C API"` (no upstream tag yet).
+vendor/ghostty/  submodule of our fork github.com/nek0der/ghostty (branch `limpid`),
+                 currently pinned to `ce986eead "Add scrollback save/restore C API"`.
+                 Upstream ghostty-org is tracked via the `upstream` remote for rebases.
                  Run `git -C vendor/ghostty describe` for the current pin.
 scripts/       build-ghostty.sh, package-dmg.sh, ExportOptions.plist
 project.yml    xcodegen source of truth for the .xcodeproj
@@ -108,8 +109,10 @@ Short index of load-bearing files. Skim these before touching their domain.
 
 ## 5. Do not touch
 
-- `vendor/ghostty/` — upstream submodule. Bump only by updating the submodule
-  ref, never by editing in place.
+- `vendor/ghostty/` — our libghostty fork (`nek0der/ghostty`, branch `limpid`).
+  C ABI patches land on the fork's `limpid` branch, then bump the submodule ref
+  here. Don't edit the checkout in place from the Limpid repo — commit patches
+  on the fork.
 - `Limpid.xcodeproj/project.pbxproj` — generated. Edit `project.yml` and run
   `make xcodegen` instead.
 - `Limpid/Resources/Info.plist` Sparkle public key (`SUPublicEDKey`). Changing
