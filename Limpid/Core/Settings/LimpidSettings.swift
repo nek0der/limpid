@@ -133,13 +133,13 @@ struct AppearanceSettings: Codable, Equatable {
     /// content against the wallpaper.
     var backgroundOpacity: Double = 0.92
 
-    /// Transparency mode for the L1 / L2 slabs (the Liquid Glass
-    /// chrome — not the terminal pane). `.system` honors macOS
-    /// Accessibility's `accessibilityDisplayShouldReduceTransparency`
-    /// (system "Reduce Transparency" ON → slabs go opaque). `.on` /
-    /// `.off` ignore the system setting and force translucent / opaque
-    /// respectively.
-    var transparency: TransparencyMode = .system
+    /// Whether the chrome (L1 / L2 slabs, window backdrop — not the
+    /// terminal pane) uses Liquid Glass. macOS Accessibility's
+    /// "Reduce Transparency" always wins: when the system flag is on,
+    /// AppKit renders vibrancy opaque and strips Liquid Glass no matter
+    /// what we ask for, so this toggle only has an effect while that
+    /// system setting is off. See `ReduceTransparencyResolver`.
+    var transparencyEnabled: Bool = true
 
     /// User-chosen colour scheme. `.system` follows the macOS
     /// Appearance preference; `.light` / `.dark` pin Limpid (both
@@ -162,15 +162,36 @@ struct AppearanceSettings: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.windowTint = try c.decodeIfPresent(WindowTint.self, forKey: .windowTint) ?? .default
         self.backgroundOpacity = try c.decodeIfPresent(Double.self, forKey: .backgroundOpacity) ?? 0.92
-        self.transparency = try c.decodeIfPresent(TransparencyMode.self, forKey: .transparency) ?? .system
+        // Migrate the older three-way `transparency` enum: only its
+        // explicit `off` opted out of glass, so every other value (and
+        // a missing key) maps to enabled.
+        if let enabled = try c.decodeIfPresent(Bool.self, forKey: .transparencyEnabled) {
+            self.transparencyEnabled = enabled
+        } else if let legacy = try c.decodeIfPresent(String.self, forKey: .transparency) {
+            self.transparencyEnabled = legacy != "off"
+        } else {
+            self.transparencyEnabled = true
+        }
         self.colorScheme = try c.decodeIfPresent(ColorSchemePreference.self, forKey: .colorScheme) ?? .system
     }
-}
 
-enum TransparencyMode: String, Codable, CaseIterable {
-    case system
-    case on
-    case off
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(windowTint, forKey: .windowTint)
+        try c.encode(backgroundOpacity, forKey: .backgroundOpacity)
+        try c.encode(transparencyEnabled, forKey: .transparencyEnabled)
+        try c.encode(colorScheme, forKey: .colorScheme)
+        // `transparency` is intentionally not written — it exists only
+        // as a decode-time migration path off older settings files.
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case windowTint
+        case backgroundOpacity
+        case transparencyEnabled
+        case transparency // legacy, decode-only for migration
+        case colorScheme
+    }
 }
 
 /// User Appearance preference, mirrored after macOS 26 System
@@ -420,7 +441,7 @@ enum LimpidSettingsSchema {
         // Appearance
         "appearance.windowTint": .live,
         "appearance.backgroundOpacity": .live,
-        "appearance.transparency": .live,
+        "appearance.transparencyEnabled": .live,
         // Font
         "appearance.font.family": .newTerminal,
         "appearance.font.size": .live,

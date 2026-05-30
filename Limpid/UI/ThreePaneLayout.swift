@@ -43,7 +43,8 @@ struct ThreePaneLayout: View {
                         .frame(width: state.session.sidebarWidth)
                         .liquidGlassSlab(
                             cornerRadius: 10,
-                            solid: reduceTransparencyResolver.shouldReduceTransparency
+                            solid: reduceTransparencyResolver.shouldReduceTransparency,
+                            solidFill: l1SolidFill
                         )
                     SidebarResizeHandle(session: state.session)
                 }
@@ -63,6 +64,20 @@ struct ThreePaneLayout: View {
         .ignoresSafeArea(.all)
     }
 
+    /// Opaque fill for the L1 slab when transparency is reduced. The
+    /// glass slab samples the window tint from behind it, but the solid
+    /// slab has nothing to sample, so it would otherwise read as flat
+    /// grey and clash with a coloured `WindowTint`. Blend the tint into
+    /// the native window background so the opaque slab still tracks the
+    /// theme while staying muted enough to keep the sidebar legible.
+    private var l1SolidFill: Color {
+        let window = Color(nsColor: .windowBackgroundColor)
+        guard let tint = state.settingsStore.settings.appearance.windowTint.fillColor else {
+            return window
+        }
+        return window.mix(with: tint, by: 0.5)
+    }
+
     @ViewBuilder
     private var windowBaseFill: some View {
         if reduceTransparencyResolver.shouldReduceTransparency {
@@ -79,13 +94,14 @@ struct ThreePaneLayout: View {
 // MARK: - Horizontal tab mode
 
 /// Horizontal tab mode body — chrome and content are independent rows.
-/// The chrome row preserves the L2/L3 column boundary (with matching
-/// tints), while the content row spans full width so the tab bar and
-/// terminal get maximum real estate.
+/// The chrome row carries the L2/L3 tints but no boundary rule, and the
+/// content row spans full width so the tab bar and terminal get maximum
+/// real estate.
 private struct HorizontalModeBody: View {
     let ghosttyApp: GhosttyApp
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settings
+    @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
 
     var body: some View {
         VStack(spacing: 0) {
@@ -97,9 +113,15 @@ private struct HorizontalModeBody: View {
                 }
                 .frame(width: leadingInset + session.l2Width)
                 .background(l2Tint)
+                // Glass mode separates the columns by their distinct
+                // tints, so the chrome row keeps its hairline. Reduce-
+                // transparency mode shares one opaque tone across both
+                // columns, so the rule would read as an arbitrary line —
+                // drop it there.
                 .overlay(alignment: .trailing) {
-                    LimpidColor.l2TrailingDivider
-                        .frame(width: 0.5)
+                    if !reduce {
+                        LimpidColor.l2TrailingDivider.frame(width: 0.5)
+                    }
                 }
 
                 ChromeL3Segment()
@@ -118,8 +140,9 @@ private struct HorizontalModeBody: View {
                         .frame(maxWidth: .infinity)
                 }
                 .overlay(alignment: .bottom) {
-                    LimpidColor.l2TrailingDivider
-                        .frame(height: 0.5)
+                    if !reduce {
+                        LimpidColor.l2TrailingDivider.frame(height: 0.5)
+                    }
                 }
                 HStack(spacing: 0) {
                     if !session.sidebarHidden {
@@ -134,18 +157,20 @@ private struct HorizontalModeBody: View {
         }
     }
 
+    private var reduce: Bool {
+        reduceTransparencyResolver.shouldReduceTransparency
+    }
+
     private var leadingInset: CGFloat {
         session.sidebarHidden ? 0 : L1Footprint.width(for: session)
     }
 
     private var l2Tint: some View {
-        (settings.settings.appearance.windowTint.fillColor ?? LimpidColor.l2Background)
-            .opacity(settings.settings.appearance.backgroundOpacity * 0.5)
+        ColumnBackdrop(appearance: settings.settings.appearance, role: .list, reduceTransparency: reduce)
     }
 
     private var l3Tint: some View {
-        (settings.settings.appearance.windowTint.fillColor ?? LimpidColor.l3Background)
-            .opacity(settings.settings.appearance.backgroundOpacity * 0.5)
+        ColumnBackdrop(appearance: settings.settings.appearance, role: .content, reduceTransparency: reduce)
     }
 }
 
@@ -159,6 +184,7 @@ private struct HorizontalModeBody: View {
 private struct L2Column: View {
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settings
+    @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -176,14 +202,23 @@ private struct L2Column: View {
             L2ResizeHandle(session: session)
         }
         .frame(width: leadingInset + session.l2Width)
+        // Glass mode leans on the column tints (dark divider is clear);
+        // reduce-transparency mode shares one tone, so it needs a
+        // visible hairline to keep the L2/L3 seam legible.
         .overlay(alignment: .trailing) {
-            LimpidColor.l2TrailingDivider
-                .frame(width: 0.5)
+            divider.frame(width: 0.5)
         }
-        .background(
-            (settings.settings.appearance.windowTint.fillColor ?? LimpidColor.l2Background)
-                .opacity(settings.settings.appearance.backgroundOpacity * 0.5)
-        )
+        .background(ColumnBackdrop(
+            appearance: settings.settings.appearance,
+            role: .list,
+            reduceTransparency: reduceTransparencyResolver.shouldReduceTransparency
+        ))
+    }
+
+    private var divider: Color {
+        reduceTransparencyResolver.shouldReduceTransparency
+            ? LimpidColor.l2TrailingDividerOpaque
+            : LimpidColor.l2TrailingDivider
     }
 
     private var leadingInset: CGFloat {
@@ -195,6 +230,7 @@ private struct L2Column: View {
 private struct L3Column: View {
     let ghosttyApp: GhosttyApp
     @Environment(SettingsStore.self) private var settings
+    @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
 
     var body: some View {
         VStack(spacing: 0) {
@@ -204,10 +240,45 @@ private struct L3Column: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity)
-        .background(
-            (settings.settings.appearance.windowTint.fillColor ?? LimpidColor.l3Background)
-                .opacity(settings.settings.appearance.backgroundOpacity * 0.5)
-        )
+        .background(ColumnBackdrop(
+            appearance: settings.settings.appearance,
+            role: .content,
+            reduceTransparency: reduceTransparencyResolver.shouldReduceTransparency
+        ))
+    }
+}
+
+/// Backdrop for the flush L2 / L3 columns. The fill depends on the
+/// user's Reduce Transparency state:
+///
+/// - **Off (default):** the stock translucent column tints
+///   (`l2Background` / `l3Background`) wash over the window's
+///   behind-window glass, so the panes read as Liquid Glass.
+/// - **On:** translucency is undesirable, so both columns take the
+///   native `windowBackgroundColor` tone (matching System Settings),
+///   and the `l2TrailingDivider` hairline carries the boundary that the
+///   two distinct tints would otherwise provide.
+///
+/// A named `WindowTint` is a deliberate atmosphere in either mode, so we
+/// paint that colour regardless, kept translucent by the opacity slider.
+private struct ColumnBackdrop: View {
+    enum Role { case list, content }
+    let appearance: AppearanceSettings
+    let role: Role
+    let reduceTransparency: Bool
+
+    var body: some View {
+        if let fill = appearance.windowTint.fillColor {
+            fill.opacity(appearance.backgroundOpacity * 0.5)
+        } else if reduceTransparency {
+            Color(nsColor: .windowBackgroundColor).opacity(appearance.backgroundOpacity)
+        } else {
+            stockTint.opacity(appearance.backgroundOpacity * 0.5)
+        }
+    }
+
+    private var stockTint: Color {
+        role == .list ? LimpidColor.l2Background : LimpidColor.l3Background
     }
 }
 

@@ -83,11 +83,21 @@ enum LimpidColor {
         dark: Color.black.opacity(0.28)
     )
 
-    /// Vertical hairline between the L2 and L3 columns. Visible only
-    /// in light mode where the two column tints are nearly identical.
+    /// Vertical hairline between the L2 and L3 columns in the default
+    /// (translucent) appearance. Visible only in light mode — in dark
+    /// mode the two column tints already separate the columns, so the
+    /// line stays clear to avoid a hard rule over the glass.
     static let l2TrailingDivider: Color = .init(
         light: Color.black.opacity(0.08),
         dark: Color.clear
+    )
+
+    /// Vertical hairline used in reduce-transparency mode, where L2 and
+    /// L3 share one opaque tone and so need an explicit boundary in both
+    /// appearances.
+    static let l2TrailingDividerOpaque: Color = .init(
+        light: Color.black.opacity(0.08),
+        dark: Color.white.opacity(0.10)
     )
 
     /// Rim highlight along the top of glass panels (§2.2).
