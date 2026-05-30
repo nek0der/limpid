@@ -90,6 +90,14 @@ final class ClaudeAgentStateTracker {
         self.session = session
         self.triage = triage
         self.notificationManager = notificationManager
+        // Demo mode treats `DemoFixture` as the whole truth: any badge
+        // we'd pull from `~/Library/.../agent-states` would clobber the
+        // in-memory fixture (the disk lookup deletes badges for panes
+        // that have no record). Skip the disk sync + watchers entirely.
+        guard !DemoFixture.isDemoActive else {
+            hasBootstrapped = true
+            return
+        }
         applyAllRecordsToSession()
         hasBootstrapped = true
         startDirectoryWatch()

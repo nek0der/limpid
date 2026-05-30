@@ -60,6 +60,12 @@ final class CodexAgentStateTracker {
         self.session = session
         self.triage = triage
         self.notificationManager = notificationManager
+        // Same demo-mode guard as `ClaudeAgentStateTracker.bootstrap`:
+        // skip the disk sync so `DemoFixture` stays the source of truth.
+        guard !DemoFixture.isDemoActive else {
+            hasBootstrapped = true
+            return
+        }
         applyAllRecordsToSession()
         hasBootstrapped = true
         startDirectoryWatch()

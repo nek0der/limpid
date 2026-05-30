@@ -91,7 +91,14 @@ final class SettingsStore {
     init() {
         let raw = UserDefaults.standard.string(forKey: Self.appLanguageDefaultsKey)
             ?? AppLanguage.system.rawValue
-        self.appLanguage = AppLanguage(rawValue: raw) ?? .system
+        let stored = AppLanguage(rawValue: raw) ?? .system
+        // Demo mode pins the SwiftUI tree to English so the README hero
+        // screenshot reads the same regardless of the contributor's OS
+        // locale. UserDefaults stays untouched so the user's real
+        // preference survives a `LIMPID_DEMO=1` run. AppKit menu bar
+        // still follows `AppleLanguages` (untouched here) — capture
+        // pipelines crop to the SwiftUI window content.
+        self.appLanguage = DemoFixture.isDemoActive ? .english : stored
         var loaded = Self.loadFromDiskOrDefault()
         // The hero screenshot pipeline runs under `LIMPID_DEMO=1`.
         // Force the chrome opaque there so the captured PNG doesn't
