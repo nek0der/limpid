@@ -20,6 +20,7 @@ extension AgentState {
         case .running, .compacting: "bolt.circle.fill"
         case .needsInput: "questionmark.circle.fill"
         case .error: "exclamationmark.circle.fill"
+        case .finished: "checkmark.circle.fill"
         case .idle, .unknown: nil
         }
     }
@@ -32,6 +33,7 @@ extension AgentState {
         case .running, .compacting: Color(.systemBlue)
         case .needsInput: Color(.systemOrange)
         case .error: Color(.systemRed)
+        case .finished: Color(.systemGreen)
         case .idle, .unknown: nil
         }
     }

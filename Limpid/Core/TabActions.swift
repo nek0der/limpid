@@ -68,6 +68,7 @@ enum TabActions {
         tabID: UUID,
         source: CloseConfirmer.Source = .keyboard,
         confirm: Bool = true,
+        triage: TriageState? = nil,
         claudeSessionTracker: ClaudeSessionTracker? = nil,
         codexSessionTracker: CodexSessionTracker? = nil
     ) {
@@ -109,6 +110,11 @@ enum TabActions {
             // cleanup pass swept them.
             claudeSessionTracker?.didClosePane(leafID)
             codexSessionTracker?.didClosePane(leafID)
+            // Drop the triage bookkeeping for the closed pane so the
+            // viewed / dismissed dictionaries don't accumulate dead
+            // entries across long sessions. UUIDs aren't reused, so
+            // this is a pure cleanup — never affects live panes.
+            triage?.forget(paneID: leafID)
         }
     }
 
@@ -329,6 +335,26 @@ enum TabActions {
         // case; SurfaceView.viewDidMoveToWindow will grab it once the
         // view mounts. Do *not* "fix" this to crash on a missing view.
         if let view = registry.view(for: next) {
+            view.window?.makeFirstResponder(view)
+        }
+    }
+
+    /// Make `tabID` active, focus `paneID`, and pull keyboard focus to
+    /// its surface. The target tab's SurfaceView may not be mounted yet
+    /// (we just switched tabs); when it isn't, `viewDidMoveToWindow`
+    /// grabs first responder on mount via the focusedLeafID we set —
+    /// the same contract `focusPane` relies on. Internal so `TriageState`
+    /// (the owner of the ⌘J cursor + WAITING row taps) can share this
+    /// one focus-pull primitive with `TabActions`.
+    static func activateAndFocus(
+        _ session: WindowSession,
+        registry: any SurfaceViewProviding,
+        tabID: UUID,
+        paneID: UUID
+    ) {
+        session.setActiveTab(tabID)
+        session.update(tabID) { $0.splitTree.focusedLeafID = paneID }
+        if let view = registry.view(for: paneID) {
             view.window?.makeFirstResponder(view)
         }
     }
@@ -579,6 +605,7 @@ enum TabActions {
     static func executeCommandPaletteAction(
         _ action: CommandPaletteAction,
         session: WindowSession,
+        triage: TriageState,
         registry: any SurfaceViewProviding,
         frecencyStore: FrecencyStore,
         claudeSessionTracker: ClaudeSessionTracker? = nil,
@@ -592,9 +619,9 @@ enum TabActions {
             dispatchShortcutAction(
                 shortcut,
                 session: session,
+                triage: triage,
                 registry: registry,
-                claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker
+                trackers: SessionTrackers(claude: claudeSessionTracker, codex: codexSessionTracker)
             )
         case let .jumpToTab(tabID):
             if let tab = session.tab(tabID) {
@@ -626,12 +653,20 @@ enum TabActions {
         }
     }
 
+    /// Bundles the two optional CLI-session trackers so the dispatcher
+    /// chain stays under the parameter-count budget. Both are needed for
+    /// `--resume` plumbing but only the file dispatch reads them.
+    struct SessionTrackers {
+        let claude: ClaudeSessionTracker?
+        let codex: CodexSessionTracker?
+    }
+
     private static func dispatchShortcutAction(
         _ action: LimpidShortcutAction,
         session: WindowSession,
+        triage: TriageState,
         registry: any SurfaceViewProviding,
-        claudeSessionTracker: ClaudeSessionTracker?,
-        codexSessionTracker: CodexSessionTracker?
+        trackers: SessionTrackers
     ) {
         switch action.category {
         case .file:
@@ -639,13 +674,13 @@ enum TabActions {
                 action,
                 session: session,
                 registry: registry,
-                claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker
+                claudeSessionTracker: trackers.claude,
+                codexSessionTracker: trackers.codex
             )
         case .view:
             dispatchViewAction(action, session: session)
         case .navigation:
-            dispatchNavigationAction(action, session: session)
+            dispatchNavigationAction(action, session: session, triage: triage, registry: registry)
         case .splits:
             dispatchSplitAction(action, session: session, registry: registry)
         case .search:
@@ -703,13 +738,19 @@ enum TabActions {
 
     private static func dispatchNavigationAction(
         _ action: LimpidShortcutAction,
-        session: WindowSession
+        session: WindowSession,
+        triage: TriageState,
+        registry: any SurfaceViewProviding
     ) {
         switch action {
         case .nextSection: cycleContainer(session, forward: true)
         case .previousSection: cycleContainer(session, forward: false)
         case .nextTab: cycleTab(session, forward: true)
         case .previousTab: cycleTab(session, forward: false)
+        case .nextAttention:
+            triage.jumpToAttention(in: session, registry: registry, forward: true)
+        case .previousAttention:
+            triage.jumpToAttention(in: session, registry: registry, forward: false)
         default: break
         }
     }

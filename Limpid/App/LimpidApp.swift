@@ -16,6 +16,11 @@ final class AppState {
     let ghosttyApp: GhosttyApp?
     let registry = SurfaceRegistry()
     let session: WindowSession
+    /// Triage-ring state — finished-turn viewed / dismissed bookkeeping,
+    /// the L1 WAITING list, and the ⌘J cursor. Held independently of
+    /// `WindowSession` so that hub stays focused on tabs / projects /
+    /// persistence; triage is a UI workflow layer over the raw badges.
+    let triage: TriageState
     let store: SessionStore
     // Dependency graph — owned here so the rest of the app can read
     // these via explicit constructor injection instead of `.shared`.
@@ -195,6 +200,7 @@ final class AppState {
         self.codexSessionTracker = codexSessionTracker
 
         self.session = session
+        self.triage = TriageState()
 
         let historyStore = NotificationHistoryStore()
         self.historyStore = historyStore
@@ -208,10 +214,12 @@ final class AppState {
         // call had to wait.
         claudeAgentStateTracker.bootstrap(
             into: session,
+            triage: triage,
             notificationManager: notificationManager
         )
         codexAgentStateTracker.bootstrap(
             into: session,
+            triage: triage,
             notificationManager: notificationManager
         )
         self.historyPresentation = NotificationHistoryPresentation()
@@ -557,6 +565,7 @@ struct LimpidApp: App {
                 // vs. fall back to Sparkle's standard alert.
                 .background(LimpidMainWindowMarker())
                 .environment(state.session)
+                .environment(state.triage)
                 .environment(state.historyStore)
                 .environment(state.historyPresentation)
                 .environment(state.dragState)
@@ -687,19 +696,6 @@ struct LimpidApp: App {
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
                 }
-                Divider()
-                Button {
-                    TabActions.cycleContainer(state.session, forward: true)
-                } label: {
-                    Label("Next Section", systemImage: "chevron.right")
-                }
-                .limpidShortcut(.nextSection, in: state.settingsStore)
-                Button {
-                    TabActions.cycleContainer(state.session, forward: false)
-                } label: {
-                    Label("Previous Section", systemImage: "chevron.left")
-                }
-                .limpidShortcut(.previousSection, in: state.settingsStore)
                 // ⌘⌃1 … ⌘⌃9 → jump to the Nth top-level container.
                 ForEach(1...9, id: \.self) { n in
                     Button {
@@ -710,6 +706,7 @@ struct LimpidApp: App {
                     .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: [.command, .control])
                 }
             }
+            NavigationCommands(state: state)
             CommandGroup(after: .toolbar) {
                 Button {
                     TabActions.openCommandPalette(
@@ -867,6 +864,7 @@ struct ContentView: View {
             TabActions.executeCommandPaletteAction(
                 action,
                 session: state.session,
+                triage: state.triage,
                 registry: state.registry,
                 frecencyStore: state.frecencyStore,
                 claudeSessionTracker: state.claudeSessionTracker,

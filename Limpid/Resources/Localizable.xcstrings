@@ -1484,6 +1484,78 @@
         }
       }
     },
+    "Hide already-viewed (show only next-to-deal-with)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既読を隠す（次に対応するものだけ表示）"
+          }
+        }
+      }
+    },
+    "just now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "たった今"
+          }
+        }
+      }
+    },
+    "%lld hidden by filter": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件はフィルタで非表示"
+          }
+        }
+      }
+    },
+    "All clear": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対応待ちなし"
+          }
+        }
+      }
+    },
+    "WAITING": {
+    },
+    "Next Action": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次の対応"
+          }
+        }
+      }
+    },
+    "Show all (including already-viewed)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既読を含めて表示"
+          }
+        }
+      }
+    },
+    "Previous Action": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前の対応"
+          }
+        }
+      }
+    },
     "Next Section": {
       "localizations": {
         "ja": {

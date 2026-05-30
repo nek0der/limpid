@@ -30,7 +30,7 @@ struct AgentNotificationEmitter {
     /// leaf; decides whether the change warrants a banner and, if so,
     /// builds + sends it. Mirrors the per-tracker logic exactly:
     ///
-    /// - `(running|compacting) → idle` → "X finished" with last prompt.
+    /// - `(running|compacting) → finished` → "X finished" with last prompt.
     /// - `* → needsInput` (when previous wasn't already needsInput) →
     ///   "X needs input" with the permission text / question.
     ///
@@ -52,7 +52,7 @@ struct AgentNotificationEmitter {
             )
             return
         }
-        guard current.state == .idle,
+        guard current.state == .finished,
               let previous,
               previous.state == .running || previous.state == .compacting
         else { return }
@@ -131,28 +131,13 @@ struct AgentNotificationEmitter {
             tabTitleSnapshot: tab.displayTitle,
             containerLabel: session.containerLabel(for: tab.container)
         )
-        markUnreadUnlessFocused(session: session, tab: tab, paneID: paneID)
-    }
-
-    /// Match the OSC 9 / 777 path's "only flag unread when the user
-    /// isn't already watching the pane" rule. We can't reach the
-    /// underlying `SurfaceView` from here, so we approximate by
-    /// checking the model's active tab + focused leaf + whether the
-    /// app is the key window.
-    private func markUnreadUnlessFocused(
-        session: WindowSession,
-        tab: Tab,
-        paneID: UUID
-    ) {
-        let isActiveTab = session.activeTabID == tab.id
-        let isFocusedLeaf = tab.splitTree.focusedLeafID == paneID
-        if isActiveTab,
-           isFocusedLeaf,
-           LimpidNotificationDelegate.isKeyAndFocused
-        {
-            return
-        }
-        session.markUnread(paneID: paneID)
+        // Agent events fire the macOS banner + history entry (above) but
+        // deliberately do NOT bump the per-pane unread count that drives
+        // the L2/L1 bell — an agent's triage surface is the lifecycle
+        // badge + the WAITING list, not the bell. Routing them through
+        // the bell too would double-signal the same event. The bell is
+        // reserved for non-agent unread (terminal OSC 9/777, child-exit)
+        // handled in GhosttyEventCoordinator.
     }
 
     /// Collapse whitespace + truncate to ~80 chars. Returns `nil` if
@@ -176,7 +161,7 @@ struct AgentNotificationEmitter {
 
 extension AgentKind {
     /// macOS notification title used when a `(running|compacting) →
-    /// idle` transition fires for this agent kind. Each case must use a
+    /// finished` transition fires for this agent kind. Each case must use a
     /// string literal so the `Localizable.xcstrings` extractor can
     /// pick up both keys at build time.
     var finishedTitle: String {

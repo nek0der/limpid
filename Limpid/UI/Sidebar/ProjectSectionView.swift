@@ -15,6 +15,7 @@ import SwiftUI
 
 struct ProjectSectionView: View {
     @Environment(WindowSession.self) private var session
+    @Environment(TriageState.self) private var triage
     @Environment(LimpidDragState.self) private var dragState
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.surfaceRegistry) private var registry
@@ -97,11 +98,14 @@ struct ProjectSectionView: View {
                 ? session.isRingingInProject(project.id)
                 : session.isRinging(in: .project(project.id)),
             agentState: aggregatesWholeProject
-                ? session.aggregateAgentStateInProject(project.id)
-                : session.aggregateAgentState(in: .project(project.id)),
+                ? triage.aggregateAgentStateInProject(project.id, session: session)
+                : triage.aggregateAgentState(in: .project(project.id), session: session),
+            agentStateViewed: aggregatesWholeProject
+                ? triage.isFinishedAggregateViewedInProject(project.id, session: session)
+                : triage.isFinishedAggregateViewed(in: .project(project.id), session: session),
             agentBreakdown: aggregatesWholeProject
-                ? session.agentStateBreakdownInProject(project.id)
-                : session.agentStateBreakdown(in: .project(project.id)),
+                ? triage.agentStateBreakdownInProject(project.id, session: session)
+                : triage.agentStateBreakdown(in: .project(project.id), session: session),
             // Header tap always activates `.project(id)` — the
             // project-direct ("Default") container. With worktrees,
             // chevron expansion is a separate 16×16 hit target on
@@ -219,8 +223,9 @@ struct ProjectSectionView: View {
             isActive: session.activeContainerID == .worktree(projectID: project.id, worktreeID: wt.id),
             hasUnread: session.hasUnread(in: .worktree(projectID: project.id, worktreeID: wt.id)),
             isRinging: session.isRinging(in: .worktree(projectID: project.id, worktreeID: wt.id)),
-            agentState: session.aggregateAgentState(in: .worktree(projectID: project.id, worktreeID: wt.id)),
-            agentBreakdown: session.agentStateBreakdown(in: .worktree(projectID: project.id, worktreeID: wt.id)),
+            agentState: triage.aggregateAgentState(in: .worktree(projectID: project.id, worktreeID: wt.id), session: session),
+            agentStateViewed: triage.isFinishedAggregateViewed(in: .worktree(projectID: project.id, worktreeID: wt.id), session: session),
+            agentBreakdown: triage.agentStateBreakdown(in: .worktree(projectID: project.id, worktreeID: wt.id), session: session),
             onActivate: {
                 session.setActiveContainer(.worktree(projectID: project.id, worktreeID: wt.id))
             },

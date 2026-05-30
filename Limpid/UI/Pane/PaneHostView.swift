@@ -17,6 +17,7 @@ struct PaneHostView: View {
     let ghosttyApp: GhosttyApp
     @Environment(\.surfaceRegistry) private var registry
     @Environment(WindowSession.self) private var session
+    @Environment(TriageState.self) private var triage
 
     var body: some View {
         GeometryReader { geo in
@@ -26,6 +27,7 @@ struct PaneHostView: View {
                     ghosttyApp: ghosttyApp,
                     registry: registry,
                     session: session,
+                    triage: triage,
                     size: geo.size
                 )
                 if let state = session.paneSearchStates[paneID],
@@ -56,6 +58,7 @@ private struct PaneHostRepresentable: NSViewRepresentable {
     let ghosttyApp: GhosttyApp
     let registry: any SurfaceViewProviding
     let session: WindowSession
+    let triage: TriageState
     let size: CGSize
 
     func makeNSView(context: Context) -> SurfaceView {
@@ -86,6 +89,15 @@ private struct PaneHostRepresentable: NSViewRepresentable {
         view.onUserAcknowledge = { [weak session] in
             session?.clearUnread(paneID: paneID)
         }
+        // Single source of truth for "triage focus moved": fires
+        // whenever this pane gains focus (mount/restore, click, ⌘J, tab
+        // switch, arrow). `markViewed` fades the arrived pane's finished
+        // turn — viewing isn't completing. Covers the launch-focused
+        // pane that no explicit navigation ever touched.
+        view.onFocusEntry = { [weak session, triage] in
+            guard let session else { return }
+            triage.focusMoved(to: paneID, in: session)
+        }
         wireContextMenuCallbacks(on: view)
         view.applyExpectedSize(size)
         return view
@@ -95,6 +107,10 @@ private struct PaneHostRepresentable: NSViewRepresentable {
         let paneID = paneID
         nsView.onUserAcknowledge = { [weak session] in
             session?.clearUnread(paneID: paneID)
+        }
+        nsView.onFocusEntry = { [weak session, triage] in
+            guard let session else { return }
+            triage.focusMoved(to: paneID, in: session)
         }
         nsView.applyExpectedSize(size)
     }

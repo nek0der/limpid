@@ -19,6 +19,11 @@ struct SessionSnapshot: Codable {
     var activeContainerID: ContainerID
     var sidebarWidth: Double
     var l2Width: Double = LimpidLayout.l2Width
+    /// L1 WAITING region height as a fraction of slab height.
+    /// Optional so a state.json written before this field existed still
+    /// decodes (synthesized Decodable uses decodeIfPresent for
+    /// Optionals; nil → default in `restore`).
+    var attentionHeightFraction: Double?
     var sidebarHidden: Bool
     var l2Horizontal: Bool
     var windowFrame: WindowFrame?
@@ -33,6 +38,7 @@ struct SessionSnapshot: Codable {
         activeContainerID: ContainerID = .loose,
         sidebarWidth: Double,
         l2Width: Double = LimpidLayout.l2Width,
+        attentionHeightFraction: Double? = nil,
         sidebarHidden: Bool = false,
         l2Horizontal: Bool = false,
         windowFrame: WindowFrame? = nil,
@@ -46,6 +52,7 @@ struct SessionSnapshot: Codable {
         self.activeContainerID = activeContainerID
         self.sidebarWidth = sidebarWidth
         self.l2Width = l2Width
+        self.attentionHeightFraction = attentionHeightFraction
         self.sidebarHidden = sidebarHidden
         self.l2Horizontal = l2Horizontal
         self.windowFrame = windowFrame
@@ -106,6 +113,7 @@ extension WindowSession {
             activeContainerID: activeContainerID,
             sidebarWidth: Double(sidebarWidth),
             l2Width: Double(l2Width),
+            attentionHeightFraction: Double(attentionHeightFraction),
             sidebarHidden: sidebarHidden,
             l2Horizontal: l2Horizontal,
             windowFrame: windowFrame.map(WindowFrame.init),
@@ -119,6 +127,8 @@ extension WindowSession {
         projects = snapshot.projects
         sidebarWidth = CGFloat(snapshot.sidebarWidth)
         l2Width = CGFloat(snapshot.l2Width)
+        attentionHeightFraction = snapshot.attentionHeightFraction
+            .map { CGFloat($0) } ?? LimpidLayout.attentionHeightFraction
         sidebarHidden = snapshot.sidebarHidden
         l2Horizontal = snapshot.l2Horizontal
         recentProjectPaths = snapshot.recentProjectPaths

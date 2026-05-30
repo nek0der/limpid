@@ -16,8 +16,10 @@ import Foundation
 enum AgentState: String, Codable, Equatable, CaseIterable {
     /// Initial / SessionEnd / unobserved. No icon rendered.
     case unknown
-    /// `Stop` (Claude) / equivalent observed, agent waiting for the
-    /// next user prompt.
+    /// `SessionStart` / fresh — a launched agent that hasn't run a
+    /// turn yet. No icon rendered. (A turn that *has* finished maps to
+    /// `finished`, not here, so the triage cursor can tell "your turn"
+    /// apart from "never used".)
     case idle
     /// `UserPromptSubmit` / `PreToolUse` observed.
     case running
@@ -30,14 +32,22 @@ enum AgentState: String, Codable, Equatable, CaseIterable {
     case needsInput
     /// `StopFailure` observed. Rate limit, billing error, etc.
     case error
+    /// `Stop` observed — the agent finished its turn and is waiting on
+    /// the user's next input ("your turn"). Distinct from `idle` (the
+    /// fresh / at-launch state) so the triage cursor treats a finished
+    /// turn as actionable without snagging on never-used panes, and so
+    /// a finished pane shows a badge while a freshly launched one stays
+    /// quiet.
+    case finished
 
     /// Aggregate priority. Higher value wins when multiple panes have
-    /// different states (error > needsInput > running > others). Used
-    /// by both L1 (container) and L2 (tab) aggregation.
+    /// different states (error > needsInput > finished > running >
+    /// others). Used by both L1 (container) and L2 (tab) aggregation.
     var priority: Int {
         switch self {
-        case .error: 4
-        case .needsInput: 3
+        case .error: 5
+        case .needsInput: 4
+        case .finished: 3
         case .running, .compacting: 2
         case .idle: 1
         case .unknown: 0
@@ -51,7 +61,7 @@ enum AgentState: String, Codable, Equatable, CaseIterable {
     /// and the aggregator's "should this propagate up" filter.
     var hasVisibleBadge: Bool {
         switch self {
-        case .running, .compacting, .needsInput, .error: true
+        case .running, .compacting, .needsInput, .error, .finished: true
         case .idle, .unknown: false
         }
     }

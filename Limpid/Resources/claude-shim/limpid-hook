@@ -41,14 +41,28 @@ states_dir="${LIMPID_AGENT_STATES_DIR:-$HOME/Library/Application Support/Limpid/
 mkdir -p "$sessions_dir" 2>/dev/null
 mkdir -p "$states_dir" 2>/dev/null
 
-# Extract fields out of the JSON payload with sed. We intentionally
-# avoid jq — it's not in the base macOS install and we don't want a
-# runtime dependency for a hook that must never fail.
+# Read a field from the JSON payload. `plutil` ships with every macOS,
+# so values containing quotes / newlines / backslashes survive intact
+# (the old `sed` match stopped at the first `"` or `\`, which is why
+# prompts with either used to come through empty). `$1` may be a plutil
+# key path, e.g. `tool_input.questions.0.question`. Returns the
+# *decoded* value; falls back to a coarse sed match if plutil can't
+# read the key. We still avoid jq — it isn't guaranteed on macOS.
 extract() {
+  printf '%s' "$payload" | plutil -extract "$1" raw -o - - 2>/dev/null && return 0
   printf '%s' "$payload" | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1
 }
-extract_int() {
-  printf '%s' "$payload" | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n1
+
+# Escape a string for safe embedding as a JSON string value: fold tabs
+# / CR to a space, escape backslash + double-quote, then fold real
+# newlines to `\n`. Replaces the old sanitize() that blanked any value
+# containing `"` or `\` — that blanking was the second half of the
+# empty-prompt bug.
+json_escape() {
+  printf '%s' "$1" \
+    | tr '\t\r' '  ' \
+    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
+    | awk 'BEGIN { ORS = "" } NR > 1 { printf "\\n" } { printf "%s", $0 }'
 }
 
 session_id="$(extract session_id)"
@@ -58,30 +72,27 @@ reason="$(extract reason)"
 tool_name="$(extract tool_name)"
 notification_type="$(extract notification_type)"
 notification_message="$(extract message)"
-# AskUserQuestion's tool_input carries the question text under a
-# `question` field. Pull whichever string-shaped `question` field is
-# in the payload — depth-agnostic sed because the value usually
-# lives nested inside `tool_input.question`.
-ask_question="$(extract question)"
+# AskUserQuestion carries the question under tool_input.questions[].question.
+# Try the exact path first, then a depth-agnostic fallback for other shapes.
+ask_question="$(extract tool_input.questions.0.question)"
+[ -n "$ask_question" ] || ask_question="$(extract question)"
 error_type="$(extract error_type)"
-current_token_count="$(extract_int current_token_count)"
+current_token_count="$(extract current_token_count)"
+# Only keep a clean integer — anything else would break the JSON below.
+case "$current_token_count" in
+  '' | *[!0-9]*) current_token_count="" ;;
+esac
 
 ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-# Strip control chars / quotes from values that we emit verbatim into
-# JSON. Belt-and-suspenders — the extract regex already excludes
-# `"` and `\` but we re-check before write.
-sanitize() {
-  case "$1" in
-    *[\"\\]*) printf '%s' "" ;;
-    *) printf '%s' "$1" ;;
-  esac
-}
-cwd_safe="$(sanitize "$cwd")"
-tool_safe="$(sanitize "$tool_name")"
-error_safe="$(sanitize "$error_type")"
-message_safe="$(sanitize "$notification_message")"
-question_safe="$(sanitize "$ask_question")"
+# JSON-escaped copies for embedding. `tool_safe` is still usable for the
+# AskUserQuestion equality check below — a tool name has nothing to
+# escape, so escaping is a no-op for it.
+cwd_safe="$(json_escape "$cwd")"
+tool_safe="$(json_escape "$tool_name")"
+error_safe="$(json_escape "$error_type")"
+message_safe="$(json_escape "$notification_message")"
+question_safe="$(json_escape "$ask_question")"
 detail_safe=""
 # Carried into the OSC 2 tab-title fallback below. Initialised here so
 # the title block can reference it even on events that skip the state
@@ -102,10 +113,9 @@ case "$hook_event" in
   PreToolUse)
     if [ "$tool_safe" = "AskUserQuestion" ]; then
       new_state="needsInput"
-      # Use the actual question text when we managed to extract it;
-      # fall back to the tool name so the user at least knows *which*
-      # tool blocked. The Limpid notification body and the L2 tooltip
-      # both read this field.
+      # The agent is asking the user a question — surface the question
+      # text itself (falls back to the tool name if we couldn't read
+      # it). This is what shows on the L1 attention card.
       if [ -n "$question_safe" ]; then
         detail_safe="$question_safe"
       else
@@ -113,7 +123,17 @@ case "$hook_event" in
       fi
     else
       new_state="running"
-      detail_safe="$tool_safe"
+      # Prefer a concrete summary (the command / file path) over the
+      # bare tool name so that, if a permission prompt follows, the
+      # card can show *what* needs approval (e.g. "Bash: rm -rf x")
+      # instead of a generic "Claude needs your permission".
+      tool_arg="$(extract tool_input.command)"
+      [ -n "$tool_arg" ] || tool_arg="$(extract tool_input.file_path)"
+      if [ -n "$tool_arg" ]; then
+        detail_safe="$(json_escape "$tool_name: $tool_arg")"
+      else
+        detail_safe="$tool_safe"
+      fi
     fi
     ;;
   Notification)
@@ -123,12 +143,14 @@ case "$hook_event" in
     case "$notification_type" in
       permission_prompt)
         new_state="needsInput"
-        # Use the payload's `message` (e.g. "Allow Bash command:
-        # rm -rf node_modules ?") so the Limpid-emitted notification
-        # has the actual prompt instead of a generic "permission"
-        # placeholder. Fall back to "permission" when the message
-        # field was empty / unparseable.
-        if [ -n "$message_safe" ]; then
+        # Keep the richer detail the preceding PreToolUse stored (the
+        # command / question text) rather than clobbering it with the
+        # generic "Claude needs your permission to use X" message.
+        # Fall back to the message, then a literal placeholder.
+        prev_detail="$(plutil -extract detail raw -o - "$states_dir/$pane_id.state.json" 2>/dev/null)"
+        if [ -n "$prev_detail" ]; then
+          detail_safe="$(json_escape "$prev_detail")"
+        elif [ -n "$message_safe" ]; then
           detail_safe="$message_safe"
         else
           detail_safe="permission"
@@ -143,7 +165,10 @@ case "$hook_event" in
     new_state="compacting"
     ;;
   Stop)
-    new_state="idle"
+    # Turn finished — the agent is waiting on the user's next input.
+    # `finished` (not `idle`) so the triage cursor counts "your turn"
+    # without snagging on freshly launched, never-run panes.
+    new_state="finished"
     ;;
   StopFailure)
     new_state="error"
@@ -164,27 +189,27 @@ if [ -n "$new_state" ]; then
   # notification body can say *what* finished, not just *that*
   # something finished. We re-read the previous file each event so
   # PreToolUse / Notification / PreCompact preserve both fields.
+  # Read the prior file with plutil too: the stored lastPrompt is now
+  # JSON-escaped (may contain `\n` / `\"`), which the old sed match
+  # would truncate at the first backslash. plutil returns the decoded
+  # value, which we re-escape on write below.
   prev_run_started=""
   prev_last_prompt=""
   prev_first_prompt=""
   prev_session_started=""
   if [ -f "$state_final" ]; then
-    prev_run_started="$(sed -n 's/.*"runStartedAt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
-    prev_last_prompt="$(sed -n 's/.*"lastPrompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
-    prev_first_prompt="$(sed -n 's/.*"firstPrompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
-    prev_session_started="$(sed -n 's/.*"sessionStartedAt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
+    prev_run_started="$(plutil -extract runStartedAt raw -o - "$state_final" 2>/dev/null)"
+    prev_last_prompt="$(plutil -extract lastPrompt raw -o - "$state_final" 2>/dev/null)"
+    prev_first_prompt="$(plutil -extract firstPrompt raw -o - "$state_final" 2>/dev/null)"
+    prev_session_started="$(plutil -extract sessionStartedAt raw -o - "$state_final" 2>/dev/null)"
   fi
   case "$hook_event" in
     UserPromptSubmit)
       run_started="$ts"
-      # Extract the user's prompt from this event's payload so the
-      # next Stop hook's notification body can reference it. sed is
-      # fragile against embedded quotes / newlines / escapes — typical
-      # prompts work, edge cases truncate to whatever sed could match,
-      # and the notification falls back to a generic string when the
-      # extracted text is empty. Good enough for MVP.
-      raw_prompt="$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1)"
-      last_prompt="$(sanitize "$raw_prompt")"
+      # The user's prompt drives the L1 attention card preview + the
+      # Stop notification body. plutil reads it intact (quotes /
+      # newlines / backslashes survive); it gets JSON-escaped at write.
+      last_prompt="$(extract prompt)"
       # `firstPrompt` is the seed for the tab-title fallback: captured
       # once at the session's first prompt and never overwritten, so a
       # later turn still resolves to the conversation's opening line
@@ -246,7 +271,7 @@ if [ -n "$new_state" ]; then
   fi
   prompt_field=""
   if [ -n "$last_prompt" ]; then
-    prompt_field=",\"lastPrompt\":\"$last_prompt\""
+    prompt_field=",\"lastPrompt\":\"$(json_escape "$last_prompt")\""
   fi
   first_prompt_field=""
   if [ -n "$first_prompt" ]; then

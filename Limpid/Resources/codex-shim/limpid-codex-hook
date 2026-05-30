@@ -77,12 +77,24 @@ states_dir="${LIMPID_CODEX_AGENT_STATES_DIR:-$HOME/Library/Application Support/L
 mkdir -p "$sessions_dir" 2>/dev/null
 mkdir -p "$states_dir" 2>/dev/null
 
-# Extract string field via sed. Avoid jq — not in base macOS install.
+# Read a field via plutil (ships with every macOS) so values with
+# quotes / newlines / backslashes survive — the old sed match stopped
+# at the first `"` or `\`. Falls back to a coarse sed match. jq is not
+# guaranteed on macOS, so we don't use it.
 extract() {
+  printf '%s' "$payload" | plutil -extract "$1" raw -o - - 2>/dev/null && return 0
   printf '%s' "$payload" | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1
 }
-extract_int() {
-  printf '%s' "$payload" | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n1
+
+# Escape a string for safe embedding as a JSON string value: fold tabs
+# / CR to a space, escape backslash + double-quote, fold real newlines
+# to `\n`. Replaces the old sanitize() that blanked any value with `"`
+# or `\` (the empty-prompt bug).
+json_escape() {
+  printf '%s' "$1" \
+    | tr '\t\r' '  ' \
+    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
+    | awk 'BEGIN { ORS = "" } NR > 1 { printf "\\n" } { printf "%s", $0 }'
 }
 
 session_id="$(extract session_id)"
@@ -91,23 +103,19 @@ hook_event="$(extract hook_event_name)"
 tool_name="$(extract tool_name)"
 permission_message="$(extract message)"
 error_type="$(extract error_type)"
-current_token_count="$(extract_int current_token_count)"
+current_token_count="$(extract current_token_count)"
+case "$current_token_count" in
+  '' | *[!0-9]*) current_token_count="" ;;
+esac
 
 ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-# Strip control chars / quotes from values that we emit verbatim into
-# JSON. Belt-and-suspenders — extract regex already excludes `"`
-# and `\` but we re-check before write.
-sanitize() {
-  case "$1" in
-    *[\"\\]*) printf '%s' "" ;;
-    *) printf '%s' "$1" ;;
-  esac
-}
-cwd_safe="$(sanitize "$cwd")"
-tool_safe="$(sanitize "$tool_name")"
-message_safe="$(sanitize "$permission_message")"
-error_safe="$(sanitize "$error_type")"
+# JSON-escaped copies for embedding. `tool_safe` is still usable for
+# equality checks — a tool name has nothing to escape.
+cwd_safe="$(json_escape "$cwd")"
+tool_safe="$(json_escape "$tool_name")"
+message_safe="$(json_escape "$permission_message")"
+error_safe="$(json_escape "$error_type")"
 detail_safe=""
 
 # Compute the lifecycle state. PermissionRequest is its own event in
@@ -144,14 +152,15 @@ case "$hook_event" in
     new_state="running"
     ;;
   Stop)
-    # Codex emits Stop on both successful and failed turns. We could
-    # inspect `error_type` to disambiguate `.error` vs `.idle`; for
-    # MVP we treat both as idle and let the user notice via TUI.
+    # Codex emits Stop on both successful and failed turns. A turn that
+    # ended cleanly maps to `finished` ("your turn"); a failure to
+    # `error`. `finished` (not `idle`) so the triage cursor counts a
+    # completed turn without snagging on never-run panes.
     if [ -n "$error_safe" ]; then
       new_state="error"
       detail_safe="$error_safe"
     else
-      new_state="idle"
+      new_state="finished"
     fi
     ;;
 esac
@@ -159,21 +168,22 @@ esac
 if [ -n "$new_state" ]; then
   state_final="$states_dir/$pane_id.state.json"
   state_tmp="$states_dir/.$pane_id.state.json.tmp.$$"
+  # plutil re-read: the stored lastPrompt is JSON-escaped now, which
+  # the old sed match would truncate at the first backslash.
   prev_run_started=""
   prev_last_prompt=""
   prev_first_prompt=""
   prev_session_started=""
   if [ -f "$state_final" ]; then
-    prev_run_started="$(sed -n 's/.*"runStartedAt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
-    prev_last_prompt="$(sed -n 's/.*"lastPrompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
-    prev_first_prompt="$(sed -n 's/.*"firstPrompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
-    prev_session_started="$(sed -n 's/.*"sessionStartedAt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
+    prev_run_started="$(plutil -extract runStartedAt raw -o - "$state_final" 2>/dev/null)"
+    prev_last_prompt="$(plutil -extract lastPrompt raw -o - "$state_final" 2>/dev/null)"
+    prev_first_prompt="$(plutil -extract firstPrompt raw -o - "$state_final" 2>/dev/null)"
+    prev_session_started="$(plutil -extract sessionStartedAt raw -o - "$state_final" 2>/dev/null)"
   fi
   case "$hook_event" in
     UserPromptSubmit)
       run_started="$ts"
-      raw_prompt="$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1)"
-      last_prompt="$(sanitize "$raw_prompt")"
+      last_prompt="$(extract prompt)"
       # `firstPrompt` seeds the tab-title fallback: captured once at
       # the session's first prompt and never overwritten, so the tab
       # keeps naming itself after the conversation's opening line.
@@ -221,7 +231,7 @@ if [ -n "$new_state" ]; then
   fi
   prompt_field=""
   if [ -n "$last_prompt" ]; then
-    prompt_field=",\"lastPrompt\":\"$last_prompt\""
+    prompt_field=",\"lastPrompt\":\"$(json_escape "$last_prompt")\""
   fi
   first_prompt_field=""
   if [ -n "$first_prompt" ]; then

@@ -133,6 +133,15 @@ final class SurfaceView: NSView {
     /// SurfaceView itself doesn't know its pane id or the WindowSession.
     var onUserAcknowledge: (() -> Void)?
 
+    /// Callback fired when this pane gains keyboard focus (becomes first
+    /// responder — on mount/restore, click, ⌘J, tab switch, arrow). Set
+    /// by `PaneHostView`. The host uses it to track which pane currently
+    /// holds triage focus so leaving a finished pane drops it from the
+    /// WAITING list. Fired synchronously here (not deferred) so focus
+    /// transitions are processed in order, never acking the pane we just
+    /// arrived at.
+    var onFocusEntry: (() -> Void)?
+
     /// Context-menu plumbing back to `TabActions`. Set by
     /// `PaneHostView`; `SurfaceView` calls into the focused pane via
     /// these so we don't have to thread a `WindowSession` reference
@@ -354,6 +363,13 @@ final class SurfaceView: NSView {
         // switch which would wipe the ring before the user has had a
         // chance to see it. We clear in `mouseDown` instead so the user
         // has to actively click into the pane to acknowledge.
+        //
+        // We DO track triage focus here, though: gaining focus by *any*
+        // means (tab switch included) is exactly when the pane we left
+        // should drop its finished badge. Unlike unread, the
+        // finished-ack acks the *previous* pane, so arriving here never
+        // clears this pane prematurely.
+        onFocusEntry?()
         return true
     }
 

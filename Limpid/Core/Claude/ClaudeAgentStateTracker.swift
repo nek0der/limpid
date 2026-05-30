@@ -19,6 +19,13 @@ private let log = Logger(subsystem: "dev.limpid", category: "claude.agent.state.
 final class ClaudeAgentStateTracker {
     private let store: ClaudeAgentStateStore
     private weak var session: WindowSession?
+    /// Set by `bootstrap(triage:)`; weak so we don't extend its
+    /// lifetime. Used to auto-mark a finished turn as viewed when it
+    /// arrives on the pane the user is currently looking at — the
+    /// `focusMoved` path only fires on focus *changes*, so an in-place
+    /// `running → finished` transition (same pane stayed focused) would
+    /// otherwise stay green forever.
+    private weak var triage: TriageState?
     /// Optional notification sink. When wired, the tracker fires a
     /// macOS notification on every `.running` / `.compacting` → `.idle`
     /// transition so users notice when Claude has finished a turn
@@ -77,9 +84,11 @@ final class ClaudeAgentStateTracker {
     /// "Claude finished" macOS notification.
     func bootstrap(
         into session: WindowSession,
+        triage: TriageState? = nil,
         notificationManager: LimpidNotificationManager? = nil
     ) {
         self.session = session
+        self.triage = triage
         self.notificationManager = notificationManager
         applyAllRecordsToSession()
         hasBootstrapped = true
@@ -234,7 +243,29 @@ final class ClaudeAgentStateTracker {
         // baseline.
         rebuildPreviousBadges(session: session)
 
+        // Auto-mark the currently-focused pane's freshly-arrived
+        // finished turn as viewed — the user is looking at it as it
+        // lands, so the L1 / L2 check should grey immediately. The
+        // helper itself bails on the bootstrap pass so a restored
+        // finished pane stays unviewed (the user hasn't seen it this
+        // run yet); we route through it unconditionally here to keep
+        // the caller's branch count down.
+        markCurrentlyFocusedViewed(session: session)
+
         store.cleanup(keeping: alive)
+    }
+
+    private func markCurrentlyFocusedViewed(session: WindowSession) {
+        // Skip the bootstrap apply: on launch a restored finished pane
+        // mustn't be silently marked viewed (the user hasn't actually
+        // seen it this run). Same shape as `emitFinishedNotifications`.
+        guard hasBootstrapped,
+              let triage,
+              let activeTabID = session.activeTabID,
+              let tab = session.tab(activeTabID),
+              let paneID = tab.splitTree.focusedLeafID
+        else { return }
+        triage.markViewed(paneID: paneID, in: session)
     }
 
     /// Diff every leaf's prior badge against its current badge and
