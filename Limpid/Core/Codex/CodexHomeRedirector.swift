@@ -128,7 +128,14 @@ final class CodexHomeRedirector {
         guard hookScriptURL != nil else { return [:] }
         if ProcessInfo.processInfo.environment["LIMPID_DEMO"] == "1" { return [:] }
         var env: [String: String] = [:]
-        env["CODEX_HOME"] = shadowCodexHome.path
+        // Only redirect CODEX_HOME when the shadow dir actually exists.
+        // `refresh()` bails before creating it when the user has no
+        // `~/.codex/` yet, so exporting the path unconditionally would
+        // point every pty — and any `codex` the user runs by hand — at a
+        // non-existent home, which the Codex CLI treats as a fatal error.
+        if FileManager.default.fileExists(atPath: shadowCodexHome.path) {
+            env["CODEX_HOME"] = shadowCodexHome.path
+        }
         if let id = paneID {
             env["LIMPID_PANE_ID"] = id.uuidString
         }
