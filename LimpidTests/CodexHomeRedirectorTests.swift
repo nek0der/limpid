@@ -4,8 +4,44 @@
 // dir construction is exercised via the Bash spike
 // `scripts/spike-codex-shadow.sh`.
 
+import Foundation
 import Testing
 @testable import Limpid
+
+@MainActor
+@Suite("CodexHomeRedirector.environment")
+struct CodexHomeRedirectorEnvironmentTests {
+    @Test("omits CODEX_HOME when the shadow dir does not exist")
+    func omitsCodexHomeWhenShadowMissing() throws {
+        try withTempDir { dir in
+            // `refresh()` skips shadow creation when the user has no
+            // `~/.codex/`, so a still-missing shadow dir must not be
+            // exported — otherwise a hand-run `codex` aborts on a
+            // non-existent CODEX_HOME.
+            let missing = dir.appendingPathComponent("codex-home", isDirectory: true)
+            let redirector = CodexHomeRedirector(
+                shadowCodexHome: missing,
+                hookScriptURL: dir.appendingPathComponent("limpid-codex-hook")
+            )
+            let env = redirector.environment(forPaneID: nil)
+            #expect(env["CODEX_HOME"] == nil)
+        }
+    }
+
+    @Test("exports CODEX_HOME when the shadow dir exists")
+    func exportsCodexHomeWhenShadowPresent() throws {
+        try withTempDir { dir in
+            let shadow = dir.appendingPathComponent("codex-home", isDirectory: true)
+            try FileManager.default.createDirectory(at: shadow, withIntermediateDirectories: true)
+            let redirector = CodexHomeRedirector(
+                shadowCodexHome: shadow,
+                hookScriptURL: dir.appendingPathComponent("limpid-codex-hook")
+            )
+            let env = redirector.environment(forPaneID: nil)
+            #expect(env["CODEX_HOME"] == shadow.path)
+        }
+    }
+}
 
 @Suite("CodexHomeRedirector.stripHookStateBlocks")
 struct CodexHomeRedirectorStripTests {
