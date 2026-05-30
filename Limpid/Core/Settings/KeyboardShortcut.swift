@@ -405,6 +405,21 @@ struct StoredShortcut: Codable, Hashable {
         modifiers.displaySymbols + Self.displayKey(for: key)
     }
 
+    /// `["⇧", "⌘", "T"]` — one token per keycap, in Apple's HIG order
+    /// (⌃⌥⇧⌘ then the key glyph). `displayString` concatenates these
+    /// for inline menu-style display; this splits them for surfaces
+    /// that render each modifier and the key as its own chip (the
+    /// welcome screen).
+    var displayTokens: [String] {
+        var tokens: [String] = []
+        if modifiers.contains(.control) { tokens.append("⌃") }
+        if modifiers.contains(.option) { tokens.append("⌥") }
+        if modifiers.contains(.shift) { tokens.append("⇧") }
+        if modifiers.contains(.command) { tokens.append("⌘") }
+        tokens.append(Self.displayKey(for: key))
+        return tokens
+    }
+
     /// Single lookup table for every named key Limpid understands.
     /// Each row pairs the storage string (Ghostty's vocabulary) with
     /// (a) the glyph macOS shows in menus and (b) SwiftUI's

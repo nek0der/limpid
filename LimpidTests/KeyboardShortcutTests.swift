@@ -43,6 +43,13 @@ struct KeyboardShortcutTests {
         #expect(StoredShortcut(key: "t", modifiers: [.command]).displayString == "⌘T")
     }
 
+    @Test("Display tokens split modifiers and key into chips")
+    func displayTokens_splitsChips() {
+        #expect(StoredShortcut(key: "t", modifiers: [.command, .shift]).displayTokens == ["⇧", "⌘", "T"])
+        #expect(StoredShortcut(key: "left", modifiers: [.command]).displayTokens == ["⌘", "←"])
+        #expect(StoredShortcut(key: "k", modifiers: []).displayTokens == ["K"])
+    }
+
     @Test("Codable round-trip preserves key and modifiers")
     func codable_roundTrip() throws {
         let original = StoredShortcut(key: "d", modifiers: [.command, .shift])
