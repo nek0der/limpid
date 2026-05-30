@@ -18,6 +18,11 @@ struct TabRow: View {
     /// tab strip uses this to widen a narrow tab while it's being
     /// edited; the vertical list leaves it unset (no width change).
     var onEditingChanged: ((Bool) -> Void)?
+    /// Horizontal padding the pill background inherits from the row's
+    /// content edge. The vertical list keeps the default so pills sit
+    /// inset from the column edges; the horizontal strip collapses it
+    /// so adjacent pills don't carry a wide phantom gap on each side.
+    var pillHorizontalPadding: CGFloat = 10
 
     @State private var isEditing = false
     @State private var isHovering = false
@@ -133,13 +138,13 @@ struct TabRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Leading identity glyph: a sparkles mark when an agent has
+            // Leading identity glyph: a bolt mark when an agent has
             // a live session in the tab (currently Claude, via the shim
             // hooks), otherwise a plain terminal mark. Always present so
             // the row reads as "AI vs plain terminal" at a glance. We
             // distinguish by glyph only — both share the same monochrome
             // tint so the AI rows don't shout with an accent colour.
-            Image(systemName: isAgentTab ? "sparkles" : "terminal")
+            Image(systemName: isAgentTab ? "bolt" : "terminal")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 16, height: 16)
@@ -224,11 +229,21 @@ struct TabRow: View {
             .opacity(isActive || isHovering ? 1 : 0)
             .allowsHitTesting(isActive || isHovering)
         }
-        .padding(.leading, 28)
-        .padding(.trailing, 14)
+        // Hold the *visible* pill inset (icon-to-pill-edge) constant
+        // across vertical / horizontal layouts. Because the pill
+        // background is itself inset by `pillHorizontalPadding`, the
+        // content padding has to grow in lockstep — otherwise the
+        // horizontal strip (which uses pillHorizontalPadding = 0) reads
+        // as more spacious on the left than the vertical list.
+        .padding(.leading, 18 + pillHorizontalPadding)
+        .padding(.trailing, 4 + pillHorizontalPadding)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .selectablePillBackground(isActive: isActive, isHovering: isHovering)
+        .selectablePillBackground(
+            isActive: isActive,
+            isHovering: isHovering,
+            horizontalPadding: pillHorizontalPadding
+        )
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .onChange(of: isEditing) { _, editing in

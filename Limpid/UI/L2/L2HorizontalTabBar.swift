@@ -24,10 +24,13 @@ struct L2HorizontalTabBar: View {
         let tabs = session.tabs(in: container)
         GeometryReader { geo in
             // Width the strip needs to honour the per-tab minimum.
-            let spacing = LimpidLayout.reorderRowSpacing
+            // Subtract the strip's own horizontal padding so the test
+            // matches what's actually available to the pills.
+            let spacing = LimpidLayout.horizontalTabSpacing
+            let usable = geo.size.width - 2 * LimpidLayout.horizontalTabStripInset
             let needed = CGFloat(tabs.count) * LimpidLayout.horizontalTabMinWidth
                 + CGFloat(max(0, tabs.count - 1)) * spacing
-            if needed <= geo.size.width {
+            if needed <= usable {
                 // Everything fits — share the width evenly.
                 strip(tabs, pillWidth: nil)
                     .frame(width: geo.size.width, alignment: .leading)
@@ -56,7 +59,7 @@ struct L2HorizontalTabBar: View {
     }
 
     private func strip(_ tabs: [Tab], pillWidth: CGFloat?) -> some View {
-        HStack(spacing: LimpidLayout.reorderRowSpacing) {
+        HStack(spacing: LimpidLayout.horizontalTabSpacing) {
             ForEach(tabs) { tab in
                 TabRow(
                     tab: tab,
@@ -80,7 +83,8 @@ struct L2HorizontalTabBar: View {
                     },
                     onEditingChanged: { editing in
                         editingTabID = editing ? tab.id : (editingTabID == tab.id ? nil : editingTabID)
-                    }
+                    },
+                    pillHorizontalPadding: 0
                 )
                 // Constrain each row to a column slot: a fixed minimum
                 // when scrolling, otherwise an even share of the strip.
@@ -100,6 +104,7 @@ struct L2HorizontalTabBar: View {
             }
         }
         .padding(.vertical, 8)
+        .padding(.horizontal, LimpidLayout.horizontalTabStripInset)
         .animation(.easeOut(duration: LimpidLayout.renamePillDuration), value: editingTabID)
     }
 

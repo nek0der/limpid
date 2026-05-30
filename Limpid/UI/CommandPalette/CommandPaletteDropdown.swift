@@ -10,7 +10,14 @@ struct CommandPaletteDropdown: View {
     let onDismiss: () -> Void
 
     var body: some View {
+        // Outer vertical padding shortens the inner `ScrollView`, which
+        // shortens its legacy scroller track in turn — that's what
+        // keeps the track from running flush into the palette's rounded
+        // top + bottom corners. Clip BEFORE the glass treatment so the
+        // scroller (track + thumb) is bounded by the rounded shape too.
         resultsList
+            .padding(.vertical, 10)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .limpidGlass(.palette)
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
