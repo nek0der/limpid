@@ -36,4 +36,15 @@ struct CodexAgentBadge: Codable, Equatable, AgentNotificationBadge {
     /// "Codex finished" notification body so the user can identify
     /// *which* request just completed.
     var lastPrompt: String?
+
+    /// The conversation's opening prompt, captured once at the first
+    /// `UserPromptSubmit` and held for the session. Drives the tab
+    /// title: Codex emits no auto-title and Limpid suppresses its OSC 2
+    /// pwd title, so this is the only meaningful label a Codex pane gets.
+    var firstPrompt: String?
+
+    /// Wall-clock instant the Codex session began (`SessionStart`).
+    /// `Tab.latestAgentSessionPaneID` compares this across Claude /
+    /// Codex panes so the most recent session wins the tab title.
+    var sessionStartedAt: Date?
 }

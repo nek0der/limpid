@@ -44,4 +44,16 @@ struct ClaudeAgentStateRecord: Codable, Equatable {
     /// missing for older records or when sed extraction couldn't
     /// parse the payload (embedded quotes / multi-line input).
     var lastPrompt: String?
+    /// The session's opening prompt, captured once at the first
+    /// `UserPromptSubmit` and held verbatim across every later event.
+    /// Used by the hook's tab-title fallback (`terminalSequence` OSC 2)
+    /// when Claude hasn't yet generated an `ai-title`. The Swift side
+    /// only needs to know it exists for migration purposes.
+    var firstPrompt: String?
+    /// ISO-8601 instant the `SessionStart` hook fired for this pane.
+    /// Captured once and held verbatim across every later event in the
+    /// session. Used by the title selector to pick which pane owns the
+    /// tab label when more than one Claude/Codex session is alive — the
+    /// most recent SessionStart wins.
+    var sessionStartedAt: String?
 }

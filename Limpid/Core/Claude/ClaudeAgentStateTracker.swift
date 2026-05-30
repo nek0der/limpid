@@ -274,24 +274,31 @@ final class ClaudeAgentStateTracker {
     private func makeBadge(from record: ClaudeAgentStateRecord) -> ClaudeAgentBadge? {
         guard let state = AgentState(rawValue: record.state) else { return nil }
         let detail = (record.detail?.isEmpty == false) ? record.detail : nil
-        let updatedAt = parseISO8601(record.updatedAt) ?? Date()
-        let runStartedAt: Date? = if let raw = record.runStartedAt, !raw.isEmpty {
-            parseISO8601(raw)
-        } else {
-            nil
-        }
+        let updatedAt = Self.parseISO8601(record.updatedAt) ?? Date()
         let lastPrompt = (record.lastPrompt?.isEmpty == false) ? record.lastPrompt : nil
         return ClaudeAgentBadge(
             state: state,
             detail: detail,
-            runStartedAt: runStartedAt,
+            runStartedAt: Self.parseOptionalDate(record.runStartedAt),
             contextTokens: record.contextTokens,
             updatedAt: updatedAt,
-            lastPrompt: lastPrompt
+            lastPrompt: lastPrompt,
+            sessionStartedAt: Self.parseOptionalDate(record.sessionStartedAt)
         )
     }
 
-    private func parseISO8601(_ string: String) -> Date? {
+    /// Parse an optional ISO-8601 string from a hook record. Empty
+    /// strings (`runStartedAt=""` on a reset) become `nil` so callers
+    /// don't have to repeat the empty-vs-missing check inline. `static`
+    /// to match `CodexAgentStateTracker.parseOptionalDate` (no instance
+    /// state needed) and so a future common helper can be lifted out
+    /// without an instance dance.
+    private static func parseOptionalDate(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        return parseISO8601(raw)
+    }
+
+    private static func parseISO8601(_ string: String) -> Date? {
         ClaudeAgentStateTracker.isoFormatter.date(from: string)
     }
 

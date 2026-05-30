@@ -37,14 +37,17 @@ struct PaneAreaView: View {
                         node: root,
                         ghosttyApp: ghosttyApp,
                         onLeafFocus: { id in
-                            // Pull the newly-focused pane's last known title up
-                            // to the tab so the label and window title snap to
-                            // the new pane immediately, without waiting for the
-                            // shell's next prompt to re-emit SET_TITLE.
-                            let pulledTitle = registry.view(for: id)?.paneTitle
+                            // Move focus only; leave `tab.title` alone. The
+                            // label is owned by the tab (Claude/Codex prompt
+                            // routed through `latestAgentSessionPaneID`, or —
+                            // when no agent is in the tab — the focused pane's
+                            // OSC 2 stream). `GhosttyEventCoordinator.shouldPropagateTitle`
+                            // enforces the latest-agent-owner rule; pulling
+                            // each pane's last-known title up on focus would
+                            // bypass it and re-introduce Codex's
+                            // `process.title="codex"` flicker.
                             session.update(tab.id) { t in
                                 t.splitTree.focusedLeafID = id
-                                if let pulledTitle { t.title = pulledTitle }
                             }
                         },
                         onResize: { leafID, delta, direction, bounds in

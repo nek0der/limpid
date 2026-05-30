@@ -83,6 +83,10 @@ error_safe="$(sanitize "$error_type")"
 message_safe="$(sanitize "$notification_message")"
 question_safe="$(sanitize "$ask_question")"
 detail_safe=""
+# Carried into the OSC 2 tab-title fallback below. Initialised here so
+# the title block can reference it even on events that skip the state
+# write (defensive under `set -u`).
+first_prompt=""
 
 # Compute the lifecycle state for the L1/L2 status icons. Order
 # matters: AskUserQuestion is a PreToolUse subtype but maps to
@@ -162,9 +166,13 @@ if [ -n "$new_state" ]; then
   # PreToolUse / Notification / PreCompact preserve both fields.
   prev_run_started=""
   prev_last_prompt=""
+  prev_first_prompt=""
+  prev_session_started=""
   if [ -f "$state_final" ]; then
     prev_run_started="$(sed -n 's/.*"runStartedAt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
     prev_last_prompt="$(sed -n 's/.*"lastPrompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
+    prev_first_prompt="$(sed -n 's/.*"firstPrompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
+    prev_session_started="$(sed -n 's/.*"sessionStartedAt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
   fi
   case "$hook_event" in
     UserPromptSubmit)
@@ -177,22 +185,55 @@ if [ -n "$new_state" ]; then
       # extracted text is empty. Good enough for MVP.
       raw_prompt="$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1)"
       last_prompt="$(sanitize "$raw_prompt")"
+      # `firstPrompt` is the seed for the tab-title fallback: captured
+      # once at the session's first prompt and never overwritten, so a
+      # later turn still resolves to the conversation's opening line
+      # when Claude hasn't generated an `ai-title` yet. (`lastPrompt`
+      # is overwritten every turn and would drift off-topic.)
+      if [ -n "$prev_first_prompt" ]; then
+        first_prompt="$prev_first_prompt"
+      else
+        first_prompt="$last_prompt"
+      fi
+      session_started="$prev_session_started"
       ;;
-    Stop|SessionStart|SessionEnd|StopFailure)
+    SessionStart)
+      run_started=""
+      last_prompt=""
+      first_prompt=""
+      # `sessionStartedAt` is captured here and held for every event of
+      # this session. The Swift side uses it to decide which pane "owns"
+      # the tab title when more than one Claude/Codex session is alive:
+      # the latest SessionStart wins, so a fresh session in pane 2
+      # doesn't get clobbered when pane 1's older session emits a turn.
+      session_started="$ts"
+      ;;
+    Stop|SessionEnd|StopFailure)
       run_started=""
       # Stop keeps `lastPrompt` so the Tracker's diff (running→idle)
       # can read it once before the next UserPromptSubmit overwrites.
-      # SessionStart / SessionEnd reset; StopFailure is fatal so also
-      # reset.
+      # SessionEnd resets; StopFailure is fatal so also reset.
       if [ "$hook_event" = "Stop" ]; then
         last_prompt="$prev_last_prompt"
       else
         last_prompt=""
       fi
+      # Keep the captured opening prompt across Stop so the title block
+      # can fall back to it; SessionEnd / StopFailure reset it
+      # alongside the rest of the per-run state.
+      if [ "$hook_event" = "Stop" ]; then
+        first_prompt="$prev_first_prompt"
+        session_started="$prev_session_started"
+      else
+        first_prompt=""
+        session_started=""
+      fi
       ;;
     *)
       run_started="$prev_run_started"
       last_prompt="$prev_last_prompt"
+      first_prompt="$prev_first_prompt"
+      session_started="$prev_session_started"
       ;;
   esac
   tokens_field=""
@@ -207,8 +248,16 @@ if [ -n "$new_state" ]; then
   if [ -n "$last_prompt" ]; then
     prompt_field=",\"lastPrompt\":\"$last_prompt\""
   fi
+  first_prompt_field=""
+  if [ -n "$first_prompt" ]; then
+    first_prompt_field=",\"firstPrompt\":\"$first_prompt\""
+  fi
+  session_started_field=""
+  if [ -n "$session_started" ]; then
+    session_started_field=",\"sessionStartedAt\":\"$session_started\""
+  fi
   {
-    printf '{"schemaVersion":1,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s}\n' \
+    printf '{"schemaVersion":1,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s}\n' \
       "$pane_id" \
       "$new_state" \
       "$detail_safe" \
@@ -217,9 +266,52 @@ if [ -n "$new_state" ]; then
       "$hook_event" \
       "$tokens_field" \
       "$pid_field" \
-      "$prompt_field"
+      "$prompt_field" \
+      "$first_prompt_field" \
+      "$session_started_field"
   } > "$state_tmp" 2>/dev/null && mv -f "$state_tmp" "$state_final" 2>/dev/null || rm -f "$state_tmp" 2>/dev/null
 fi
+
+# ----- Tab title (Claude's title / opening prompt -> OSC 2) -----
+# Drive the tab label off whatever best names this conversation, in
+# the same precedence Claude's own resume picker uses:
+#   customTitle (explicit /rename)  >  aiTitle (Haiku auto-name)
+#   >  firstPrompt (the session's opening line, captured above)
+# Claude writes `customTitle` / `aiTitle` into an `ai-title` line in
+# the transcript jsonl, but only generates `aiTitle` sporadically and
+# late — so without the firstPrompt fallback a fresh pane would keep
+# showing the launch command for the whole session. We hand the
+# resolved title to Claude as an OSC 2 escape via the hook's
+# `terminalSequence` output; Claude emits it on our behalf through its
+# own terminal write path (race-free, tmux/screen-safe), and
+# libghostty turns it into a GHOSTTY_ACTION_SET_TITLE that Limpid
+# already routes to the tab label.
+#
+# We force `LC_ALL=C` so sed treats each line as bytes — a Japanese
+# title would otherwise crash BSD sed with "illegal byte sequence".
+# `null` / empty values don't match the quoted-capture regex, so they
+# fall through to the next candidate.
+case "$hook_event" in
+  UserPromptSubmit | Stop)
+    ai_title=""
+    custom_title=""
+    transcript_path="$(extract transcript_path)"
+    if [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
+      title_line="$(grep '"type":"ai-title"' "$transcript_path" 2>/dev/null | tail -n1)"
+      if [ -n "$title_line" ]; then
+        ai_title="$(printf '%s' "$title_line" | LC_ALL=C sed -n 's/.*"aiTitle"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+        custom_title="$(printf '%s' "$title_line" | LC_ALL=C sed -n 's/.*"customTitle"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+      fi
+    fi
+    tab_title="${custom_title:-${ai_title:-$first_prompt}}"
+    if [ -n "$tab_title" ]; then
+      # JSON-escape backslash + double-quote and drop any control
+      # bytes before splicing into the terminalSequence string.
+      esc_title="$(printf '%s' "$tab_title" | LC_ALL=C sed 's/\\/\\\\/g; s/"/\\"/g' | LC_ALL=C tr -d '\000-\037')"
+      printf '{"terminalSequence":"\\u001b]2;%s\\u0007"}\n' "$esc_title"
+    fi
+    ;;
+esac
 
 # ----- Session record (claude --resume) -----
 # Independent of the lifecycle state file above; SessionStart writes

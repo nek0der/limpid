@@ -38,4 +38,9 @@ struct ClaudeAgentBadge: Codable, Equatable, AgentNotificationBadge {
     /// *which* request just completed. May be `nil` for older
     /// records or when shell extraction missed the field.
     var lastPrompt: String?
+
+    /// Wall-clock instant the Claude session began (`SessionStart`).
+    /// `Tab.latestAgentSessionPaneID` compares this across Claude /
+    /// Codex panes so the most recent session wins the tab title.
+    var sessionStartedAt: Date?
 }
