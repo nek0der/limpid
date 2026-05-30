@@ -1,14 +1,14 @@
 // SplitDividerView.swift
-// Limpid — thin draggable handle between two pane halves.
+// Limpid — visual-only divider handle. Drag gesture is owned by
+// SplitContainerView (absolute-position approach) so this view
+// only provides the hit target and hover highlight.
 
 import SwiftUI
 
 struct SplitDividerView: View {
     enum Axis { case horizontal, vertical }
     let direction: Axis
-    let onDrag: (Double) -> Void
 
-    @State private var lastTranslation: CGFloat = 0
     @State private var isHovering: Bool = false
 
     var body: some View {
@@ -19,20 +19,13 @@ struct SplitDividerView: View {
                 height: direction == .vertical ? 6 : nil
             )
             .contentShape(Rectangle())
-            .onHover { isHovering = $0 }
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        let total = direction == .horizontal
-                            ? value.translation.width
-                            : value.translation.height
-                        let delta = total - lastTranslation
-                        lastTranslation = total
-                        onDrag(Double(delta))
-                    }
-                    .onEnded { _ in
-                        lastTranslation = 0
-                    }
-            )
+            .onHover { hovering in
+                isHovering = hovering
+                if hovering {
+                    (direction == .horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
     }
 }
