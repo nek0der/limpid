@@ -486,7 +486,10 @@ final class SurfaceView: NSView {
             // Otherwise fall through and let IME try.
         }
 
-        if isNavigationOrFunctionKey(event) {
+        // While composing, arrows / ESC / tab belong to the IME (candidate
+        // navigation, cancel, select), not the terminal. Same `!hasMarkedText()`
+        // gate as the control fast-path above.
+        if !hasMarkedText(), isNavigationOrFunctionKey(event) {
             // For ESC (keyCode 53) keep `text=event.characters` so libghostty
             // can write the bare ESC byte. For other navigation/function keys
             // suppress text so the keyCode → escape-sequence translation
