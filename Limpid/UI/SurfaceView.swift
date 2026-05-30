@@ -265,37 +265,18 @@ final class SurfaceView: NSView {
     // MARK: - `NSView` lifecycle
 
     private nonisolated(unsafe) var windowResizeObserver: (any NSObjectProtocol)?
+    private nonisolated(unsafe) var windowOcclusionObserver: (any NSObjectProtocol)?
+    private nonisolated(unsafe) var windowMiniaturizeObserver: (any NSObjectProtocol)?
+    private nonisolated(unsafe) var windowDeminiaturizeObserver: (any NSObjectProtocol)?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-
-        // Drop any previous observer (view may move between windows).
-        if let obs = windowResizeObserver {
-            NotificationCenter.default.removeObserver(obs)
-            windowResizeObserver = nil
-        }
+        tearDownWindowObservers()
 
         guard let window else { return }
         if surface == nil { createSurface() }
         window.makeFirstResponder(self)
-
-        // SwiftUI's WindowGroup hosting doesn't always propagate frame
-        // changes down to `NSViewRepresentable`'s `NSView` (we verified
-        // via logs: setFrameSize never fires during a window drag). Observe
-        // the window directly and push the size ourselves.
-        windowResizeObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResizeNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            // The notification arrives on .main but the closure is
-            // declared @Sendable / nonisolated, so we have to hop into
-            // MainActor explicitly before touching SurfaceView state.
-            MainActor.assumeIsolated {
-                self?.syncLayerOnly()
-                self?.pushSurfaceSize()
-            }
-        }
+        installWindowObservers(on: window)
     }
 
     deinit {
@@ -304,6 +285,9 @@ final class SurfaceView: NSView {
         // libghostty / NotificationCenter interactions safe.
         let s = surface
         let obs = windowResizeObserver
+        let occObs = windowOcclusionObserver
+        let miniObs = windowMiniaturizeObserver
+        let deminiObs = windowDeminiaturizeObserver
         let wdBuf = workingDirectoryCStr
         let sbBuf = scrollbackPathCStr
         let envKeys = envKeyBuffers
@@ -312,6 +296,9 @@ final class SurfaceView: NSView {
         Task { @MainActor in
             if let s { ghostty_surface_free(s) }
             if let obs { NotificationCenter.default.removeObserver(obs) }
+            if let occObs { NotificationCenter.default.removeObserver(occObs) }
+            if let miniObs { NotificationCenter.default.removeObserver(miniObs) }
+            if let deminiObs { NotificationCenter.default.removeObserver(deminiObs) }
             if let wdBuf { free(wdBuf) }
             if let sbBuf { free(sbBuf) }
             for buf in envKeys {
@@ -911,4 +898,77 @@ extension SurfaceView: @preconcurrency NSTextInputClient {
         }
     }
 
+}
+
+// MARK: - Window observer lifecycle (energy)
+
+extension SurfaceView {
+    func tearDownWindowObservers() {
+        let observers: [(any NSObjectProtocol)?] = [
+            windowResizeObserver, windowOcclusionObserver,
+            windowMiniaturizeObserver, windowDeminiaturizeObserver
+        ]
+        for obs in observers {
+            obs.map { NotificationCenter.default.removeObserver($0) }
+        }
+        windowResizeObserver = nil
+        windowOcclusionObserver = nil
+        windowMiniaturizeObserver = nil
+        windowDeminiaturizeObserver = nil
+    }
+
+    func installWindowObservers(on window: NSWindow) {
+        windowResizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.syncLayerOnly()
+                self?.pushSurfaceSize()
+            }
+        }
+
+        windowOcclusionObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let surface = self.surface else { return }
+                let visible = self.window?.occlusionState.contains(.visible) ?? false
+                ghostty_surface_set_occlusion(surface, visible)
+            }
+        }
+
+        windowMiniaturizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMiniaturizeNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let surface = self.surface else { return }
+                ghostty_surface_set_occlusion(surface, false)
+            }
+        }
+
+        windowDeminiaturizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didDeminiaturizeNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let surface = self.surface else { return }
+                ghostty_surface_set_occlusion(surface, true)
+            }
+        }
+    }
+
+    /// Tell libghostty whether this surface is currently visible on screen.
+    /// When `false`, the renderer stops its CVDisplayLink and draw timer,
+    /// cutting idle wakeups from ~120/s to near zero per hidden surface.
+    func setOccluded(_ occluded: Bool) {
+        guard let surface else { return }
+        ghostty_surface_set_occlusion(surface, !occluded)
+    }
 }

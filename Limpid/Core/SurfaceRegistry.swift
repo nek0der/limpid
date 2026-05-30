@@ -60,6 +60,31 @@ final class SurfaceRegistry: SurfaceViewProviding {
         }
     }
 
+    // MARK: - Occlusion (energy)
+
+    /// Mark surfaces visible/occluded based on the set of pane IDs that
+    /// are actually on screen. Surfaces not in `visibleIDs` get their
+    /// CVDisplayLink stopped, saving ~120 wakeups/s each on ProMotion.
+    func updateOcclusion(visibleIDs: Set<UUID>) {
+        for (id, view) in views {
+            view.setOccluded(!visibleIDs.contains(id))
+        }
+    }
+
+    /// Occlude every registered surface (e.g. window hidden / app occluded).
+    func occludeAll() {
+        for (_, view) in views {
+            view.setOccluded(true)
+        }
+    }
+
+    /// Reveal every registered surface (e.g. window reappears).
+    func revealAll() {
+        for (_, view) in views {
+            view.setOccluded(false)
+        }
+    }
+
 }
 
 /// `SurfaceViewProviding` fallback used as the `EnvironmentValues`
