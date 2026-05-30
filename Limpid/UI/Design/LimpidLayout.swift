@@ -48,21 +48,27 @@ enum LimpidLayout {
     static let chromeContentTopInsetL1: CGFloat = 4
     static let chromeContentTopInset: CGFloat = 14
     /// Height of the chrome content row itself (button frame height).
-    static let chromeContentHeight: CGFloat = 28
+    static let chromeContentHeight: CGFloat = 32
+
+    /// Point size for SF Symbols rendered in the chrome strip (+, …,
+    /// bell, sidebar toggle, back/forward, split, update). Centralized
+    /// so the L1 / L2 / L3 chrome icons keep the same weight and scale
+    /// as the system's Notes-style toolbar — bump here, not per call site.
+    static let chromeIconSize: CGFloat = 18
 
     /// Width × height of every clickable button inside a chrome
     /// capsule (action capsule, ellipsis menu). Keeping this in one
     /// place ensures L1 / L2 / L3 chromes all line up.
-    static let chromeCapsuleButtonWidth: CGFloat = 32
-    static let chromeCapsuleButtonHeight: CGFloat = 28
+    static let chromeCapsuleButtonWidth: CGFloat = 38
+    static let chromeCapsuleButtonHeight: CGFloat = 32
     /// Inner corner radius of the hover highlight inside a capsule
     /// button. Sits inside the capsule's clip path so the rounded
     /// fill ends up clipped to the parent shape anyway.
-    static let chromeCapsuleHoverCorner: CGFloat = 6
+    static let chromeCapsuleHoverCorner: CGFloat = 7
     /// Width × height of the vertical hairline between buttons in a
     /// chrome capsule.
     static let chromeCapsuleDividerWidth: CGFloat = 0.5
-    static let chromeCapsuleDividerHeight: CGFloat = 16
+    static let chromeCapsuleDividerHeight: CGFloat = 20
 
     // MARK: - Reorderable list spacing
 
@@ -79,7 +85,7 @@ enum LimpidLayout {
 
     /// Fixed-width slot for the leading marker (icon/dot). Every row
     /// reserves the same width so labels align across kinds.
-    static let l1MarkerSlot: CGFloat = 14
+    static let l1MarkerSlot: CGFloat = 18
     /// Row heights — slightly shorter for nested rows.
     static let l1RowHeightTop: CGFloat = 30
     static let l1RowHeightNested: CGFloat = 26

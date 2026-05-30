@@ -469,7 +469,7 @@ struct ContainerRow: View {
             switch kind {
             case .loose:
                 Image(systemName: "tray")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.secondary)
             case let .group(g, _, _):
                 paletteDotButton(paletteColor(g.paletteIndex), current: g.paletteIndex)
@@ -477,12 +477,12 @@ struct ContainerRow: View {
                 paletteDotButton(paletteColor(p.paletteIndex), current: p.paletteIndex)
             case .worktree:
                 Image(systemName: "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.secondary)
             case .groupTab:
                 Circle()
                     .fill(Color.secondary.opacity(0.5))
-                    .frame(width: 6, height: 6)
+                    .frame(width: 7, height: 7)
             }
         }
         .frame(width: LimpidLayout.l1MarkerSlot, height: LimpidLayout.l1MarkerSlot)
@@ -501,7 +501,7 @@ struct ContainerRow: View {
         if onChangePalette != nil {
             Circle()
                 .fill(color)
-                .frame(width: 8, height: 8)
+                .frame(width: 10, height: 10)
                 .padding(4)
                 .contentShape(Rectangle())
                 .highPriorityGesture(
@@ -519,7 +519,7 @@ struct ContainerRow: View {
         } else {
             Circle()
                 .fill(color)
-                .frame(width: 8, height: 8)
+                .frame(width: 10, height: 10)
         }
     }
 
