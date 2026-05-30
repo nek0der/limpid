@@ -163,7 +163,7 @@ struct ChromeUpdateButton: View {
             isOpen.toggle()
         } label: {
             badgeIcon
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: LimpidLayout.chromeIconSize, weight: .medium))
                 .foregroundStyle(.white)
                 .frame(
                     width: LimpidLayout.chromeCapsuleButtonWidth,
@@ -324,7 +324,7 @@ struct ChromeCapsuleLabel: View {
 
     var body: some View {
         Image(systemName: systemImage)
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: LimpidLayout.chromeIconSize, weight: .medium))
             .foregroundStyle(isEnabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
             .frame(width: LimpidLayout.chromeCapsuleButtonWidth, height: LimpidLayout.chromeCapsuleButtonHeight)
             .background(
@@ -451,7 +451,7 @@ struct ChromeIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: LimpidLayout.chromeIconSize, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 30, height: 28)
                 .background(

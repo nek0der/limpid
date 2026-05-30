@@ -49,7 +49,7 @@ private struct InactivePill: View {
         Button(action: onTap) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.tertiary)
                 Text("Command Palette")
                     .font(LimpidFont.bodySecondary)
@@ -89,7 +89,7 @@ private struct ActivePill: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
             TextField(String(localized: state.placeholder), text: $state.query)
                 .textFieldStyle(.plain)
