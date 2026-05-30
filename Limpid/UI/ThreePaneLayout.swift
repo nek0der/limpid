@@ -111,7 +111,7 @@ private struct HorizontalModeBody: View {
                     Spacer().frame(width: leadingInset)
                     ChromeL2Segment()
                 }
-                .frame(width: leadingInset + session.l2Width)
+                .frame(width: leadingInset + l2BoxWidth)
                 .background(l2Tint)
                 // Glass mode separates the columns by their distinct
                 // tints, so the chrome row keeps its hairline. Reduce-
@@ -165,6 +165,17 @@ private struct HorizontalModeBody: View {
         session.sidebarHidden ? 0 : L1Footprint.width(for: session)
     }
 
+    /// When the sidebar is hidden, the L2 box widens just enough that the
+    /// trailing action capsule (+ / …) lands clear of the floating
+    /// bell + sidebar-toggle capsule. We grow the *box*, not the
+    /// `leadingInset`, so the L2 tab bar below still starts at x=0
+    /// instead of jumping inwards.
+    private var l2BoxWidth: CGFloat {
+        session.sidebarHidden
+            ? max(session.l2Width, L1Footprint.minL2WidthCollapsed)
+            : session.l2Width
+    }
+
     private var l2Tint: some View {
         ColumnBackdrop(appearance: settings.settings.appearance, role: .list, reduceTransparency: reduce)
     }
@@ -193,7 +204,7 @@ private struct L2Column: View {
                     Spacer().frame(width: leadingInset)
                     ChromeL2Segment()
                 }
-                .frame(height: LimpidLayout.topStripHeight)
+                .frame(width: leadingInset + l2BoxWidth, height: LimpidLayout.topStripHeight)
                 HStack(spacing: 0) {
                     Spacer().frame(width: leadingInset)
                     L2View()
@@ -201,7 +212,7 @@ private struct L2Column: View {
             }
             L2ResizeHandle(session: session)
         }
-        .frame(width: leadingInset + session.l2Width)
+        .frame(width: leadingInset + l2BoxWidth)
         // Glass mode leans on the column tints (dark divider is clear);
         // reduce-transparency mode shares one tone, so it needs a
         // visible hairline to keep the L2/L3 seam legible.
@@ -223,6 +234,16 @@ private struct L2Column: View {
 
     private var leadingInset: CGFloat {
         session.sidebarHidden ? 0 : L1Footprint.width(for: session)
+    }
+
+    /// Same trick as horizontal mode: widen the L2 box (not the leading
+    /// inset) when the sidebar is hidden, so the chrome action capsule
+    /// has room to clear the floating bell + sidebar-toggle while the L2
+    /// list rows stay flush to the window's left edge.
+    private var l2BoxWidth: CGFloat {
+        session.sidebarHidden
+            ? max(session.l2Width, L1Footprint.minL2WidthCollapsed)
+            : session.l2Width
     }
 }
 
@@ -287,5 +308,20 @@ private struct ColumnBackdrop: View {
 enum L1Footprint {
     static func width(for session: WindowSession) -> CGFloat {
         LimpidLayout.l1InsetH + session.sidebarWidth
+    }
+
+    /// Minimum L2 box width when the sidebar is hidden. Sized so the
+    /// trailing action capsule (+ / …) inside `ChromeL2Segment` lands
+    /// past the right edge of the `FloatingHiddenChrome` capsule
+    /// (rendered at `trafficLightWidth + 18`), with a breathing gap
+    /// between the two. The L2 box widens to this whenever the user's
+    /// `l2Width` would otherwise be too narrow to fit both capsules.
+    static var minL2WidthCollapsed: CGFloat {
+        let capsule = 2 * LimpidLayout.chromeCapsuleButtonWidth
+            + LimpidLayout.chromeCapsuleDividerWidth
+        let floatingChromeRightEdge = LimpidLayout.trafficLightWidth + 18 + capsule
+        let chromeGap: CGFloat = 12
+        let actionCapsuleTrailing: CGFloat = 8
+        return floatingChromeRightEdge + chromeGap + capsule + actionCapsuleTrailing
     }
 }

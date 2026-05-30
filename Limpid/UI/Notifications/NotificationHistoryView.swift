@@ -23,6 +23,9 @@ struct NotificationHistoryView: View {
                 emptyState
             } else {
                 list
+                    // Shorten the scroller track at the top + bottom so
+                    // it doesn't run into the popover's rounded corners.
+                    .padding(.vertical, 8)
             }
         }
         .frame(width: 360, height: 480)

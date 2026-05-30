@@ -156,6 +156,16 @@ enum LimpidLayout {
     /// horizontally scrollable instead of squeezing them narrower.
     static let horizontalTabMinWidth: CGFloat = 180
 
+    /// Inter-pill spacing for the horizontal tab strip. The horizontal
+    /// pill drops `SelectablePillBackground.horizontalPadding` to 0, so
+    /// this `HStack` gap is the *only* space between adjacent pills.
+    static let horizontalTabSpacing: CGFloat = 6
+
+    /// Leading / trailing inset for the horizontal tab strip so the
+    /// first and last pills don't kiss the L3 column edges. Matches the
+    /// padding the vertical list inherits from `selectablePillBackground`.
+    static let horizontalTabStripInset: CGFloat = 10
+
     // MARK: - Pane
 
     /// Minimum size a pane can be resized to via the split divider.
