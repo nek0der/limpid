@@ -42,7 +42,7 @@ struct ChromeL2Segment: View {
                         systemImage: "plus",
                         help: "New Tab (⌘T)"
                     ) {
-                        SessionActions.newTab(session)
+                        TabActions.newTab(session)
                     }
                     ChromeCapsuleDivider()
                     ChromeCapsuleMenuButton(
@@ -50,14 +50,14 @@ struct ChromeL2Segment: View {
                         help: "Container Actions"
                     ) {
                         Button(role: .destructive) {
-                            SessionActions.closeAllTabsInActiveContainer(
+                            TabActions.closeAllTabsInActiveContainer(
                                 session,
                                 registry: registry,
                                 claudeSessionTracker: claudeSessionTracker,
                                 codexSessionTracker: codexSessionTracker
                             )
                         } label: {
-                            Label("Close All Sessions", systemImage: "xmark")
+                            Label("Close All Tabs", systemImage: "xmark")
                         }
                         .disabled(session.tabs(in: session.activeContainerID).isEmpty)
                         Divider()
@@ -124,7 +124,7 @@ struct ChromeL3Segment: View {
                     help: "Split Right (⌘D)",
                     isEnabled: session.activeTab != nil
                 ) {
-                    SessionActions.split(session, direction: .horizontal)
+                    TabActions.split(session, direction: .horizontal)
                 }
                 ChromeCapsuleDivider()
                 ChromeCapsuleButton(
@@ -132,7 +132,7 @@ struct ChromeL3Segment: View {
                     help: "Split Down (⌘⇧D)",
                     isEnabled: session.activeTab != nil
                 ) {
-                    SessionActions.split(session, direction: .vertical)
+                    TabActions.split(session, direction: .vertical)
                 }
             }
         }

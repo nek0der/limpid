@@ -16,7 +16,7 @@ import SwiftUI
 
 extension EnvironmentValues {
     /// libghostty surface registry — UUID ↔ SurfaceView lookup.
-    /// Typed as the protocol so views (and `SessionActions`) don't
+    /// Typed as the protocol so views (and `TabActions`) don't
     /// see the concrete `SurfaceRegistry`; tests can swap in their
     /// own conformer.
     @Entry var surfaceRegistry: any SurfaceViewProviding = NoopSurfaceRegistry()
@@ -32,7 +32,7 @@ extension EnvironmentValues {
     @Entry var sparkleUpdater: SPUUpdater?
 
     /// Tracks per-tab Claude Code session ids written by the shim's
-    /// hook. `SessionActions.closeTab` calls into it so the on-disk
+    /// hook. `TabActions.closeTab` calls into it so the on-disk
     /// record is dropped when the user closes a tab. `nil` in Previews
     /// / tests is fine — the optional parameter on the close helpers
     /// just skips the cleanup step.

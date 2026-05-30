@@ -1,4 +1,4 @@
-// SessionActions.swift
+// TabActions.swift
 // Limpid — centralized verbs over WindowSession + SplitTree so keyboard
 // shortcuts, menu items, and context menus all dispatch through the same
 // surface. Each method is small and pure: pull the active tab, mutate its
@@ -9,10 +9,10 @@ import Foundation
 import GhosttyKit
 import OSLog
 
-private let log = Logger(subsystem: "dev.limpid", category: "session.actions")
+private let log = Logger(subsystem: "dev.limpid", category: "tab.actions")
 
 extension Notification.Name {
-    /// Posted by `SessionActions.beginSearch` carrying the pane id as
+    /// Posted by `TabActions.beginSearch` carrying the pane id as
     /// `object`. The search overlay observes this so it re-grabs
     /// keyboard focus when ⌘F is hit a second time while the overlay
     /// is already on screen.
@@ -38,7 +38,7 @@ extension Notification.Name {
 }
 
 @MainActor
-enum SessionActions {
+enum TabActions {
 
     // MARK: - Tab
 

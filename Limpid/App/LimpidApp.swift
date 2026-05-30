@@ -593,7 +593,7 @@ struct LimpidApp: App {
             // ── File menu ──────────────────────────────────────
             CommandGroup(replacing: .newItem) {
                 Button {
-                    SessionActions.newTab(state.session)
+                    TabActions.newTab(state.session)
                 } label: {
                     Label("New Tab", systemImage: "plus.rectangle")
                 }
@@ -616,14 +616,14 @@ struct LimpidApp: App {
                 .limpidShortcut(.newWorktree, in: state.settingsStore)
                 .disabled(state.session.activeContainerID.projectID == nil)
                 Button {
-                    SessionActions.renameActiveTab(state.session)
+                    TabActions.renameActiveTab(state.session)
                 } label: {
                     Label("Rename Tab", systemImage: "pencil")
                 }
                 .limpidShortcut(.renameTab, in: state.settingsStore)
                 .disabled(state.session.activeTab == nil)
                 Button {
-                    SessionActions.reopenClosedTab(state.session)
+                    TabActions.reopenClosedTab(state.session)
                 } label: {
                     Label("Reopen Closed Tab", systemImage: "arrow.uturn.backward.square")
                 }
@@ -636,7 +636,7 @@ struct LimpidApp: App {
                 // family across the whole app (plain `xmark`) so
                 // every "close X" affordance reads as the same verb.
                 Button {
-                    SessionActions.closeActivePaneOrTab(
+                    TabActions.closeActivePaneOrTab(
                         state.session,
                         registry: state.registry,
                         claudeSessionTracker: state.claudeSessionTracker,
@@ -649,7 +649,7 @@ struct LimpidApp: App {
                 // ⌘⌥W → close the entire tab regardless of how many
                 // panes it contains (no per-pane cascade).
                 Button {
-                    SessionActions.closeActiveTab(
+                    TabActions.closeActiveTab(
                         state.session,
                         registry: state.registry,
                         claudeSessionTracker: state.claudeSessionTracker,
@@ -681,7 +681,7 @@ struct LimpidApp: App {
             CommandGroup(after: .windowList) {
                 ForEach(1...9, id: \.self) { n in
                     Button {
-                        SessionActions.activateTabInActiveContainer(at: n - 1, in: state.session)
+                        TabActions.activateTabInActiveContainer(at: n - 1, in: state.session)
                     } label: {
                         Label("Go to Tab \(n)", systemImage: "\(n).square")
                     }
@@ -689,13 +689,13 @@ struct LimpidApp: App {
                 }
                 Divider()
                 Button {
-                    SessionActions.cycleContainer(state.session, forward: true)
+                    TabActions.cycleContainer(state.session, forward: true)
                 } label: {
                     Label("Next Section", systemImage: "chevron.right")
                 }
                 .limpidShortcut(.nextSection, in: state.settingsStore)
                 Button {
-                    SessionActions.cycleContainer(state.session, forward: false)
+                    TabActions.cycleContainer(state.session, forward: false)
                 } label: {
                     Label("Previous Section", systemImage: "chevron.left")
                 }
@@ -703,7 +703,7 @@ struct LimpidApp: App {
                 // ⌘⌃1 … ⌘⌃9 → jump to the Nth top-level container.
                 ForEach(1...9, id: \.self) { n in
                     Button {
-                        SessionActions.activateContainer(at: n - 1, in: state.session)
+                        TabActions.activateContainer(at: n - 1, in: state.session)
                     } label: {
                         Label("Go to Section \(n)", systemImage: "\(n).circle")
                     }
@@ -712,7 +712,7 @@ struct LimpidApp: App {
             }
             CommandGroup(after: .toolbar) {
                 Button {
-                    SessionActions.openCommandPalette(
+                    TabActions.openCommandPalette(
                         state.session,
                         settings: state.settingsStore,
                         frecencyStore: state.frecencyStore
@@ -723,7 +723,7 @@ struct LimpidApp: App {
                 .limpidShortcut(.commandPalette, in: state.settingsStore)
 
                 Button {
-                    SessionActions.openCommandPalette(
+                    TabActions.openCommandPalette(
                         state.session,
                         settings: state.settingsStore,
                         frecencyStore: state.frecencyStore,
@@ -749,19 +749,19 @@ struct LimpidApp: App {
                 // no-op from an empty L2.
                 Section {
                     Button {
-                        SessionActions.beginSearch(state.session)
+                        TabActions.beginSearch(state.session)
                     } label: {
                         Label("Find…", systemImage: "magnifyingglass")
                     }
                     .limpidShortcut(.find, in: state.settingsStore)
                     Button {
-                        SessionActions.searchNext(state.session, registry: state.registry)
+                        TabActions.searchNext(state.session, registry: state.registry)
                     } label: {
                         Label("Find Next", systemImage: "chevron.down")
                     }
                     .limpidShortcut(.findNext, in: state.settingsStore)
                     Button {
-                        SessionActions.searchPrevious(state.session, registry: state.registry)
+                        TabActions.searchPrevious(state.session, registry: state.registry)
                     } label: {
                         Label("Find Previous", systemImage: "chevron.up")
                     }
@@ -843,12 +843,12 @@ struct ContentView: View {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            SessionActions.closeCommandPalette(state.session)
+                            TabActions.closeCommandPalette(state.session)
                         }
                     CommandPaletteDropdown(
                         state: paletteState,
                         onDismiss: {
-                            SessionActions.closeCommandPalette(state.session)
+                            TabActions.closeCommandPalette(state.session)
                         }
                     )
                     .frame(width: 400)
@@ -864,7 +864,7 @@ struct ContentView: View {
         .animation(LimpidMotion.paletteToggle, value: state.session.commandPaletteState != nil)
         .onReceive(NotificationCenter.default.publisher(for: .limpidCommandPaletteExecute)) { note in
             guard let action = note.object as? CommandPaletteAction else { return }
-            SessionActions.executeCommandPaletteAction(
+            TabActions.executeCommandPaletteAction(
                 action,
                 session: state.session,
                 registry: state.registry,

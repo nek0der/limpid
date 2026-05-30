@@ -3,7 +3,7 @@
 // `navBackStack` pattern: the field lives on `WindowSession`, the
 // push / pop helpers live in a focused extension so the model owns
 // its own cap + eviction invariant instead of leaking it into the
-// orchestration layer (`SessionActions`).
+// orchestration layer (`TabActions`).
 
 import Foundation
 

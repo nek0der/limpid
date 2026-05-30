@@ -131,12 +131,12 @@
         }
       }
     },
-    "All sessions in this group will be closed.": {
+    "All tabs in this group will be closed.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このグループ内のすべてのセッションが閉じられます。"
+            "value": "このグループ内のすべてのタブが閉じられます。"
           }
         }
       }
@@ -489,12 +489,12 @@
         }
       }
     },
-    "Close All Sessions": {
+    "Close All Tabs": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "すべてのセッションを閉じる"
+            "value": "すべてのタブを閉じる"
           }
         }
       }
@@ -1430,16 +1430,6 @@
         }
       }
     },
-    "New Session": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新規セッション"
-          }
-        }
-      }
-    },
     "New Tab": {
       "localizations": {
         "ja": {
@@ -1540,22 +1530,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "通知はまだありません"
-          }
-        }
-      }
-    },
-    "No sessions": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No sessions"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "セッションがありません"
           }
         }
       }

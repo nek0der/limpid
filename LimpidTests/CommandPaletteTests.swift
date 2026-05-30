@@ -166,7 +166,7 @@ struct CommandPaletteTests {
         let settings = SettingsStore()
         try withTempDir { dir in
             let frecency = FrecencyStore(directory: dir)
-            SessionActions.openCommandPalette(session, settings: settings, frecencyStore: frecency)
+            TabActions.openCommandPalette(session, settings: settings, frecencyStore: frecency)
             #expect(session.commandPaletteState != nil)
             #expect(!session.commandPaletteState!.allItems.isEmpty)
         }
@@ -178,8 +178,8 @@ struct CommandPaletteTests {
         let settings = SettingsStore()
         try withTempDir { dir in
             let frecency = FrecencyStore(directory: dir)
-            SessionActions.openCommandPalette(session, settings: settings, frecencyStore: frecency)
-            SessionActions.closeCommandPalette(session)
+            TabActions.openCommandPalette(session, settings: settings, frecencyStore: frecency)
+            TabActions.closeCommandPalette(session)
             #expect(session.commandPaletteState == nil)
         }
     }
@@ -213,9 +213,9 @@ struct CommandPaletteTests {
         let settings = SettingsStore()
         try withTempDir { dir in
             let frecency = FrecencyStore(directory: dir)
-            SessionActions.openCommandPalette(session, settings: settings, frecencyStore: frecency)
+            TabActions.openCommandPalette(session, settings: settings, frecencyStore: frecency)
             let first = session.commandPaletteState
-            SessionActions.openCommandPalette(session, settings: settings, frecencyStore: frecency)
+            TabActions.openCommandPalette(session, settings: settings, frecencyStore: frecency)
             #expect(session.commandPaletteState === first)
         }
     }

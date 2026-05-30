@@ -1,7 +1,7 @@
 // LimpidConfirm.swift
 // Limpid — synchronous NSAlert helper for destructive-action
 // confirmations (⌘Q, close tab). Synchronous so static call sites in
-// `SessionActions` and `LimpidAppDelegate.applicationShouldTerminate`
+// `TabActions` and `LimpidAppDelegate.applicationShouldTerminate`
 // can gate their work on the user's choice without plumbing async state
 // through SwiftUI. Matches the existing AppKit interop pattern (see
 // `LimpidApp.swift`'s `willTerminateNotification` observer).

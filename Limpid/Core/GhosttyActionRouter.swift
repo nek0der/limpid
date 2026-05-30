@@ -30,7 +30,7 @@ enum GhosttyEvent {
     /// libghostty asks the apprt to dismiss the search overlay.
     /// Fires in response to Limpid driving `end_search` via
     /// `ghostty_surface_binding_action` (no libghostty keybind owns
-    /// it anymore — `SessionActions.endSearch` is the only trigger).
+    /// it anymore — `TabActions.endSearch` is the only trigger).
     case endSearch(SurfaceView)
     /// Updated total-matches counter for the current search.
     case searchTotal(SurfaceView, total: Int?)

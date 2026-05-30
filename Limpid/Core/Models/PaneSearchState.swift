@@ -2,14 +2,14 @@
 // Limpid — observable state for libghostty's in-pane search (⌘F).
 //
 // One instance per active search session. Lifecycle:
-//   ⌘F                  → `SessionActions.beginSearch` installs a
+//   ⌘F                  → `TabActions.beginSearch` installs a
 //                         fresh state for the focused pane
 //   needle edited       → `PaneSearchOverlay` debounces and calls
 //                         binding action "search:<needle>" on the
 //                         SurfaceView
 //   ghostty callbacks   → `GhosttyEventCoordinator` updates `total`
 //                         and `selected` on the same instance
-//   Esc / close button  → `SessionActions.endSearch` drops the entry
+//   Esc / close button  → `TabActions.endSearch` drops the entry
 //                         AND emits `end_search` to libghostty
 //
 // State is intentionally transient (not Codable) — search position
