@@ -315,11 +315,13 @@ enum TabActions {
         else { return }
         session.update(tab.id) { t in
             t.splitTree.focusedLeafID = next
-            // Mirror SplitContainerView.onLeafFocus — pull the new pane's
-            // last-known title up so the window/tab label snaps to it.
-            if let pulledTitle = registry.view(for: next)?.paneTitle {
-                t.title = pulledTitle
-            }
+            // Mirror `SplitContainerView.onLeafFocus`: focus shift only,
+            // never overwrite `tab.title`. The label is owned by the tab
+            // (Claude/Codex agent prompt, or the latest OSC 2 stream) —
+            // pulling each pane's last-known title up on focus would
+            // make the tab name flicker across pane switches and collide
+            // with the latest-agent-owner rule in
+            // `GhosttyEventCoordinator.shouldPropagateTitle`.
         }
         // View may not be registered yet when focusPane fires the same
         // runloop tick as a split — SwiftUI hasn't mounted the new

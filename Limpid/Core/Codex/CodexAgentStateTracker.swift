@@ -248,30 +248,7 @@ final class CodexAgentStateTracker {
 
         for tab in session.tabs {
             session.update(tab.id) { mutTab in
-                var current = mutTab.codexAgentBadges
-                for paneID in mutTab.splitTree.allLeafIDs() {
-                    if let record = byPaneID[paneID],
-                       let badge = makeBadge(from: record)
-                    {
-                        if let existing = current[paneID],
-                           existing.updatedAt > badge.updatedAt
-                        {
-                            continue
-                        }
-                        if current[paneID] != badge {
-                            current[paneID] = badge
-                        }
-                    } else if current[paneID] != nil {
-                        current[paneID] = nil
-                    }
-                }
-                let leaves = Set(mutTab.splitTree.allLeafIDs())
-                for stale in current.keys where !leaves.contains(stale) {
-                    current[stale] = nil
-                }
-                if mutTab.codexAgentBadges != current {
-                    mutTab.codexAgentBadges = current
-                }
+                reconcile(&mutTab, byPaneID: byPaneID)
             }
         }
 
@@ -281,6 +258,60 @@ final class CodexAgentStateTracker {
         rebuildPreviousBadges(session: session)
 
         store.cleanup(keeping: alive)
+    }
+
+    /// Refresh one tab's per-pane badges from the on-disk records and
+    /// name the tab after the focused Codex pane's opening prompt.
+    /// Split out of `applyAllRecordsToSession` so each stays under the
+    /// cyclomatic-complexity limit.
+    private func reconcile(
+        _ tab: inout Tab,
+        byPaneID: [UUID: CodexAgentStateRecord]
+    ) {
+        var current = tab.codexAgentBadges
+        for paneID in tab.splitTree.allLeafIDs() {
+            if let record = byPaneID[paneID], let badge = makeBadge(from: record) {
+                // Drop out-of-order async updates.
+                if let existing = current[paneID], existing.updatedAt > badge.updatedAt {
+                    continue
+                }
+                if current[paneID] != badge {
+                    current[paneID] = badge
+                }
+            } else if current[paneID] != nil {
+                current[paneID] = nil
+            }
+        }
+        let leaves = Set(tab.splitTree.allLeafIDs())
+        for stale in current.keys where !leaves.contains(stale) {
+            current[stale] = nil
+        }
+        if tab.codexAgentBadges != current {
+            tab.codexAgentBadges = current
+        }
+        applyCodexTitle(&tab, badges: current)
+    }
+
+    /// Name the tab after the Codex conversation's opening prompt.
+    /// Codex emits no auto-title and Limpid suppresses its OSC 2 pwd
+    /// title, so the pane's `firstPrompt` is the only meaningful label
+    /// this pane produces. We write `tab.title` (not `titleOverride`,
+    /// which belongs to the user's manual rename and still wins via
+    /// `displayTitle`).
+    ///
+    /// Only the pane whose Codex/Claude session started most recently
+    /// (`Tab.latestAgentSessionPaneID`) is allowed to push a title —
+    /// without this guard, an older session typing another turn would
+    /// re-emit its own `firstPrompt` and clobber a newer pane's label.
+    /// When that owner pane is Claude (or no agent at all), we leave
+    /// the Codex side alone: Claude's hook drives OSC 2 directly.
+    private func applyCodexTitle(_ tab: inout Tab, badges: [UUID: CodexAgentBadge]) {
+        guard let owner = tab.latestAgentSessionPaneID,
+              let prompt = badges[owner]?.firstPrompt,
+              !prompt.isEmpty,
+              tab.title != prompt
+        else { return }
+        tab.title = prompt
     }
 
     /// Diff every leaf's prior badge against its current badge and
@@ -322,20 +353,26 @@ final class CodexAgentStateTracker {
         guard let state = AgentState(rawValue: record.state) else { return nil }
         let detail = (record.detail?.isEmpty == false) ? record.detail : nil
         let updatedAt = Self.parseISO8601(record.updatedAt) ?? Date()
-        let runStartedAt: Date? = if let raw = record.runStartedAt, !raw.isEmpty {
-            Self.parseISO8601(raw)
-        } else {
-            nil
-        }
         let lastPrompt = (record.lastPrompt?.isEmpty == false) ? record.lastPrompt : nil
+        let firstPrompt = (record.firstPrompt?.isEmpty == false) ? record.firstPrompt : nil
         return CodexAgentBadge(
             state: state,
             detail: detail,
-            runStartedAt: runStartedAt,
+            runStartedAt: Self.parseOptionalDate(record.runStartedAt),
             contextTokens: record.contextTokens,
             updatedAt: updatedAt,
-            lastPrompt: lastPrompt
+            lastPrompt: lastPrompt,
+            firstPrompt: firstPrompt,
+            sessionStartedAt: Self.parseOptionalDate(record.sessionStartedAt)
         )
+    }
+
+    /// Parse an optional ISO-8601 string from a hook record. Empty
+    /// strings (`runStartedAt=""` on a reset) become `nil` so callers
+    /// don't have to repeat the empty-vs-missing check inline.
+    private static func parseOptionalDate(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        return parseISO8601(raw)
     }
 
     private static func parseISO8601(_ string: String) -> Date? {

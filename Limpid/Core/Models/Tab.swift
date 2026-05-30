@@ -161,6 +161,34 @@ struct Tab: Codable, Equatable, Identifiable {
         return title
     }
 
+    /// Pane whose Claude or Codex session started most recently — the
+    /// "owner" of `title` while at least one agent is alive. Compared
+    /// across both agent kinds because a tab can host a mixed set
+    /// (e.g. pane 1 claude, pane 2 codex). Returns `nil` when no pane
+    /// currently has a captured `sessionStartedAt`, in which case the
+    /// caller falls back to whichever pane the OSC source happens to
+    /// be focused on.
+    ///
+    /// The rule prevents an older session from clobbering a newer one:
+    /// without it, pane 1 (older) typing a fresh turn would re-emit its
+    /// own `firstPrompt` and overwrite pane 2's (newer) tab label.
+    var latestAgentSessionPaneID: UUID? {
+        var best: (paneID: UUID, started: Date)?
+        for (paneID, badge) in claudeAgentBadges {
+            guard let started = badge.sessionStartedAt else { continue }
+            if best == nil || started > best!.started {
+                best = (paneID, started)
+            }
+        }
+        for (paneID, badge) in codexAgentBadges {
+            guard let started = badge.sessionStartedAt else { continue }
+            if best == nil || started > best!.started {
+                best = (paneID, started)
+            }
+        }
+        return best?.paneID
+    }
+
     /// Convenience: tab containing a single empty pane.
     static func newWithSinglePane(
         title: String,

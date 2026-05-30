@@ -115,11 +115,7 @@ final class GhosttyEventCoordinator {
             return
         }
 
-        // Only the focused pane gets to push its title up to the tab.
-        if let focused = owningTab.splitTree.focusedLeafID, focused != paneID {
-            log.debug("SET_TITLE recorded on bg pane only")
-            return
-        }
+        guard shouldPropagateTitle(from: paneID, in: owningTab) else { return }
 
         pendingTitleApplies[paneID]?.cancel()
         let tabID = owningTab.id
@@ -128,6 +124,34 @@ final class GhosttyEventCoordinator {
             guard !Task.isCancelled else { return }
             self?.applySetTitle(tabID: tabID, paneID: paneID, title: title)
         }
+    }
+
+    /// Decide whether `paneID`'s OSC 2 should be propagated up to
+    /// `tab.title`. Two regimes:
+    ///   1. **Agent in the tab** — only the pane whose Claude / Codex
+    ///      session started most recently is allowed, regardless of
+    ///      focus. The tab label is "owned" by the latest conversation
+    ///      so a background claude pane writing a fresh `terminalSequence`
+    ///      still updates the tab; conversely a foregrounded pane that
+    ///      isn't the latest owner is silenced so an older session can't
+    ///      clobber the label.
+    ///   2. **No agent at all** — fall back to the legacy "focused
+    ///      pane only" rule so a plain shell tab still behaves the way
+    ///      it always has (background pane prompts don't flicker the
+    ///      tab name).
+    private func shouldPropagateTitle(from paneID: UUID, in tab: Tab) -> Bool {
+        if let owner = tab.latestAgentSessionPaneID {
+            if owner != paneID {
+                log.debug("SET_TITLE ignored: pane is not the latest agent session owner")
+                return false
+            }
+            return true
+        }
+        if let focused = tab.splitTree.focusedLeafID, focused != paneID {
+            log.debug("SET_TITLE recorded on bg pane only")
+            return false
+        }
+        return true
     }
 
     private func applySetTitle(tabID: UUID, paneID: UUID, title: String) {
