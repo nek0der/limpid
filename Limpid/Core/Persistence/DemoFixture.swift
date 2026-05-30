@@ -24,12 +24,14 @@ enum DemoFixture {
     // MARK: - Stable IDs
 
     //
-    // Hand-rolled UUIDs keep the fixture bit-identical across runs:
-    // tests can assert against them, the snapshot encodes the same
-    // bytes every time, and the screenshot pipeline stays
-    // reproducible. **Don't change these once a hero image is
-    // shipped** — the snapshot is captured into a PNG, but the
-    // tests anchor on the UUIDs.
+    // Hand-rolled UUIDs anchor the fixture's structure across runs:
+    // tests assert against them and the screenshot pipeline always
+    // sees the same containers / tabs / panes. Wall-clock timestamps
+    // on agent badges intentionally drift (relative to `Date()` so the
+    // WAITING row reads as "2m ago" forever — see the comment near
+    // the badge), so the encoded JSON is not bit-identical across
+    // runs. **Don't change these UUIDs once a hero image is shipped**
+    // — tests anchor on them.
 
     static let agentsGroupID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
     static let scratchGroupID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A2")!
@@ -104,8 +106,8 @@ enum DemoFixture {
     private static let gitStatusCommand = """
     clear && cat <<'EOF'
     \u{0024} git status
-    On branch feat/agent-orchestration
-    Your branch is up to date with 'origin/feat/agent-orchestration'.
+    On branch feat/agents
+    Your branch is up to date with 'origin/feat/agents'.
 
     Changes to be committed:
       (use \"git restore --staged <file>...\" to unstage)
@@ -117,11 +119,11 @@ enum DemoFixture {
     private static let gitTabCommand = """
     clear && cat <<'EOF'
     \u{0024} git log --oneline --graph -5
-    * 6686ad5 feat(agents): orchestration scaffolding
-    * 3c195bd chore: security / perf hardening
-    * 7e5c875 docs(readme): simplify
-    * 98372c9 feat: baseline implementation
-    * 0155870 initial empty commit
+    * 6686ad5 feat(agents): cross-pane WAITING list and ⌘J cursor
+    * 3c195bd feat(tab): name tabs from the agent conversation
+    * 7e5c875 feat(chrome): scale up header icons to Apple metrics
+    * 98372c9 fix(codex): only export CODEX_HOME when shadow dir exists
+    * 0155870 feat(transparency): follow Reduce Transparency live
     EOF
     """
 
@@ -142,7 +144,9 @@ enum DemoFixture {
     > Refactor addOrActivateProject to return a Result so callers can
       surface filesystem errors instead of silently falling back.
 
-    Reading WindowSession+Containers.swift...
+    Read WindowSession+Containers.swift
+    Edit WindowSession+Containers.swift
+    Done.
     EOF
     """
 
@@ -165,9 +169,9 @@ enum DemoFixture {
         )
         let limpidFeatWorktree = Worktree(
             id: limpidFeatWorktreeID,
-            label: "feat/agent-orchestration",
+            label: "feat/agents",
             workingDirectory: limpidRoot.deletingLastPathComponent()
-                .appendingPathComponent("limpid-feat-agent-orchestration"),
+                .appendingPathComponent("limpid-feat-agents"),
             origin: .userPinned
         )
 
@@ -207,6 +211,10 @@ enum DemoFixture {
         var editorTab = Tab(
             id: editorTabID,
             title: "editor",
+            // Pin the label so OSC 2 (`~`) doesn't replace "editor" when
+            // the split panes activate — matches `singlePaneTab`'s
+            // titleOverride trick.
+            titleOverride: "editor",
             splitTree: SplitTree(
                 root: .split(SplitData(
                     direction: .vertical,
@@ -244,6 +252,44 @@ enum DemoFixture {
             paneID: agentTabPaneID
         )
         agentTab.initialCommands[agentTabPaneID] = agentTabCommand
+        // Park the agent pane on a finished turn so the L1 WAITING list
+        // carries one entry and the L2 row shows a green checkmark —
+        // the shape a real Claude `Stop` event produces. Timestamps
+        // are relative to *now* (not a fixed epoch) so the WAITING row
+        // reads as a fresh "2m ago" each launch instead of drifting
+        // into "514d ago" as the README ages. The snapshot is no
+        // longer bit-identical across runs, but the demo is captured
+        // to a PNG before that matters — tests anchor on UUIDs.
+        agentTab.claudeAgentBadges[agentTabPaneID] = ClaudeAgentBadge(
+            state: .finished,
+            detail: nil,
+            runStartedAt: nil,
+            contextTokens: nil,
+            updatedAt: Date(timeIntervalSinceNow: -120),
+            lastPrompt: "Refactor addOrActivateProject to return a Result"
+                + " so callers can surface filesystem errors"
+                + " instead of silently falling back.",
+            sessionStartedAt: Date(timeIntervalSinceNow: -3600)
+        )
+
+        // Park the `claude` tab in the Agents group on a *running* turn
+        // so the L1 Agents row carries the blue bolt — a live agent
+        // working off-screen, the other half of the WAITING story.
+        var agentsClaudeTab = singlePaneTab(
+            id: agentsClaudeTabID,
+            title: "claude",
+            container: .group(agentsGroupID),
+            paneID: agentsClaudePaneID
+        )
+        agentsClaudeTab.claudeAgentBadges[agentsClaudePaneID] = ClaudeAgentBadge(
+            state: .running,
+            detail: "Edit",
+            runStartedAt: Date(timeIntervalSinceNow: -30),
+            contextTokens: nil,
+            updatedAt: Date(timeIntervalSinceNow: -5),
+            lastPrompt: "Audit the L1 sidebar selection contrast in light mode.",
+            sessionStartedAt: Date(timeIntervalSinceNow: -900)
+        )
 
         let tabs: [Tab] = [
             singlePaneTab(
@@ -252,12 +298,7 @@ enum DemoFixture {
                 container: .loose,
                 paneID: looseTabPaneID
             ),
-            singlePaneTab(
-                id: agentsClaudeTabID,
-                title: "claude",
-                container: .group(agentsGroupID),
-                paneID: agentsClaudePaneID
-            ),
+            agentsClaudeTab,
             singlePaneTab(
                 id: agentsCodexTabID,
                 title: "codex",
@@ -310,6 +351,12 @@ enum DemoFixture {
         Tab(
             id: id,
             title: title,
+            // Demo tabs pin a `titleOverride` matching `title` so the
+            // shell's OSC 2 pwd report (e.g. `~`) doesn't clobber the
+            // fixture's named label once the pane is activated. Same
+            // mechanism the user's manual rename uses, so `displayTitle`
+            // keeps "agent" / "git" / "build" across taps.
+            titleOverride: title,
             splitTree: SplitTree(leafID: paneID),
             container: container
         )
