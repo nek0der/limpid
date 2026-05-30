@@ -99,7 +99,7 @@ final class SettingsStore {
         // behind Limpid on the contributor's Mac — the README image
         // stays bit-for-bit reproducible regardless of host setup.
         if DemoFixture.isDemoActive {
-            loaded.appearance.transparency = .off
+            loaded.appearance.transparencyEnabled = false
             loaded.appearance.backgroundOpacity = 1.0
         }
         self.settings = loaded

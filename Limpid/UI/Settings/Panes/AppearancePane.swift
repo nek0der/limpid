@@ -8,6 +8,7 @@ import SwiftUI
 
 struct AppearancePane: View {
     @Environment(SettingsStore.self) private var store
+    @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
 
     var body: some View {
         @Bindable var store = store
@@ -43,16 +44,18 @@ struct AppearancePane: View {
             }
 
             Section {
-                Picker(
+                Toggle(
                     "Transparency",
-                    selection: $store.settings.appearance.transparency
-                ) {
-                    Text("Follow System").tag(TransparencyMode.system)
-                    Text("On").tag(TransparencyMode.on)
-                    Text("Off").tag(TransparencyMode.off)
-                }
+                    isOn: $store.settings.appearance.transparencyEnabled
+                )
+                .disabled(reduceTransparencyResolver.systemReducesTransparency)
             } footer: {
-                Text("Overrides macOS Accessibility's Reduce Transparency setting for Limpid.")
+                // Only when the OS forces opacity: explain why the toggle
+                // is disabled. The enabled state is self-explanatory, so
+                // we keep the footer to the one non-obvious case.
+                if reduceTransparencyResolver.systemReducesTransparency {
+                    Text("Disabled when System Settings' Accessibility Reduce Transparency is on.")
+                }
             }
         }
     }

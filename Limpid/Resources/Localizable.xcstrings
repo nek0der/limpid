@@ -1664,12 +1664,12 @@
         }
       }
     },
-    "Overrides macOS Accessibility's Reduce Transparency setting for Limpid.": {
+    "Disabled when System Settings' Accessibility Reduce Transparency is on.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS のアクセシビリティ「透明度を下げる」を Limpid 内で上書きします。"
+            "value": "システム設定のアクセシビリティ「透明度を下げる」がオンの場合は無効です。"
           }
         }
       }

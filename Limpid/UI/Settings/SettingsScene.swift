@@ -76,6 +76,10 @@ struct SettingsScene: View {
 
     @ViewBuilder
     private var settingsBaseFill: some View {
+        // Mirror the main window: behind-window glass in the default
+        // appearance, and the native opaque window-background tone (the
+        // same surface System Settings uses) when transparency is
+        // reduced — there the glass would be stripped by the OS anyway.
         if reduceTransparencyResolver.shouldReduceTransparency {
             Color(nsColor: .windowBackgroundColor)
         } else {

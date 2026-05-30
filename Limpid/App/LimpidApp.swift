@@ -120,7 +120,7 @@ final class AppState {
         ClipboardConfirmationCoordinator.shared = clipboardConfirmation
         self.clipboardConfirmation = clipboardConfirmation
         let resolver = ReduceTransparencyResolver()
-        resolver.apply(userMode: settingsStore.settings.appearance.transparency)
+        resolver.apply(userEnabled: settingsStore.settings.appearance.transparencyEnabled)
         self.reduceTransparencyResolver = resolver
         // Pin `NSApp.appearance` to the user's preference before the
         // first window appears so SwiftUI chrome doesn't briefly
@@ -327,7 +327,7 @@ final class AppState {
             // off the resolver, so it needs the freshest user mode
             // BEFORE libghostty starts repainting on the new config.
             self.reduceTransparencyResolver.apply(
-                userMode: current.appearance.transparency
+                userEnabled: current.appearance.transparencyEnabled
             )
             Self.applyColorScheme(current.appearance.colorScheme)
             GhosttyConfigBridge.reloadConfig(

@@ -18,10 +18,10 @@ struct LimpidSettingsTests {
         #expect(LimpidSettings.default.schemaVersion == LimpidSettings.currentSchemaVersion)
     }
 
-    @Test("appearance defaults: system transparency, default tint, near-opaque pane background")
+    @Test("appearance defaults: transparency enabled, default tint, near-opaque pane background")
     func default_appearanceDefaults() {
         let s = LimpidSettings.default.appearance
-        #expect(s.transparency == .system)
+        #expect(s.transparencyEnabled == true)
         #expect(s.windowTint == .default)
         #expect(s.backgroundOpacity == 0.92)
     }
@@ -48,7 +48,7 @@ struct LimpidSettingsTests {
     @Test("encode → decode yields an equivalent value (every field mutated)")
     func codable_customized_roundTrip() throws {
         var settings = LimpidSettings.default
-        settings.appearance.transparency = .off
+        settings.appearance.transparencyEnabled = false
         settings.appearance.windowTint = .navy
         settings.appearance.backgroundOpacity = 0.5
         settings.font.family = "Fira Code"
@@ -83,19 +83,28 @@ struct LimpidSettingsTests {
         }
     }
 
-    @Test("an unknown enum case in transparency is rejected, not silently mapped")
-    func decode_unknownTransparencyMode_throws() {
-        // `bogus` isn't a TransparencyMode case → Decoder throws.
-        let data = Data(#"""
-        {"schemaVersion":1,
-         "appearance":{"windowTint":"default","backgroundOpacity":0.92,"transparency":"bogus"},
-         "font":{"size":13,"ligatures":false,"lineHeight":0},
-         "terminal":{},
-         "advanced":{}}
-        """#.utf8)
-        #expect(throws: DecodingError.self) {
-            _ = try JSONDecoder().decode(LimpidSettings.self, from: data)
+    @Test("legacy `transparency` string migrates to Bool: only \"off\" opts out")
+    func decode_legacyTransparencyString_migratesToBool() throws {
+        /// The old three-way `transparency` enum is gone; a settings.json
+        /// written under it must still load. `LimpidSettings` maps the
+        /// legacy string to `transparencyEnabled` (`!= "off"`), so there's
+        /// nothing left to reject — unknown values just enable glass.
+        func decodeEnabled(legacy value: String) throws -> Bool {
+            let data = Data(#"""
+            {"schemaVersion":1,
+             "appearance":{"windowTint":"default","backgroundOpacity":0.92,"transparency":"\#(value)"},
+             "font":{"size":13,"ligatures":false,"lineHeight":0},
+             "terminal":{},
+             "advanced":{"useGhosttyConfigFile":false}}
+            """#.utf8)
+            return try JSONDecoder()
+                .decode(LimpidSettings.self, from: data)
+                .appearance.transparencyEnabled
         }
+        #expect(try decodeEnabled(legacy: "off") == false)
+        #expect(try decodeEnabled(legacy: "on") == true)
+        #expect(try decodeEnabled(legacy: "system") == true)
+        #expect(try decodeEnabled(legacy: "bogus") == true)
     }
 
     @Test("terminal section without quickTab keys decodes with cwd defaults")

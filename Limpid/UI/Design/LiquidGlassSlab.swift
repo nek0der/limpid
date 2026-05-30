@@ -20,10 +20,22 @@ extension View {
     /// Treat this view as a floating slab — translucent material,
     /// rounded corners, rim-light, drop shadow. Mirrors the L1 sidebar
     /// in macOS Notes 2026. `solid` forces an opaque fill (used when
-    /// `SettingsStore.settings.appearance.transparency` resolves
-    /// to `true`); leaving it at the default keeps Liquid Glass.
-    func liquidGlassSlab(cornerRadius: CGFloat = 10, solid: Bool = false) -> some View {
-        modifier(LiquidGlassSlabModifier(cornerRadius: cornerRadius, solid: solid))
+    /// transparency resolves to reduced); leaving it at the default
+    /// keeps Liquid Glass. `solidFill` is the colour painted in solid
+    /// mode — pass a window-tint-aware colour so the opaque slab still
+    /// tracks the theme instead of going flat grey. In glass mode the
+    /// slab samples the tint from the surface behind it, so the fill is
+    /// ignored there.
+    func liquidGlassSlab(
+        cornerRadius: CGFloat = 10,
+        solid: Bool = false,
+        solidFill: Color = Color(nsColor: .windowBackgroundColor)
+    ) -> some View {
+        modifier(LiquidGlassSlabModifier(
+            cornerRadius: cornerRadius,
+            solid: solid,
+            solidFill: solidFill
+        ))
     }
 
     /// Smaller variant used for in-chrome buttons / search fields —
@@ -36,6 +48,7 @@ extension View {
 private struct LiquidGlassSlabModifier: ViewModifier {
     let cornerRadius: CGFloat
     let solid: Bool
+    let solidFill: Color
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -86,7 +99,7 @@ private struct LiquidGlassSlabModifier: ViewModifier {
     @ViewBuilder
     private func slabBackground(content: Content, shape: some Shape) -> some View {
         if solid {
-            content.background(Color(nsColor: .windowBackgroundColor), in: shape)
+            content.background(solidFill, in: shape)
         } else {
             // macOS 26's `.glassEffect(.regular, in:)` applied as a
             // content wrapper silently kills `.draggable` hit-testing
