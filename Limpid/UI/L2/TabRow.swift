@@ -308,7 +308,7 @@ struct TabsListView: View {
                                 session.setActiveTab(tab.id)
                             },
                             onClose: {
-                                SessionActions.closeTab(
+                                TabActions.closeTab(
                                     session,
                                     registry: registry,
                                     tabID: tab.id,

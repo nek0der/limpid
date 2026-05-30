@@ -9,7 +9,7 @@
 // paneStates, zoomedLeafID, initialCommands) so reopen feeds the
 // existing session-restore machinery — same path ⌘Q uses on launch.
 //
-// Transient — pushed in `SessionActions.closeTab`, popped in
+// Transient — pushed in `TabActions.closeTab`, popped in
 // `reopenClosedTab`. Not persisted across launches.
 
 import Foundation

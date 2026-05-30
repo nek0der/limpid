@@ -133,7 +133,7 @@ final class SurfaceView: NSView {
     /// SurfaceView itself doesn't know its pane id or the WindowSession.
     var onUserAcknowledge: (() -> Void)?
 
-    /// Context-menu plumbing back to `SessionActions`. Set by
+    /// Context-menu plumbing back to `TabActions`. Set by
     /// `PaneHostView`; `SurfaceView` calls into the focused pane via
     /// these so we don't have to thread a `WindowSession` reference
     /// through AppKit. `onRequestFocus` MUST run before the others —
@@ -382,7 +382,7 @@ final class SurfaceView: NSView {
     /// free.
     ///
     /// We forward to libghostty via `ghostty_surface_binding_action`
-    /// (the same path `SessionActions.endSearch/searchNext/...` uses)
+    /// (the same path `TabActions.endSearch/searchNext/...` uses)
     /// so libghostty's clipboard plumbing — including its prompt for
     /// suspicious paste content — still runs.
     @objc func paste(_ sender: Any?) {

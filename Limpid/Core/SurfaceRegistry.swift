@@ -20,7 +20,7 @@ protocol SurfaceViewProviding: AnyObject {
     func register(_ view: SurfaceView, for id: UUID)
     func unregister(_ id: UUID)
     /// Drop any registry entries whose ids aren't in the given set —
-    /// used by SessionActions when a pane close mutates the tree so
+    /// used by TabActions when a pane close mutates the tree so
     /// orphaned SurfaceViews don't pile up.
     func reconcile(activeIDs: Set<UUID>)
 }

@@ -36,7 +36,7 @@ struct PaneHostView: View {
                         state: state,
                         surfaceView: surfaceView,
                         onClose: {
-                            SessionActions.endSearch(
+                            TabActions.endSearch(
                                 session,
                                 registry: registry,
                                 paneID: paneID
@@ -100,7 +100,7 @@ private struct PaneHostRepresentable: NSViewRepresentable {
     }
 
     /// Bridge the right-click menu's Focus / Split / Close / Find items
-    /// to `SessionActions`. The callbacks let `SurfaceView` stay
+    /// to `TabActions`. The callbacks let `SurfaceView` stay
     /// ignorant of `WindowSession` and the surface registry — same
     /// pattern as `onUserAcknowledge`. Wired once in `makeNSView`; the
     /// closures only weakly capture `session` so SwiftUI re-renders
@@ -119,11 +119,11 @@ private struct PaneHostRepresentable: NSViewRepresentable {
         }
         view.onRequestSplit = { [weak session] direction in
             guard let session else { return }
-            SessionActions.split(session, direction: direction)
+            TabActions.split(session, direction: direction)
         }
         view.onRequestCloseActivePane = { [weak session] in
             guard let session else { return }
-            SessionActions.closeActivePaneOrTab(
+            TabActions.closeActivePaneOrTab(
                 session,
                 registry: registry,
                 source: .mouse
@@ -131,7 +131,7 @@ private struct PaneHostRepresentable: NSViewRepresentable {
         }
         view.onRequestBeginSearch = { [weak session] in
             guard let session else { return }
-            SessionActions.beginSearch(session)
+            TabActions.beginSearch(session)
         }
     }
 

@@ -159,7 +159,7 @@ struct ProjectSectionView: View {
                 onPruneMissingWorktrees: session.hasMissingWorktrees(projectID: project.id)
                     ? {
                         withAnimation(LimpidMotion.reorder) {
-                            SessionActions.pruneMissingWorktrees(
+                            TabActions.pruneMissingWorktrees(
                                 session,
                                 registry: registry,
                                 projectID: project.id
@@ -237,7 +237,7 @@ struct ProjectSectionView: View {
                         // hide). Live rows: hide so the user can
                         // recover via "Show Hidden Worktrees".
                         if wt.isMissing {
-                            SessionActions.removeWorktree(
+                            TabActions.removeWorktree(
                                 session,
                                 registry: registry,
                                 projectID: project.id,
@@ -333,12 +333,12 @@ struct ProjectSectionView: View {
     /// 5 s the toast auto-dismisses and the hide stays. Matches the
     /// Apple Mail "deleted message" pattern.
     ///
-    /// Lives in the View layer rather than `SessionActions` on
+    /// Lives in the View layer rather than `TabActions` on
     /// purpose: it's UI-orchestration (animation + toast) wrapped
     /// around two existing pure session verbs (`hideWorktree` /
-    /// `unhideWorktree`). Moving it to `SessionActions` would force
+    /// `unhideWorktree`). Moving it to `TabActions` would force
     /// that enum to import SwiftUI + know about `ToastCenter`, which
-    /// breaks the rule "SessionActions takes session + registry only,
+    /// breaks the rule "TabActions takes session + registry only,
     /// no UI deps."
     private func hideWorktreeWithUndo(projectID: UUID, worktreeID: UUID, label: String) {
         withAnimation(LimpidMotion.reorder) {

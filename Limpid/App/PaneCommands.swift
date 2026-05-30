@@ -11,26 +11,26 @@ struct PaneCommands: Commands {
     var body: some Commands {
         CommandMenu("Pane") {
             Button {
-                SessionActions.split(state.session, direction: .horizontal)
+                TabActions.split(state.session, direction: .horizontal)
             } label: {
                 Label("Split Right", systemImage: "rectangle.split.2x1")
             }
             .limpidShortcut(.splitRight, in: state.settingsStore)
             Button {
-                SessionActions.split(state.session, direction: .vertical)
+                TabActions.split(state.session, direction: .vertical)
             } label: {
                 Label("Split Down", systemImage: "rectangle.split.1x2")
             }
             .limpidShortcut(.splitDown, in: state.settingsStore)
             Button {
-                SessionActions.equalizeSplits(state.session)
+                TabActions.equalizeSplits(state.session)
             } label: {
                 Label("Equalize Splits", systemImage: "rectangle.split.2x1.slash")
             }
             .limpidShortcut(.equalizeSplits, in: state.settingsStore)
             .disabled(state.session.activeTab?.splitTree.isSplit != true)
             Button {
-                SessionActions.toggleZoom(state.session)
+                TabActions.toggleZoom(state.session)
             } label: {
                 if state.session.activeTab?.zoomedLeafID != nil {
                     Label("Unzoom Pane", systemImage: "arrow.down.right.and.arrow.up.left")
@@ -44,28 +44,28 @@ struct PaneCommands: Commands {
             .disabled(state.session.activeTab?.splitTree.isSplit != true)
             Divider()
             Button {
-                SessionActions.focusPane(state.session, registry: state.registry, direction: .left)
+                TabActions.focusPane(state.session, registry: state.registry, direction: .left)
             } label: {
                 Label("Focus Left Pane", systemImage: "arrow.left")
             }
             .limpidShortcut(.focusPaneLeft, in: state.settingsStore)
             .disabled(!canFocusAdjacentPane)
             Button {
-                SessionActions.focusPane(state.session, registry: state.registry, direction: .right)
+                TabActions.focusPane(state.session, registry: state.registry, direction: .right)
             } label: {
                 Label("Focus Right Pane", systemImage: "arrow.right")
             }
             .limpidShortcut(.focusPaneRight, in: state.settingsStore)
             .disabled(!canFocusAdjacentPane)
             Button {
-                SessionActions.focusPane(state.session, registry: state.registry, direction: .up)
+                TabActions.focusPane(state.session, registry: state.registry, direction: .up)
             } label: {
                 Label("Focus Pane Above", systemImage: "arrow.up")
             }
             .limpidShortcut(.focusPaneUp, in: state.settingsStore)
             .disabled(!canFocusAdjacentPane)
             Button {
-                SessionActions.focusPane(state.session, registry: state.registry, direction: .down)
+                TabActions.focusPane(state.session, registry: state.registry, direction: .down)
             } label: {
                 Label("Focus Pane Below", systemImage: "arrow.down")
             }
@@ -73,13 +73,13 @@ struct PaneCommands: Commands {
             .disabled(!canFocusAdjacentPane)
             Divider()
             Button {
-                SessionActions.cycleTab(state.session, forward: true)
+                TabActions.cycleTab(state.session, forward: true)
             } label: {
                 Label("Next Tab", systemImage: "arrow.right")
             }
             .limpidShortcut(.nextTab, in: state.settingsStore)
             Button {
-                SessionActions.cycleTab(state.session, forward: false)
+                TabActions.cycleTab(state.session, forward: false)
             } label: {
                 Label("Previous Tab", systemImage: "arrow.left")
             }

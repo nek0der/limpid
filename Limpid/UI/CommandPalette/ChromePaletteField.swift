@@ -34,7 +34,7 @@ struct ChromePaletteField: View {
 
     private func openPalette() {
         guard let frecencyStore else { return }
-        SessionActions.openCommandPalette(session, settings: settings, frecencyStore: frecencyStore)
+        TabActions.openCommandPalette(session, settings: settings, frecencyStore: frecencyStore)
     }
 }
 
@@ -99,7 +99,7 @@ private struct ActivePill: View {
                     scheduleFilter(query: newValue)
                 }
                 .onSubmit { executeSelected() }
-                .onExitCommand { SessionActions.closeCommandPalette(session) }
+                .onExitCommand { TabActions.closeCommandPalette(session) }
                 .onKeyPress(.upArrow) {
                     state.moveSelection(up: true)
                     return .handled

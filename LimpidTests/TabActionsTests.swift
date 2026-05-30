@@ -1,4 +1,4 @@
-// SessionActionsTests.swift
+// TabActionsTests.swift
 // Pane-level verbs that wrap WindowSession mutations. Registry-coupled
 // actions inject the production `NoopSurfaceRegistry` (already used
 // by SwiftUI previews) so we exercise the same code path without
@@ -9,15 +9,15 @@ import Testing
 @testable import Limpid
 
 @MainActor
-@Suite("SessionActions")
-struct SessionActionsTests {
+@Suite("TabActions")
+struct TabActionsTests {
 
     // MARK: - Zoom
 
     @Test("toggleZoom on a single-leaf tab is a no-op")
     func toggleZoom_singleLeaf_doesNothing() {
         let (session, _, _) = WindowSessionFixture.withLooseTab()
-        SessionActions.toggleZoom(session)
+        TabActions.toggleZoom(session)
         #expect(session.activeTab?.zoomedLeafID == nil)
     }
 
@@ -25,26 +25,26 @@ struct SessionActionsTests {
     func toggleZoom_splitTab_togglesFocusedLeaf() throws {
         let (session, tab, paneA) = WindowSessionFixture.withLooseTab()
         // Add a sibling pane so toggleZoom has something to act on.
-        SessionActions.split(session, direction: .horizontal)
+        TabActions.split(session, direction: .horizontal)
         let active = try #require(session.tab(tab.id))
         let focused = try #require(active.splitTree.focusedLeafID)
         #expect(focused != paneA) // split focuses the new leaf
 
-        SessionActions.toggleZoom(session)
+        TabActions.toggleZoom(session)
         #expect(session.tab(tab.id)?.zoomedLeafID == focused)
 
-        SessionActions.toggleZoom(session)
+        TabActions.toggleZoom(session)
         #expect(session.tab(tab.id)?.zoomedLeafID == nil)
     }
 
     @Test("splitting while zoomed exits zoom so the new sibling is visible")
     func split_whileZoomed_clearsZoom() {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
-        SessionActions.split(session, direction: .horizontal)
-        SessionActions.toggleZoom(session)
+        TabActions.split(session, direction: .horizontal)
+        TabActions.toggleZoom(session)
         #expect(session.tab(tab.id)?.zoomedLeafID != nil)
 
-        SessionActions.split(session, direction: .vertical)
+        TabActions.split(session, direction: .vertical)
         #expect(session.tab(tab.id)?.zoomedLeafID == nil)
     }
 
@@ -52,11 +52,11 @@ struct SessionActionsTests {
     func closeActivePane_removesZoomedLeaf_clearsZoom() {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
-        SessionActions.split(session, direction: .horizontal)
-        SessionActions.toggleZoom(session) // zooms the focused (new) leaf
+        TabActions.split(session, direction: .horizontal)
+        TabActions.toggleZoom(session) // zooms the focused (new) leaf
         #expect(session.tab(tab.id)?.zoomedLeafID != nil)
 
-        SessionActions.closeActivePane(session, registry: registry)
+        TabActions.closeActivePane(session, registry: registry)
         #expect(session.tab(tab.id)?.zoomedLeafID == nil)
     }
 
@@ -65,7 +65,7 @@ struct SessionActionsTests {
     @Test("equalizeSplits routes the SplitTree primitive through the active tab")
     func equalizeSplits_drivesSplitTreeEqualize() throws {
         let (session, tab, paneA) = WindowSessionFixture.withLooseTab()
-        SessionActions.split(session, direction: .horizontal)
+        TabActions.split(session, direction: .horizontal)
         // Drift the ratio off-center so equalize has work to do.
         session.update(tab.id) { t in
             t.splitTree = t.splitTree.resize(
@@ -83,7 +83,7 @@ struct SessionActionsTests {
         }
         #expect(beforeData.ratio != 0.5)
 
-        SessionActions.equalizeSplits(session)
+        TabActions.equalizeSplits(session)
 
         let afterRoot = try #require(session.tab(tab.id)?.splitTree.root)
         guard case let .split(afterData) = afterRoot else {
@@ -99,9 +99,9 @@ struct SessionActionsTests {
     func focusPane_splitTab_movesFocus() throws {
         let (session, tab, paneA) = WindowSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
-        SessionActions.split(session, direction: .horizontal)
+        TabActions.split(session, direction: .horizontal)
         // After split, focused leaf is the new pane (right of paneA).
-        SessionActions.focusPane(session, registry: registry, direction: .left)
+        TabActions.focusPane(session, registry: registry, direction: .left)
         let focused = try #require(session.tab(tab.id)?.splitTree.focusedLeafID)
         #expect(focused == paneA)
     }
@@ -110,17 +110,17 @@ struct SessionActionsTests {
     func focusPane_singleLeaf_doesNothing() {
         let (session, _, paneA) = WindowSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
-        SessionActions.focusPane(session, registry: registry, direction: .right)
+        TabActions.focusPane(session, registry: registry, direction: .right)
         #expect(session.activeTab?.splitTree.focusedLeafID == paneA)
     }
 
     @Test("toggleZoom pins focusedLeafID to the zoomed leaf even when focus was nil")
     func toggleZoom_pinsFocusedLeafIDToZoomedLeaf() {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
-        SessionActions.split(session, direction: .horizontal)
+        TabActions.split(session, direction: .horizontal)
         // Wipe focus to force toggleZoom into its fallback path.
         session.update(tab.id) { $0.splitTree.focusedLeafID = nil }
-        SessionActions.toggleZoom(session)
+        TabActions.toggleZoom(session)
         let stored = session.tab(tab.id)
         #expect(stored?.zoomedLeafID != nil)
         #expect(stored?.splitTree.focusedLeafID == stored?.zoomedLeafID)
@@ -130,11 +130,11 @@ struct SessionActionsTests {
     func focusPane_whileZoomed_doesNotMoveFocus() throws {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
-        SessionActions.split(session, direction: .horizontal)
+        TabActions.split(session, direction: .horizontal)
         let beforeZoom = try #require(session.tab(tab.id)?.splitTree.focusedLeafID)
-        SessionActions.toggleZoom(session)
+        TabActions.toggleZoom(session)
 
-        SessionActions.focusPane(session, registry: registry, direction: .left)
+        TabActions.focusPane(session, registry: registry, direction: .left)
         #expect(session.tab(tab.id)?.splitTree.focusedLeafID == beforeZoom)
     }
 
@@ -149,7 +149,7 @@ struct SessionActionsTests {
             t.workingDirectory = "/tmp/limpid-test-cwd"
         }
 
-        SessionActions.closeTab(session, registry: registry, tabID: tab.id)
+        TabActions.closeTab(session, registry: registry, tabID: tab.id)
 
         #expect(session.closedTabStack.count == 1)
         let closed = session.closedTabStack.last
@@ -169,11 +169,11 @@ struct SessionActionsTests {
             t.titleOverride = "restore-me"
             t.workingDirectory = "/tmp/limpid-test-cwd"
         }
-        SessionActions.closeTab(session, registry: registry, tabID: tab.id)
+        TabActions.closeTab(session, registry: registry, tabID: tab.id)
         #expect(session.tab(originalID) == nil)
         #expect(session.closedTabStack.count == 1)
 
-        SessionActions.reopenClosedTab(session)
+        TabActions.reopenClosedTab(session)
 
         #expect(session.closedTabStack.isEmpty)
         let revived = try #require(session.activeTab)
@@ -187,15 +187,15 @@ struct SessionActionsTests {
     func reopenClosedTab_splitTab_restoresLayout() throws {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
-        SessionActions.split(session, direction: .horizontal)
-        SessionActions.split(session, direction: .vertical)
+        TabActions.split(session, direction: .horizontal)
+        TabActions.split(session, direction: .vertical)
         // Snapshot the original split-tree structure before close.
         let originalLeafCount = try #require(session.tab(tab.id)?.splitTree.allLeafIDs().count)
         let originalIsSplit = try #require(session.tab(tab.id)?.splitTree.isSplit)
         let originalLeafIDs = try #require(session.tab(tab.id)?.splitTree.allLeafIDs())
 
-        SessionActions.closeTab(session, registry: registry, tabID: tab.id)
-        SessionActions.reopenClosedTab(session)
+        TabActions.closeTab(session, registry: registry, tabID: tab.id)
+        TabActions.reopenClosedTab(session)
 
         let revived = try #require(session.activeTab)
         #expect(revived.splitTree.allLeafIDs().count == originalLeafCount)
@@ -211,12 +211,12 @@ struct SessionActionsTests {
     func reopenClosedTab_zoomedTab_preservesZoomViaRemap() throws {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
-        SessionActions.split(session, direction: .horizontal)
-        SessionActions.toggleZoom(session)
+        TabActions.split(session, direction: .horizontal)
+        TabActions.toggleZoom(session)
         let zoomedBefore = try #require(session.tab(tab.id)?.zoomedLeafID)
 
-        SessionActions.closeTab(session, registry: registry, tabID: tab.id)
-        SessionActions.reopenClosedTab(session)
+        TabActions.closeTab(session, registry: registry, tabID: tab.id)
+        TabActions.reopenClosedTab(session)
 
         let revived = try #require(session.activeTab)
         let zoomedAfter = try #require(revived.zoomedLeafID)
@@ -234,8 +234,8 @@ struct SessionActionsTests {
         session.markUnread(paneID: paneA)
         #expect(session.tab(tab.id)?.paneStates[paneA]?.unreadCount == 1)
 
-        SessionActions.closeTab(session, registry: registry, tabID: tab.id)
-        SessionActions.reopenClosedTab(session)
+        TabActions.closeTab(session, registry: registry, tabID: tab.id)
+        TabActions.reopenClosedTab(session)
 
         let revived = try #require(session.activeTab)
         // PaneA's id should have been remapped to a fresh UUID, and
@@ -250,7 +250,7 @@ struct SessionActionsTests {
     func reopenClosedTab_emptyStack_doesNothing() {
         let (session, _, _) = WindowSessionFixture.withLooseTab()
         let tabCountBefore = session.tabs.count
-        SessionActions.reopenClosedTab(session)
+        TabActions.reopenClosedTab(session)
         #expect(session.tabs.count == tabCountBefore)
     }
 
@@ -262,7 +262,7 @@ struct SessionActionsTests {
         let extra = 3
         for i in 0..<(WindowSession.closedTabStackLimit + extra) {
             let tab = session.openTab(container: .loose, title: "tab-\(i)")
-            SessionActions.closeTab(session, registry: registry, tabID: tab.id)
+            TabActions.closeTab(session, registry: registry, tabID: tab.id)
         }
         #expect(session.closedTabStack.count == WindowSession.closedTabStackLimit)
         #expect(session.closedTabStack.last?.tab.displayTitle == "tab-\(WindowSession.closedTabStackLimit + extra - 1)")

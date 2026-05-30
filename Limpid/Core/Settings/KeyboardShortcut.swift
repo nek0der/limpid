@@ -52,7 +52,7 @@ enum LimpidShortcutCategory: Int, CaseIterable, Identifiable {
 /// Every action the user can rebind. When adding a new case,
 /// update these locations:
 ///   1. `defaultShortcut`, `localizedTitle`, `category`, `ghosttyAction`
-///   2. `SessionActions.dispatchShortcutAction` (palette dispatch)
+///   2. `TabActions.dispatchShortcutAction` (palette dispatch)
 ///   3. `CommandPaletteCatalog.icon(for:)` + `isActionEnabled`
 ///   4. `LimpidApp.commands` block (menu bar Button)
 ///
@@ -146,7 +146,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// **no menu item** get a non-`nil` value: the menu bar's
     /// `keyboardShortcut` and libghostty's keybind table would
     /// otherwise both match the same keystroke and fire their
-    /// handlers in parallel (menu → `SessionActions.…`, libghostty
+    /// handlers in parallel (menu → `TabActions.…`, libghostty
     /// → `GhosttyActionRouter` callback), producing two splits per
     /// ⌘D / two tab closes per ⌘⌥W / etc. So `splitRight`,
     /// `splitDown`, `closeTab`, and `find` — all of which have menu
@@ -161,7 +161,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .decreaseFontSize: "decrease_font_size:1"
         case .resetFontSize: "reset_font_size"
         // Menu-owned + Limpid-only actions: the menu Button or a
-        // notification fires `SessionActions.…` directly.
+        // notification fires `TabActions.…` directly.
         case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
              .closeSurface, .closeTab, .toggleSidebar, .toggleTabLayout,
              .notificationHistory,

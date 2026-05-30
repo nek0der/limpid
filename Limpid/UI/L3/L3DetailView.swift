@@ -70,19 +70,19 @@ private struct L3EmptyState: View {
     /// truth per command.
     private var commands: [WelcomeCommand] {
         [
-            WelcomeCommand(title: "New Session", action: .newTab, isEnabled: true) {
-                SessionActions.newTab(session)
+            WelcomeCommand(title: "New Tab", action: .newTab, isEnabled: true) {
+                TabActions.newTab(session)
             },
             WelcomeCommand(
                 title: "Reopen Closed Tab",
                 action: .reopenClosedTab,
                 isEnabled: !session.closedTabStack.isEmpty
             ) {
-                SessionActions.reopenClosedTab(session)
+                TabActions.reopenClosedTab(session)
             },
             WelcomeCommand(title: "Command Palette", action: .commandPalette, isEnabled: true) {
                 guard let frecencyStore else { return }
-                SessionActions.openCommandPalette(
+                TabActions.openCommandPalette(
                     session, settings: settings, frecencyStore: frecencyStore
                 )
             },

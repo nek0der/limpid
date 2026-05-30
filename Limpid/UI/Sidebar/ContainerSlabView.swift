@@ -109,13 +109,13 @@ struct ContainerSlabView: View {
                                 onRename: { session.renameGroup(group.id, to: $0) },
                                 actions: ContainerRowActions(
                                     onDelete: {
-                                        // Empty groups (0 sessions) skip
+                                        // Empty groups (0 tabs) skip
                                         // the confirm modal — there's
                                         // nothing to lose, so the alert
                                         // would just be friction.
                                         if session.tabs(in: group.id).isEmpty {
                                             withAnimation(LimpidMotion.reorder) {
-                                                SessionActions.removeGroup(
+                                                TabActions.removeGroup(
                                                     session,
                                                     registry: registry,
                                                     groupID: group.id

@@ -68,7 +68,7 @@ struct WorktreeOperationAlerts: ViewModifier {
             ) { target in
                 Button("Close Project", role: .destructive) {
                     withAnimation(LimpidMotion.reorder) {
-                        SessionActions.removeProject(session, registry: registry, projectID: target.projectID)
+                        TabActions.removeProject(session, registry: registry, projectID: target.projectID)
                     }
                     removingProject = nil
                 }
@@ -86,13 +86,13 @@ struct WorktreeOperationAlerts: ViewModifier {
             ) { target in
                 Button("Close Group", role: .destructive) {
                     withAnimation(LimpidMotion.reorder) {
-                        SessionActions.removeGroup(session, registry: registry, groupID: target.groupID)
+                        TabActions.removeGroup(session, registry: registry, groupID: target.groupID)
                     }
                     removingGroup = nil
                 }
                 Button("Cancel", role: .cancel) { removingGroup = nil }
             } message: { _ in
-                Text("All sessions in this group will be closed.")
+                Text("All tabs in this group will be closed.")
             }
             .alert(
                 "Delete failed",
@@ -117,7 +117,7 @@ struct WorktreeOperationAlerts: ViewModifier {
         force: Bool
     ) async {
         do {
-            try await SessionActions.deleteGitWorktree(
+            try await TabActions.deleteGitWorktree(
                 session,
                 registry: registry,
                 projectID: target.projectID,

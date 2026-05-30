@@ -7,7 +7,7 @@
 // `WindowSession.paneSearchStates`). Needle edits flow through a
 // 300ms debounce (immediate for 3+ chars or empty) into the
 // libghostty binding action `search:<needle>`. Esc / the close
-// button route through `SessionActions.endSearch`, which both drops
+// button route through `TabActions.endSearch`, which both drops
 // the state entry and emits `end_search` to libghostty.
 
 import AppKit

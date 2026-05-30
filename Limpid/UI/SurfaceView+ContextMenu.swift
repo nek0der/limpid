@@ -1,6 +1,6 @@
 // SurfaceView+ContextMenu.swift
 // Limpid — right-click context menu for terminal panes; modelled on
-// Ghostty's macOS app and wired to libghostty actions + SessionActions
+// Ghostty's macOS app and wired to libghostty actions + TabActions
 // via the callbacks `PaneHostView` installs.
 
 import AppKit
