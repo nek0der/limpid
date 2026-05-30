@@ -30,6 +30,17 @@ struct CodexAgentStateRecord: Codable, Equatable {
     var pid: String?
     /// The most recent user prompt observed via UserPromptSubmit.
     var lastPrompt: String?
+    /// The session's opening user prompt, captured once and never
+    /// overwritten. Codex has no auto-generated conversation title, so
+    /// this is the tab-title source `CodexAgentStateTracker` reflects
+    /// into `Tab.title` (`lastPrompt` would drift off-topic each turn).
+    var firstPrompt: String?
+    /// ISO-8601 instant the `SessionStart` hook fired for this pane.
+    /// Captured once and held verbatim across every later event in the
+    /// session. Used by the title selector to pick which pane owns the
+    /// tab label when more than one Claude/Codex session is alive — the
+    /// most recent SessionStart wins.
+    var sessionStartedAt: String?
     /// ISO-8601 instant set by `preserveLiveSessionsOnTerminate` when
     /// Limpid quits while the codex process is still alive. The next
     /// bootstrap's `cleanupDeadSessionsOnLaunch` reads this to give

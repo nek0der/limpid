@@ -52,6 +52,8 @@ struct CodexAgentStateTrackerTests {
         paneID: UUID,
         state: String = "idle",
         pid: String?,
+        firstPrompt: String? = nil,
+        sessionStartedAt: String? = nil,
         killedByLimpidAt: String? = nil
     ) -> CodexAgentStateRecord {
         CodexAgentStateRecord(
@@ -65,6 +67,8 @@ struct CodexAgentStateTrackerTests {
             contextTokens: nil,
             pid: pid,
             lastPrompt: nil,
+            firstPrompt: firstPrompt,
+            sessionStartedAt: sessionStartedAt,
             killedByLimpidAt: killedByLimpidAt
         )
     }
@@ -169,6 +173,35 @@ struct CodexAgentStateTrackerTests {
 
                 #expect(s.state.record(forPaneID: id) == nil)
                 #expect(s.session.record(forPaneID: id) == nil)
+            }
+        }
+    }
+
+    // MARK: - Title selector (applyCodexTitle via bootstrap)
+
+    /// Bootstrap a tracker with a Codex state record and verify the
+    /// tab title ends up matching the record's `firstPrompt`. The
+    /// `applyCodexTitle` path is private; `bootstrap` is the public
+    /// seam that drives it via `applyAllRecordsToSession`. We rely on
+    /// `Tab.latestAgentSessionPaneID` tests to cover the cross-pane
+    /// ordering — here we just need a single happy-path check that the
+    /// disk → tab.title pipe is wired correctly.
+    @Test("bootstrap copies the codex pane's firstPrompt into tab.title")
+    func bootstrap_firstPrompt_setsTabTitle() throws {
+        try withTempDir { stateDir in
+            try withTempDir { sessionDir in
+                let s = makeTracker(stateDir: stateDir, sessionDir: sessionDir)
+                let fixture = WindowSessionFixture.withLooseTab()
+                try s.state.save(stateRecord(
+                    paneID: fixture.paneID,
+                    pid: String(getpid()),
+                    firstPrompt: "investigate ringer",
+                    sessionStartedAt: Self.iso.string(from: Date())
+                ))
+
+                s.tracker.bootstrap(into: fixture.session)
+
+                #expect(fixture.session.tabs.first?.title == "investigate ringer")
             }
         }
     }

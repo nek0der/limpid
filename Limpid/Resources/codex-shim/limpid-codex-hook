@@ -161,27 +161,54 @@ if [ -n "$new_state" ]; then
   state_tmp="$states_dir/.$pane_id.state.json.tmp.$$"
   prev_run_started=""
   prev_last_prompt=""
+  prev_first_prompt=""
+  prev_session_started=""
   if [ -f "$state_final" ]; then
     prev_run_started="$(sed -n 's/.*"runStartedAt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
     prev_last_prompt="$(sed -n 's/.*"lastPrompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
+    prev_first_prompt="$(sed -n 's/.*"firstPrompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
+    prev_session_started="$(sed -n 's/.*"sessionStartedAt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$state_final" 2>/dev/null | head -n1)"
   fi
   case "$hook_event" in
     UserPromptSubmit)
       run_started="$ts"
       raw_prompt="$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1)"
       last_prompt="$(sanitize "$raw_prompt")"
-      ;;
-    Stop|SessionStart)
-      run_started=""
-      if [ "$hook_event" = "Stop" ]; then
-        last_prompt="$prev_last_prompt"
+      # `firstPrompt` seeds the tab-title fallback: captured once at
+      # the session's first prompt and never overwritten, so the tab
+      # keeps naming itself after the conversation's opening line.
+      # Codex has no auto-title equivalent, so this is the only title
+      # source the Swift side gets. (`lastPrompt` drifts every turn.)
+      if [ -n "$prev_first_prompt" ]; then
+        first_prompt="$prev_first_prompt"
       else
-        last_prompt=""
+        first_prompt="$last_prompt"
       fi
+      session_started="$prev_session_started"
+      ;;
+    SessionStart)
+      run_started=""
+      last_prompt=""
+      first_prompt=""
+      # `sessionStartedAt` captures the moment this Codex session began
+      # and is held for every subsequent event. The Swift side uses it
+      # to pick which pane "owns" the tab title when more than one
+      # Claude/Codex session is alive: the most recent SessionStart
+      # wins, so an older session re-emitting a turn doesn't clobber a
+      # newer pane's label.
+      session_started="$ts"
+      ;;
+    Stop)
+      run_started=""
+      last_prompt="$prev_last_prompt"
+      first_prompt="$prev_first_prompt"
+      session_started="$prev_session_started"
       ;;
     *)
       run_started="$prev_run_started"
       last_prompt="$prev_last_prompt"
+      first_prompt="$prev_first_prompt"
+      session_started="$prev_session_started"
       ;;
   esac
   tokens_field=""
@@ -196,8 +223,16 @@ if [ -n "$new_state" ]; then
   if [ -n "$last_prompt" ]; then
     prompt_field=",\"lastPrompt\":\"$last_prompt\""
   fi
+  first_prompt_field=""
+  if [ -n "$first_prompt" ]; then
+    first_prompt_field=",\"firstPrompt\":\"$first_prompt\""
+  fi
+  session_started_field=""
+  if [ -n "$session_started" ]; then
+    session_started_field=",\"sessionStartedAt\":\"$session_started\""
+  fi
   {
-    printf '{"schemaVersion":1,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s}\n' \
+    printf '{"schemaVersion":1,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s}\n' \
       "$pane_id" \
       "$new_state" \
       "$detail_safe" \
@@ -206,7 +241,9 @@ if [ -n "$new_state" ]; then
       "$hook_event" \
       "$tokens_field" \
       "$pid_field" \
-      "$prompt_field"
+      "$prompt_field" \
+      "$first_prompt_field" \
+      "$session_started_field"
   } > "$state_tmp" 2>/dev/null && mv -f "$state_tmp" "$state_final" 2>/dev/null || rm -f "$state_tmp" 2>/dev/null
 fi
 
