@@ -132,6 +132,11 @@ enum GhosttyConfigBridge {
         // #3836 / #5144 / #8681 — the long-standing pitfall behind
         // "cursor-style doesn't change on existing shells".)
         lines.append("shell-integration-features = no-cursor")
+        // Limpid never loads custom shaders, so disable the draw timer
+        // that fires at 120 Hz (DRAW_INTERVAL = 8 ms) when the surface
+        // is focused. Without this, every focused surface burns ~120
+        // wakeups/s even at idle.
+        lines.append("custom-shader-animation = false")
 
         // MARK: Pattern A — single source of truth for keybinds
 
