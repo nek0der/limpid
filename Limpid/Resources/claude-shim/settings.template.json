@@ -11,7 +11,11 @@
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ],
     "PreToolUse": [
-      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] },
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "@@WORKTREE_PRETOOL_HOOK@@" }]
+      }
     ],
     "Notification": [
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }

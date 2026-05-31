@@ -148,6 +148,21 @@ struct Project: Codable, Equatable, Identifiable {
     /// the L2/L3 chrome subtitle when the project container is
     /// active.
     var mainBranchName: String?
+    /// Commands run inside each new worktree right after
+    /// `git worktree add` completes — both for sidebar-initiated
+    /// creates and for Claude-initiated ones (the PreToolUse hook
+    /// re-enters the same code path). Empty array = no bootstrap.
+    /// Items are `BootstrapItem` so a future field addition (retries,
+    /// per-step env, …) lands without breaking older `state.json`.
+    var bootstrap: [BootstrapItem]
+    /// Whether Claude's `git worktree add` invocations get routed
+    /// through this project's `worktreePlacement` + `bootstrap`. When
+    /// false the PreToolUse hook passes through and Claude creates the
+    /// worktree at its own default path. Defaults to `true` so a fresh
+    /// Limpid install hits the wedge ("worktrees follow one set of
+    /// rules") out of the box; users who want Claude's defaults
+    /// untouched can flip this off per-project.
+    var routeClaudeWorktrees: Bool
 
     init(
         id: UUID = UUID(),
@@ -158,7 +173,9 @@ struct Project: Codable, Equatable, Identifiable {
         isExpanded: Bool = true,
         lastActiveTabID: UUID? = nil,
         worktreePlacement: WorktreePlacement = .siblingPrefixed,
-        mainBranchName: String? = nil
+        mainBranchName: String? = nil,
+        bootstrap: [BootstrapItem] = [],
+        routeClaudeWorktrees: Bool = true
     ) {
         self.id = id
         self.name = name
@@ -169,6 +186,41 @@ struct Project: Codable, Equatable, Identifiable {
         self.lastActiveTabID = lastActiveTabID
         self.worktreePlacement = worktreePlacement
         self.mainBranchName = mainBranchName
+        self.bootstrap = bootstrap
+        self.routeClaudeWorktrees = routeClaudeWorktrees
+    }
+
+    /// Hand-rolled decoder so a `state.json` written before `bootstrap`
+    /// existed still loads cleanly. The other fields stay `decode` (not
+    /// `decodeIfPresent`) because they predate this change and are
+    /// always written — a missing one means the file is genuinely
+    /// corrupt and we want the loader to surface that.
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.rootURL = try c.decode(URL.self, forKey: .rootURL)
+        self.worktrees = try c.decode([Worktree].self, forKey: .worktrees)
+        self.paletteIndex = try c.decodeIfPresent(Int.self, forKey: .paletteIndex)
+        self.isExpanded = try c.decode(Bool.self, forKey: .isExpanded)
+        self.lastActiveTabID = try c.decodeIfPresent(UUID.self, forKey: .lastActiveTabID)
+        // Decode worktreePlacement with a fallback so a state.json
+        // written before placement existed (or with a future case we
+        // don't know about) still loads. Without `decodeIfPresent`
+        // here we'd be stricter than the synthesised decoder we
+        // replaced, and a very old state.json would lose every
+        // project on first launch with this build.
+        self.worktreePlacement = try c.decodeIfPresent(
+            WorktreePlacement.self, forKey: .worktreePlacement
+        ) ?? .siblingPrefixed
+        self.mainBranchName = try c.decodeIfPresent(String.self, forKey: .mainBranchName)
+        self.bootstrap = try c.decodeIfPresent([BootstrapItem].self, forKey: .bootstrap) ?? []
+        // Default `true` keeps the wedge active for existing state.json
+        // files that predate this field — same opinionation the
+        // initialiser uses.
+        self.routeClaudeWorktrees = try c.decodeIfPresent(
+            Bool.self, forKey: .routeClaudeWorktrees
+        ) ?? true
     }
 
     /// Resolve the final on-disk URL for a worktree with the given

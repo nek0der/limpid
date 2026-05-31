@@ -71,11 +71,19 @@ if [ ! -x "$hook" ]; then
   exec "$real_claude" "$@"
 fi
 
+# Worktree-routing hook is an optional companion: when present we wire
+# a second `PreToolUse` matcher so Claude's `git worktree add`
+# invocations land in the active Project's placement / bootstrap
+# rules. When absent we leave the placeholder unresolved — Claude
+# Code logs a "command not found" for that hook but the rest of the
+# session keeps working.
+wt_pretool_hook="$self_dir/limpid-pretool-worktree-hook"
+
 # Claude Code passes each `command` field to `sh -c` and any space in
 # the path turns into argv tokens — even JSON quoting / single-quote
 # wrapping inside the field gets stripped before exec. Our shim path
 # typically contains `Limpid Dev.app` or `Limpid.app`, so we side-
-# step the issue by exposing the hook under a no-space TMPDIR
+# step the issue by exposing the hooks under a no-space TMPDIR
 # symlink. Re-created on every invocation; cheap and idempotent.
 link_dir="${TMPDIR:-/tmp}/limpid-claude-shim"
 mkdir -p "$link_dir" 2>/dev/null
@@ -86,10 +94,18 @@ ln -sf "$hook" "$hook_link" 2>/dev/null
 # drop SessionStart records.
 [ -L "$hook_link" ] || hook_link="$hook"
 
+wt_pretool_hook_link="$link_dir/limpid-pretool-worktree-hook"
+if [ -x "$wt_pretool_hook" ]; then
+  ln -sf "$wt_pretool_hook" "$wt_pretool_hook_link" 2>/dev/null
+  [ -L "$wt_pretool_hook_link" ] || wt_pretool_hook_link="$wt_pretool_hook"
+else
+  wt_pretool_hook_link="$wt_pretool_hook"
+fi
+
 # Load hook definitions from the bundled JSON template and substitute
-# `@@HOOK@@` with the symlinked hook path. Keeping the JSON in its
-# own file means adding a new hook event is a plain JSON edit, not a
-# shell-escape job inside this script.
+# the placeholders with the symlinked hook paths. Keeping the JSON in
+# its own file means adding a new hook event is a plain JSON edit, not
+# a shell-escape job inside this script.
 template="$self_dir/settings.template.json"
 if [ ! -f "$template" ]; then
   # Same defensive fall-through as a missing hook script: better to
@@ -98,8 +114,11 @@ if [ ! -f "$template" ]; then
   exec "$real_claude" "$@"
 fi
 # `sed`'s replacement uses `|` as delimiter so the (path-typed) hook
-# argument doesn't need escaping.
-settings_json=$(sed "s|@@HOOK@@|$hook_link|g" "$template")
+# arguments don't need escaping.
+settings_json=$(sed \
+  -e "s|@@HOOK@@|$hook_link|g" \
+  -e "s|@@WORKTREE_PRETOOL_HOOK@@|$wt_pretool_hook_link|g" \
+  "$template")
 
 # Expose our own pid as `LIMPID_CLAUDE_PID` so the hook can stamp the
 # state.json. Limpid uses this for the 30-second PID sweep that
