@@ -130,10 +130,7 @@ final class WorktreeEventTracker {
             return
         }
 
-        // Sort by filename so events within the same fs burst process
-        // in their ns-timestamp order rather than directory-listing
-        // order.
-        let fresh = names.filter { !seen.contains($0) }.sorted()
+        let fresh = Self.freshEventFilenames(in: names, seen: seen)
         for name in fresh {
             seen.insert(name)
             let url = directory.appendingPathComponent(name)
@@ -154,6 +151,56 @@ final class WorktreeEventTracker {
             // re-firing on rescan. The hook will write a fresh
             // record next time anyway.
             try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    /// Select directory entries the watcher should consume. Pure
+    /// function so we can unit-test the `.tmp` exclusion without
+    /// touching the file system.
+    ///
+    /// We skip `.tmp` files because the hook writes JSON to
+    /// `<name>.tmp` and atomically renames to `<name>` — without the
+    /// suffix filter we race the rename, "parse" a half-flushed
+    /// tempfile, fail, then delete it before the hook can rename,
+    /// silently losing the event entirely. We sort the result so
+    /// events within one fs burst process in ns-timestamp filename
+    /// order rather than directory-listing order.
+    nonisolated static func freshEventFilenames(
+        in names: [String],
+        seen: Set<String>
+    ) -> [String] {
+        names
+            .filter { !seen.contains($0) }
+            .filter { !$0.hasSuffix(".tmp") }
+            .sorted()
+    }
+
+    /// Standard handler that maps a `WorktreeCreate` event to a
+    /// GitSync refetch on the owning project. We extract it so both
+    /// the Claude and Codex trackers can share the same body — and so
+    /// `LimpidApp.init` doesn't carry an extra ~20 lines of closure
+    /// per agent.
+    static func gitSyncRefetchHandler(
+        for session: WindowSession
+    ) -> (WorktreeEventRecord) -> Void {
+        { [weak session] record in
+            guard let session, let repoRoot = record.repoRoot else { return }
+            // Match by canonical path so symlinked checkouts still
+            // resolve to the right project. Strip any trailing slash
+            // on both sides — Swift's URL Codable likes to round-trip
+            // project roots as `file:///path/` (trailing `/`) while
+            // the hook hands us `/path` (no slash), and a naive `==`
+            // misses.
+            let canonical = URL(fileURLWithPath: repoRoot)
+                .standardizedFileURL.path.trimmedTrailingSlash
+            let target = session.projects.first {
+                $0.rootURL.standardizedFileURL.path.trimmedTrailingSlash == canonical
+            }
+            guard let target else { return }
+            NotificationCenter.default.post(
+                name: .limpidGitSyncRequested,
+                object: target.id
+            )
         }
     }
 }

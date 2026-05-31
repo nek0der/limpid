@@ -3756,6 +3756,23 @@
         }
       }
     },
+    "Codex CLI": {
+      "comment": "Toggle row label inside the Apply-to-agents section. Brand name, kept in English in both locales.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI"
+          }
+        }
+      }
+    },
     "When an agent listed here runs `git worktree add`, Limpid intercepts it and applies this project's placement and bootstrap. Off lets the agent use its own default location.": {
       "comment": "Footer under the Apply-to-agents section",
       "localizations": {

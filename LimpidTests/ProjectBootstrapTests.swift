@@ -184,4 +184,56 @@ struct ProjectBootstrapTests {
         let decoded = try JSONDecoder().decode(Project.self, from: data)
         #expect(decoded.routeClaudeWorktrees == false)
     }
+
+    // MARK: - routeCodexWorktrees forward-compat
+
+    @Test
+    func projectDecodes_legacyStateJsonWithoutRouteCodex_defaultsToTrue() throws {
+        // State.json predating the per-agent Codex toggle must still
+        // load — and default to `true` so the wedge stays active
+        // after upgrade, same opinionation as routeClaudeWorktrees.
+        let legacy = #"""
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "name": "Test",
+          "rootURL": "file:///tmp/test",
+          "worktrees": [],
+          "isExpanded": true,
+          "worktreePlacement": { "siblingPrefixed": {} }
+        }
+        """#
+        let project = try JSONDecoder().decode(
+            Project.self, from: Data(legacy.utf8)
+        )
+        #expect(project.routeCodexWorktrees)
+    }
+
+    @Test
+    func projectRoundtrips_routeCodexWorktrees() throws {
+        let project = Project(
+            name: "Test",
+            rootURL: URL(fileURLWithPath: "/tmp/test"),
+            routeCodexWorktrees: false
+        )
+        let data = try JSONEncoder().encode(project)
+        let decoded = try JSONDecoder().decode(Project.self, from: data)
+        #expect(decoded.routeCodexWorktrees == false)
+    }
+
+    @Test
+    func projectToggles_areIndependent() throws {
+        // Two per-agent flags must round-trip independently — e.g. a
+        // user who trusts Claude with bootstrap but wants Codex on
+        // its defaults flips one without touching the other.
+        let project = Project(
+            name: "Test",
+            rootURL: URL(fileURLWithPath: "/tmp/test"),
+            routeClaudeWorktrees: false,
+            routeCodexWorktrees: true
+        )
+        let data = try JSONEncoder().encode(project)
+        let decoded = try JSONDecoder().decode(Project.self, from: data)
+        #expect(decoded.routeClaudeWorktrees == false)
+        #expect(decoded.routeCodexWorktrees == true)
+    }
 }

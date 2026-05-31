@@ -62,6 +62,16 @@ extension WindowSession {
         projects[pi].routeClaudeWorktrees = enabled
     }
 
+    /// Codex-side mirror of `setProjectRouteClaudeWorktrees`. Each
+    /// agent has its own toggle so a user can route one CLI but not
+    /// the other.
+    @MainActor
+    func setProjectRouteCodexWorktrees(_ projectID: UUID, to enabled: Bool) {
+        guard let pi = projects.firstIndex(where: { $0.id == projectID }) else { return }
+        guard projects[pi].routeCodexWorktrees != enabled else { return }
+        projects[pi].routeCodexWorktrees = enabled
+    }
+
     /// Append a freshly-created git worktree to a project's sidebar
     /// list. Caller is responsible for actually running `git worktree
     /// add` first — this only mutates Limpid's in-memory model.

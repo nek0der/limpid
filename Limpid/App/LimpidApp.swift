@@ -55,6 +55,10 @@ final class AppState {
     /// GitSync refetch on the owning project so L1 picks up the new
     /// row immediately, no app-focus polling needed.
     let worktreeEventTracker: WorktreeEventTracker
+    /// Codex parallel: own watcher on the Codex agent-states dir so
+    /// `limpid-codex-pretool-worktree-hook` notifications flow into
+    /// the same GitSync refetch pipeline.
+    let codexWorktreeEventTracker: WorktreeEventTracker
     /// Drives the bottom-of-window banner that asks "Move to
     /// worktree X?" whenever Claude `cd`s into a worktree the
     /// current tab doesn't own.
@@ -248,33 +252,25 @@ final class AppState {
         }
         self.cwdEventTracker = cwdEventTracker
 
-        // Worktree-events: the PreToolUse hook drops a JSON record
-        // after it re-routes a Claude `git worktree add`. Each event
-        // refreshes the owning project's GitSync so L1 reflects the
-        // new worktree without the app-focus polling delay.
+        // Worktree-events: the PreToolUse hooks drop a JSON record
+        // after they re-route an agent's `git worktree add`. One
+        // tracker per agent-states dir; both share the same handler
+        // (defined on `WorktreeEventTracker` so this init stays under
+        // the file-length cap).
+        let worktreeEventHandler = WorktreeEventTracker.gitSyncRefetchHandler(for: session)
         let worktreeEventTracker = WorktreeEventTracker(
             agentStatesDirectory: LimpidPaths.applicationSupportDirectory()
                 .appendingPathComponent("agent-states", isDirectory: true)
         )
-        worktreeEventTracker.bootstrap { [weak session] record in
-            guard let session, let repoRoot = record.repoRoot else { return }
-            // Match by canonical path so symlinked checkouts still
-            // resolve to the right project. Strip any trailing slash on
-            // both sides — Swift's URL Codable likes to round-trip
-            // project roots as `file:///path/` (trailing `/`) while the
-            // hook hands us `/path` (no slash), and a naive `==` misses.
-            let canonical = URL(fileURLWithPath: repoRoot)
-                .standardizedFileURL.path.trimmedTrailingSlash
-            let target = session.projects.first {
-                $0.rootURL.standardizedFileURL.path.trimmedTrailingSlash == canonical
-            }
-            guard let target else { return }
-            NotificationCenter.default.post(
-                name: .limpidGitSyncRequested,
-                object: target.id
-            )
-        }
+        worktreeEventTracker.bootstrap(handler: worktreeEventHandler)
         self.worktreeEventTracker = worktreeEventTracker
+
+        let codexWorktreeEventTracker = WorktreeEventTracker(
+            agentStatesDirectory: LimpidPaths.applicationSupportDirectory()
+                .appendingPathComponent("codex-agent-states", isDirectory: true)
+        )
+        codexWorktreeEventTracker.bootstrap(handler: worktreeEventHandler)
+        self.codexWorktreeEventTracker = codexWorktreeEventTracker
 
         self.historyPresentation = NotificationHistoryPresentation()
         self.dragState = LimpidDragState()

@@ -163,6 +163,12 @@ struct Project: Codable, Equatable, Identifiable {
     /// rules") out of the box; users who want Claude's defaults
     /// untouched can flip this off per-project.
     var routeClaudeWorktrees: Bool
+    /// Same opt-out for Codex CLI's `git worktree add`. Symmetric with
+    /// `routeClaudeWorktrees` — each agent gets its own toggle so a
+    /// user can route one CLI but not the other (e.g. trust Claude
+    /// with the bootstrap chain while Codex still goes to its
+    /// default).
+    var routeCodexWorktrees: Bool
 
     init(
         id: UUID = UUID(),
@@ -175,7 +181,8 @@ struct Project: Codable, Equatable, Identifiable {
         worktreePlacement: WorktreePlacement = .siblingPrefixed,
         mainBranchName: String? = nil,
         bootstrap: [BootstrapItem] = [],
-        routeClaudeWorktrees: Bool = true
+        routeClaudeWorktrees: Bool = true,
+        routeCodexWorktrees: Bool = true
     ) {
         self.id = id
         self.name = name
@@ -188,6 +195,7 @@ struct Project: Codable, Equatable, Identifiable {
         self.mainBranchName = mainBranchName
         self.bootstrap = bootstrap
         self.routeClaudeWorktrees = routeClaudeWorktrees
+        self.routeCodexWorktrees = routeCodexWorktrees
     }
 
     /// Hand-rolled decoder so a `state.json` written before `bootstrap`
@@ -220,6 +228,9 @@ struct Project: Codable, Equatable, Identifiable {
         // initialiser uses.
         self.routeClaudeWorktrees = try c.decodeIfPresent(
             Bool.self, forKey: .routeClaudeWorktrees
+        ) ?? true
+        self.routeCodexWorktrees = try c.decodeIfPresent(
+            Bool.self, forKey: .routeCodexWorktrees
         ) ?? true
     }
 

@@ -46,9 +46,17 @@ final class CodexHomeRedirector {
     /// `refresh()` is a no-op.
     let hookScriptURL: URL?
 
+    /// Bundled `limpid-codex-pretool-worktree-hook` script path. `nil`
+    /// when missing from the bundle; in that case hooks.json ships
+    /// without the second PreToolUse handler and the lifecycle hook
+    /// alone still works.
+    let worktreeHookScriptURL: URL?
+
     /// Subset of hook events we subscribe to. Mirrors what
-    /// `limpid-codex-hook` knows how to handle.
-    static let subscribedEvents: [(label: String, jsonKey: String)] = [
+    /// `limpid-codex-hook` knows how to handle. `nonisolated` so the
+    /// pure `renderHooksJson` and `CodexTrustHash`-feeding helpers
+    /// can read it off the main actor.
+    nonisolated static let subscribedEvents: [(label: String, jsonKey: String)] = [
         (label: "session_start", jsonKey: "SessionStart"),
         (label: "user_prompt_submit", jsonKey: "UserPromptSubmit"),
         (label: "pre_tool_use", jsonKey: "PreToolUse"),
@@ -59,16 +67,24 @@ final class CodexHomeRedirector {
         (label: "stop", jsonKey: "Stop")
     ]
 
+    /// Codex evaluates the handler's `matcher` field as a regex
+    /// (Claude uses a flat string equal-match). `^Bash$` pins the
+    /// worktree intercept to the exact Bash tool the way Claude's
+    /// `settings.template.json` does with `"matcher": "Bash"`.
+    nonisolated static let worktreeMatcher = "^Bash$"
+
     init(
         userCodexHome: URL = URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent(".codex", isDirectory: true),
         shadowCodexHome: URL? = nil,
-        hookScriptURL: URL? = nil
+        hookScriptURL: URL? = nil,
+        worktreeHookScriptURL: URL? = nil
     ) {
         self.userCodexHome = userCodexHome
         self.shadowCodexHome = shadowCodexHome ?? LimpidPaths.applicationSupportDirectory()
             .appendingPathComponent("codex-home", isDirectory: true)
         self.hookScriptURL = hookScriptURL ?? CodexHomeRedirector.bundledHookScript()
+        self.worktreeHookScriptURL = worktreeHookScriptURL ?? CodexHomeRedirector.bundledWorktreeHookScript()
     }
 
     /// Where the hook receiver writes session records. Mirrors
@@ -321,10 +337,19 @@ final class CodexHomeRedirector {
     /// event. Output ends with a trailing newline so appending to
     /// the mirrored config doesn't glue our block onto the previous
     /// line.
+    ///
+    /// For `PreToolUse` we emit a second block keyed at
+    /// `groupIndex=1` covering the worktree intercept handler (see
+    /// `writeHooksJson` for the corresponding entry). The two blocks
+    /// must match the two groups inside hooks.json exactly — Codex
+    /// re-hashes the file on every change, and a missing trust entry
+    /// would silently disable our intercept under
+    /// `--dangerously-bypass-hook-trust`.
     private func buildTrustBlock(hookScriptURL: URL) -> String {
         let canonical = hookScriptURL.resolvingSymlinksInPath().path
         let hooksJsonCanonical = canonicalHooksJsonPath()
         let command = hookCommand(hookScriptCanonicalPath: canonical)
+        let worktreeCmd = worktreeCommand()
 
         var out = ""
         out += "# Limpid-managed Codex hook trust. Regenerated on every app launch.\n"
@@ -342,6 +367,25 @@ final class CodexHomeRedirector {
             out += "[hooks.state.\"\(escapeTomlKey(key))\"]\n"
             out += "enabled = true\n"
             out += "trusted_hash = \"\(hash)\"\n"
+
+            if ev.jsonKey == "PreToolUse", let worktreeCmd {
+                let worktreeHash = CodexTrustHash.compute(
+                    eventLabel: ev.label,
+                    command: worktreeCmd,
+                    timeoutSec: 600,
+                    isAsync: false,
+                    matcher: Self.worktreeMatcher
+                )
+                let worktreeKey = CodexTrustHash.trustKey(
+                    hooksJsonPath: hooksJsonCanonical,
+                    eventLabel: ev.label,
+                    groupIndex: 1,
+                    handlerIndex: 0
+                )
+                out += "[hooks.state.\"\(escapeTomlKey(worktreeKey))\"]\n"
+                out += "enabled = true\n"
+                out += "trusted_hash = \"\(worktreeHash)\"\n"
+            }
         }
         return out
     }
@@ -362,25 +406,61 @@ final class CodexHomeRedirector {
     private func writeHooksJson(hookScriptURL: URL) {
         let canonical = hookScriptURL.resolvingSymlinksInPath().path
         let command = hookCommand(hookScriptCanonicalPath: canonical)
+        let worktreeCmd = worktreeCommand()
 
-        // Build the JSON manually — we control every byte so the
-        // exact serialisation matches what `CodexTrustHash.compute`
-        // would re-hash if we re-derived the trust block from the
-        // file on disk. (We don't, but consistency is reassuring.)
-        var out = "{\"hooks\":{"
-        let parts: [String] = Self.subscribedEvents.map { ev in
-            let handler = "{\"type\":\"command\",\"command\":\(jsonString(command))}"
-            let group = "{\"hooks\":[\(handler)]}"
-            return "\(jsonString(ev.jsonKey)):[\(group)]"
-        }
-        out += parts.joined(separator: ",")
-        out += "}}"
+        let out = Self.renderHooksJson(
+            lifecycleCommand: command,
+            worktreeCommand: worktreeCmd
+        )
 
         let outURL = shadowCodexHome.appendingPathComponent("hooks.json")
         do {
             try SecureFileWrite.writeAtomic(Data(out.utf8), to: outURL)
         } catch {
             log.error("write shadow hooks.json: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Pure renderer for the shadow `hooks.json`. PreToolUse gets two
+    /// groups: group 0 is the lifecycle handler (same as every other
+    /// event), group 1 is the worktree intercept handler matched on
+    /// `^Bash$`. The Claude-side analogue is
+    /// `settings.template.json`'s two-entry PreToolUse array. Pure
+    /// (no I/O, no instance state) so tests can pin the exact byte
+    /// output — Codex re-hashes hooks.json on every change, and a
+    /// drifted byte means a broken trust match.
+    ///
+    /// We build the JSON manually rather than via `JSONSerialization`
+    /// because we control every byte: the exact serialisation must
+    /// match what `CodexTrustHash.compute` would re-hash if we
+    /// re-derived the trust block from the file on disk.
+    nonisolated static func renderHooksJson(
+        lifecycleCommand: String,
+        worktreeCommand: String?
+    ) -> String {
+        var out = "{\"hooks\":{"
+        let parts: [String] = subscribedEvents.map { ev in
+            let handler = "{\"type\":\"command\",\"command\":\(jsonString(lifecycleCommand))}"
+            var groups = "{\"hooks\":[\(handler)]}"
+            if ev.jsonKey == "PreToolUse", let worktreeCommand {
+                let worktreeHandler = "{\"type\":\"command\",\"command\":\(jsonString(worktreeCommand))}"
+                let worktreeGroup = "{\"matcher\":\(jsonString(worktreeMatcher)),\"hooks\":[\(worktreeHandler)]}"
+                groups += "," + worktreeGroup
+            }
+            return "\(jsonString(ev.jsonKey)):[\(groups)]"
+        }
+        out += parts.joined(separator: ",")
+        out += "}}"
+        return out
+    }
+
+    /// Canonicalised `/bin/sh '<path>'` invocation for the worktree
+    /// hook script — `nil` when the bundled script is missing. Used by
+    /// both `writeHooksJson` and `buildTrustBlock` so the byte-exact
+    /// command string is computed in exactly one place.
+    private func worktreeCommand() -> String? {
+        worktreeHookScriptURL.map {
+            hookCommand(hookScriptCanonicalPath: $0.resolvingSymlinksInPath().path)
         }
     }
 
@@ -409,7 +489,7 @@ final class CodexHomeRedirector {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    private func jsonString(_ s: String) -> String {
+    nonisolated static func jsonString(_ s: String) -> String {
         var out = "\""
         for char in s.unicodeScalars {
             switch char {
@@ -439,6 +519,18 @@ final class CodexHomeRedirector {
         let url = resources
             .appendingPathComponent("codex-shim", isDirectory: true)
             .appendingPathComponent("limpid-codex-hook")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Locate `Limpid.app/Contents/Resources/codex-shim/limpid-codex-pretool-worktree-hook`.
+    /// Returns `nil` if missing — in that case hooks.json is built
+    /// without the second PreToolUse handler and the lifecycle
+    /// integration alone keeps working.
+    static func bundledWorktreeHookScript() -> URL? {
+        guard let resources = Bundle.main.resourceURL else { return nil }
+        let url = resources
+            .appendingPathComponent("codex-shim", isDirectory: true)
+            .appendingPathComponent("limpid-codex-pretool-worktree-hook")
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 }
