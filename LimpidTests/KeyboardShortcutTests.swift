@@ -159,26 +159,33 @@ struct KeyboardShortcutTests {
         """)
     }
 
-    /// Menu-owned actions must NOT have a libghostty keybind emitted.
-    /// If they did, `eventHitsKeybind` would claim the event and the
-    /// resulting `action_cb` would silently drop (no Limpid handler).
-    /// Regression guard against the "NEW_TAB never fires when a
-    /// surface is focused" bug.
-    @Test("Menu-owned actions are absent from libghostty's keybind section")
-    func bridge_skipsMenuOwnedActions() throws {
+    /// Menu-owned actions must reach libghostty only as `=ignore`.
+    ///
+    /// Older versions skipped them entirely so `eventHitsKeybind`
+    /// wouldn't claim the event (which would have silently dropped the
+    /// `action_cb`). Now `SurfaceView.performKeyEquivalent` probes the
+    /// main menu first when `eventHitsKeybind` is true, so the menu
+    /// runs the live Button when enabled; we only need libghostty to
+    /// swallow the keystroke when the menu item is disabled, hence
+    /// `=ignore` instead of a real action. Regression guard against
+    /// the original "NEW_TAB never fires when a surface is focused"
+    /// bug and against the newer "disabled menu leaks the literal key
+    /// into the terminal" bug.
+    @Test("Menu-owned actions reach libghostty as =ignore, never as a real action")
+    func bridge_menuOwnedActionsResolveToIgnore() throws {
         let config = GhosttyConfigBridge.makeConfigString(
             settings: .default,
             resourcesDir: nil,
             appearance: .dark
         )
-        // newTab / nextTab / focus* live in the menu — no libghostty
-        // keybind for them. newWorktree is Limpid-only (no ghostty
-        // action at all) so it's also absent.
+        // newTab / nextTab / focus* live in the menu; newWorktree is
+        // Limpid-only (no ghostty action at all). All four must show
+        // up as `=ignore` — never bound to anything else.
         for action: LimpidShortcutAction in [.newTab, .nextTab, .focusPaneLeft, .newWorktree] {
             let trigger = try #require(action.defaultShortcut?.ghosttyTrigger)
             #expect(
-                !config.contains("keybind = \(trigger)="),
-                "menu-owned action \(action.rawValue) leaked into libghostty config"
+                config.contains("keybind = \(trigger)=ignore"),
+                "menu-owned action \(action.rawValue) missing its =ignore guard"
             )
         }
     }

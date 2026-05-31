@@ -175,18 +175,35 @@ enum GhosttyConfigBridge {
         // discussion #7780 and claude-code issues #1282 / #5757.)
         lines.append(#"keybind = shift+enter=text:\n"#)
 
-        // Emit a keybind only for actions whose `ghosttyAction` is
-        // non-nil — those are the ones libghostty can dispatch
-        // without Limpid silently dropping the result. Menu-owned
-        // actions are nil and flow through AppKit's menu instead.
-        for action in LimpidShortcutAction.allCases {
-            guard let ghosttyAction = action.ghosttyAction,
-                  let shortcut = settings.keyboard.shortcut(for: action)
-            else { continue }
-            lines.append("keybind = \(shortcut.ghosttyTrigger)=\(ghosttyAction)")
-        }
+        lines.append(contentsOf: actionKeybindLines(settings: settings))
 
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// One `keybind = …` line per `LimpidShortcutAction` that has a
+    /// configured trigger. Two flavours, in two passes:
+    ///
+    ///   1. **Ghostty-dispatched** (`ghosttyAction != nil`): emit the
+    ///      real action so libghostty fires it whenever the terminal
+    ///      has focus (font size, prompt jumps, …).
+    ///   2. **Menu-owned** (`ghosttyAction == nil`): emit `=ignore`.
+    ///      AppKit only fires a menu key equivalent while its item is
+    ///      enabled; a disabled item (e.g. "Next Action" while WAITING
+    ///      is empty, "Rename Tab" with no active tab) lets the
+    ///      keystroke fall through to the focused terminal, where
+    ///      libghostty would type the literal character ("j", "R", …).
+    ///      Pinning each menu-owned shortcut to `ignore` makes the
+    ///      disabled-menu path a silent no-op end-to-end. When the
+    ///      menu IS enabled AppKit consumes the event before libghostty
+    ///      sees it, so this never competes with the live menu action.
+    private static func actionKeybindLines(settings: LimpidSettings) -> [String] {
+        var out: [String] = []
+        for action in LimpidShortcutAction.allCases {
+            guard let shortcut = settings.keyboard.shortcut(for: action) else { continue }
+            let rhs = action.ghosttyAction ?? "ignore"
+            out.append("keybind = \(shortcut.ghosttyTrigger)=\(rhs)")
+        }
+        return out
     }
 
     /// Write the config string to a stable temp file and return its

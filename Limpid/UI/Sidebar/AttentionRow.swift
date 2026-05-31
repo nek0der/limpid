@@ -92,7 +92,7 @@ struct AttentionRow: View {
                 }
             }
             Text(tabTitle)
-                .font(.system(size: 13))
+                .font(.system(size: 12))
                 .foregroundStyle(Color.primary.opacity(0.7))
                 .lineLimit(1)
                 .truncationMode(.tail)

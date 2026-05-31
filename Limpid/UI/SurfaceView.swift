@@ -452,17 +452,24 @@ final class SurfaceView: NSView {
             return super.performKeyEquivalent(with: event)
         }
 
-        // libghostty keybind fast-path. Lets the binding fire before
-        // the menu bar / IME chain swallows it (notably JIS Kotoeri
-        // grabbing ⌘⇧- in `interpretKeyEvents`). We redispatch via
-        // `keyDown` rather than calling `ghostty_surface_key`
-        // directly — calling it from `performKeyEquivalent` looks
-        // like it works but the action callback never fires.
-        // Same pattern as Ghostty's macOS app.
+        // libghostty keybind fast-path. Beats the IME chain (notably
+        // JIS Kotoeri grabbing ⌘⇧- in `interpretKeyEvents`). We
+        // redispatch via `keyDown` because calling `ghostty_surface_key`
+        // straight from `performKeyEquivalent` never fires the action
+        // callback. Same shape as Ghostty's macOS app.
+        //
+        // When the event matches a binding we probe the main menu
+        // first so menu-owned shortcuts (⌘J, ⌘⇧R, …) respect their
+        // current enabled state — disabled items fall through to
+        // libghostty's `=ignore` and drop silently instead of leaking
+        // the literal character. Mirrors `Ghostty.MenuShortcutManager`.
         if event.type == .keyDown,
            let surface,
            Self.eventHitsKeybind(event: event, surface: surface)
         {
+            if NSApp.mainMenu?.performKeyEquivalent(with: event) == true {
+                return true
+            }
             self.keyDown(with: event)
             return true
         }
