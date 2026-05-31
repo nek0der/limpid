@@ -307,6 +307,58 @@ struct TriageRingTests {
         #expect(triage.isFinishedAggregateViewed(in: .loose, session: session) == false)
     }
 
+    // MARK: - Aggregate AgentState (drives L1 / L2 badge icon)
+
+    @Test func aggregateAgentState_runningOutranksViewedFinished() {
+        // The bug this fixes: a container shows the grey check (viewed
+        // `.finished`) even while a sibling pane is still `.running`.
+        // Once the user has glanced at the finished turn, the running
+        // sibling should be what the L1 / L2 badge advertises.
+        let session = WindowSession()
+        let triage = TriageState()
+        let done = paneWithBadge(session, .finished, at: 100)
+        _ = paneWithBadge(session, .running, at: 200)
+        triage.focusMoved(to: done, in: session)
+
+        #expect(triage.aggregateAgentState(in: .loose, session: session) == .running)
+    }
+
+    @Test func aggregateAgentState_runningStaysBelowUnviewedFinished() {
+        // Unviewed `.finished` still outranks `.running` — the user
+        // hasn't seen the check yet, so we keep the green dot.
+        let session = WindowSession()
+        let triage = TriageState()
+        _ = paneWithBadge(session, .finished, at: 100)
+        _ = paneWithBadge(session, .running, at: 200)
+
+        #expect(triage.aggregateAgentState(in: .loose, session: session) == .finished)
+    }
+
+    @Test func aggregateAgentState_onlyViewedFinished_stillShowsCheck() {
+        // No other state present — the grey check stays so the row
+        // doesn't go silent on "all viewed".
+        let session = WindowSession()
+        let triage = TriageState()
+        let done = paneWithBadge(session, .finished, at: 100)
+        triage.focusMoved(to: done, in: session)
+
+        #expect(triage.aggregateAgentState(in: .loose, session: session) == .finished)
+    }
+
+    @Test func aggregateAgentState_errorBeatsViewedFinishedAndRunning() {
+        // Severity still wins above the running/viewed-finished
+        // tiebreaker — an error must surface no matter what else sits
+        // in the container.
+        let session = WindowSession()
+        let triage = TriageState()
+        let done = paneWithBadge(session, .finished, at: 100)
+        _ = paneWithBadge(session, .running, at: 200)
+        _ = paneWithBadge(session, .error, at: 300)
+        triage.focusMoved(to: done, in: session)
+
+        #expect(triage.aggregateAgentState(in: .loose, session: session) == .error)
+    }
+
     @Test func aggregateViewed_dismissedFinishedExcluded() {
         let session = WindowSession()
         let triage = TriageState()
