@@ -94,6 +94,7 @@ struct ChromeL3Segment: View {
         HStack(spacing: 8) {
             if session.sidebarHidden {
                 ChromeContainerTitle()
+                    .frame(minWidth: 200, alignment: .leading)
             }
 
             ChromePaletteField()
