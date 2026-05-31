@@ -42,6 +42,12 @@ extension EnvironmentValues {
     /// Mirror of `claudeSessionTracker` for the Codex integration.
     @Entry var codexSessionTracker: CodexSessionTracker?
 
+    /// Tracks per-tab `CwdChanged` records written by the shim's hook.
+    /// `TabActions.closeTab` / `closeActivePane` call into it so a
+    /// closed pane's `seen`-map entry and on-disk record are dropped
+    /// immediately rather than waiting for the next scan sweep.
+    @Entry var cwdEventTracker: CwdEventTracker?
+
     /// Command palette frecency scoring store. `nil` in Previews /
     /// tests; LimpidApp installs the real instance at the scene root.
     @Entry var frecencyStore: FrecencyStore?

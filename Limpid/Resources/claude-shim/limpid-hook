@@ -1,16 +1,20 @@
 #!/bin/sh
 # Limpid claude hook receiver — invoked by Claude Code on every hook
 # event we subscribe to (SessionStart, UserPromptSubmit, PreToolUse,
-# Notification, PreCompact, Stop, StopFailure, SessionEnd). Keyed by
-# LIMPID_PANE_ID (= split-tree leaf UUID, one per pane).
+# Notification, PreCompact, Stop, StopFailure, SessionEnd, CwdChanged).
+# Keyed by LIMPID_PANE_ID (= split-tree leaf UUID, one per pane).
 #
-# Two persistence paths:
+# Three persistence paths:
 #   - $LIMPID_SESSIONS_DIR/<pane>.json — session id for `claude --resume`.
 #     Authoritative on SessionStart, dropped on user-initiated SessionEnd
 #     (reason ∈ clear/logout/exit/prompt_input_exit/quit).
 #   - $LIMPID_AGENT_STATES_DIR/<pane>.state.json — agent lifecycle state
 #     for the L1/L2 status icons. Rewritten on every hook event so
 #     `Tab.claudeAgentBadges[paneID]` mirrors the current lifecycle.
+#   - $LIMPID_CWD_EVENTS_DIR/<pane>.cwd.json — latest cwd transition
+#     captured from `CwdChanged`. Picked up by `CwdEventTracker` to
+#     drive worktree-move suggestions when Claude `cd`s into a
+#     worktree path the current tab doesn't own.
 #
 # Failure policy: ALWAYS exit 0. A broken hook must never block Claude
 # from running. We drop stderr to /dev/null in production so the hook
@@ -38,8 +42,10 @@ esac
 
 sessions_dir="${LIMPID_SESSIONS_DIR:-$HOME/Library/Application Support/Limpid/sessions}"
 states_dir="${LIMPID_AGENT_STATES_DIR:-$HOME/Library/Application Support/Limpid/agent-states}"
+cwd_events_dir="${LIMPID_CWD_EVENTS_DIR:-$HOME/Library/Application Support/Limpid/cwd-events}"
 mkdir -p "$sessions_dir" 2>/dev/null
 mkdir -p "$states_dir" 2>/dev/null
+mkdir -p "$cwd_events_dir" 2>/dev/null
 
 # Read a field from the JSON payload. `plutil` ships with every macOS,
 # so values containing quotes / newlines / backslashes survive intact
@@ -295,6 +301,33 @@ if [ -n "$new_state" ]; then
       "$first_prompt_field" \
       "$session_started_field"
   } > "$state_tmp" 2>/dev/null && mv -f "$state_tmp" "$state_final" 2>/dev/null || rm -f "$state_tmp" 2>/dev/null
+fi
+
+# ----- Cwd change event -----
+# `CwdChanged` fires whenever the agent's working directory changes,
+# typically a `cd` via the Bash tool. We persist {oldCwd, newCwd} so
+# `CwdEventTracker` can suggest moving to the owning worktree's tab
+# when the new path is inside a different worktree from the one the
+# pane is bound to. The docs spell the payload only as "directory
+# metadata", so we try a couple of likely field shapes (explicit
+# `old_cwd` / `new_cwd`, then the flat `cwd` everyone else uses) and
+# fall back to whatever is non-empty.
+if [ "$hook_event" = "CwdChanged" ]; then
+  cwd_new="$(extract new_cwd)"
+  [ -n "$cwd_new" ] || cwd_new="$(extract newCwd)"
+  [ -n "$cwd_new" ] || cwd_new="$cwd"
+  cwd_old="$(extract old_cwd)"
+  [ -n "$cwd_old" ] || cwd_old="$(extract oldCwd)"
+  [ -n "$cwd_old" ] || cwd_old="$(extract previous_cwd)"
+  new_safe="$(json_escape "$cwd_new")"
+  old_safe="$(json_escape "$cwd_old")"
+  cwd_final="$cwd_events_dir/$pane_id.cwd.json"
+  cwd_tmp="$cwd_events_dir/.$pane_id.cwd.json.tmp.$$"
+  {
+    printf '{"schemaVersion":1,"paneId":"%s","newCwd":"%s","oldCwd":"%s","updatedAt":"%s"}\n' \
+      "$pane_id" "$new_safe" "$old_safe" "$ts"
+  } > "$cwd_tmp" 2>/dev/null && mv -f "$cwd_tmp" "$cwd_final" 2>/dev/null || rm -f "$cwd_tmp" 2>/dev/null
+  exit 0
 fi
 
 # ----- Tab title (Claude's title / opening prompt -> OSC 2) -----

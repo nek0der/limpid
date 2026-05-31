@@ -39,6 +39,15 @@ enum ClaudeShimLocator {
             .appendingPathComponent("agent-states", isDirectory: true)
     }
 
+    /// Where the hook receiver writes per-pane `CwdChanged` events.
+    /// Mirrors `CwdEventStore.directory` so the receiver and the
+    /// Swift watcher meet on the same files. Same Dev/Release path
+    /// reasoning as `agentStatesDirectoryURL`.
+    static var cwdEventsDirectoryURL: URL {
+        LimpidPaths.applicationSupportDirectory()
+            .appendingPathComponent("cwd-events", isDirectory: true)
+    }
+
     /// Build the env-var dictionary that `PaneHostView` stages on a
     /// fresh `SurfaceView`. We always inject `LIMPID_PANE_ID` and the
     /// sessions dir (even when `paneID` is nil, the shim itself just
@@ -79,6 +88,7 @@ enum ClaudeShimLocator {
 
         env["LIMPID_SESSIONS_DIR"] = sessionsDirectoryURL.path
         env["LIMPID_AGENT_STATES_DIR"] = agentStatesDirectoryURL.path
+        env["LIMPID_CWD_EVENTS_DIR"] = cwdEventsDirectoryURL.path
         return env
     }
 }

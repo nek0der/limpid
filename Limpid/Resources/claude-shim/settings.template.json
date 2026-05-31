@@ -24,6 +24,9 @@
     ],
     "StopFailure": [
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
+    "CwdChanged": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ]
   }
 }
