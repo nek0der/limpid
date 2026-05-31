@@ -3637,6 +3637,91 @@
           }
         }
       }
+    },
+    "Add it to the project and open a tab.": {
+      "comment": "Subhead when the worktree is new to Limpid",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add it to the project and open a tab."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトに追加してタブを開きます。"
+          }
+        }
+      }
+    },
+    "Move": {
+      "comment": "Accept the worktree-move suggestion",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移動"
+          }
+        }
+      }
+    },
+    "Move to worktree “%@”?": {
+      "comment": "Worktree move suggestion banner headline",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move to worktree “%@”?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリー「%@」に移動しますか？"
+          }
+        }
+      }
+    },
+    "Open a new tab inside it.": {
+      "comment": "Subhead when the worktree is registered but has no tab",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open a new tab inside it."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいタブを開きます。"
+          }
+        }
+      }
+    },
+    "Switch to its open tab.": {
+      "comment": "Subhead when the worktree already has a tab",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to its open tab."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開いているタブに切り替えます。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

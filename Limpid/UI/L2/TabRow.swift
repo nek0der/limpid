@@ -316,6 +316,7 @@ struct TabsListView: View {
     @Environment(TriageState.self) private var triage
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.claudeSessionTracker) private var claudeSessionTracker
+    @Environment(\.cwdEventTracker) private var cwdEventTracker
     @Environment(\.codexSessionTracker) private var codexSessionTracker
     let container: ContainerID
 
@@ -348,7 +349,8 @@ struct TabsListView: View {
                                     source: .mouse,
                                     triage: triage,
                                     claudeSessionTracker: claudeSessionTracker,
-                                    codexSessionTracker: codexSessionTracker
+                                    codexSessionTracker: codexSessionTracker,
+                                    cwdEventTracker: cwdEventTracker
                                 )
                             },
                             onRename: { newName in

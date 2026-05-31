@@ -13,6 +13,7 @@ struct L2HorizontalTabBar: View {
     @Environment(WindowSession.self) private var session
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.claudeSessionTracker) private var claudeSessionTracker
+    @Environment(\.cwdEventTracker) private var cwdEventTracker
     @Environment(\.codexSessionTracker) private var codexSessionTracker
     let container: ContainerID
 
@@ -71,7 +72,8 @@ struct L2HorizontalTabBar: View {
                             tabID: tab.id,
                             source: .mouse,
                             claudeSessionTracker: claudeSessionTracker,
-                            codexSessionTracker: codexSessionTracker
+                            codexSessionTracker: codexSessionTracker,
+                            cwdEventTracker: cwdEventTracker
                         )
                     },
                     onRename: { newName in renameTab(tab.id, to: newName) },

@@ -23,6 +23,7 @@ struct ChromeL2Segment: View {
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.claudeSessionTracker) private var claudeSessionTracker
     @Environment(\.codexSessionTracker) private var codexSessionTracker
+    @Environment(\.cwdEventTracker) private var cwdEventTracker
 
     var body: some View {
         ChromeRow(position: .l2) {
@@ -54,7 +55,8 @@ struct ChromeL2Segment: View {
                                 session,
                                 registry: registry,
                                 claudeSessionTracker: claudeSessionTracker,
-                                codexSessionTracker: codexSessionTracker
+                                codexSessionTracker: codexSessionTracker,
+                                cwdEventTracker: cwdEventTracker
                             )
                         } label: {
                             Label("Close All Tabs", systemImage: "xmark")

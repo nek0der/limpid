@@ -46,6 +46,13 @@ final class AppState {
     /// Mirrors the on-disk Codex agent lifecycle records into
     /// `Tab.codexAgentBadges`.
     let codexAgentStateTracker: CodexAgentStateTracker
+    /// Watches the shim's `cwd-events` dir for fresh `CwdChanged`
+    /// records. Each fresh event lands on `worktreeMoveSuggester`.
+    let cwdEventTracker: CwdEventTracker
+    /// Drives the bottom-of-window banner that asks "Move to
+    /// worktree X?" whenever Claude `cd`s into a worktree the
+    /// current tab doesn't own.
+    let worktreeMoveSuggester: WorktreeMoveSuggester
     /// Builds and refreshes the shadow `CODEX_HOME` Limpid hands to
     /// every Codex pty. Owns the symlink farm + the Limpid-managed
     /// `hooks.json` / `config.toml` mirror.
@@ -222,6 +229,18 @@ final class AppState {
             triage: triage,
             notificationManager: notificationManager
         )
+        // Cwd-change → worktree-move suggestion pipeline. The tracker
+        // watches the shim's `cwd-events` dir; every fresh record
+        // hands off to the suggester which decides whether the new
+        // path warrants a banner (case A/B in `WorktreeMoveSuggester`).
+        let worktreeMoveSuggester = WorktreeMoveSuggester()
+        worktreeMoveSuggester.bind(session: session)
+        self.worktreeMoveSuggester = worktreeMoveSuggester
+        let cwdEventTracker = CwdEventTracker()
+        cwdEventTracker.bootstrap(into: session) { [weak worktreeMoveSuggester] record in
+            worktreeMoveSuggester?.handleEvent(record)
+        }
+        self.cwdEventTracker = cwdEventTracker
         self.historyPresentation = NotificationHistoryPresentation()
         self.dragState = LimpidDragState()
         self.toastCenter = ToastCenter()
@@ -570,11 +589,13 @@ struct LimpidApp: App {
                 .environment(state.historyPresentation)
                 .environment(state.dragState)
                 .environment(state.toastCenter)
+                .environment(state.worktreeMoveSuggester)
                 .environment(state.settingsStore)
                 .environment(state.reduceTransparencyResolver)
                 .environment(\.surfaceRegistry, state.registry)
                 .environment(\.claudeSessionTracker, state.claudeSessionTracker)
                 .environment(\.codexSessionTracker, state.codexSessionTracker)
+                .environment(\.cwdEventTracker, state.cwdEventTracker)
                 .environment(\.frecencyStore, state.frecencyStore)
                 .environment(\.notificationManager, state.notificationManager)
                 .environment(\.sparkleUpdater, updaterStack.updater)
@@ -649,7 +670,8 @@ struct LimpidApp: App {
                         state.session,
                         registry: state.registry,
                         claudeSessionTracker: state.claudeSessionTracker,
-                        codexSessionTracker: state.codexSessionTracker
+                        codexSessionTracker: state.codexSessionTracker,
+                        cwdEventTracker: state.cwdEventTracker
                     )
                 } label: {
                     Label("Close Pane", systemImage: "xmark")
@@ -662,7 +684,8 @@ struct LimpidApp: App {
                         state.session,
                         registry: state.registry,
                         claudeSessionTracker: state.claudeSessionTracker,
-                        codexSessionTracker: state.codexSessionTracker
+                        codexSessionTracker: state.codexSessionTracker,
+                        cwdEventTracker: state.cwdEventTracker
                     )
                 } label: {
                     Label("Close Tab", systemImage: "xmark.rectangle")
@@ -827,6 +850,9 @@ struct ContentView: View {
         .overlay(alignment: .bottom) {
             ToastHost()
         }
+        .overlay(alignment: .bottom) {
+            WorktreeMoveSuggestionHost()
+        }
         .overlay {
             if let paletteState = state.session.commandPaletteState,
                state.session.paletteFieldFrame.width > 0
@@ -868,7 +894,8 @@ struct ContentView: View {
                 registry: state.registry,
                 frecencyStore: state.frecencyStore,
                 claudeSessionTracker: state.claudeSessionTracker,
-                codexSessionTracker: state.codexSessionTracker
+                codexSessionTracker: state.codexSessionTracker,
+                cwdEventTracker: state.cwdEventTracker
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: .limpidToggleNotificationHistory)) { _ in

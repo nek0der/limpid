@@ -70,7 +70,8 @@ enum TabActions {
         confirm: Bool = true,
         triage: TriageState? = nil,
         claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil
+        codexSessionTracker: CodexSessionTracker? = nil,
+        cwdEventTracker: CwdEventTracker? = nil
     ) {
         guard let tab = session.tab(tabID) else { return }
         let leafIDs = tab.splitTree.allLeafIDs()
@@ -110,6 +111,7 @@ enum TabActions {
             // cleanup pass swept them.
             claudeSessionTracker?.didClosePane(leafID)
             codexSessionTracker?.didClosePane(leafID)
+            cwdEventTracker?.didClosePane(leafID)
             // Drop the triage bookkeeping for the closed pane so the
             // viewed / dismissed dictionaries don't accumulate dead
             // entries across long sessions. UUIDs aren't reused, so
@@ -183,7 +185,8 @@ enum TabActions {
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil
+        codexSessionTracker: CodexSessionTracker? = nil,
+        cwdEventTracker: CwdEventTracker? = nil
     ) {
         guard let id = session.activeTabID else { return }
         closeTab(
@@ -192,7 +195,8 @@ enum TabActions {
             tabID: id,
             source: source,
             claudeSessionTracker: claudeSessionTracker,
-            codexSessionTracker: codexSessionTracker
+            codexSessionTracker: codexSessionTracker,
+            cwdEventTracker: cwdEventTracker
         )
     }
 
@@ -205,7 +209,8 @@ enum TabActions {
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
         claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil
+        codexSessionTracker: CodexSessionTracker? = nil,
+        cwdEventTracker: CwdEventTracker? = nil
     ) {
         let tabs = session.tabs(in: session.activeContainerID)
         guard !tabs.isEmpty else { return }
@@ -218,7 +223,8 @@ enum TabActions {
                 tabID: tab.id,
                 confirm: false,
                 claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker
+                codexSessionTracker: codexSessionTracker,
+                cwdEventTracker: cwdEventTracker
             )
         }
     }
@@ -269,7 +275,8 @@ enum TabActions {
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil
+        codexSessionTracker: CodexSessionTracker? = nil,
+        cwdEventTracker: CwdEventTracker? = nil
     ) {
         guard let tab = session.activeTab else { return }
         guard let leafID = tab.splitTree.focusedLeafID
@@ -292,6 +299,7 @@ enum TabActions {
         registry.unregister(leafID)
         claudeSessionTracker?.didClosePane(leafID)
         codexSessionTracker?.didClosePane(leafID)
+        cwdEventTracker?.didClosePane(leafID)
         // If the tab is now empty, close it altogether.
         if let refreshed = session.activeTab, refreshed.splitTree.isEmpty {
             session.closeTab(refreshed.id)
@@ -480,7 +488,8 @@ enum TabActions {
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil
+        codexSessionTracker: CodexSessionTracker? = nil,
+        cwdEventTracker: CwdEventTracker? = nil
     ) {
         guard let tab = session.activeTab else { return }
         let leafCount = tab.splitTree.allLeafIDs().count
@@ -490,7 +499,8 @@ enum TabActions {
                 registry: registry,
                 source: source,
                 claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker
+                codexSessionTracker: codexSessionTracker,
+                cwdEventTracker: cwdEventTracker
             )
         } else {
             closeActivePane(
@@ -498,7 +508,8 @@ enum TabActions {
                 registry: registry,
                 source: source,
                 claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker
+                codexSessionTracker: codexSessionTracker,
+                cwdEventTracker: cwdEventTracker
             )
         }
     }
@@ -609,7 +620,8 @@ enum TabActions {
         registry: any SurfaceViewProviding,
         frecencyStore: FrecencyStore,
         claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil
+        codexSessionTracker: CodexSessionTracker? = nil,
+        cwdEventTracker: CwdEventTracker? = nil
     ) {
         closeCommandPalette(session)
         frecencyStore.record(action.frecencyKey)
@@ -621,7 +633,11 @@ enum TabActions {
                 session: session,
                 triage: triage,
                 registry: registry,
-                trackers: SessionTrackers(claude: claudeSessionTracker, codex: codexSessionTracker)
+                trackers: SessionTrackers(
+                    claude: claudeSessionTracker,
+                    codex: codexSessionTracker,
+                    cwdEvent: cwdEventTracker
+                )
             )
         case let .jumpToTab(tabID):
             if let tab = session.tab(tabID) {
@@ -653,12 +669,15 @@ enum TabActions {
         }
     }
 
-    /// Bundles the two optional CLI-session trackers so the dispatcher
-    /// chain stays under the parameter-count budget. Both are needed for
-    /// `--resume` plumbing but only the file dispatch reads them.
+    /// Bundles the optional CLI-session and cwd-event trackers so the
+    /// dispatcher chain stays under the parameter-count budget. The
+    /// session trackers feed `--resume` plumbing; the cwd-event one
+    /// keeps the worktree-move suggester's seen-map in sync with the
+    /// close path.
     struct SessionTrackers {
         let claude: ClaudeSessionTracker?
         let codex: CodexSessionTracker?
+        let cwdEvent: CwdEventTracker?
     }
 
     private static func dispatchShortcutAction(
@@ -674,8 +693,7 @@ enum TabActions {
                 action,
                 session: session,
                 registry: registry,
-                claudeSessionTracker: trackers.claude,
-                codexSessionTracker: trackers.codex
+                trackers: trackers
             )
         case .view:
             dispatchViewAction(action, session: session)
@@ -695,8 +713,7 @@ enum TabActions {
         _ action: LimpidShortcutAction,
         session: WindowSession,
         registry: any SurfaceViewProviding,
-        claudeSessionTracker: ClaudeSessionTracker?,
-        codexSessionTracker: CodexSessionTracker?
+        trackers: SessionTrackers
     ) {
         switch action {
         case .newTab: newTab(session)
@@ -708,15 +725,17 @@ enum TabActions {
             closeActivePaneOrTab(
                 session,
                 registry: registry,
-                claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker
+                claudeSessionTracker: trackers.claude,
+                codexSessionTracker: trackers.codex,
+                cwdEventTracker: trackers.cwdEvent
             )
         case .closeTab:
             closeActiveTab(
                 session,
                 registry: registry,
-                claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker
+                claudeSessionTracker: trackers.claude,
+                codexSessionTracker: trackers.codex,
+                cwdEventTracker: trackers.cwdEvent
             )
         default: break
         }
