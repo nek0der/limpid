@@ -1178,7 +1178,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "非表示のワークツリー (%lld)"
+            "value": "非表示のワークツリー(%lld)"
           }
         }
       }
@@ -1524,8 +1524,7 @@
         }
       }
     },
-    "WAITING": {
-    },
+    "WAITING": {},
     "Next Action": {
       "localizations": {
         "ja": {
@@ -3719,6 +3718,91 @@
           "stringUnit": {
             "state": "translated",
             "value": "開いているタブに切り替えます。"
+          }
+        }
+      }
+    },
+    "Apply to agents": {
+      "comment": "Project Settings section header listing per-agent toggles for routing their git worktree add through this project's rules",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply to agents"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対象エージェント"
+          }
+        }
+      }
+    },
+    "Claude Code CLI": {
+      "comment": "Toggle row label inside the Apply-to-agents section. Brand name, kept in English in both locales.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code CLI"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code CLI"
+          }
+        }
+      }
+    },
+    "When an agent listed here runs `git worktree add`, Limpid intercepts it and applies this project's placement and bootstrap. Off lets the agent use its own default location.": {
+      "comment": "Footer under the Apply-to-agents section",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When an agent listed here runs `git worktree add`, Limpid intercepts it and applies this project's placement and bootstrap. Off lets the agent use its own default location."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここに表示されたエージェントが `git worktree add` を実行すると、このプロジェクトの設定 (配置・初期化コマンド) が適用されます。オフのときは各エージェントのデフォルト位置に作成されます。"
+          }
+        }
+      }
+    },
+    "Bootstrap commands": {
+      "comment": "Project Settings section header for the per-project bootstrap script list",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bootstrap commands"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "初期化コマンド"
+          }
+        }
+      }
+    },
+    "One shell command per line. Each runs inside the new worktree after `git worktree add`. Empty = no bootstrap.": {
+      "comment": "Footer under the Bootstrap commands editor",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One shell command per line. Each runs inside the new worktree after `git worktree add`. Empty = no bootstrap."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいワークツリーが作成された直後に、その中で順番に実行されます (1 行 1 コマンド)。"
           }
         }
       }

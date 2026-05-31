@@ -49,6 +49,12 @@ final class AppState {
     /// Watches the shim's `cwd-events` dir for fresh `CwdChanged`
     /// records. Each fresh event lands on `worktreeMoveSuggester`.
     let cwdEventTracker: CwdEventTracker
+    /// Watches the shim's `worktree-events` dir for `WorktreeCreate`
+    /// records dropped by `limpid-pretool-worktree-hook` after it
+    /// re-routes a Claude `git worktree add`. Each event fires a
+    /// GitSync refetch on the owning project so L1 picks up the new
+    /// row immediately, no app-focus polling needed.
+    let worktreeEventTracker: WorktreeEventTracker
     /// Drives the bottom-of-window banner that asks "Move to
     /// worktree X?" whenever Claude `cd`s into a worktree the
     /// current tab doesn't own.
@@ -241,6 +247,35 @@ final class AppState {
             worktreeMoveSuggester?.handleEvent(record)
         }
         self.cwdEventTracker = cwdEventTracker
+
+        // Worktree-events: the PreToolUse hook drops a JSON record
+        // after it re-routes a Claude `git worktree add`. Each event
+        // refreshes the owning project's GitSync so L1 reflects the
+        // new worktree without the app-focus polling delay.
+        let worktreeEventTracker = WorktreeEventTracker(
+            agentStatesDirectory: LimpidPaths.applicationSupportDirectory()
+                .appendingPathComponent("agent-states", isDirectory: true)
+        )
+        worktreeEventTracker.bootstrap { [weak session] record in
+            guard let session, let repoRoot = record.repoRoot else { return }
+            // Match by canonical path so symlinked checkouts still
+            // resolve to the right project. Strip any trailing slash on
+            // both sides — Swift's URL Codable likes to round-trip
+            // project roots as `file:///path/` (trailing `/`) while the
+            // hook hands us `/path` (no slash), and a naive `==` misses.
+            let canonical = URL(fileURLWithPath: repoRoot)
+                .standardizedFileURL.path.trimmedTrailingSlash
+            let target = session.projects.first {
+                $0.rootURL.standardizedFileURL.path.trimmedTrailingSlash == canonical
+            }
+            guard let target else { return }
+            NotificationCenter.default.post(
+                name: .limpidGitSyncRequested,
+                object: target.id
+            )
+        }
+        self.worktreeEventTracker = worktreeEventTracker
+
         self.historyPresentation = NotificationHistoryPresentation()
         self.dragState = LimpidDragState()
         self.toastCenter = ToastCenter()

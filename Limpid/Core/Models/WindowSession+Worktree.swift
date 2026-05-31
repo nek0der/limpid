@@ -40,6 +40,28 @@ private func requestSyncRefetch(projectID: UUID) {
 // defined further down and call into the synchronous helpers below.
 
 extension WindowSession {
+    /// Replace the per-project bootstrap list. Wired from
+    /// `ContainerSettingsSheet`'s editor (and `state.json` hand-edits
+    /// pick up the new value on next decode).
+    @MainActor
+    func setProjectBootstrap(_ projectID: UUID, to items: [BootstrapItem]) {
+        guard let pi = projects.firstIndex(where: { $0.id == projectID }) else { return }
+        guard projects[pi].bootstrap != items else { return }
+        projects[pi].bootstrap = items
+    }
+
+    /// Flip the per-project "route Claude's `git worktree add`" toggle.
+    /// The hook script reads the saved value from `state.json`; flipping
+    /// to false makes future Claude `git worktree add` invocations
+    /// passthrough (Claude lands worktrees at its own default path
+    /// instead of our placement-derived one).
+    @MainActor
+    func setProjectRouteClaudeWorktrees(_ projectID: UUID, to enabled: Bool) {
+        guard let pi = projects.firstIndex(where: { $0.id == projectID }) else { return }
+        guard projects[pi].routeClaudeWorktrees != enabled else { return }
+        projects[pi].routeClaudeWorktrees = enabled
+    }
+
     /// Append a freshly-created git worktree to a project's sidebar
     /// list. Caller is responsible for actually running `git worktree
     /// add` first — this only mutates Limpid's in-memory model.
@@ -378,9 +400,103 @@ extension WindowSession {
             setActiveContainer(.worktree(projectID: projectID, worktreeID: wt.id))
             _ = self.openTab(container: .worktree(projectID: projectID, worktreeID: wt.id))
         }
+        // Kick off the project's bootstrap as a detached task so the
+        // Create sheet doesn't sit on a spinner while a slow
+        // `pnpm install` runs. The worktree row is already attached;
+        // tab opening (above) completes immediately so the user can
+        // start typing while bootstrap finishes in the background.
+        let bootstrapItems = project.bootstrap
+        Task.detached {
+            await Self.runBootstrap(bootstrapItems, in: path)
+        }
         // Ask GitSync to settle the new row's gitRef on its next pass.
         requestSyncRefetch(projectID: projectID)
         return wt
+    }
+
+    /// Run each bootstrap step sequentially inside the new worktree.
+    /// We hand the command to `sh -c` so users can write shell pipelines
+    /// (`pnpm install && pnpm db:reset`) without quoting acrobatics.
+    /// Steps that fail to launch or exit non-zero are logged and skipped;
+    /// the worktree itself stays attached either way.
+    ///
+    /// `nonisolated static` so the detached caller above doesn't have
+    /// to hop back to the MainActor to enter this method (the actual
+    /// `Process` work is off-actor anyway).
+    nonisolated static func runBootstrap(
+        _ items: [BootstrapItem], in worktreeURL: URL
+    ) async {
+        for item in items {
+            // Reject `cwd` values that try to escape the worktree.
+            // `appendingPathComponent` doesn't resolve `..` and
+            // `chdir(2)` would happily follow them, so a malicious
+            // (or careless) `cwd: "../../"` could land the step in
+            // the project root. Cheap belt-and-braces today; the
+            // shell hook applies the same guard.
+            if let cwd = item.cwd, isUnsafeRelativePath(cwd) {
+                log.warning("""
+                bootstrap step skipped — unsafe cwd '\(cwd, privacy: .public)' \
+                escapes the worktree
+                """)
+                continue
+            }
+            let stepURL: URL = item.cwd.map {
+                worktreeURL.appendingPathComponent($0)
+            } ?? worktreeURL
+            await runBootstrapStep(item, at: stepURL)
+        }
+    }
+
+    private nonisolated static func isUnsafeRelativePath(_ path: String) -> Bool {
+        path.isEmpty
+            || path.hasPrefix("/")
+            || path.hasPrefix("../")
+            || path.contains("/../")
+            || path.hasSuffix("/..")
+            || path == ".."
+    }
+
+    private nonisolated static func runBootstrapStep(
+        _ item: BootstrapItem, at directory: URL
+    ) async {
+        // NOTE: `item.timeout` is currently ignored — the schema reserves
+        // the field but v1 has no enforcement. A hung command keeps the
+        // Process alive until something else reaps it. Adding
+        // `Task.sleep(for:) + process.terminate()` here is the follow-up
+        // PR; the shell hook needs the same treatment in parallel.
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            // Single-shot guard against double-resume. `Process.run()`
+            // throwing should mean `terminationHandler` won't fire, but
+            // if a future Foundation revision tightens the contract
+            // ambiguously we don't want a crash here.
+            let resumed = ResumeFlag()
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", item.cmd]
+            process.currentDirectoryURL = directory
+            process.terminationHandler = { proc in
+                if proc.terminationStatus != 0 {
+                    log.warning("""
+                    bootstrap step exited \(proc.terminationStatus, privacy: .public): \
+                    \(item.cmd, privacy: .public)
+                    """)
+                }
+                if resumed.tryClaim() {
+                    cont.resume()
+                }
+            }
+            do {
+                try process.run()
+            } catch {
+                log.warning("""
+                bootstrap step failed to launch: \(item.cmd, privacy: .public) \
+                — \(error.localizedDescription, privacy: .public)
+                """)
+                if resumed.tryClaim() {
+                    cont.resume()
+                }
+            }
+        }
     }
 
     /// End-to-end "Delete Worktree" pipeline. Runs `git worktree
@@ -438,5 +554,22 @@ extension WindowSession {
         let ids = removeWorktree(projectID: projectID, worktreeID: worktreeID)
         requestSyncRefetch(projectID: projectID)
         return ids
+    }
+}
+
+/// One-shot latch shared between `Process.terminationHandler` and the
+/// `catch` block in `WindowSession.runBootstrapStep`. We can't capture
+/// a `var` into a `@Sendable` closure, so the flag lives behind a
+/// class reference + atomic claim. Used only for the bootstrap path.
+private final class ResumeFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    func tryClaim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !claimed else { return false }
+        claimed = true
+        return true
     }
 }
