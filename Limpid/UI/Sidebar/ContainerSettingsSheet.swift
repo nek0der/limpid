@@ -101,7 +101,9 @@ struct ContainerSettingsSheet: View {
                     worktreesSection
                     RoutedAgentsSection(
                         claudeEnabled: project?.routeClaudeWorktrees ?? true,
-                        onClaudeChange: applyRouteClaudeToggle
+                        codexEnabled: project?.routeCodexWorktrees ?? true,
+                        onClaudeChange: applyRouteClaudeToggle,
+                        onCodexChange: applyRouteCodexToggle
                     )
                     bootstrapSection
                     if !hiddenWorktrees.isEmpty {
@@ -291,23 +293,27 @@ struct ContainerSettingsSheet: View {
     // MARK: - Routed agents (Project only)
 
     /// Per-agent opt-out section for the PreToolUse hooks that
-    /// intercept agent-initiated `git worktree add` invocations.
-    /// Today this holds a single row (Claude Code CLI); when we add
-    /// Codex / others we drop in another `Toggle` row and the section
-    /// scales without further UI work.
+    /// intercept agent-initiated `git worktree add` invocations. One
+    /// `Toggle` per supported CLI — adding a new agent is a new row.
     ///
     /// Extracted to a nested `View` because the parent sheet's Form
     /// section list otherwise blows past Swift's IRGen capacity at
     /// `Onone` (`llvm::report_fatal_error` in `Explosion::setArgs`).
     private struct RoutedAgentsSection: View {
         let claudeEnabled: Bool
+        let codexEnabled: Bool
         let onClaudeChange: (Bool) -> Void
+        let onCodexChange: (Bool) -> Void
 
         var body: some View {
             Section {
                 Toggle(
                     "Claude Code CLI",
                     isOn: Binding(get: { claudeEnabled }, set: onClaudeChange)
+                )
+                Toggle(
+                    "Codex CLI",
+                    isOn: Binding(get: { codexEnabled }, set: onCodexChange)
                 )
             } header: {
                 Text("Apply to agents")
@@ -427,6 +433,11 @@ struct ContainerSettingsSheet: View {
     private func applyRouteClaudeToggle(_ enabled: Bool) {
         guard let projectID else { return }
         session.setProjectRouteClaudeWorktrees(projectID, to: enabled)
+    }
+
+    private func applyRouteCodexToggle(_ enabled: Bool) {
+        guard let projectID else { return }
+        session.setProjectRouteCodexWorktrees(projectID, to: enabled)
     }
 
     /// Belt-and-braces normaliser for `state.json` hand-edits or
