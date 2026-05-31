@@ -109,6 +109,18 @@ final class TriageState {
 
 @MainActor
 extension TriageState {
+    /// One pane's contribution to an L1 / L2 aggregate — the raw agent
+    /// state plus whether a `.finished` turn has already been viewed.
+    /// The viewed flag is what lets the aggregator demote a "check
+    /// already glanced at" below a sibling that's still running, so
+    /// `{running, viewed-finished}` shows `running` instead of the
+    /// stale grey check.
+    private struct PaneAgentState {
+        let state: AgentState
+        /// Only meaningful for `.finished` — every other state ignores it.
+        let isViewed: Bool
+    }
+
     /// Every observed agent state for a tab's panes (Claude + Codex
     /// merged), with any dismissed-finished turns filtered out so a
     /// finished pane the user has dismissed stops contributing to the
@@ -117,41 +129,65 @@ extension TriageState {
     /// on `WindowSession` read raw badges and are intentionally NOT
     /// filtered through here (a dismissed-finished pane is still a live
     /// session worth confirming before close).
-    private func allAgentStates(in tab: Tab) -> [AgentState] {
-        var states: [AgentState] = []
+    private func allAgentStates(in tab: Tab) -> [PaneAgentState] {
+        var states: [PaneAgentState] = []
         for paneID in tab.splitTree.allLeafIDs() {
             if let b = tab.claudeAgentBadges[paneID],
                !isFinishedAndDismissed(paneID: paneID, state: b.state, updatedAt: b.updatedAt)
             {
-                states.append(b.state)
+                let viewed = b.state == .finished
+                    && isViewed(paneID: paneID, badgeUpdatedAt: b.updatedAt)
+                states.append(PaneAgentState(state: b.state, isViewed: viewed))
             }
             if let b = tab.codexAgentBadges[paneID],
                !isFinishedAndDismissed(paneID: paneID, state: b.state, updatedAt: b.updatedAt)
             {
-                states.append(b.state)
+                let viewed = b.state == .finished
+                    && isViewed(paneID: paneID, badgeUpdatedAt: b.updatedAt)
+                states.append(PaneAgentState(state: b.state, isViewed: viewed))
             }
         }
         return states
     }
 
+    /// Two-stage reducer: viewed-finished contributions are kept only
+    /// as a fallback. If any other state is present (including
+    /// `running` / `compacting`), that wins so a sibling pane still
+    /// doing work outranks a check the user has already glanced at.
+    /// Without this, `.finished` (priority 3) silently dominates
+    /// `.running` (priority 2) even when the finished badge is
+    /// already greyed out.
+    private static func aggregateDemotingViewed(_ states: [PaneAgentState]) -> AgentState? {
+        let nonViewedFinished = states
+            .filter { !($0.state == .finished && $0.isViewed) }
+            .map(\.state)
+        if let primary = nonViewedFinished.aggregateAgentState() {
+            return primary
+        }
+        return states.contains(where: { $0.state == .finished && $0.isViewed })
+            ? .finished
+            : nil
+    }
+
     /// Aggregate state for a single tab — drives the L2 row badge.
     func aggregateAgentState(in tab: Tab) -> AgentState? {
-        allAgentStates(in: tab).aggregateAgentState()
+        Self.aggregateDemotingViewed(allAgentStates(in: tab))
     }
 
     /// Aggregate across every tab in the given container — L1 group /
     /// project / worktree row badge.
     func aggregateAgentState(in container: ContainerID, session: WindowSession) -> AgentState? {
-        session.tabs(in: container).flatMap { allAgentStates(in: $0) }.aggregateAgentState()
+        Self.aggregateDemotingViewed(session.tabs(in: container).flatMap { allAgentStates(in: $0) })
     }
 
     /// Aggregate across project-direct + every worktree inside the
     /// project. Used by Project headers in L1.
     func aggregateAgentStateInProject(_ projectID: UUID, session: WindowSession) -> AgentState? {
-        session.tabs
-            .filter { $0.container.projectID == projectID }
-            .flatMap { allAgentStates(in: $0) }
-            .aggregateAgentState()
+        Self.aggregateDemotingViewed(
+            session.tabs
+                .filter { $0.container.projectID == projectID }
+                .flatMap { allAgentStates(in: $0) }
+        )
     }
 
     /// Per-state pane counts for the L1 hover tooltip
@@ -160,8 +196,8 @@ extension TriageState {
     func agentStateBreakdown(in container: ContainerID, session: WindowSession) -> [AgentState: Int] {
         var out: [AgentState: Int] = [:]
         for tab in session.tabs(in: container) {
-            for state in allAgentStates(in: tab) {
-                out[state, default: 0] += 1
+            for entry in allAgentStates(in: tab) {
+                out[entry.state, default: 0] += 1
             }
         }
         return out
@@ -171,8 +207,8 @@ extension TriageState {
     func agentStateBreakdownInProject(_ projectID: UUID, session: WindowSession) -> [AgentState: Int] {
         var out: [AgentState: Int] = [:]
         for tab in session.tabs where tab.container.projectID == projectID {
-            for state in allAgentStates(in: tab) {
-                out[state, default: 0] += 1
+            for entry in allAgentStates(in: tab) {
+                out[entry.state, default: 0] += 1
             }
         }
         return out
