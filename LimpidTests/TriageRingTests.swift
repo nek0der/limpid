@@ -321,4 +321,73 @@ struct TriageRingTests {
 
         #expect(triage.isFinishedAggregateViewed(in: .loose, session: session))
     }
+
+    // MARK: - ⌘J cursor honours the includeViewed filter
+
+    @Test func jumpToAttention_includeViewedFalse_skipsViewedFinished() throws {
+        let session = WindowSession()
+        let triage = TriageState()
+        let registry = NoopSurfaceRegistry()
+        // Three finished panes; mark the middle one viewed and hide
+        // viewed-finished. The cursor must walk only the two visible
+        // unviewed panes, not stop on the hidden one.
+        let a = paneWithBadge(session, .finished, at: 100)
+        let b = paneWithBadge(session, .finished, at: 200)
+        let c = paneWithBadge(session, .finished, at: 300)
+        triage.focusMoved(to: b, in: session)
+        triage.includeViewed = false
+
+        // Park focus on `a` so the cursor has a known starting point.
+        let tabA = try #require(session.tabs.first { $0.splitTree.allLeafIDs().contains(a) })
+        session.setActiveTab(tabA.id)
+
+        triage.jumpToAttention(in: session, registry: registry, forward: true)
+        #expect(session.activeTab?.splitTree.focusedLeafID == c)
+
+        // Forward again wraps inside the visible subset back to `a` —
+        // the hidden `b` is skipped on the wrap as well.
+        triage.jumpToAttention(in: session, registry: registry, forward: true)
+        #expect(session.activeTab?.splitTree.focusedLeafID == a)
+    }
+
+    @Test func jumpToAttention_includeViewedTrue_walksEveryWaitingPane() throws {
+        let session = WindowSession()
+        let triage = TriageState()
+        let registry = NoopSurfaceRegistry()
+        let a = paneWithBadge(session, .finished, at: 100)
+        let b = paneWithBadge(session, .finished, at: 200)
+        let c = paneWithBadge(session, .finished, at: 300)
+        // `b` is viewed but the filter is on — viewed rows stay
+        // reachable so the cursor behaviour matches what the list shows.
+        triage.focusMoved(to: b, in: session)
+
+        let tabA = try #require(session.tabs.first { $0.splitTree.allLeafIDs().contains(a) })
+        session.setActiveTab(tabA.id)
+
+        // List order is unviewed-first within the finished tier (c, a, b).
+        triage.jumpToAttention(in: session, registry: registry, forward: true)
+        #expect(session.activeTab?.splitTree.focusedLeafID == c)
+        triage.jumpToAttention(in: session, registry: registry, forward: true)
+        #expect(session.activeTab?.splitTree.focusedLeafID == b)
+    }
+
+    @Test func jumpToAttention_filterHidesEveryRow_isNoOp() throws {
+        let session = WindowSession()
+        let triage = TriageState()
+        let registry = NoopSurfaceRegistry()
+        // Only one waiting pane and it's already viewed. With the filter
+        // off the visible list is empty → ⌘J has nowhere to go and must
+        // leave focus untouched rather than stepping into hidden rows.
+        let pane = paneWithBadge(session, .finished, at: 100)
+        triage.focusMoved(to: pane, in: session)
+        triage.includeViewed = false
+
+        let other = session.openTab(container: .loose)
+        let otherPane = try #require(other.splitTree.allLeafIDs().first)
+        session.setActiveTab(other.id)
+
+        triage.jumpToAttention(in: session, registry: registry, forward: true)
+        #expect(session.activeTabID == other.id)
+        #expect(session.activeTab?.splitTree.focusedLeafID == otherPane)
+    }
 }

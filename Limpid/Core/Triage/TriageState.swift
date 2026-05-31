@@ -343,9 +343,17 @@ extension TriageState {
         }
     }
 
-    /// Ordered targets for the L1 WAITING list — same order
-    /// the ⌘J / ⌘⇧J cursor walks (severity first, then oldest-waiting
-    /// within each tier). Empty when nothing is waiting.
+    /// `attentionTargets` after the `includeViewed` filter — the single
+    /// source of truth for the visible WAITING list and the ⌘J cursor,
+    /// so the cursor never lands on a row the user can't see. With the
+    /// filter on (default) this matches `attentionTargets`; with it off,
+    /// viewed-finished rows drop out (needsInput / error are never
+    /// filtered — they always demand a response).
+    private func visibleAttentionTargets(in session: WindowSession) -> [AttentionTarget] {
+        attentionTargets(in: session)
+            .filter { includeViewed || !($0.state == .finished && $0.isViewed) }
+    }
+
     /// Count of finished panes the `includeViewed` filter is currently
     /// hiding. Used by the L1 WAITING region to render a small
     /// "N hidden" hint when the filter is on and the visible list is
@@ -354,23 +362,23 @@ extension TriageState {
         guard !includeViewed else { return 0 }
         return attentionTargets(in: session)
             .count(where: { $0.state == .finished && $0.isViewed })
-
     }
 
+    /// Ordered entries for the L1 WAITING list — same order
+    /// the ⌘J / ⌘⇧J cursor walks (severity first, then oldest-waiting
+    /// within each tier). Empty when nothing is waiting.
     func attentionEntries(in session: WindowSession) -> [AttentionEntry] {
-        attentionTargets(in: session)
-            .filter { includeViewed || !($0.state == .finished && $0.isViewed) }
-            .map {
-                AttentionEntry(
-                    tabID: $0.tabID,
-                    paneID: $0.paneID,
-                    state: $0.state,
-                    updatedAt: $0.updatedAt,
-                    lastPrompt: $0.lastPrompt,
-                    detail: $0.detail,
-                    isViewed: $0.isViewed
-                )
-            }
+        visibleAttentionTargets(in: session).map {
+            AttentionEntry(
+                tabID: $0.tabID,
+                paneID: $0.paneID,
+                state: $0.state,
+                updatedAt: $0.updatedAt,
+                lastPrompt: $0.lastPrompt,
+                detail: $0.detail,
+                isViewed: $0.isViewed
+            )
+        }
     }
 
     /// ⌘J / ⌘⇧J — move focus to the next (`forward`) or previous pane
@@ -379,7 +387,10 @@ extension TriageState {
     /// (most urgent / longest-waiting first). Answer a pane, press ⌘J,
     /// land on the next one waiting on you. `running` / `idle` panes are
     /// skipped — we only stop where the user is the blocker, so this
-    /// never degrades into a plain tab cycler.
+    /// never degrades into a plain tab cycler. The cursor walks the same
+    /// visible list the L1 WAITING region renders, so toggling the
+    /// `includeViewed` filter off scopes ⌘J to the still-visible rows
+    /// instead of stopping on ones the user has chosen to hide.
     ///
     /// When the focused pane is itself a target we step to the adjacent
     /// entry (cyclic) so repeated presses sweep every waiting pane;
@@ -390,7 +401,7 @@ extension TriageState {
         registry: any SurfaceViewProviding,
         forward: Bool
     ) {
-        let ordered = attentionTargets(in: session)
+        let ordered = visibleAttentionTargets(in: session)
         guard !ordered.isEmpty else { return }
         let currentTab = session.activeTabID
         let currentPane = session.activeTab?.splitTree.focusedLeafID

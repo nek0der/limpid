@@ -26,18 +26,24 @@ struct NavigationCommands: Commands {
             }
             .limpidShortcut(.previousSection, in: state.settingsStore)
             Divider()
-            // Intentionally always enabled: a disabled menu item does
-            // not consume its key equivalent, so ⌘J would fall through
-            // to the focused terminal and type "J". We keep it enabled
-            // and let `jumpToAttention` no-op when nothing is waiting.
-            Button("Next Action", systemImage: "bell.badge") {
+            // Disable when the WAITING list is empty so the menu state
+            // matches reality (an enabled item that no-ops looks broken).
+            // `GhosttyConfigBridge` emits `keybind = <trigger>=ignore`
+            // for every menu-owned shortcut, so disabling here doesn't
+            // leak ⌘J / ⌘⇧J to the focused terminal as raw input —
+            // libghostty silently drops the keystroke when AppKit's
+            // menu didn't fire.
+            let hasWaiting = !state.triage.attentionEntries(in: state.session).isEmpty
+            Button("Next Action", systemImage: "arrow.right.to.line") {
                 state.triage.jumpToAttention(in: state.session, registry: state.registry, forward: true)
             }
             .limpidShortcut(.nextAttention, in: state.settingsStore)
-            Button("Previous Action", systemImage: "bell.badge") {
+            .disabled(!hasWaiting)
+            Button("Previous Action", systemImage: "arrow.left.to.line") {
                 state.triage.jumpToAttention(in: state.session, registry: state.registry, forward: false)
             }
             .limpidShortcut(.previousAttention, in: state.settingsStore)
+            .disabled(!hasWaiting)
         }
     }
 }

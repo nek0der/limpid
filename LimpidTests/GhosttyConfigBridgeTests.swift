@@ -154,4 +154,28 @@ struct GhosttyConfigBridgeTests {
         }
         #expect(userIdx.lowerBound < overridesIdx.lowerBound)
     }
+
+    // MARK: - Menu-owned shortcut guards
+
+    @Test("menu-owned shortcuts emit `=ignore` so a disabled menu item never leaks the keystroke to the terminal")
+    func makeConfig_menuOwnedShortcuts_emitIgnore() {
+        let config = generate(.default)
+        // `nextAttention` (⌘J) and `renameTab` (⌘⇧R) are menu-owned
+        // (ghosttyAction == nil) and have printable defaults — the two
+        // cases most likely to type "j" / "R" into the terminal when
+        // their menu item is disabled. Their defaults must round-trip
+        // to `ignore`.
+        #expect(config.contains("keybind = super+j=ignore"))
+        #expect(config.contains("keybind = super+shift+j=ignore"))
+        #expect(config.contains("keybind = super+shift+r=ignore"))
+    }
+
+    @Test("libghostty-dispatched actions still emit their real action, not ignore")
+    func makeConfig_ghosttyOwnedShortcuts_keepRealAction() {
+        let config = generate(.default)
+        // `nextPrompt` (⌘↓) has `ghosttyAction == "jump_to_prompt:1"`;
+        // the ignore loop must not shadow these.
+        #expect(config.contains("jump_to_prompt:1"))
+        #expect(!config.contains("keybind = super+down=ignore"))
+    }
 }
