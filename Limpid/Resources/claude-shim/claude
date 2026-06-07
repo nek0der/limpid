@@ -1,0 +1,140 @@
+#!/bin/sh
+# Limpid claude shim — intercepts `claude` invocations inside a Limpid
+# pty so SessionStart / SessionEnd hooks fire into Limpid via
+# `claude --settings <inline JSON>`. We never touch the user's
+# ~/.claude/settings.json; --settings is additively merged by Claude
+# Code, so existing user hooks / permissions stay intact.
+#
+# Bypass: set LIMPID_DISABLE_CLAUDE_RESUME=1 to exec the real claude
+# directly with no --settings override.
+#
+# Locate the real claude by excluding our own directory from PATH and
+# falling back to LIMPID_REAL_CLAUDE (test override) plus a few known
+# install paths.
+
+set -u
+
+self="$(command -v -- "$0" 2>/dev/null || printf '%s\n' "$0")"
+case "$self" in
+  /*) ;;
+  *) self="$PWD/$self" ;;
+esac
+self_dir="$(cd -- "$(dirname -- "$self")" && pwd -P)"
+
+# Rebuild PATH with our own dir filtered out so command -v finds the
+# real claude. POSIX-only — no awk dependency, just IFS splitting.
+filtered_path=""
+old_ifs="$IFS"
+IFS=":"
+for entry in $PATH; do
+  [ "$entry" = "$self_dir" ] && continue
+  if [ -z "$filtered_path" ]; then
+    filtered_path="$entry"
+  else
+    filtered_path="$filtered_path:$entry"
+  fi
+done
+IFS="$old_ifs"
+
+real_claude="${LIMPID_REAL_CLAUDE:-}"
+if [ -z "$real_claude" ]; then
+  real_claude=$(PATH="$filtered_path" command -v claude 2>/dev/null || true)
+fi
+# Common install locations (mise / asdf / homebrew / direct npm i -g)
+if [ -z "$real_claude" ]; then
+  for candidate in \
+    "$HOME/.claude/local/claude" \
+    "$HOME/.local/bin/claude" \
+    "/opt/homebrew/bin/claude" \
+    "/usr/local/bin/claude"
+  do
+    if [ -x "$candidate" ] && [ "$candidate" != "$self" ]; then
+      real_claude="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -z "$real_claude" ]; then
+  printf 'limpid: claude not found in PATH (searched without %s)\n' "$self_dir" >&2
+  exit 127
+fi
+
+if [ "${LIMPID_DISABLE_CLAUDE_RESUME:-0}" = "1" ]; then
+  exec "$real_claude" "$@"
+fi
+
+hook="$self_dir/limpid-hook"
+if [ ! -x "$hook" ]; then
+  # If the hook is missing for any reason just exec the real claude —
+  # never break the user's claude session because of shim breakage.
+  exec "$real_claude" "$@"
+fi
+
+# Worktree-routing hook is an optional companion: when present we wire
+# a second `PreToolUse` matcher so Claude's `git worktree add`
+# invocations land in the active Project's placement / bootstrap
+# rules. When absent we leave the placeholder unresolved — Claude
+# Code logs a "command not found" for that hook but the rest of the
+# session keeps working.
+wt_pretool_hook="$self_dir/limpid-pretool-worktree-hook"
+
+# Claude Code passes each `command` field to `sh -c` and any space in
+# the path turns into argv tokens — even JSON quoting / single-quote
+# wrapping inside the field gets stripped before exec. Our shim path
+# typically contains `Limpid Dev.app` or `Limpid.app`, so we side-
+# step the issue by exposing the hooks under a no-space TMPDIR
+# symlink. Re-created on every invocation; cheap and idempotent.
+link_dir="${TMPDIR:-/tmp}/limpid-claude-shim"
+mkdir -p "$link_dir" 2>/dev/null
+hook_link="$link_dir/limpid-hook"
+ln -sf "$hook" "$hook_link" 2>/dev/null
+# Fall back to the original path if symlink creation failed; better
+# to fire a busted hook (and log a stderr message) than to silently
+# drop SessionStart records.
+[ -L "$hook_link" ] || hook_link="$hook"
+
+wt_pretool_hook_link="$link_dir/limpid-pretool-worktree-hook"
+if [ -x "$wt_pretool_hook" ]; then
+  ln -sf "$wt_pretool_hook" "$wt_pretool_hook_link" 2>/dev/null
+  [ -L "$wt_pretool_hook_link" ] || wt_pretool_hook_link="$wt_pretool_hook"
+else
+  wt_pretool_hook_link="$wt_pretool_hook"
+fi
+
+# Load hook definitions from the bundled JSON template and substitute
+# the placeholders with the symlinked hook paths. Keeping the JSON in
+# its own file means adding a new hook event is a plain JSON edit, not
+# a shell-escape job inside this script.
+template="$self_dir/settings.template.json"
+if [ ! -f "$template" ]; then
+  # Same defensive fall-through as a missing hook script: better to
+  # launch a usable claude than to refuse to start because our
+  # bundled template went missing.
+  exec "$real_claude" "$@"
+fi
+# `sed`'s replacement uses `|` as delimiter so the (path-typed) hook
+# arguments don't need escaping.
+settings_json=$(sed \
+  -e "s|@@HOOK@@|$hook_link|g" \
+  -e "s|@@WORKTREE_PRETOOL_HOOK@@|$wt_pretool_hook_link|g" \
+  "$template")
+
+# Expose our own pid as `LIMPID_CLAUDE_PID` so the hook can stamp the
+# state.json. Limpid uses this for the 30-second PID sweep that
+# clears stale state when Claude crashes without firing Stop.
+# `$$` here is the shim shell's pid; after exec it becomes the real
+# claude process's pid, which is exactly what the hook is run under.
+export LIMPID_CLAUDE_PID="$$"
+
+# Claude Code writes its title + spinner to the terminal via OSC 2
+# ("✳ Claude Code" with an animating Braille glyph). The animation
+# constantly bounces tab widths and Limpid surfaces the OSC-derived
+# title in its sidebar, so we suppress it at source. The flag is
+# undocumented (only mentioned in issue threads) but stable on macOS
+# since v1.x — users can re-enable by exporting the variable as `0`
+# in their shell rc.
+: "${CLAUDE_CODE_DISABLE_TERMINAL_TITLE:=1}"
+export CLAUDE_CODE_DISABLE_TERMINAL_TITLE
+
+exec "$real_claude" --settings "$settings_json" "$@"

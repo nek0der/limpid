@@ -1,0 +1,58 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly.
+labels: ["bug", "needs-attention"]
+body:
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Pre-flight check
+      options:
+        - label: I searched existing issues and didn't find a duplicate.
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you see instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: limpid-version
+    attributes:
+      label: Limpid version
+      placeholder: e.g. v0.1.0 or commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: e.g. macOS 26 (Tahoe)
+    validations:
+      required: true
+
+  - type: input
+    id: xcode-version
+    attributes:
+      label: Xcode version (only if this is a build-from-source issue)
+      placeholder: e.g. Xcode 26.0 (Build 17A123)
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Optional. Drag-and-drop files or paste log output.

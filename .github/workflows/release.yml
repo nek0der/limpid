@@ -1,0 +1,277 @@
+name: Release
+
+# Tag-driven release pipeline. Push a v*.*.* tag and this workflow will:
+#   1. Build a Release archive on a macOS 26 runner
+#   2. Sign the .app with the Developer ID Application certificate
+#   3. Notarize the .app and staple the ticket
+#   4. Package into a signed + notarized + stapled dmg
+#   5. Sign the dmg for Sparkle with the EdDSA private key
+#   6. Publish the dmg to a GitHub Release
+#   7. Append a new <item> to gh-pages/appcast.xml so Sparkle clients
+#      pick the update up within SUScheduledCheckInterval (24 h).
+#
+# Required secrets (Settings → Secrets and variables → Actions):
+#   BUILD_CERTIFICATE_BASE64   Developer ID Application .p12, base64-encoded
+#   P12_PASSWORD               Password for the .p12
+#   KEYCHAIN_PASSWORD          Any string — used for the throwaway keychain
+#   APPLE_ID                   The Apple ID for notarization
+#   APPLE_TEAM_ID              10-char Apple Developer team id
+#   APPLE_APP_PASSWORD         App-specific password (issue a CI-scoped one)
+#   SPARKLE_PRIVATE_KEY        EdDSA private key (the 44-char base64 string)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, notarize, and publish
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    env:
+      SPARKLE_VERSION: 2.9.2
+
+    steps:
+      # Route user-controlled inputs through env vars so the value is
+      # quoted by the shell rather than spliced into the script body by
+      # the Actions runner. This is the standard mitigation for
+      # script-injection via workflow_dispatch / pull_request_target.
+      - name: Resolve version
+        id: ver
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$DISPATCH_TAG"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${TAG#v}"
+          printf 'tag=%s\n' "$TAG" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
+          printf 'Releasing %s (version %s)\n' "$TAG" "$VERSION"
+
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          # On tag push we already are on the tag (default ref).
+          # For manual smoke tests via workflow_dispatch the requested
+          # tag may not exist yet, so just stay on the triggering ref.
+
+      - name: Select latest Xcode
+        run: |
+          set -euo pipefail
+          XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Install tooling
+        run: brew install xcodegen zig@0.15 create-dmg
+
+      - name: Restore GhosttyKit.xcframework cache
+        id: cache-ghostty
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: vendor/ghostty/macos/GhosttyKit.xcframework
+          key: ghostty-${{ runner.os }}-${{ hashFiles('vendor/ghostty/build.zig.zon', 'vendor/ghostty/build.zig', 'scripts/build-ghostty.sh') }}-${{ hashFiles('.gitmodules') }}
+
+      - name: Build libghostty xcframework
+        if: steps.cache-ghostty.outputs.cache-hit != 'true'
+        run: |
+          # Ghostty's Xcode "Ghostty" target has a Copy Bundle Resources
+          # step that references zig-out/share/locale even when zig is
+          # invoked with -Di18n=false. Seed the directory so CpResource
+          # has something to copy from.
+          mkdir -p vendor/ghostty/zig-out/share/locale
+          ./scripts/build-ghostty.sh
+
+      # Save the xcframework explicitly so the cache lands even when a
+      # later step (cert import, notarize, …) fails. The default v4
+      # post-step skips save on prior failures.
+      - name: Save GhosttyKit.xcframework cache
+        if: always() && steps.cache-ghostty.outputs.cache-hit != 'true' && hashFiles('vendor/ghostty/macos/GhosttyKit.xcframework/**') != ''
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: vendor/ghostty/macos/GhosttyKit.xcframework
+          key: ${{ steps.cache-ghostty.outputs.cache-primary-key }}
+
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@63fff01cd422d4b7b855d40ca1e9d34d2de9427d # v3
+        with:
+          p12-file-base64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.P12_PASSWORD }}
+          keychain-password: ${{ secrets.KEYCHAIN_PASSWORD }}
+
+      - name: Store notarization credentials
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials limpid-notarize-ci \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD"
+
+      - name: Download Sparkle release (for sign_update)
+        run: |
+          curl -fsSL -o /tmp/sparkle.tar.xz \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          mkdir -p /tmp/sparkle
+          tar -xJf /tmp/sparkle.tar.xz -C /tmp/sparkle
+          /tmp/sparkle/bin/sign_update --version || true
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Archive Release
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Limpid.xcodeproj \
+            -scheme Limpid \
+            -configuration Release \
+            -derivedDataPath build \
+            -destination 'platform=macOS' \
+            MARKETING_VERSION='${{ steps.ver.outputs.version }}' \
+            CURRENT_PROJECT_VERSION='${{ steps.ver.outputs.version }}' \
+            archive \
+            -archivePath build/Limpid.xcarchive
+
+      # exportArchive is Sparkle's officially supported codesigning path:
+      # Xcode resigns every nested helper (Installer.xpc, Downloader.xpc,
+      # Autoupdate, Updater.app, …) bottom-up with the correct flags,
+      # including --preserve-metadata=entitlements for the XPCs. Hand-
+      # rolling codesign over Sparkle.framework strips those entitlements
+      # and breaks updates even when notarization passes.
+      - name: Export Developer ID-signed .app
+        id: app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -exportArchive \
+            -archivePath build/Limpid.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist scripts/ExportOptions.plist
+          APP_PATH=build/export/Limpid.app
+          ls "$APP_PATH" >/dev/null
+          echo "path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+      - name: Notarize and staple the app
+        run: |
+          ditto -c -k --keepParent "${{ steps.app.outputs.path }}" /tmp/Limpid.zip
+          xcrun notarytool submit /tmp/Limpid.zip \
+            --keychain-profile limpid-notarize-ci \
+            --wait
+          xcrun stapler staple "${{ steps.app.outputs.path }}"
+
+      - name: Package signed and notarized dmg
+        id: dmg
+        run: |
+          mkdir -p dist
+          DMG="dist/Limpid-${{ steps.ver.outputs.version }}.dmg"
+          create-dmg \
+            --volname "Limpid ${{ steps.ver.outputs.version }}" \
+            --window-size 540 380 \
+            --icon-size 128 \
+            --icon "Limpid.app" 140 190 \
+            --app-drop-link 400 190 \
+            --hide-extension "Limpid.app" \
+            --no-internet-enable \
+            --codesign "Developer ID Application" \
+            "$DMG" "${{ steps.app.outputs.path }}"
+          xcrun notarytool submit "$DMG" \
+            --keychain-profile limpid-notarize-ci \
+            --wait
+          xcrun stapler staple "$DMG"
+          echo "path=$DMG" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        id: gh_release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          files: ${{ steps.dmg.outputs.path }}
+
+      # Sparkle's official publishing recipe, as used by TimeMachineStatus,
+      # CodeEdit, boring.notch et al.: stage the current dmg in a *flat*
+      # working directory (generate_appcast never recurses — nested layouts
+      # raise "No usable archives found"), bake the tag into the URL prefix
+      # so each release points at its own GitHub Releases download path,
+      # then let generate_appcast emit a signed appcast.xml with release
+      # notes attached.
+      # https://sparkle-project.org/documentation/publishing/
+      - name: Generate and publish appcast.xml
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          REPO="${{ github.repository }}"
+          DMG="${{ steps.dmg.outputs.path }}"
+          DMG_BASENAME=$(basename "$DMG" .dmg)
+
+          INBOX="$RUNNER_TEMP/sparkle_inbox"
+          rm -rf "$INBOX"
+          mkdir -p "$INBOX"
+          cp "$DMG" "$INBOX/"
+
+          # GitHub Release body → matching .md so the appcast embeds notes.
+          gh release view "$TAG" --json body --jq .body \
+            > "$INBOX/${DMG_BASENAME}.md"
+
+          # Generate the signed appcast. The URL prefix bakes in the tag so
+          # the enclosure URL resolves to the GitHub Releases download path.
+          # --maximum-deltas 0 keeps the run hermetic (delta generation
+          # would require prior dmgs in this same flat directory, which
+          # we don't have here).
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | /tmp/sparkle/bin/generate_appcast \
+            --ed-key-file - \
+            --download-url-prefix "https://github.com/$REPO/releases/download/$TAG/" \
+            --link "https://github.com/$REPO" \
+            --maximum-deltas 0 \
+            "$INBOX"
+
+          # Replace the appcast.xml on the gh-pages branch and publish
+          # the matching release-notes .md alongside it. Sparkle clients
+          # follow `sparkle:releaseNotesLink` in the appcast to fetch the
+          # notes — without the .md the link 404s and the update sheet
+          # shows an empty body. Each release ships its own one-item
+          # appcast; Sparkle clients only need the newest entry to
+          # decide whether to update.
+          git worktree add /tmp/pages gh-pages
+          cp "$INBOX/appcast.xml" /tmp/pages/appcast.xml
+          cp "$INBOX/${DMG_BASENAME}.md" "/tmp/pages/${DMG_BASENAME}.md"
+          cd /tmp/pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add appcast.xml "${DMG_BASENAME}.md"
+          if git diff --cached --quiet; then
+            echo "No appcast changes to commit."
+          else
+            git commit -m "chore(release): publish ${TAG} to appcast"
+            git push origin gh-pages
+          fi

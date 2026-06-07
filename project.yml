@@ -1,0 +1,234 @@
+name: Limpid
+options:
+  bundleIdPrefix: dev.limpid
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+  # Default UI language. `Localizable.xcstrings` holds en (source) +
+  # ja translations; system locale falls back to en when not ja.
+  developmentLanguage: en
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.9.2
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY: YES
+    # String Catalog auto-extraction + type-safe symbol generation
+    # (Xcode 26). Every Text("…") literal lands in the catalog at
+    # build time; access via the generated `String.Localizable.…`
+    # symbols (or directly by the source string).
+    SWIFT_EMIT_LOC_STRINGS: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    STRING_CATALOG_GENERATE_SYMBOLS: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    # Default version stamps for local dev builds. CI overrides both
+    # at archive time via xcodebuild MARKETING_VERSION=... and
+    # CURRENT_PROJECT_VERSION=... so the released app reports the
+    # actual tag (release-please bumps these in lockstep with tags).
+    MARKETING_VERSION: "0.1.0" # x-release-please-version
+    CURRENT_PROJECT_VERSION: "0.1.0" # x-release-please-version
+    # Debug uses ad-hoc signing for fast local iteration.
+    # Release is signed with the Developer ID Application certificate
+    # so the distributable .app can be notarized.
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: YES
+    GENERATE_INFOPLIST_FILE: YES
+    OTHER_LDFLAGS:
+      - -framework Carbon
+      - -framework Metal
+      - -framework MetalKit
+      - -framework QuartzCore
+      - -framework CoreGraphics
+      - -framework Foundation
+      - -framework IOKit
+      - -framework CoreText
+      - -lz
+      - -lc++
+  configs:
+    Release:
+      CODE_SIGN_IDENTITY: "Developer ID Application"
+      DEVELOPMENT_TEAM: 44V4P6L9PM
+      OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime"
+      # Xcode injects com.apple.security.get-task-allow into entitlements
+      # by default, which fails Apple notarization. Disable injection so
+      # the Release executable is not flagged as debuggable.
+      CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+
+targets:
+  Limpid:
+    type: application
+    platform: macOS
+    sources:
+      - path: Limpid
+        excludes:
+          - "Resources/ghostty"
+          - "Resources/claude-shim"
+          - "Resources/codex-shim"
+      # Bundle libghostty's shell-integration scripts + the themes
+      # we ship as Limpid's defaults (Apple System Colors Light/Dark).
+      # `type: folder` keeps the directory structure intact under
+      # `.app/Contents/Resources/ghostty/`, which is where
+      # `GhosttyApp.resolveResourcesDir()` looks first.
+      - path: Limpid/Resources/ghostty
+        type: folder
+      # Bundle the Claude Code shim + hook receiver. `type: folder`
+      # preserves the executable bit so the scripts stay runnable
+      # inside `.app/Contents/Resources/claude-shim/`. Limpid prepends
+      # this directory to `PATH` for every pty it spawns so `claude`
+      # invocations are intercepted.
+      - path: Limpid/Resources/claude-shim
+        type: folder
+      # Bundle the Codex CLI hook receiver. Unlike `claude-shim` we
+      # don't intercept the codex binary via PATH — we manage a shadow
+      # `CODEX_HOME` per `CodexHomeRedirector` and point Codex's own
+      # `hooks.json` discovery at the bundled receiver script.
+      - path: Limpid/Resources/codex-shim
+        type: folder
+      # Ship the license + third-party attribution inside the app bundle so
+      # the MIT / GPL notices travel with the distributed .app, satisfying the
+      # "include the copyright notice in all copies" requirement — not just
+      # in the source repo.
+      - path: THIRD-PARTY-NOTICES
+        buildPhase: resources
+      - path: LICENSE
+        buildPhase: resources
+    # Explicit Info.plist (not the GENERATE_INFOPLIST_FILE auto-version)
+    # because Sparkle's `SU*` keys aren't on Xcode's INFOPLIST_KEY_*
+    # allow-list. XcodeGen fills in the standard CFBundle keys for us.
+    info:
+      path: Limpid/Resources/Info.plist
+      properties:
+        NSPrincipalClass: NSApplication
+        NSHighResolutionCapable: YES
+        # Resolves to "Limpid" in Release and "Limpid Dev" in Debug
+        # via the per-config PRODUCT_NAME override below.
+        CFBundleDisplayName: "$(PRODUCT_NAME)"
+        # Resolves to AppIcon (Release, turquoise) or AppIcon-Dev
+        # (Debug, purple) via ASSETCATALOG_COMPILER_APPICON_NAME so
+        # the two builds are also distinct on the Dock.
+        CFBundleIconName: "$(ASSETCATALOG_COMPILER_APPICON_NAME)"
+        # Surfaces under "About Limpid" / Finder / Spotlight / Sparkle's
+        # update dialog. Localize via InfoPlist.xcstrings for ja.
+        NSHumanReadableCopyright: "© 2026 nek0der. MIT License."
+        LSApplicationCategoryType: public.app-category.developer-tools
+        # `NO` for both: with sudden / automatic termination enabled
+        # macOS can `_exit` the process without firing the
+        # `applicationWillTerminate` notification. We rely on that
+        # notification to dump scrollback and persist state, so the
+        # flags must stay off. (Sparkle / Apple's defaults both
+        # suggest these, but they assume an app with no save-on-quit
+        # work — which Limpid clearly isn't.)
+        NSSupportsAutomaticTermination: NO
+        NSSupportsSuddenTermination: NO
+        # Reference the MARKETING_VERSION / CURRENT_PROJECT_VERSION
+        # build settings (set in the base settings, overridden by CI)
+        # so a single source of truth flows into the bundle.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSMinimumSystemVersion: "26.0"
+        # Usage descriptions for filesystem locations the embedded shell
+        # is likely to touch. macOS shows these strings in the consent
+        # prompt; keep them honest and short. Music / Photos are
+        # intentionally omitted — a terminal shouldn't be asking.
+        NSDocumentsFolderUsageDescription: "Limpid runs a shell that may access files under your Documents folder."
+        NSDownloadsFolderUsageDescription: "Limpid runs a shell that may access files under your Downloads folder."
+        NSDesktopFolderUsageDescription: "Limpid runs a shell that may access files on your Desktop."
+        NSRemovableVolumesUsageDescription: "Limpid runs a shell that may access removable volumes."
+        NSNetworkVolumesUsageDescription: "Limpid runs a shell that may access network volumes."
+        # Sparkle update settings (https://sparkle-project.org/documentation/)
+        # SUFeedURL points to the appcast hosted on GitHub Pages.
+        # SUPublicEDKey is the EdDSA public key paired with the private key
+        # held in Keychain (and backed up offline). Lose the private key
+        # and existing users can never auto-update again — never lose it.
+        SUFeedURL: "https://nek0der.github.io/limpid/appcast.xml"
+        SUPublicEDKey: "TaNB85h5yh8v6GIs4veFHhdkUYlL35jXJbl/NpjhxNs="
+        SUEnableAutomaticChecks: YES
+        SUScheduledCheckInterval: 86400
+        # Refuse to extract the downloaded update if the EdDSA signature
+        # doesn't verify. Without this the bytes are extracted first and
+        # only then checked, which widens the attack surface (path-traversal
+        # in a zip / dmg engine bug). Sparkle 2.7.3+.
+        SUVerifyUpdateBeforeExtraction: YES
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.Limpid
+        PRODUCT_NAME: Limpid
+        # Keep the Swift module name stable across configurations so
+        # `@testable import Limpid` keeps working even in Debug where
+        # the product name is "Limpid Dev". Without this, the module
+        # name auto-tracks PRODUCT_NAME → "Limpid_Dev" and the test
+        # target fails to link.
+        PRODUCT_MODULE_NAME: Limpid
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+        FRAMEWORK_SEARCH_PATHS:
+          - $(PROJECT_DIR)/vendor/ghostty/macos
+      configs:
+        # Debug builds get a distinct bundle id + display name so the
+        # daily-driver dmg (`dev.limpid.Limpid` / "Limpid") and the
+        # in-progress Xcode build can coexist on the same Mac. They
+        # also branch on this id at runtime to pick a separate
+        # Application Support directory ("Limpid Dev/") — see
+        # `LimpidPaths.applicationSupportDirectoryName`.
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.Limpid.dev
+          PRODUCT_NAME: "Limpid Dev"
+          ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon-Dev
+    dependencies:
+      - framework: vendor/ghostty/macos/GhosttyKit.xcframework
+        embed: false
+      - package: Sparkle
+
+  LimpidTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: LimpidTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.LimpidTests
+        PRODUCT_NAME: LimpidTests
+        BUNDLE_LOADER: $(TEST_HOST)
+        # Debug builds rename the product to "Limpid Dev.app" (see the
+        # Debug override on the Limpid target). The test host must
+        # match — without the per-config split the test bundle would
+        # try to link against `Limpid.app` and fail in Debug.
+      configs:
+        Debug:
+          TEST_HOST: $(BUILT_PRODUCTS_DIR)/Limpid Dev.app/Contents/MacOS/Limpid Dev
+        Release:
+          TEST_HOST: $(BUILT_PRODUCTS_DIR)/Limpid.app/Contents/MacOS/Limpid
+    dependencies:
+      - target: Limpid
+
+# Explicit scheme so `xcodebuild -scheme Limpid test` knows about the
+# LimpidTests target. Without this xcodegen's autogenerated scheme can
+# drop the test action on some xcodegen versions.
+schemes:
+  Limpid:
+    build:
+      targets:
+        Limpid: all
+        LimpidTests: [test]
+    test:
+      targets:
+        - LimpidTests
+    run:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

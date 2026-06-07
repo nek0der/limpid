@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Distribution method: Developer ID for direct download (no Mac App Store).
+         Xcode's exportArchive resigns every nested helper (Sparkle's
+         Installer.xpc / Downloader.xpc / Autoupdate / Updater.app) with
+         the correct flags, preserving XPC entitlements. This is Sparkle's
+         officially supported codesigning path. -->
+    <key>method</key>
+    <string>developer-id</string>
+    <key>signingStyle</key>
+    <string>manual</string>
+    <key>signingCertificate</key>
+    <string>Developer ID Application</string>
+    <key>teamID</key>
+    <string>44V4P6L9PM</string>
+    <!-- Versions are owned by the workflow (passed as MARKETING_VERSION /
+         CURRENT_PROJECT_VERSION on the archive line). Tell Xcode not to
+         auto-bump CFBundleVersion during export. -->
+    <key>manageAppVersionAndBuildNumber</key>
+    <false/>
+</dict>
+</plist>

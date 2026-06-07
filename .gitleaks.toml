@@ -1,0 +1,16 @@
+# gitleaks configuration for Limpid.
+# Extends the full default ruleset; the only carve-out is the Sparkle EdDSA
+# *public* key (SUPublicEDKey), which ships in the app bundle by design —
+# clients use it to verify update signatures, so it is not a secret. The
+# matching private key lives only in the SPARKLE_PRIVATE_KEY repo secret and is
+# never committed.
+title = "Limpid"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Sparkle EdDSA public key — published by design, not a secret"
+regexes = [
+  '''TaNB85h5yh8v6GIs4veFHhdkUYlL35jXJbl/NpjhxNs=''',
+]

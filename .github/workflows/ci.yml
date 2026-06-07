@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (macOS 26)
+    needs: [format, lint]
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+
+      - name: Select latest Xcode
+        run: |
+          set -euo pipefail
+          XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Install tooling
+        run: brew install xcodegen zig@0.15
+
+      - name: Restore GhosttyKit.xcframework cache
+        id: cache-ghostty
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: vendor/ghostty/macos/GhosttyKit.xcframework
+          key: ghostty-${{ runner.os }}-${{ hashFiles('vendor/ghostty/build.zig.zon', 'vendor/ghostty/build.zig', 'scripts/build-ghostty.sh') }}-${{ hashFiles('.gitmodules') }}
+
+      - name: Build libghostty xcframework
+        if: steps.cache-ghostty.outputs.cache-hit != 'true'
+        run: |
+          # Ghostty's Xcode "Ghostty" target has a Copy Bundle Resources
+          # step that references zig-out/share/locale even when zig is
+          # invoked with -Di18n=false. Seed the directory so CpResource
+          # has something to copy from.
+          mkdir -p vendor/ghostty/zig-out/share/locale
+          ./scripts/build-ghostty.sh
+
+      - name: Save GhosttyKit.xcframework cache
+        if: always() && steps.cache-ghostty.outputs.cache-hit != 'true' && hashFiles('vendor/ghostty/macos/GhosttyKit.xcframework/**') != ''
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: vendor/ghostty/macos/GhosttyKit.xcframework
+          key: ${{ steps.cache-ghostty.outputs.cache-primary-key }}
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Install xcbeautify
+        run: brew install xcbeautify
+
+      - name: Build and test with coverage
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Limpid.xcodeproj \
+            -scheme Limpid \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/Limpid.xcresult \
+            -enableCodeCoverage YES \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            test | xcbeautify --renderer github-actions
+
+      - name: Upload xcresult bundle
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Limpid.xcresult
+          path: build/Limpid.xcresult
+          retention-days: 14
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          {
+            echo "## Coverage report"
+            echo '```'
+            xcrun xccov view --report --only-targets build/Limpid.xcresult || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  format:
+    name: SwiftFormat
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install SwiftFormat
+        run: brew install swiftformat
+      - name: Run SwiftFormat (lint mode, gating)
+        run: swiftformat --lint .
+
+  lint:
+    name: SwiftLint
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install SwiftLint
+        run: brew install swiftlint
+      # We don't pass `--strict`: warnings stay as warnings (visible in
+      # the annotation pane) and only the `error:` thresholds in
+      # `.swiftlint.yml` actually fail the job. This matches the
+      # SwiftLint default and the majority of Swift OSS projects.
+      - name: Run SwiftLint
+        run: swiftlint --quiet

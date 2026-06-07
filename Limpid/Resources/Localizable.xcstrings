@@ -1,0 +1,4362 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ""
+          }
+        }
+      }
+    },
+    "\"Only when an agent is active\" prompts only when a tracked agent is live in the affected pane.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「エージェントが動作中のみ」は、追跡対象のエージェントが対象ペインで稼働している時のみ確認します。"
+          }
+        }
+      }
+    },
+    "%@ lines (custom)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 行(カスタム)"
+          }
+        }
+      }
+    },
+    "%@ — %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@ — %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — %2$@"
+          }
+        }
+      }
+    },
+    "%lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        }
+      }
+    },
+    "%lld hidden by filter": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件はフィルタで非表示"
+          }
+        }
+      }
+    },
+    "%lld unread": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未読 %lld 件"
+          }
+        }
+      }
+    },
+    "%lld/%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld/%2$lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld / %2$lld"
+          }
+        }
+      }
+    },
+    "-/%lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "-/%lld"
+          }
+        }
+      }
+    },
+    "0": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0"
+          }
+        }
+      }
+    },
+    "1,000 lines": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1,000 行"
+          }
+        }
+      }
+    },
+    "1,000,000 lines": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1,000,000 行"
+          }
+        }
+      }
+    },
+    "10,000 lines": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "10,000 行"
+          }
+        }
+      }
+    },
+    "100,000 lines": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "100,000 行"
+          }
+        }
+      }
+    },
+    "A folder already exists at %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ にはすでにフォルダがあります。"
+          }
+        }
+      }
+    },
+    "A folder already exists at this path. Pick a different branch name or location.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A folder already exists at this path. Pick a different branch name or location."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このパスにはすでにフォルダが存在します。ブランチ名または場所を変更してください。"
+          }
+        }
+      }
+    },
+    "Accent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクセント"
+          }
+        }
+      }
+    },
+    "Actions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクション"
+          }
+        }
+      }
+    },
+    "Active agents may lose unsaved work.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行中のエージェントが未保存の作業を失う可能性があります。"
+          }
+        }
+      }
+    },
+    "Adjacent Folder (%@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隣接フォルダ (%@)"
+          }
+        }
+      }
+    },
+    "Advanced": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細設定"
+          }
+        }
+      }
+    },
+    "All clear": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対応待ちなし"
+          }
+        }
+      }
+    },
+    "All tabs in this group will be closed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このグループ内のすべてのタブが閉じられます。"
+          }
+        }
+      }
+    },
+    "Allow": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可"
+          }
+        }
+      }
+    },
+    "Allow clipboard read?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリップボードの読み取りを許可しますか?"
+          }
+        }
+      }
+    },
+    "Allow clipboard write?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリップボードへの書き込みを許可しますか?"
+          }
+        }
+      }
+    },
+    "Already bound to %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ にすでに割り当て済み"
+          }
+        }
+      }
+    },
+    "Always": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "常に"
+          }
+        }
+      }
+    },
+    "An agent is active in this pane.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペインでエージェントが動作中です。"
+          }
+        }
+      }
+    },
+    "An agent is active in this tab.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このタブでエージェントが動作中です。"
+          }
+        }
+      }
+    },
+    "App content updates immediately. The macOS menu bar updates on next launch.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリ内の文言は即時更新されます。macOS のメニューバーは次回起動時に切り替わります。"
+          }
+        }
+      }
+    },
+    "Appearance": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外観"
+          }
+        }
+      }
+    },
+    "Applies to new terminals only.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規ターミナルから適用されます。"
+          }
+        }
+      }
+    },
+    "Apply to agents": {
+      "comment": "Project Settings section header listing per-agent toggles for routing their git worktree add through this project's rules",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply to agents"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対象エージェント"
+          }
+        }
+      }
+    },
+    "Audio": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サウンド"
+          }
+        }
+      }
+    },
+    "Automatically check for updates": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを自動的に確認"
+          }
+        }
+      }
+    },
+    "Base branch": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Base branch"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ベースブランチ"
+          }
+        }
+      }
+    },
+    "Bell": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ベル"
+          }
+        }
+      }
+    },
+    "Block": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブロック"
+          }
+        }
+      }
+    },
+    "Bootstrap commands": {
+      "comment": "Project Settings section header for the per-project bootstrap script list",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bootstrap commands"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "初期化コマンド"
+          }
+        }
+      }
+    },
+    "Blue": {
+      "comment": "Settings → Appearance accent swatch name; mirrors macOS System Settings → Appearance.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブルー"
+          }
+        }
+      }
+    },
+    "Branch": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Branch"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブランチ"
+          }
+        }
+      }
+    },
+    "Branch name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Branch name"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブランチ名"
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンセル"
+          }
+        }
+      }
+    },
+    "Change Color": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "色を変更"
+          }
+        }
+      }
+    },
+    "Check Now…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今すぐ確認…"
+          }
+        }
+      }
+    },
+    "Check for Updates…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを確認…"
+          }
+        }
+      }
+    },
+    "Checking for updates…": {
+      "comment": "Update popover: in-progress check",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking for updates…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを確認中…"
+          }
+        }
+      }
+    },
+    "Choose": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択"
+          }
+        }
+      }
+    },
+    "Choose a folder to open as a Project.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトとして開くフォルダを選んでください。"
+          }
+        }
+      }
+    },
+    "Choose…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択…"
+          }
+        }
+      }
+    },
+    "Claude Code CLI": {
+      "comment": "Toggle row label inside the Apply-to-agents section. Brand name, kept in English in both locales.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code CLI"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code CLI"
+          }
+        }
+      }
+    },
+    "Claude finished": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude finished"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude が応答完了"
+          }
+        }
+      }
+    },
+    "Claude needs input": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude needs input"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude が入力待ち"
+          }
+        }
+      }
+    },
+    "Clear": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリア"
+          }
+        }
+      }
+    },
+    "Clear All": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて削除"
+          }
+        }
+      }
+    },
+    "Click a shortcut to rebind it. Press ⎋ to cancel, ⌫ to clear back to default. ⌘1–⌘9 and ⌘⌃1–⌘⌃9 are reserved for tab and section jumps.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ショートカットをクリックして再割り当て。⎋ でキャンセル、⌫ でデフォルトに戻す。⌘1–⌘9 と ⌘⌃1–⌘⌃9 はタブ/セクション切替に予約されています。"
+          }
+        }
+      }
+    },
+    "Close": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じる"
+          }
+        }
+      }
+    },
+    "Close (Esc)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じる (Esc)"
+          }
+        }
+      }
+    },
+    "Close All Tabs": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのタブを閉じる"
+          }
+        }
+      }
+    },
+    "Close Group": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グループを閉じる"
+          }
+        }
+      }
+    },
+    "Close Pane": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close Pane"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを閉じる"
+          }
+        }
+      }
+    },
+    "Close Project": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトを閉じる"
+          }
+        }
+      }
+    },
+    "Close Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを閉じる"
+          }
+        }
+      }
+    },
+    "Close Tab (Keyboard)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを閉じる（キーボード）"
+          }
+        }
+      }
+    },
+    "Close Tab (X Button)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを閉じる（× ボタン）"
+          }
+        }
+      }
+    },
+    "Close all tabs?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのタブを閉じますか？"
+          }
+        }
+      }
+    },
+    "Close group?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グループを閉じますか?"
+          }
+        }
+      }
+    },
+    "Close pane?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを閉じますか？"
+          }
+        }
+      }
+    },
+    "Close project?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトを閉じますか?"
+          }
+        }
+      }
+    },
+    "Close tab?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを閉じますか？"
+          }
+        }
+      }
+    },
+    "Codex CLI": {
+      "comment": "Toggle row label inside the Apply-to-agents section. Brand name, kept in English in both locales.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI"
+          }
+        }
+      }
+    },
+    "Codex finished": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex finished"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex が応答完了"
+          }
+        }
+      }
+    },
+    "Codex needs input": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex needs input"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex が入力待ち"
+          }
+        }
+      }
+    },
+    "Color": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "色"
+          }
+        }
+      }
+    },
+    "Color %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Color %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "色 %lld"
+          }
+        }
+      }
+    },
+    "Command Palette": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コマンドパレット"
+          }
+        }
+      }
+    },
+    "Confirmations": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認"
+          }
+        }
+      }
+    },
+    "Copy": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コピー"
+          }
+        }
+      }
+    },
+    "Create": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作成"
+          }
+        }
+      }
+    },
+    "Create New Branch": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規ブランチを作成"
+          }
+        }
+      }
+    },
+    "Cursor": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カーソル"
+          }
+        }
+      }
+    },
+    "Cursor blink": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カーソルの点滅"
+          }
+        }
+      }
+    },
+    "Custom Parent Folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "親フォルダを指定"
+          }
+        }
+      }
+    },
+    "Custom directory": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom directory"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムディレクトリ"
+          }
+        }
+      }
+    },
+    "Dark": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダーク"
+          }
+        }
+      }
+    },
+    "Decrease Font Size": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォントを小さく"
+          }
+        }
+      }
+    },
+    "Default": {
+      "comment": "Settings → Font → Family default-fallback row; Settings → Appearance default accent swatch.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルト"
+          }
+        }
+      }
+    },
+    "Orange": {
+      "comment": "Settings → Appearance accent swatch name.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オレンジ"
+          }
+        }
+      }
+    },
+    "Pink": {
+      "comment": "Settings → Appearance accent swatch name.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ピンク"
+          }
+        }
+      }
+    },
+    "Purple": {
+      "comment": "Settings → Appearance accent swatch name.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パープル"
+          }
+        }
+      }
+    },
+    "Red": {
+      "comment": "Settings → Appearance accent swatch name.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レッド"
+          }
+        }
+      }
+    },
+    "Yellow": {
+      "comment": "Settings → Appearance accent swatch name.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "イエロー"
+          }
+        }
+      }
+    },
+    "Default working directory": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default working directory"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルト作業ディレクトリ"
+          }
+        }
+      }
+    },
+    "Delete": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        }
+      }
+    },
+    "Delete Worktree…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete Worktree…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーを削除…"
+          }
+        }
+      }
+    },
+    "Delete failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete failed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除失敗"
+          }
+        }
+      }
+    },
+    "Delete worktree?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete worktree?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーを削除しますか?"
+          }
+        }
+      }
+    },
+    "Deny": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒否"
+          }
+        }
+      }
+    },
+    "Disabled when System Settings' Accessibility Reduce Transparency is on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム設定のアクセシビリティ「透明度を下げる」がオンの場合は無効です。"
+          }
+        }
+      }
+    },
+    "Dismiss": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dismiss"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じる"
+          }
+        }
+      }
+    },
+    "Display Language": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display Language"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示言語"
+          }
+        }
+      }
+    },
+    "Done": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了"
+          }
+        }
+      }
+    },
+    "Downloading %@": {
+      "comment": "Update popover: downloading header",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ をダウンロード中"
+          }
+        }
+      }
+    },
+    "Downloading %@…": {
+      "comment": "Toolbar tooltip: downloading",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading %@…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ をダウンロード中…"
+          }
+        }
+      }
+    },
+    "English": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "English"
+          }
+        }
+      }
+    },
+    "Enter a branch name for the new worktree.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規ワークツリーのブランチ名を入力してください。"
+          }
+        }
+      }
+    },
+    "Equalize Splits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スプリットを均等化"
+          }
+        }
+      }
+    },
+    "Expand": {
+      "comment": "Sidebar chevron accessibility label / tooltip for collapsed project headers.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展開"
+          }
+        }
+      }
+    },
+    "Collapse": {
+      "comment": "Sidebar chevron accessibility label / tooltip for expanded project headers.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "折りたたみ"
+          }
+        }
+      }
+    },
+    "Failed to restore previous session": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回のセッションを復元できませんでした"
+          }
+        }
+      }
+    },
+    "Family": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファミリー"
+          }
+        }
+      }
+    },
+    "File": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイル"
+          }
+        }
+      }
+    },
+    "Files on disk are not affected.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスク上のファイルには影響しません。"
+          }
+        }
+      }
+    },
+    "Filter by actions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクションで絞り込み"
+          }
+        }
+      }
+    },
+    "Find": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索"
+          }
+        }
+      }
+    },
+    "Find Next": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次を検索"
+          }
+        }
+      }
+    },
+    "Find Previous": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前を検索"
+          }
+        }
+      }
+    },
+    "Find…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索…"
+          }
+        }
+      }
+    },
+    "Focus Left Pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左のペインへフォーカス"
+          }
+        }
+      }
+    },
+    "Focus Pane Above": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上のペインへフォーカス"
+          }
+        }
+      }
+    },
+    "Focus Pane Below": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下のペインへフォーカス"
+          }
+        }
+      }
+    },
+    "Focus Right Pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右のペインへフォーカス"
+          }
+        }
+      }
+    },
+    "Folder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダ"
+          }
+        }
+      }
+    },
+    "Follow System": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システムに従う"
+          }
+        }
+      }
+    },
+    "Font": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォント"
+          }
+        }
+      }
+    },
+    "Force Delete": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Force Delete"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "強制削除"
+          }
+        }
+      }
+    },
+    "Force delete?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Force delete?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "強制削除しますか?"
+          }
+        }
+      }
+    },
+    "General": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一般"
+          }
+        }
+      }
+    },
+    "Ghostty Config": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ghostty 設定"
+          }
+        }
+      }
+    },
+    "Go to Section %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セクション %lld へ移動"
+          }
+        }
+      }
+    },
+    "Go to Tab %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ %lld へ移動"
+          }
+        }
+      }
+    },
+    "Go to project or worktree": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト/ワークツリーに移動"
+          }
+        }
+      }
+    },
+    "Go to tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブに移動"
+          }
+        }
+      }
+    },
+    "Group": {
+      "comment": "Fallback name when a TabGroup has no user-supplied name.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グループ"
+          }
+        }
+      }
+    },
+    "Group Settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group Settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グループ設定"
+          }
+        }
+      }
+    },
+    "Group Settings…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group Settings…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グループ設定…"
+          }
+        }
+      }
+    },
+    "Hid worktree “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリー「%@」を非表示にしました"
+          }
+        }
+      }
+    },
+    "Hidden Worktrees (%lld)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hidden Worktrees (%lld)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非表示のワークツリー(%lld)"
+          }
+        }
+      }
+    },
+    "Hide already-viewed (show only next-to-deal-with)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既読を隠す（次に対応するものだけ表示）"
+          }
+        }
+      }
+    },
+    "Green": {
+      "comment": "Settings → Appearance accent swatch name.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グリーン"
+          }
+        }
+      }
+    },
+    "Hide details": {
+      "comment": "Update popover: collapse error details",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide details"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細を非表示"
+          }
+        }
+      }
+    },
+    "Hide from Sidebar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide from Sidebar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーで非表示にする"
+          }
+        }
+      }
+    },
+    "Home directory": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Home directory"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホームディレクトリ"
+          }
+        }
+      }
+    },
+    "I-Beam": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I ビーム"
+          }
+        }
+      }
+    },
+    "Increase Font Size": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォントを大きく"
+          }
+        }
+      }
+    },
+    "Inherit from previous tab": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inherit from previous tab"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前のタブから継承"
+          }
+        }
+      }
+    },
+    "Inside project (.worktrees/)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト内 (.worktrees/)"
+          }
+        }
+      }
+    },
+    "Install and Restart": {
+      "comment": "Update popover: primary install action",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install and Restart"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストールして再起動"
+          }
+        }
+      }
+    },
+    "Installing update…": {
+      "comment": "Update popover: installing",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installing update…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール中…"
+          }
+        }
+      }
+    },
+    "Keyboard": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーボード"
+          }
+        }
+      }
+    },
+    "Language": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "言語"
+          }
+        }
+      }
+    },
+    "Later": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Later"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あとで"
+          }
+        }
+      }
+    },
+    "Layers ~/.config/ghostty/config beneath the values above. Limpid always overrides window background, opacity, and decoration. Restart required.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~/.config/ghostty/config を上記の設定値の下に重ねます。ウィンドウ背景・不透明度・装飾は常に Limpid が上書きします。再起動が必要です。"
+          }
+        }
+      }
+    },
+    "Ligatures": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リガチャ"
+          }
+        }
+      }
+    },
+    "Light": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライト"
+          }
+        }
+      }
+    },
+    "Limpid will quit and relaunch to finish installing.": {
+      "comment": "Update popover: ready-to-install explainer",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid will quit and relaunch to finish installing."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストールを完了するために Limpid は終了して再起動します。"
+          }
+        }
+      }
+    },
+    "Line height": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "行の高さ"
+          }
+        }
+      }
+    },
+    "Location": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存場所"
+          }
+        }
+      }
+    },
+    "Long-running commands and OSC 9 / 777 alerts land here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "長時間コマンドや OSC 9 / 777 通知はここに記録されます。"
+          }
+        }
+      }
+    },
+    "Minimum pane size": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最小ペインサイズ"
+          }
+        }
+      }
+    },
+    "Splits and divider drags can't push any pane below this floor.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分割やドラッグでペインがこのサイズを下回らないようにします。"
+          }
+        }
+      }
+    },
+    "Mark All as Read": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて既読にする"
+          }
+        }
+      }
+    },
+    "Move": {
+      "comment": "Accept the worktree-move suggestion",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移動"
+          }
+        }
+      }
+    },
+    "Move Down": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下へ移動"
+          }
+        }
+      }
+    },
+    "Move Pane to New Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを新規タブへ移動"
+          }
+        }
+      }
+    },
+    "Move Up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上へ移動"
+          }
+        }
+      }
+    },
+    "Move to worktree “%@”?": {
+      "comment": "Worktree move suggestion banner headline",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move to worktree “%@”?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリー「%@」に移動しますか？"
+          }
+        }
+      }
+    },
+    "Move this tab there.": {
+      "comment": "Worktree move suggestion banner subhead — existing worktree.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このタブをそちらへ移動します。"
+          }
+        }
+      }
+    },
+    "Register the worktree and move this tab there.": {
+      "comment": "Worktree move suggestion banner subhead — worktree not yet registered.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーを登録してこのタブをそちらへ移動します。"
+          }
+        }
+      }
+    },
+    "Name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前"
+          }
+        }
+      }
+    },
+    "Navigate": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移動"
+          }
+        }
+      }
+    },
+    "Navigation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ナビゲーション"
+          }
+        }
+      }
+    },
+    "Never": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "なし"
+          }
+        }
+      }
+    },
+    "New Group": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規グループ"
+          }
+        }
+      }
+    },
+    "New Project": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規プロジェクト"
+          }
+        }
+      }
+    },
+    "New Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規タブ"
+          }
+        }
+      }
+    },
+    "New Worktree": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Worktree"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規ワークツリー"
+          }
+        }
+      }
+    },
+    "New Worktree…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Worktree…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規ワークツリー…"
+          }
+        }
+      }
+    },
+    "Next Action": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次の対応"
+          }
+        }
+      }
+    },
+    "Next Prompt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のプロンプト"
+          }
+        }
+      }
+    },
+    "Next Section": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のセクション"
+          }
+        }
+      }
+    },
+    "Next Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のタブ"
+          }
+        }
+      }
+    },
+    "Next match (⏎)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次の検索結果 (⏎)"
+          }
+        }
+      }
+    },
+    "No active tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクティブなタブがありません"
+          }
+        }
+      }
+    },
+    "No notifications yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知はまだありません"
+          }
+        }
+      }
+    },
+    "No results": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結果なし"
+          }
+        }
+      }
+    },
+    "None": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "なし"
+          }
+        }
+      }
+    },
+    "Double-click to equalize": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダブルクリックで均等化"
+          }
+        }
+      }
+    },
+    "Not enough room to split": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分割するスペースがありません"
+          }
+        }
+      }
+    },
+    "Notification History": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知履歴"
+          }
+        }
+      }
+    },
+    "Notifications": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知"
+          }
+        }
+      }
+    },
+    "OK": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "Off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフ"
+          }
+        }
+      }
+    },
+    "On": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オン"
+          }
+        }
+      }
+    },
+    "One shell command per line. Each runs inside the new worktree after `git worktree add`. Empty = no bootstrap.": {
+      "comment": "Footer under the Bootstrap commands editor",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One shell command per line. Each runs inside the new worktree after `git worktree add`. Empty = no bootstrap."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいワークツリーが作成された直後に、その中で順番に実行されます (1 行 1 コマンド)。"
+          }
+        }
+      }
+    },
+    "Only when an agent is active": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが動作中のみ"
+          }
+        }
+      }
+    },
+    "Opacity": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不透明度"
+          }
+        }
+      }
+    },
+    "Open": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開く"
+          }
+        }
+      }
+    },
+    "Open Folder as Project…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダをプロジェクトとして開く…"
+          }
+        }
+      }
+    },
+    "Open Settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を開く"
+          }
+        }
+      }
+    },
+    "Open Tab in New Worktree": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規ワークツリーで新しいタブを開く"
+          }
+        }
+      }
+    },
+    "Open settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を開く"
+          }
+        }
+      }
+    },
+    "Override location": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存場所を上書き"
+          }
+        }
+      }
+    },
+    "Painted on focus rings, drop targets, and other highlights.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォーカスリングやドロップ先などのハイライトに使われます。"
+          }
+        }
+      }
+    },
+    "Pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペイン"
+          }
+        }
+      }
+    },
+    "Parent folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "親フォルダ"
+          }
+        }
+      }
+    },
+    "Paste": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペースト"
+          }
+        }
+      }
+    },
+    "Paste this text?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このテキストをペーストしますか?"
+          }
+        }
+      }
+    },
+    "Path preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作成先"
+          }
+        }
+      }
+    },
+    "Pick a worktree from the sidebar or press ⌘T": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick a worktree from the sidebar or press ⌘T"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーからワークツリーを選ぶか、⌘T で新規作成してください"
+          }
+        }
+      }
+    },
+    "Placement": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置"
+          }
+        }
+      }
+    },
+    "Preparing update…": {
+      "comment": "Update popover: extracting / preparing",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing update…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを準備中…"
+          }
+        }
+      }
+    },
+    "Press a key…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーを押してください…"
+          }
+        }
+      }
+    },
+    "Press ⌘W to close, or ↵ to restart": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘W で閉じる、↵ で再起動"
+          }
+        }
+      }
+    },
+    "Preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビュー"
+          }
+        }
+      }
+    },
+    "Previous Action": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前の対応"
+          }
+        }
+      }
+    },
+    "Previous Prompt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前のプロンプト"
+          }
+        }
+      }
+    },
+    "Previous Section": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前のセクション"
+          }
+        }
+      }
+    },
+    "Previous Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前のタブ"
+          }
+        }
+      }
+    },
+    "Previous match (⇧⏎)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前の検索結果 (⇧⏎)"
+          }
+        }
+      }
+    },
+    "Previous session not restored": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回のセッションは復元されませんでした"
+          }
+        }
+      }
+    },
+    "Process exited (code %u)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロセスが終了しました (コード %u)"
+          }
+        }
+      }
+    },
+    "Project": {
+      "comment": "Fallback name when a Project has no user-supplied name.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト"
+          }
+        }
+      }
+    },
+    "Project Settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project Settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト設定"
+          }
+        }
+      }
+    },
+    "Project Settings…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project Settings…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト設定…"
+          }
+        }
+      }
+    },
+    "Project not found.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトが見つかりません。"
+          }
+        }
+      }
+    },
+    "Project: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト: %@"
+          }
+        }
+      }
+    },
+    "Quick Open": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイックオープン"
+          }
+        }
+      }
+    },
+    "Quick Tabs": {
+      "comment": "Apple-Notes-style 'unfiled' container for tabs not in any Group or Project.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイックタブ"
+          }
+        }
+      }
+    },
+    "Quit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了"
+          }
+        }
+      }
+    },
+    "Quit Limpid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid の終了"
+          }
+        }
+      }
+    },
+    "Quit Limpid?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid を終了しますか？"
+          }
+        }
+      }
+    },
+    "Ready to install %@": {
+      "comment": "Update popover: ready header / toolbar tooltip",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready to install %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ をインストール可能"
+          }
+        }
+      }
+    },
+    "Recent": {
+      "comment": "Section header in the + add menu listing recently-opened projects.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近開いたプロジェクト"
+          }
+        }
+      }
+    },
+    "Release Date": {
+      "comment": "Update popover field label",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Release Date"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リリース日"
+          }
+        }
+      }
+    },
+    "Remove Missing Worktrees": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove Missing Worktrees"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "存在しないワークツリーを削除"
+          }
+        }
+      }
+    },
+    "Remove Row": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove Row"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーから削除"
+          }
+        }
+      }
+    },
+    "Remove from Sidebar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from Sidebar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーから外す"
+          }
+        }
+      }
+    },
+    "Rename Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブの名前を変更"
+          }
+        }
+      }
+    },
+    "Rename…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を変更…"
+          }
+        }
+      }
+    },
+    "Reopen": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再度開く"
+          }
+        }
+      }
+    },
+    "Reopen Closed Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じたタブを再度開く"
+          }
+        }
+      }
+    },
+    "Reserved by Limpid (⌘1–⌘9, ⌘⌃1–⌘⌃9)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid 予約 (⌘1–⌘9, ⌘⌃1–⌘⌃9)"
+          }
+        }
+      }
+    },
+    "Reset Font Size": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォントサイズをリセット"
+          }
+        }
+      }
+    },
+    "Reset to default": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトに戻す"
+          }
+        }
+      }
+    },
+    "Resets every Limpid preference to its factory default. The app language and your settings.json on disk are both rewritten.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid のすべての設定を初期状態に戻します。表示言語と settings.json も書き換わります。"
+          }
+        }
+      }
+    },
+    "Restore All Defaults": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての設定をデフォルトに戻す"
+          }
+        }
+      }
+    },
+    "Restore Defaults": {
+      "comment": "Use the same Japanese term (デフォルト) across every Restore-Defaults flow so titles + buttons in the same dialog don't speak different words for the same concept.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトに戻す"
+          }
+        }
+      }
+    },
+    "Restore all keyboard shortcuts to defaults?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのショートカットをデフォルトに戻しますか？"
+          }
+        }
+      }
+    },
+    "Restore all settings to defaults?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての設定をデフォルトに戻しますか？"
+          }
+        }
+      }
+    },
+    "Retry": {
+      "comment": "Update popover: retry the failed check OR retry quitting during install",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再試行"
+          }
+        }
+      }
+    },
+    "Reveal in Finder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reveal in Finder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder で表示"
+          }
+        }
+      }
+    },
+    "Root": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Root"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルート"
+          }
+        }
+      }
+    },
+    "Runs `git worktree remove`. The folder is removed from disk.\n\n%@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`git worktree remove` を実行します。フォルダはディスクから削除されます。\n\n%@"
+          }
+        }
+      }
+    },
+    "Saved session uses schema v%lld; Limpid expected v%lld. A fresh window was opened instead.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Saved session uses schema v%1$lld; Limpid expected v%2$lld. A fresh window was opened instead."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存済みセッションのスキーマは v%1$lld ですが、Limpid は v%2$lld を想定しています。新しいウィンドウを開きました。"
+          }
+        }
+      }
+    },
+    "Scroll to Bottom": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll to Bottom"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "末尾までスクロール"
+          }
+        }
+      }
+    },
+    "Scroll to Top": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll to Top"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先頭までスクロール"
+          }
+        }
+      }
+    },
+    "Scrollback": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スクロールバック"
+          }
+        }
+      }
+    },
+    "Search": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索"
+          }
+        }
+      }
+    },
+    "Select All": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてを選択"
+          }
+        }
+      }
+    },
+    "Select a mode...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モードを選択..."
+          }
+        }
+      }
+    },
+    "%lld sessions": {
+      "comment": "Toolbar container subtitle: count of tabs inside the active container.",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld session"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld sessions"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 個のタブ"
+          }
+        }
+      }
+    },
+    "Settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定"
+          }
+        }
+      }
+    },
+    "Settings…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定…"
+          }
+        }
+      }
+    },
+    "Shortcut must include ⌘, ⌥, ⌃, or ⇧": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ショートカットには ⌘, ⌥, ⌃, または ⇧ を含める必要があります"
+          }
+        }
+      }
+    },
+    "Show": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示"
+          }
+        }
+      }
+    },
+    "Show All": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show All"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて表示"
+          }
+        }
+      }
+    },
+    "Show Hidden Worktrees": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Hidden Worktrees"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非表示のワークツリーを表示"
+          }
+        }
+      }
+    },
+    "Show all (including already-viewed)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既読を含めて表示"
+          }
+        }
+      }
+    },
+    "Show all prefix modes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全プレフィックスモードを表示"
+          }
+        }
+      }
+    },
+    "Show details": {
+      "comment": "Update popover: expand error details",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show details"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細を表示"
+          }
+        }
+      }
+    },
+    "Size": {
+      "comment": "Update popover field label",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Size"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイズ"
+          }
+        }
+      }
+    },
+    "Size applies live. Family applies on new terminals only.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイズは即時反映されます。ファミリーは新規ターミナルから適用されます。"
+          }
+        }
+      }
+    },
+    "Skip": {
+      "comment": "Update popover: skip this version",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキップ"
+          }
+        }
+      }
+    },
+    "Software Update": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソフトウェア・アップデート"
+          }
+        }
+      }
+    },
+    "Source pane was closed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信元のペインは閉じられました"
+          }
+        }
+      }
+    },
+    "Split Down": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下に分割"
+          }
+        }
+      }
+    },
+    "Split Right": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右に分割"
+          }
+        }
+      }
+    },
+    "Splits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分割"
+          }
+        }
+      }
+    },
+    "Sync Worktrees": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync Worktrees"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーを同期"
+          }
+        }
+      }
+    },
+    "System Default": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システムのデフォルト"
+          }
+        }
+      }
+    },
+    "Terminal": {
+      "comment": "Keyboard settings section title for terminal-specific shortcuts",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナル"
+          }
+        }
+      }
+    },
+    "The terminal is requesting to read the contents of your clipboard. Only allow this if you recognise the program that issued the request.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルがクリップボードの読み取りを要求しています。要求元のプログラムに心当たりがある場合のみ許可してください。"
+          }
+        }
+      }
+    },
+    "The terminal is requesting to replace your clipboard with the text shown below.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルが以下のテキストでクリップボードを置き換えようとしています。"
+          }
+        }
+      }
+    },
+    "The text you are about to paste looks like it may execute commands. Review it carefully before allowing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペーストしようとしているテキストはコマンドを実行する可能性があります。許可前に内容を慎重に確認してください。"
+          }
+        }
+      }
+    },
+    "Theme": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テーマ"
+          }
+        }
+      }
+    },
+    "This cannot be undone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この操作は取り消せません。"
+          }
+        }
+      }
+    },
+    "Toggle Sidebar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーを切り替え"
+          }
+        }
+      }
+    },
+    "Toggle Split Zoom": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分割ズームの切り替え"
+          }
+        }
+      }
+    },
+    "Toggle Tab Layout": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブレイアウトを切り替え"
+          }
+        }
+      }
+    },
+    "Transparency": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "透明度"
+          }
+        }
+      }
+    },
+    "Type a command or search...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コマンドを入力または検索..."
+          }
+        }
+      }
+    },
+    "Type a project or worktree name...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト名を入力..."
+          }
+        }
+      }
+    },
+    "Type a setting name...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定項目を入力..."
+          }
+        }
+      }
+    },
+    "Type a tab name...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ名を入力..."
+          }
+        }
+      }
+    },
+    "Type an action name...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクション名を入力..."
+          }
+        }
+      }
+    },
+    "Unbound": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未割り当て"
+          }
+        }
+      }
+    },
+    "Underline": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アンダーライン"
+          }
+        }
+      }
+    },
+    "Undo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元に戻す"
+          }
+        }
+      }
+    },
+    "Unfocused pane opacity": {
+      "comment": "Settings → Appearance: slider that dims unfocused split panes.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォーカスされていないペインの不透明度"
+          }
+        }
+      }
+    },
+    "Dims the unfocused leaves when a tab carries more than one pane.": {
+      "comment": "Settings → Appearance: unfocused-pane-opacity slider footer.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ内に複数ペインがあるとき、フォーカスされていないペインを薄く表示します。"
+          }
+        }
+      }
+    },
+    "Unread": {
+      "comment": "Notification History row accessibility label for unread entries.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未読"
+          }
+        }
+      }
+    },
+    "Read": {
+      "comment": "Notification History row accessibility label for already-read entries.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既読"
+          }
+        }
+      }
+    },
+    "Unread notifications": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未読通知"
+          }
+        }
+      }
+    },
+    "Unzoom Pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインのズームを解除"
+          }
+        }
+      }
+    },
+    "Update available": {
+      "comment": "Update popover: available header",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update available"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートがあります"
+          }
+        }
+      }
+    },
+    "Update available: %@": {
+      "comment": "Tooltip on the terminal-column toolbar update button",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update available: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートあり: %@"
+          }
+        }
+      }
+    },
+    "Update failed": {
+      "comment": "Update popover: error header",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update failed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートに失敗しました"
+          }
+        }
+      }
+    },
+    "Update installed": {
+      "comment": "Update popover: install complete",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update installed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを適用しました"
+          }
+        }
+      }
+    },
+    "Updates": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデート"
+          }
+        }
+      }
+    },
+    "Use Ghostty config file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ghostty 設定ファイルを使用"
+          }
+        }
+      }
+    },
+    "Used for new worktrees created from this project. Applies to future creations only — existing worktrees stay where they are.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このプロジェクトで新しく作成するワークツリーに適用されます。既存のワークツリーは現在の場所に残ります。"
+          }
+        }
+      }
+    },
+    "Using project default: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトのデフォルトを使用: %@"
+          }
+        }
+      }
+    },
+    "Using project default: hidden subdirectory inside the project.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトのデフォルトを使用: プロジェクト内の隠しサブディレクトリ。"
+          }
+        }
+      }
+    },
+    "Using project default: sibling folder prefixed with the repo name.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトのデフォルトを使用: リポジトリと同じ階層に「リポジトリ名-ブランチ名」で作成。"
+          }
+        }
+      }
+    },
+    "Version": {
+      "comment": "Update popover field label",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バージョン"
+          }
+        }
+      }
+    },
+    "View": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示"
+          }
+        }
+      }
+    },
+    "View Release Notes": {
+      "comment": "Update popover: open release notes",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View Release Notes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リリースノートを表示"
+          }
+        }
+      }
+    },
+    "Visual": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビジュアル"
+          }
+        }
+      }
+    },
+    "Visual + Audio": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビジュアル + サウンド"
+          }
+        }
+      }
+    },
+    "Waiting": {
+      "comment": "Sidebar section header. Intentionally stays English in every locale so the workflow lane reads as the same brand-y label everywhere — do not translate.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting"
+          }
+        }
+      }
+    },
+    "When an agent listed here runs `git worktree add`, Limpid intercepts it and applies this project's placement and bootstrap. Off lets the agent use its own default location.": {
+      "comment": "Footer under the Apply-to-agents section",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When an agent listed here runs `git worktree add`, Limpid intercepts it and applies this project's placement and bootstrap. Off lets the agent use its own default location."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここに表示されたエージェントが `git worktree add` を実行すると、このプロジェクトの設定 (配置・初期化コマンド) が適用されます。オフのときは各エージェントのデフォルト位置に作成されます。"
+          }
+        }
+      }
+    },
+    "Where new Quick Tabs open. Containers can override this in their own settings.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where new Quick Tabs open. Containers can override this in their own settings."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいクイックタブを開く場所。各コンテナは独自の設定で上書きできます。"
+          }
+        }
+      }
+    },
+    "Working Directory": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working Directory"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作業ディレクトリ"
+          }
+        }
+      }
+    },
+    "Worktree": {
+      "comment": "Fallback name when a worktree has no label / project name.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリー"
+          }
+        }
+      }
+    },
+    "Worktree has uncommitted changes. Force delete anyway? Uncommitted work will be lost.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worktree has uncommitted changes. Force delete anyway? Uncommitted work will be lost."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーに未コミットの変更があります。強制削除しますか? 未コミットの変更は失われます。"
+          }
+        }
+      }
+    },
+    "Worktree has uncommitted changes. Retry with Force to delete anyway.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーに未コミットの変更があります。それでも削除する場合は Force を選択してください。"
+          }
+        }
+      }
+    },
+    "Worktree not found on disk": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worktree not found on disk"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーがディスク上に見つかりません"
+          }
+        }
+      }
+    },
+    "Worktree not found.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーが見つかりません。"
+          }
+        }
+      }
+    },
+    "Worktrees": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worktrees"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリー"
+          }
+        }
+      }
+    },
+    "You're up to date": {
+      "comment": "Update popover: no update available",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You're up to date"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最新版を使用中です"
+          }
+        }
+      }
+    },
+    "Zoom Pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを最大化"
+          }
+        }
+      }
+    },
+    "git worktree add failed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "git worktree add に失敗しました。"
+          }
+        }
+      }
+    },
+    "git worktree remove failed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "git worktree remove に失敗しました。"
+          }
+        }
+      }
+    },
+    "just now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "たった今"
+          }
+        }
+      }
+    },
+    "now": {
+      "comment": "Notification History compact time label for entries under one minute old.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "たった今"
+          }
+        }
+      }
+    },
+    "libghostty %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "libghostty %@"
+          }
+        }
+      }
+    },
+    "libghostty failed to initialize": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "libghostty の初期化に失敗しました"
+          }
+        }
+      }
+    },
+    "Most failures are caused by a malformed user-side ghostty config. Open Settings to disable advanced overrides, or reset settings.json to defaults.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほとんどの失敗はユーザー側の ghostty 設定の不備が原因です。設定を開いて詳細オーバーライドを無効化するか、settings.json を初期化してください。"
+          }
+        }
+      }
+    },
+    "Reveal Logs in Console": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コンソールでログを表示"
+          }
+        }
+      }
+    },
+    "Reset Settings to Defaults": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を初期値に戻す"
+          }
+        }
+      }
+    },
+    "Jump to this pane": {
+      "comment": "Waiting row accessibility hint",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペインにジャンプ"
+          }
+        }
+      }
+    },
+    "Could not launch git: %@. Is git installed?": {
+      "comment": "Worktree-operation error — git binary failed to launch",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "git を起動できませんでした: %@。git はインストールされていますか?"
+          }
+        }
+      }
+    },
+    "git exited with code %lld.": {
+      "comment": "Worktree-operation error — git exited with non-zero code (no stderr)",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "git が終了コード %lld で終了しました。"
+          }
+        }
+      }
+    },
+    "settings.json": {
+      "comment": "Advanced pane section header",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "settings.json"
+          }
+        }
+      }
+    },
+    "Reveal settings.json in Finder": {
+      "comment": "Advanced pane button",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder で settings.json を表示"
+          }
+        }
+      }
+    },
+    "Open in Default Editor": {
+      "comment": "Advanced pane button",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトエディタで開く"
+          }
+        }
+      }
+    },
+    "Edit `settings.json` directly. Limpid watches the file and reloads on save. A typo is recoverable — the malformed copy is renamed to settings.json.bak-decode-failed-<ts> on the next launch and defaults are loaded.": {
+      "comment": "Advanced pane settings.json section footer",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`settings.json` を直接編集できます。Limpid はファイルを監視し、保存時に再読み込みします。記述ミスがあっても、次回起動時に壊れたファイルは settings.json.bak-decode-failed-<ts> にリネームされ、デフォルト値が読み込まれます。"
+          }
+        }
+      }
+    },
+    "New Tab (⌘T)": {
+      "comment": "Toolbar tooltip",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規タブ (⌘T)"
+          }
+        }
+      }
+    },
+    "Container Actions": {
+      "comment": "Toolbar tooltip",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コンテナアクション"
+          }
+        }
+      }
+    },
+    "Go Back": {
+      "comment": "Toolbar tooltip",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "戻る"
+          }
+        }
+      }
+    },
+    "Go Forward": {
+      "comment": "Toolbar tooltip",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "進む"
+          }
+        }
+      }
+    },
+    "Split Right (⌘D)": {
+      "comment": "Toolbar tooltip",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右に分割 (⌘D)"
+          }
+        }
+      }
+    },
+    "Split Down (⌘⇧D)": {
+      "comment": "Toolbar tooltip",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下に分割 (⌘⇧D)"
+          }
+        }
+      }
+    },
+    "Error": {
+      "comment": "Agent state label",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エラー"
+          }
+        }
+      }
+    },
+    "Needs input": {
+      "comment": "Agent state label",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力待ち"
+          }
+        }
+      }
+    },
+    "Finished": {
+      "comment": "Agent state label",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了"
+          }
+        }
+      }
+    },
+    "Running": {
+      "comment": "Agent state label",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行中"
+          }
+        }
+      }
+    },
+    "Idle": {
+      "comment": "Agent state label",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待機中"
+          }
+        }
+      }
+    },
+    "Unknown": {
+      "comment": "Agent state label",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不明"
+          }
+        }
+      }
+    },
+    "(%lld of %lld panes)": {
+      "comment": "Agent state tooltip — match count out of total panes",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(%lld / %lld ペイン)"
+          }
+        }
+      }
+    },
+    "· %llds": {
+      "comment": "Agent state tooltip — elapsed seconds suffix",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· %lld 秒"
+          }
+        }
+      }
+    },
+    "Finished in %@%@": {
+      "comment": "Command-finished notification body — duration + optional exit fragment",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ で完了%@"
+          }
+        }
+      }
+    },
+    " (exit %lld)": {
+      "comment": "Command-finished notification — exit code fragment",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " (終了コード %lld)"
+          }
+        }
+      }
+    },
+    "Hide Sidebar (⌘1)": {
+      "comment": "Toolbar tooltip",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーを隠す (⌘1)"
+          }
+        }
+      }
+    },
+    "Show Sidebar (⌘1)": {
+      "comment": "Toolbar tooltip",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーを表示 (⌘1)"
+          }
+        }
+      }
+    },
+    "Terminal failed to start": {
+      "comment": "Pane surface NULL recovery title",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルを起動できませんでした"
+          }
+        }
+      }
+    },
+    "libghostty could not allocate this pane. Retry to try again.": {
+      "comment": "Pane surface NULL recovery body",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "libghostty がこのペインを確保できませんでした。再試行してください。"
+          }
+        }
+      }
+    },
+    "—": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "—"
+          }
+        }
+      }
+    },
+    "日本語": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日本語"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

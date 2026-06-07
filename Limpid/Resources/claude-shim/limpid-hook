@@ -1,0 +1,419 @@
+#!/bin/sh
+# Limpid claude hook receiver — invoked by Claude Code on every hook
+# event we subscribe to (SessionStart, UserPromptSubmit, PreToolUse,
+# Notification, PreCompact, Stop, StopFailure, SessionEnd, CwdChanged).
+# Keyed by LIMPID_PANE_ID (= split-tree leaf UUID, one per pane).
+#
+# Three persistence paths:
+#   - $LIMPID_SESSIONS_DIR/<pane>.json — session id for `claude --resume`.
+#     Authoritative on SessionStart, dropped on user-initiated SessionEnd
+#     (reason ∈ clear/logout/exit/prompt_input_exit/quit).
+#   - $LIMPID_AGENT_STATES_DIR/<pane>.state.json — agent lifecycle state
+#     for the container/tab column status icons. Rewritten on every hook event so
+#     `Tab.claudeAgentBadges[paneID]` mirrors the current lifecycle.
+#   - $LIMPID_CWD_EVENTS_DIR/<pane>.cwd.json — latest cwd transition
+#     captured from `CwdChanged`. Picked up by `CwdEventTracker` to
+#     drive worktree-move suggestions when Claude `cd`s into a
+#     worktree path the current tab doesn't own.
+#
+# Failure policy: ALWAYS exit 0. A broken hook must never block Claude
+# from running. We drop stderr to /dev/null in production so the hook
+# is observably silent; tooling that needs diagnostics can set
+# LIMPID_HOOK_LOG=<path> to capture stderr into a file.
+
+set -u
+
+if [ -n "${LIMPID_HOOK_LOG:-}" ]; then
+  exec 2>>"$LIMPID_HOOK_LOG" || exec 2>/dev/null
+else
+  exec 2>/dev/null
+fi
+
+payload="$(cat 2>/dev/null || true)"
+
+pane_id="${LIMPID_PANE_ID:-}"
+# Accept only UUID-shaped pane ids (hex + dash + max 64 chars) so a
+# hostile env can't traverse the filesystem via crafted PANE_ID values.
+case "$pane_id" in
+  '') exit 0 ;;
+  *[!0-9A-Fa-f-]*) exit 0 ;;
+esac
+[ "${#pane_id}" -le 64 ] || exit 0
+
+sessions_dir="${LIMPID_SESSIONS_DIR:-$HOME/Library/Application Support/Limpid/sessions}"
+states_dir="${LIMPID_AGENT_STATES_DIR:-$HOME/Library/Application Support/Limpid/agent-states}"
+cwd_events_dir="${LIMPID_CWD_EVENTS_DIR:-$HOME/Library/Application Support/Limpid/cwd-events}"
+mkdir -p "$sessions_dir" 2>/dev/null
+mkdir -p "$states_dir" 2>/dev/null
+mkdir -p "$cwd_events_dir" 2>/dev/null
+
+# Read a field from the JSON payload. `plutil` ships with every macOS,
+# so values containing quotes / newlines / backslashes survive intact
+# (the old `sed` match stopped at the first `"` or `\`, which is why
+# prompts with either used to come through empty). `$1` may be a plutil
+# key path, e.g. `tool_input.questions.0.question`. Returns the
+# *decoded* value; falls back to a coarse sed match if plutil can't
+# read the key. We still avoid jq — it isn't guaranteed on macOS.
+extract() {
+  printf '%s' "$payload" | plutil -extract "$1" raw -o - - 2>/dev/null && return 0
+  printf '%s' "$payload" | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1
+}
+
+# Escape a string for safe embedding as a JSON string value: fold tabs
+# / CR to a space, escape backslash + double-quote, then fold real
+# newlines to `\n`. Replaces the old sanitize() that blanked any value
+# containing `"` or `\` — that blanking was the second half of the
+# empty-prompt bug.
+json_escape() {
+  printf '%s' "$1" \
+    | tr '\t\r' '  ' \
+    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
+    | awk 'BEGIN { ORS = "" } NR > 1 { printf "\\n" } { printf "%s", $0 }'
+}
+
+session_id="$(extract session_id)"
+cwd="$(extract cwd)"
+hook_event="$(extract hook_event_name)"
+reason="$(extract reason)"
+tool_name="$(extract tool_name)"
+notification_type="$(extract notification_type)"
+notification_message="$(extract message)"
+# AskUserQuestion carries the question under tool_input.questions[].question.
+# Try the exact path first, then a depth-agnostic fallback for other shapes.
+ask_question="$(extract tool_input.questions.0.question)"
+[ -n "$ask_question" ] || ask_question="$(extract question)"
+error_type="$(extract error_type)"
+current_token_count="$(extract current_token_count)"
+# Only keep a clean integer — anything else would break the JSON below.
+case "$current_token_count" in
+  '' | *[!0-9]*) current_token_count="" ;;
+esac
+
+ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+# JSON-escaped copies for embedding. `tool_safe` is still usable for the
+# AskUserQuestion equality check below — a tool name has nothing to
+# escape, so escaping is a no-op for it.
+cwd_safe="$(json_escape "$cwd")"
+tool_safe="$(json_escape "$tool_name")"
+error_safe="$(json_escape "$error_type")"
+message_safe="$(json_escape "$notification_message")"
+question_safe="$(json_escape "$ask_question")"
+detail_safe=""
+# Carried into the OSC 2 tab-title fallback below. Initialised here so
+# the title block can reference it even on events that skip the state
+# write (defensive under `set -u`).
+first_prompt=""
+
+# Compute the lifecycle state for the container/tab column status icons. Order
+# matters: AskUserQuestion is a PreToolUse subtype but maps to
+# `.needsInput`, so check it before the generic running branch.
+new_state=""
+case "$hook_event" in
+  SessionStart)
+    new_state="idle"
+    ;;
+  UserPromptSubmit)
+    new_state="running"
+    ;;
+  PreToolUse)
+    if [ "$tool_safe" = "AskUserQuestion" ]; then
+      new_state="needsInput"
+      # The agent is asking the user a question — surface the question
+      # text itself (falls back to the tool name if we couldn't read
+      # it). This is what shows on the container column attention card.
+      if [ -n "$question_safe" ]; then
+        detail_safe="$question_safe"
+      else
+        detail_safe="AskUserQuestion"
+      fi
+    else
+      new_state="running"
+      # Prefer a concrete summary (the command / file path) over the
+      # bare tool name so that, if a permission prompt follows, the
+      # card can show *what* needs approval (e.g. "Bash: rm -rf x")
+      # instead of a generic "Claude needs your permission".
+      tool_arg="$(extract tool_input.command)"
+      [ -n "$tool_arg" ] || tool_arg="$(extract tool_input.file_path)"
+      if [ -n "$tool_arg" ]; then
+        detail_safe="$(json_escape "$tool_name: $tool_arg")"
+      else
+        detail_safe="$tool_safe"
+      fi
+    fi
+    ;;
+  Notification)
+    # Only `permission_prompt` requires user attention. `idle_prompt`,
+    # `auth_success`, `elicitation_dialog` etc are noise from a
+    # status-icon perspective.
+    case "$notification_type" in
+      permission_prompt)
+        new_state="needsInput"
+        # Keep the richer detail the preceding PreToolUse stored (the
+        # command / question text) rather than clobbering it with the
+        # generic "Claude needs your permission to use X" message.
+        # Fall back to the message, then a literal placeholder.
+        prev_detail="$(plutil -extract detail raw -o - "$states_dir/$pane_id.state.json" 2>/dev/null)"
+        if [ -n "$prev_detail" ]; then
+          detail_safe="$(json_escape "$prev_detail")"
+        elif [ -n "$message_safe" ]; then
+          detail_safe="$message_safe"
+        else
+          detail_safe="permission"
+        fi
+        ;;
+      *)
+        new_state=""
+        ;;
+    esac
+    ;;
+  PreCompact)
+    new_state="compacting"
+    ;;
+  Stop)
+    # Turn finished — the agent is waiting on the user's next input.
+    # `finished` (not `idle`) so the attention cursor counts "your turn"
+    # without snagging on freshly launched, never-run panes.
+    new_state="finished"
+    ;;
+  StopFailure)
+    new_state="error"
+    detail_safe="$error_safe"
+    ;;
+  SessionEnd)
+    new_state="unknown"
+    ;;
+esac
+
+if [ -n "$new_state" ]; then
+  state_final="$states_dir/$pane_id.state.json"
+  state_tmp="$states_dir/.$pane_id.state.json.tmp.$$"
+  # `runStartedAt` is set at UserPromptSubmit and cleared on Stop /
+  # SessionStart / SessionEnd so the tab column tooltip can compute elapsed
+  # seconds without extra bookkeeping. `lastPrompt` follows the same
+  # carry-through model — captured at UserPromptSubmit so the Stop
+  # notification body can say *what* finished, not just *that*
+  # something finished. We re-read the previous file each event so
+  # PreToolUse / Notification / PreCompact preserve both fields.
+  # Read the prior file with plutil too: the stored lastPrompt is now
+  # JSON-escaped (may contain `\n` / `\"`), which the old sed match
+  # would truncate at the first backslash. plutil returns the decoded
+  # value, which we re-escape on write below.
+  prev_run_started=""
+  prev_last_prompt=""
+  prev_first_prompt=""
+  prev_session_started=""
+  if [ -f "$state_final" ]; then
+    prev_run_started="$(plutil -extract runStartedAt raw -o - "$state_final" 2>/dev/null)"
+    prev_last_prompt="$(plutil -extract lastPrompt raw -o - "$state_final" 2>/dev/null)"
+    prev_first_prompt="$(plutil -extract firstPrompt raw -o - "$state_final" 2>/dev/null)"
+    prev_session_started="$(plutil -extract sessionStartedAt raw -o - "$state_final" 2>/dev/null)"
+  fi
+  case "$hook_event" in
+    UserPromptSubmit)
+      run_started="$ts"
+      # The user's prompt drives the container column attention card preview + the
+      # Stop notification body. plutil reads it intact (quotes /
+      # newlines / backslashes survive); it gets JSON-escaped at write.
+      last_prompt="$(extract prompt)"
+      # `firstPrompt` is the seed for the tab-title fallback: captured
+      # once at the session's first prompt and never overwritten, so a
+      # later turn still resolves to the conversation's opening line
+      # when Claude hasn't generated an `ai-title` yet. (`lastPrompt`
+      # is overwritten every turn and would drift off-topic.)
+      if [ -n "$prev_first_prompt" ]; then
+        first_prompt="$prev_first_prompt"
+      else
+        first_prompt="$last_prompt"
+      fi
+      session_started="$prev_session_started"
+      ;;
+    SessionStart)
+      run_started=""
+      last_prompt=""
+      first_prompt=""
+      # `sessionStartedAt` is captured here and held for every event of
+      # this session. The Swift side uses it to decide which pane "owns"
+      # the tab title when more than one Claude/Codex session is alive:
+      # the latest SessionStart wins, so a fresh session in pane 2
+      # doesn't get clobbered when pane 1's older session emits a turn.
+      session_started="$ts"
+      ;;
+    Stop|SessionEnd|StopFailure)
+      run_started=""
+      # Stop keeps `lastPrompt` so the Tracker's diff (running→idle)
+      # can read it once before the next UserPromptSubmit overwrites.
+      # SessionEnd resets; StopFailure is fatal so also reset.
+      if [ "$hook_event" = "Stop" ]; then
+        last_prompt="$prev_last_prompt"
+      else
+        last_prompt=""
+      fi
+      # Keep the captured opening prompt across Stop so the title block
+      # can fall back to it; SessionEnd / StopFailure reset it
+      # alongside the rest of the per-run state.
+      if [ "$hook_event" = "Stop" ]; then
+        first_prompt="$prev_first_prompt"
+        session_started="$prev_session_started"
+      else
+        first_prompt=""
+        session_started=""
+      fi
+      ;;
+    *)
+      run_started="$prev_run_started"
+      last_prompt="$prev_last_prompt"
+      first_prompt="$prev_first_prompt"
+      session_started="$prev_session_started"
+      ;;
+  esac
+  tokens_field=""
+  if [ -n "$current_token_count" ]; then
+    tokens_field=",\"contextTokens\":$current_token_count"
+  fi
+  pid_field=""
+  if [ -n "${LIMPID_CLAUDE_PID:-}" ]; then
+    pid_field=",\"pid\":\"$LIMPID_CLAUDE_PID\""
+  fi
+  prompt_field=""
+  if [ -n "$last_prompt" ]; then
+    prompt_field=",\"lastPrompt\":\"$(json_escape "$last_prompt")\""
+  fi
+  first_prompt_field=""
+  if [ -n "$first_prompt" ]; then
+    # `$first_prompt` carries the raw prompt verbatim — a literal
+    # `"`, `\`, or embedded newline will produce malformed JSON that
+    # `PaneStore.allRecords` silently drops. The sibling `lastPrompt`
+    # field already passes through `json_escape`; match it so the
+    # state record is parseable.
+    first_prompt_field=",\"firstPrompt\":\"$(json_escape "$first_prompt")\""
+  fi
+  session_started_field=""
+  if [ -n "$session_started" ]; then
+    session_started_field=",\"sessionStartedAt\":\"$session_started\""
+  fi
+  {
+    printf '{"schemaVersion":1,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s}\n' \
+      "$pane_id" \
+      "$new_state" \
+      "$detail_safe" \
+      "$run_started" \
+      "$ts" \
+      "$hook_event" \
+      "$tokens_field" \
+      "$pid_field" \
+      "$prompt_field" \
+      "$first_prompt_field" \
+      "$session_started_field"
+  } > "$state_tmp" 2>/dev/null && mv -f "$state_tmp" "$state_final" 2>/dev/null || rm -f "$state_tmp" 2>/dev/null
+fi
+
+# ----- Cwd change event -----
+# `CwdChanged` fires whenever the agent's working directory changes,
+# typically a `cd` via the Bash tool. We persist {oldCwd, newCwd} so
+# `CwdEventTracker` can suggest moving to the owning worktree's tab
+# when the new path is inside a different worktree from the one the
+# pane is bound to. The docs spell the payload only as "directory
+# metadata", so we try a couple of likely field shapes (explicit
+# `old_cwd` / `new_cwd`, then the flat `cwd` everyone else uses) and
+# fall back to whatever is non-empty.
+if [ "$hook_event" = "CwdChanged" ]; then
+  cwd_new="$(extract new_cwd)"
+  [ -n "$cwd_new" ] || cwd_new="$(extract newCwd)"
+  [ -n "$cwd_new" ] || cwd_new="$cwd"
+  cwd_old="$(extract old_cwd)"
+  [ -n "$cwd_old" ] || cwd_old="$(extract oldCwd)"
+  [ -n "$cwd_old" ] || cwd_old="$(extract previous_cwd)"
+  new_safe="$(json_escape "$cwd_new")"
+  old_safe="$(json_escape "$cwd_old")"
+  cwd_final="$cwd_events_dir/$pane_id.cwd.json"
+  cwd_tmp="$cwd_events_dir/.$pane_id.cwd.json.tmp.$$"
+  {
+    printf '{"schemaVersion":1,"paneId":"%s","newCwd":"%s","oldCwd":"%s","updatedAt":"%s"}\n' \
+      "$pane_id" "$new_safe" "$old_safe" "$ts"
+  } > "$cwd_tmp" 2>/dev/null && mv -f "$cwd_tmp" "$cwd_final" 2>/dev/null || rm -f "$cwd_tmp" 2>/dev/null
+  exit 0
+fi
+
+# ----- Tab title (Claude's title / opening prompt -> OSC 2) -----
+# Drive the tab label off whatever best names this conversation, in
+# the same precedence Claude's own resume picker uses:
+#   customTitle (explicit /rename)  >  aiTitle (Haiku auto-name)
+#   >  firstPrompt (the session's opening line, captured above)
+# Claude writes `customTitle` / `aiTitle` into an `ai-title` line in
+# the transcript jsonl, but only generates `aiTitle` sporadically and
+# late — so without the firstPrompt fallback a fresh pane would keep
+# showing the launch command for the whole session. We hand the
+# resolved title to Claude as an OSC 2 escape via the hook's
+# `terminalSequence` output; Claude emits it on our behalf through its
+# own terminal write path (race-free, tmux/screen-safe), and
+# libghostty turns it into a GHOSTTY_ACTION_SET_TITLE that Limpid
+# already routes to the tab label.
+#
+# We force `LC_ALL=C` so sed treats each line as bytes — a Japanese
+# title would otherwise crash BSD sed with "illegal byte sequence".
+# `null` / empty values don't match the quoted-capture regex, so they
+# fall through to the next candidate.
+case "$hook_event" in
+  UserPromptSubmit | Stop)
+    ai_title=""
+    custom_title=""
+    transcript_path="$(extract transcript_path)"
+    if [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
+      title_line="$(grep '"type":"ai-title"' "$transcript_path" 2>/dev/null | tail -n1)"
+      if [ -n "$title_line" ]; then
+        ai_title="$(printf '%s' "$title_line" | LC_ALL=C sed -n 's/.*"aiTitle"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+        custom_title="$(printf '%s' "$title_line" | LC_ALL=C sed -n 's/.*"customTitle"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+      fi
+    fi
+    tab_title="${custom_title:-${ai_title:-$first_prompt}}"
+    if [ -n "$tab_title" ]; then
+      # JSON-escape backslash + double-quote and drop any control
+      # bytes before splicing into the terminalSequence string.
+      esc_title="$(printf '%s' "$tab_title" | LC_ALL=C sed 's/\\/\\\\/g; s/"/\\"/g' | LC_ALL=C tr -d '\000-\037')"
+      printf '{"terminalSequence":"\\u001b]2;%s\\u0007"}\n' "$esc_title"
+    fi
+    ;;
+esac
+
+# ----- Session record (claude --resume) -----
+# Independent of the lifecycle state file above; SessionStart writes
+# the record, user-initiated SessionEnd drops it. Other events are
+# no-ops on this path.
+if [ "$hook_event" = "SessionEnd" ]; then
+  case "$reason" in
+    clear|logout|exit|prompt_input_exit|quit)
+      rm -f "$sessions_dir/$pane_id.json" 2>/dev/null
+      ;;
+    *)
+      # SIGTERM-driven end or any reason we don't recognise. Keep
+      # the record so Limpid's next launch can auto-resume.
+      :
+      ;;
+  esac
+  exit 0
+fi
+
+# Only write a session record when SessionStart fires (we have a real
+# session_id we want to remember). Other events would write stale
+# data — the existing record is the authority for resume.
+if [ "$hook_event" != "SessionStart" ]; then
+  exit 0
+fi
+
+case "$session_id" in
+  '') exit 0 ;;
+  *[\"\\]*) exit 0 ;;
+esac
+
+session_final="$sessions_dir/$pane_id.json"
+session_tmp="$sessions_dir/.$pane_id.json.tmp.$$"
+
+{
+  printf '{"schemaVersion":1,"paneId":"%s","sessionId":"%s","cwd":"%s","updatedAt":"%s","lastHookEvent":"%s"}\n' \
+    "$pane_id" "$session_id" "$cwd_safe" "$ts" "$hook_event"
+} > "$session_tmp" 2>/dev/null || exit 0
+
+mv -f "$session_tmp" "$session_final" 2>/dev/null || rm -f "$session_tmp" 2>/dev/null
+
+exit 0

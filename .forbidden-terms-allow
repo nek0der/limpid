@@ -1,0 +1,19 @@
+# Reviewed exceptions to scripts/check-forbidden-terms.sh.
+# One "path:substring" fragment per line; keep each short and justified.
+# An entry suppresses any matching line in that file.
+
+# Standard editor-ignore entry (the VS Code project folder), not a competitor
+# reference — many repos ignore .vscode/ and .idea/ alike.
+.gitignore:.vscode/
+
+# Kitty is named in THIRD-PARTY-NOTICES as required GPL-3.0 attribution for the
+# vendored shell-integration scripts (and the kovidgoyal/kitty source URL).
+THIRD-PARTY-NOTICES:Kitty
+THIRD-PARTY-NOTICES:kitty
+
+# The attribution-coverage manifest lists "Kitty" as a component to verify.
+scripts/check-notices-coverage.sh:Kitty
+
+# Neutral reference: the demo fixture explains why it deliberately does NOT run
+# real CLI tools (output drifts, may be absent) — not a comparison or clone.
+Limpid/Core/Persistence/DemoFixture.swift:lazygit

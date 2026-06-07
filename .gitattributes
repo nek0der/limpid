@@ -1,0 +1,30 @@
+# Normalize line endings — repo uses LF everywhere.
+* text=auto eol=lf
+
+# Source code.
+*.swift     text
+*.h         text
+*.m         text
+*.mm        text
+*.metal     text
+
+# Config / data.
+*.yml       text
+*.yaml      text
+*.json      text
+*.toml      text
+*.plist     text
+*.xcconfig  text
+
+# xcstrings is JSON — let GitHub diff/highlight it as such.
+*.xcstrings linguist-language=JSON
+
+# Binaries.
+*.xcframework binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.pdf       binary
+*.dmg       binary
+*.ico       binary
+*.icns      binary

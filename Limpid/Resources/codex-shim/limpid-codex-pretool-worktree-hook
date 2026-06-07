@@ -1,0 +1,207 @@
+#!/bin/bash
+# limpid-codex-pretool-worktree-hook
+# Limpid — Codex CLI PreToolUse hook handler that intercepts the Bash
+# tool's `git worktree add` invocations so the resulting worktree
+# follows the active Project's `worktreePlacement` + `bootstrap` rules
+# instead of Codex's ad-hoc choice.
+#
+# Symmetric with the Claude-side `limpid-pretool-worktree-hook` (the
+# stdin JSON shape, exit semantics, and notify-file pipeline are
+# identical — that's intentional, the two CLIs converge on the same
+# PreToolUse contract). The deltas are
+#
+#   1. env var: we read `LIMPID_CODEX_AGENT_STATES_DIR` (Codex pane env)
+#      instead of `LIMPID_AGENT_STATES_DIR` (Claude pane env).
+#   2. opt-out field: `routeCodexWorktrees` in state.json instead of
+#      `routeClaudeWorktrees`.
+#   3. trust path: Codex re-hashes hooks.json on every change; this
+#      script's bytes are part of the hash, so any edit here also
+#      requires re-running `CodexHomeRedirector.refresh()`.
+#
+# Decision contract: on a successful intercept we write a single-line
+# context line to stderr and exit 2. Codex's PreToolUse spec treats
+# exit 2 as "deny tool call, surface stderr to the model" — same as
+# Claude.
+#
+# `jq` is required for state.json filtering (we need to walk the
+# projects array and find the one whose rootURL prefix-matches `cwd`).
+# Plain `plutil` can't express the predicate without a bash iteration
+# loop, and the lifecycle hook (`limpid-codex-hook`) only needs flat
+# key reads — that's why it stays plutil-only while we lean on jq
+# here.
+
+set -uo pipefail
+
+if ! command -v jq >/dev/null 2>&1; then
+  exit 0
+fi
+
+PAYLOAD="$(cat 2>/dev/null || true)"
+[ -z "$PAYLOAD" ] && exit 0
+
+TOOL_NAME=$(printf '%s' "$PAYLOAD" | jq -r '.tool_name // empty')
+[ "$TOOL_NAME" = "Bash" ] || exit 0
+
+COMMAND=$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.command // empty')
+[ -z "$COMMAND" ] && exit 0
+
+if ! printf '%s' "$COMMAND" | grep -Eq '^[[:space:]]*git[[:space:]]+([^|;&]+[[:space:]]+)*worktree[[:space:]]+add([[:space:]]|$)'; then
+  exit 0
+fi
+
+# `LIMPID_CODEX_AGENT_STATES_DIR` is set per-pane by
+# `CodexHomeRedirector.environment(forPaneID:)`. If we're not inside
+# a Limpid pty there's no state.json to consult.
+if [ -z "${LIMPID_CODEX_AGENT_STATES_DIR:-}" ]; then
+  exit 0
+fi
+STATE_JSON="$(dirname "$LIMPID_CODEX_AGENT_STATES_DIR")/state.json"
+[ -f "$STATE_JSON" ] || exit 0
+
+CWD=$(printf '%s' "$PAYLOAD" | jq -r '.cwd // empty')
+CWD="${CWD:-$PWD}"
+
+# Find the project whose `rootURL` is a path-prefix of `cwd`. Swift's
+# URL Codable adds a `file://` scheme and often a trailing slash; we
+# strip both before comparing. The guard against
+# `/Users/x/repo` matching `/Users/x/repo-other` is the `/`-bounded
+# subpath check.
+PROJECT_DATA=$(jq --arg cwd "$CWD" '
+    [.projects[]?
+     | (.rootURL | sub("^file://"; "") | sub("/$"; "")) as $root
+     | select($cwd == $root or ($cwd | startswith($root + "/")))]
+    | first // null
+' "$STATE_JSON" 2>/dev/null)
+
+if [ -z "$PROJECT_DATA" ] || [ "$PROJECT_DATA" = "null" ]; then
+  exit 0
+fi
+
+PROJECT_ROOT=$(printf '%s' "$PROJECT_DATA" \
+  | jq -r '.rootURL | sub("^file://"; "") | sub("/$"; "")')
+
+# Per-project opt-out — same `has()` vs `// true` care as the Claude
+# side: jq's alternative operator treats boolean `false` as missing,
+# which would silently invert the toggle.
+ROUTE_ENABLED=$(printf '%s' "$PROJECT_DATA" | jq -r '
+  if has("routeCodexWorktrees") then .routeCodexWorktrees else true end
+')
+if [ "$ROUTE_ENABLED" != "true" ]; then
+  exit 0
+fi
+
+PLACEMENT_CASE=$(printf '%s' "$PROJECT_DATA" | jq -r '.worktreePlacement | keys[0]')
+
+BRANCH=""
+in_args=0
+prev=""
+read -ra TOKENS <<< "$COMMAND"
+for tok in "${TOKENS[@]}"; do
+  if [ $in_args -eq 0 ]; then
+    if [ "$prev" = "worktree" ] && [ "$tok" = "add" ]; then
+      in_args=1
+    fi
+    prev="$tok"
+    continue
+  fi
+  case "$tok" in
+    -b|-B)
+      prev="$tok"
+      ;;
+    --branch=*)
+      BRANCH="${tok#--branch=}"
+      prev=""
+      ;;
+    -*)
+      prev=""
+      ;;
+    *)
+      if [ "$prev" = "-b" ] || [ "$prev" = "-B" ]; then
+        BRANCH="$tok"
+      fi
+      prev=""
+      ;;
+  esac
+done
+
+if [ -z "$BRANCH" ]; then
+  exit 0
+fi
+
+BRANCH_LEAF="${BRANCH##*/}"
+case "$PLACEMENT_CASE" in
+  siblingPrefixed)
+    REPO_BASENAME="$(basename "$PROJECT_ROOT")"
+    WORKTREE_PATH="$(dirname "$PROJECT_ROOT")/${REPO_BASENAME}-${BRANCH_LEAF}"
+    ;;
+  insideHidden)
+    WORKTREE_PATH="$PROJECT_ROOT/.worktrees/$BRANCH_LEAF"
+    ;;
+  custom)
+    CUSTOM_PARENT=$(printf '%s' "$PROJECT_DATA" \
+      | jq -r '.worktreePlacement.custom._0 // empty | sub("^file://"; "")')
+    if [ -z "$CUSTOM_PARENT" ]; then
+      exit 0
+    fi
+    WORKTREE_PATH="$CUSTOM_PARENT/$BRANCH_LEAF"
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+
+mkdir -p "$(dirname "$WORKTREE_PATH")"
+if ! git -C "$PROJECT_ROOT" worktree add -b "$BRANCH" "$WORKTREE_PATH" >/dev/null 2>&1; then
+  exit 0
+fi
+
+BOOTSTRAP_JSON=$(printf '%s' "$PROJECT_DATA" | jq -c '.bootstrap // []')
+BOOTSTRAP_COUNT=$(printf '%s' "$BOOTSTRAP_JSON" | jq 'length')
+
+# NOTE: `item.timeout` is read but NOT enforced in v1 — same caveat
+# as the Claude-side hook. A follow-up will route each step through
+# `gtimeout` / BSD `timeout`.
+if [ "$BOOTSTRAP_COUNT" -gt 0 ]; then
+  i=0
+  while [ "$i" -lt "$BOOTSTRAP_COUNT" ]; do
+    ITEM=$(printf '%s' "$BOOTSTRAP_JSON" | jq -c ".[$i]")
+    if printf '%s' "$ITEM" | jq -e 'type == "string"' >/dev/null 2>&1; then
+      CMD=$(printf '%s' "$ITEM" | jq -r '.')
+      STEP_CWD=""
+    else
+      CMD=$(printf '%s' "$ITEM" | jq -r '.cmd')
+      STEP_CWD=$(printf '%s' "$ITEM" | jq -r '.cwd // empty')
+    fi
+    case "$STEP_CWD" in
+      /*|../*|*/../*|*/..|..)
+        echo "limpid-codex-pretool-worktree-hook: skipping step — unsafe cwd '$STEP_CWD'" >&2
+        i=$((i + 1))
+        continue
+        ;;
+    esac
+    STEP_DIR="$WORKTREE_PATH"
+    [ -n "$STEP_CWD" ] && STEP_DIR="$WORKTREE_PATH/$STEP_CWD"
+    ( cd "$STEP_DIR" && eval "$CMD" ) >&2 || true
+    i=$((i + 1))
+  done
+fi
+
+# Notify the app so `WorktreeEventTracker` can fire a GitSync refetch.
+# We write into the Codex-side worktree-events dir; the tracker
+# watches both Claude and Codex dirs so this lands in the same
+# pipeline as a Claude-initiated create.
+NOTIFY_DIR="$LIMPID_CODEX_AGENT_STATES_DIR/worktree-events"
+mkdir -p "$NOTIFY_DIR" 2>/dev/null || true
+EVENT_FILE="$NOTIFY_DIR/$(date +%s)-$$-$RANDOM-create.json"
+jq -n \
+  --arg event "WorktreeCreate" \
+  --arg repoRoot "$PROJECT_ROOT" \
+  --arg worktreePath "$WORKTREE_PATH" \
+  --arg branch "$BRANCH" \
+  '{event: $event, repoRoot: $repoRoot, worktreePath: $worktreePath, branch: $branch}' \
+  > "${EVENT_FILE}.tmp" 2>/dev/null \
+  && mv "${EVENT_FILE}.tmp" "$EVENT_FILE" 2>/dev/null \
+  || true
+
+echo "Limpid created worktree at $WORKTREE_PATH." >&2
+exit 2

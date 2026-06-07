@@ -1,0 +1,26 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        with:
+          # Fine-grained PAT so the tag release-please pushes goes
+          # through as a "human" event — that's what lets the
+          # `push: tags:` trigger on release.yml fire automatically.
+          # Default GITHUB_TOKEN-pushed tags are explicitly excluded
+          # from triggering downstream workflows (anti-recursion).
+          # This also lets ci.yml + pr-lint fire on the release PR
+          # itself, so required checks come in without a manual nudge.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          config-file: .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json

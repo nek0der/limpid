@@ -1,0 +1,42 @@
+# Labels added to PRs based on changed file paths.
+# https://github.com/actions/labeler
+
+"area: ui":
+  - changed-files:
+      - any-glob-to-any-file: "Limpid/UI/**"
+
+"area: core":
+  - changed-files:
+      - any-glob-to-any-file: "Limpid/Core/**"
+
+"area: ffi":
+  - changed-files:
+      - any-glob-to-any-file: "Limpid/FFI/**"
+
+"area: build":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "scripts/**"
+          - "project.yml"
+          - "vendor/**"
+
+"area: tests":
+  - changed-files:
+      - any-glob-to-any-file: "LimpidTests/**"
+
+"area: ci":
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+
+"documentation":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - "design/**"
+
+"dependencies":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".gitmodules"
+          - "Package.resolved"
+          - "**/Package.swift"

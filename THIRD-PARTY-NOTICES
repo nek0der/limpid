@@ -1,0 +1,181 @@
+Third-Party Notices
+===================
+
+Limpid is licensed under the MIT License (see LICENSE). The distributed
+Limpid.app / DMG bundles, statically links, or embeds the third-party
+software listed below, under the terms of their respective licenses.
+
+The primary components (Ghostty and Sparkle) are reproduced in full.
+Libraries that ghostty vendors transitively inside libghostty are summarized,
+with a pointer to ghostty for their authoritative license texts.
+
+
+================================================================
+1. Ghostty (libghostty)
+================================================================
+
+Statically linked into Limpid via GhosttyKit.xcframework.
+Project: https://github.com/ghostty-org/ghostty
+
+MIT License
+
+Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+================================================================
+2. Sparkle
+================================================================
+
+Embedded as a framework (software auto-update).
+Project: https://github.com/sparkle-project/Sparkle
+
+Copyright (c) 2006-2013 Andy Matuschak.
+Copyright (c) 2009-2013 Elgato Systems GmbH.
+Copyright (c) 2011-2014 Kornel Lesiński.
+Copyright (c) 2015-2017 Mayur Pawashe.
+Copyright (c) 2014 C.W. Betts.
+Copyright (c) 2014 Petroules Corporation.
+Copyright (c) 2014 Big Nerd Ranch.
+All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Sparkle bundles the following external components:
+
+  - bsdiff/bspatch (bsdiff 4.3) — Copyright 2003-2005 Colin Percival —
+    BSD-2-Clause.
+  - sais-lite — Copyright (c) 2008-2010 Yuta Mori — MIT.
+  - Ed25519 portable C implementation — Copyright (c) 2015 Orson Peters —
+    zlib license.
+  - SUSignatureVerifier — Copyright (c) 2011 Mark Hamlin — BSD-2-Clause.
+
+The full text of these external licenses is reproduced in Sparkle's LICENSE
+file: https://github.com/sparkle-project/Sparkle/blob/2.x/LICENSE
+
+
+================================================================
+3. Libraries bundled within libghostty
+================================================================
+
+libghostty (section 1) statically links additional third-party libraries it
+vendors itself; their object code ships inside GhosttyKit.xcframework. By SPDX
+identifier:
+
+  - FreeType      (FTL)                — https://freetype.org
+  - libpng        (Libpng)             — https://libpng.org
+  - zlib          (Zlib)               — https://zlib.net
+  - Oniguruma     (BSD-2-Clause)       — https://github.com/kkos/oniguruma
+  - simdutf       (Apache-2.0 OR MIT)  — https://github.com/simdutf/simdutf
+  - SPIRV-Cross   (Apache-2.0)         — https://github.com/KhronosGroup/SPIRV-Cross
+  - glslang       (BSD-3-Clause AND others) — https://github.com/KhronosGroup/glslang
+  - Highway       (Apache-2.0)         — https://github.com/google/highway
+  - Wuffs         (Apache-2.0)         — https://github.com/google/wuffs
+  - stb           (Public Domain OR MIT) — https://github.com/nothings/stb
+  - Dear ImGui    (MIT)                — https://github.com/ocornut/imgui
+  - GNU gettext runtime, libintl (LGPL-2.1-or-later) — https://www.gnu.org/software/gettext/
+  - JetBrains Mono (OFL-1.1, Reserved Font Name "JetBrains Mono",
+    Copyright 2020 The JetBrains Mono Project Authors) —
+    https://github.com/JetBrains/JetBrainsMono
+  - Nerd Fonts codepoint tables (OFL-1.1 for fonts / MIT for code) —
+    https://github.com/ryanoasis/nerd-fonts
+
+libghostty also statically links the following Zig-language libraries declared
+in `vendor/ghostty/build.zig.zon`:
+
+  - libxev        (MIT)                — https://github.com/mitchellh/libxev
+  - uucode        (MIT)                — https://github.com/jacobsandlund/uucode
+  - vaxis         (MIT)                — https://github.com/rockorager/libvaxis
+  - z2d           (MPL-2.0)            — https://github.com/vancluever/z2d
+  - zf            (MIT)                — https://github.com/natecraddock/zf
+  - zig-objc      (MIT)                — https://github.com/mitchellh/zig-objc
+
+z2d is MPL-2.0; per §3.2(a) the source for the covered files is freely
+available at the upstream URL above.
+
+uucode in turn bundles Bjoern Höhrmann's UTF-8 decoder and Unicode Character
+Database data; see the `licenses/` directory in the uucode upstream for the
+full texts.
+
+These are vendored and licensed by their respective authors; see
+https://github.com/ghostty-org/ghostty and each upstream above for the full
+texts.
+
+For the LGPL-2.1 libintl (statically linked into GhosttyKit.xcframework), this
+satisfies LGPL-2.1 §6(a): the complete corresponding source is published at
+https://github.com/nek0der/limpid (which pins https://github.com/nek0der/ghostty
+branch `limpid` as a submodule under `vendor/ghostty`); `make ghostty` invokes
+`scripts/build-ghostty.sh` and is the entry point that produces the linker
+input `GhosttyKit.xcframework`, which can be relinked against a modified
+libintl object set. As a §6(b) fallback, the libintl object files are also
+available on written request via GitHub Discussions
+(https://github.com/nek0der/limpid/discussions); this offer is valid for at
+least three years from the date the corresponding Limpid build was distributed.
+
+
+================================================================
+4. Bundled scripts (shipped under the app's Resources/)
+================================================================
+
+Shell-integration scripts under Resources/ghostty/shell-integration/ are
+sourced into the user's shell at runtime (data files, not linked into the
+binary):
+
+  - zsh/ghostty-integration, zsh/.zshenv, bash/ghostty.bash — adapted from
+    Kitty's shell integration. Kitty is licensed under the GNU General Public
+    License v3.0 (GPL-3.0); these files remain GPL-3.0. They are redistributed
+    as separate, unlinked data files (mere aggregation), so they do not affect
+    the MIT license of Limpid's own code or the libghostty binary. Full text:
+    https://www.gnu.org/licenses/gpl-3.0.html — https://github.com/kovidgoyal/kitty
+
+  - bash/bash-preexec.sh — bash-preexec, MIT License, Copyright (c) Ryan Caloras
+    and contributors. https://github.com/rcaloras/bash-preexec
+
+  - elvish/lib/ghostty-integration.elv,
+    fish/vendor_conf.d/ghostty-shell-integration.fish,
+    nushell/vendor/autoload/ghostty.nu — original ghostty shell integration
+    (not Kitty-derived); distributed under Section 1's MIT license.
+
+
+================================================================
+Notes
+================================================================
+
+This file covers software in the distributed application; build-time-only
+toolchains (Zig, Xcode, xcodegen, etc.) are not included. libghostty is built
+from our fork https://github.com/nek0der/ghostty (branch `limpid`); all changes
+there remain under ghostty's MIT license.
+
+Limpid — Copyright (c) 2026 nek0der — MIT License (see LICENSE).

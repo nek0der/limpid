@@ -1,0 +1,45 @@
+excluded:
+  - vendor
+  - build
+  - .build
+  - .claude
+  - Limpid.xcodeproj
+
+line_length:
+  warning: 140
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+
+identifier_name:
+  min_length: 1
+  excluded:
+    - id
+    - x
+    - y
+    - w
+    - h
+    - r
+    - g
+    - b
+
+function_body_length:
+  warning: 150
+  error: 300
+
+type_body_length:
+  warning: 600
+  error: 900
+
+file_length:
+  warning: 1000
+  error: 1500
+
+cyclomatic_complexity:
+  warning: 13
+  error: 25
+
+disabled_rules:
+  - todo
+  - trailing_comma
+  - opening_brace
