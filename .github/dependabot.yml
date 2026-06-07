@@ -20,21 +20,6 @@ updates:
         update-types:
           - version-update:semver-major
 
-  # Swift packages: monthly. Sparkle is the only entry today; a
-  # Sparkle major bump would need active review anyway, but keep
-  # majors visible so we don't miss a security release.
-  - package-ecosystem: swift
-    directory: /
-    schedule:
-      interval: monthly
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-      - swift
-
   # Submodules: monthly, no auto-updates of any kind. `vendor/ghostty`
   # tracks a fast-moving upstream that frequently breaks our build at
   # the Zig / Metal layer; bumps are vetted manually in a dedicated PR.
