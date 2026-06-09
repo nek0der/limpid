@@ -379,6 +379,7 @@ final class SurfaceView: NSView {
     private nonisolated(unsafe) var windowOcclusionObserver: (any NSObjectProtocol)?
     private nonisolated(unsafe) var windowMiniaturizeObserver: (any NSObjectProtocol)?
     private nonisolated(unsafe) var windowDeminiaturizeObserver: (any NSObjectProtocol)?
+    private nonisolated(unsafe) var windowScreenObserver: (any NSObjectProtocol)?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -403,6 +404,7 @@ final class SurfaceView: NSView {
         let occObs = windowOcclusionObserver
         let miniObs = windowMiniaturizeObserver
         let deminiObs = windowDeminiaturizeObserver
+        let screenObs = windowScreenObserver
         let wdBuf = workingDirectoryCStr
         let sbBuf = scrollbackPathCStr
         let envKeys = envKeyBuffers
@@ -433,6 +435,7 @@ final class SurfaceView: NSView {
             if let occObs { NotificationCenter.default.removeObserver(occObs) }
             if let miniObs { NotificationCenter.default.removeObserver(miniObs) }
             if let deminiObs { NotificationCenter.default.removeObserver(deminiObs) }
+            if let screenObs { NotificationCenter.default.removeObserver(screenObs) }
             if let wdBuf { free(wdBuf) }
             if let sbBuf { free(sbBuf) }
             for buf in envKeys {
@@ -447,6 +450,18 @@ final class SurfaceView: NSView {
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
+        // libghostty owns the CAMetalLayer and renders at native backing
+        // pixels. Without matching `contentsScale` to the window's
+        // `backingScaleFactor`, Core Animation double-scales on a
+        // DPI-mismatched display migration and the rendered grid ends
+        // up cramped into the top-left. The implicit scale animation
+        // is suppressed so the transition isn't visibly janky.
+        if let window {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer?.contentsScale = window.backingScaleFactor
+            CATransaction.commit()
+        }
         pushSurfaceSize()
     }
 
@@ -701,7 +716,8 @@ extension SurfaceView {
     func tearDownWindowObservers() {
         let observers: [(any NSObjectProtocol)?] = [
             windowResizeObserver, windowOcclusionObserver,
-            windowMiniaturizeObserver, windowDeminiaturizeObserver
+            windowMiniaturizeObserver, windowDeminiaturizeObserver,
+            windowScreenObserver
         ]
         for obs in observers {
             obs.map { NotificationCenter.default.removeObserver($0) }
@@ -710,6 +726,7 @@ extension SurfaceView {
         windowOcclusionObserver = nil
         windowMiniaturizeObserver = nil
         windowDeminiaturizeObserver = nil
+        windowScreenObserver = nil
     }
 
     func installWindowObservers(on window: NSWindow) {
@@ -754,6 +771,37 @@ extension SurfaceView {
             MainActor.assumeIsolated {
                 guard let self, let surface = self.surface else { return }
                 ghostty_surface_set_occlusion(surface, true)
+            }
+        }
+
+        // `viewDidChangeBackingProperties` isn't reliable on every
+        // screen-migration path, and `backingScaleFactor` may not be
+        // settled when `didChangeScreen` arrives. Update the vsync
+        // display ID now, then defer the backing-properties refresh by
+        // one run-loop tick. Clear the last-push cache so the C calls
+        // re-fire even when the cached numbers match what we last sent
+        // — the Metal drawable may have been torn down by migration.
+        windowScreenObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeScreenNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let surface = self.surface,
+                   let screen = self.window?.screen,
+                   let displayID = screen.deviceDescription[
+                       NSDeviceDescriptionKey("NSScreenNumber")
+                   ] as? UInt32
+                {
+                    ghostty_surface_set_display_id(surface, displayID)
+                }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.lastPushedScale = nil
+                    self.lastPushedSize = nil
+                    self.viewDidChangeBackingProperties()
+                }
             }
         }
     }
