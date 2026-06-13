@@ -3,15 +3,15 @@
     <channel>
         <title>Limpid</title>
         <item>
-            <title>0.1.0</title>
-            <pubDate>Sun, 07 Jun 2026 07:32:23 +0000</pubDate>
+            <title>0.1.1</title>
+            <pubDate>Sat, 13 Jun 2026 04:16:10 +0000</pubDate>
             <link>https://github.com/nek0der/limpid</link>
-            <sparkle:version>0.1.0</sparkle:version>
-            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:version>0.1.1</sparkle:version>
+            <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <sparkle:releaseNotesLink>https://nek0der.github.io/limpid/Limpid-0.1.0.md</sparkle:releaseNotesLink>
-            <enclosure url="https://github.com/nek0der/limpid/releases/download/v0.1.0/Limpid-0.1.0.dmg" length="9657969" type="application/octet-stream" sparkle:edSignature="0BvjGqpmjY1o3wbwaL6CQ7N9pLTclT2Wbnromd+NBmvt/lqRdSylb+lx5XGnKapecSPkbSeF6q4PfNO0JGCZAA=="/>
+            <sparkle:releaseNotesLink>https://nek0der.github.io/limpid/Limpid-0.1.1.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/nek0der/limpid/releases/download/v0.1.1/Limpid-0.1.1.dmg" length="9659538" type="application/octet-stream" sparkle:edSignature="lo4voUpZmrefEefUIGg5RVb15oh0Po1oDNRFK+/yXBE6w1jxNve8qrMdjy8czUeRhBeo2pFLrR5ROAb7d47PBQ=="/>
         </item>
     </channel>
 </rss>
