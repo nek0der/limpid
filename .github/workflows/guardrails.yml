@@ -23,7 +23,7 @@ jobs:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0 # full history so gitleaks scans every commit, not just the tip
       - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
@@ -34,7 +34,7 @@ jobs:
     name: Forbidden terms (competitor names)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Scan tracked files
         run: scripts/check-forbidden-terms.sh
       - name: Self-test the regex (catches a `\b` regression at edit time)
@@ -44,6 +44,6 @@ jobs:
     name: Attribution coverage (THIRD-PARTY-NOTICES)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Verify every bundled dependency is acknowledged
         run: scripts/check-notices-coverage.sh
