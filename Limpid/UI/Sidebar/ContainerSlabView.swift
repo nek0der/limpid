@@ -1,6 +1,8 @@
 // ContainerSlabView.swift
-// Limpid — the container column sidebar slab. Renders the Quick Tabs row
-// pinned at the top above two collapsible sections (Groups / Projects).
+// Limpid — the container column sidebar slab. A `VerticalSplitView`
+// divides it into the scrolling container list — the Quick Tabs row
+// pinned at the top above two collapsible sections (Groups / Projects) —
+// and the Waiting region below.
 // Section headers carry the fold chevron; individual
 // rows are foldable per-project only (worktrees + general). Every
 // reorderable / droppable row uses the shared
@@ -14,6 +16,7 @@ struct ContainerSlabView: View {
     @Environment(WindowSession.self) private var session
     @Environment(AttentionState.self) private var attention
     @Environment(LimpidDragState.self) private var dragState
+    @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.limpidAccent) var limpidAccent
 
@@ -38,242 +41,21 @@ struct ContainerSlabView: View {
     /// failure UI honest no matter which pipeline threw.
     @State private var worktreeOperationError: String?
 
-    /// Captured slab interior height. Sourced via `onGeometryChange`
-    /// on the enclosing VStack instead of wrapping the whole slab in a
-    /// `GeometryReader`. The previous shape forced a full slab body
-    /// re-eval (which re-runs every container row's aggregate
-    /// computations) every time the proxy size changed — i.e. every
-    /// window resize, sidebar drag, or attention divider drag. Reading
-    /// the height into `@State` lets only the attention region read it
-    /// while the rest of the slab body skips the rebuild.
-    @State private var slabHeight: CGFloat = 0
-
     var body: some View {
-        @Bindable var session = session
-        VStack(spacing: 0) {
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: LimpidLayout.reorderRowSpacing) {
-                    // "Quick Tabs" sits alone at the top — no section header
-                    // since it'd just label a single row. Sections only kick
-                    // in when there's an actual list to label (Groups,
-                    // Projects).
-                    ContainerRow(
-                        kind: .loose(count: session.looseTabs.count),
-                        isActive: isActiveContainer(.loose),
-                        hasUnread: hasUnread(in: .loose),
-                        isRinging: isRinging(in: .loose),
-                        agentState: agentState(in: .loose),
-                        agentStateViewed: attention.isFinishedAggregateViewed(in: .loose, session: session),
-                        agentBreakdown: agentBreakdown(in: .loose),
-                        onActivate: { session.setActiveContainer(.loose) },
-                        onToggleExpand: nil,
-                        onRename: nil
-                    )
-                    .reorderableDropTarget(
-                        targetID: "loose",
-                        acceptedPrefixes: ["tab:"],
-                        tabAsContainerAssignment: true,
-                        isNoOp: { sourceID, _ in
-                            guard let src = session.tab(sourceID) else { return false }
-                            return src.container == .loose
-                        },
-                        onDrop: { _, sourceID, _ in
-                            session.moveTab(sourceID, to: .loose)
-                        }
-                    )
-
-                    sectionHeader(
-                        "GROUPS",
-                        isExpanded: session.groupsSectionExpanded,
-                        toggle: {
-                            withAnimation(LimpidMotion.reorder) {
-                                session.groupsSectionExpanded.toggle()
-                            }
-                        },
-                        addAccessory: {
-                            AnyView(
-                                Button {
-                                    withAnimation(LimpidMotion.reorder) {
-                                        session.groupsSectionExpanded = true
-                                        _ = session.addGroup()
-                                    }
-                                } label: {
-                                    SectionAddBadge()
-                                }
-                                .buttonStyle(.plain)
-                                .help("New Group")
-                                .accessibilityLabel(Text("New Group"))
-                            )
-                        }
-                    )
-                    if session.groupsSectionExpanded {
-                        Group {
-                            ForEach(session.groups) { group in
-                                ContainerRow(
-                                    kind: .group(
-                                        group,
-                                        count: session.tabs(in: group.id).count,
-                                        isExpanded: false
-                                    ),
-                                    isActive: isActiveContainer(.group(group.id)),
-                                    hasUnread: hasUnread(in: .group(group.id)),
-                                    isRinging: isRinging(in: .group(group.id)),
-                                    agentState: agentState(in: .group(group.id)),
-                                    agentStateViewed: attention.isFinishedAggregateViewed(in: .group(group.id), session: session),
-                                    agentBreakdown: agentBreakdown(in: .group(group.id)),
-                                    onActivate: { session.setActiveContainer(.group(group.id)) },
-                                    onToggleExpand: nil,
-                                    onRename: { session.renameGroup(group.id, to: $0) },
-                                    actions: ContainerRowActions(
-                                        onDelete: {
-                                            // Empty groups (0 tabs) skip
-                                            // the confirm modal — there's
-                                            // nothing to lose, so the alert
-                                            // would just be friction.
-                                            if session.tabs(in: group.id).isEmpty {
-                                                withAnimation(LimpidMotion.reorder) {
-                                                    ContainerActions.removeGroup(
-                                                        session,
-                                                        registry: registry,
-                                                        groupID: group.id
-                                                    )
-                                                }
-                                            } else {
-                                                removingGroup = RemoveGroupTarget(
-                                                    groupID: group.id,
-                                                    name: group.name
-                                                )
-                                            }
-                                        },
-                                        onChangePalette: { idx in
-                                            session.setGroupPaletteIndex(group.id, to: idx)
-                                        },
-                                        onMoveUp: {
-                                            withAnimation(LimpidMotion.reorder) {
-                                                session.moveGroupUp(group.id)
-                                            }
-                                        },
-                                        onMoveDown: {
-                                            withAnimation(LimpidMotion.reorder) {
-                                                session.moveGroupDown(group.id)
-                                            }
-                                        },
-                                        canMoveUp: session.canMoveGroupUp(group.id),
-                                        canMoveDown: session.canMoveGroupDown(group.id),
-                                        onOpenSettings: { openSettingsFor = .group(group.id) }
-                                    ),
-                                    // Drag must attach from inside the
-                                    // row body so the row's tap /
-                                    // context-menu gestures don't claim
-                                    // the hit area first on macOS 26.
-                                    dragDescriptor: ContainerRow.DragDescriptor(
-                                        kind: .group,
-                                        prefix: "group:",
-                                        id: group.id.uuidString,
-                                        dragState: dragState
-                                    )
-                                )
-                                .reorderableDropTarget(
-                                    targetID: "group-\(group.id)",
-                                    acceptedPrefixes: ["tab:", "group:"],
-                                    tabAsContainerAssignment: true,
-                                    isNoOp: { sourceID, position in
-                                        // Tab cross-move into the same group
-                                        // = no-op (bg highlight suppressed).
-                                        if let src = session.tab(sourceID),
-                                           case let .group(gid) = src.container, gid == group.id
-                                        {
-                                            return true
-                                        }
-                                        // Self-drop: dragging this group onto
-                                        // its own row never moves anything.
-                                        if sourceID == group.id {
-                                            return true
-                                        }
-                                        // Group reorder adjacency check —
-                                        // dropping right next to where the
-                                        // source already sits is a no-op.
-                                        guard let srcIdx = session.groups.firstIndex(where: { $0.id == sourceID }),
-                                              let tgtIdx = session.groups.firstIndex(where: { $0.id == group.id })
-                                        else { return false }
-                                        switch position {
-                                        case .before: return srcIdx == tgtIdx - 1
-                                        case .after: return srcIdx == tgtIdx + 1
-                                        }
-                                    },
-                                    onDrop: { prefix, sourceID, position in
-                                        if prefix == "tab:" {
-                                            session.moveTab(sourceID, to: .group(group.id))
-                                        } else if prefix == "group:" {
-                                            session.reorderGroup(sourceID: sourceID, target: group.id, position: position)
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-
-                    sectionHeader(
-                        "PROJECTS",
-                        isExpanded: session.projectsSectionExpanded,
-                        toggle: {
-                            withAnimation(LimpidMotion.reorder) {
-                                session.projectsSectionExpanded.toggle()
-                            }
-                        },
-                        addAccessory: {
-                            AnyView(
-                                ProjectAddMenu(
-                                    recentPaths: session.recentProjectPaths,
-                                    onOpenFolder: { openProjectFolderPicker() },
-                                    onOpenRecent: { url in openProject(at: url) }
-                                )
-                            )
-                        }
-                    )
-                    if session.projectsSectionExpanded {
-                        Group {
-                            ForEach(session.projects) { project in
-                                ProjectSectionView(
-                                    project: project,
-                                    creatingWorktreeFor: $creatingWorktreeFor,
-                                    openSettingsFor: $openSettingsFor,
-                                    deletingWorktree: $deletingWorktree,
-                                    removingProject: $removingProject,
-                                    worktreeOperationError: $worktreeOperationError
-                                )
-                            }
-                        }
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
-                .padding(.vertical, 4)
-                .animation(LimpidMotion.expand, value: foldSignature)
-            }
-            // Take all remaining height so the Waiting region
-            // below is pinned to the bottom of the slab (otherwise
-            // the VStack top-aligns the scroll view and the region
-            // floats up / off-screen).
-            .frame(maxHeight: .infinity)
-            attentionRegion(slabHeight: slabHeight)
-        }
-        // Capture the slab's interior height once into local state
-        // so the attention region's fraction math has a value to
-        // read without forcing the whole VStack body to re-run on
-        // every resize tick. `onGeometryChange` only fires when the
-        // observed size actually changes and writes into `@State`
-        // — the slab body skips the rebuild that wrapping the
-        // VStack in a `GeometryReader` would have forced.
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { _, newValue in
-            slabHeight = newValue
-        }
+        VerticalSplitView(
+            topMinHeight: LimpidLayout.containerListMinHeight,
+            bottomMinHeight: LimpidLayout.attentionMinHeight,
+            bottomFractionRange: LimpidLayout.attentionMinFraction...LimpidLayout.attentionMaxFraction,
+            bottomInitialFraction: session.attentionHeightFraction,
+            bottomDefaultFraction: LimpidLayout.attentionHeightFraction,
+            onBottomFractionChanged: { fraction in
+                persistAttentionFraction(fraction)
+            },
+            top: { slabEnvironment(containerList) },
+            bottom: { slabEnvironment(attentionRegion) }
+        )
         // Breathing room between the Waiting region (or any container
-        // column content) and the slab's bottom edge — outside the
-        // VStack so the captured height reflects the VStack's true
-        // drawing area without including this padding.
+        // column content) and the slab's bottom edge.
         .padding(.bottom, 12)
         .sheet(item: Binding(
             get: { creatingWorktreeFor.map { IdentifiedUUID(id: $0) } },
@@ -357,36 +139,20 @@ struct ContainerSlabView: View {
 
     // MARK: - Section header
 
-    /// Bottom-of-slab attention region, pinned at a fraction of the slab
-    /// height and always present (even with nothing waiting) so the user
-    /// has a stable place to glance. A gray rule (also the resize handle)
-    /// separates it from the Quick Tabs / Groups / Projects list above; it
-    /// lists every pane the agent is waiting on the user for (needsInput /
-    /// error / finished) in the same order the ⌘J cursor walks; the inner
-    /// area scrolls when the list overflows. Tapping a row jumps focus to
-    /// that pane.
+    /// The lower pane of the slab's split: always present (even with
+    /// nothing waiting) so the user has a stable place to glance. It
+    /// lists every pane the agent is waiting on the user for
+    /// (needsInput / error / finished) in the same order the ⌘J cursor
+    /// walks; the inner area scrolls when the list overflows. Tapping a
+    /// row jumps focus to that pane.
     @ViewBuilder
-    private func attentionRegion(slabHeight: CGFloat) -> some View {
-        @Bindable var session = session
+    private var attentionRegion: some View {
         let entries = attention.attentionEntries(in: session)
         // The pane the user is currently looking at — its row gets a
         // highlight so "where am I" is obvious while cycling with ⌘J.
         let focusedTab = session.activeTabID
         let focusedPane = session.activeTab?.splitTree.focusedLeafID
-        // Floor to `attentionMinHeight` so the 0-item hint ("All clear"
-        // / "N hidden") stays visible even when the user has dragged the
-        // region to its smallest fraction in a short sidebar.
-        let height = max(slabHeight * session.attentionHeightFraction, LimpidLayout.attentionMinHeight)
         VStack(alignment: .leading, spacing: 0) {
-            // Gray rule doubles as the drag handle: drag up/down to
-            // resize the region, double-click to reset to the default
-            // fraction. Stored as a fraction of slab height so it keeps
-            // its proportion across window resizes.
-            AttentionDividerHandle(
-                currentFraction: { session.attentionHeightFraction },
-                setFraction: { session.attentionHeightFraction = $0 },
-                slabHeight: slabHeight
-            )
             attentionHeader(count: entries.count, attention: attention, accent: limpidAccent)
             // TimelineView re-renders once per minute. The label is
             // "just now" under 60s and steps to "1m / 2m / …" from there
@@ -452,7 +218,241 @@ struct ContainerSlabView: View {
                 }
             }
         }
-        .frame(height: height, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// The scrolling upper pane of the slab: Quick Tabs, Groups,
+    /// Projects. Extracted from `body` so the split view's two panes
+    /// read as a pair at the call site.
+    private var containerList: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: LimpidLayout.reorderRowSpacing) {
+                // "Quick Tabs" sits alone at the top — no section header
+                // since it'd just label a single row. Sections only kick
+                // in when there's an actual list to label (Groups,
+                // Projects).
+                ContainerRow(
+                    kind: .loose(count: session.looseTabs.count),
+                    isActive: isActiveContainer(.loose),
+                    hasUnread: hasUnread(in: .loose),
+                    isRinging: isRinging(in: .loose),
+                    agentState: agentState(in: .loose),
+                    agentStateViewed: attention.isFinishedAggregateViewed(in: .loose, session: session),
+                    agentBreakdown: agentBreakdown(in: .loose),
+                    onActivate: { session.setActiveContainer(.loose) },
+                    onToggleExpand: nil,
+                    onRename: nil
+                )
+                .reorderableDropTarget(
+                    targetID: "loose",
+                    acceptedPrefixes: ["tab:"],
+                    tabAsContainerAssignment: true,
+                    isNoOp: { sourceID, _ in
+                        guard let src = session.tab(sourceID) else { return false }
+                        return src.container == .loose
+                    },
+                    onDrop: { _, sourceID, _ in
+                        session.moveTab(sourceID, to: .loose)
+                    }
+                )
+
+                sectionHeader(
+                    "GROUPS",
+                    isExpanded: session.groupsSectionExpanded,
+                    toggle: {
+                        withAnimation(LimpidMotion.reorder) {
+                            session.groupsSectionExpanded.toggle()
+                        }
+                    },
+                    addAccessory: {
+                        AnyView(
+                            Button {
+                                withAnimation(LimpidMotion.reorder) {
+                                    session.groupsSectionExpanded = true
+                                    _ = session.addGroup()
+                                }
+                            } label: {
+                                SectionAddBadge()
+                            }
+                            .buttonStyle(.plain)
+                            .help("New Group")
+                            .accessibilityLabel(Text("New Group"))
+                        )
+                    }
+                )
+                if session.groupsSectionExpanded {
+                    Group {
+                        ForEach(session.groups) { group in
+                            ContainerRow(
+                                kind: .group(
+                                    group,
+                                    count: session.tabs(in: group.id).count,
+                                    isExpanded: false
+                                ),
+                                isActive: isActiveContainer(.group(group.id)),
+                                hasUnread: hasUnread(in: .group(group.id)),
+                                isRinging: isRinging(in: .group(group.id)),
+                                agentState: agentState(in: .group(group.id)),
+                                agentStateViewed: attention.isFinishedAggregateViewed(in: .group(group.id), session: session),
+                                agentBreakdown: agentBreakdown(in: .group(group.id)),
+                                onActivate: { session.setActiveContainer(.group(group.id)) },
+                                onToggleExpand: nil,
+                                onRename: { session.renameGroup(group.id, to: $0) },
+                                actions: ContainerRowActions(
+                                    onDelete: {
+                                        // Empty groups (0 tabs) skip
+                                        // the confirm modal — there's
+                                        // nothing to lose, so the alert
+                                        // would just be friction.
+                                        if session.tabs(in: group.id).isEmpty {
+                                            withAnimation(LimpidMotion.reorder) {
+                                                ContainerActions.removeGroup(
+                                                    session,
+                                                    registry: registry,
+                                                    groupID: group.id
+                                                )
+                                            }
+                                        } else {
+                                            removingGroup = RemoveGroupTarget(
+                                                groupID: group.id,
+                                                name: group.name
+                                            )
+                                        }
+                                    },
+                                    onChangePalette: { idx in
+                                        session.setGroupPaletteIndex(group.id, to: idx)
+                                    },
+                                    onMoveUp: {
+                                        withAnimation(LimpidMotion.reorder) {
+                                            session.moveGroupUp(group.id)
+                                        }
+                                    },
+                                    onMoveDown: {
+                                        withAnimation(LimpidMotion.reorder) {
+                                            session.moveGroupDown(group.id)
+                                        }
+                                    },
+                                    canMoveUp: session.canMoveGroupUp(group.id),
+                                    canMoveDown: session.canMoveGroupDown(group.id),
+                                    onOpenSettings: { openSettingsFor = .group(group.id) }
+                                ),
+                                // Drag must attach from inside the
+                                // row body so the row's tap /
+                                // context-menu gestures don't claim
+                                // the hit area first on macOS 26.
+                                dragDescriptor: ContainerRow.DragDescriptor(
+                                    kind: .group,
+                                    prefix: "group:",
+                                    id: group.id.uuidString,
+                                    dragState: dragState
+                                )
+                            )
+                            .reorderableDropTarget(
+                                targetID: "group-\(group.id)",
+                                acceptedPrefixes: ["tab:", "group:"],
+                                tabAsContainerAssignment: true,
+                                isNoOp: { sourceID, position in
+                                    // Tab cross-move into the same group
+                                    // = no-op (bg highlight suppressed).
+                                    if let src = session.tab(sourceID),
+                                       case let .group(gid) = src.container, gid == group.id
+                                    {
+                                        return true
+                                    }
+                                    // Self-drop: dragging this group onto
+                                    // its own row never moves anything.
+                                    if sourceID == group.id {
+                                        return true
+                                    }
+                                    // Group reorder adjacency check —
+                                    // dropping right next to where the
+                                    // source already sits is a no-op.
+                                    guard let srcIdx = session.groups.firstIndex(where: { $0.id == sourceID }),
+                                          let tgtIdx = session.groups.firstIndex(where: { $0.id == group.id })
+                                    else { return false }
+                                    switch position {
+                                    case .before: return srcIdx == tgtIdx - 1
+                                    case .after: return srcIdx == tgtIdx + 1
+                                    }
+                                },
+                                onDrop: { prefix, sourceID, position in
+                                    if prefix == "tab:" {
+                                        session.moveTab(sourceID, to: .group(group.id))
+                                    } else if prefix == "group:" {
+                                        session.reorderGroup(sourceID: sourceID, target: group.id, position: position)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                sectionHeader(
+                    "PROJECTS",
+                    isExpanded: session.projectsSectionExpanded,
+                    toggle: {
+                        withAnimation(LimpidMotion.reorder) {
+                            session.projectsSectionExpanded.toggle()
+                        }
+                    },
+                    addAccessory: {
+                        AnyView(
+                            ProjectAddMenu(
+                                recentPaths: session.recentProjectPaths,
+                                onOpenFolder: { openProjectFolderPicker() },
+                                onOpenRecent: { url in openProject(at: url) }
+                            )
+                        )
+                    }
+                )
+                if session.projectsSectionExpanded {
+                    Group {
+                        ForEach(session.projects) { project in
+                            ProjectSectionView(
+                                project: project,
+                                creatingWorktreeFor: $creatingWorktreeFor,
+                                openSettingsFor: $openSettingsFor,
+                                deletingWorktree: $deletingWorktree,
+                                removingProject: $removingProject,
+                                worktreeOperationError: $worktreeOperationError
+                            )
+                        }
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .padding(.vertical, 4)
+            .animation(LimpidMotion.expand, value: foldSignature)
+        }
+    }
+
+    /// Mirror a divider drag or double-click reset onto the stored
+    /// value. `NSSplitView` can autosave divider positions itself, but
+    /// the share belongs with the rest of the window session rather than
+    /// in `UserDefaults`. No clamping here: `VerticalSplitView`
+    /// constrains the drag and hands back only user-driven shares. The
+    /// dead-band keeps a drag's stream of callbacks from rewriting the
+    /// session on every frame.
+    private func persistAttentionFraction(_ fraction: CGFloat) {
+        if abs(fraction - session.attentionHeightFraction) > 0.005 {
+            session.attentionHeightFraction = fraction
+        }
+    }
+
+    /// The panes do inherit this view's SwiftUI environment through the
+    /// representable — verified by rendering the slab without this
+    /// helper — but the slab's correctness shouldn't rest on that, so we
+    /// re-apply every value the subtree reads. Add new ones in this one
+    /// place.
+    private func slabEnvironment(_ content: some View) -> some View {
+        content
+            .environment(session)
+            .environment(attention)
+            .environment(dragState)
+            .environment(toastCenter)
+            .environment(\.surfaceRegistry, registry)
+            .limpidAccentPropagated(limpidAccent)
     }
 
     /// Palette color of a container, for the Waiting row's dot.

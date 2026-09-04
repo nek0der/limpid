@@ -1,7 +1,7 @@
 // AttentionRow.swift
-// Limpid — container column Waiting list row card + its resize divider handle.
+// Limpid — container column Waiting list row card.
 // Extracted from ContainerSlabView to keep that file within the
-// file-length budget. Both are self-contained (no slab-private state).
+// file-length budget. Self-contained (no slab-private state).
 
 import AppKit
 import SwiftUI
@@ -130,74 +130,6 @@ struct AttentionRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(Text("Jump to this pane"))
-    }
-}
-
-/// Horizontal drag handle that resizes the Waiting region. Mirrors
-/// `DividerResizeHandle` (the container column/tab column width splitter) but on the vertical
-/// axis and storing a fraction of slab height. Drag up to grow the
-/// region, down to shrink; double-click resets to the default fraction.
-struct AttentionDividerHandle: View {
-    let currentFraction: () -> CGFloat
-    let setFraction: (CGFloat) -> Void
-    let slabHeight: CGFloat
-
-    @State private var dragStartFraction: CGFloat?
-
-    var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(Color.clear)
-                .frame(height: LimpidLayout.attentionResizeHandleHeight)
-            Rectangle()
-                .fill(Color.primary.opacity(0.1))
-                .frame(height: 1)
-                // Inset the rule so it doesn't run edge-to-edge into the
-                // sidebar frame; matches the header's horizontal padding.
-                .padding(.horizontal, 18)
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            if hovering {
-                NSCursor.resizeUpDown.push()
-            } else {
-                NSCursor.pop()
-            }
-        }
-        .gesture(
-            TapGesture(count: 2)
-                .onEnded {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        setFraction(LimpidLayout.attentionHeightFraction)
-                    }
-                }
-                .exclusively(before:
-                    DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                        .onChanged { value in
-                            if dragStartFraction == nil {
-                                dragStartFraction = currentFraction()
-                            }
-                            guard slabHeight > 0 else { return }
-                            // Dragging up (negative translation) grows
-                            // the bottom region, so subtract.
-                            let deltaFraction = -value.translation.height / slabHeight
-                            let next = (dragStartFraction ?? currentFraction()) + deltaFraction
-                            // Floor the fraction so the rendered point
-                            // height also respects `attentionMinHeight`
-                            // — dragging never collapses past the 0-item
-                            // hint in a short sidebar.
-                            let pointFloor = slabHeight > 0
-                                ? LimpidLayout.attentionMinHeight / slabHeight
-                                : LimpidLayout.attentionMinFraction
-                            let minFraction = max(LimpidLayout.attentionMinFraction, pointFloor)
-                            setFraction(min(
-                                max(next, minFraction),
-                                LimpidLayout.attentionMaxFraction
-                            ))
-                        }
-                        .onEnded { _ in dragStartFraction = nil }
-                )
-        )
     }
 }
 
