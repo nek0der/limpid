@@ -31,18 +31,34 @@ extension TabActions {
         )
         // Carry per-pane state across so the new tab is byte-identical
         // for the moved leaf — agent badges, unread, replay payloads.
-        if let s = sourceTab.paneStates[paneID] { newTab.paneStates[paneID] = s }
-        if let s = sourceTab.claudeSessions[paneID] { newTab.claudeSessions[paneID] = s }
-        if let s = sourceTab.codexSessions[paneID] { newTab.codexSessions[paneID] = s }
-        if let s = sourceTab.claudeAgentBadges[paneID] { newTab.claudeAgentBadges[paneID] = s }
-        if let s = sourceTab.codexAgentBadges[paneID] { newTab.codexAgentBadges[paneID] = s }
-        if let s = sourceTab.scrollbackPaths[paneID] { newTab.scrollbackPaths[paneID] = s }
-        if let s = sourceTab.initialCommands[paneID] { newTab.initialCommands[paneID] = s }
+        if let s = sourceTab.paneStates[paneID] {
+            newTab.paneStates[paneID] = s
+        }
+        if let s = sourceTab.claudeSessions[paneID] {
+            newTab.claudeSessions[paneID] = s
+        }
+        if let s = sourceTab.codexSessions[paneID] {
+            newTab.codexSessions[paneID] = s
+        }
+        if let s = sourceTab.claudeAgentBadges[paneID] {
+            newTab.claudeAgentBadges[paneID] = s
+        }
+        if let s = sourceTab.codexAgentBadges[paneID] {
+            newTab.codexAgentBadges[paneID] = s
+        }
+        if let s = sourceTab.scrollbackPaths[paneID] {
+            newTab.scrollbackPaths[paneID] = s
+        }
+        if let s = sourceTab.initialCommands[paneID] {
+            newTab.initialCommands[paneID] = s
+        }
 
         session.update(sourceTab.id) { t in
             let result = t.splitTree.remove(paneID)
             t.splitTree = result.tree
-            if t.zoomedLeafID == paneID { t.zoomedLeafID = nil }
+            if t.zoomedLeafID == paneID {
+                t.zoomedLeafID = nil
+            }
             t.paneStates.removeValue(forKey: paneID)
             t.claudeSessions.removeValue(forKey: paneID)
             t.codexSessions.removeValue(forKey: paneID)

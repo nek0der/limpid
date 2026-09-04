@@ -144,14 +144,18 @@ extension WindowSession {
     /// Tabs in the implicit Loose container.
     var looseTabs: [Tab] {
         tabs.filter {
-            if case .loose = $0.container { return true }
+            if case .loose = $0.container {
+                return true
+            }
             return false
         }
     }
 
     func tabs(in groupID: UUID) -> [Tab] {
         tabs.filter {
-            if case let .group(gid) = $0.container, gid == groupID { return true }
+            if case let .group(gid) = $0.container, gid == groupID {
+                return true
+            }
             return false
         }
     }
@@ -159,7 +163,9 @@ extension WindowSession {
     /// Tabs directly under a Project header (the "general" leaf).
     func directTabs(in projectID: UUID) -> [Tab] {
         tabs.filter {
-            if case let .project(pid) = $0.container, pid == projectID { return true }
+            if case let .project(pid) = $0.container, pid == projectID {
+                return true
+            }
             return false
         }
     }
@@ -168,7 +174,10 @@ extension WindowSession {
     func tabs(inProject projectID: UUID, worktree worktreeID: UUID) -> [Tab] {
         tabs.filter {
             if case let .worktree(pid, wid) = $0.container,
-               pid == projectID, wid == worktreeID { return true }
+               pid == projectID, wid == worktreeID
+            {
+                return true
+            }
             return false
         }
     }
@@ -196,7 +205,9 @@ extension WindowSession {
     ///      sees the moved tab immediately, with that tab still active
     func moveTab(_ tabID: UUID, to target: ContainerID) {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
-        if tabs[index].container == target { return }
+        if tabs[index].container == target {
+            return
+        }
         let sourceContainer = tabs[index].container
         let wasActive = (activeTabID == tabID)
         // Clear the source's `lastActiveTabID` before the tab leaves

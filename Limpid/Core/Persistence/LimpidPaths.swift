@@ -40,7 +40,9 @@ enum LimpidPaths {
     /// separate sandbox so a missed `init(directory:)` injection can't
     /// trash production data.
     static var applicationSupportDirectoryName: String {
-        if isRunningInTests { return "Limpid Tests Stray" }
+        if isRunningInTests {
+            return "Limpid Tests Stray"
+        }
         return isDevBuild ? "Limpid Dev" : "Limpid"
     }
 

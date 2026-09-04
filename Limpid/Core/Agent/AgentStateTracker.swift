@@ -348,7 +348,9 @@ extension AgentStateTracker where S == CodexAgent {
                 let killErrno = errno
                 isAlive = killRC == 0 || killErrno == EPERM
             }
-            if isAlive { continue }
+            if isAlive {
+                continue
+            }
 
             // Honor the "Limpid killed it" marker for one resume
             // attempt — but only when recent (24 h) and we always

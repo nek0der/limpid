@@ -128,7 +128,9 @@ extension SurfaceView {
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
         var scrollMods: Int32 = 0
-        if event.hasPreciseScrollingDeltas { scrollMods |= 1 << 0 }
+        if event.hasPreciseScrollingDeltas {
+            scrollMods |= 1 << 0
+        }
         switch event.momentumPhase {
         case .began: scrollMods |= Int32(GHOSTTY_MOUSE_MOMENTUM_BEGAN.rawValue) << 1
         case .stationary: scrollMods |= Int32(GHOSTTY_MOUSE_MOMENTUM_STATIONARY.rawValue) << 1

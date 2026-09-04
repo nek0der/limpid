@@ -35,7 +35,9 @@ indirect enum PaneNode: Codable, Equatable {
     case split(PaneSplit)
 
     var leafID: UUID? {
-        if case let .leaf(id) = self { return id }
+        if case let .leaf(id) = self {
+            return id
+        }
         return nil
     }
 }
@@ -100,7 +102,9 @@ struct SplitTree: Codable, Equatable {
     }
 
     var isSplit: Bool {
-        if case .split = root { return true }
+        if case .split = root {
+            return true
+        }
         return false
     }
 
@@ -363,7 +367,9 @@ struct SplitTree: Codable, Equatable {
         return candidates.min { lhs, rhs in
             let gl = axisGap(lhs.rect)
             let gr = axisGap(rhs.rect)
-            if gl != gr { return gl < gr }
+            if gl != gr {
+                return gl < gr
+            }
             return perpDistance(lhs.rect) < perpDistance(rhs.rect)
         }?.id
     }

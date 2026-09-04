@@ -29,7 +29,11 @@ struct WorktreeOperationAlerts: ViewModifier {
                 "Delete worktree?",
                 isPresented: Binding(
                     get: { deletingWorktree != nil },
-                    set: { if !$0 { deletingWorktree = nil } }
+                    set: {
+                        if !$0 {
+                            deletingWorktree = nil
+                        }
+                    }
                 ),
                 presenting: deletingWorktree
             ) { target in
@@ -47,7 +51,11 @@ struct WorktreeOperationAlerts: ViewModifier {
                 "Force delete?",
                 isPresented: Binding(
                     get: { forceDeleteWorktree != nil },
-                    set: { if !$0 { forceDeleteWorktree = nil } }
+                    set: {
+                        if !$0 {
+                            forceDeleteWorktree = nil
+                        }
+                    }
                 ),
                 presenting: forceDeleteWorktree
             ) { target in
@@ -62,7 +70,11 @@ struct WorktreeOperationAlerts: ViewModifier {
                 "Close project?",
                 isPresented: Binding(
                     get: { removingProject != nil },
-                    set: { if !$0 { removingProject = nil } }
+                    set: {
+                        if !$0 {
+                            removingProject = nil
+                        }
+                    }
                 ),
                 presenting: removingProject
             ) { target in
@@ -80,7 +92,11 @@ struct WorktreeOperationAlerts: ViewModifier {
                 "Close group?",
                 isPresented: Binding(
                     get: { removingGroup != nil },
-                    set: { if !$0 { removingGroup = nil } }
+                    set: {
+                        if !$0 {
+                            removingGroup = nil
+                        }
+                    }
                 ),
                 presenting: removingGroup
             ) { target in
@@ -98,7 +114,11 @@ struct WorktreeOperationAlerts: ViewModifier {
                 "Delete failed",
                 isPresented: Binding(
                     get: { worktreeOperationError != nil },
-                    set: { if !$0 { worktreeOperationError = nil } }
+                    set: {
+                        if !$0 {
+                            worktreeOperationError = nil
+                        }
+                    }
                 ),
                 presenting: worktreeOperationError
             ) { _ in

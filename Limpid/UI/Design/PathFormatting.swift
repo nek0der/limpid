@@ -10,7 +10,9 @@ enum PathFormatting {
     /// the user's home directory are returned verbatim.
     static func abbreviateHome(_ path: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        if path == home { return "~" }
+        if path == home {
+            return "~"
+        }
         if path.hasPrefix(home + "/") {
             return "~" + path.dropFirst(home.count)
         }

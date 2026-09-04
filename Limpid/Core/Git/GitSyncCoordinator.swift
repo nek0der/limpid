@@ -82,8 +82,12 @@ final class GitSyncCoordinator {
     }
 
     deinit {
-        if let s = syncRequestObserver { NotificationCenter.default.removeObserver(s) }
-        if let a = activateObserver { NotificationCenter.default.removeObserver(a) }
+        if let s = syncRequestObserver {
+            NotificationCenter.default.removeObserver(s)
+        }
+        if let a = activateObserver {
+            NotificationCenter.default.removeObserver(a)
+        }
     }
 
     private func handleSyncRequest(_ projectID: UUID?) {
@@ -293,7 +297,9 @@ private final class ProjectSync {
         // Append rows git reported that we don't already track.
         for info in liveInfos {
             let path = info.path.standardizedFileURL
-            if consumedPaths.contains(path) { continue }
+            if consumedPaths.contains(path) {
+                continue
+            }
             result.append(mergeWorktree(existing: nil, info: info, statuses: statuses))
         }
 

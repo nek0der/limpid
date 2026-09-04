@@ -46,8 +46,12 @@ extension WindowSession {
     /// as web browsers do.
     func recordNavigation(from previous: NavTarget) {
         guard previous != currentNavTarget else { return }
-        if previous == navBackStack.last { return }
-        if previous == navForwardStack.last { return }
+        if previous == navBackStack.last {
+            return
+        }
+        if previous == navForwardStack.last {
+            return
+        }
         navBackStack.append(previous)
         if navBackStack.count > Self.navHistoryLimit {
             navBackStack.removeFirst()

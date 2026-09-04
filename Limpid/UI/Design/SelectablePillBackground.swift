@@ -50,9 +50,15 @@ private struct SelectablePillBackground: ViewModifier {
     }
 
     private var fill: Color {
-        if isActive { return LimpidColor.rowActiveFill }
-        if isDescendantActive { return LimpidColor.rowAncestorActiveFill }
-        if isHovering { return LimpidColor.rowHoverFill }
+        if isActive {
+            return LimpidColor.rowActiveFill
+        }
+        if isDescendantActive {
+            return LimpidColor.rowAncestorActiveFill
+        }
+        if isHovering {
+            return LimpidColor.rowHoverFill
+        }
         return .clear
     }
 

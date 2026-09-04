@@ -123,7 +123,9 @@ extension WindowSession {
         let url = URL(fileURLWithPath: path)
         let resolved = url.resolvingSymlinksInPath()
         var base = scrollbackDir().resolvingSymlinksInPath().path
-        if !base.hasSuffix("/") { base += "/" }
+        if !base.hasSuffix("/") {
+            base += "/"
+        }
         guard resolved.pathExtension == "vt", resolved.path.hasPrefix(base) else {
             scrollbackLog.warning("rejected out-of-sandbox scrollback path on restore")
             return nil

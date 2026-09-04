@@ -45,7 +45,9 @@ struct AttentionRow: View {
     /// English `m`/`h`/`d ago`.
     private var relativeLabel: String {
         let elapsed = max(0, Int(now.timeIntervalSince(timestamp)))
-        if elapsed < 60 { return String(localized: "just now") }
+        if elapsed < 60 {
+            return String(localized: "just now")
+        }
         return timestamp.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
     }
 
@@ -156,7 +158,11 @@ struct AttentionDividerHandle: View {
         }
         .contentShape(Rectangle())
         .onHover { hovering in
-            if hovering { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+            if hovering {
+                NSCursor.resizeUpDown.push()
+            } else {
+                NSCursor.pop()
+            }
         }
         .gesture(
             TapGesture(count: 2)
@@ -168,7 +174,9 @@ struct AttentionDividerHandle: View {
                 .exclusively(before:
                     DragGesture(minimumDistance: 1, coordinateSpace: .global)
                         .onChanged { value in
-                            if dragStartFraction == nil { dragStartFraction = currentFraction() }
+                            if dragStartFraction == nil {
+                                dragStartFraction = currentFraction()
+                            }
                             guard slabHeight > 0 else { return }
                             // Dragging up (negative translation) grows
                             // the bottom region, so subtract.
@@ -256,8 +264,12 @@ extension ContainerSlabView {
     /// when present, otherwise the turn's prompt. AskUserQuestion and
     /// permission prompts carry their text in `detail`, not `lastPrompt`.
     func attentionPreview(_ entry: AttentionState.AttentionEntry) -> String? {
-        if let detail = entry.detail, !detail.isEmpty { return detail }
-        if let prompt = entry.lastPrompt, !prompt.isEmpty { return prompt }
+        if let detail = entry.detail, !detail.isEmpty {
+            return detail
+        }
+        if let prompt = entry.lastPrompt, !prompt.isEmpty {
+            return prompt
+        }
         return nil
     }
 
@@ -265,6 +277,10 @@ extension ContainerSlabView {
     /// palette color, so we show an icon instead of a meaningless dot.
     /// Groups / Projects keep their color dot (it encodes which one).
     func containerIcon(for container: ContainerID) -> String? {
-        if case .loose = container { "tray.full" } else { nil }
+        if case .loose = container {
+            "tray.full"
+        } else {
+            nil
+        }
     }
 }

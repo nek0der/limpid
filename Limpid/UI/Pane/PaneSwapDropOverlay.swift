@@ -108,7 +108,9 @@ struct PaneSwapDropOverlay: View {
         // previous zone's highlight for a frame before the new
         // `isTargeted: true` callback arrives.
         .onChange(of: dragState.current) { _, new in
-            if new != .pane { hoverZone = nil }
+            if new != .pane {
+                hoverZone = nil
+            }
         }
     }
 

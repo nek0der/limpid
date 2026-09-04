@@ -86,7 +86,9 @@ final class NotificationHistoryStore {
             entries[i].isRead = true
             changed = true
         }
-        if changed { scheduleSave() }
+        if changed {
+            scheduleSave()
+        }
     }
 
     func clearAll() {

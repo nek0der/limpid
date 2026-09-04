@@ -249,7 +249,9 @@ private struct NotificationHistoryRow: View {
     /// Row background — hover fill only. The red kind icon already
     /// conveys "failed", no need to also tint the whole row.
     private var rowBackground: Color {
-        if isHovering, isSourceAlive { return LimpidColor.rowHoverFill }
+        if isHovering, isSourceAlive {
+            return LimpidColor.rowHoverFill
+        }
         return .clear
     }
 
@@ -281,7 +283,9 @@ private struct NotificationHistoryRow: View {
     private var timeLabel: String {
         let now = Date()
         let delta = now.timeIntervalSince(entry.timestamp)
-        if delta < 60 { return String(localized: "now") }
+        if delta < 60 {
+            return String(localized: "now")
+        }
         if delta < 86400 {
             // Recent entries get a locale-aware abbreviated relative
             // form ("5 min. ago" / "5分前"). `Date.RelativeFormatStyle`

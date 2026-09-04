@@ -169,7 +169,9 @@ enum TabActions {
     ) -> [UUID: T] {
         var result: [UUID: T] = [:]
         for (old, value) in source {
-            if let new = mapping[old] { result[new] = value }
+            if let new = mapping[old] {
+                result[new] = value
+            }
         }
         return result
     }

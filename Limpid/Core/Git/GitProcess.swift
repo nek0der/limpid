@@ -211,7 +211,9 @@ enum GitProcess {
         force: Bool
     ) async throws -> GitResult {
         var args = ["worktree", "remove"]
-        if force { args.append("--force") }
+        if force {
+            args.append("--force")
+        }
         args.append(path.path)
         return try await run(args, cwd: repoRoot)
     }

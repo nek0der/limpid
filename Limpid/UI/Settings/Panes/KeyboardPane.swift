@@ -248,13 +248,17 @@ private struct ShortcutRecorder: View {
             }
         }
         .onDisappear {
-            if isRecording { recordingAction = nil }
+            if isRecording {
+                recordingAction = nil
+            }
             teardownMonitors()
         }
     }
 
     private var label: String {
-        if isRecording { return String(localized: "Press a key…") }
+        if isRecording {
+            return String(localized: "Press a key…")
+        }
         return displayedShortcut?.displayString ?? String(localized: "Unbound")
     }
 

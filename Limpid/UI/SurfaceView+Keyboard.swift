@@ -147,7 +147,9 @@ extension SurfaceView {
                 key.text = text.isEmpty ? nil : ptr
                 return ghostty_surface_key(surface, key)
             }
-            if handled { return }
+            if handled {
+                return
+            }
             // Otherwise fall through and let IME try.
         }
 
@@ -236,7 +238,9 @@ extension SurfaceView {
     override func flagsChanged(with event: NSEvent) {
         // Bare modifier presses during IME composition clear the
         // preedit visually (ghostty#4634). Suppress them.
-        if hasMarkedText() { return }
+        if hasMarkedText() {
+            return
+        }
         // Keep the pane-drag cursor in sync on every modifier change so
         // ⌥⌘ press/release flips the cursor without waiting for a
         // mouse move.

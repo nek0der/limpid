@@ -25,6 +25,12 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
   ```
   `zig@0.15` is keg-only; the build script invokes it by its full path
   (`/opt/homebrew/opt/zig@0.15/bin/zig`), so no `PATH` change is required.
+- [Mint](https://github.com/yonaskolb/Mint), for the `swiftformat` version
+  pinned in `Mintfile` (`make fmt` / `make lint`)
+  ```bash
+  brew install mint
+  mint bootstrap
+  ```
 
 ### Build
 

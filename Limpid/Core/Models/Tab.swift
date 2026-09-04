@@ -184,7 +184,9 @@ struct Tab: Codable, Equatable, Identifiable {
     /// Title actually rendered in the UI. Honors a manual override; falls
     /// back to whatever libghostty last reported.
     var displayTitle: String {
-        if let override = titleOverride, !override.isEmpty { return override }
+        if let override = titleOverride, !override.isEmpty {
+            return override
+        }
         return title
     }
 
@@ -271,18 +273,24 @@ enum ContainerID: Codable, Hashable {
     }
 
     var worktreeID: UUID? {
-        if case let .worktree(_, wid) = self { return wid }
+        if case let .worktree(_, wid) = self {
+            return wid
+        }
         return nil
     }
 
     var groupID: UUID? {
-        if case let .group(gid) = self { return gid }
+        if case let .group(gid) = self {
+            return gid
+        }
         return nil
     }
 
     /// `true` when the container is anything other than `.loose`.
     var hasParent: Bool {
-        if case .loose = self { return false }
+        if case .loose = self {
+            return false
+        }
         return true
     }
 

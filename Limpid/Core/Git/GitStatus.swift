@@ -69,8 +69,12 @@ enum GitStatus {
                 // Format: "+N -N"
                 let parts = pair.split(separator: " ")
                 if parts.count == 2 {
-                    if let a = Int(parts[0].dropFirst()) { ahead = a }
-                    if let b = Int(parts[1].dropFirst()) { behind = b }
+                    if let a = Int(parts[0].dropFirst()) {
+                        ahead = a
+                    }
+                    if let b = Int(parts[1].dropFirst()) {
+                        behind = b
+                    }
                 }
             } else if line.hasPrefix("1 ")
                 || line.hasPrefix("2 ")

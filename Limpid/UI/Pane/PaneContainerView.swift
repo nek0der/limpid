@@ -30,10 +30,14 @@ struct PaneContainerView: View {
         guard let tab = session.tab(containing: paneID) else { return 1.0 }
         // Zoom hides every sibling, so a fade on the visible leaf would
         // dim "the only thing on screen" — keep it full-strength.
-        if tab.zoomedLeafID != nil { return 1.0 }
+        if tab.zoomedLeafID != nil {
+            return 1.0
+        }
         let leaves = tab.splitTree.allLeafIDs()
         guard leaves.count > 1 else { return 1.0 }
-        if tab.splitTree.effectiveFocusedLeafID == paneID { return 1.0 }
+        if tab.splitTree.effectiveFocusedLeafID == paneID {
+            return 1.0
+        }
         return settingsStore.settings.appearance.unfocusedPaneOpacity
     }
 

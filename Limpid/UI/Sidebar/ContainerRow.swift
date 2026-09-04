@@ -329,14 +329,20 @@ struct ContainerRow: View {
                 // closure still no-ops when already editing.
                 .simultaneousGesture(
                     TapGesture(count: 2).onEnded {
-                        if !isEditing { beginRename() }
+                        if !isEditing {
+                            beginRename()
+                        }
                     }
                 )
                 .onChange(of: label) { _, newValue in
-                    if !isEditing { draft = newValue }
+                    if !isEditing {
+                        draft = newValue
+                    }
                 }
                 .onAppear {
-                    if !isEditing { draft = label }
+                    if !isEditing {
+                        draft = label
+                    }
                 }
             } else {
                 // `maxWidth: .infinity` so the label takes the row's
@@ -376,7 +382,9 @@ struct ContainerRow: View {
         // (fixed separately), not the tap recognizer.
         .simultaneousGesture(
             TapGesture().onEnded {
-                if isEditing { return }
+                if isEditing {
+                    return
+                }
                 onActivate()
             }
         )
@@ -557,7 +565,9 @@ struct ContainerRow: View {
         // user flagged as too dim. Use full primary for active and
         // ~85% for everything else so labels stay legible without the
         // contrast leaking into the active highlight.
-        if isActive { return .primary }
+        if isActive {
+            return .primary
+        }
         switch kind {
         case .worktree, .groupTab:
             return Color.primary.opacity(0.78)
@@ -571,7 +581,9 @@ struct ContainerRow: View {
     /// True when this row represents a worktree that has been
     /// externally removed from disk. Drives the dim + warning badge.
     private var isMissingWorktree: Bool {
-        if case let .worktree(_, w, _) = kind { return w.isMissing }
+        if case let .worktree(_, w, _) = kind {
+            return w.isMissing
+        }
         return false
     }
 

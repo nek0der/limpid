@@ -45,7 +45,9 @@ struct CreateWorktreeSheet: View {
               !effectiveBranchLeaf().isEmpty,
               resolvedPath != nil
         else { return false }
-        if locationConflicts { return false }
+        if locationConflicts {
+            return false
+        }
         if createsNewBranch {
             return !newBranchName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }

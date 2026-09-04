@@ -386,12 +386,16 @@ final class SurfaceView: NSView {
         tearDownWindowObservers()
 
         guard let window else { return }
-        if surface == nil { createSurface() }
+        if surface == nil {
+            createSurface()
+        }
         // Focused leaf grabs the keyboard; others are marked unfocused so
         // they don't all render an active cursor. See `shouldFocusOnMount`.
         if shouldFocusOnMount?() ?? true {
             window.makeFirstResponder(self)
-        } else if let surface { ghostty_surface_set_focus(surface, false) }
+        } else if let surface {
+            ghostty_surface_set_focus(surface, false)
+        }
         installWindowObservers(on: window)
     }
 
@@ -430,21 +434,39 @@ final class SurfaceView: NSView {
             if let box = SurfaceView.liveViewsByPointer[pointerKey], box.view == nil {
                 SurfaceView.liveViewsByPointer.removeValue(forKey: pointerKey)
             }
-            if let s { ghostty_surface_free(s) }
-            if let obs { NotificationCenter.default.removeObserver(obs) }
-            if let occObs { NotificationCenter.default.removeObserver(occObs) }
-            if let miniObs { NotificationCenter.default.removeObserver(miniObs) }
-            if let deminiObs { NotificationCenter.default.removeObserver(deminiObs) }
-            if let screenObs { NotificationCenter.default.removeObserver(screenObs) }
-            if let wdBuf { free(wdBuf) }
-            if let sbBuf { free(sbBuf) }
+            if let s {
+                ghostty_surface_free(s)
+            }
+            if let obs {
+                NotificationCenter.default.removeObserver(obs)
+            }
+            if let occObs {
+                NotificationCenter.default.removeObserver(occObs)
+            }
+            if let miniObs {
+                NotificationCenter.default.removeObserver(miniObs)
+            }
+            if let deminiObs {
+                NotificationCenter.default.removeObserver(deminiObs)
+            }
+            if let screenObs {
+                NotificationCenter.default.removeObserver(screenObs)
+            }
+            if let wdBuf {
+                free(wdBuf)
+            }
+            if let sbBuf {
+                free(sbBuf)
+            }
             for buf in envKeys {
                 free(buf)
             }
             for buf in envValues {
                 free(buf)
             }
-            if let envArray { envArray.deallocate() }
+            if let envArray {
+                envArray.deallocate()
+            }
         }
     }
 
@@ -496,7 +518,9 @@ final class SurfaceView: NSView {
     }
 
     override func becomeFirstResponder() -> Bool {
-        if let surface { ghostty_surface_set_focus(surface, true) }
+        if let surface {
+            ghostty_surface_set_focus(surface, true)
+        }
         // Don't clear unread here — AppKit auto-focuses the pane on tab
         // switch which would wipe the ring before the user has had a
         // chance to see it. We clear in `mouseDown` instead so the user
@@ -512,7 +536,9 @@ final class SurfaceView: NSView {
     }
 
     override func resignFirstResponder() -> Bool {
-        if let surface { ghostty_surface_set_focus(surface, false) }
+        if let surface {
+            ghostty_surface_set_focus(surface, false)
+        }
         return true
     }
 

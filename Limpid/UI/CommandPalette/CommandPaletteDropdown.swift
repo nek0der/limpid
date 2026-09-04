@@ -100,7 +100,9 @@ struct CommandPaletteDropdown: View {
     private func globalIndex(for offset: Int, in category: CommandPaletteCategory, allSections: [Section]) -> Int {
         var index = 0
         for section in allSections {
-            if section.category == category { return index + offset }
+            if section.category == category {
+                return index + offset
+            }
             index += section.items.count
         }
         return index + offset

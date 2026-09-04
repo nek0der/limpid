@@ -131,7 +131,9 @@ struct PaneAreaView: View {
                             // operations.
                             if zone != .center {
                                 let centerResult = tree.swappingLeaves(source, target)
-                                if result == centerResult { return false }
+                                if result == centerResult {
+                                    return false
+                                }
                             }
                             return true
                         },

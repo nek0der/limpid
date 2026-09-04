@@ -194,7 +194,9 @@ enum CommandPaletteCatalog {
     ) {
         for url in session.recentProjectPaths {
             let alreadyOpen = session.projects.contains { $0.rootURL == url }
-            if alreadyOpen { continue }
+            if alreadyOpen {
+                continue
+            }
 
             items.append(CommandPaletteItem(
                 id: "recent.\(url.path)",

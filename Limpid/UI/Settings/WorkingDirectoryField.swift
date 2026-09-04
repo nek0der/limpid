@@ -69,7 +69,9 @@ struct WorkingDirectoryField: View {
             mode = newMode
             // Drop a stale fixed path so it can't resurface if the
             // user toggles back to Custom later.
-            if path != nil { path = nil }
+            if path != nil {
+                path = nil
+            }
         case .fixed:
             // No directory chosen yet — open the picker. If the user
             // cancels we leave the previous mode untouched (the

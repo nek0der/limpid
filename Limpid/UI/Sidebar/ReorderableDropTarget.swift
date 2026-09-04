@@ -164,7 +164,9 @@ private struct UnifiedReorderDelegate: DropDelegate {
         // consumed by `performDrop` below — which then no-ops, because
         // the UUID isn't a tab/group/project/worktree — and the user
         // sees the drag "vanish" with no merge.
-        if dragState.current == .pane { return false }
+        if dragState.current == .pane {
+            return false
+        }
         return true
     }
 
@@ -285,7 +287,9 @@ private struct UnifiedReorderDelegate: DropDelegate {
         // predicate already knows the data shape (group / project /
         // worktree / tab) and detects "drop right where you already
         // are" without us reverse-engineering targetID strings.
-        if let isNoOp, isNoOp(sourceUUID, position) { return }
+        if let isNoOp, isNoOp(sourceUUID, position) {
+            return
+        }
         // Dedupe repeat `dropUpdated` callbacks — SwiftUI fires those
         // at roughly the mouse-move rate.
         if dragState.lastLiveTarget == targetID,

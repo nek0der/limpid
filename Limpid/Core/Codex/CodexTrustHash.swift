@@ -114,14 +114,26 @@ enum CodexTrustHash {
             let body = array.map { serializeCanonical($0) }.joined(separator: ",")
             return "[\(body)]"
         }
-        if let s = value as? String { return jsonString(s) }
-        if let b = value as? Bool { return b ? "true" : "false" }
-        if let i = value as? Int { return String(i) }
+        if let s = value as? String {
+            return jsonString(s)
+        }
+        if let b = value as? Bool {
+            return b ? "true" : "false"
+        }
+        if let i = value as? Int {
+            return String(i)
+        }
         // AnyHashable wrapper unwrap.
         if let any = value as? AnyHashable {
-            if let s = any.base as? String { return jsonString(s) }
-            if let b = any.base as? Bool { return b ? "true" : "false" }
-            if let i = any.base as? Int { return String(i) }
+            if let s = any.base as? String {
+                return jsonString(s)
+            }
+            if let b = any.base as? Bool {
+                return b ? "true" : "false"
+            }
+            if let i = any.base as? Int {
+                return String(i)
+            }
             if let arr = any.base as? [AnyHashable] {
                 let body = arr.map { serializeCanonical($0) }.joined(separator: ",")
                 return "[\(body)]"

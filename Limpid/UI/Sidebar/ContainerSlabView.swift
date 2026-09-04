@@ -187,7 +187,9 @@ struct ContainerSlabView: View {
                                         }
                                         // Self-drop: dragging this group onto
                                         // its own row never moves anything.
-                                        if sourceID == group.id { return true }
+                                        if sourceID == group.id {
+                                            return true
+                                        }
                                         // Group reorder adjacency check —
                                         // dropping right next to where the
                                         // source already sits is a no-op.
@@ -501,7 +503,11 @@ struct ContainerSlabView: View {
         .padding(.top, 18)
         .padding(.bottom, 4)
         .contentShape(Rectangle())
-        .onTapGesture { if isExpanded != nil { toggle() } }
+        .onTapGesture {
+            if isExpanded != nil {
+                toggle()
+            }
+        }
     }
 
     // MARK: - Project add helpers

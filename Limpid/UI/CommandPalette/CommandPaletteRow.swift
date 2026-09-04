@@ -56,7 +56,11 @@ struct CommandPaletteRow: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .background(rowBackground, in: RoundedRectangle(cornerRadius: 6))
-        .onTapGesture { if item.isEnabled { onTap() } }
+        .onTapGesture {
+            if item.isEnabled {
+                onTap()
+            }
+        }
         .onHover { isHovering = $0 }
     }
 
