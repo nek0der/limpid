@@ -121,6 +121,10 @@ Short index of load-bearing files. Skim these before touching their domain.
   tabs, groups, projects, and restore.
 - `Limpid/UI/Design/LiquidGlassPanel.swift` — entry point for the macOS 26
   `.glassEffect` panel treatment.
+- `Limpid/UI/Design/VerticalSplitView.swift` — the container slab's list /
+  Waiting split, and why its position is persisted only from a divider
+  drag. Records `NSSplitView` behavior measured on macOS 26 that the SDK
+  headers describe differently.
 - `Limpid/Core/Updates/SparkleUpdater.swift` — Sparkle auto-update wiring.
 
 ## 5. Do not touch

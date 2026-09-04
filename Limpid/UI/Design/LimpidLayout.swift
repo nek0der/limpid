@@ -41,9 +41,9 @@ enum LimpidLayout {
     static let tabColumnMaxWidth: CGFloat = 500
 
     /// Container column Waiting region height as a fraction of the slab height.
-    /// Drag-resizable via the divider above it (persisted on
-    /// `WindowSession.attentionHeightFraction`); double-click resets to
-    /// `attentionHeightFraction`. A fraction (not points) so the region
+    /// Default for `WindowSession.attentionHeightFraction`: the share a
+    /// session opens at until the user moves the divider, and the share
+    /// a double-click resets to. A fraction (not points) so the region
     /// keeps its proportion when the window resizes.
     static let attentionHeightFraction: CGFloat = 0.25
     static let attentionMinFraction: CGFloat = 0.08
@@ -52,10 +52,16 @@ enum LimpidLayout {
     /// fraction, the region never shrinks below this so the header + the
     /// 0-item message ("All clear" / "N hidden by filter") stay visible
     /// in small sidebars. Eyeballed from the header padding (top 18 +
-    /// bottom 10), the divider hit area, and one 11pt hint row.
+    /// bottom 10) and one 11pt hint row. `VerticalSplitView` holds it on
+    /// every path — drag, restore, and window resize — the last of which
+    /// needs `splitView(_:resizeSubviewsWithOldSize:)` because
+    /// `NSSplitView`'s own proportional resize ignores delegate limits.
     static let attentionMinHeight: CGFloat = 100
-    /// Vertical drag handle hit-area height (the Waiting divider).
-    static let attentionResizeHandleHeight: CGFloat = 8
+    /// Floor for the container list pane above the Waiting divider, so
+    /// it can't collapse to nothing. Declared through the split view's
+    /// divider limits, unlike `attentionMinHeight`, which
+    /// `VerticalSplitView` also resolves itself.
+    static let containerListMinHeight: CGFloat = 100
 
     /// Distance from a column's top edge to where toolbar content (the
     /// action capsule / container title) starts. Aligns container / tab / terminal column

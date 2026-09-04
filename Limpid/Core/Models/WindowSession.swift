@@ -78,10 +78,10 @@ final class WindowSession {
     var tabColumnWidth: CGFloat = LimpidLayout.tabColumnWidth
 
     /// Height of the container column Waiting region as a fraction of the slab
-    /// height; persisted. Drag-resizable via the divider above it;
-    /// double-click resets to `LimpidLayout.attentionHeightFraction`.
-    /// A fraction (not points) so it keeps its proportion across window
-    /// resizes. Clamped to `attentionMinFraction ... attentionMaxFraction`.
+    /// height; persisted. The UI writes it only when the user drags the
+    /// slab's divider or double-clicks it to reset — a window resize
+    /// re-lays the panes but leaves this alone. A fraction (not points) so it
+    /// keeps its proportion across window resizes.
     var attentionHeightFraction: CGFloat = LimpidLayout.attentionHeightFraction
 
     /// Whether the sidebar is collapsed.
