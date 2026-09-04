@@ -197,7 +197,9 @@ struct ProjectSectionView: View {
                 {
                     return true
                 }
-                if sourceID == project.id { return true }
+                if sourceID == project.id {
+                    return true
+                }
                 guard let srcIdx = session.projects.firstIndex(where: { $0.id == sourceID }),
                       let tgtIdx = session.projects.firstIndex(where: { $0.id == project.id })
                 else { return false }
@@ -312,7 +314,9 @@ struct ProjectSectionView: View {
                 }
                 if let srcProjectID = session.projectID(forWorktree: sourceID) {
                     guard srcProjectID == project.id else { return true }
-                    if sourceID == wt.id { return true }
+                    if sourceID == wt.id {
+                        return true
+                    }
                     guard let si = project.worktrees.firstIndex(where: { $0.id == sourceID }),
                           let ti = project.worktrees.firstIndex(where: { $0.id == wt.id })
                     else { return false }

@@ -483,7 +483,9 @@ final class WindowSession {
         else { return }
         let moved = array.remove(at: from)
         var insertAt = array.firstIndex(where: { $0.id == targetID }) ?? from
-        if position == .after { insertAt += 1 }
+        if position == .after {
+            insertAt += 1
+        }
         array.insert(moved, at: insertAt)
     }
 

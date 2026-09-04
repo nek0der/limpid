@@ -51,10 +51,10 @@ test: $(PBXPROJ)
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' test
 
 fmt:
-	swiftformat .
+	mint run swiftformat .
 
 lint:
-	swiftformat --lint .
+	mint run swiftformat --lint .
 	swiftlint lint --strict
 
 dmg:

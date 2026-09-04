@@ -87,8 +87,20 @@ struct SessionSnapshot: Codable, @unchecked Sendable {
         self.version = try c.decode(Int.self, forKey: .version)
         let containers = try c.decode([OptionalContainer].self, forKey: .containers)
             .compactMap(\.container)
-        self.groups = containers.compactMap { if case let .group(g) = $0 { g } else { nil } }
-        self.projects = containers.compactMap { if case let .project(p) = $0 { p } else { nil } }
+        self.groups = containers.compactMap {
+            if case let .group(g) = $0 {
+                g
+            } else {
+                nil
+            }
+        }
+        self.projects = containers.compactMap {
+            if case let .project(p) = $0 {
+                p
+            } else {
+                nil
+            }
+        }
         // Wire format separates content (`tabs: {id: Tab}`) from ordering
         // (`tabOrder: [UUID]`) so a future partial-update tool can rewrite
         // a single tab without re-encoding the whole array, and a reorder
@@ -379,8 +391,12 @@ extension WindowSession {
 
         guard droppedTabs > 0 || resetContainer else { return nil }
         var parts: [String] = []
-        if droppedTabs > 0 { parts.append("\(droppedTabs) tab(s) with duplicate pane IDs were dropped") }
-        if resetContainer { parts.append("the active container no longer existed") }
+        if droppedTabs > 0 {
+            parts.append("\(droppedTabs) tab(s) with duplicate pane IDs were dropped")
+        }
+        if resetContainer {
+            parts.append("the active container no longer existed")
+        }
         return .decodeFailed(message: "Recovered a corrupt session: \(parts.joined(separator: "; ")).")
     }
 }

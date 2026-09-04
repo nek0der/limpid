@@ -32,13 +32,21 @@ enum NotificationSanitizer {
         result = result.unicodeScalars.filter { scalar in
             let v = scalar.value
             // Allow tab and newline.
-            if v == 0x09 || v == 0x0A { return true }
+            if v == 0x09 || v == 0x0A {
+                return true
+            }
             // Strip C0 control chars (0x00-0x1F minus tab/newline).
-            if v <= 0x1F { return false }
+            if v <= 0x1F {
+                return false
+            }
             // Strip DEL.
-            if v == 0x7F { return false }
+            if v == 0x7F {
+                return false
+            }
             // Strip C1 control chars (0x80-0x9F).
-            if v >= 0x80, v <= 0x9F { return false }
+            if v >= 0x80, v <= 0x9F {
+                return false
+            }
             // Strip invisible-spacing / direction marks that are common
             // attack vectors: ZWSP (200B), LRM (200E), RLM (200F).
             // Deliberately *preserve* ZWNJ (200C) and ZWJ (200D) — the
@@ -46,13 +54,23 @@ enum NotificationSanitizer {
             // the latter is load-bearing for modern emoji sequences
             // (family / skin-tone / profession). Stripping them would
             // garble user-visible text without meaningful safety win.
-            if v == 0x200B { return false }
-            if v == 0x200E || v == 0x200F { return false }
+            if v == 0x200B {
+                return false
+            }
+            if v == 0x200E || v == 0x200F {
+                return false
+            }
             // Strip BOM / ZWNBSP.
-            if v == 0xFEFF { return false }
+            if v == 0xFEFF {
+                return false
+            }
             // Strip bidi overrides + isolation marks.
-            if v >= 0x202A, v <= 0x202E { return false }
-            if v >= 0x2066, v <= 0x2069 { return false }
+            if v >= 0x202A, v <= 0x202E {
+                return false
+            }
+            if v >= 0x2066, v <= 0x2069 {
+                return false
+            }
             return true
         }.map { String($0) }.joined()
 

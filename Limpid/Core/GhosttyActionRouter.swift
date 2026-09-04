@@ -234,8 +234,12 @@ enum GhosttyActionRouter {
             if scalar.value < 0x20 || (scalar.value >= 0x7F && scalar.value <= 0x9F) {
                 continue
             }
-            if bidi.contains(scalar) || bidi2.contains(scalar) { continue }
-            if zwsp.contains(scalar) { continue }
+            if bidi.contains(scalar) || bidi2.contains(scalar) {
+                continue
+            }
+            if zwsp.contains(scalar) {
+                continue
+            }
             scalars.append(scalar)
         }
         return String(scalars)

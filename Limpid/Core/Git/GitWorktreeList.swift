@@ -39,12 +39,16 @@ enum GitWorktreeList {
         for rawLine in porcelain.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = String(rawLine)
             if line.isEmpty {
-                if let p = current?.finalized { results.append(p) }
+                if let p = current?.finalized {
+                    results.append(p)
+                }
                 current = nil
                 continue
             }
             if line.hasPrefix("worktree ") {
-                if let p = current?.finalized { results.append(p) }
+                if let p = current?.finalized {
+                    results.append(p)
+                }
                 let path = String(line.dropFirst("worktree ".count))
                 current = PartialWorktree(path: URL(fileURLWithPath: path))
             } else if line.hasPrefix("HEAD ") {
@@ -68,7 +72,9 @@ enum GitWorktreeList {
             }
             // Unknown lines are ignored — porcelain is forward-compatible.
         }
-        if let p = current?.finalized { results.append(p) }
+        if let p = current?.finalized {
+            results.append(p)
+        }
         return results
     }
 

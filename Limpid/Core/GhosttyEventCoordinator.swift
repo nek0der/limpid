@@ -229,7 +229,9 @@ final class GhosttyEventCoordinator {
             guard index >= 0, index < visible.count else { return }
             target = visible[index]
         }
-        if let target { session.setActiveTab(target.id) }
+        if let target {
+            session.setActiveTab(target.id)
+        }
     }
 
     /// COMMAND_FINISHED — the shell integration's preexec/precmd hook
@@ -245,12 +247,16 @@ final class GhosttyEventCoordinator {
 
         let isFocusedSource = LimpidNotificationDelegate.isKeyAndFocused
             && (view.window?.firstResponder === view)
-        if config.mode == .unfocused, isFocusedSource { return }
+        if config.mode == .unfocused, isFocusedSource {
+            return
+        }
 
         let owningTab = session?.tab(containing: paneID)
         let title = owningTab?.displayTitle ?? "Limpid"
         let exitFragment: String = {
-            if exit < 0 { return "" }
+            if exit < 0 {
+                return ""
+            }
             return String(
                 localized: " (exit \(exit))",
                 comment: "Command-finished notification — exit code fragment"
@@ -276,7 +282,9 @@ final class GhosttyEventCoordinator {
                 exitCode: exit >= 0 ? exit : nil,
                 durationSeconds: durationSeconds
             )
-            if !isFocusedSource { session?.markUnread(paneID: paneID) }
+            if !isFocusedSource {
+                session?.markUnread(paneID: paneID)
+            }
         }
         if config.channels.contains(.bell) {
             NSSound.beep()

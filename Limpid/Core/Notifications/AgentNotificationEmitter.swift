@@ -153,7 +153,9 @@ struct AgentNotificationEmitter {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !collapsed.isEmpty else { return nil }
         let limit = 80
-        if collapsed.count <= limit { return collapsed }
+        if collapsed.count <= limit {
+            return collapsed
+        }
         let cutoff = collapsed.index(collapsed.startIndex, offsetBy: limit - 1)
         return collapsed[..<cutoff] + "…"
     }

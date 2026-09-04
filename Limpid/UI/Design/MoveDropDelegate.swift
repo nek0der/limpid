@@ -248,10 +248,12 @@ final class LimpidDragState {
     }
 
     private func removeMouseUpMonitor() {
-        if let m = localMonitor { NSEvent.removeMonitor(m)
+        if let m = localMonitor {
+            NSEvent.removeMonitor(m)
             localMonitor = nil
         }
-        if let m = globalMonitor { NSEvent.removeMonitor(m)
+        if let m = globalMonitor {
+            NSEvent.removeMonitor(m)
             globalMonitor = nil
         }
     }
@@ -277,7 +279,9 @@ struct MoveDropDelegate: DropDelegate {
     }
 
     func dropEntered(info: DropInfo) {
-        if isAccepted { onEntered() }
+        if isAccepted {
+            onEntered()
+        }
     }
 
     func dropExited(info: DropInfo) {
@@ -305,7 +309,9 @@ struct MoveDropDelegate: DropDelegate {
         provider.loadObject(ofClass: NSString.self) { item, _ in
             let payload = (item as? String)
             Task { @MainActor in
-                if let payload { _ = onPerform(payload) }
+                if let payload {
+                    _ = onPerform(payload)
+                }
                 onExited()
                 dragState.end()
             }

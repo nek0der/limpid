@@ -47,7 +47,9 @@ struct DividerResizeHandle: View {
                     .exclusively(before:
                         DragGesture(minimumDistance: 1, coordinateSpace: .global)
                             .onChanged { value in
-                                if dragStart == nil { dragStart = currentWidth() }
+                                if dragStart == nil {
+                                    dragStart = currentWidth()
+                                }
                                 let delta = value.translation.width
                                 let next = (dragStart ?? currentWidth()) + delta
                                 setWidth(next.clampedToResizeRange(min: minWidth, max: maxWidth))

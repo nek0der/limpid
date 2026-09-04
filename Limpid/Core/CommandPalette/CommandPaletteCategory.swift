@@ -80,7 +80,9 @@ enum PalettePrefix: CaseIterable {
     func matchesItem(_ item: CommandPaletteItem) -> Bool {
         switch self {
         case .tabs:
-            if case .jumpToTab = item.action { return true }
+            if case .jumpToTab = item.action {
+                return true
+            }
             return false
         case .projects:
             switch item.action {

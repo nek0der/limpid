@@ -52,12 +52,16 @@ struct ContainerSettingsSheet: View {
     }
 
     private var projectID: UUID? {
-        if case let .project(id) = target { return id }
+        if case let .project(id) = target {
+            return id
+        }
         return nil
     }
 
     private var groupID: UUID? {
-        if case let .group(id) = target { return id }
+        if case let .group(id) = target {
+            return id
+        }
         return nil
     }
 

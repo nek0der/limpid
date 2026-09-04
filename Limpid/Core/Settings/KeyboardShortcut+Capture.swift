@@ -29,10 +29,18 @@ extension StoredShortcut {
         _ flags: NSEvent.ModifierFlags
     ) -> ShortcutModifiers {
         var set: ShortcutModifiers = []
-        if flags.contains(.command) { set.insert(.command) }
-        if flags.contains(.shift) { set.insert(.shift) }
-        if flags.contains(.option) { set.insert(.option) }
-        if flags.contains(.control) { set.insert(.control) }
+        if flags.contains(.command) {
+            set.insert(.command)
+        }
+        if flags.contains(.shift) {
+            set.insert(.shift)
+        }
+        if flags.contains(.option) {
+            set.insert(.option)
+        }
+        if flags.contains(.control) {
+            set.insert(.control)
+        }
         return set
     }
 
@@ -63,7 +71,9 @@ extension StoredShortcut {
     /// expects in its keybind line.
     @MainActor
     private static func ghosttyKey(from event: NSEvent) -> String? {
-        if let named = keyCodeNames[event.keyCode] { return named }
+        if let named = keyCodeNames[event.keyCode] {
+            return named
+        }
         if let translated = translateKeyCodeIgnoringShift(event.keyCode), !translated.isEmpty {
             return translated.lowercased()
         }

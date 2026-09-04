@@ -161,12 +161,16 @@ extension WindowSession {
     func removeGroup(_ groupID: UUID) -> [UUID] {
         let leafIDs = tabs
             .filter {
-                if case let .group(gid) = $0.container { return gid == groupID }
+                if case let .group(gid) = $0.container {
+                    return gid == groupID
+                }
                 return false
             }
             .flatMap { $0.splitTree.allLeafIDs() }
         tabs.removeAll {
-            if case let .group(gid) = $0.container { return gid == groupID }
+            if case let .group(gid) = $0.container {
+                return gid == groupID
+            }
             return false
         }
         groups.removeAll { $0.id == groupID }
@@ -305,7 +309,9 @@ extension WindowSession {
         let sorted = indexed.sorted { lhs, rhs in
             let l = rank[lhs.1.id] ?? Int.max
             let r = rank[rhs.1.id] ?? Int.max
-            if l != r { return l < r }
+            if l != r {
+                return l < r
+            }
             return lhs.0 < rhs.0
         }
         return sorted.map(\.1)

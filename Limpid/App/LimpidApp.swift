@@ -963,7 +963,11 @@ struct ContentView: View {
             loadIssue?.title ?? "",
             isPresented: Binding(
                 get: { loadIssue != nil },
-                set: { if !$0 { loadIssue = nil } }
+                set: {
+                    if !$0 {
+                        loadIssue = nil
+                    }
+                }
             ),
             presenting: loadIssue
         ) { _ in

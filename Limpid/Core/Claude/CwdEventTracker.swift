@@ -124,7 +124,9 @@ final class CwdEventTracker {
         }
         for rec in records {
             guard let id = UUID(uuidString: rec.paneId) else { continue }
-            if seen[id] == rec.updatedAt { continue }
+            if seen[id] == rec.updatedAt {
+                continue
+            }
             seen[id] = rec.updatedAt
             // Don't suggest for panes that no longer exist; the
             // event is moot.

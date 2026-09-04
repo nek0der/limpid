@@ -58,7 +58,9 @@ final class ReduceTransparencyResolver {
     }
 
     deinit {
-        if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+        if let observer {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
     }
 
     /// Wire the user's preference into the resolver. Call this from

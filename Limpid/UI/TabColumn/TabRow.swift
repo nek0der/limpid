@@ -69,8 +69,12 @@ struct TabRow: View {
     /// the badge is dropped.
     private var isAgentTab: Bool {
         tab.splitTree.allLeafIDs().contains { leaf in
-            if let s = tab.claudeAgentBadges[leaf]?.state, s != .unknown { return true }
-            if let s = tab.codexAgentBadges[leaf]?.state, s != .unknown { return true }
+            if let s = tab.claudeAgentBadges[leaf]?.state, s != .unknown {
+                return true
+            }
+            if let s = tab.codexAgentBadges[leaf]?.state, s != .unknown {
+                return true
+            }
             return false
         }
     }
@@ -167,19 +171,27 @@ struct TabRow: View {
             // already editing.
             .simultaneousGesture(
                 TapGesture(count: 2).onEnded {
-                    if !isEditing { beginRename() }
+                    if !isEditing {
+                        beginRename()
+                    }
                 }
             )
             .onChange(of: tab.displayTitle) { _, new in
-                if !isEditing { draft = new }
+                if !isEditing {
+                    draft = new
+                }
             }
             .onAppear {
-                if !isEditing { draft = tab.displayTitle }
+                if !isEditing {
+                    draft = tab.displayTitle
+                }
             }
             // ⌘⇧R posts this; only the matching row reacts so cross-
             // container renames don't fire the wrong row.
             .onReceive(NotificationCenter.default.publisher(for: .limpidRenameActiveTab)) { note in
-                if (note.object as? UUID) == tab.id, !isEditing { beginRename() }
+                if (note.object as? UUID) == tab.id, !isEditing {
+                    beginRename()
+                }
             }
             Spacer(minLength: 4)
             if let state = aggregateAgentState,
@@ -273,7 +285,9 @@ struct TabRow: View {
         // still settling the previous frame.
         .simultaneousGesture(
             TapGesture().onEnded {
-                if isEditing { return }
+                if isEditing {
+                    return
+                }
                 onActivate()
             }
         )

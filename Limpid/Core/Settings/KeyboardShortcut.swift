@@ -345,20 +345,36 @@ struct ShortcutModifiers: OptionSet, Codable, Hashable {
     /// order so unit tests and round-trips are stable.
     var ghosttyTokens: [String] {
         var tokens: [String] = []
-        if contains(.command) { tokens.append("super") }
-        if contains(.control) { tokens.append("ctrl") }
-        if contains(.option) { tokens.append("alt") }
-        if contains(.shift) { tokens.append("shift") }
+        if contains(.command) {
+            tokens.append("super")
+        }
+        if contains(.control) {
+            tokens.append("ctrl")
+        }
+        if contains(.option) {
+            tokens.append("alt")
+        }
+        if contains(.shift) {
+            tokens.append("shift")
+        }
         return tokens
     }
 
     /// macOS symbol order matches Apple's HIG: ⌃⌥⇧⌘.
     var displaySymbols: String {
         var out = ""
-        if contains(.control) { out += "⌃" }
-        if contains(.option) { out += "⌥" }
-        if contains(.shift) { out += "⇧" }
-        if contains(.command) { out += "⌘" }
+        if contains(.control) {
+            out += "⌃"
+        }
+        if contains(.option) {
+            out += "⌥"
+        }
+        if contains(.shift) {
+            out += "⇧"
+        }
+        if contains(.command) {
+            out += "⌘"
+        }
         return out
     }
 
@@ -366,10 +382,18 @@ struct ShortcutModifiers: OptionSet, Codable, Hashable {
     /// `View+limpidShortcut` to wire the menu bar shortcut.
     var swiftUIEventModifiers: EventModifiers {
         var out: EventModifiers = []
-        if contains(.command) { out.insert(.command) }
-        if contains(.shift) { out.insert(.shift) }
-        if contains(.option) { out.insert(.option) }
-        if contains(.control) { out.insert(.control) }
+        if contains(.command) {
+            out.insert(.command)
+        }
+        if contains(.shift) {
+            out.insert(.shift)
+        }
+        if contains(.option) {
+            out.insert(.option)
+        }
+        if contains(.control) {
+            out.insert(.control)
+        }
         return out
     }
 }
@@ -431,10 +455,18 @@ struct StoredShortcut: Codable, Hashable {
     /// welcome screen).
     var displayTokens: [String] {
         var tokens: [String] = []
-        if modifiers.contains(.control) { tokens.append("⌃") }
-        if modifiers.contains(.option) { tokens.append("⌥") }
-        if modifiers.contains(.shift) { tokens.append("⇧") }
-        if modifiers.contains(.command) { tokens.append("⌘") }
+        if modifiers.contains(.control) {
+            tokens.append("⌃")
+        }
+        if modifiers.contains(.option) {
+            tokens.append("⌥")
+        }
+        if modifiers.contains(.shift) {
+            tokens.append("⇧")
+        }
+        if modifiers.contains(.command) {
+            tokens.append("⌘")
+        }
         tokens.append(Self.displayKey(for: key))
         return tokens
     }

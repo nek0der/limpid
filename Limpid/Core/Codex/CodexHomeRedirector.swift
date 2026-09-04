@@ -141,7 +141,9 @@ final class CodexHomeRedirector {
     /// non-existent shadow CODEX_HOME.
     func environment(forPaneID paneID: UUID?) -> [String: String] {
         guard hookScriptURL != nil else { return [:] }
-        if ProcessInfo.processInfo.environment["LIMPID_DEMO"] == "1" { return [:] }
+        if ProcessInfo.processInfo.environment["LIMPID_DEMO"] == "1" {
+            return [:]
+        }
         var env: [String: String] = [:]
         // Only redirect CODEX_HOME when the shadow dir actually exists.
         // `refresh()` bails before creating it when the user has no
@@ -256,7 +258,9 @@ final class CodexHomeRedirector {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("[") {
                 inTuiSection = (trimmed == "[tui]")
-                if inTuiSection { tuiSeen = true }
+                if inTuiSection {
+                    tuiSeen = true
+                }
                 filtered.append(line)
                 continue
             }

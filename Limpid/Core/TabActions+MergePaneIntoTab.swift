@@ -58,13 +58,27 @@ extension TabActions {
             let result = t.splitTree.insert(at: pivot, direction: .horizontal, newID: paneID)
             t.splitTree = result.tree
             t.splitTree.focusedLeafID = paneID
-            if let s = paneState { t.paneStates[paneID] = s }
-            if let s = claudeSession { t.claudeSessions[paneID] = s }
-            if let s = codexSession { t.codexSessions[paneID] = s }
-            if let s = claudeBadge { t.claudeAgentBadges[paneID] = s }
-            if let s = codexBadge { t.codexAgentBadges[paneID] = s }
-            if let s = scrollbackPath { t.scrollbackPaths[paneID] = s }
-            if let s = initialCommand { t.initialCommands[paneID] = s }
+            if let s = paneState {
+                t.paneStates[paneID] = s
+            }
+            if let s = claudeSession {
+                t.claudeSessions[paneID] = s
+            }
+            if let s = codexSession {
+                t.codexSessions[paneID] = s
+            }
+            if let s = claudeBadge {
+                t.claudeAgentBadges[paneID] = s
+            }
+            if let s = codexBadge {
+                t.codexAgentBadges[paneID] = s
+            }
+            if let s = scrollbackPath {
+                t.scrollbackPaths[paneID] = s
+            }
+            if let s = initialCommand {
+                t.initialCommands[paneID] = s
+            }
         }
 
         // Drop the pane from the source tab. zoom is per-tab so clear
@@ -72,7 +86,9 @@ extension TabActions {
         session.update(sourceTab.id) { t in
             let result = t.splitTree.remove(paneID)
             t.splitTree = result.tree
-            if t.zoomedLeafID == paneID { t.zoomedLeafID = nil }
+            if t.zoomedLeafID == paneID {
+                t.zoomedLeafID = nil
+            }
             t.paneStates.removeValue(forKey: paneID)
             t.claudeSessions.removeValue(forKey: paneID)
             t.codexSessions.removeValue(forKey: paneID)

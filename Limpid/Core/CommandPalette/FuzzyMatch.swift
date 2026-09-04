@@ -33,7 +33,9 @@ enum FuzzyMatch {
         if query.isEmpty {
             return Result(score: 0, matchedIndices: [])
         }
-        if candidate.isEmpty { return nil }
+        if candidate.isEmpty {
+            return nil
+        }
 
         let q = Array(query.lowercased())
         let cLower = Array(candidate.lowercased())
@@ -42,7 +44,9 @@ enum FuzzyMatch {
         let qLen = q.count
         let cLen = cLower.count
 
-        if qLen > cLen { return nil }
+        if qLen > cLen {
+            return nil
+        }
 
         // scores[i][j] = best score aligning query[0..<i] ending at candidate[j-1].
         // diagonal[i][j] = diagonal score (last move was a match) — tracks consecutive.
@@ -97,7 +101,9 @@ enum FuzzyMatch {
             bestJ = j
         }
 
-        if bestScore == 0 { return nil }
+        if bestScore == 0 {
+            return nil
+        }
 
         // Traceback to recover matched indices.
         var matched: [Int] = []
@@ -114,7 +120,9 @@ enum FuzzyMatch {
         }
 
         // All query chars must be consumed.
-        if i > 0 { return nil }
+        if i > 0 {
+            return nil
+        }
 
         matched.reverse()
         return Result(score: bestScore, matchedIndices: matched)

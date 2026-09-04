@@ -353,7 +353,9 @@ final class WorktreeMoveSuggester {
     private static func pathIsInsideStatic(_ child: String, of parent: String) -> Bool {
         let c = standardize(child)
         let p = standardize(parent)
-        if c == p { return true }
+        if c == p {
+            return true
+        }
         return c.hasPrefix(p + "/")
     }
 

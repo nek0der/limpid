@@ -87,8 +87,12 @@ final class AttentionState {
     /// or nil if the pane isn't sitting on a finished turn right now.
     func currentFinishedStamp(paneID: UUID, in session: WindowSession) -> Date? {
         guard let tab = session.tab(containing: paneID) else { return nil }
-        if let b = tab.claudeAgentBadges[paneID], b.state == .finished { return b.updatedAt }
-        if let b = tab.codexAgentBadges[paneID], b.state == .finished { return b.updatedAt }
+        if let b = tab.claudeAgentBadges[paneID], b.state == .finished {
+            return b.updatedAt
+        }
+        if let b = tab.codexAgentBadges[paneID], b.state == .finished {
+            return b.updatedAt
+        }
         return nil
     }
 
@@ -239,16 +243,24 @@ extension AttentionState {
             guard state == .finished,
                   !isDismissed(paneID: paneID, badgeUpdatedAt: updatedAt)
             else { return true }
-            if !isViewed(paneID: paneID, badgeUpdatedAt: updatedAt) { return false }
+            if !isViewed(paneID: paneID, badgeUpdatedAt: updatedAt) {
+                return false
+            }
             sawFinished = true
             return true
         }
         for tab in scopedTabs {
             for paneID in tab.splitTree.allLeafIDs() {
                 if let b = tab.claudeAgentBadges[paneID],
-                   !check(b.state, b.updatedAt, paneID) { return false }
+                   !check(b.state, b.updatedAt, paneID)
+                {
+                    return false
+                }
                 if let b = tab.codexAgentBadges[paneID],
-                   !check(b.state, b.updatedAt, paneID) { return false }
+                   !check(b.state, b.updatedAt, paneID)
+                {
+                    return false
+                }
             }
         }
         return sawFinished
@@ -325,8 +337,12 @@ extension AttentionState {
             // `dismissedAt` is keyed per pane, dismissing the visible
             // row would also mute the other agent's later turn until it
             // updates again.
-            if c.state.priority > x.state.priority { return c }
-            if x.state.priority > c.state.priority { return x }
+            if c.state.priority > x.state.priority {
+                return c
+            }
+            if x.state.priority > c.state.priority {
+                return x
+            }
             return c.updatedAt >= x.updatedAt ? c : x
         case let (c?, nil): return c
         case let (nil, x?): return x
@@ -360,7 +376,9 @@ extension AttentionState {
                 // needsInput / error are never dismissed this way.
                 if info.state == .finished,
                    isDismissed(paneID: paneID, badgeUpdatedAt: info.updatedAt)
-                { continue }
+                {
+                    continue
+                }
                 let viewedNow = info.state == .finished
                     && isViewed(paneID: paneID, badgeUpdatedAt: info.updatedAt)
                 targets.append(AttentionTarget(

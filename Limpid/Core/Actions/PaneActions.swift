@@ -291,7 +291,9 @@ enum PaneActions {
             // `allLeafIDs.first`. Without this, a later
             // `closeActivePane` could resolve focus to a different
             // leaf than the one the user sees zoomed.
-            if entering { t.splitTree.focusedLeafID = focusID }
+            if entering {
+                t.splitTree.focusedLeafID = focusID
+            }
         }
     }
 

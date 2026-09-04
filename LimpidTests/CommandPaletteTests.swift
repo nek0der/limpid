@@ -143,7 +143,9 @@ struct CommandPaletteTests {
             session: session, settings: settings, attention: AttentionState()
         )
         let tabItems = items.filter {
-            if case .jumpToTab = $0.action { return true }
+            if case .jumpToTab = $0.action {
+                return true
+            }
             return false
         }
         #expect(tabItems.count == 1)
@@ -157,7 +159,9 @@ struct CommandPaletteTests {
             session: session, settings: settings, attention: AttentionState()
         )
         let groupItems = items.filter {
-            if case let .activateGroup(id) = $0.action { return id == group.id }
+            if case let .activateGroup(id) = $0.action {
+                return id == group.id
+            }
             return false
         }
         #expect(groupItems.count == 1)

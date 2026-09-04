@@ -152,7 +152,9 @@ struct PaneSearchOverlay: View {
             // libghostty surface we just told to `end_search`. The
             // overlay disappears while the pane stays full of stale
             // highlights.
-            if Task.isCancelled { return }
+            if Task.isCancelled {
+                return
+            }
             fireSearch(needle: captured)
         }
     }

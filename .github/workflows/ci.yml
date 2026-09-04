@@ -101,10 +101,12 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - name: Install SwiftFormat
-        run: brew install swiftformat
+      - name: Install SwiftFormat (pinned via Mintfile)
+        run: |
+          brew install mint
+          mint bootstrap
       - name: Run SwiftFormat (lint mode, gating)
-        run: swiftformat --lint .
+        run: mint run swiftformat --lint .
 
   lint:
     name: SwiftLint
