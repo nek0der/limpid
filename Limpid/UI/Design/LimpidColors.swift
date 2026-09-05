@@ -39,6 +39,22 @@ enum LimpidColor {
     /// Error / failure.
     static let error: Color = .red
 
+    /// A merged pull request. Its own token rather than one of the
+    /// three above because merged is neither success nor warning: the
+    /// work is finished and the branch is spent, which the forges
+    /// themselves render in purple and users read that way.
+    static let merged: Color = .purple
+
+    /// Ground a knocked-out status glyph is composited over, so the
+    /// shape cut out of it reads as the mark rather than showing the
+    /// row behind. Follows the appearance rather than being white,
+    /// because the glyph sits on the slab and a white cut-out would
+    /// glare against it in dark mode.
+    static let statusGlyphKnockout = Color(
+        light: .white,
+        dark: Color(white: 0.14)
+    )
+
     /// Primary text.
     static let primaryText: Color = .primary
 

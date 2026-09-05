@@ -170,6 +170,45 @@ binary):
 
 
 ================================================================
+5. Octicons
+================================================================
+
+Seven 16px SVG drawings — git-pull-request, git-pull-request-draft,
+git-pull-request-closed, git-merge, x-circle-fill, check-circle-fill and
+dot-fill — embedded unmodified in the app's asset catalog and used as the
+sidebar's pull-request marks and the hover card's check-status marks.
+Project: https://github.com/primer/octicons
+
+The Octicons repository's README carves GitHub's own logos out of the
+grant below, directing them to https://github.com/logos instead. The
+LICENSE file reproduced here is bare MIT and states no such exception.
+None of the seven drawings used here are logos either way, so only the
+MIT terms below apply.
+
+MIT License
+
+Copyright (c) 2026 GitHub Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+================================================================
 Notes
 ================================================================
 

@@ -4,8 +4,9 @@
 import Testing
 
 extension Tag {
-    /// Hits the local filesystem or shells out to `git`. Requires
-    /// `RepoFixture.hasLocalRepo`.
+    /// Hits the local filesystem or shells out to an external tool
+    /// (`git`, `gh`, `/bin/sh`). The `git` ones require
+    /// `RepoFixture.hasLocalRepo`; the rest gate on their own binary.
     @Tag static var smoke: Self
 
     /// Wall-clock > 1s. CI runs them; locally consider

@@ -46,6 +46,7 @@ in `Core/`, no `Settings` ↔ `Persistence` cycles.
 | `Limpid/Core/SurfaceRegistry.swift` | `[UUID: SurfaceView]` mapping — single source of truth for AppKit surface lifetime |
 | `Limpid/UI/SurfaceView.swift` | The `NSView` subclass that owns the libghostty surface + Metal layer |
 | `Limpid/UI/Pane/PaneHostView.swift` | `NSViewRepresentable` bridging `SurfaceRegistry` ↔ SplitTree |
+| `Limpid/Core/Git/PRStatusSyncer.swift` | Schedules forge CLI lookups per sidebar row and writes them into `PRStatusStore` (opt-in; `gh` / `glab`) |
 | `Limpid/Core/Updates/SparkleUpdater.swift` | Sparkle integration (only `ObservableObject` site has been removed) |
 
 ---

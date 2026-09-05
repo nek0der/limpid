@@ -24,6 +24,9 @@ Across every tab and pane, ⌘J jumps to the next agent waiting on you. The Wait
 ### Worktrees as first-class containers
 Each git worktree gets its own space. Tabs, panes, and agent sessions stay isolated per branch. When Claude `cd`'s into another worktree mid-session, Limpid follows automatically — the matching row activates without you reaching for the mouse.
 
+### Pull request status per branch
+A branch with an open request shows it on its sidebar row — open, draft, merged, or closed, with a badge when checks are failing. Hover for the title and CI summary. Off by default; it reads whatever `gh` or `glab` is already signed in on your machine rather than asking for a token of its own.
+
 ### Claude Code & Codex, together
 Both CLIs are recognized natively, with live status, prompt-aware tab names, and per-pane session resume that survives restarts — including the actual scrollback, not just session IDs.
 

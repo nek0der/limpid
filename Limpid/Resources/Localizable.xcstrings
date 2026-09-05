@@ -21,12 +21,90 @@
         }
       }
     },
+    "%@ failed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@失敗"
+          }
+        }
+      }
+    },
+    "%@ failed (%lld/%lld passed)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ failed (%2$lld/%3$lld passed)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@失敗 (%2$lld/%3$lld 成功)"
+          }
+        }
+      }
+    },
     "%@ lines (custom)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ 行(カスタム)"
+          }
+        }
+      }
+    },
+    "%@ passed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@成功"
+          }
+        }
+      }
+    },
+    "%@ passed (%lld/%lld)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ passed (%2$lld/%3$lld)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@成功 (%2$lld/%3$lld)"
+          }
+        }
+      }
+    },
+    "%@ running": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@実行中"
+          }
+        }
+      }
+    },
+    "%@ running (%lld/%lld passed)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ running (%2$lld/%3$lld passed)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@実行中 (%2$lld/%3$lld 成功)"
           }
         }
       }
@@ -1026,6 +1104,36 @@
         }
       }
     },
+    "Integrations": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連携"
+          }
+        }
+      }
+    },
+    "No %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@なし"
+          }
+        }
+      }
+    },
+    "Open on %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ で開く"
+          }
+        }
+      }
+    },
     "Orange": {
       "comment": "Settings → Appearance accent swatch name.",
       "localizations": {
@@ -1033,6 +1141,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "オレンジ"
+          }
+        }
+      }
+    },
+    "PR closed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PR クローズ済み"
+          }
+        }
+      }
+    },
+    "PR draft": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PR ドラフト"
+          }
+        }
+      }
+    },
+    "PR merged": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PR マージ済み"
+          }
+        }
+      }
+    },
+    "PR open": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PR オープン"
           }
         }
       }
@@ -1066,6 +1214,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "レッド"
+          }
+        }
+      }
+    },
+    "Refresh PR Status": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PR ステータスを更新"
+          }
+        }
+      }
+    },
+    "Show PR status in sidebar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーに PR ステータスを表示"
+          }
+        }
+      }
+    },
+    "Mark only rows needing attention": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対応が必要な行だけにステータスを表示"
+          }
+        }
+      }
+    },
+    "Marks a sidebar row whose branch has a pull request, and shows the title and CI summary on hover. Requires `gh` (GitHub) or `glab` (GitLab), signed in to the remote's host. Refreshes on focus, every %lld minutes otherwise, and faster while checks are running.\n\nRestricting the mark to rows with a failing check leaves fewer of them on screen; the hover card reports every request either way.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブランチにプルリクエスト (PR) があるサイドバーの行に、そのステータスを表示します。ポインタを合わせると、タイトルと CI の概要を確認できます。`gh` (GitHub) または `glab` (GitLab) が必要で、リモートのホストにサインインしている必要があります。フォーカス時と、それ以外は %lld 分ごとに更新し、チェックの実行中はより短い間隔で更新します。\n\nチェックが失敗している行だけに絞ると、ステータスを表示する行が少なくなります。どちらの設定でも、ポインタを合わせればすべての PR を確認できます。"
           }
         }
       }
@@ -1670,22 +1858,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "詳細を非表示"
-          }
-        }
-      }
-    },
-    "Hide from Sidebar": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hide from Sidebar"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サイドバーで非表示にする"
           }
         }
       }
@@ -4073,6 +4245,102 @@
         }
       }
     },
+    "pr.checks.noun.github": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checks"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チェック"
+          }
+        }
+      }
+    },
+    "pr.checks.noun.gitlab": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pipeline"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パイプライン"
+          }
+        }
+      }
+    },
+    "pr.state.closed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Closed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クローズ済み"
+          }
+        }
+      }
+    },
+    "pr.state.draft": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Draft"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドラフト"
+          }
+        }
+      }
+    },
+    "pr.state.merged": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merged"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マージ済み"
+          }
+        }
+      }
+    },
+    "pr.state.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オープン"
+          }
+        }
+      }
+    },
     "settings.json": {
       "comment": "Advanced pane section header",
       "localizations": {
@@ -4353,6 +4621,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "日本語"
+          }
+        }
+      }
+    },
+    "Checks failing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checks failing"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チェック失敗"
           }
         }
       }

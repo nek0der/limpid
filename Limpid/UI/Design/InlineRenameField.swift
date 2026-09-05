@@ -53,7 +53,12 @@ struct InlineRenameField: View {
     /// Match the field editor's default `lineFragmentPadding` so the
     /// static `Text` lines up with the editing TextField's first
     /// glyph.
-    private static let fieldEditorLeadingPadding: CGFloat = 5
+    ///
+    /// Not private: a list that mixes renameable rows with plain ones
+    /// has to apply the same offset to both, or the two label styles
+    /// sit 5pt apart for a reason that has nothing to do with either
+    /// row. `ContainerRow` does exactly that.
+    static let fieldEditorLeadingPadding: CGFloat = 5
 
     var body: some View {
         Group {

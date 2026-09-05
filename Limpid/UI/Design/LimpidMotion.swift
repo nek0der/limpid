@@ -37,6 +37,13 @@ enum LimpidMotion {
     /// safety-net path and the real exit stay in lockstep.
     static let dropIndicator: Animation = .easeInOut(duration: 0.12)
 
+    /// Crossfade as the sidebar's pull-request card hands off from one
+    /// row to the next. The card is already gated behind a hover
+    /// delay, so the fade only has to cover the swap — anything longer
+    /// leaves the old row's request on screen after the pointer has
+    /// moved on.
+    static let prHoverCard: Animation = .easeInOut(duration: 0.12)
+
     /// Sliding highlight that follows a pane drag between rows / pills
     /// in the tab list — paired with `matchedGeometryEffect` so the
     /// highlight reads as one shared element. Same curve in both the

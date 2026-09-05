@@ -636,6 +636,27 @@ struct AdvancedSettings: Codable, Equatable {
     /// `ghostty/config` values where they overlap.
     var ghosttyConfig: GhosttyConfig = .off
 
+    /// Report each row's linked pull request in the sidebar: a mark in
+    /// the row's trailing group, and a hover-revealed card carrying
+    /// the title and CI summary. Needs `gh` or `glab` on the machine,
+    /// signed in to the remote's host. Off by default: it shells out
+    /// to a CLI the user may not have.
+    var showPRStatusInSidebar: Bool = false
+
+    /// Draw the mark only on rows whose request needs attention,
+    /// rather than on every row that has one.
+    ///
+    /// Off by default. Restricting the mark was a response to a
+    /// trailing group that also carried a disclosure chevron and a
+    /// permanently reserved delete slot; with both gone the column
+    /// holds the request, the agent state and the bell, and a mark on
+    /// each request no longer crowds it. Knowing a branch has an open
+    /// request without hovering is worth the ink.
+    ///
+    /// The hover card is unaffected either way — it reports every
+    /// request regardless.
+    var showPRStatusOnlyWhenAttention: Bool = false
+
     /// See `LimpidSettings.unknownFields`.
     var unknownFields: [String: LimpidJSONValue] = [:]
 
@@ -646,6 +667,12 @@ struct AdvancedSettings: Codable, Equatable {
         self.ghosttyConfig = try c.decodeIfPresent(
             GhosttyConfig.self, forKey: .ghosttyConfig
         ) ?? .off
+        self.showPRStatusInSidebar = try c.decodeIfPresent(
+            Bool.self, forKey: .showPRStatusInSidebar
+        ) ?? false
+        self.showPRStatusOnlyWhenAttention = try c.decodeIfPresent(
+            Bool.self, forKey: .showPRStatusOnlyWhenAttention
+        ) ?? false
         self.unknownFields = try CodableSidecar.decodeUnknownFields(
             from: decoder,
             knownKeys: Self.knownKeyStrings
@@ -655,11 +682,15 @@ struct AdvancedSettings: Codable, Equatable {
     func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(ghosttyConfig, forKey: .ghosttyConfig)
+        try c.encode(showPRStatusInSidebar, forKey: .showPRStatusInSidebar)
+        try c.encode(showPRStatusOnlyWhenAttention, forKey: .showPRStatusOnlyWhenAttention)
         try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case ghosttyConfig
+        case showPRStatusInSidebar
+        case showPRStatusOnlyWhenAttention
     }
 
     private static let knownKeyStrings: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))
