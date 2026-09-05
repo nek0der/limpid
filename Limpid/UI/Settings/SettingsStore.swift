@@ -138,6 +138,14 @@ final class SettingsStore {
             loaded.appearance.transparency = .off
             loaded.appearance.backgroundOpacity = 1.0
             loaded.appearance.accentColor = .blue
+            // Pinned for the same reason, and it has to be pinned in
+            // both directions: this setting is opt-in, so without it
+            // the hero would show the sidebar's request marks only for
+            // contributors who happen to have switched them on. The
+            // data behind them comes from `DemoFixture.prStatus`, not
+            // from a CLI — see `PRStatusSyncer.start()`.
+            loaded.advanced.showPRStatusInSidebar = true
+            loaded.advanced.showPRStatusOnlyWhenAttention = false
         }
         self.settings = loaded
     }

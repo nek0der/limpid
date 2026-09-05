@@ -44,7 +44,10 @@ struct LimpidSettingsTests {
         #expect(restored == original)
     }
 
-    @Test("encode → decode yields an equivalent value (every field mutated)")
+    /// Every field touched here is moved *off* its default, so a
+    /// dropped `CodingKey` shows up as a mismatch. A field assigned its
+    /// own default would round-trip either way and pin nothing.
+    @Test("encode → decode yields an equivalent value")
     func codable_customized_roundTrip() throws {
         var settings = LimpidSettings.default
         settings.appearance.transparency = .off
@@ -54,7 +57,9 @@ struct LimpidSettingsTests {
         settings.font.size = 15
         settings.font.ligatures = true
         settings.font.lineHeight = 2
-        settings.terminal.scrollbackLines = 10000
+        settings.terminal.scrollbackLines = 25000
+        settings.advanced.showPRStatusInSidebar = true
+        settings.advanced.showPRStatusOnlyWhenAttention = true
 
         let data = try JSONEncoder().encode(settings)
         let restored = try JSONDecoder().decode(LimpidSettings.self, from: data)
@@ -112,6 +117,25 @@ struct LimpidSettingsTests {
         let decoded = try JSONDecoder().decode(LimpidSettings.self, from: data)
         #expect(decoded.terminal.quickTabCwdMode == .inheritPrevious)
         #expect(decoded.terminal.quickTabCwdPath == nil)
+    }
+
+    /// Every `settings.json` written before the pull-request feature
+    /// existed lacks both keys, which is every existing user's file.
+    /// If the fallback flipped to `true`, the feature would switch
+    /// itself on for all of them and start spawning `gh` / `glab` per
+    /// sidebar row — the one thing being opt-in is meant to prevent.
+    @Test("advanced section without the PR keys decodes with the feature off")
+    func decode_advancedMissingPRKeys_defaultsToOff() throws {
+        let data = Data(#"""
+        {"schemaVersion":1,
+         "appearance":{"accentColor":"default","backgroundOpacity":0.92,"transparency":"on"},
+         "font":{"size":13,"ligatures":false,"lineHeight":0},
+         "terminal":{},
+         "advanced":{"ghosttyConfig":"off"}}
+        """#.utf8)
+        let decoded = try JSONDecoder().decode(LimpidSettings.self, from: data)
+        #expect(decoded.advanced.showPRStatusInSidebar == false)
+        #expect(decoded.advanced.showPRStatusOnlyWhenAttention == false)
     }
 
     @Test("terminal quickTab cwd fields round-trip", .tags(.persistence))

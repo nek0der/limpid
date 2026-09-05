@@ -4,10 +4,10 @@
 // pinned at the top above two collapsible sections (Groups / Projects) —
 // and the Waiting region below.
 // Section headers carry the fold chevron; individual
-// rows are foldable per-project only (worktrees + general). Every
+// rows are foldable per-project only. Every
 // reorderable / droppable row uses the shared
-// `reorderableDropTarget(...)` modifier so the insertion line + drop
-// animation stay identical to the tab column tab reorder.
+// `reorderableDropTarget(...)` modifier so the drop animation stays
+// identical to the tab column's reorder.
 
 import AppKit
 import SwiftUI
@@ -19,6 +19,12 @@ struct ContainerSlabView: View {
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.limpidAccent) var limpidAccent
+    // Read only to hand back down through `slabEnvironment` — the
+    // rows below need them, the slab itself does not.
+    @Environment(PRStatusStore.self) private var prStatusStore
+    @Environment(PRHoverPresentation.self) private var prHoverPresentation
+    @Environment(SettingsStore.self) private var settingsStore
+    @Environment(\.prStatusSyncer) private var prStatusSyncer
 
     /// Project whose Create-Worktree sheet should be presented, if any.
     @State private var creatingWorktreeFor: UUID?
@@ -137,6 +143,34 @@ struct ContainerSlabView: View {
         )
     }
 
+    /// Height the Groups section occupies below its header when open.
+    private var groupsSectionHeight: CGFloat {
+        Self.stackedHeight(session.groups.map { _ in LimpidLayout.containerColumnRowHeight })
+    }
+
+    /// Height the Projects section occupies below its header when
+    /// open. Each project reports its own because an expanded one also
+    /// carries its worktrees.
+    private var projectsSectionHeight: CGFloat {
+        Self.stackedHeight(session.projects.map(ProjectSectionView.blockHeight(for:)))
+    }
+
+    /// Sum of stacked block heights, the gaps between them, and the
+    /// gap above the first — which belongs to the section rather than
+    /// to the enclosing list; see `FoldableSection`. Zero for no
+    /// blocks, so an empty section occupies exactly its header.
+    ///
+    /// Static and internal because this is one half of an agreement
+    /// nothing else checks: the leading gap has to match the
+    /// `.padding(.top,)` inside `FoldableSection`, and a test is the
+    /// only place that can hold the two together.
+    static func stackedHeight(_ blocks: [CGFloat]) -> CGFloat {
+        guard !blocks.isEmpty else { return 0 }
+        return LimpidLayout.reorderRowSpacing
+            + blocks.reduce(0, +)
+            + CGFloat(blocks.count - 1) * LimpidLayout.reorderRowSpacing
+    }
+
     // MARK: - Section header
 
     /// The lower pane of the slab's split: always present (even with
@@ -232,7 +266,7 @@ struct ContainerSlabView: View {
                 // in when there's an actual list to label (Groups,
                 // Projects).
                 ContainerRow(
-                    kind: .loose(count: session.looseTabs.count),
+                    kind: .loose,
                     isActive: isActiveContainer(.loose),
                     hasUnread: hasUnread(in: .loose),
                     isRinging: isRinging(in: .loose),
@@ -256,39 +290,41 @@ struct ContainerSlabView: View {
                     }
                 )
 
-                sectionHeader(
-                    "GROUPS",
+                // Folded by clipping the section to a height rather
+                // than inserting its rows — see `FoldableSection`.
+                FoldableSection(
                     isExpanded: session.groupsSectionExpanded,
-                    toggle: {
-                        withAnimation(LimpidMotion.reorder) {
-                            session.groupsSectionExpanded.toggle()
-                        }
-                    },
-                    addAccessory: {
-                        AnyView(
-                            Button {
-                                withAnimation(LimpidMotion.reorder) {
-                                    session.groupsSectionExpanded = true
-                                    _ = session.addGroup()
-                                }
-                            } label: {
-                                SectionAddBadge()
+                    height: groupsSectionHeight
+                ) {
+                    sectionHeader(
+                        "GROUPS",
+                        isExpanded: session.groupsSectionExpanded,
+                        toggle: {
+                            withAnimation(LimpidMotion.reorder) {
+                                session.groupsSectionExpanded.toggle()
                             }
-                            .buttonStyle(.plain)
-                            .help("New Group")
-                            .accessibilityLabel(Text("New Group"))
-                        )
-                    }
-                )
-                if session.groupsSectionExpanded {
-                    Group {
+                        },
+                        addAccessory: {
+                            AnyView(
+                                Button {
+                                    withAnimation(LimpidMotion.reorder) {
+                                        session.groupsSectionExpanded = true
+                                        _ = session.addGroup()
+                                    }
+                                } label: {
+                                    SectionAddBadge()
+                                }
+                                .buttonStyle(.plain)
+                                .help("New Group")
+                                .accessibilityLabel(Text("New Group"))
+                            )
+                        }
+                    )
+                } content: {
+                    VStack(alignment: .leading, spacing: LimpidLayout.reorderRowSpacing) {
                         ForEach(session.groups) { group in
                             ContainerRow(
-                                kind: .group(
-                                    group,
-                                    count: session.tabs(in: group.id).count,
-                                    isExpanded: false
-                                ),
+                                kind: .group(group, isExpanded: false),
                                 isActive: isActiveContainer(.group(group.id)),
                                 hasUnread: hasUnread(in: .group(group.id)),
                                 isRinging: isRinging(in: .group(group.id)),
@@ -385,29 +421,33 @@ struct ContainerSlabView: View {
                             )
                         }
                     }
-                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                sectionHeader(
-                    "PROJECTS",
+                // Same treatment as GROUPS above.
+                FoldableSection(
                     isExpanded: session.projectsSectionExpanded,
-                    toggle: {
-                        withAnimation(LimpidMotion.reorder) {
-                            session.projectsSectionExpanded.toggle()
-                        }
-                    },
-                    addAccessory: {
-                        AnyView(
-                            ProjectAddMenu(
-                                recentPaths: session.recentProjectPaths,
-                                onOpenFolder: { openProjectFolderPicker() },
-                                onOpenRecent: { url in openProject(at: url) }
+                    height: projectsSectionHeight
+                ) {
+                    sectionHeader(
+                        "PROJECTS",
+                        isExpanded: session.projectsSectionExpanded,
+                        toggle: {
+                            withAnimation(LimpidMotion.reorder) {
+                                session.projectsSectionExpanded.toggle()
+                            }
+                        },
+                        addAccessory: {
+                            AnyView(
+                                ProjectAddMenu(
+                                    recentPaths: session.recentProjectPaths,
+                                    onOpenFolder: { openProjectFolderPicker() },
+                                    onOpenRecent: { url in openProject(at: url) }
+                                )
                             )
-                        )
-                    }
-                )
-                if session.projectsSectionExpanded {
-                    Group {
+                        }
+                    )
+                } content: {
+                    VStack(alignment: .leading, spacing: LimpidLayout.reorderRowSpacing) {
                         ForEach(session.projects) { project in
                             ProjectSectionView(
                                 project: project,
@@ -419,7 +459,6 @@ struct ContainerSlabView: View {
                             )
                         }
                     }
-                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .padding(.vertical, 4)
@@ -451,6 +490,10 @@ struct ContainerSlabView: View {
             .environment(attention)
             .environment(dragState)
             .environment(toastCenter)
+            .environment(prStatusStore)
+            .environment(prHoverPresentation)
+            .environment(settingsStore)
+            .environment(\.prStatusSyncer, prStatusSyncer)
             .environment(\.surfaceRegistry, registry)
             .limpidAccentPropagated(limpidAccent)
     }
@@ -483,11 +526,9 @@ struct ContainerSlabView: View {
                 .tracking(0.6)
                 .foregroundStyle(Color.primary.opacity(0.55))
             Spacer()
-            // `+` sits adjacent to the chevron (matching the row's
-            // create-worktree `Y` column — second from the right in
-            // hover state, just left of `countOrChevron`). The bell
-            // is hidden on rows without unread notifications, so
-            // there's no gap to reserve between `+` and chevron.
+            // `+` sits just left of the section's own fold chevron.
+            // Both are section furniture and share the header's
+            // trailing padding with the rows' status column below.
             if let addAccessory {
                 addAccessory()
             }
@@ -496,7 +537,7 @@ struct ContainerSlabView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color.primary.opacity(0.45))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: 16, height: 16)
+                    .frame(width: LimpidLayout.containerColumnTrailingSlot, height: LimpidLayout.containerColumnTrailingSlot)
             }
         }
         .padding(.horizontal, 18)
@@ -643,5 +684,54 @@ private struct SectionAddBadge: View {
                 Circle().fill(LimpidColor.rowHoverFill)
             )
             .contentShape(Circle())
+    }
+}
+
+/// A collapsible section's rows, clipped to a height that goes to
+/// zero while the section is folded.
+///
+/// Inserting and removing them under a `.transition` did not work:
+/// the transition never ran, so the rows appeared at their final
+/// position while everything below was still sliding down and the two
+/// drew on top of each other. Clipping to a height leaves no insertion
+/// to overlap. See `ProjectSectionView.worktreeStack` for what was
+/// tried and for why the obvious explanation does not hold.
+///
+/// The fold is instant, which is a known limitation rather than an
+/// intent — the identical construction in `ProjectSectionView` does
+/// interpolate, and neither an own `View`, an explicit
+/// `.animation(value:)`, nor an eager enclosing stack changed it
+/// here. Instant is plain but correct; the overlap was not.
+///
+/// The rows stay mounted while folded, so hit testing and VoiceOver
+/// are switched off with them. That also means the enclosing
+/// `LazyVStack` no longer skips a folded section's rows the way an
+/// `if` would: laziness now works at section granularity, which is the
+/// standing cost of folding this way.
+private struct FoldableSection<Header: View, Content: View>: View {
+    let isExpanded: Bool
+    let height: CGFloat
+    @ViewBuilder let header: Header
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        // The header and the body are one child of the enclosing list,
+        // and the gap above the first row lives inside the clip rather
+        // than coming from the list's own spacing. Holding the header
+        // outside would leave the body a child of its own, and a folded
+        // one is a child at zero height: the list would then put its
+        // spacing on both sides of nothing, doubling the gap between
+        // two headers whenever a section is folded or empty.
+        // `ProjectSectionView.worktreeStack` folds the same way for the
+        // same reason.
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            content
+                .padding(.top, LimpidLayout.reorderRowSpacing)
+                .frame(height: isExpanded ? height : 0, alignment: .top)
+                .clipped()
+                .allowsHitTesting(isExpanded)
+                .accessibilityHidden(!isExpanded)
+        }
     }
 }

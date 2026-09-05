@@ -166,10 +166,19 @@ final class WindowSession {
     /// projectID → number of tabs whose container points at the
     /// project (project-direct OR any of its worktrees). Maintained
     /// incrementally by `openTab` / `closeTab` / `moveTab` / `restore`
-    /// / `removeProject` so the Project header row gets `tabCount(in:)`
-    /// in O(1) instead of an N-tab linear walk per body re-eval.
+    /// / `removeProject` so `tabCount(inProject:)` answers in O(1)
+    /// instead of an N-tab linear walk per body re-eval.
     /// `@ObservationIgnored` because the count is observed via the
     /// owning `Project` row through `session.tabs` mutations.
+    ///
+    /// No view reads either count today: the Project header row that
+    /// motivated the cache stopped displaying a tab summary when the
+    /// trailing group became the status column, and `ContainerRowKind`
+    /// stopped carrying the number at all. Both accessors and the
+    /// bookkeeping below are kept rather than deleted because the
+    /// sidebar is the natural home for such a summary if it returns —
+    /// but nothing outside `WindowSessionTabsTests` exercises them, so
+    /// treat that suite as the only thing holding them correct.
     @ObservationIgnored
     var cachedProjectTabCount: [UUID: Int] = [:]
 

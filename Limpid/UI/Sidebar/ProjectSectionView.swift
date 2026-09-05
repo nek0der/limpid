@@ -1,7 +1,7 @@
 // ProjectSectionView.swift
 // Limpid — one project's slice of the container slab: the header row, its
-// drag/drop target, and (when expanded) the "general" row + every
-// worktree row underneath. Lives in its own view so `ContainerSlabView`
+// drag/drop target, and (when expanded) every worktree row
+// underneath. Lives in its own view so `ContainerSlabView`
 // can stay short — that file now owns section composition + sheet /
 // alert state, while per-project rendering / wiring lands here.
 //
@@ -38,24 +38,105 @@ struct ProjectSectionView: View {
     }
 
     var body: some View {
-        projectHeader
-        if !isFlat, project.isExpanded {
-            // Wrap the nested children in a single Group so SwiftUI
-            // applies one slide-up transition to the whole subtree —
-            // matches the GROUPS section's collapse animation.
-            //
-            // The project-general ("Default") row used to live here
-            // but was redundant — tapping the project header itself
-            // already activates `.project(id)`. Removing it keeps
-            // the worktree-yes / worktree-no behavior symmetrical
-            // and shaves one row off every expanded project.
-            Group {
-                ForEach(project.worktrees.filter { !$0.isHidden }) { wt in
-                    worktreeRow(wt)
-                }
+        // `spacing: 0` because the gap under the header belongs to the
+        // worktree stack's animated height, not to this stack. A
+        // collapsed stack is still a child at zero height, so a gap
+        // owned by this stack would survive the collapse and leave the
+        // folded project sitting on a gap that belongs to nobody.
+        VStack(alignment: .leading, spacing: 0) {
+            projectHeader
+            if !isFlat {
+                worktreeStack
             }
-            .transition(.move(edge: .top).combined(with: .opacity))
         }
+    }
+
+    /// The project's worktree rows, revealed by animating this stack's
+    /// height rather than by inserting it.
+    ///
+    /// Inserting them does not work. Under a `.transition` the rows
+    /// appeared at their final position while the projects below were
+    /// still sliding down, so the two drew on top of each other for
+    /// the length of the animation. Changing the transition, the
+    /// container type, and where the animation was attached all made
+    /// no difference — nothing was transitioning at all.
+    ///
+    /// Why the transition was skipped was never established. The
+    /// obvious explanation, that the fold reaches the view through
+    /// Observation outside an animated transaction, does not hold:
+    /// `onToggleExpand` below flips the flag inside `withAnimation`.
+    /// Recording the symptom rather than a mechanism we could not
+    /// confirm, because the fix does not depend on which it was.
+    ///
+    /// A height is a plain interpolatable value, so the rows below
+    /// move as a direct consequence of it in the same layout pass, and
+    /// `clipped()` makes overlap impossible rather than unlikely. The
+    /// cost is that the rows stay mounted while collapsed, hence
+    /// hit testing off — a clipped row must not answer a click.
+    ///
+    /// A "Default" row for the project itself used to live here but
+    /// was redundant: tapping the project header already activates
+    /// `.project(id)`.
+    private var worktreeStack: some View {
+        VStack(alignment: .leading, spacing: LimpidLayout.reorderRowSpacing) {
+            ForEach(project.worktrees.filter { !$0.isHidden }) { wt in
+                worktreeRow(wt)
+            }
+        }
+        // The gap under the header is inside the animated height, so
+        // the rule spans it too and meets the dot it descends from
+        // instead of starting a row's worth of space below it.
+        .padding(.top, LimpidLayout.reorderRowSpacing)
+        .overlay(alignment: .leading) { worktreeRule }
+        .frame(height: project.isExpanded ? Self.worktreeStackHeight(for: project) : 0, alignment: .top)
+        .clipped()
+        .allowsHitTesting(project.isExpanded)
+        .accessibilityHidden(!project.isExpanded)
+    }
+
+    /// Height the worktree stack occupies when open, including the gap
+    /// that separates it from its header.
+    ///
+    /// Computed, not measured: measuring the natural height of a view
+    /// whose height we are also imposing is circular — the collapsed
+    /// frame would report zero and the stack could never open again.
+    /// Rows are a fixed height, so the arithmetic is exact. Static so
+    /// the enclosing section can total its own height the same way.
+    static func worktreeStackHeight(for project: Project) -> CGFloat {
+        let count = project.worktrees.count { !$0.isHidden }
+        guard count > 0 else { return 0 }
+        return LimpidLayout.reorderRowSpacing
+            + CGFloat(count) * LimpidLayout.containerColumnRowHeight
+            + CGFloat(count - 1) * LimpidLayout.reorderRowSpacing
+    }
+
+    /// Height of everything this view draws for `project` — the header
+    /// plus, when it is open, its worktrees.
+    static func blockHeight(for project: Project) -> CGFloat {
+        let header = LimpidLayout.containerColumnRowHeight
+        guard project.isExpanded else { return header }
+        return header + worktreeStackHeight(for: project)
+    }
+
+    /// Vertical rule spanning this project's worktree rows, in the
+    /// project's own palette colour.
+    ///
+    /// It answers "how far does this project reach", which nothing
+    /// else does: every row shares one left edge, so the list alone
+    /// cannot say where one project ends and the next begins. The
+    /// palette colour rather than a neutral hairline is what ties the
+    /// span to the dot it descends from, damped because the two are
+    /// not peers — the dot is the identity and the disclosure control,
+    /// the rule only marks extent.
+    private var worktreeRule: some View {
+        Capsule()
+            .fill(LimpidColor.paletteColor(project.paletteIndex).opacity(0.45))
+            .frame(width: LimpidLayout.containerColumnProjectRuleWidth)
+            .offset(
+                x: LimpidLayout.containerColumnProjectRuleCenter
+                    - LimpidLayout.containerColumnProjectRuleWidth / 2
+            )
+            .accessibilityHidden(true)
     }
 
     // MARK: - Project header
@@ -73,11 +154,7 @@ struct ProjectSectionView: View {
 
     private var projectHeader: some View {
         ContainerRow(
-            kind: .projectHeader(
-                project,
-                totalCount: session.tabCount(inProject: project.id),
-                isExpanded: project.isExpanded
-            ),
+            kind: .projectHeader(project, isExpanded: project.isExpanded),
             // Strict match: the header's strong "selected" pill only
             // fires when the project-direct container is active. When a
             // worktree under this project is active we fall through to
@@ -108,11 +185,11 @@ struct ProjectSectionView: View {
                 : attention.agentStateBreakdown(in: .project(project.id), session: session),
             // Header tap always activates `.project(id)` — the
             // project-direct ("Default") container. With worktrees,
-            // chevron expansion is a separate 16×16 hit target on
-            // the row's right edge, so the rename double-tap conflict
-            // that used to require an inert header is no longer in
-            // play. Worktree-yes / worktree-no rows now behave the
-            // same on body tap.
+            // expansion is a separate hit target on the leading
+            // palette dot, so the rename double-tap conflict that used
+            // to require an inert header is no longer in play.
+            // Worktree-yes / worktree-no rows now behave the same on
+            // body tap.
             onActivate: { session.setActiveContainer(.project(project.id)) },
             onToggleExpand: isFlat ? nil : {
                 withAnimation(LimpidMotion.expand) {
@@ -222,11 +299,7 @@ struct ProjectSectionView: View {
 
     private func worktreeRow(_ wt: Worktree) -> some View {
         ContainerRow(
-            kind: .worktree(
-                projectID: project.id,
-                wt,
-                count: session.tabs(inProject: project.id, worktree: wt.id).count
-            ),
+            kind: .worktree(projectID: project.id, wt),
             isActive: session.activeContainerID == .worktree(projectID: project.id, worktreeID: wt.id),
             hasUnread: session.hasUnread(in: .worktree(projectID: project.id, worktreeID: wt.id)),
             isRinging: session.isRinging(in: .worktree(projectID: project.id, worktreeID: wt.id)),
@@ -247,20 +320,21 @@ struct ProjectSectionView: View {
             onRename: nil,
             actions: ContainerRowActions(
                 onDelete: {
-                    withAnimation(LimpidMotion.reorder) {
-                        // Missing rows: drop entirely (no disk left to
-                        // hide). Live rows: hide so the user can
-                        // recover via "Show Hidden Worktrees".
-                        if wt.isMissing {
+                    // Missing rows: drop entirely (no disk left to
+                    // hide). Live rows: hide so the user can recover
+                    // via "Show Hidden Worktrees" — that path animates
+                    // itself, so only the removal is wrapped here.
+                    if wt.isMissing {
+                        withAnimation(LimpidMotion.reorder) {
                             ContainerActions.removeWorktree(
                                 session,
                                 registry: registry,
                                 projectID: project.id,
                                 worktreeID: wt.id
                             )
-                        } else {
-                            hideWorktreeWithUndo(projectID: project.id, worktreeID: wt.id, label: wt.label)
                         }
+                    } else {
+                        hideWorktreeWithUndo(projectID: project.id, worktreeID: wt.id, label: wt.label)
                     }
                 },
                 onMoveUp: {
@@ -278,7 +352,8 @@ struct ProjectSectionView: View {
                 onDeleteOnDisk: wt.isMissing ? nil : {
                     // Disk-side delete (= `git worktree remove`) only
                     // makes sense when the worktree still exists.
-                    // Orphan rows go via the hover "x" → onDelete.
+                    // Orphan rows go via the context menu's remove
+                    // entry instead, which maps to `onDelete`.
                     deletingWorktree = ContainerSlabView.DeleteWorktreeTarget(
                         projectID: project.id,
                         worktreeID: wt.id,

@@ -51,4 +51,8 @@ extension EnvironmentValues {
     /// Command palette frecency scoring store. `nil` in Previews /
     /// tests; LimpidApp installs the real instance at the scene root.
     @Entry var frecencyStore: FrecencyStore?
+
+    /// Pull-request status scheduler. Reached from the sidebar row's
+    /// context menu for a manual refresh. `nil` in Previews / tests.
+    @Entry var prStatusSyncer: PRStatusSyncer?
 }

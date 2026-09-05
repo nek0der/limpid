@@ -11,12 +11,14 @@ struct NotificationBell: View {
     var isRinging: Bool = false
     var size: CGFloat = 11
 
-    /// `true` reserves a fixed 16×16 slot whether or not the bell is
-    /// currently drawn — sidebar trailing accessories (ContainerRow,
-    /// TabRow) rely on uniform-width trailing items so the state
-    /// icon, bell, and chevron all sit on the same x-axis.
-    /// `false` keeps the historical 0-width-when-empty behavior for
-    /// toolbar / settings call sites that don't share a grid.
+    /// `true` reserves one `LimpidLayout.containerColumnTrailingSlot`
+    /// whether or not the bell is drawn, so a row's trailing group
+    /// keeps its width as the accessories around the bell come and go.
+    /// On `ContainerRow` it is the only slot held unconditionally, and
+    /// therefore what anchors that group's right edge; `TabRow` holds
+    /// further slots of its own.
+    /// `false` keeps the 0-width-when-empty behavior for toolbar and
+    /// settings call sites that share no grid.
     var reservesSlot: Bool = false
 
     var body: some View {
@@ -30,8 +32,8 @@ struct NotificationBell: View {
             }
         }
         .frame(
-            width: reservesSlot ? 16 : nil,
-            height: reservesSlot ? 16 : nil
+            width: reservesSlot ? LimpidLayout.containerColumnTrailingSlot : nil,
+            height: reservesSlot ? LimpidLayout.containerColumnTrailingSlot : nil
         )
     }
 }

@@ -193,8 +193,8 @@ private final class ProjectSync {
 
         let projectRoot = project.rootURL.standardizedFileURL
         // Main checkout entry is captured separately for the toolbar
-        // subtitle; per-worktree rows skip it (the "general" row
-        // already represents the main checkout).
+        // subtitle; per-worktree rows skip it because the project
+        // header already stands for the main checkout.
         let mainInfo = infos.first(where: { $0.path.standardizedFileURL == projectRoot })
         let liveInfos = infos.filter { $0.path.standardizedFileURL != projectRoot }
 

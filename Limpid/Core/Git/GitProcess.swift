@@ -102,41 +102,14 @@ enum GitProcess {
             throw GitProcessError.launchFailed(error.localizedDescription)
         }
 
-        // Drain stdout / stderr concurrently with `waitUntilExit()`.
-        // macOS pipe buffers are bounded (~16-64 KB); when `git`
-        // writes more than that — `git status --porcelain=v2`
-        // against a dirty repo with hundreds of untracked files is
-        // the realistic case — its next `write(2)` blocks waiting
-        // for the pipe to drain. If we read the pipes only AFTER
-        // `waitUntilExit()` returns, nothing drains them, git never
-        // exits, and the calling Task parks forever (cancellation
-        // doesn't help because `withCheckedThrowingContinuation`
-        // can't tear down a running runSync). Two background reads
-        // keep both descriptors moving until EOF.
-        let outQueue = DispatchQueue(label: "dev.limpid.git.process.stdout")
-        let errQueue = DispatchQueue(label: "dev.limpid.git.process.stderr")
-        nonisolated(unsafe) var outBuffer = Data()
-        nonisolated(unsafe) var errBuffer = Data()
-        let outGroup = DispatchGroup()
-        let errGroup = DispatchGroup()
-        outGroup.enter()
-        outQueue.async {
-            outBuffer = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            outGroup.leave()
-        }
-        errGroup.enter()
-        errQueue.async {
-            errBuffer = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-            errGroup.leave()
-        }
-        process.waitUntilExit()
-        outGroup.wait()
-        errGroup.wait()
+        // See `drainAndWait` for why the pipes must be read while the
+        // child is still running rather than after it exits.
+        let output = drainAndWait(process, stdout: stdoutPipe, stderr: stderrPipe)
 
         let result = GitResult(
             exitCode: process.terminationStatus,
-            stdout: String(data: outBuffer, encoding: .utf8) ?? "",
-            stderr: String(data: errBuffer, encoding: .utf8) ?? ""
+            stdout: String(data: output.stdout, encoding: .utf8) ?? "",
+            stderr: String(data: output.stderr, encoding: .utf8) ?? ""
         )
         if !result.succeeded {
             log

@@ -1,40 +1,72 @@
 // ContainerRow.swift
-// Limpid — single row in the container slab. All five row shapes
-// (Loose / Group / Project header / Worktree leaf / project-direct
-// "general" leaf) render through the same view. Layout follows the
-// reference screenshot:
+// Limpid — single row in the container slab. Every row shape (Quick
+// Tabs / Group / Project header / Worktree leaf) renders through this
+// view, in one of two layouts:
 //
-//   [● palette-dot] [Label]               [count]  [chevron]
+//   top-level   [marker] [Label]              [status…]
+//   nested               [Label]              [status…]
+//
+// Every row starts at the same inset; a nested one simply draws
+// nothing into the marker slot, which puts its label on exactly the
+// left edge its parent's sits on. What tells the two apart is the
+// absent marker, the lighter label, and the tinted rule
+// `ProjectSectionView` draws down the marker column to span a
+// project's children.
+//
+// A marker is only worth a slot when it says something that varies
+// per row. The palette dot does — it is the project's identity, and
+// the head of that tinted rule. A fixed glyph repeated on every
+// worktree would not, so nested rows have none; the three signals
+// above already say which kind of row this is.
+//
+// The trailing group is the row's status column. The bell anchors its
+// right edge by holding a slot even when silent; everything else takes
+// a slot only when it has something to report. Before that rule the
+// group's right edge was set by whatever each kind happened to
+// reserve — a disclosure chevron on Project rows, a hover delete on
+// Group and worktree rows, and nothing at all on Quick Tabs, which
+// therefore ended a slot short of every other row in the list. The
+// disclosure has since moved to the dot, where macOS puts it
+// (`NSOutlineView`, `DisclosureGroup`), and the delete appears on
+// hover rather than holding a slot.
 //
 // Selection draws a rounded pill stroke + fill around the row.
-// Section indents stay shallow (just slab padding); nested rows under
-// an expanded Project / Group indent by an extra step so the
-// hierarchy reads at a glance.
 
 import SwiftUI
 
-/// What a single row in container column represents. The view picks indent, icon,
-/// chevron behavior, and trailing accessories from this.
+/// What a single row in container column represents. The view picks
+/// the marker, the disclosure behavior, and the trailing accessories
+/// from this; the leading inset is the same for every kind.
 enum ContainerRowKind: Equatable {
-    case loose(count: Int)
-    case group(TabGroup, count: Int, isExpanded: Bool)
-    case projectHeader(Project, totalCount: Int, isExpanded: Bool)
-    case worktree(projectID: UUID, Worktree, count: Int)
-    /// Single tab inline-listed under an expanded Group. Lets users
-    /// peek into a Group from container column without leaving the current container.
-    case groupTab(Tab)
+    case loose
+    case group(TabGroup, isExpanded: Bool)
+    case projectHeader(Project, isExpanded: Bool)
+    case worktree(projectID: UUID, Worktree)
 
-    /// `true` when the row should expose a hover-revealed delete (×)
-    /// at its right edge. Daily / weekly destructive actions
-    /// (closing a tab, hiding a worktree, dropping an empty group)
-    /// belong here. Long-lived top-level rows — currently only
-    /// project headers — opt out so the delete affordance doesn't
-    /// invite accidental teardown; users still reach it from the
-    /// row's context menu, which carries the proper confirm flow.
+    /// `true` for rows that hang under a parent row. They draw nothing
+    /// into the marker slot, which is what lands their label on the
+    /// same left edge as their parent's.
+    var isNested: Bool {
+        switch self {
+        case .worktree: true
+        case .loose, .group, .projectHeader: false
+        }
+    }
+
+    /// `true` when the row shows a delete at its right edge on hover.
+    ///
+    /// Groups only. They are made and dropped freely — an empty one
+    /// closes without even a confirm — so the round trip through a
+    /// context menu is friction on the app's most disposable row.
+    /// Closing a project is a year-scale action and stays behind the
+    /// menu, which routes it through a confirmation. A worktree needs
+    /// no confirmation — one still on disk is merely hidden, and one
+    /// already gone leaves nothing to lose — but it is long-lived
+    /// enough that a hover slip should not take it off the sidebar.
     var allowsHoverDelete: Bool {
         switch self {
-        case .projectHeader: false
-        default: true
+        case .group: true
+        case .loose, .projectHeader, .worktree: false
         }
     }
 }
@@ -59,8 +91,6 @@ extension ContainerRowKind {
 
     /// "Close" reads more accurately than "Delete" for Projects (the
     /// folder on disk lives on) and Groups (purely a Limpid grouping).
-    /// Tabs ("groupTab") still use Close as well — it ends the
-    /// session, not destructive in the on-disk sense.
     ///
     /// Returns `LocalizedStringResource` (not `String`) so the resolved
     /// text is taken from the String Catalog on render — passing a
@@ -70,38 +100,30 @@ extension ContainerRowKind {
         switch self {
         case .projectHeader: "Close Project"
         case .group: "Close Group"
-        case let .worktree(_, w, _):
+        case let .worktree(_, w):
             // For an orphan whose disk-side worktree is gone, the
             // verb is just "Remove Row" — there's nothing to hide
             // because the disk state is already "gone".
             w.isMissing ? "Remove Row" : "Remove from Sidebar"
-        case .groupTab, .loose: "Close"
+        case .loose: "Close"
         }
     }
 
-    /// SF Symbol paired with `closeLabel`. Worktree rows use the
-    /// "hide" metaphor (the disk-side worktree stays put) so we pick
-    /// an eye-with-slash; everything else genuinely closes/destroys
-    /// the entity in Limpid, so the standard ✕ reads correctly.
-    /// Single icon used by BOTH the context-menu destructive entry
-    /// and the hover-revealed trailing button. Apple convention is
-    /// simple symbols (no `.circle`) in context menus and inline
-    /// actions, so we drop the suffixed forms entirely.
+    /// SF Symbol paired with `closeLabel`. Both entries that use it —
+    /// the context menu on every kind, the hover delete on Groups —
+    /// take it from here so the two never disagree.
+    ///
+    /// A worktree still on disk is only hidden, so it gets the
+    /// eye-with-slash; one already gone, like everything else here,
+    /// genuinely stops existing in Limpid and takes the ✕. Apple
+    /// convention is simple symbols (no `.circle`) in context menus,
+    /// so we drop the suffixed forms.
     var closeIcon: String {
         switch self {
-        case let .worktree(_, w, _):
+        case let .worktree(_, w):
             w.isMissing ? "xmark" : "eye.slash"
         default:
             "xmark"
-        }
-    }
-
-    var hoverDeleteHelp: LocalizedStringResource {
-        switch self {
-        case let .worktree(_, w, _):
-            w.isMissing ? "Remove Row" : "Hide from Sidebar"
-        default:
-            "Delete"
         }
     }
 }
@@ -112,8 +134,9 @@ extension ContainerRowKind {
 /// new affordances a single struct to land on instead of growing
 /// `ContainerRow.init`'s signature each time.
 struct ContainerRowActions {
-    /// Hover-revealed trailing button + context-menu close. Nil means
-    /// the row can't be removed.
+    /// Close the row — the context-menu entry, and on kinds that
+    /// allow it the hover delete too. Nil means the row can't be
+    /// removed.
     var onDelete: (() -> Void)?
     /// Palette-index setter for the color picker popover. Only Group
     /// / Project header rows pass a real closure.
@@ -125,7 +148,7 @@ struct ContainerRowActions {
     var canMoveUp: Bool = true
     var canMoveDown: Bool = true
     /// Project header only — "New Worktree…" context menu entry and
-    /// hover-revealed "+" affordance.
+    /// the hover-revealed branch affordance beside it.
     var onCreateWorktree: (() -> Void)?
     /// Project header only — "Show Hidden Worktrees" entry, surfaced
     /// only when at least one row is hidden.
@@ -190,7 +213,9 @@ struct ContainerRow: View {
     /// Empty dict when no claude is running.
     var agentBreakdown: [AgentState: Int] = [:]
     let onActivate: () -> Void
-    /// Chevron click for Project / Group rows. Nil disables.
+    /// Toggle whether this row's children are shown. Reaches the user
+    /// as the palette dot, which swaps to a chevron on hover. Nil
+    /// disables.
     let onToggleExpand: (() -> Void)?
     /// Rename submit. Nil disables inline rename for that kind.
     let onRename: ((String) -> Void)?
@@ -203,10 +228,9 @@ struct ContainerRow: View {
 
     // MARK: - Action passthroughs
 
-    //
     // Internal code reads these via the short name; storing them on a
-    // bundle keeps `ContainerRow.init` callers from passing eleven
-    // optional closures by name.
+    // bundle keeps `ContainerRow.init` callers from naming every
+    // optional closure at each call site.
 
     private var onDelete: (() -> Void)? {
         actions.onDelete
@@ -268,7 +292,22 @@ struct ContainerRow: View {
     @State private var isEditing = false
     @State private var draft = ""
     @State private var isColorPickerPresented = false
+    /// Hover over the marker slot alone, not the row. Drives the
+    /// dot → chevron swap, which must not fire from anywhere else on
+    /// the row or the dot would flicker as the pointer crossed it.
+    @State private var isMarkerHovering = false
     @Environment(\.limpidAccent) private var limpidAccent
+
+    // Pull-request dependencies, all propagated by `LimpidApp` at
+    // scene root. Read here rather than threaded through every call
+    // site so `ContainerRow`'s init signature stays put. Everything
+    // the feature draws goes through `prHoverCardTarget` below, which
+    // is where the Settings switch is checked.
+    @Environment(PRStatusStore.self) private var prStatusStore
+    @Environment(\.prStatusSyncer) private var prStatusSyncer
+    @Environment(SettingsStore.self) private var settingsStore
+
+    // MARK: - Body
 
     var body: some View {
         // Two top-level branches instead of routing `.draggable` through
@@ -304,7 +343,16 @@ struct ContainerRow: View {
     }
 
     private var rowContent: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: LimpidLayout.containerColumnRowContentSpacing) {
+            // Unconditional, even though a nested row draws nothing in
+            // it. Dropping the slot from some rows makes the HStack's
+            // shape differ per kind, and SwiftUI then animates the
+            // markers of the surviving rows independently of their
+            // labels when a sibling is removed — the dots slide into
+            // place after the text has already settled. Reserving an
+            // empty slot keeps every row the same shape and lines the
+            // labels up at the same x, which is what the slot was for
+            // to begin with.
             leadingMarker
             if onRename != nil {
                 // Renameable kinds use `InlineRenameField` (Text↔
@@ -348,26 +396,41 @@ struct ContainerRow: View {
                 // `maxWidth: .infinity` so the label takes the row's
                 // full free width even when the text itself is short —
                 // otherwise the trailing accessories collapse left
-                // toward the label and the count drifts away from the
-                // right edge (visible on Quick Tabs / general rows).
+                // toward the label instead of staying pinned to the
+                // row's right edge.
                 Text(label)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundStyle(labelColor)
+                    // The renameable branch above carries this offset
+                    // to line its static label up with the field
+                    // editor. A row that can't be renamed has no field
+                    // editor to match, but it does sit in the same
+                    // list — without the same offset a worktree label
+                    // lands 5pt left of its project's.
+                    .padding(.leading, InlineRenameField.fieldEditorLeadingPadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(1)
             }
             trailingAccessory
         }
-        .padding(.leading, indent)
-        .padding(.trailing, 18)
-        .frame(height: rowHeight)
+        .padding(.leading, LimpidLayout.containerColumnIndentTop)
+        .padding(.trailing, LimpidLayout.containerColumnRowTrailingPadding)
+        .frame(height: LimpidLayout.containerColumnRowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Resolve the row's children against one geometry instead of
+        // each their own, so a row that moves in the list carries its
+        // marker, label and accessories as a single piece rather than
+        // interpolating them independently.
+        .geometryGroup()
         .selectablePillBackground(
             isActive: isActive,
             isHovering: isHovering,
-            isDescendantActive: isDescendantActive
+            isDescendantActive: isDescendantActive,
+            // A nested row starts its pill clear of the project rule
+            // running down the marker column — see the constant.
+            leadingPadding: kind.isNested ? LimpidLayout.containerColumnNestedPillLeading : nil
         )
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
@@ -458,6 +521,21 @@ struct ContainerRow: View {
                 }
                 .tint(Color.primary)
             }
+            // Only offered on rows that have a request on file. On a
+            // row with none, a refresh has nothing to refresh and the
+            // entry would read as dead. It is deliberately not gated
+            // on `showsPRMark`: under "only rows needing attention" a
+            // healthy request draws nothing at rest, and that is
+            // exactly the row where the user might want to re-ask.
+            if let target = prHoverCardTarget, let prStatusSyncer {
+                Divider()
+                Button {
+                    prStatusSyncer.refreshNow(container: target.container)
+                } label: {
+                    Label("Refresh PR Status", systemImage: "arrow.clockwise")
+                }
+                .tint(Color.primary)
+            }
             if let onRevealInFinder {
                 Divider()
                 Button(action: onRevealInFinder) {
@@ -483,68 +561,117 @@ struct ContainerRow: View {
                 .tint(Color.primary)
             }
         }
-        .modifier(OptionalHelp(text: helpText))
+        // Suppress the path tooltip on rows that show a pull-request
+        // card. Both are hover surfaces for the same row, and the
+        // system tooltip appears later and draws on top — it would
+        // cover the card the user is reading. The path stays reachable
+        // from the row's context menu.
+        .modifier(OptionalHelp(text: prHoverCardTarget == nil ? helpText : nil))
+        // Attaches to the whole row so the hover target is the row,
+        // not the mark. Resolves to nil — and the modifier to a no-op
+        // — on every row that has no linked pull request.
+        .prHoverCard(prHoverCardTarget)
     }
 
-    // MARK: - Leading marker (palette dot, branch icon, or unread)
+    // MARK: - Leading marker (palette dot / Quick Tabs glyph)
 
+    /// Reached for every row. A nested row draws nothing into the
+    /// slot but still reserves it, which is what puts its label on the
+    /// same left edge as its parent's — see `rowContent` for why the
+    /// slot cannot be made conditional.
     private var leadingMarker: some View {
         ZStack {
             switch kind {
             case .loose:
+                // Quick Tabs sits above the sections, alone, with no
+                // parent to align to. The glyph is what tells it apart
+                // from a project.
                 Image(systemName: "tray")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.secondary)
-            case let .group(g, _, _):
-                paletteDotButton(paletteColor(g.paletteIndex), current: g.paletteIndex)
-            case let .projectHeader(p, _, _):
-                paletteDotButton(paletteColor(p.paletteIndex), current: p.paletteIndex)
+            case let .group(g, _):
+                paletteDot(paletteColor(g.paletteIndex))
+            case let .projectHeader(p, _):
+                paletteDot(paletteColor(p.paletteIndex))
             case .worktree:
-                Image(systemName: "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-            case .groupTab:
-                Circle()
-                    .fill(Color.secondary.opacity(0.5))
-                    .frame(width: 7, height: 7)
+                EmptyView()
             }
         }
         .frame(width: LimpidLayout.containerColumnMarkerSlot, height: LimpidLayout.containerColumnMarkerSlot)
+    }
+
+    /// `true` when this row's children are showing.
+    private var isRowExpanded: Bool {
+        switch kind {
+        case let .group(_, expanded): expanded
+        case let .projectHeader(_, expanded): expanded
+        case .loose, .worktree: false
+        }
     }
 
     private func paletteColor(_ idx: Int?) -> Color {
         LimpidColor.paletteColor(idx)
     }
 
-    /// 8px dot. When `onChangePalette` is set, the slot becomes
-    /// tappable (high-priority so the row's `onActivate` tap doesn't
-    /// swallow it) and anchors the color-picker popover. Hover ring
-    /// hints that the dot is interactive.
+    /// The project's colour, and the row's disclosure control.
+    ///
+    /// macOS puts a disclosure on the leading edge (`NSOutlineView`,
+    /// `DisclosureGroup`), where the dot already sits. Hovering swaps
+    /// it for a chevron so the control announces itself before the
+    /// click; the dot holds the slot otherwise, being also the head of
+    /// the tinted rule spanning this project's children.
+    ///
+    /// One tap target can only mean one thing, so recolouring moved to
+    /// the context menu — expanding is daily, recolouring rare. The
+    /// picker's popover still anchors here, attached independently of
+    /// `onToggleExpand` so a group row can be recoloured without being
+    /// expandable. `highPriorityGesture` so the tap beats the row's
+    /// own activation rather than racing it.
     @ViewBuilder
-    private func paletteDotButton(_ color: Color, current: Int?) -> some View {
-        if onChangePalette != nil {
-            Circle()
-                .fill(color)
-                .frame(width: 10, height: 10)
+    private func paletteDot(_ color: Color) -> some View {
+        let dot = Circle().fill(color).frame(width: 10, height: 10)
+        Group {
+            if let onToggleExpand {
+                ZStack {
+                    dot.opacity(isMarkerHovering ? 0 : 1)
+                    if isMarkerHovering {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color.primary.opacity(0.75))
+                            .rotationEffect(.degrees(isRowExpanded ? 90 : 0))
+                    }
+                }
                 .padding(4)
                 .contentShape(Rectangle())
-                .highPriorityGesture(
-                    TapGesture().onEnded {
-                        isColorPickerPresented = true
-                    }
-                )
-                .help("Change Color")
-                .popover(isPresented: $isColorPickerPresented, arrowEdge: .bottom) {
-                    ContainerColorPicker(current: current) { idx in
-                        onChangePalette?(idx)
-                        isColorPickerPresented = false
-                    }
-                    .limpidAccentPropagated(limpidAccent)
-                }
-        } else {
-            Circle()
-                .fill(color)
-                .frame(width: 10, height: 10)
+                .onHover { isMarkerHovering = $0 }
+                // No `withAnimation` here: the action site owns the
+                // transaction, the way `onMoveUp` and `onDelete` do.
+                // Wrapping it again wrapped the same animation twice
+                // and left callers no way to fold without one.
+                .highPriorityGesture(TapGesture().onEnded { onToggleExpand() })
+                .help(isRowExpanded ? "Collapse" : "Expand")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(Text(isRowExpanded ? "Collapse" : "Expand"))
+            } else {
+                dot
+            }
+        }
+        .popover(isPresented: $isColorPickerPresented, arrowEdge: .bottom) {
+            ContainerColorPicker(current: currentPaletteIndex) { idx in
+                onChangePalette?(idx)
+                isColorPickerPresented = false
+            }
+            .limpidAccentPropagated(limpidAccent)
+        }
+    }
+
+    /// Palette slot this row currently sits on, so the picker opens
+    /// with the right swatch selected.
+    private var currentPaletteIndex: Int? {
+        switch kind {
+        case let .group(g, _): g.paletteIndex
+        case let .projectHeader(p, _): p.paletteIndex
+        case .loose, .worktree: nil
         }
     }
 
@@ -553,10 +680,9 @@ struct ContainerRow: View {
     private var label: String {
         switch kind {
         case .loose: String(localized: "Quick Tabs")
-        case let .group(g, _, _): g.name
-        case let .projectHeader(p, _, _): p.name
-        case let .worktree(_, w, _): w.label
-        case let .groupTab(t): t.displayTitle
+        case let .group(g, _): g.name
+        case let .projectHeader(p, _): p.name
+        case let .worktree(_, w): w.label
         }
     }
 
@@ -569,35 +695,123 @@ struct ContainerRow: View {
             return .primary
         }
         switch kind {
-        case .worktree, .groupTab:
+        case .worktree:
             return Color.primary.opacity(0.78)
         default:
             return Color.primary.opacity(0.92)
         }
     }
 
-    // MARK: - Trailing (count + chevron)
+    // MARK: - Trailing (status column)
 
     /// True when this row represents a worktree that has been
     /// externally removed from disk. Drives the dim + warning badge.
     private var isMissingWorktree: Bool {
-        if case let .worktree(_, w, _) = kind {
+        if case let .worktree(_, w) = kind {
             return w.isMissing
         }
         return false
     }
 
-    /// Trailing accessory — bell + count always in layout; hover
-    /// action buttons (delete / new-worktree) join the HStack only
-    /// while the row is hovered. That means the label reflows on
-    /// hover enter/leave: ~32pt of label width shrinks to make room
-    /// for the buttons. We chose this over an `.overlay` after the
-    /// overlay landed icons on top of the label tail (truncated "…"
-    /// would sit under the buttons), which read badly. The reflow
-    /// is a tradeoff: the label is fuller at rest, and
-    /// hover icons sit cleanly in their own slot during interaction.
+    /// The container this row stands for, paired with its pull
+    /// request — or nil when there is nothing to show, which includes
+    /// the feature being switched off. Every part of the row that
+    /// reads request state comes through here, so that one check is
+    /// the whole master switch.
+    ///
+    /// A Project row resolves to its own main checkout: that is the
+    /// container tapping the header activates, and `GitSyncCoordinator`
+    /// keeps it out of `project.worktrees` precisely because this row
+    /// already represents it. Groups and Quick Tabs
+    /// have no branch of their own and resolve to nil.
+    private var prHoverCardTarget: (container: ContainerID, info: PRInfo)? {
+        guard settingsStore.settings.advanced.showPRStatusInSidebar else { return nil }
+        let container: ContainerID? = switch kind {
+        case let .projectHeader(project, _):
+            .project(project.id)
+        case let .worktree(projectID, worktree):
+            .worktree(projectID: projectID, worktreeID: worktree.id)
+        case .loose, .group:
+            nil
+        }
+        guard let container, let info = prStatusStore.info(for: container) else { return nil }
+        return (container, info)
+    }
+
+    /// Whether the row draws its pull-request mark at rest.
+    ///
+    /// Gating here rather than in `PRMarkPresentation` keeps that
+    /// mapping a pure function of the request and leaves the hover
+    /// card alone — `prHoverCardTarget` still resolves on every row
+    /// with a request.
+    /// What counts as attention lives on `PRInfo`, so it is testable
+    /// without standing up a view.
+    private var showsPRMark: Bool {
+        guard let info = prHoverCardTarget?.info else { return false }
+        guard settingsStore.settings.advanced.showPRStatusOnlyWhenAttention else { return true }
+        return info.needsAttention
+    }
+
+    /// Pull-request mark. Sits in the trailing group so the
+    /// leading marker stays free to say what the row *is* — see
+    /// `PRMarkPresentation` for why that separation matters here.
+    private func prStatusMark(_ style: PRMarkPresentation) -> some View {
+        // A bundled Octicon, not an SF Symbol, so it is sized by frame
+        // rather than by font — see `PRMarkPresentation` for why the glyphs
+        // are assets.
+        Image(style.glyph)
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(
+                width: LimpidLayout.containerColumnPRGlyphSize,
+                height: LimpidLayout.containerColumnPRGlyphSize
+            )
+            .foregroundStyle(style.tint)
+            .frame(width: LimpidLayout.containerColumnTrailingSlot, height: LimpidLayout.containerColumnTrailingSlot)
+            .overlay(alignment: .bottomTrailing) {
+                if let badge = style.badge {
+                    // The mark is cut out of the disc, so the circle
+                    // behind is what shows through it — and being one
+                    // drawing, it is exactly centred, where the SF
+                    // Symbol this replaced landed its two layers a
+                    // fraction of a pixel apart at this size.
+                    //
+                    // Hidden from VoiceOver; its meaning is spoken
+                    // through the value below.
+                    Circle()
+                        .fill(LimpidColor.statusGlyphKnockout)
+                        .overlay {
+                            Image(badge.glyph)
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .foregroundStyle(badge.color)
+                        }
+                        .frame(width: 9, height: 9)
+                        .offset(x: 2, y: 2)
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityLabel(Text(style.accessibilityKey))
+            // A failing check is a red mark and nothing else on screen.
+            // Speaking it here is what keeps that meaning off colour.
+            .accessibilityValue(style.badge.map { Text($0.accessibilityKey) } ?? Text(verbatim: ""))
+    }
+
+    /// Trailing accessory — the row's status column. Read outward from
+    /// the label: the missing-worktree warning, the hover-only
+    /// new-worktree button, then the standing trio of pull request,
+    /// agent state and bell. Only the bell reserves its slot, so the
+    /// group's right edge is fixed while at rest and the rest stack
+    /// inward from it.
+    ///
+    /// New-worktree and the Group delete appear on hover, reflowing
+    /// the label by a slot while the pointer is on the row. Holding
+    /// slots for them instead is what made the group's right edge
+    /// depend on the row kind — see the file banner.
     private var trailingAccessory: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: LimpidLayout.containerColumnTrailingSpacing) {
             if isMissingWorktree {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 10, weight: .semibold))
@@ -606,18 +820,29 @@ struct ContainerRow: View {
             }
             if isHovering, !isEditing, let onCreateWorktree {
                 // Create-worktree (Y) stays inside the trailing group
-                // — it sits next to the project header it belongs to,
-                // not at the row edge, so it never collides with a
-                // sibling row's delete affordance.
+                // — it sits next to the project header it belongs to
+                // rather than at the row edge, so it stays inside the
+                // status column's rhythm instead of hanging off it.
                 Button(action: onCreateWorktree) {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 16, height: 16)
+                        .frame(width: LimpidLayout.containerColumnTrailingSlot, height: LimpidLayout.containerColumnTrailingSlot)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("New Worktree…")
+            }
+            // The request comes before the agent, reading outward from
+            // the label: what this branch *is* proposing, then what is
+            // happening in it right now. The agent state changes by the
+            // second and the request by the day, so the volatile one
+            // sits nearer the edge where the eye already goes for the
+            // bell.
+            if showsPRMark,
+               let style = PRMarkPresentation.style(for: prHoverCardTarget?.info, accent: limpidAccent)
+            {
+                prStatusMark(style)
             }
             if let state = agentState,
                let iconName = state.iconName,
@@ -629,7 +854,7 @@ struct ContainerRow: View {
                     .foregroundStyle(state == .finished && agentStateViewed
                         ? Color.secondary
                         : iconColor)
-                    .frame(width: 16, height: 16)
+                    .frame(width: LimpidLayout.containerColumnTrailingSlot, height: LimpidLayout.containerColumnTrailingSlot)
                     .help(tooltip)
                     // Color is the only sighted differentiator (red /
                     // orange / blue / green). VoiceOver gets nothing
@@ -644,32 +869,27 @@ struct ContainerRow: View {
                 isRinging: isRinging,
                 reservesSlot: true
             )
-            trailingControl
-            // Delete (×) lives at the absolute right edge of the row
-            // when hovered — matches the TabRow close affordance
-            // and gives worktree / group rows a consistent "destructive
-            // action on the far right" mental model. The slot is
-            // unconditionally rendered (only the image is hidden when
-            // not hovered) so the right edge of the row doesn't shift
-            // on hover-in / hover-out.
-            //
-            // Project headers opt out via `kind.allowsHoverDelete`
-            // because removing a project is a year-scale operation
-            // that belongs in the context menu, not on a quick
-            // hover slip.
-            if let onDelete, kind.allowsHoverDelete {
+            // Present only while hovered, and it holds no slot the
+            // rest of the time. The previous version reserved one
+            // permanently to keep the row's right edge from shifting,
+            // which froze a gap into every row that had a delete and
+            // left the ones without — Quick Tabs — ending short. At
+            // rest is when the column gets read, so it wins; the hover
+            // reflow is the same trade `onCreateWorktree` above makes.
+            if let onDelete, kind.allowsHoverDelete, isHovering, !isEditing {
                 Button(action: onDelete) {
-                    Image(systemName: hoverDeleteIcon)
+                    Image(systemName: closeIcon)
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 16, height: 16)
+                        .frame(
+                            width: LimpidLayout.containerColumnTrailingSlot,
+                            height: LimpidLayout.containerColumnTrailingSlot
+                        )
                         .contentShape(Rectangle())
-                        .opacity(isHovering && !isEditing ? 1 : 0)
                 }
                 .buttonStyle(.plain)
-                .allowsHitTesting(isHovering && !isEditing)
-                .help(String(localized: hoverDeleteHelp))
-                .accessibilityLabel(Text(hoverDeleteHelp))
+                .help(Text(closeLabel))
+                .accessibilityLabel(Text(closeLabel))
             }
         }
     }
@@ -691,61 +911,6 @@ struct ContainerRow: View {
         return parts.isEmpty
             ? dominant.localizedLabel
             : parts.joined(separator: " · ")
-    }
-
-    @ViewBuilder
-    private var trailingControl: some View {
-        switch kind {
-        case .loose, .group, .worktree:
-            // Tab count is intentionally not surfaced on container column any more
-            // — the agent-state icon owns the trailing "at-a-glance"
-            // role, and the tab count is one click away in tab column. Keeps
-            // the trailing grid pure (state · bell · chevron, all 16×16).
-            EmptyView()
-        case let .projectHeader(_, _, expanded):
-            // Project headers always reserve a 16×16 slot in the
-            // chevron position so worktree rows below align with the
-            // header even on non-git projects. Without `onToggleExpand`
-            // the slot stays empty (no glyph, no hit target — a
-            // disclosure that doesn't disclose would be a dead
-            // control); with it, the same slot carries the chevron
-            // button.
-            if let onToggleExpand {
-                Button(action: { onToggleExpand() }, label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.primary.opacity(0.70))
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .frame(width: 16, height: 16)
-                        .contentShape(Rectangle())
-                })
-                .buttonStyle(.plain)
-                .help(expanded ? "Collapse" : "Expand")
-                .accessibilityLabel(Text(expanded ? "Collapse" : "Expand"))
-            } else {
-                Color.clear.frame(width: 16, height: 16)
-            }
-        case .groupTab:
-            EmptyView()
-        }
-    }
-
-    // MARK: - Geometry
-
-    private var indent: CGFloat {
-        // All rows share the same leading inset; hierarchy reads from
-        // the slab tree structure + marker icon change, not from
-        // horizontal indent.
-        LimpidLayout.containerColumnIndentTop
-    }
-
-    private var rowHeight: CGFloat {
-        switch kind {
-        case .loose, .group, .projectHeader:
-            LimpidLayout.containerColumnRowHeightTop
-        case .worktree, .groupTab:
-            LimpidLayout.containerColumnRowHeightNested
-        }
     }
 
     // MARK: - Rename
@@ -775,44 +940,17 @@ struct ContainerRow: View {
         isEditing = false
     }
 
-    /// `closeLabel` / `closeIcon` / `hoverDeleteIcon` / `hoverDeleteHelp`
-    /// are kind-derived and live on `ContainerRowKind` (below) so the
-    /// view's struct body stays within the lint length budget.
+    // MARK: - Kind forwarding
+
+    /// `closeLabel` / `closeIcon` are kind-derived and live on
+    /// `ContainerRowKind` (top of this file) so the view's struct body
+    /// stays within the lint length budget.
     private var closeLabel: LocalizedStringResource {
         kind.closeLabel
     }
 
     private var closeIcon: String {
         kind.closeIcon
-    }
-
-    private var hoverDeleteIcon: String {
-        kind.closeIcon
-    }
-
-    private var hoverDeleteHelp: LocalizedStringResource {
-        kind.hoverDeleteHelp
-    }
-}
-
-extension View {
-    /// Conditionally attaches `.limpidDraggable` from inside the
-    /// container row's body. Used by `ContainerRow` to win gesture
-    /// arbitration against its own tap / context-menu recognizers —
-    /// see `ContainerRow.DragDescriptor` for the full rationale.
-    @ViewBuilder
-    @MainActor
-    func applyLimpidDraggable(_ descriptor: ContainerRow.DragDescriptor?) -> some View {
-        if let descriptor {
-            limpidDraggable(
-                kind: descriptor.kind,
-                prefix: descriptor.prefix,
-                id: descriptor.id,
-                dragState: descriptor.dragState
-            )
-        } else {
-            self
-        }
     }
 }
 

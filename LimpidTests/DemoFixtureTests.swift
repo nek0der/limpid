@@ -79,6 +79,38 @@ struct DemoFixtureTests {
         #expect(restored.activeContainerID == original.activeContainerID)
     }
 
+    /// The demo request marks are keyed by hand-written `ContainerID`
+    /// values, so nothing but this connects them to the containers in
+    /// the snapshot. Change one UUID constant and `make screenshot`
+    /// silently produces a hero image with the marks missing — exactly
+    /// the class of breakage this suite exists to catch.
+    @Test("every demo pull request is keyed to a container in the snapshot")
+    func prStatus_keysResolveToSnapshotContainers() throws {
+        let snap = DemoFixture.snapshot
+        #expect(!DemoFixture.prStatus.isEmpty)
+        for container in DemoFixture.prStatus.keys {
+            switch container {
+            case let .project(id):
+                #expect(snap.projects.contains { $0.id == id })
+            case let .worktree(projectID, worktreeID):
+                let project = try #require(snap.projects.first { $0.id == projectID })
+                #expect(project.worktrees.contains { $0.id == worktreeID })
+            case .loose, .group:
+                Issue.record("a Group or Quick Tabs row has no branch to carry a request")
+            }
+        }
+    }
+
+    /// A real `github.com/<name>` is somebody's account, and the demo
+    /// hands its link to anyone who clicks. RFC 2606 reserves
+    /// `.invalid` so it can never resolve to one.
+    @Test("demo request links point at a reserved, non-resolving host")
+    func prStatus_urlsUseAReservedHost() {
+        for info in DemoFixture.prStatus.values {
+            #expect(info.url.host()?.hasSuffix(".invalid") == true)
+        }
+    }
+
     @Test("isDemoActive defaults to false in the test runner (LIMPID_DEMO unset)")
     func isDemoActive_inTestRunner_isFalse() {
         // Tests aren't launched via `scripts/screenshot.sh`, so the env

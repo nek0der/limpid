@@ -103,6 +103,11 @@ final class AppState {
     private var fullScreenSync: WindowFullScreenSync?
     private var dockBadgeSync: DockBadgeSync?
     private var gitSync: GitSyncCoordinator?
+    /// Sidebar pull-request status: data, hover state, and the
+    /// scheduler that fills them. See each type for its own contract.
+    let prStatusStore = PRStatusStore()
+    let prHoverPresentation = PRHoverPresentation()
+    private(set) var prStatusSyncer: PRStatusSyncer?
     /// Set when the on-disk snapshot couldn't be restored at boot.
     /// A version mismatch or decode failure normally just dropped the
     /// file silently; surfacing it as an alert lets the user notice
@@ -312,6 +317,18 @@ final class AppState {
             notificationManager: notificationManager
         )
         self.gitSync = GitSyncCoordinator(session: session)
+
+        let toolLocator = ToolLocator()
+        let prStatusSyncer = PRStatusSyncer(
+            session: session,
+            store: prStatusStore,
+            settings: settingsStore,
+            hoverPresentation: prHoverPresentation,
+            resolver: ForgeResolver(locator: toolLocator),
+            locator: toolLocator
+        )
+        prStatusSyncer.start()
+        self.prStatusSyncer = prStatusSyncer
 
         store.scheduleSave(session.makeSnapshot())
 
@@ -612,6 +629,9 @@ struct LimpidApp: App {
                 .environment(state.worktreeMoveSuggester)
                 .environment(state.settingsStore)
                 .environment(state.reduceTransparencyResolver)
+                .environment(state.prStatusStore)
+                .environment(state.prHoverPresentation)
+                .environment(\.prStatusSyncer, state.prStatusSyncer)
                 .environment(\.surfaceRegistry, state.registry)
                 .environment(\.claudeSessionTracker, state.claudeSessionTracker)
                 .environment(\.codexSessionTracker, state.codexSessionTracker)
@@ -872,6 +892,7 @@ struct ContentView: View {
         .overlay(alignment: .bottom) {
             WorktreeMoveSuggestionHost()
         }
+        .overlay { PRHoverCardHost() }
         .overlay {
             if let paletteState = state.session.commandPaletteState,
                state.session.paletteFieldFrame.width > 0

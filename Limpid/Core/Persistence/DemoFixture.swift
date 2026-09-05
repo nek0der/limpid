@@ -348,6 +348,67 @@ enum DemoFixture {
         )
     }
 
+    // MARK: - Pull-request status
+
+    /// Pull-request state the demo hands to `PRStatusStore`, standing
+    /// in for what the forge CLIs would report.
+    ///
+    /// The hero screenshot has to look the same on every
+    /// contributor's Mac, and the live path cannot promise that — it
+    /// shells out to `gh` / `glab` against whatever is on disk under
+    /// whatever credentials happen to be present. `PRStatusSyncer`
+    /// stops at the door in demo mode and takes this instead.
+    ///
+    /// Two rows only: one with failing checks, the single state that
+    /// also earns a badge, and one merged on another project so the
+    /// merge glyph appears too.
+    ///
+    /// The demo's worktrees are `.userPinned` to stop
+    /// `GitSyncCoordinator` replacing them with a scan of paths that
+    /// do not exist. That flag is a fixture mechanism, not a claim
+    /// about the row, so it carries an ordinary worktree's status.
+    static var prStatus: [ContainerID: PRInfo] {
+        [
+            .worktree(projectID: limpidProjectID, worktreeID: limpidFeatWorktreeID): PRInfo(
+                number: 128,
+                state: .open,
+                isDraft: false,
+                title: "Track agent state per pane",
+                url: demoPullRequestURL(repo: "limpid", number: 128),
+                forge: .gitHub,
+                checks: PRChecks(conclusion: .failure, counts: .init(passed: 7, total: 9))
+            ),
+            .project(personalSiteProjectID): PRInfo(
+                number: 42,
+                state: .merged,
+                isDraft: false,
+                title: "Rewrite the pricing page",
+                url: demoPullRequestURL(repo: "marketing-site", number: 42),
+                forge: .gitHub,
+                checks: PRChecks(conclusion: .success, counts: .init(passed: 4, total: 4))
+            )
+        ]
+    }
+
+    /// Where a demo request's "Open on GitHub" would go.
+    ///
+    /// `example.invalid` is reserved by RFC 2606 and never resolves,
+    /// which is the point: a plausible `github.com/<something>` is a
+    /// real address belonging to whoever registered that name, and the
+    /// demo would hand a stranger's page to anyone who clicked.
+    /// `SparkleUpdater`'s mock appcast picks it for the same reason.
+    ///
+    /// The fallback is unreachable: the string is assembled here from
+    /// a fixed host, a repo name we choose, and an `Int`. It exists
+    /// because `URL(string:)` is failable and nothing in this app
+    /// force-unwraps. `DemoFixtureTests` asserts the host on every
+    /// entry, so an edit that reached the fallback fails there instead
+    /// of shipping a link into the demo.
+    private static func demoPullRequestURL(repo: String, number: Int) -> URL {
+        URL(string: "https://example.invalid/limpid/\(repo)/pull/\(number)")
+            ?? URL(fileURLWithPath: "/")
+    }
+
     // MARK: - Helpers
 
     private static func singlePaneTab(

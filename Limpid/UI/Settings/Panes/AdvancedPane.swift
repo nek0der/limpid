@@ -55,6 +55,37 @@ struct AdvancedPane: View {
                 )
             }
 
+            // Sits under Ghostty Config because both are "Limpid talks
+            // to something outside itself" switches. Off by default:
+            // it shells out to a CLI the user may not have, so it has
+            // to be asked for rather than discovered by surprise.
+            Section {
+                Toggle(
+                    "Show PR status in sidebar",
+                    isOn: $store.settings.advanced.showPRStatusInSidebar
+                )
+                Toggle(
+                    "Mark only rows needing attention",
+                    isOn: $store.settings.advanced.showPRStatusOnlyWhenAttention
+                )
+                .disabled(!store.settings.advanced.showPRStatusInSidebar)
+            } header: {
+                Text("Integrations")
+            } footer: {
+                Text(
+                    """
+                    Marks a sidebar row whose branch has a pull request, and shows the title \
+                    and CI summary on hover. Requires `gh` (GitHub) or `glab` (GitLab), \
+                    signed in to the remote's host. \
+                    Refreshes on focus, every \(PRStatusSyncer.refreshIntervalMinutes) minutes \
+                    otherwise, and faster while checks are running.
+
+                    Restricting the mark to rows with a failing check leaves fewer of them \
+                    on screen; the hover card reports every request either way.
+                    """
+                )
+            }
+
             // Lives at the bottom of the last pane on purpose — this
             // is the kind of switch a user only reaches for when
             // something is wrong, and putting it next to the daily

@@ -206,10 +206,9 @@ private func makeWorktree(
     path: String,
     isHidden: Bool = false
 ) -> Worktree {
-    Worktree(
+    WorktreeFixture.make(
         label: label,
         workingDirectory: URL(fileURLWithPath: path),
-        origin: .gitWorktree,
         isHidden: isHidden
     )
 }

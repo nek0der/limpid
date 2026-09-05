@@ -7,19 +7,25 @@
 import SwiftUI
 
 extension View {
+    /// - Parameter leadingPadding: Inset for the pill's leading edge
+    ///   when it has to differ from `horizontalPadding`. A row nested
+    ///   under a rule needs to start clear of it, or the pill's
+    ///   rounded corner crosses the line. Defaults to symmetric.
     func selectablePillBackground(
         isActive: Bool,
         isHovering: Bool,
         isDescendantActive: Bool = false,
         cornerRadius: CGFloat = 12,
-        horizontalPadding: CGFloat = 10
+        horizontalPadding: CGFloat = 10,
+        leadingPadding: CGFloat? = nil
     ) -> some View {
         modifier(SelectablePillBackground(
             isActive: isActive,
             isHovering: isHovering,
             isDescendantActive: isDescendantActive,
             cornerRadius: cornerRadius,
-            horizontalPadding: horizontalPadding
+            horizontalPadding: horizontalPadding,
+            leadingPadding: leadingPadding ?? horizontalPadding
         ))
     }
 }
@@ -35,6 +41,7 @@ private struct SelectablePillBackground: ViewModifier {
     let isDescendantActive: Bool
     let cornerRadius: CGFloat
     let horizontalPadding: CGFloat
+    let leadingPadding: CGFloat
 
     func body(content: Content) -> some View {
         content
@@ -45,7 +52,8 @@ private struct SelectablePillBackground: ViewModifier {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .stroke(stroke, lineWidth: 0.5)
                     )
-                    .padding(.horizontal, horizontalPadding)
+                    .padding(.leading, leadingPadding)
+                    .padding(.trailing, horizontalPadding)
             )
     }
 
