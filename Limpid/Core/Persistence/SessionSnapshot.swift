@@ -346,10 +346,6 @@ extension WindowSession {
         cachedWindowUnreadCount = tabs.reduce(0) { sum, tab in
             sum + tab.paneStates.values.reduce(0) { $0 + $1.unreadCount }
         }
-        // Same posture for the per-project / per-worktree tab-count
-        // caches the Project header and worktree rows consume — the
-        // canonical `tabs` list just changed wholesale, so rebuild.
-        rebuildTabCountCaches()
         windowFrame = snapshot.windowFrame?.cgRect
 
         // Pin the active tab first, then derive `activeContainerID`

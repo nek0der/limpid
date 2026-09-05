@@ -45,7 +45,6 @@ extension WindowSession {
             container: container
         )
         tabs.append(tab)
-        incTabCount(in: container)
         setActiveTab(tab.id)
         return tab
     }
@@ -97,7 +96,6 @@ extension WindowSession {
             paneSearchStates.removeValue(forKey: leafID)
         }
         tabs.remove(at: index)
-        decTabCount(in: closing.container)
 
         if activeTabID == tabID {
             // Hand focus to the neighbour in the *same* container: the
@@ -220,8 +218,6 @@ extension WindowSession {
         var moved = tabs.remove(at: index)
         moved.container = target
         tabs.append(moved)
-        decTabCount(in: sourceContainer)
-        incTabCount(in: target)
         // Stay on the source container — yanking the user across
         // to the destination on every drag feels like a bug. For
         // active-tab drags promote the sibling that slid into the
@@ -267,68 +263,5 @@ extension WindowSession {
             return
         }
         tabs.insert(moved, at: toBase + 1)
-    }
-
-    // MARK: - Project / worktree tab-count cache
-
-    /// Bump the per-project / per-worktree tab count when a tab lands
-    /// in a project-or-worktree container. Loose tabs and groups skip
-    /// the cache — only Project headers and worktree rows consult it,
-    /// and tabs in those scopes never need a count summary.
-    func incTabCount(in container: ContainerID) {
-        switch container {
-        case .loose, .group:
-            return
-        case let .project(projectID):
-            cachedProjectTabCount[projectID, default: 0] += 1
-        case let .worktree(projectID, worktreeID):
-            cachedProjectTabCount[projectID, default: 0] += 1
-            cachedWorktreeTabCount[WorktreeTabCountKey(projectID: projectID, worktreeID: worktreeID), default: 0] += 1
-        }
-    }
-
-    /// Mirror of `incTabCount` — drops the relevant counters and
-    /// removes zero-valued entries so the dict stays tidy and the
-    /// `nil`-vs-`0` distinction at lookup time stays meaningful.
-    func decTabCount(in container: ContainerID) {
-        switch container {
-        case .loose, .group:
-            return
-        case let .project(projectID):
-            if let current = cachedProjectTabCount[projectID] {
-                cachedProjectTabCount[projectID] = current > 1 ? current - 1 : nil
-            }
-        case let .worktree(projectID, worktreeID):
-            if let current = cachedProjectTabCount[projectID] {
-                cachedProjectTabCount[projectID] = current > 1 ? current - 1 : nil
-            }
-            let key = WorktreeTabCountKey(projectID: projectID, worktreeID: worktreeID)
-            if let current = cachedWorktreeTabCount[key] {
-                cachedWorktreeTabCount[key] = current > 1 ? current - 1 : nil
-            }
-        }
-    }
-
-    /// Recompute the caches from the canonical `tabs` list. Called
-    /// from `restore(from:)` and any other path that replaces `tabs`
-    /// wholesale.
-    func rebuildTabCountCaches() {
-        cachedProjectTabCount.removeAll(keepingCapacity: true)
-        cachedWorktreeTabCount.removeAll(keepingCapacity: true)
-        for tab in tabs {
-            incTabCount(in: tab.container)
-        }
-    }
-
-    /// O(1) replacement for `session.tabs.count(where: { $0.container.projectID == projectID })`.
-    /// Returns 0 when no tab points at the project — same shape as
-    /// the linear walk it replaces.
-    func tabCount(inProject projectID: UUID) -> Int {
-        cachedProjectTabCount[projectID] ?? 0
-    }
-
-    /// O(1) tab count for a specific worktree (not its project rollup).
-    func tabCount(inProject projectID: UUID, worktree worktreeID: UUID) -> Int {
-        cachedWorktreeTabCount[WorktreeTabCountKey(projectID: projectID, worktreeID: worktreeID)] ?? 0
     }
 }

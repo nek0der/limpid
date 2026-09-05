@@ -142,35 +142,4 @@ struct WindowSessionTabsTests {
 
         #expect(fx.session.tabs.map(\.id) == [fx.tabs[2].id, fx.tabs[0].id, fx.tabs[1].id])
     }
-
-    // MARK: - Project / worktree tab-count cache
-
-    /// Sanity-check the per-project tab count cache through the full
-    /// CRUD lifecycle: open, move in, move out, close. The cache lets
-    /// the Project header skip an N-tab linear walk per body re-eval,
-    /// so a regression here would silently regress sidebar perf
-    /// without any observable failure beyond a slower render.
-    @Test("project tab-count cache tracks open / move / close")
-    func tabCount_inProject_tracksAcrossCRUD() {
-        let session = WindowSession()
-        let project = session.addOrActivateProject(
-            rootURL: FileManager.default.temporaryDirectory
-                .appendingPathComponent("limpid-tabcount-\(UUID().uuidString)"),
-            suggestedName: "P"
-        )
-        let baseline = session.tabCount(inProject: project.id)
-
-        // Open two more tabs inside the project.
-        let t1 = session.openTab(container: .project(project.id))
-        let t2 = session.openTab(container: .project(project.id))
-        #expect(session.tabCount(inProject: project.id) == baseline + 2)
-
-        // Move one tab out to .loose — the project count drops by 1.
-        session.moveTab(t1.id, to: .loose)
-        #expect(session.tabCount(inProject: project.id) == baseline + 1)
-
-        // Close the remaining opened tab.
-        session.closeTab(t2.id)
-        #expect(session.tabCount(inProject: project.id) == baseline)
-    }
 }

@@ -163,32 +163,6 @@ final class WindowSession {
     /// rename) don't fan out to badge recomputes.
     var cachedWindowUnreadCount: Int = 0
 
-    /// projectID → number of tabs whose container points at the
-    /// project (project-direct OR any of its worktrees). Maintained
-    /// incrementally by `openTab` / `closeTab` / `moveTab` / `restore`
-    /// / `removeProject` so `tabCount(inProject:)` answers in O(1)
-    /// instead of an N-tab linear walk per body re-eval.
-    /// `@ObservationIgnored` because the count is observed via the
-    /// owning `Project` row through `session.tabs` mutations.
-    ///
-    /// No view reads either count today: the Project header row that
-    /// motivated the cache stopped displaying a tab summary when the
-    /// trailing group became the status column, and `ContainerRowKind`
-    /// stopped carrying the number at all. Both accessors and the
-    /// bookkeeping below are kept rather than deleted because the
-    /// sidebar is the natural home for such a summary if it returns —
-    /// but nothing outside `WindowSessionTabsTests` exercises them, so
-    /// treat that suite as the only thing holding them correct.
-    @ObservationIgnored
-    var cachedProjectTabCount: [UUID: Int] = [:]
-
-    /// (projectID, worktreeID) → number of tabs in this specific
-    /// worktree. Same pattern as `cachedProjectTabCount` but at
-    /// worktree granularity so individual worktree rows skip the
-    /// per-render scan.
-    @ObservationIgnored
-    var cachedWorktreeTabCount: [WorktreeTabCountKey: Int] = [:]
-
     /// paneID → tabID reverse index used by `tab(containing:)` and the
     /// per-pane state mutators it funnels through. Without it, every
     /// libghostty event (focus, occlusion, action) walks every tab's
@@ -498,14 +472,4 @@ final class WindowSession {
         array.insert(moved, at: insertAt)
     }
 
-}
-
-/// Composite key for `cachedWorktreeTabCount`. A worktree is uniquely
-/// identified by its `(projectID, worktreeID)` pair — the worktree
-/// UUID alone is enough for lookup, but pairing with the project keeps
-/// the invalidation path (project delete → drop every nested entry)
-/// trivial.
-struct WorktreeTabCountKey: Hashable {
-    let projectID: UUID
-    let worktreeID: UUID
 }
