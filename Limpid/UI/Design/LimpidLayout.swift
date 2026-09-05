@@ -109,7 +109,7 @@ enum LimpidLayout {
     /// including nested ones that draw nothing in it: that is what
     /// puts a child's label on the same left edge as its parent's, and
     /// it leaves the column the project rule runs down. Making the
-    /// slot conditional also desynchronises the markers from their
+    /// slot conditional also desynchronizes the markers from their
     /// labels when a sibling row is removed — see `ContainerRow`.
     static let containerColumnMarkerSlot: CGFloat = 18
     /// Gap between the row's leading marker, its label, and the
@@ -151,7 +151,7 @@ enum LimpidLayout {
     /// Width of the tinted rule `ProjectSectionView` runs down a
     /// project's worktree rows.
     static let containerColumnProjectRuleWidth: CGFloat = 2
-    /// Where that rule is centred, measured from the row's leading
+    /// Where that rule is centerd, measured from the row's leading
     /// edge. The middle of the marker slot, so the rule descends from
     /// the parent's palette dot rather than sitting at an unrelated x.
     static var containerColumnProjectRuleCenter: CGFloat {

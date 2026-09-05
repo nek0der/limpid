@@ -36,7 +36,7 @@ struct PRMarkPresentationTests {
     /// Every state draws a different glyph, so none of them depends on
     /// tint to be told apart. That matters twice over: the accent is
     /// user-configurable, so someone who picks purple would otherwise
-    /// see open and merged render alike, and colour-only encoding
+    /// see open and merged render alike, and color-only encoding
     /// fails anyone who cannot separate the hues at all.
     ///
     /// Two earlier symbol sets could not hold this — one had no
