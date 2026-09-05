@@ -71,6 +71,21 @@ sleep 4
 osascript -e 'tell application "Limpid" to activate' >/dev/null
 sleep 1
 
+# Park the pointer off the window before capturing. Sidebar rows reveal
+# a delete button on hover, so without this the shot depends on where
+# the contributor's cursor happened to rest — the hero would show one
+# row with an affordance its neighbours lack, which is the opposite of
+# what the design says about the trailing group at rest.
+swift - <<'SWIFT' >/dev/null 2>&1 || true
+import Cocoa
+if let screen = NSScreen.main {
+    let f = screen.frame
+    // Bottom-right, inset so we don't land on a screen-edge hot corner.
+    CGWarpMouseCursorPosition(CGPoint(x: f.maxX - 8, y: f.maxY - 8))
+}
+SWIFT
+sleep 1
+
 # Query Limpid's on-screen rect via CGWindowList. This only needs
 # Screen Recording permission (which `screencapture` already requires
 # below), so contributors don't have to grant Accessibility too.
