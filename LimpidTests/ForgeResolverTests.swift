@@ -120,7 +120,7 @@ struct ForgeResolverTests {
     /// own search would make them run — and would also wake the race
     /// the header describes, because `setenv` rewrites `environ` while
     /// `ToolProcess.spawn` enumerates it from another suite. Running
-    /// them would mean serialising the whole bundle, which is a larger
+    /// them would mean serializing the whole bundle, which is a larger
     /// bill than this coverage is worth. What they document is
     /// therefore the shape of the GitHub Enterprise probe for a reader
     /// and for a manual run, not a guarantee CI enforces.

@@ -119,12 +119,12 @@ struct ProjectSectionView: View {
     }
 
     /// Vertical rule spanning this project's worktree rows, in the
-    /// project's own palette colour.
+    /// project's own palette color.
     ///
     /// It answers "how far does this project reach", which nothing
     /// else does: every row shares one left edge, so the list alone
     /// cannot say where one project ends and the next begins. The
-    /// palette colour rather than a neutral hairline is what ties the
+    /// palette color rather than a neutral hairline is what ties the
     /// span to the dot it descends from, damped because the two are
     /// not peers — the dot is the identity and the disclosure control,
     /// the rule only marks extent.

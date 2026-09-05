@@ -10,7 +10,7 @@
 // any `NSPopover.Behavior`, so the observation is what we have, not
 // a mechanism to design against.
 //
-// A plain SwiftUI overlay at scene root has no such behaviour to
+// A plain SwiftUI overlay at scene root has no such behavior to
 // depend on: clicks on the row reach their target directly, and only
 // clicks landing ON the card's own rect are consumed — which is
 // exactly what the link button it carries needs.
@@ -114,7 +114,7 @@ private struct PRHoverCardPresenter: ViewModifier {
 /// slab itself is the wrong place for it.
 struct PRHoverCardHost: View {
     /// Read from the environment rather than passed in, so the call
-    /// site matches its neighbours in `ContentView` (`ToastHost`,
+    /// site matches its neighbors in `ContentView` (`ToastHost`,
     /// `WorktreeMoveSuggestionHost`) and the presenter modifier, which
     /// already reaches the same object that way.
     @Environment(PRHoverPresentation.self) private var presentation
@@ -276,7 +276,7 @@ struct PRHoverCardContent: View {
                 // report rather than two vocabularies.
                 //
                 // Hidden from VoiceOver: `checksText` beside it already
-                // states the conclusion, and an unlabelled `Image` is
+                // states the conclusion, and an unlabeled `Image` is
                 // announced by its asset name ("x-circle-fill").
                 Image(checksIcon(checks))
                     .renderingMode(.template)

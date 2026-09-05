@@ -16,7 +16,7 @@ repository root, which is the notice that ships with the app.
 
 The asset names match the upstream file names on purpose, so a reader
 who wonders where a glyph came from can find it without a lookup
-table. All seven render as template images, so the colour comes from
+table. All seven render as template images, so the color comes from
 whichever view draws them: `PRMarkPresentation` for the four
 pull-request glyphs and the failing-check badge, `PRHoverCard` for the
 three check-status ones.

@@ -270,7 +270,7 @@ private struct GhStatusCheck: Decodable {
 private struct GlabPayload: Decodable {
     /// GitLab exposes both a global `id` and a per-project `iid`. The
     /// UI, the web URL, and every `glab` command all use `iid`, so
-    /// that is the number a user recognises.
+    /// that is the number a user recognizes.
     let iid: Int
     let state: String
     let draft: Bool?

@@ -613,7 +613,7 @@ struct ContainerRow: View {
         LimpidColor.paletteColor(idx)
     }
 
-    /// The project's colour, and the row's disclosure control.
+    /// The project's color, and the row's disclosure control.
     ///
     /// macOS puts a disclosure on the leading edge (`NSOutlineView`,
     /// `DisclosureGroup`), where the dot already sits. Hovering swaps
@@ -621,10 +621,10 @@ struct ContainerRow: View {
     /// click; the dot holds the slot otherwise, being also the head of
     /// the tinted rule spanning this project's children.
     ///
-    /// One tap target can only mean one thing, so recolouring moved to
-    /// the context menu — expanding is daily, recolouring rare. The
+    /// One tap target can only mean one thing, so recoloring moved to
+    /// the context menu — expanding is daily, recoloring rare. The
     /// picker's popover still anchors here, attached independently of
-    /// `onToggleExpand` so a group row can be recoloured without being
+    /// `onToggleExpand` so a group row can be recolored without being
     /// expandable. `highPriorityGesture` so the tap beats the row's
     /// own activation rather than racing it.
     @ViewBuilder
@@ -773,7 +773,7 @@ struct ContainerRow: View {
                 if let badge = style.badge {
                     // The mark is cut out of the disc, so the circle
                     // behind is what shows through it — and being one
-                    // drawing, it is exactly centred, where the SF
+                    // drawing, it is exactly centerd, where the SF
                     // Symbol this replaced landed its two layers a
                     // fraction of a pixel apart at this size.
                     //
@@ -795,7 +795,7 @@ struct ContainerRow: View {
             }
             .accessibilityLabel(Text(style.accessibilityKey))
             // A failing check is a red mark and nothing else on screen.
-            // Speaking it here is what keeps that meaning off colour.
+            // Speaking it here is what keeps that meaning off color.
             .accessibilityValue(style.badge.map { Text($0.accessibilityKey) } ?? Text(verbatim: ""))
     }
 

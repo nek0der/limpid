@@ -73,7 +73,9 @@ Most of the style is enforced by `make lint` (`swiftformat --lint` +
 `swiftlint --strict`). The rules a linter can't check:
 
 - **English only** for source, comments, commits, PR titles / bodies.
-  No emoji anywhere.
+  No emoji anywhere. US spelling (`color`, `normalize`, `gray`); some
+  older files still use British forms, so match the rule rather than
+  the file you are editing.
 - **SwiftUI before AppKit.** AppKit is the boundary (`NSWindow`,
   `NSTextInputClient`, `NSPasteboard`, `NSVisualEffectView`), not the
   default. Wrap AppKit classes in `*Representable` types and keep the

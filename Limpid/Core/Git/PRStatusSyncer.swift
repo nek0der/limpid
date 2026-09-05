@@ -91,7 +91,7 @@ final class PRStatusSyncer {
 
     /// How often the recurring task wakes to reconsider. Equal to the
     /// active cadence, which is the shortest interval it ever has to
-    /// honour — waking more often would decide nothing sooner.
+    /// honor — waking more often would decide nothing sooner.
     private static let pollGranularity: Duration = .seconds(45)
 
     /// AppKit observer token. Held with `nonisolated(unsafe)` so the

@@ -7,7 +7,7 @@
 //
 // The mark belongs in the row's trailing group, not on the leading
 // marker: a Project row's leading marker is the palette dot the user
-// picked, so tinting it for a request would make one colour mean two
+// picked, so tinting it for a request would make one color mean two
 // things, and a worktree row has no leading marker at all.
 //
 // Whether the mark is drawn at rest is settled elsewhere, by
@@ -65,7 +65,7 @@ struct PRMarkPresentation {
         guard let info else { return nil }
         // Resolved once: the badge does not vary with `info.state`,
         // only with the checks. Without its own speech a failing check
-        // would reach a VoiceOver user through colour alone.
+        // would reach a VoiceOver user through color alone.
         let badge: Badge? = info.checks?.conclusion == .failure ? Badge(
             // From the same drawings as the glyphs it sits on. This
             // used to be `xmark.octagon.fill`, chosen so the badge
@@ -99,7 +99,7 @@ struct PRMarkPresentation {
                 // solid line and arrowhead; the draft replaces that
                 // with two loose dots — the same object, on a path not
                 // yet joined up. A shape difference, so it survives
-                // without colour.
+                // without color.
                 tint: LimpidColor.secondaryText,
                 badge: badge,
                 accessibilityKey: "PR draft"
