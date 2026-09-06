@@ -83,16 +83,16 @@ extension SurfaceView: @preconcurrency NSTextInputClient {
         // If we're inside a keyDown dispatch, accumulate so the caller can
         // forward the committed text as a normal key event (lets libghostty's
         // encoder run on it). Otherwise the call came from outside the key
-        // pipeline (voice input, accessibility) — send as paste.
+        // pipeline (voice input, accessibility) and we commit it here.
         if keyTextAccumulator != nil {
             keyTextAccumulator?.append(chars)
             return
         }
 
-        guard let surface else { return }
-        chars.withCString { ptr in
-            ghostty_surface_text(surface, ptr, UInt(strlen(ptr)))
-        }
+        // Dictation and accessibility clients both reach this path and
+        // both can deliver a bare control character.
+        guard !Self.isSuppressibleControlInput(chars) else { return }
+        commitText(chars)
     }
 
     func characterIndex(for point: NSPoint) -> Int {
@@ -117,19 +117,17 @@ extension SurfaceView: @preconcurrency NSTextInputClient {
     override func doCommand(by selector: Selector) {
         if hasMarkedText() {
             // Newline selectors during composition: commit the text
-            // via the paste path (ghostty_surface_text) to bypass
-            // keybind matching — forward() would hit the
-            // shift+enter=text:\n bind and discard the text.
+            // without a physical key so keybind matching can't fire —
+            // forward() would hit the shift+enter=text:\n bind and
+            // discard the text.
             guard selector == #selector(insertNewline(_:))
                 || selector == #selector(insertLineBreak(_:))
             else { return }
 
             let text = markedText
             unmarkText()
-            if let surface, !text.isEmpty {
-                text.withCString { ptr in
-                    ghostty_surface_text(surface, ptr, UInt(text.utf8.count))
-                }
+            if !text.isEmpty {
+                commitText(text)
             }
             // Clear the accumulator so keyDown doesn't re-send.
             keyTextAccumulator = []
