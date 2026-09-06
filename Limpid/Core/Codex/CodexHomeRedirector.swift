@@ -57,12 +57,14 @@ final class CodexHomeRedirector {
     /// can read it off the main actor.
     nonisolated static let subscribedEvents: [(label: String, jsonKey: String)] = [
         (label: "session_start", jsonKey: "SessionStart"),
+        (label: "session_end", jsonKey: "SessionEnd"),
         (label: "user_prompt_submit", jsonKey: "UserPromptSubmit"),
         (label: "pre_tool_use", jsonKey: "PreToolUse"),
         (label: "post_tool_use", jsonKey: "PostToolUse"),
         (label: "pre_compact", jsonKey: "PreCompact"),
         (label: "post_compact", jsonKey: "PostCompact"),
         (label: "permission_request", jsonKey: "PermissionRequest"),
+        (label: "interrupt", jsonKey: "Interrupt"),
         (label: "stop", jsonKey: "Stop")
     ]
 
