@@ -2,8 +2,11 @@
 # Limpid claude shim — intercepts `claude` invocations inside a Limpid
 # pty so SessionStart / SessionEnd hooks fire into Limpid via
 # `claude --settings <inline JSON>`. We never touch the user's
-# ~/.claude/settings.json; --settings is additively merged by Claude
-# Code, so existing user hooks / permissions stay intact.
+# ~/.claude/settings.json; Claude Code merges --settings over the
+# settings files, so existing user hooks / permissions stay intact.
+# The flag itself does not compose, though: a second --settings
+# replaces the first rather than merging with it, so we fold a
+# user-supplied one into ours instead of letting either side lose.
 #
 # Bypass: set LIMPID_DISABLE_CLAUDE_RESUME=1 to exec the real claude
 # directly with no --settings override.
@@ -136,5 +139,101 @@ export LIMPID_CLAUDE_PID="$$"
 # in their shell rc.
 : "${CLAUDE_CODE_DISABLE_TERMINAL_TITLE:=1}"
 export CLAUDE_CODE_DISABLE_TERMINAL_TITLE
+
+# Merge our settings with a user-supplied `--settings`, echoing the result.
+# Echoes nothing when either side can't be read, which the caller treats as
+# "leave their invocation alone". Their value may be inline JSON or a path,
+# so we disambiguate the way Claude Code does: parse as JSON, else read it
+# as a file. The merge itself is JavaScript because the two objects have to
+# be combined per hook event, which `plutil` cannot express; `osascript`
+# ships with macOS, and this path only runs when a `--settings` is present.
+merge_settings() {
+  ms_ours="$link_dir/merge-$$-ours.json"
+  ms_theirs="$link_dir/merge-$$-theirs.json"
+  ms_result=""
+  # Single guarded block rather than early returns, so the two scratch
+  # files are removed on every path out of here instead of by the caller.
+  if printf '%s' "$1" > "$ms_ours" 2>/dev/null &&
+    { case "$2" in
+      \{*) printf '%s' "$2" > "$ms_theirs" 2>/dev/null ;;
+      *) cat -- "$2" > "$ms_theirs" 2>/dev/null ;;
+    esac; }
+  then
+    ms_result=$(osascript -l JavaScript -e '
+ObjC.import("Foundation");
+function rd(p) {
+  return ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(
+    p, $.NSUTF8StringEncoding, null));
+}
+var ours = JSON.parse(rd("'"$ms_ours"'"));
+var theirs = JSON.parse(rd("'"$ms_theirs"'"));
+var out = {};
+// Their keys win: an explicit choice of theirs outranks our default.
+for (var k in theirs) out[k] = theirs[k];
+for (var k in ours) if (!(k in out)) out[k] = ours[k];
+// Hooks are the exception — both sets have to run, so the per-event
+// arrays concatenate with theirs first.
+var merged = {}, th = theirs.hooks || {}, oh = ours.hooks || {};
+for (var k in th) merged[k] = th[k];
+for (var k in oh) merged[k] = (th[k] || []).concat(oh[k]);
+out.hooks = merged;
+JSON.stringify(out);' 2>/dev/null)
+  fi
+  rm -f "$ms_ours" "$ms_theirs" 2>/dev/null
+  [ -n "$ms_result" ] && printf '%s' "$ms_result"
+}
+
+# `--settings` is last-wins rather than additive, and ours is passed first,
+# so a user-supplied one silently took every Limpid hook with it. Detect
+# theirs and fold it into ours instead.
+user_settings=""
+have_user_settings=0
+expect_settings_value=0
+for arg in "$@"; do
+  if [ "$expect_settings_value" = 1 ]; then
+    user_settings="$arg"
+    have_user_settings=1
+    expect_settings_value=0
+    continue
+  fi
+  case "$arg" in
+    --settings) expect_settings_value=1 ;;
+    --settings=*)
+      user_settings="${arg#--settings=}"
+      have_user_settings=1
+      ;;
+  esac
+done
+
+if [ "$have_user_settings" = 1 ]; then
+  merged_settings="$(merge_settings "$settings_json" "$user_settings" || true)"
+  if [ -z "$merged_settings" ]; then
+    # Unreadable or malformed. Launching their claude with their own
+    # settings beats replacing them with ours, so we stay out of the way.
+    exec "$real_claude" "$@"
+  fi
+  settings_json="$merged_settings"
+  # Drop their flag now that ours carries it; a second one would win.
+  arg_count=$#
+  arg_index=0
+  skip_next=0
+  while [ "$arg_index" -lt "$arg_count" ]; do
+    arg="$1"
+    shift
+    arg_index=$((arg_index + 1))
+    if [ "$skip_next" = 1 ]; then
+      skip_next=0
+      continue
+    fi
+    case "$arg" in
+      --settings)
+        skip_next=1
+        continue
+        ;;
+      --settings=*) continue ;;
+    esac
+    set -- "$@" "$arg"
+  done
+fi
 
 exec "$real_claude" --settings "$settings_json" "$@"
