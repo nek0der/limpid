@@ -376,7 +376,12 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
     /// body — the chained optionals + nil-coalescing + flatMap version
     /// inline blew up Swift 6's SwiftUI type checker into a
     /// multi-minute compile.
-    private static func resolveInitialCommand(
+    /// Internal rather than private so the precedence between the four
+    /// sources can be pinned directly. Getting that order wrong is the
+    /// failure this whole path exists to avoid: a pane that reattaches
+    /// *and* resumes ends up with two agent processes against one
+    /// session id.
+    static func resolveInitialCommand(
         tab: Tab?,
         paneID: UUID
     ) -> String? {
@@ -384,6 +389,14 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
             return staged
         }
         guard let tab else { return nil }
+        // Above the agent builders: a pane that was inside tmux has its
+        // agent running in there too, so reattaching restores the live
+        // session rather than starting a second one against the same
+        // session id. Below `initialCommands`, which is the override
+        // `DemoFixture` stages through and is never clobbered.
+        if let tmux = TmuxReattachCommandBuilder.initialCommand(for: tab, paneID: paneID) {
+            return tmux
+        }
         if let claude = ClaudeResumeCommandBuilder.initialCommand(for: tab, paneID: paneID) {
             return claude
         }
