@@ -657,6 +657,21 @@ struct AdvancedSettings: Codable, Equatable {
     /// request regardless.
     var showPRStatusOnlyWhenAttention: Bool = false
 
+    /// Run agent commands inside a tmux session of their own instead of
+    /// directly on the pane's pty, so the agent survives Limpid quitting
+    /// — including the restart Sparkle performs after applying an
+    /// update, which otherwise kills every running agent. A pane comes
+    /// back to its session through the reattach path, which needs
+    /// nothing from this setting.
+    ///
+    /// Off by default. It needs a tmux the user may not have, and it
+    /// costs the pane's scrollback: history stays in tmux's copy mode
+    /// rather than entering Limpid's own. That is a fair trade for an
+    /// agent, whose transcript lives in its session file, and a poor one
+    /// for a shell — which is why only the agent command is wrapped and
+    /// the pane's shell keeps the pty.
+    var hostsAgentsInTmux: Bool = false
+
     /// See `LimpidSettings.unknownFields`.
     var unknownFields: [String: LimpidJSONValue] = [:]
 
@@ -673,6 +688,9 @@ struct AdvancedSettings: Codable, Equatable {
         self.showPRStatusOnlyWhenAttention = try c.decodeIfPresent(
             Bool.self, forKey: .showPRStatusOnlyWhenAttention
         ) ?? false
+        self.hostsAgentsInTmux = try c.decodeIfPresent(
+            Bool.self, forKey: .hostsAgentsInTmux
+        ) ?? false
         self.unknownFields = try CodableSidecar.decodeUnknownFields(
             from: decoder,
             knownKeys: Self.knownKeyStrings
@@ -684,6 +702,7 @@ struct AdvancedSettings: Codable, Equatable {
         try c.encode(ghosttyConfig, forKey: .ghosttyConfig)
         try c.encode(showPRStatusInSidebar, forKey: .showPRStatusInSidebar)
         try c.encode(showPRStatusOnlyWhenAttention, forKey: .showPRStatusOnlyWhenAttention)
+        try c.encode(hostsAgentsInTmux, forKey: .hostsAgentsInTmux)
         try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
     }
 
@@ -691,6 +710,7 @@ struct AdvancedSettings: Codable, Equatable {
         case ghosttyConfig
         case showPRStatusInSidebar
         case showPRStatusOnlyWhenAttention
+        case hostsAgentsInTmux
     }
 
     private static let knownKeyStrings: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))

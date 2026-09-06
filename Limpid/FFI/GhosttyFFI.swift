@@ -101,6 +101,19 @@ enum GhosttyFFI {
         return ""
     }
 
+    /// Pid of the process in the foreground of a surface's pty, or
+    /// `nil` when libghostty has none to report.
+    ///
+    /// A pane showing tmux has the tmux client in the foreground —
+    /// the client owns the pty and everything the session runs sits
+    /// behind it — so this answers "is this pane inside tmux" for a
+    /// session the user started by hand as well as one we host.
+    static func surfaceForegroundPID(_ surface: ghostty_surface_t) -> pid_t? {
+        let pid = ghostty_surface_foreground_pid(surface)
+        guard pid > 0, pid <= UInt64(pid_t.max) else { return nil }
+        return pid_t(pid)
+    }
+
     /// Build mode libghostty was compiled with.
     static func buildMode() -> String {
         switch ghostty_info().build_mode {

@@ -56,6 +56,108 @@ if [ -z "$real_codex" ]; then
   exit 127
 fi
 
+# ----- Optional tmux hosting (Settings > Advanced > tmux) -----
+# Limpid sets `LIMPID_AGENT_TMUX` to the tmux it located, and only when
+# the user asked for this, so the variable carries both the opt-in and
+# the binary and there is nothing to search for here.
+#
+# The session goes on a server of our own, because the options we set
+# are server-wide and not ours to set on a server the user also uses.
+# `escape-time` guards the Esc that interrupts a turn on a tmux old
+# enough to still default it high — 3.6a already uses 10, measured — and
+# the terminal overrides are what keep the agent's colors.
+# `LIMPID_AGENT_TMUX_SOCKET` is namespaced per build for the same
+# reason, and because a session created on a server that already exists
+# inherits that server's environment for everything outside tmux's
+# `update-environment`: a Dev agent on a Release server would write its
+# records into the Release directories. `-f /dev/null` completes the
+# separation — `-L` picks the socket but the user's `~/.tmux.conf` is
+# still read otherwise, which would bring their hooks and plugins onto
+# our server.
+
+# The first arguments that begin an interactive session. Everything else
+# runs directly.
+interactive_first_args="resume fork"
+# Non-interactive wherever they appear.
+one_shot_flags="--version -v -V --help -h -p --print --bg --background"
+# Passed through explicitly rather than left to inheritance, for the
+# reason above.
+hosted_env_names="LIMPID_PANE_ID LIMPID_CODEX_SESSIONS_DIR LIMPID_CODEX_AGENT_STATES_DIR"
+
+should_host_in_tmux() {
+  [ -n "${LIMPID_AGENT_TMUX:-}" ] && [ -x "${LIMPID_AGENT_TMUX:-}" ] || return 1
+  # Both variables come from the same place, so a missing pane id means
+  # we are not in a Limpid pane and have nothing to name the session for.
+  [ -n "${LIMPID_PANE_ID:-}" ] || return 1
+  # Already inside a session: our directory is still on PATH in there,
+  # so without this the shim would wrap itself without bound.
+  [ -z "${TMUX:-}" ] || return 1
+  # Anything written inside tmux is erased when the client leaves the
+  # alternate screen, so only what we recognize as interactive is
+  # wrapped. This is an allow list rather than a list of one-shots to
+  # exclude because the two cannot be told apart from the shape of the
+  # arguments: `codex fix` is a prompt and `codex exec` is a
+  # subcommand, and a global option can precede either
+  # (`codex -m gpt-5 exec ...`). Wrapping something that was going to
+  # print and exit costs the user that output; declining to wrap an
+  # interactive session only leaves it running the way it does today,
+  # so the guesses are made in that direction.
+  [ -t 0 ] && [ -t 1 ] || return 1
+  for sht_arg in "$@"; do
+    for sht_flag in $one_shot_flags; do
+      [ "$sht_arg" = "$sht_flag" ] && return 1
+    done
+  done
+  # No arguments at all is the ordinary interactive launch.
+  [ "$#" -gt 0 ] || return 0
+  for sht_known in $interactive_first_args; do
+    [ "$1" = "$sht_known" ] && return 0
+  done
+  return 1
+}
+
+hosts_in_tmux=0
+# Decided against the user's own arguments, before we add any of ours.
+should_host_in_tmux "$@" && hosts_in_tmux=1
+
+# Hand off to the real agent, inside a tmux session of its own when the
+# user asked for that. Every exit from this script goes through here.
+exec_agent() {
+  [ "$hosts_in_tmux" = 1 ] || exec "$@"
+  # Unique per invocation. `-A` is deliberately absent: with the name
+  # already taken it attaches and silently drops the command, handing
+  # back the running agent instead of starting the one that was asked
+  # for.
+  ea_session="limpid-$(printf '%s' "$LIMPID_PANE_ID" | tr -cd 'A-Za-z0-9' | cut -c1-8)-$$"
+  # The agent command is in "$@" and the tmux command line has to come
+  # before it. We append the tmux side after it and then rotate the
+  # agent command to the end, which is how a list whose values may hold
+  # spaces is built in POSIX sh.
+  ea_count=$#
+  set -- "$@" -L "${LIMPID_AGENT_TMUX_SOCKET:-limpid}" -f /dev/null \
+    set -s escape-time 10 ";" \
+    set -s default-terminal tmux-256color ";" \
+    set -sa terminal-overrides ",*:RGB" ";" \
+    set -g prefix None ";" \
+    new-session -s "$ea_session"
+  for ea_name in $hosted_env_names; do
+    eval "ea_value=\${$ea_name:-}"
+    [ -n "$ea_value" ] || continue
+    set -- "$@" -e "$ea_name=$ea_value"
+  done
+  # `/usr/bin/env` guarantees more than one argument after the options,
+  # which is what makes tmux exec our argv directly rather than passing
+  # a single string to `sh -c` — so nothing here needs quoting.
+  set -- "$@" /usr/bin/env
+  while [ "$ea_count" -gt 0 ]; do
+    ea_arg="$1"
+    shift
+    set -- "$@" "$ea_arg"
+    ea_count=$((ea_count - 1))
+  done
+  exec "$LIMPID_AGENT_TMUX" "$@"
+}
+
 # Splice in the hook flags Limpid computed for this pane, ahead of the
 # user's own arguments so they land as global options. They arrive
 # newline-separated rather than as one string because each `-c` value is
@@ -75,8 +177,10 @@ fi
 # Expose our own pid so the receiver can stamp the agent's pid without
 # guessing. `$$` here is this shell's pid; after exec it becomes the codex
 # process's, which is exactly the process the Swift-side liveness sweep
-# needs to watch. The receiver keeps its parent-walk as a fallback for a
-# codex started outside this shim, by absolute path.
+# needs to watch — unless the handoff goes through tmux, where it becomes
+# the tmux client's instead. The receiver drops the value inside tmux and
+# walks for the agent rather than trusting it. The walk is also the
+# fallback for a codex started outside this shim, by absolute path.
 export LIMPID_CODEX_PID="$$"
 
-exec "$real_codex" "$@"
+exec_agent "$real_codex" "$@"

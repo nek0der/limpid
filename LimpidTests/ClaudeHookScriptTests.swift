@@ -1,23 +1,22 @@
-// CodexHookScriptTests.swift
-// Limpid — runs `codex-shim/limpid-hook` against captured Codex
-// payloads. The receiver carries the whole lifecycle mapping, so a wrong or
-// missing branch stays invisible until a badge sticks in the sidebar. Its
-// Claude counterpart is the larger of the two and still has no coverage of
-// its own; the same harness shape would cover it.
+// ClaudeHookScriptTests.swift
+// Limpid — runs `claude-shim/limpid-hook` against captured Claude Code
+// payloads. It is the larger of the two receivers and had no coverage of
+// its own until layer 2 forced the pid handling open; this suite starts
+// from the harness `CodexHookScriptTests` uses and covers the pid
+// resolution plus the event mapping. The rest of the receiver — prompt
+// carry-over, the OSC 2 title fallback, the cwd events — is still
+// uncovered.
 
 import Foundation
 import Testing
 @testable import Limpid
 
-@Suite("Codex hook receiver", .tags(.smoke), .disabled(if: !RepoFixture.hasLocalRepo, "no local git"))
-struct CodexHookScriptTests {
+@Suite("Claude hook receiver", .tags(.smoke), .disabled(if: !RepoFixture.hasLocalRepo, "no local git"))
+struct ClaudeHookScriptTests {
     /// Replay `payloads` through the receiver against one pane, in order,
     /// and return the lifecycle record left behind — or `nil` when the
-    /// receiver declined to write one. A sequence rather than a single
-    /// event because the fields that carry across turns (`runStartedAt`,
-    /// `firstPrompt`) only misbehave once there is a previous record to
-    /// carry them from. Runs against a temp state dir so the developer's
-    /// real records are never touched.
+    /// receiver declined to write one. Runs against a temp state dir so
+    /// the developer's real records are never touched.
     private func runHooks(
         _ payloads: [[String: Any]],
         extraEnvironment: [String: String] = [:]
@@ -25,7 +24,7 @@ struct CodexHookScriptTests {
         try withTempDir { dir in
             let root = try #require(RepoFixture.limpidRoot)
             let script = root.appendingPathComponent(
-                "Limpid/Resources/codex-shim/limpid-hook"
+                "Limpid/Resources/claude-shim/limpid-hook"
             )
             let states = dir.appendingPathComponent("states")
             let paneID = UUID().uuidString
@@ -41,8 +40,9 @@ struct CodexHookScriptTests {
                     "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                     "HOME": dir.path,
                     "LIMPID_PANE_ID": paneID,
-                    "LIMPID_CODEX_AGENT_STATES_DIR": states.path,
-                    "LIMPID_CODEX_SESSIONS_DIR": dir.appendingPathComponent("sessions").path
+                    "LIMPID_AGENT_STATES_DIR": states.path,
+                    "LIMPID_SESSIONS_DIR": dir.appendingPathComponent("sessions").path,
+                    "LIMPID_CWD_EVENTS_DIR": dir.appendingPathComponent("cwd").path
                 ]
                 process.environment?.merge(extraEnvironment) { _, new in new }
                 let stdin = Pipe()
@@ -54,7 +54,7 @@ struct CodexHookScriptTests {
                 try stdin.fileHandleForWriting.close()
                 process.waitUntilExit()
                 // The receiver's stated failure policy is to exit 0 no matter
-                // what, so that a broken hook never blocks Codex from running.
+                // what, so that a broken hook never blocks Claude from running.
                 #expect(process.terminationStatus == 0)
             }
 
@@ -62,10 +62,6 @@ struct CodexHookScriptTests {
             guard let data = try? Data(contentsOf: record) else { return nil }
             return try JSONSerialization.jsonObject(with: data) as? [String: Any]
         }
-    }
-
-    private func runHook(_ payload: [String: Any]) throws -> [String: Any]? {
-        try runHooks([payload])
     }
 
     /// A turn in flight: the receiver has stamped `runStartedAt` and is
@@ -77,11 +73,11 @@ struct CodexHookScriptTests {
         ]
     }
 
-    /// Shape mirrors what Codex sent on the wire when this was measured
-    /// (2026-09); `extra` carries the per-event fields.
+    /// Shape mirrors what Claude Code sends on the wire; `extra` carries
+    /// the per-event fields.
     private func payload(_ event: String, extra: [String: Any] = [:]) -> [String: Any] {
         var base: [String: Any] = [
-            "session_id": "01a072a0-05a3-7d73-8f0e-045219d01e4f",
+            "session_id": "6f1d6a1e-0e34-4a1a-9a8e-2f2b6c1d7f10",
             "cwd": "/tmp",
             "hook_event_name": event
         ]
@@ -89,39 +85,23 @@ struct CodexHookScriptTests {
         return base
     }
 
-    /// The receiver's header states that it needs a branch for every name
-    /// `subscribedEvents` carries. Enforcing that here is what stops the bug
-    /// this suite was written for from coming back in a new shape: a hook
-    /// subscribed but never mapped leaves the pane frozen on its last state,
-    /// and nothing else notices.
-    @Test("every subscribed event maps to a lifecycle state")
-    func subscribedEvents_allReachABranch() throws {
-        for event in CodexHookInstaller.subscribedEvents {
-            let record = try runHook(payload(event.jsonKey))
-            #expect(
-                record?["lastHookEvent"] as? String == event.jsonKey,
-                "codex-shim/limpid-hook has no branch for \(event.jsonKey)"
-            )
-        }
-    }
-
-    /// The shim exports its own pid and then `exec`s codex, so the value
-    /// already is the process the Swift-side liveness sweep watches. The
-    /// receiver's parent walk stays as the fallback for a codex started
-    /// outside the shim, but guessing by `comm` cannot distinguish two
-    /// codex processes in the same tree — the exported value can.
-    @Test("prefers the pid the shim exported over walking the process tree")
-    func exportedPid_isRecordedVerbatim() throws {
-        let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_CODEX_PID": "424242"])
+    /// The shim exports its own pid and then `exec`s claude, so outside
+    /// tmux the value already is the process the Swift-side liveness
+    /// sweep watches.
+    @Test("prefers the pid the shim exported")
+    func exportedPid_isRecorded() throws {
+        let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_CLAUDE_PID": "424242"])
         #expect(record?["pid"] as? String == "424242")
     }
 
-    /// The walk read its pid out of `ps`, so it was numeric by
-    /// construction. An inherited variable is not, and the value goes
-    /// into the record's JSON verbatim.
-    @Test("falls back to the walk when the exported pid is not a number")
+    /// The value reaches the record's JSON verbatim, and an inherited
+    /// variable is not numeric by construction the way a value read out
+    /// of `ps` is. A malformed record is dropped whole by
+    /// `PaneStore.allRecords`, taking the pane's badge with it — the
+    /// failure #19 fixed on the Codex side and left standing here.
+    @Test("refuses an exported pid that is not a number")
     func nonNumericExportedPid_isRefused() throws {
-        let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_CODEX_PID": "\" ,\"x\":1"])
+        let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_CLAUDE_PID": "\" ,\"x\":1"])
         #expect(record?["pid"] == nil)
     }
 
@@ -137,7 +117,7 @@ struct CodexHookScriptTests {
         let record = try runHooks(
             midTurn(),
             extraEnvironment: [
-                "LIMPID_CODEX_PID": "424242",
+                "LIMPID_CLAUDE_PID": "424242",
                 "TMUX": "/tmp/tmux-501/default,4242,0"
             ]
         )
@@ -146,46 +126,48 @@ struct CodexHookScriptTests {
 
     @Test("records no pid when the shim exported none")
     func noExportedPid_leavesThePidFieldOff() throws {
-        let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_CODEX_PID": ""])
+        let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_CLAUDE_PID": ""])
         #expect(record?["pid"] == nil)
     }
 
-    /// The tmux test above is satisfied by a walk that never matches
-    /// anything, because nothing in the test host's ancestry is named
-    /// `codex`. Hosting the agent in tmux makes the walk the only source
-    /// of the pid, so it needs one test that proves it finds something.
-    @Test("walks up to an ancestor named codex when no pid was exported")
-    func walk_findsTheAncestorNamedCodex() throws {
+    /// Every assertion above is also satisfied by a walk that never
+    /// matches anything, because nothing in the test host's ancestry is
+    /// named `claude`. Layer 2 makes the walk the only source of the pid,
+    /// so it needs one test that proves it finds something.
+    @Test("walks up to an ancestor named claude when no pid was exported")
+    func walk_findsTheAncestorNamedClaude() throws {
         try withTempDir { dir in
             let root = try #require(RepoFixture.limpidRoot)
             let hook = root.appendingPathComponent(
-                "Limpid/Resources/codex-shim/limpid-hook"
+                "Limpid/Resources/claude-shim/limpid-hook"
             )
             let states = dir.appendingPathComponent("states")
             let paneID = UUID().uuidString
             // `ps` reports the path a process was exec'd as rather than
-            // the resolved one, so a symlink hands the walk an ancestor
-            // with the name it looks for, and exercises the basename
-            // stripping at the same time. A copy of `sh` would not work:
-            // macOS kills a relocated system binary on launch.
-            let fakeCodex = dir.appendingPathComponent("codex")
+            // the resolved one, so a symlink is enough to hand the walk
+            // an ancestor with the name it looks for — and it exercises
+            // the basename stripping at the same time. A copy of `sh`
+            // would not work: macOS kills a relocated system binary on
+            // launch (measured: exit 137).
+            let fakeClaude = dir.appendingPathComponent("claude")
             try FileManager.default.createSymbolicLink(
-                at: fakeCodex,
+                at: fakeClaude,
                 withDestinationURL: URL(fileURLWithPath: "/bin/sh")
             )
 
             let process = Process()
-            process.executableURL = fakeCodex
+            process.executableURL = fakeClaude
             // The trailing `true` keeps the shell from exec'ing the hook
-            // in place, which would drop the `codex`-named process out
+            // in place, which would drop the `claude`-named process out
             // of the very chain the walk has to climb.
             process.arguments = ["-c", "/bin/sh '\(hook.path)'; true"]
             process.environment = [
                 "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                 "HOME": dir.path,
                 "LIMPID_PANE_ID": paneID,
-                "LIMPID_CODEX_AGENT_STATES_DIR": states.path,
-                "LIMPID_CODEX_SESSIONS_DIR": dir.appendingPathComponent("sessions").path
+                "LIMPID_AGENT_STATES_DIR": states.path,
+                "LIMPID_SESSIONS_DIR": dir.appendingPathComponent("sessions").path,
+                "LIMPID_CWD_EVENTS_DIR": dir.appendingPathComponent("cwd").path
             ]
             let stdin = Pipe()
             process.standardInput = stdin
@@ -221,45 +203,48 @@ struct CodexHookScriptTests {
         #expect(try runHooks(midTurn())?["isTmuxHosted"] == nil)
     }
 
-    @Test("Stop maps to finished")
-    func stop_mapsToFinished() throws {
-        let record = try runHook(payload("Stop"))
-        #expect(record?["state"] as? String == "finished")
+    /// The template is what Claude is actually told to call us on, so it
+    /// is the list the receiver has to keep up with. An event subscribed
+    /// but never mapped leaves the pane frozen on its last state, and
+    /// nothing else notices. `CwdChanged` is excluded because it writes a
+    /// cwd event rather than a lifecycle state; it is asserted below.
+    @Test("every subscribed event maps to a lifecycle state")
+    func subscribedEvents_allReachABranch() throws {
+        for event in try Self.subscribedEvents() where event != "CwdChanged" {
+            let record = try runHooks(midTurn() + [payload(event, extra: Self.extras(for: event))])
+            #expect(
+                record?["lastHookEvent"] as? String == event,
+                "claude-shim/limpid-hook has no branch for \(event)"
+            )
+        }
     }
 
-    @Test("Interrupt maps to finished — Codex sends no Stop for an interrupted turn")
-    func interrupt_mapsToFinished() throws {
-        let record = try runHook(
-            payload("Interrupt", extra: ["turn_id": "01a072a0-4bb0-7020-959e-40c97c391d17"])
+    /// Reads the event names out of `settings.template.json`, which the
+    /// shim hands to `claude --settings` after substituting hook paths.
+    private static func subscribedEvents() throws -> [String] {
+        let root = try #require(RepoFixture.limpidRoot)
+        let template = root.appendingPathComponent(
+            "Limpid/Resources/claude-shim/settings.template.json"
         )
-        #expect(record?["state"] as? String == "finished")
-        #expect(record?["lastHookEvent"] as? String == "Interrupt")
+        let filled = try String(contentsOf: template, encoding: .utf8)
+            .replacingOccurrences(of: "@@HOOK@@", with: "/hook")
+            .replacingOccurrences(of: "@@WORKTREE_PRETOOL_HOOK@@", with: "/pretool")
+        let json = try JSONSerialization.jsonObject(with: Data(filled.utf8))
+        let hooks = try #require((json as? [String: Any])?["hooks"] as? [String: Any])
+        #expect(!hooks.isEmpty)
+        return hooks.keys.sorted()
     }
 
-    @Test("SessionEnd clears the lifecycle back to unknown")
-    func sessionEnd_mapsToUnknown() throws {
-        let record = try runHook(payload("SessionEnd", extra: ["reason": "other"]))
-        #expect(record?["state"] as? String == "unknown")
-        #expect(record?["lastHookEvent"] as? String == "SessionEnd")
-    }
-
-    @Test("Stop stops the elapsed timer")
-    func stop_clearsRunStartedAt() throws {
-        let record = try runHooks(midTurn() + [payload("Stop")])
-        #expect(record?["runStartedAt"] as? String == "")
-    }
-
-    @Test("Interrupt stops the elapsed timer — the turn ended, it just ended early")
-    func interrupt_clearsRunStartedAt() throws {
-        let record = try runHooks(midTurn() + [payload("Interrupt")])
-        #expect(record?["runStartedAt"] as? String == "")
-    }
-
-    @Test("SessionEnd stops the elapsed timer")
-    func sessionEnd_clearsRunStartedAt() throws {
-        let record = try runHooks(
-            midTurn() + [payload("SessionEnd", extra: ["reason": "other"])]
-        )
-        #expect(record?["runStartedAt"] as? String == "")
+    /// The fields an event needs before it reaches a state at all: a
+    /// `Notification` that is not a permission prompt is deliberately
+    /// ignored, and `PreToolUse` keys off the tool name.
+    private static func extras(for event: String) -> [String: Any] {
+        switch event {
+        case "Notification": ["notification_type": "permission_prompt", "message": "needs permission"]
+        case "PreToolUse": ["tool_name": "Bash"]
+        case "StopFailure": ["error_type": "overloaded"]
+        case "SessionEnd": ["reason": "other"]
+        default: [:]
+        }
     }
 }

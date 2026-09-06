@@ -198,7 +198,8 @@ struct PaneAreaView: View {
             paneID: paneID,
             ghosttyApp: ghosttyApp,
             registry: registry,
-            session: session
+            session: session,
+            hostsAgentsInTmux: settings.settings.advanced.hostsAgentsInTmux
         )
     }
 }

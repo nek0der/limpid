@@ -244,7 +244,8 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         paneID: UUID,
         ghosttyApp: GhosttyApp,
         registry: any SurfaceViewProviding,
-        session: WindowSession
+        session: WindowSession,
+        hostsAgentsInTmux: Bool
     ) -> SurfaceView {
         if let existing = registry.view(for: paneID) {
             return existing
@@ -261,7 +262,10 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         // hooks. The agent layers are inert when the user never runs the
         // matching CLI; injecting unconditionally keeps spawn paths
         // uniform across panes.
-        var env = PaneShellEnvironment.resolved(forPaneID: paneID)
+        var env = PaneShellEnvironment.resolved(
+            forPaneID: paneID,
+            hostsAgentsInTmux: hostsAgentsInTmux
+        )
         for (k, v) in ClaudeShimLocator.environment(forPaneID: paneID) {
             env[k] = v
         }

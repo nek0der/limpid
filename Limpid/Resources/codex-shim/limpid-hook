@@ -65,6 +65,13 @@ find_codex_pid() {
   return 1
 }
 codex_pid="${LIMPID_CODEX_PID:-}"
+# Inside tmux the exported value names the wrong process. The shim
+# publishes its own pid and then exec's what it is wrapping, so with
+# tmux in between it publishes the tmux client’s — which is gone after
+# the first detach, while the agent it was standing in for keeps
+# running. Dropping it here leaves the walk, which starts from this hook
+# and so finds the agent wherever tmux placed it.
+[ -z "${TMUX:-}" ] || codex_pid=""
 # The walk read its pid out of `ps` and so was numeric by construction.
 # An inherited variable is not, and the value goes into the record's
 # JSON verbatim — an unvalidated one corrupts the file the Swift side
@@ -259,6 +266,12 @@ if [ -n "$new_state" ]; then
   if [ -n "$codex_pid" ]; then
     pid_field=",\"pid\":\"$codex_pid\""
   fi
+  # Only written when true. The tab column reads it to mark the pane as
+  # hosted, and the record is already tied to the agent's own lifecycle,
+  # so `SessionEnd` and the pid sweep clear the mark without anything
+  # else having to notice the session went away.
+  tmux_field=""
+  [ -z "${TMUX:-}" ] || tmux_field=',"isTmuxHosted":true'
   prompt_field=""
   if [ -n "$last_prompt" ]; then
     prompt_field=",\"lastPrompt\":\"$(json_escape "$last_prompt")\""
@@ -276,7 +289,7 @@ if [ -n "$new_state" ]; then
     session_started_field=",\"sessionStartedAt\":\"$session_started\""
   fi
   {
-    printf '{"schemaVersion":1,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s}\n' \
+    printf '{"schemaVersion":1,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s%s}\n' \
       "$pane_id" \
       "$new_state" \
       "$detail_safe" \
@@ -285,6 +298,7 @@ if [ -n "$new_state" ]; then
       "$hook_event" \
       "$tokens_field" \
       "$pid_field" \
+      "$tmux_field" \
       "$prompt_field" \
       "$first_prompt_field" \
       "$session_started_field"

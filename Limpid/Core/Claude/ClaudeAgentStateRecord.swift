@@ -50,4 +50,9 @@ struct ClaudeAgentStateRecord: AgentLifecycleRecord, Equatable {
     /// more than one Claude / Codex session is alive — most recent
     /// `SessionStart` wins.
     var sessionStartedAt: String?
+    /// `true` while the agent is running inside a tmux session Limpid
+    /// hosts for it. Absent otherwise: the shim only wraps an agent
+    /// when the user asked for it, and the receiver only sees `$TMUX`
+    /// from inside. Drives the mark on the tab column's identity icon.
+    var isTmuxHosted: Bool?
 }

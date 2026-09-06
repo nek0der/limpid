@@ -40,6 +40,49 @@ case "$pane_id" in
 esac
 [ "${#pane_id}" -le 64 ] || exit 0
 
+# Claude spawns hooks through an intermediate shell, so $PPID points at
+# a wrapper rather than at claude. We walk up to 10 hops looking for a
+# match. The allow list is exact for the reason its Codex counterpart
+# records: a `*claude*` glob would also catch a wrapper such as a
+# user-authored `claude.sh`, and watching the wrong pid produces
+# spurious "process died" cleanups when that wrapper exec's away. Every
+# install path the shim takes exec's a file named `claude` — measured
+# 2026-09-06, `ps` reports either `claude` or `/opt/homebrew/bin/claude`
+# — and `claude.exe` is the npm package's own target, accepted so a
+# direct invocation of it is still recognized.
+find_claude_pid() {
+  fcp_pid="$PPID"
+  fcp_max=10
+  while [ -n "$fcp_pid" ] && [ "$fcp_pid" != "1" ] && [ "$fcp_max" -gt 0 ]; do
+    fcp_comm=$(ps -o comm= -p "$fcp_pid" 2>/dev/null | sed 's|^.*/||')
+    case "$fcp_comm" in
+      claude|claude.exe)
+        printf '%s' "$fcp_pid"
+        return 0
+        ;;
+    esac
+    fcp_pid=$(ps -o ppid= -p "$fcp_pid" 2>/dev/null | tr -d ' ')
+    fcp_max=$((fcp_max - 1))
+  done
+  return 1
+}
+
+claude_pid="${LIMPID_CLAUDE_PID:-}"
+# Inside tmux the exported value names the wrong process. The shim
+# publishes its own pid and then exec's what it is wrapping, so with
+# tmux in between it publishes the tmux client’s — which is gone after
+# the first detach, while the agent it was standing in for keeps
+# running. Dropping it here leaves the walk, which starts from this hook
+# and so finds the agent wherever tmux placed it.
+[ -z "${TMUX:-}" ] || claude_pid=""
+# The exported value is inherited rather than read out of `ps`, so it is
+# not numeric by construction, and it goes into the record's JSON
+# verbatim — an unvalidated one corrupts the file the Swift side parses,
+# taking the pane's badge down with it.
+case "$claude_pid" in
+  "" | *[!0-9]*) claude_pid="$(find_claude_pid || true)" ;;
+esac
+
 sessions_dir="${LIMPID_SESSIONS_DIR:-$HOME/Library/Application Support/Limpid/sessions}"
 states_dir="${LIMPID_AGENT_STATES_DIR:-$HOME/Library/Application Support/Limpid/agent-states}"
 cwd_events_dir="${LIMPID_CWD_EVENTS_DIR:-$HOME/Library/Application Support/Limpid/cwd-events}"
@@ -272,9 +315,15 @@ if [ -n "$new_state" ]; then
     tokens_field=",\"contextTokens\":$current_token_count"
   fi
   pid_field=""
-  if [ -n "${LIMPID_CLAUDE_PID:-}" ]; then
-    pid_field=",\"pid\":\"$LIMPID_CLAUDE_PID\""
+  if [ -n "$claude_pid" ]; then
+    pid_field=",\"pid\":\"$claude_pid\""
   fi
+  # Only written when true. The tab column reads it to mark the pane as
+  # hosted, and the record is already tied to the agent's own lifecycle,
+  # so `SessionEnd` and the pid sweep clear the mark without anything
+  # else having to notice the session went away.
+  tmux_field=""
+  [ -z "${TMUX:-}" ] || tmux_field=',"isTmuxHosted":true'
   prompt_field=""
   if [ -n "$last_prompt" ]; then
     prompt_field=",\"lastPrompt\":\"$(json_escape "$last_prompt")\""
@@ -293,7 +342,7 @@ if [ -n "$new_state" ]; then
     session_started_field=",\"sessionStartedAt\":\"$session_started\""
   fi
   {
-    printf '{"schemaVersion":1,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s}\n' \
+    printf '{"schemaVersion":1,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s%s}\n' \
       "$pane_id" \
       "$new_state" \
       "$detail_safe" \
@@ -302,6 +351,7 @@ if [ -n "$new_state" ]; then
       "$hook_event" \
       "$tokens_field" \
       "$pid_field" \
+      "$tmux_field" \
       "$prompt_field" \
       "$first_prompt_field" \
       "$session_started_field"

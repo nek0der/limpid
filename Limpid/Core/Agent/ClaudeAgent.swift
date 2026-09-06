@@ -45,6 +45,7 @@ enum ClaudeAgent: AgentSpec {
             detail: detail,
             runStartedAt: AgentDateParsing.parseOptional(record.runStartedAt),
             contextTokens: record.contextTokens,
+            isTmuxHosted: record.isTmuxHosted,
             updatedAt: updatedAt,
             lastPrompt: lastPrompt,
             firstPrompt: nil,

@@ -60,6 +60,7 @@ struct LimpidSettingsTests {
         settings.terminal.scrollbackLines = 25000
         settings.advanced.showPRStatusInSidebar = true
         settings.advanced.showPRStatusOnlyWhenAttention = true
+        settings.advanced.hostsAgentsInTmux = true
 
         let data = try JSONEncoder().encode(settings)
         let restored = try JSONDecoder().decode(LimpidSettings.self, from: data)
