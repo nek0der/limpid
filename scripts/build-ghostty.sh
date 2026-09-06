@@ -2,8 +2,10 @@
 # Build libghostty xcframework for Limpid.
 #
 # Requirements:
-#   - zig 0.15.2 installed (Ghostty 1.3.1 pins this exactly).
-#     Recommended: `brew install zig@0.15` (keg-only formula).
+#   - zig 0.16.0 installed. The exact requirement is
+#     `minimum_zig_version` in vendor/ghostty/build.zig.zon.
+#     Recommended: `brew install zig@0.16` (keg-only formula), so the
+#     build does not drift with whatever `zig` is on PATH.
 #   - vendor/ghostty submodule initialized.
 #
 # Output:
@@ -16,11 +18,11 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GHOSTTY_DIR="${REPO_ROOT}/vendor/ghostty"
-ZIG_BIN="/opt/homebrew/opt/zig@0.15/bin/zig"
+ZIG_BIN="/opt/homebrew/opt/zig@0.16/bin/zig"
 
 if [[ ! -x "${ZIG_BIN}" ]]; then
-  echo "✗ zig 0.15.2 not found at ${ZIG_BIN}" >&2
-  echo "  Install with: brew install zig@0.15" >&2
+  echo "✗ zig 0.16.0 not found at ${ZIG_BIN}" >&2
+  echo "  Install with: brew install zig@0.16" >&2
   exit 1
 fi
 
@@ -32,8 +34,12 @@ fi
 
 echo "→ Building libghostty xcframework using $(${ZIG_BIN} version)..."
 cd "${GHOSTTY_DIR}"
+# We consume only the xcframework. Leaving the macOS app bundle in the
+# build graph costs time and, since it copies gettext output we disable
+# with -Di18n=false, fails outright.
 "${ZIG_BIN}" build \
   -Demit-xcframework=true \
+  -Demit-macos-app=false \
   -Doptimize=ReleaseFast \
   -Dsentry=false \
   -Di18n=false

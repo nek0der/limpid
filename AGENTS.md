@@ -60,7 +60,7 @@ Limpid/
   Resources/   Info.plist, Localizable.xcstrings, assets
 LimpidTests/   Swift Testing (new) + XCTest (legacy, being migrated)
 vendor/ghostty/  submodule of our fork github.com/nek0der/ghostty (branch `limpid`),
-                 currently pinned to `ce986eead "Add scrollback save/restore C API"`.
+                 currently pinned to `23c1ffad0 "Add scrollback save/restore C API"`.
                  Upstream ghostty-org is tracked via the `upstream` remote for rebases.
                  Run `git -C vendor/ghostty describe` for the current pin.
 scripts/       build-ghostty.sh, package-dmg.sh, ExportOptions.plist

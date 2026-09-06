@@ -42,6 +42,65 @@ enum GhosttyFFI {
         return value
     }
 
+    /// Complete a clipboard read request with a single `text/plain`
+    /// representation.
+    ///
+    /// libghostty takes the payload by pointer and borrows it only for
+    /// the duration of the call, so the MIME string, the data, and both
+    /// structs stay on the stack until it returns.
+    static func completeClipboardRequest(
+        surface: ghostty_surface_t,
+        text: String,
+        state: UnsafeMutableRawPointer?,
+        confirmed: Bool
+    ) {
+        "text/plain".withCString { mime in
+            text.withCString { data in
+                var content = ghostty_clipboard_content_s(
+                    mime: mime,
+                    data: data,
+                    len: text.utf8.count
+                )
+                withUnsafePointer(to: &content) { contents in
+                    var payload = ghostty_clipboard_complete_s(
+                        contents: contents,
+                        contents_len: 1,
+                        available: nil,
+                        available_len: 0,
+                        confirmed: confirmed,
+                        remember: false
+                    )
+                    withUnsafePointer(to: &payload) { ptr in
+                        ghostty_surface_complete_clipboard_request(surface, ptr, state)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The first text-like representation carried by a clipboard
+    /// confirmation payload, or an empty string when it holds none.
+    ///
+    /// The payload is only valid for the duration of the callback that
+    /// received it, so this has to run synchronously inside that frame.
+    /// See `GhosttyApp.confirmReadClipboardCallback` for what deferring
+    /// it costs.
+    static func clipboardText(
+        from confirm: UnsafePointer<ghostty_clipboard_confirm_s>
+    ) -> String {
+        let payload = confirm.pointee
+        guard let contents = payload.contents else { return "" }
+        for index in 0..<payload.contents_len {
+            let content = contents[index]
+            guard let mime = content.mime, let data = content.data,
+                  String(cString: mime).hasPrefix("text/")
+            else { continue }
+            let bytes = UnsafeRawBufferPointer(start: data, count: content.len)
+            return String(bytes: bytes, encoding: .utf8) ?? ""
+        }
+        return ""
+    }
+
     /// Build mode libghostty was compiled with.
     static func buildMode() -> String {
         switch ghostty_info().build_mode {

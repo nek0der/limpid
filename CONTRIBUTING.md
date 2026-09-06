@@ -19,12 +19,14 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
   xcodebuild -downloadComponent MetalToolchain
   ```
 - [Homebrew](https://brew.sh)
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) and Zig 0.15.2
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen) and Zig 0.16.0
   ```bash
-  brew install xcodegen zig@0.15
+  brew install xcodegen zig@0.16
   ```
-  `zig@0.15` is keg-only; the build script invokes it by its full path
-  (`/opt/homebrew/opt/zig@0.15/bin/zig`), so no `PATH` change is required.
+  `zig@0.16` is keg-only; the build script invokes it by its full path
+  (`/opt/homebrew/opt/zig@0.16/bin/zig`), so no `PATH` change is required.
+  The version of record is `minimum_zig_version` in
+  `vendor/ghostty/build.zig.zon`.
 - [Mint](https://github.com/yonaskolb/Mint), for the `swiftformat` version
   pinned in `Mintfile` (`make fmt` / `make lint`)
   ```bash
@@ -44,9 +46,9 @@ cd limpid
 #   git submodule update --init --recursive
 
 # 2. Confirm Zig is reachable (the build script hard-codes the
-# Homebrew keg path, so missing zig@0.15 yields a clear error
+# Homebrew keg path, so missing zig@0.16 yields a clear error
 # rather than silently picking up a system Zig):
-#   ls /opt/homebrew/opt/zig@0.15/bin/zig
+#   ls /opt/homebrew/opt/zig@0.16/bin/zig
 
 # 3. Build libghostty as an xcframework (10–20 min on first run; cached after)
 make ghostty

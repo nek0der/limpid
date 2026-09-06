@@ -85,7 +85,7 @@ jobs:
           xcodebuild -version
 
       - name: Install tooling
-        run: brew install xcodegen zig@0.15 create-dmg
+        run: brew install xcodegen zig@0.16 create-dmg
 
       - name: Restore GhosttyKit.xcframework cache
         id: cache-ghostty
