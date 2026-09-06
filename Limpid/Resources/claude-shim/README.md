@@ -1,7 +1,8 @@
 # claude-shim
 
-A pair of small POSIX-shell scripts that let Limpid resume Claude Code
-sessions across app restarts without ever writing to the user's
+Small POSIX-shell scripts that let Limpid resume Claude Code sessions
+across app restarts, badge agent state, and re-route
+`git worktree add`, without ever writing to the user's
 `~/.claude/settings.json`.
 
 ## Files
@@ -11,16 +12,27 @@ sessions across app restarts without ever writing to the user's
   this directory to `PATH` for every pty it spawns, so when the user
   types `claude` inside a Limpid terminal this script runs first.
   It locates the real `claude` binary, then exec's it with
-  `--settings '<inline JSON>'` so SessionStart and SessionEnd hooks
-  fire into `limpid-hook`. Claude Code merges `--settings`
-  additively, so the user's existing hooks and permissions stay
-  intact.
+  `--settings '<inline JSON>'` so our hooks fire into `limpid-hook`.
+  Claude Code takes the last `--settings` and ignores the rest, so
+  when the user passes one of their own the shim merges the two
+  first: their keys win, and the per-event hook arrays concatenate so
+  both sets run.
 - `limpid-hook` — receives hook payloads on stdin from Claude Code.
   Reads `LIMPID_PANE_ID` (= the owning split-leaf UUID, one per
   pane) and writes
   `{paneId, sessionId, cwd, updatedAt, lastHookEvent}` to
   `$LIMPID_SESSIONS_DIR/<pane_id>.json` so Limpid can replay the
-  session on next launch.
+  session on next launch. It also writes the agent-state and
+  cwd-change records the sidebar badges read.
+- `limpid-pretool-worktree-hook` — intercepts a `PreToolUse` Bash call
+  that would create a git worktree and re-runs it under the active
+  Project's placement rules.
+- `settings.template.json` — the hook block the `claude` shim fills in
+  and passes as `--settings`.
+- `zdotdir/` — startup files that source the user's own first, then put
+  the shim directories back at the front of `PATH`. Without this a
+  user's `export PATH="/opt/homebrew/bin:$PATH"` buries the shim and
+  no hook ever fires.
 
 ## Environment contract
 
@@ -29,10 +41,17 @@ Set by Limpid before spawning the pty:
 | Variable | Meaning |
 |---|---|
 | `PATH` | Original `PATH` with this directory prepended |
+| `ZDOTDIR` | Redirected to `zdotdir/` so the `PATH` edit survives the user's rc |
 | `LIMPID_PANE_ID` | UUID of the owning split-tree leaf (one per pane) |
+| `LIMPID_SHIM_DIR` | This directory, so `zdotdir/.zshrc` can re-prepend it |
 | `LIMPID_SESSIONS_DIR` | Directory to write session records into |
+| `LIMPID_AGENT_STATES_DIR` | Directory to write agent-state records into |
+| `LIMPID_CWD_EVENTS_DIR` | Directory to write cwd-change records into |
 | `LIMPID_REAL_CLAUDE` | Optional override path to the real `claude` |
 | `LIMPID_DISABLE_CLAUDE_RESUME` | `1` to bypass the shim entirely |
+
+`PaneShellEnvironment` and `ClaudeShimLocator` are the source of truth
+for the values.
 
 ## Why shell scripts and not a Swift binary
 
@@ -44,9 +63,8 @@ Set by Limpid before spawning the pty:
 
 ## Failure policy
 
-`limpid-hook` always exits `0`. A broken hook must never prevent the
-user from running Claude. Diagnostic output goes to
-`$TMPDIR/limpid-hook.log` on a best-effort basis.
+`limpid-hook` always exits `0`. A broken hook must never stop the user
+from running Claude. Set `LIMPID_HOOK_LOG=<path>` to capture its stderr.
 
 The `claude` shim falls back to executing the real claude with no
 overrides if `limpid-hook` is missing, if the real binary cannot be

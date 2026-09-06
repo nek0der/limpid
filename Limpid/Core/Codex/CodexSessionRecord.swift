@@ -1,6 +1,6 @@
 // CodexSessionRecord.swift
 // Limpid — on-disk model for one persisted Codex session, written by
-// `Limpid/Resources/codex-shim/limpid-codex-hook` and consumed by
+// `Limpid/Resources/codex-shim/limpid-hook` and consumed by
 // `CodexSessionStore`. One record per split-tree leaf
 // (= `LIMPID_PANE_ID`); the hook overwrites the file on SessionStart
 // so the stored sessionId is captured up front.

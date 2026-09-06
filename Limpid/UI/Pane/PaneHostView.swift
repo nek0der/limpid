@@ -256,12 +256,19 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
             tab: owningTab,
             paneID: paneID
         )
-        // Wire the Claude shim + Codex shadow CODEX_HOME into every
-        // pty. Both layers are inert when the user never runs the
+        // Four layers over one pty: what every pane gets, then each
+        // agent's own directories, then the flags that hand Codex our
+        // hooks. The agent layers are inert when the user never runs the
         // matching CLI; injecting unconditionally keeps spawn paths
         // uniform across panes.
-        var env = ClaudeShimLocator.environment(forPaneID: paneID)
-        for (k, v) in CodexHomeRedirector.shared.environment(forPaneID: paneID) {
+        var env = PaneShellEnvironment.resolved(forPaneID: paneID)
+        for (k, v) in ClaudeShimLocator.environment(forPaneID: paneID) {
+            env[k] = v
+        }
+        for (k, v) in CodexShimLocator.environment() {
+            env[k] = v
+        }
+        for (k, v) in CodexHookInstaller.shared.environment() {
             env[k] = v
         }
         if DemoFixture.isDemoActive {

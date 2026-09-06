@@ -1,6 +1,6 @@
 // CodexAgentStateRecord.swift
 // Limpid — on-disk shape of a Codex agent lifecycle record written by
-// `Limpid/Resources/codex-shim/limpid-codex-hook` after every relevant
+// `Limpid/Resources/codex-shim/limpid-hook` after every relevant
 // hook event. `CodexAgentStateStore` reads / writes; the live
 // `Tab.codexAgentBadges[paneID]` mirror is rebuilt from this struct
 // via `CodexAgentStateTracker`.

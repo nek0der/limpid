@@ -89,10 +89,9 @@ targets:
       # invocations are intercepted.
       - path: Limpid/Resources/claude-shim
         type: folder
-      # Bundle the Codex CLI hook receiver. Unlike `claude-shim` we
-      # don't intercept the codex binary via PATH — we manage a shadow
-      # `CODEX_HOME` per `CodexHomeRedirector` and point Codex's own
-      # `hooks.json` discovery at the bundled receiver script.
+      # Bundle the Codex shim + hook receiver, on the same terms: this
+      # directory is prepended to `PATH` too, so `codex` invocations are
+      # intercepted the way `claude` ones are.
       - path: Limpid/Resources/codex-shim
         type: folder
       # Ship the license + third-party attribution inside the app bundle so

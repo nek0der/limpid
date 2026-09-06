@@ -1,6 +1,6 @@
 #!/bin/sh
 # Limpid codex hook receiver — invoked by Codex CLI on every hook event
-# we subscribe to. `CodexHomeRedirector.subscribedEvents` owns that list;
+# we subscribe to. `CodexHookInstaller.subscribedEvents` owns that list;
 # this file needs a branch for every name it carries, so read it there
 # rather than trusting a copy that drifts.
 # Keyed by LIMPID_PANE_ID (= split-tree leaf UUID, one per pane).
@@ -25,30 +25,30 @@ else
   exec 2>/dev/null
 fi
 
-# Find codex's actual PID by walking the parent process chain.
-# Codex spawns hooks through one or more intermediate shells (e.g.
-# `sh -c "/bin/sh '/path/to/script'"`), so $PPID points at the
-# wrapper shell, not codex itself. We walk up to 10 hops looking
-# for a process whose `comm` contains "codex" — matches both
-# `codex` (Rust binary) and `codex-darwin-arm64` (some installs).
-# The wrapper-shell layering is why $PPID alone isn't enough — we walk
-# the parent chain to find the real codex process.
+# Resolve the pid of the codex process this hook belongs to. We persist
+# it in the agent state record so the Swift-side `kill(pid, 0)` sweep
+# can clear the session + badge when the process exits. SessionEnd
+# narrows what the sweep has to cover but cannot replace it, because
+# the exits we care about most fire no hook at all: a closed pane, and
+# a killed process. Measured 2026-09, `/quit` was the only path that
+# reached us — re-measure rather than trust this line.
 #
-# We persist the captured PID in the agent state record so the
-# Swift-side `kill(pid, 0)` sweep can clear the session + badge
-# when the process exits. SessionEnd narrows what the sweep has to
-# cover but cannot replace it, because the exits we care about most
-# fire no hook at all: a closed pane, and a killed process. Measured
-# 2026-09, `/quit` was the only path that reached us — re-measure
-# rather than trust this line.
+# `LIMPID_CODEX_PID` comes from our own shim, which exports its pid and
+# then execs codex over it, so the value names the process exactly. The
+# walk below is the fallback for a codex started outside the shim: by
+# absolute path, or from a shell whose PATH we never touched.
 find_codex_pid() {
-  # Exact-match allow list. A `*codex*` glob would also catch
-  # wrappers such as `codex-fmt`, `codexica`, or a user-authored
-  # `codex.sh` symlinked into PATH — picking those up and then
-  # watching the wrong pid leads to spurious "process died"
-  # cleanups when the wrapper exec's away. The real Rust binary
-  # appears under one of these two names depending on install
-  # method (npm vs Homebrew vs direct binary download).
+  # Codex spawns hooks through one or more intermediate shells (e.g.
+  # `sh -c "/bin/sh '/path/to/script'"`), so $PPID points at a wrapper
+  # rather than at codex. We walk up to 10 hops looking for a match.
+  #
+  # The allow list is exact. A `*codex*` glob would also catch wrappers
+  # such as `codex-fmt`, `codexica`, or a user-authored `codex.sh`
+  # symlinked into PATH — picking those up and then watching the wrong
+  # pid leads to spurious "process died" cleanups when the wrapper
+  # exec's away. The real Rust binary appears under one of these two
+  # names depending on install method (npm vs Homebrew vs direct
+  # binary download).
   fcp_pid="$PPID"
   fcp_max=10
   while [ -n "$fcp_pid" ] && [ "$fcp_pid" != "1" ] && [ "$fcp_max" -gt 0 ]; do
@@ -64,7 +64,14 @@ find_codex_pid() {
   done
   return 1
 }
-codex_pid="$(find_codex_pid || true)"
+codex_pid="${LIMPID_CODEX_PID:-}"
+# The walk read its pid out of `ps` and so was numeric by construction.
+# An inherited variable is not, and the value goes into the record's
+# JSON verbatim — an unvalidated one corrupts the file the Swift side
+# parses, taking the pane's badge down with it.
+case "$codex_pid" in
+  "" | *[!0-9]*) codex_pid="$(find_codex_pid || true)" ;;
+esac
 
 payload="$(cat 2>/dev/null || true)"
 

@@ -16,7 +16,7 @@
 //
 // Hash captured from a Codex 0.134.0 run where the hook fired
 // successfully — if this test ever breaks, the algorithm has drifted
-// against upstream and CodexHomeRedirector's hooks won't fire any
+// against upstream and CodexHookInstaller's hooks won't fire any
 // more.
 
 import Testing
@@ -35,10 +35,25 @@ struct CodexTrustHashTests {
         )
     }
 
+    /// Reference vector taken from Codex's own `currentHash` for a
+    /// one-second hook, which `SessionEnd` and `Interrupt` default to.
+    /// Every other event defaults to 600, so a serializer that confuses a
+    /// `1` for `true` stayed invisible until those two were subscribed.
+    @Test("compute matches Codex for a one-second timeout")
+    func referenceVectorOneSecondTimeout() {
+        #expect(
+            CodexTrustHash.compute(
+                eventLabel: "session_end",
+                command: "/bin/echo lifecycle",
+                timeoutSec: 1
+            ) == "sha256:a293e09c0100519171de887b09b815c869812d295fea193a83d2b10c967baa81"
+        )
+    }
+
     @Test("trustKey format follows <path>:<event>:<group>:<handler>")
     func trustKeyFormat() {
         let key = CodexTrustHash.trustKey(
-            hooksJsonPath: "/private/tmp/lcx-v8.VXs3/hooks.json",
+            sourcePath: "/private/tmp/lcx-v8.VXs3/hooks.json",
             eventLabel: "session_start"
         )
         #expect(key == "/private/tmp/lcx-v8.VXs3/hooks.json:session_start:0:0")

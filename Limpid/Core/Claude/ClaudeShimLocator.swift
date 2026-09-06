@@ -48,44 +48,33 @@ enum ClaudeShimLocator {
             .appendingPathComponent("cwd-events", isDirectory: true)
     }
 
-    /// Build the env-var dictionary that `PaneHostView` stages on a
-    /// fresh `SurfaceView`. We always inject `LIMPID_PANE_ID` and the
-    /// sessions dir (even when `paneID` is nil, the shim itself just
-    /// won't do anything useful with an empty pane id). `PATH` is
-    /// prepended with the shim dir when we can resolve it; if we
-    /// can't (e.g. running from a test bundle without the shim
-    /// resource), we leave PATH alone so the user's shell is not
-    /// disrupted.
-    static func environment(forPaneID paneID: UUID?) -> [String: String] {
+    /// zsh startup-file forwarding dir, or `nil` when the bundle lacks it.
+    /// Each file inside sources the user's real one first and `.zshrc`
+    /// additionally re-prepends `LIMPID_SHIM_DIR`. `nil` is defensive: a
+    /// corrupted bundle should still launch a usable shell.
+    static var zdotdirURL: URL? {
+        guard let shim = shimDirectoryURL else { return nil }
+        let url = shim.appendingPathComponent("zdotdir", isDirectory: true)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// The Claude-specific half of a pane's environment. `PATH`, `ZDOTDIR`
+    /// and `LIMPID_PANE_ID` are not here — they belong to every pane, not
+    /// to Claude, and live in `PaneShellEnvironment`.
+    ///
+    /// The state directories are exported even when `paneID` is nil; the
+    /// receiver simply writes nothing useful without a pane to key on.
+    static func environment(forPaneID _: UUID?) -> [String: String] {
         var env: [String: String] = [:]
-
+        // Exposed so the `zdotdir/.zshrc` snippet can re-prepend the shim
+        // after the user's `.zshrc` runs. Without that step a user line
+        // like `export PATH="/opt/homebrew/bin:$PATH"` buries the shim
+        // past `/opt/homebrew/bin/claude` and the hook never fires.
         if let shim = shimDirectoryURL {
-            let existingPath = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-            env["PATH"] = "\(shim.path):\(existingPath)"
-            // Expose the shim dir so the `zdotdir/.zshrc` snippet can
-            // re-prepend it after the user's `.zshrc` runs. Without
-            // that step a user `.zshrc` line like
-            // `export PATH="/opt/homebrew/bin:$PATH"` buries the
-            // shim past `/opt/homebrew/bin/claude` and the hook
-            // never fires.
             env["LIMPID_SHIM_DIR"] = shim.path
-            // Redirect zsh's startup-file lookups to our forwarding
-            // dir. Each file there sources the user's real one first
-            // and `.zshrc` additionally re-prepends LIMPID_SHIM_DIR.
-            // Skip the override when the dir is missing (defensive —
-            // a corrupted bundle should still launch a usable shell).
-            let zdotdir = shim.appendingPathComponent("zdotdir", isDirectory: true)
-            if FileManager.default.fileExists(atPath: zdotdir.path) {
-                env["ZDOTDIR"] = zdotdir.path
-            }
         } else {
-            log.debug("claude-shim directory not found in bundle; skipping PATH injection")
+            log.debug("claude-shim directory not found in bundle; skipping shim dir export")
         }
-
-        if let id = paneID {
-            env["LIMPID_PANE_ID"] = id.uuidString
-        }
-
         env["LIMPID_SESSIONS_DIR"] = sessionsDirectoryURL.path
         env["LIMPID_AGENT_STATES_DIR"] = agentStatesDirectoryURL.path
         env["LIMPID_CWD_EVENTS_DIR"] = cwdEventsDirectoryURL.path

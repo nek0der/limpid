@@ -29,8 +29,8 @@ enum CodexTrustHash {
     ///     `user_prompt_submit`, `pre_tool_use`, `stop`, etc.). Must
     ///     match the label codex builds internally — see
     ///     `hook_event_key_label` in codex-rs/hooks/src/lib.rs.
-    ///   - command: the exact `command` string written into the
-    ///     handler in hooks.json.
+    ///   - command: the exact `command` string of the handler
+    ///     definition, wherever it came from.
     ///   - timeoutSec: handler timeout. Defaults to 600 (codex's
     ///     default); explicit values are clamped to a minimum of 1.
     ///   - isAsync: handler's `async` flag. Defaults to false.
@@ -43,107 +43,78 @@ enum CodexTrustHash {
         isAsync: Bool = false,
         matcher: String? = nil
     ) -> String {
-        let handler: [String: AnyHashable] = [
-            "async": isAsync,
-            "command": command,
-            "timeout": max(1, timeoutSec),
-            "type": "command"
-        ]
-
-        var identity: [String: AnyHashable] = [
-            "event_name": eventLabel,
-            "hooks": [handler]
+        let handler: Canonical = .object([
+            "async": .bool(isAsync),
+            "command": .string(command),
+            "timeout": .int(max(1, timeoutSec)),
+            "type": .string("command")
+        ])
+        var identity: [String: Canonical] = [
+            "event_name": .string(eventLabel),
+            "hooks": .array([handler])
         ]
         if let matcher {
-            identity["matcher"] = matcher
+            identity["matcher"] = .string(matcher)
         }
-
-        let canonical = canonicalize(identity)
-        let serialized = serializeCanonical(canonical)
-        let digest = SHA256.hash(data: Data(serialized.utf8))
-        let hex = digest.map { String(format: "%02x", $0) }.joined()
-        return "sha256:\(hex)"
+        let digest = SHA256.hash(data: Data(Canonical.object(identity).serialized.utf8))
+        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
     }
 
     /// Build the `[hooks.state."<KEY>"]` table key. Format:
-    /// `<canonical_hooks_json_path>:<event_label>:<group_idx>:<handler_idx>`.
-    /// `hooksJsonPath` must be canonicalized via `realpath` by the
-    /// caller — Codex resolves symlinks (e.g. macOS `/var` →
-    /// `/private/var`) before building keys, and a mismatch leaves
-    /// the hook in "review needed" state forever.
+    /// `<source_path>:<event_label>:<group_idx>:<handler_idx>`.
+    ///
+    /// A `sourcePath` naming a real file must be canonicalized via
+    /// `realpath` by the caller — Codex resolves symlinks (e.g. macOS
+    /// `/var` → `/private/var`) before building keys, and a mismatch
+    /// leaves the hook in "review needed" state forever. A hook supplied
+    /// by CLI flags has no file behind it and uses the synthetic path in
+    /// `CodexHookInjection` verbatim instead.
     static func trustKey(
-        hooksJsonPath: String,
+        sourcePath: String,
         eventLabel: String,
         groupIndex: Int = 0,
         handlerIndex: Int = 0
     ) -> String {
-        "\(hooksJsonPath):\(eventLabel):\(groupIndex):\(handlerIndex)"
+        "\(sourcePath):\(eventLabel):\(groupIndex):\(handlerIndex)"
     }
 
     // MARK: - Canonical JSON
 
-    /// Recursively sort dictionary keys. Arrays preserve order. Values
-    /// are walked so nested objects also normalize.
-    private static func canonicalize(_ value: Any) -> Any {
-        if let dict = value as? [String: Any] {
-            var sorted: [(String, Any)] = []
-            sorted.reserveCapacity(dict.count)
-            for key in dict.keys.sorted() {
-                sorted.append((key, canonicalize(dict[key] as Any)))
-            }
-            return sorted
-        }
-        if let array = value as? [Any] {
-            return array.map { canonicalize($0) }
-        }
-        return value
-    }
+    /// The value model the identity is built from.
+    ///
+    /// Modelling it explicitly rather than with `Any` / `AnyHashable` is
+    /// the whole point: a bridged `1` answers `as? Bool` on Darwin, so the
+    /// previous serializer emitted `true` for a one-second timeout and the
+    /// hash silently stopped matching Codex's. Only `SessionEnd` and
+    /// `Interrupt` default to one second, which is why it stayed hidden.
+    private indirect enum Canonical {
+        case string(String)
+        case int(Int)
+        case bool(Bool)
+        case array([Canonical])
+        case object([String: Canonical])
 
-    /// Serialize the canonical form to compact JSON (no whitespace).
-    /// We can't use `JSONSerialization` directly because it doesn't
-    /// preserve key order — we already sorted in `canonicalize`, so
-    /// we emit the bytes ourselves.
-    private static func serializeCanonical(_ value: Any) -> String {
-        if let pairs = value as? [(String, Any)] {
-            let body = pairs
-                .map { "\(jsonString($0.0)):\(serializeCanonical($0.1))" }
-                .joined(separator: ",")
-            return "{\(body)}"
-        }
-        if let array = value as? [Any] {
-            let body = array.map { serializeCanonical($0) }.joined(separator: ",")
-            return "[\(body)]"
-        }
-        if let s = value as? String {
-            return jsonString(s)
-        }
-        if let b = value as? Bool {
-            return b ? "true" : "false"
-        }
-        if let i = value as? Int {
-            return String(i)
-        }
-        // AnyHashable wrapper unwrap.
-        if let any = value as? AnyHashable {
-            if let s = any.base as? String {
-                return jsonString(s)
-            }
-            if let b = any.base as? Bool {
-                return b ? "true" : "false"
-            }
-            if let i = any.base as? Int {
-                return String(i)
-            }
-            if let arr = any.base as? [AnyHashable] {
-                let body = arr.map { serializeCanonical($0) }.joined(separator: ",")
-                return "[\(body)]"
-            }
-            if let dict = any.base as? [String: AnyHashable] {
-                let canonical = canonicalize(dict)
-                return serializeCanonical(canonical)
+        /// Compact JSON with object keys sorted, matching what Codex
+        /// hashes. `JSONSerialization` cannot be used because it does not
+        /// preserve key order.
+        var serialized: String {
+            switch self {
+            case let .string(value):
+                jsonString(value)
+            case let .int(value):
+                String(value)
+            case let .bool(value):
+                value ? "true" : "false"
+            case let .array(values):
+                "[" + values.map(\.serialized).joined(separator: ",") + "]"
+            case let .object(values):
+                "{" + values.keys.sorted()
+                    .compactMap { key in
+                        values[key].map { "\(jsonString(key)):\($0.serialized)" }
+                    }
+                    .joined(separator: ",") + "}"
             }
         }
-        return "null"
     }
 
     /// JSON-escape a string per RFC 8259 — Codex's serializer only

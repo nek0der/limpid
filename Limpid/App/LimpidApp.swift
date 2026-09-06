@@ -50,22 +50,22 @@ final class AppState {
     /// records. Each fresh event lands on `worktreeMoveSuggester`.
     let cwdEventTracker: CwdEventTracker
     /// Watches the shim's `worktree-events` dir for `WorktreeCreate`
-    /// records (dropped by `limpid-pretool-worktree-hook` after it
-    /// re-routes a Claude `git worktree add`). Each event fires a
+    /// records (dropped by `claude-shim/limpid-pretool-worktree-hook`
+    /// after it re-routes a Claude `git worktree add`). Each event fires a
     /// GitSync refetch so the new row appears without app-focus polling.
     let worktreeEventTracker: WorktreeEventTracker
     /// Codex parallel: own watcher on the Codex agent-states dir so
-    /// `limpid-codex-pretool-worktree-hook` notifications flow into
+    /// `codex-shim/limpid-pretool-worktree-hook` notifications flow into
     /// the same GitSync refetch pipeline.
     let codexWorktreeEventTracker: WorktreeEventTracker
     /// Drives the bottom-of-window banner that asks "Move to
     /// worktree X?" whenever Claude `cd`s into a worktree the
     /// current tab doesn't own.
     let worktreeMoveSuggester: WorktreeMoveSuggester
-    /// Builds and refreshes the shadow `CODEX_HOME` Limpid hands to
-    /// every Codex pty. Owns the symlink farm + the Limpid-managed
-    /// `hooks.json` / `config.toml` mirror.
-    let codexHomeRedirector: CodexHomeRedirector
+    /// Installs our lifecycle hooks into Codex: the flags every Codex
+    /// pty carries, and the single trust block written into the user's
+    /// own `~/.codex/config.toml`.
+    let codexHookInstaller: CodexHookInstaller
     /// User preferences store. Owned by `AppState` so libghostty gets
     /// the initial values at boot and live-reload routes through here.
     let settingsStore: SettingsStore
@@ -205,12 +205,12 @@ final class AppState {
         // notifications can route through it.
         self.claudeAgentStateTracker = claudeAgentStateTracker
 
-        // Codex CLI mirror trackers. The redirector also builds the
-        // shadow CODEX_HOME synchronously so the first pty we spawn
-        // already sees the Limpid-managed `hooks.json`.
-        let codexHomeRedirector = CodexHomeRedirector.shared
-        codexHomeRedirector.refresh()
-        self.codexHomeRedirector = codexHomeRedirector
+        // Codex CLI mirror trackers. The installer refreshes the trust
+        // block synchronously so the first pty we spawn already carries
+        // hooks Codex will agree to run.
+        let codexHookInstaller = CodexHookInstaller.shared
+        codexHookInstaller.refresh()
+        self.codexHookInstaller = codexHookInstaller
 
         // Order matters: the agent state tracker's PID liveness sweep
         // has to run *before* the session tracker reflects records into

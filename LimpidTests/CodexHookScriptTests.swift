@@ -1,5 +1,5 @@
 // CodexHookScriptTests.swift
-// Limpid — runs `codex-shim/limpid-codex-hook` against captured Codex
+// Limpid — runs `codex-shim/limpid-hook` against captured Codex
 // payloads. The receiver carries the whole lifecycle mapping, so a wrong or
 // missing branch stays invisible until a badge sticks in the sidebar. Its
 // Claude counterpart is the larger of the two and still has no coverage of
@@ -18,11 +18,14 @@ struct CodexHookScriptTests {
     /// `firstPrompt`) only misbehave once there is a previous record to
     /// carry them from. Runs against a temp state dir so the developer's
     /// real records are never touched.
-    private func runHooks(_ payloads: [[String: Any]]) throws -> [String: Any]? {
+    private func runHooks(
+        _ payloads: [[String: Any]],
+        extraEnvironment: [String: String] = [:]
+    ) throws -> [String: Any]? {
         try withTempDir { dir in
             let root = try #require(RepoFixture.limpidRoot)
             let script = root.appendingPathComponent(
-                "Limpid/Resources/codex-shim/limpid-codex-hook"
+                "Limpid/Resources/codex-shim/limpid-hook"
             )
             let states = dir.appendingPathComponent("states")
             let paneID = UUID().uuidString
@@ -41,6 +44,7 @@ struct CodexHookScriptTests {
                     "LIMPID_CODEX_AGENT_STATES_DIR": states.path,
                     "LIMPID_CODEX_SESSIONS_DIR": dir.appendingPathComponent("sessions").path
                 ]
+                process.environment?.merge(extraEnvironment) { _, new in new }
                 let stdin = Pipe()
                 process.standardInput = stdin
                 try process.run()
@@ -73,8 +77,8 @@ struct CodexHookScriptTests {
         ]
     }
 
-    /// Shape mirrors what Codex 0.153.4 actually sends; `extra` carries the
-    /// per-event fields observed on the wire.
+    /// Shape mirrors what Codex sent on the wire when this was measured
+    /// (2026-09); `extra` carries the per-event fields.
     private func payload(_ event: String, extra: [String: Any] = [:]) -> [String: Any] {
         var base: [String: Any] = [
             "session_id": "01a072a0-05a3-7d73-8f0e-045219d01e4f",
@@ -92,13 +96,39 @@ struct CodexHookScriptTests {
     /// and nothing else notices.
     @Test("every subscribed event maps to a lifecycle state")
     func subscribedEvents_allReachABranch() throws {
-        for event in CodexHomeRedirector.subscribedEvents {
+        for event in CodexHookInstaller.subscribedEvents {
             let record = try runHook(payload(event.jsonKey))
             #expect(
                 record?["lastHookEvent"] as? String == event.jsonKey,
-                "limpid-codex-hook has no branch for \(event.jsonKey)"
+                "codex-shim/limpid-hook has no branch for \(event.jsonKey)"
             )
         }
+    }
+
+    /// The shim exports its own pid and then `exec`s codex, so the value
+    /// already is the process the Swift-side liveness sweep watches. The
+    /// receiver's parent walk stays as the fallback for a codex started
+    /// outside the shim, but guessing by `comm` cannot distinguish two
+    /// codex processes in the same tree — the exported value can.
+    @Test("prefers the pid the shim exported over walking the process tree")
+    func exportedPid_isRecordedVerbatim() throws {
+        let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_CODEX_PID": "424242"])
+        #expect(record?["pid"] as? String == "424242")
+    }
+
+    /// The walk read its pid out of `ps`, so it was numeric by
+    /// construction. An inherited variable is not, and the value goes
+    /// into the record's JSON verbatim.
+    @Test("falls back to the walk when the exported pid is not a number")
+    func nonNumericExportedPid_isRefused() throws {
+        let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_CODEX_PID": "\" ,\"x\":1"])
+        #expect(record?["pid"] == nil)
+    }
+
+    @Test("records no pid when the shim exported none")
+    func noExportedPid_leavesThePidFieldOff() throws {
+        let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_CODEX_PID": ""])
+        #expect(record?["pid"] == nil)
     }
 
     @Test("Stop maps to finished")
