@@ -86,6 +86,31 @@ struct AdvancedPane: View {
                 )
             }
 
+            // Its own section rather than a third line under
+            // Integrations: the cost is the pane's scrollback, which
+            // needs saying, and saying it next to the pull-request
+            // footer would bury it.
+            Section {
+                Toggle(
+                    "Run agents in tmux",
+                    isOn: $store.settings.advanced.hostsAgentsInTmux
+                )
+            } header: {
+                Text("tmux")
+            } footer: {
+                Text(
+                    """
+                    Starts each agent in a tmux session of its own. The agent keeps running \
+                    when Limpid quits, including the relaunch after an update, and the pane \
+                    reconnects to the same session on the next launch. Requires tmux.
+
+                    Applies to panes opened after the change. The pane's scrollback stays in \
+                    tmux rather than Limpid. A command that prints and exits, such as \
+                    `claude --version`, runs outside it.
+                    """
+                )
+            }
+
             // Lives at the bottom of the last pane on purpose — this
             // is the kind of switch a user only reaches for when
             // something is wrong, and putting it next to the daily

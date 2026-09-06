@@ -53,6 +53,13 @@ struct AgentBadge: Codable, Equatable, AgentNotificationBadge {
     /// for the compacting tooltip; not load-bearing for icon choice.
     var contextTokens: Int?
 
+    /// `true` while the agent runs inside a tmux session Limpid hosts
+    /// for it, so the tab column can mark the pane as one that outlives a
+    /// quit. Optional rather than defaulted because synthesized
+    /// `Codable` applies no defaults, and a badge persisted before this
+    /// field existed has to keep decoding.
+    var isTmuxHosted: Bool?
+
     /// Monotonic stamp used to drop out-of-order async hook updates.
     /// Tracker compares incoming `updatedAt` against the in-memory
     /// value and discards anything older.

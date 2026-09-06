@@ -118,4 +118,93 @@ struct ClaudeShimScriptTests {
         #expect(flags.count == 1)
         #expect(flags.first.map { argv[$0 + 1] } == "{bad")
     }
+
+    /// Runs the shim under a pty with tmux hosting switched on, and
+    /// returns the argv tmux was handed. The hosting decision asks
+    /// whether stdin and stdout are terminals, and a `Process` pipe is
+    /// not one, so the harness above can never reach this branch. The
+    /// decision itself is shared with the Codex shim and pinned there;
+    /// what is Claude's own is that our `--settings` survives the wrap.
+    private func runShimHosted(_ args: [String]) throws -> (tmux: [String], claude: [String]) {
+        try withTempDir { dir in
+            let root = try #require(RepoFixture.limpidRoot)
+            let shim = root.appendingPathComponent("Limpid/Resources/claude-shim/claude")
+            let claudeArgv = dir.appendingPathComponent("claude.argv")
+            let tmuxArgv = dir.appendingPathComponent("tmux.argv")
+            let claudeStub = dir.appendingPathComponent("fake-claude")
+            let tmuxStub = dir.appendingPathComponent("fake-tmux")
+            for (stub, argvFile) in [(claudeStub, claudeArgv), (tmuxStub, tmuxArgv)] {
+                try """
+                #!/bin/sh
+                : > "\(argvFile.path)"
+                for a in "$@"; do printf '%s\\000' "$a" >> "\(argvFile.path)"; done
+                exit 0
+                """.write(to: stub, atomically: true, encoding: .utf8)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o755], ofItemAtPath: stub.path
+                )
+            }
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/script")
+            process.arguments = ["-q", "/dev/null", "/bin/sh", shim.path] + args
+            process.environment = [
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "HOME": dir.path,
+                "TMPDIR": dir.path,
+                "LIMPID_REAL_CLAUDE": claudeStub.path,
+                "LIMPID_AGENT_TMUX": tmuxStub.path,
+                "LIMPID_AGENT_TMUX_SOCKET": "limpid-test.socket",
+                "LIMPID_PANE_ID": "547D688D-39DF-4A06-BD6F-316C3385532C"
+            ]
+            try process.run()
+            process.waitUntilExit()
+
+            func argv(_ url: URL) -> [String] {
+                let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+                return text.split(separator: "\0").map(String.init)
+            }
+            return (argv(tmuxArgv), argv(claudeArgv))
+        }
+    }
+
+    /// The hooks are the reason the shim exists, so they have to survive
+    /// being handed to tmux rather than exec'd directly. tmux runs
+    /// multiple arguments as an argv, which is what keeps the settings
+    /// JSON — quotes, braces and all — out of a shell.
+    @Test("keeps our settings flag when the agent is hosted in tmux")
+    func hostedInvocation_stillCarriesTheSettingsFlag() throws {
+        let handover = try runShimHosted([])
+        #expect(handover.claude.isEmpty)
+        #expect(handover.tmux.prefix(4) == ["-L", "limpid-test.socket", "-f", "/dev/null"])
+        let settings = try #require(handover.tmux.firstIndex(of: "--settings"))
+        // Directly after `/usr/bin/env` comes the agent, then our flag.
+        #expect(handover.tmux[settings - 2] == "/usr/bin/env")
+        let payload = try JSONSerialization.jsonObject(
+            with: Data(handover.tmux[settings + 1].utf8)
+        ) as? [String: Any]
+        #expect(payload?["hooks"] != nil)
+    }
+
+    /// `--bg` prints a session id and returns, so hosting it would put
+    /// that id on a screen tmux erases on the way out. The decision rule
+    /// itself is shared with the Codex shim and pinned there.
+    @Test(
+        "runs a one-shot invocation directly even when hosting is on",
+        arguments: [["--version"], ["--bg", "do a thing"]]
+    )
+    func hostedInvocation_leavesOneShotsAlone(_ args: [String]) throws {
+        let handover = try runShimHosted(args)
+        #expect(handover.tmux.isEmpty)
+        #expect(handover.claude.contains(args[0]))
+    }
+
+    /// `--resume` is one of the two ways back into an existing session,
+    /// so it is on the allow list even though it carries arguments.
+    @Test("hosts a resume")
+    func hostedInvocation_hostsAResume() throws {
+        let handover = try runShimHosted(["--resume", "abc123"])
+        #expect(handover.claude.isEmpty)
+        #expect(handover.tmux.suffix(2) == ["--resume", "abc123"])
+    }
 }

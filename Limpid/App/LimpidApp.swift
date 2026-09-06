@@ -15,6 +15,10 @@ private let log = Logger.limpid("boot")
 final class AppState {
     let ghosttyApp: GhosttyApp?
     let registry = SurfaceRegistry()
+    /// Polls which panes are showing tmux so the tab column can mark
+    /// them. Declared here rather than built in `init` because it needs
+    /// nothing but its collaborators, which are handed to `start`.
+    let tmuxPresence = TmuxPanePresence()
     let session: WindowSession
     /// Attention-ring state — finished-turn viewed / dismissed
     /// bookkeeping, the container column Waiting list, and the ⌘J
@@ -228,6 +232,7 @@ final class AppState {
 
         self.session = session
         self.attention = AttentionState()
+        tmuxPresence.start(registry: registry, session: session)
 
         let historyStore = NotificationHistoryStore()
         self.historyStore = historyStore
@@ -593,6 +598,7 @@ struct LimpidApp: App {
                 .background(LimpidMainWindowMarker())
                 .environment(state.session)
                 .environment(state.attention)
+                .environment(state.tmuxPresence)
                 .environment(state.historyStore)
                 .environment(state.historyPresentation)
                 .environment(state.dragState)

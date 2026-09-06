@@ -49,4 +49,9 @@ struct CodexAgentStateRecord: AgentLifecycleRecord, Equatable {
     /// late (Codex TUI quirk), the state is unrecoverable but we
     /// at least don't auto-resume forever after a `/quit`.
     var killedByLimpidAt: String?
+    /// `true` while the agent is running inside a tmux session Limpid
+    /// hosts for it. Absent otherwise: the shim only wraps an agent
+    /// when the user asked for it, and the receiver only sees `$TMUX`
+    /// from inside. Drives the mark on the tab column's identity icon.
+    var isTmuxHosted: Bool?
 }

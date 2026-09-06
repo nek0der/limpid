@@ -4640,6 +4640,56 @@
           }
         }
       }
+    },
+    "Run agents in tmux": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを tmux で実行"
+          }
+        }
+      }
+    },
+    "tmux": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux"
+          }
+        }
+      }
+    },
+    "Running in tmux": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux で実行中"
+          }
+        }
+      }
+    },
+    "Running in tmux — the session survives quitting Limpid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux で実行中。Limpid を終了してもセッションは残る。"
+          }
+        }
+      }
+    },
+    "Starts each agent in a tmux session of its own. The agent keeps running when Limpid quits, including the relaunch after an update, and the pane reconnects to the same session on the next launch. Requires tmux.\n\nApplies to panes opened after the change. The pane's scrollback stays in tmux rather than Limpid. A command that prints and exits, such as `claude --version`, runs outside it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを専用の tmux セッションで起動します。Limpid を終了してもエージェントは動作を継続し、更新後の再起動でも同様です。次回起動時に、ペインは同じセッションへ再接続します。tmux が必要です。\n\nこの設定は、変更後に開いたペインから有効になります。ペインのスクロールバックは Limpid ではなく tmux 側に残ります。`claude --version` のように結果を表示して終了するコマンドは、tmux を経由しません。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
