@@ -1,10 +1,14 @@
 // CodexHomeRedirectorRenderTests.swift
 // Limpid — Pure-function tests for the shadow CODEX_HOME hooks.json
-// renderer. We pin the exact JSON shape because Codex re-hashes the
-// file on every change — a single drifted byte (key reorder, matcher
-// dropped, extra whitespace) means the trust block no longer matches
-// and the hook lands in "review needed" state, silently disabled
-// under `--dangerously-bypass-hook-trust`.
+// renderer. Codex trusts a hook per handler, keyed by
+// `<hooks.json path>:<event>:<group>:<handler>` and hashed over that one
+// handler's command, matcher, timeout and async flag. The shape worth
+// pinning is therefore narrower than the file: measured 2026-09 against a
+// synthetic CODEX_HOME, reordering the top-level events and reformatting
+// the JSON both left every handler trusted, while swapping the two groups
+// inside one event dropped both to "modified" — which is how the worktree
+// intercept would silently come off `pre_tool_use:1:0`. Group order within
+// an event is the load-bearing part; key order across events is not.
 
 import Foundation
 import Testing

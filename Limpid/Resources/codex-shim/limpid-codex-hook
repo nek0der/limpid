@@ -1,7 +1,8 @@
 #!/bin/sh
-# Limpid codex hook receiver — invoked by Codex CLI on every hook
-# event we subscribe to (SessionStart, UserPromptSubmit, PreToolUse,
-# PostToolUse, PermissionRequest, PreCompact, PostCompact, Stop).
+# Limpid codex hook receiver — invoked by Codex CLI on every hook event
+# we subscribe to. `CodexHomeRedirector.subscribedEvents` owns that list;
+# this file needs a branch for every name it carries, so read it there
+# rather than trusting a copy that drifts.
 # Keyed by LIMPID_PANE_ID (= split-tree leaf UUID, one per pane).
 #
 # Two persistence paths:
@@ -35,9 +36,11 @@ fi
 #
 # We persist the captured PID in the agent state record so the
 # Swift-side `kill(pid, 0)` sweep can clear the session + badge
-# when the process exits. Codex has no SessionEnd-equivalent hook
-# in v0.134, so /quit / Ctrl-C / crash all look identical to us —
-# the PID liveness check is our only detection signal.
+# when the process exits. SessionEnd narrows what the sweep has to
+# cover but cannot replace it, because the exits we care about most
+# fire no hook at all: a closed pane, and a killed process. Measured
+# 2026-09, `/quit` was the only path that reached us — re-measure
+# rather than trust this line.
 find_codex_pid() {
   # Exact-match allow list. A `*codex*` glob would also catch
   # wrappers such as `codex-fmt`, `codexica`, or a user-authored
@@ -151,6 +154,13 @@ case "$hook_event" in
   PostCompact)
     new_state="running"
     ;;
+  Interrupt)
+    # Codex sends no Stop for a turn the user aborted, so this is the
+    # only signal that the pane went back to waiting on input. `finished`
+    # rather than `idle` because a turn did run — `idle` is reserved for
+    # a pane that has never had one.
+    new_state="finished"
+    ;;
   Stop)
     # Codex emits Stop on both successful and failed turns. A turn that
     # ended cleanly maps to `finished` ("your turn"); a failure to
@@ -162,6 +172,14 @@ case "$hook_event" in
     else
       new_state="finished"
     fi
+    ;;
+  SessionEnd)
+    # Unlike the Claude receiver we keep the session record rather than
+    # dropping it: Claude routes on a `reason` taxonomy that tells a
+    # user-initiated exit apart from a signal, and Codex reports `other`
+    # even for `/quit`, so there is nothing here to route on. A pane
+    # therefore still auto-resumes a session the user quit.
+    new_state="unknown"
     ;;
 esac
 
@@ -208,7 +226,12 @@ if [ -n "$new_state" ]; then
       # newer pane's label.
       session_started="$ts"
       ;;
-    Stop)
+    Stop|Interrupt|SessionEnd)
+      # None of these can leave a turn running, so `runStartedAt` clears
+      # and the tab column's elapsed timer stops. An interrupted turn is
+      # still a turn that ended; leaving the stamp in place would have the
+      # tooltip count up forever. The prompts and the session stamp carry
+      # over so the tab keeps the label it derived from them.
       run_started=""
       last_prompt="$prev_last_prompt"
       first_prompt="$prev_first_prompt"
