@@ -332,36 +332,7 @@ final class AppState {
 
         store.scheduleSave(session.makeSnapshot())
 
-        saveObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.willTerminateNotification,
-            object: nil,
-            queue: .main
-        ) { [weak session, store, historyStore, frecencyStore, settingsStore, registry, codexAgentStateTracker] _ in
-            guard let session else { return }
-            MainActor.assumeIsolated {
-                // Ask libghostty to dump every live surface's scrollback
-                // to disk so the next launch can replay it. ⌘Q path only —
-                // crashes lose anything since the last debounced auto-save
-                // (which doesn't include scrollback).
-                session.captureScrollbackPaths(from: registry)
-                // Blank out the `pid` field on every codex state record
-                // that points at a still-running codex. Limpid is about to
-                // kill those processes alongside its own exit; without
-                // this step the next launch's PID sweep would mistake the
-                // forced kill for a `/quit` and drop the resume record.
-                // Records whose codex already exited (user typed `/quit`
-                // before ⌘Q) keep their dead pid → sweep deletes →
-                // session correctly not restored.
-                codexAgentStateTracker.preserveLiveSessionsOnTerminate()
-                store.saveSynchronously(session.makeSnapshot())
-                historyStore.flushSynchronously()
-                frecencyStore.flushSynchronously()
-                // Flush any pending settings.json write — a slider tick
-                // or accent pick inside the 250 ms debounce window would
-                // otherwise be cancelled as the process tears down.
-                settingsStore.flushSynchronously()
-            }
-        }
+        saveObserver = installTerminateHandler()
 
         startAutoSave()
         startActiveTabSync()

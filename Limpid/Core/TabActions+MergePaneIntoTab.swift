@@ -49,6 +49,7 @@ extension TabActions {
         let codexBadge = sourceTab.codexAgentBadges[paneID]
         let scrollbackPath = sourceTab.scrollbackPaths[paneID]
         let initialCommand = sourceTab.initialCommands[paneID]
+        let tmuxBinding = sourceTab.tmuxBindings[paneID]
 
         // Attach the leaf to target with the SAME paneID so the
         // SurfaceView in SurfaceRegistry keeps mapping cleanly. We
@@ -66,6 +67,9 @@ extension TabActions {
             }
             if let s = codexSession {
                 t.codexSessions[paneID] = s
+            }
+            if let s = tmuxBinding {
+                t.tmuxBindings[paneID] = s
             }
             if let s = claudeBadge {
                 t.claudeAgentBadges[paneID] = s
@@ -96,6 +100,7 @@ extension TabActions {
             t.codexAgentBadges.removeValue(forKey: paneID)
             t.scrollbackPaths.removeValue(forKey: paneID)
             t.initialCommands.removeValue(forKey: paneID)
+            t.tmuxBindings.removeValue(forKey: paneID)
         }
 
         // If the source tab held only the moved pane, it's empty now —

@@ -20,6 +20,28 @@ enum GhosttyFFI {
         return String(bytes: data, encoding: .utf8) ?? "unknown"
     }
 
+    /// The pty device the surface's shell is attached to
+    /// (`/dev/ttys016`), or `nil` when libghostty cannot report one.
+    ///
+    /// This is what lets us ask tmux which session a pane is showing:
+    /// tmux names its clients by tty, so the two meet here. libghostty
+    /// hands back a copy it allocated, so the caller frees it — the
+    /// `defer` is unconditional because `ghostty_string_free` returns
+    /// early on the null pointer an unavailable name comes back as.
+    static func surfaceTTYName(_ surface: ghostty_surface_t) -> String? {
+        let name = ghostty_surface_tty_name(surface)
+        defer { ghostty_string_free(name) }
+        guard let ptr = name.ptr, name.len > 0 else { return nil }
+        // Failable rather than `String(decoding:)`: a device path that
+        // is not valid UTF-8 is not a tty we can hand to tmux, and
+        // replacement characters would only push the failure further on.
+        let bytes = UnsafeRawBufferPointer(start: ptr, count: Int(name.len))
+        guard let value = String(bytes: bytes, encoding: .utf8), !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
+
     /// Build mode libghostty was compiled with.
     static func buildMode() -> String {
         switch ghostty_info().build_mode {
