@@ -120,6 +120,13 @@ extension SurfaceView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if Self.consumeAsynchronousCompositionEnter(
+            keyCode: event.keyCode,
+            timestamp: event.timestamp,
+            interval: &asynchronousCompositionInterval
+        ) {
+            return
+        }
         let flags = event.modifierFlags
 
         // Fast path for control-modified terminal input (Ctrl+C,
@@ -229,6 +236,25 @@ extension SurfaceView {
             113, 106, 64, 79, 80
         ]
         return bypassKeyCodes.contains(event.keyCode)
+    }
+
+    /// We compare occurrence times because Dictation can commit asynchronously
+    /// before AppKit dispatches the Enter that ended composition. An Enter
+    /// pressed after the commit (including after microphone-key termination)
+    /// must still reach the terminal, regardless of how soon it follows.
+    static func consumeAsynchronousCompositionEnter(
+        keyCode: UInt16,
+        timestamp: TimeInterval,
+        interval: inout ClosedRange<TimeInterval>?
+    ) -> Bool {
+        // macOS virtual keycodes for the keys that commit a composition.
+        let commitKeyCodes: Set<UInt16> = [
+            36, // return
+            76 // keypad enter
+        ]
+        defer { interval = nil }
+        guard let interval else { return false }
+        return commitKeyCodes.contains(keyCode) && interval.contains(timestamp)
     }
 
     override func keyUp(with event: NSEvent) {

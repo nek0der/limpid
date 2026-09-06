@@ -34,6 +34,15 @@ final class SurfaceView: NSView {
     /// is pushed to libghostty via ghostty_surface_preedit.
     var markedText: String = ""
 
+    /// When the live composition began. Paired with the commit time to
+    /// recognize the key that ended it. Nil means no composition is
+    /// being tracked.
+    var compositionStartedAt: TimeInterval?
+
+    /// Dictation can commit before delivering the key that ended composition.
+    /// Nil means there is no asynchronous commit awaiting a matching key.
+    var asynchronousCompositionInterval: ClosedRange<TimeInterval>?
+
     /// keyDown event currently being routed through the input context.
     /// doCommand uses this to forward the exact event to libghostty,
     /// since `NSApp.currentEvent` can be unreliable mid-dispatch.
