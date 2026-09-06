@@ -1,7 +1,7 @@
 // CodexAgentStateStore.swift
 // Limpid — per-pane Codex agent lifecycle records
 // (`codex-agent-states/<uuid>.state.json`), written by
-// `codex-shim/limpid-codex-hook` on every relevant hook event. See
+// `codex-shim/limpid-hook` on every relevant hook event. See
 // `PaneStore` for the shared storage logic.
 
 import Foundation

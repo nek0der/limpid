@@ -25,13 +25,18 @@ if [[ "$HISTFILE" == "$ZDOTDIR/.zsh_history" ]]; then
   HISTFILE="$HOME/.zsh_history"
 fi
 
-# Re-prepend the shim. `typeset -aU` keeps PATH unique-on-the-fly so
-# repeated tabs / sourcing won't grow it unbounded.
-if [[ -n "$LIMPID_SHIM_DIR" && -d "$LIMPID_SHIM_DIR" ]]; then
-  typeset -aU path
-  path=("$LIMPID_SHIM_DIR" $path)
-  export PATH
-fi
+# Re-prepend the shims. `typeset -aU` keeps PATH unique-on-the-fly so
+# repeated tabs / sourcing won't grow it unbounded. Both agents need this:
+# whichever directory the user's own PATH edits push down stops
+# intercepting, and the hooks for that agent silently never load.
+typeset -aU path
+for _limpid_shim in "${LIMPID_SHIM_DIR:-}" "${LIMPID_CODEX_SHIM_DIR:-}"; do
+  if [[ -n "$_limpid_shim" && -d "$_limpid_shim" ]]; then
+    path=("$_limpid_shim" $path)
+    export PATH
+  fi
+done
+builtin unset _limpid_shim
 
 # Chain Ghostty's zsh shell integration. Relocating ZDOTDIR for the
 # shim bypasses libghostty's own integration (it also injects via

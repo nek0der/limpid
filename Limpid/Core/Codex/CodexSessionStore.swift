@@ -1,5 +1,5 @@
 // CodexSessionStore.swift
-// Limpid — per-pane Codex session records written by `codex-shim/limpid-codex-hook`.
+// Limpid — per-pane Codex session records written by `codex-shim/limpid-hook`.
 
 import Foundation
 

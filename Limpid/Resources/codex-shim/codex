@@ -1,0 +1,82 @@
+#!/bin/sh
+# Limpid codex shim — intercepts `codex` invocations inside a Limpid pty.
+# Codex had no shim of its own, so the only lever for injecting hooks was
+# an environment variable pointing at a replacement `CODEX_HOME`; having an
+# invocation to add flags to is what lets that whole indirection go.
+#
+# Locate the real codex by excluding our own directory from PATH and
+# falling back to LIMPID_REAL_CODEX (test override) plus a few known
+# install paths.
+
+set -u
+
+self="$(command -v -- "$0" 2>/dev/null || printf '%s\n' "$0")"
+case "$self" in
+  /*) ;;
+  *) self="$PWD/$self" ;;
+esac
+self_dir="$(cd -- "$(dirname -- "$self")" && pwd -P)"
+
+# Rebuild PATH with our own dir filtered out so command -v finds the real
+# codex. POSIX-only — no awk dependency, just IFS splitting.
+filtered_path=""
+old_ifs="$IFS"
+IFS=":"
+for entry in $PATH; do
+  [ "$entry" = "$self_dir" ] && continue
+  if [ -z "$filtered_path" ]; then
+    filtered_path="$entry"
+  else
+    filtered_path="$filtered_path:$entry"
+  fi
+done
+IFS="$old_ifs"
+
+real_codex="${LIMPID_REAL_CODEX:-}"
+if [ -z "$real_codex" ]; then
+  real_codex=$(PATH="$filtered_path" command -v codex 2>/dev/null || true)
+fi
+# Common install locations (homebrew cask / direct npm i -g / mise shims
+# already sit on PATH and are found above).
+if [ -z "$real_codex" ]; then
+  for candidate in \
+    "/opt/homebrew/bin/codex" \
+    "/usr/local/bin/codex" \
+    "$HOME/.local/bin/codex"
+  do
+    if [ -x "$candidate" ] && [ "$candidate" != "$self" ]; then
+      real_codex="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -z "$real_codex" ]; then
+  printf 'limpid: codex not found in PATH (searched without %s)\n' "$self_dir" >&2
+  exit 127
+fi
+
+# Splice in the hook flags Limpid computed for this pane, ahead of the
+# user's own arguments so they land as global options. They arrive
+# newline-separated rather than as one string because each `-c` value is
+# TOML carrying spaces and quotes, and the default IFS would tear those
+# apart. Globbing is off across the split: the values contain `[` and `]`,
+# which a stray matching filename in the cwd would otherwise expand.
+if [ -n "${LIMPID_CODEX_HOOK_ARGS:-}" ]; then
+  set -f
+  old_ifs="$IFS"
+  IFS='
+'
+  set -- $LIMPID_CODEX_HOOK_ARGS "$@"
+  IFS="$old_ifs"
+  set +f
+fi
+
+# Expose our own pid so the receiver can stamp the agent's pid without
+# guessing. `$$` here is this shell's pid; after exec it becomes the codex
+# process's, which is exactly the process the Swift-side liveness sweep
+# needs to watch. The receiver keeps its parent-walk as a fallback for a
+# codex started outside this shim, by absolute path.
+export LIMPID_CODEX_PID="$$"
+
+exec "$real_codex" "$@"

@@ -89,7 +89,7 @@ struct Tab: Codable, Equatable, Identifiable {
     var claudeSessions: [UUID: ClaudeSessionInfo] = [:]
 
     /// Per-pane Claude agent lifecycle badges. Mirrors the on-disk
-    /// state records written by `limpid-hook` on every event we
+    /// state records written by `claude-shim/limpid-hook` on every event we
     /// subscribe to (SessionStart / UserPromptSubmit / PreToolUse /
     /// Notification / PreCompact / Stop / StopFailure / SessionEnd).
     /// `ClaudeAgentStateTracker` keeps this in sync with disk via
@@ -98,7 +98,7 @@ struct Tab: Codable, Equatable, Identifiable {
     var claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:]
 
     /// Per-pane Codex session info captured by
-    /// `codex-shim/limpid-codex-hook`. Mirror of `claudeSessions` for
+    /// `codex-shim/limpid-hook`. Mirror of `claudeSessions` for
     /// the Codex CLI. `CodexSessionTracker` reconciles this map with
     /// the on-disk records at launch.
     var codexSessions: [UUID: CodexSessionInfo] = [:]
@@ -106,7 +106,7 @@ struct Tab: Codable, Equatable, Identifiable {
     /// Per-pane Codex agent lifecycle badges. Mirror of
     /// `claudeAgentBadges` for the Codex CLI. Populated by
     /// `CodexAgentStateTracker` from on-disk state records written by
-    /// `limpid-codex-hook` on every subscribed hook event.
+    /// `codex-shim/limpid-hook` on every subscribed hook event.
     var codexAgentBadges: [UUID: CodexAgentBadge] = [:]
 
     init(

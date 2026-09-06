@@ -1,11 +1,11 @@
 #!/bin/bash
-# limpid-codex-pretool-worktree-hook
+# limpid-pretool-worktree-hook
 # Limpid — Codex CLI PreToolUse hook handler that intercepts the Bash
 # tool's `git worktree add` invocations so the resulting worktree
 # follows the active Project's `worktreePlacement` + `bootstrap` rules
 # instead of Codex's ad-hoc choice.
 #
-# Symmetric with the Claude-side `limpid-pretool-worktree-hook` (the
+# Symmetric with `claude-shim/limpid-pretool-worktree-hook` (the
 # stdin JSON shape, exit semantics, and notify-file pipeline are
 # identical — that's intentional, the two CLIs converge on the same
 # PreToolUse contract). The deltas are
@@ -14,9 +14,10 @@
 #      instead of `LIMPID_AGENT_STATES_DIR` (Claude pane env).
 #   2. opt-out field: `routeCodexWorktrees` in state.json instead of
 #      `routeClaudeWorktrees`.
-#   3. trust path: Codex re-hashes hooks.json on every change; this
-#      script's bytes are part of the hash, so any edit here also
-#      requires re-running `CodexHomeRedirector.refresh()`.
+#   3. trust: Codex hashes the handler's command string, which carries
+#      this file's path. Editing the body below is free; moving or
+#      renaming the file invalidates the recorded hash, and the pane
+#      then shows "Hooks need review" until `refresh()` runs again.
 #
 # Decision contract: on a successful intercept we write a single-line
 # context line to stderr and exit 2. Codex's PreToolUse spec treats
@@ -26,7 +27,7 @@
 # `jq` is required for state.json filtering (we need to walk the
 # projects array and find the one whose rootURL prefix-matches `cwd`).
 # Plain `plutil` can't express the predicate without a bash iteration
-# loop, and the lifecycle hook (`limpid-codex-hook`) only needs flat
+# loop, and the lifecycle hook (`limpid-hook`) only needs flat
 # key reads — that's why it stays plutil-only while we lean on jq
 # here.
 
@@ -50,7 +51,7 @@ if ! printf '%s' "$COMMAND" | grep -Eq '^[[:space:]]*git[[:space:]]+([^|;&]+[[:s
 fi
 
 # `LIMPID_CODEX_AGENT_STATES_DIR` is set per-pane by
-# `CodexHomeRedirector.environment(forPaneID:)`. If we're not inside
+# `CodexHookInstaller.environment(forPaneID:)`. If we're not inside
 # a Limpid pty there's no state.json to consult.
 if [ -z "${LIMPID_CODEX_AGENT_STATES_DIR:-}" ]; then
   exit 0
@@ -174,7 +175,7 @@ if [ "$BOOTSTRAP_COUNT" -gt 0 ]; then
     fi
     case "$STEP_CWD" in
       /*|../*|*/../*|*/..|..)
-        echo "limpid-codex-pretool-worktree-hook: skipping step — unsafe cwd '$STEP_CWD'" >&2
+        echo "limpid-pretool-worktree-hook: skipping step — unsafe cwd '$STEP_CWD'" >&2
         i=$((i + 1))
         continue
         ;;
