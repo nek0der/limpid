@@ -297,6 +297,15 @@ final class SurfaceView: NSView {
         }
     }
 
+    /// The pty device this surface's shell is on (`/dev/ttys016`), or
+    /// `nil` before the surface exists. Read at quit to ask tmux which
+    /// session — if any — is driving this pane; see
+    /// `WindowSession.captureTmuxBindings`.
+    var ttyName: String? {
+        guard let surface else { return nil }
+        return GhosttyFFI.surfaceTTYName(surface)
+    }
+
     @objc private func frameDidChange(_ note: Notification) {
         // libghostty owns the layer; we only keep it informed of the live
         // pixel size and it resizes + redraws its own layer.

@@ -40,6 +40,9 @@ extension TabActions {
         if let s = sourceTab.codexSessions[paneID] {
             newTab.codexSessions[paneID] = s
         }
+        if let s = sourceTab.tmuxBindings[paneID] {
+            newTab.tmuxBindings[paneID] = s
+        }
         if let s = sourceTab.claudeAgentBadges[paneID] {
             newTab.claudeAgentBadges[paneID] = s
         }
@@ -66,6 +69,7 @@ extension TabActions {
             t.codexAgentBadges.removeValue(forKey: paneID)
             t.scrollbackPaths.removeValue(forKey: paneID)
             t.initialCommands.removeValue(forKey: paneID)
+            t.tmuxBindings.removeValue(forKey: paneID)
         }
 
         session.tabs.append(newTab)

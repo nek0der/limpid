@@ -101,7 +101,7 @@ struct TabActionsMergePaneIntoTabTests {
         #expect(session.activeTabID == target.id)
     }
 
-    @Test("per-pane state (all 7 Tab-level dictionaries) migrates with the leaf")
+    @Test("per-pane state (all 8 Tab-level dictionaries) migrates with the leaf")
     func perPaneState_migratesWithLeaf() throws {
         let (session, source, target, paneID) = try Self.sessionWithSourceAndTarget()
         // Plant a distinct value in every per-pane state dictionary on
@@ -132,6 +132,11 @@ struct TabActionsMergePaneIntoTabTests {
             updatedAt: now,
             lastPrompt: "codex prompt"
         )
+        let tmuxBinding = TmuxBinding(
+            socketPath: "/private/tmp/tmux-501/default",
+            sessionID: "$4",
+            sessionName: "moved"
+        )
         let updated = session.update(source.id) { t in
             t.paneStates[paneID] = paneState
             t.scrollbackPaths[paneID] = scrollback
@@ -140,6 +145,7 @@ struct TabActionsMergePaneIntoTabTests {
             t.codexSessions[paneID] = codexSession
             t.claudeAgentBadges[paneID] = claudeBadge
             t.codexAgentBadges[paneID] = codexBadge
+            t.tmuxBindings[paneID] = tmuxBinding
         }
         #expect(updated, "Setting per-pane state should mutate the tab")
 
@@ -157,6 +163,7 @@ struct TabActionsMergePaneIntoTabTests {
         #expect(targetAfter.codexSessions[paneID] == codexSession)
         #expect(targetAfter.claudeAgentBadges[paneID] == claudeBadge)
         #expect(targetAfter.codexAgentBadges[paneID] == codexBadge)
+        #expect(targetAfter.tmuxBindings[paneID] == tmuxBinding)
         // And the source side has been swept (or the whole tab closed
         // when it was a lone-pane source).
         #expect(sourceAfter?.paneStates[paneID] == nil)
@@ -166,6 +173,7 @@ struct TabActionsMergePaneIntoTabTests {
         #expect(sourceAfter?.codexSessions[paneID] == nil)
         #expect(sourceAfter?.claudeAgentBadges[paneID] == nil)
         #expect(sourceAfter?.codexAgentBadges[paneID] == nil)
+        #expect(sourceAfter?.tmuxBindings[paneID] == nil)
     }
 
     @Test("zoom on the moved leaf is cleared from the source tab")

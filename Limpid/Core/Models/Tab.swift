@@ -109,6 +109,15 @@ struct Tab: Codable, Equatable, Identifiable {
     /// `codex-shim/limpid-hook` on every subscribed hook event.
     var codexAgentBadges: [UUID: CodexAgentBadge] = [:]
 
+    /// Which tmux session each pane was showing when Limpid last quit,
+    /// read off the pane's tty rather than reported by the shell. A pane
+    /// that was at its own prompt has no entry, so restoring it brings
+    /// back a shell; one that was attached reattaches to the same
+    /// session instead of leaving it running unreferenced. Optional
+    /// default = `[:]` so an existing `state.json` decodes without a
+    /// snapshot version bump.
+    var tmuxBindings: [UUID: TmuxBinding] = [:]
+
     init(
         id: UUID = UUID(),
         kind: Kind = .terminal,
@@ -123,7 +132,8 @@ struct Tab: Codable, Equatable, Identifiable {
         claudeSessions: [UUID: ClaudeSessionInfo] = [:],
         claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:],
         codexSessions: [UUID: CodexSessionInfo] = [:],
-        codexAgentBadges: [UUID: CodexAgentBadge] = [:]
+        codexAgentBadges: [UUID: CodexAgentBadge] = [:],
+        tmuxBindings: [UUID: TmuxBinding] = [:]
     ) {
         self.id = id
         self.kind = kind
@@ -139,6 +149,7 @@ struct Tab: Codable, Equatable, Identifiable {
         self.claudeAgentBadges = claudeAgentBadges
         self.codexSessions = codexSessions
         self.codexAgentBadges = codexAgentBadges
+        self.tmuxBindings = tmuxBindings
     }
 
     /// Custom decoding so a `state.json` written before
@@ -178,6 +189,10 @@ struct Tab: Codable, Equatable, Identifiable {
         self.codexAgentBadges = try c.decodeIfPresent(
             [UUID: CodexAgentBadge].self,
             forKey: .codexAgentBadges
+        ) ?? [:]
+        self.tmuxBindings = try c.decodeIfPresent(
+            [UUID: TmuxBinding].self,
+            forKey: .tmuxBindings
         ) ?? [:]
     }
 

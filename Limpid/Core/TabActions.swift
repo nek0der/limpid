@@ -149,7 +149,8 @@ enum TabActions {
             // resume on the revived leaf (best-effort — the disk
             // record was already dropped at close time).
             claudeSessions: remapKeys(closed.tab.claudeSessions, using: idMap),
-            codexSessions: remapKeys(closed.tab.codexSessions, using: idMap)
+            codexSessions: remapKeys(closed.tab.codexSessions, using: idMap),
+            tmuxBindings: remapKeys(closed.tab.tmuxBindings, using: idMap)
         )
         // `scrollbackPaths` / `initialCommands` aren't in the Tab init
         // signature, so assign them after construction.
