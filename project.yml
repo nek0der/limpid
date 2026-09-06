@@ -145,6 +145,12 @@ targets:
         NSDesktopFolderUsageDescription: "Limpid runs a shell that may access files on your Desktop."
         NSRemovableVolumesUsageDescription: "Limpid runs a shell that may access removable volumes."
         NSNetworkVolumesUsageDescription: "Limpid runs a shell that may access network volumes."
+        # Paired with the entitlements below. The entitlement lets the
+        # request reach TCC at all; these strings are what TCC shows when
+        # it asks. A command run in a pane is attributed to us, so the
+        # prompt names Limpid rather than the tool the user typed.
+        NSMicrophoneUsageDescription: "Limpid runs a shell that may record audio, such as a voice-input tool."
+        NSAppleEventsUsageDescription: "Limpid runs a shell that may control other apps with AppleScript."
         # Sparkle update settings (https://sparkle-project.org/documentation/)
         # SUFeedURL points to the appcast hosted on GitHub Pages.
         # SUPublicEDKey is the EdDSA public key paired with the private key
@@ -159,6 +165,20 @@ targets:
         # only then checked, which widens the attack surface (path-traversal
         # in a zip / dmg engine bug). Sparkle 2.7.3+.
         SUVerifyUpdateBeforeExtraction: YES
+    # Hardened Runtime denies every TCC-protected resource unless the
+    # binary carries the matching entitlement, and the denial happens
+    # before macOS can show a consent prompt — the user sees a tool that
+    # silently does nothing. Commands in a pane run under our
+    # responsible process, so these cover what people run in the
+    # terminal (`sox rec`, a transcription CLI, `osascript`) rather than
+    # anything the app does itself. Add to this list only with a
+    # concrete command in mind; each entry widens what a compromised
+    # shell could ask for.
+    entitlements:
+      path: Limpid/Resources/Limpid.entitlements
+      properties:
+        com.apple.security.device.audio-input: true
+        com.apple.security.automation.apple-events: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.Limpid

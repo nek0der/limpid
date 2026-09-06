@@ -26,6 +26,8 @@
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Limpid runs a shell that may control other apps with AppleScript.</string>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>Limpid runs a shell that may access files on your Desktop.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
@@ -36,6 +38,8 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 nek0der. MIT License.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Limpid runs a shell that may record audio, such as a voice-input tool.</string>
 	<key>NSNetworkVolumesUsageDescription</key>
 	<string>Limpid runs a shell that may access network volumes.</string>
 	<key>NSPrincipalClass</key>
