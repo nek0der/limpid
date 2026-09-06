@@ -63,4 +63,25 @@ struct SurfaceCompositionTests {
             keyCode: 36, timestamp: 101, interval: &interval
         ))
     }
+
+    /// `commitText` writes its argument to the pty verbatim, so a lone
+    /// control character an input method emits has to be screened out
+    /// before it reaches the shell.
+    @Test(
+        "A lone control character from an input method is dropped",
+        arguments: ["\r", "\n", "\t", "\u{1B}", "\u{00}"]
+    )
+    func suppressibleControlInput_dropsLoneControlCharacter(text: String) {
+        #expect(SurfaceView.isSuppressibleControlInput(text))
+    }
+
+    /// Everything an input method legitimately commits survives,
+    /// including DEL, which sits above the control range we screen.
+    @Test(
+        "Committed text is forwarded",
+        arguments: ["\u{5C71}\u{7530}", "a", "\r\n", "", "\u{7F}", "\u{1F600}"]
+    )
+    func suppressibleControlInput_preservesCommittedText(text: String) {
+        #expect(!SurfaceView.isSuppressibleControlInput(text))
+    }
 }

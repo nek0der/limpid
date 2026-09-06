@@ -4,8 +4,9 @@
 // lifecycle. Covers the four entry points AppKit walks for a
 // keystroke (`performKeyEquivalent`, `keyDown`, `keyUp`,
 // `flagsChanged`), the IME-coordinated `forward(_:action:…)` helper
-// that re-encodes the event for libghostty, and the
-// responder-chain clipboard selectors (`paste:`, `copy:`).
+// that re-encodes the event for libghostty, `commitText(_:)` for
+// text an input method committed, and the responder-chain
+// clipboard selectors (`paste:`, `copy:`).
 //
 // The companion `SurfaceView+Input.swift` holds the static
 // `NSEvent` → `ghostty_input_key_s` helpers
@@ -198,16 +199,13 @@ extension SurfaceView {
             .isDisjoint(with: [.command, .control, .option])
 
         if !accumulated.isEmpty {
-            if wasComposing, let surface {
-                // IME committed composed text — send via the paste
-                // path (ghostty_surface_text) to bypass keybind
-                // matching. forward() would match keybinds like
-                // shift+enter=text:\n on the underlying key event
-                // and discard the composed text.
-                for text in accumulated {
-                    text.withCString { ptr in
-                        ghostty_surface_text(surface, ptr, UInt(text.utf8.count))
-                    }
+            if wasComposing {
+                // IME committed composed text. forward() would match
+                // keybinds like shift+enter=text:\n on the underlying
+                // key event and discard the composed text, so we commit
+                // it without a physical key instead.
+                for text in accumulated where !Self.isSuppressibleControlInput(text) {
+                    commitText(text)
                 }
             } else {
                 // Regular (non-IME) text — forward as a key event
@@ -321,5 +319,54 @@ extension SurfaceView {
             handled = ghostty_surface_key(surface, key)
         }
         return handled
+    }
+
+    /// Commits text an input method produced — IME confirmation,
+    /// Dictation, the character viewer — as typed input.
+    ///
+    /// `ghostty_surface_text` is libghostty's paste entry point, so it
+    /// brackets the text whenever the program has bracketed paste on,
+    /// and the program then applies paste handling to a dictated word.
+    /// A key event avoids that, but a real one carries the physical key
+    /// that ended the composition and libghostty matches keybinds
+    /// before encoding — `shift+enter` is bound to `text:\n`, so the
+    /// committed text would be dropped for the binding's action.
+    ///
+    /// We therefore send a key event with no key: `keycode` is a value
+    /// the macOS keycode table doesn't map, which libghostty resolves
+    /// to `unidentified`, and no modifiers are set. Nothing can match a
+    /// binding, and the encoder — finding no table entry and no
+    /// modifiers to apply — writes `text` to the pty verbatim. A
+    /// keycode of `0` would resolve to `KeyA` on macOS and could
+    /// collide with a bare-letter keybind.
+    ///
+    /// Verbatim also covers control characters, so callers screen them
+    /// with `isSuppressibleControlInput(_:)`.
+    @discardableResult
+    func commitText(_ text: String) -> Bool {
+        guard let surface else { return false }
+        var key = ghostty_input_key_s()
+        key.action = GHOSTTY_ACTION_PRESS
+        key.mods = GHOSTTY_MODS_NONE
+        key.consumed_mods = GHOSTTY_MODS_NONE
+        key.keycode = UInt32.max
+        key.unshifted_codepoint = 0
+        key.composing = false
+        return text.withCString { ptr in
+            key.text = ptr
+            return ghostty_surface_key(surface, key)
+        }
+    }
+
+    /// A lone control character is never text the terminal should
+    /// receive: `commitText` writes it to the pty as-is, and a bare
+    /// `\r` fires zsh's `accept-line` on an empty buffer — the double
+    /// prompt `forward()` already screens out.
+    static func isSuppressibleControlInput(_ text: String) -> Bool {
+        let scalars = text.unicodeScalars
+        guard let first = scalars.first,
+              scalars.index(after: scalars.startIndex) == scalars.endIndex
+        else { return false }
+        return first.value < 0x20
     }
 }
