@@ -35,7 +35,7 @@ jobs:
           xcodebuild -version
 
       - name: Install tooling
-        run: brew install xcodegen zig@0.15
+        run: brew install xcodegen zig@0.16
 
       - name: Restore GhosttyKit.xcframework cache
         id: cache-ghostty
@@ -46,11 +46,7 @@ jobs:
 
       - name: Build libghostty xcframework
         if: steps.cache-ghostty.outputs.cache-hit != 'true'
-        run: |
-          # Ghostty's Xcode target needs zig-out/share/locale to
-          # exist even with -Di18n=false. Seed it.
-          mkdir -p vendor/ghostty/zig-out/share/locale
-          ./scripts/build-ghostty.sh
+        run: ./scripts/build-ghostty.sh
 
       - name: Save GhosttyKit.xcframework cache
         if: always() && steps.cache-ghostty.outputs.cache-hit != 'true' && hashFiles('vendor/ghostty/macos/GhosttyKit.xcframework/**') != ''

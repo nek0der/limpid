@@ -243,8 +243,18 @@ final class GhosttyApp {
     /// MainActor before touching `NSPasteboard` (which is main-thread-
     /// only) and before dereferencing the userdata pointer (the Swift
     /// view may have deinited between this fire and the hop).
-    private static let readClipboardCallback: ghostty_runtime_read_clipboard_cb = { userdata, _, state in
-        guard let userdata else { return false }
+    /// The MIME types the read asked us to serve and the "list the
+    /// available types" flag are ignored: we only ever serve
+    /// `text/plain` from `NSPasteboard`, which is what the paste and
+    /// OSC 52 requesters ask for.
+    private static let readClipboardCallback: ghostty_runtime_read_clipboard_cb = { userdata, clipboard, state, _, _, _ in
+        // macOS has no primary selection. Reporting it as unsupported
+        // lets libghostty answer the program immediately instead of
+        // waiting on a completion that would never arrive.
+        guard clipboard != GHOSTTY_CLIPBOARD_PRIMARY else {
+            return GHOSTTY_CLIPBOARD_READ_UNSUPPORTED
+        }
+        guard let userdata else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
         nonisolated(unsafe) let ud = userdata
         nonisolated(unsafe) let st = state
         DispatchQueue.main.async {
@@ -252,13 +262,15 @@ final class GhosttyApp {
                 guard let view = SurfaceView.liveView(forUserdata: ud),
                       let surface = view.surface
                 else { return }
-                let text = NSPasteboard.general.string(forType: .string) ?? ""
-                text.withCString { ptr in
-                    ghostty_surface_complete_clipboard_request(surface, ptr, st, false)
-                }
+                GhosttyFFI.completeClipboardRequest(
+                    surface: surface,
+                    text: NSPasteboard.general.string(forType: .string) ?? "",
+                    state: st,
+                    confirmed: false
+                )
             }
         }
-        return true
+        return GHOSTTY_CLIPBOARD_READ_STARTED
     }
 
     /// libghostty asks to confirm a clipboard request — fires when
@@ -269,24 +281,24 @@ final class GhosttyApp {
     /// could silently read or overwrite the system clipboard. Same
     /// MainActor hop + liveness check as `readClipboardCallback` to
     /// avoid touching a freed `SurfaceView`.
-    private static let confirmReadClipboardCallback: ghostty_runtime_confirm_read_clipboard_cb = { userdata, str, state, request in
-        guard let userdata, let str else { return }
+    private static let confirmReadClipboardCallback: ghostty_runtime_confirm_read_clipboard_cb = { userdata, confirm, state, request in
+        guard let userdata, let confirm else { return }
         nonisolated(unsafe) let ud = userdata
         nonisolated(unsafe) let st = state
         let rawRequest = request
-        // Materialize the C string into an owned Swift `String` here,
+        // Materialize the payload into an owned Swift `String` here,
         // synchronously inside the callback frame, NOT after the main
         // hop. libghostty calls us from inside its own
-        // `completeClipboardRequest`, which is itself nested in our
-        // `readClipboardCallback`'s `text.withCString { ptr in ... }`
-        // closure (`GhosttyApp.swift:256`). The pointer `str` aliases
-        // that `ptr` and only stays valid while the outer `withCString`
-        // is on the stack. Deferring the `String(cString:)` into the
+        // `completeClipboardRequest`, which is itself nested in the
+        // `withCString` closures `GhosttyFFI.completeClipboardRequest`
+        // builds the completion payload from. The confirmation payload
+        // aliases those buffers and only stays valid while they are on
+        // the stack. Deferring the copy into the
         // `DispatchQueue.main.async` block read freed heap — paste
         // protection (the whole reason this callback exists) fires the
         // path on every user paste. Mirrors the sibling
         // `writeClipboardCallback`, which already copies up front.
-        let contents = String(cString: str)
+        let contents = GhosttyFFI.clipboardText(from: confirm)
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 guard let view = SurfaceView.liveView(forUserdata: ud),
@@ -296,10 +308,11 @@ final class GhosttyApp {
                       let kind = ClipboardConfirmationKind(rawRequest)
                 else {
                     // Coordinator not wired up (should not happen
-                    // after AppState init) or an unknown request type
-                    // arrived from a newer libghostty. Deny rather
-                    // than allow — fail closed.
-                    ghostty_surface_complete_clipboard_request(surface, "", st, false)
+                    // after AppState init) or a request type we don't
+                    // prompt for — the OSC 5522 clipboard reads and
+                    // writes libghostty gained in 1.4 land here.
+                    // Deny rather than allow: fail closed.
+                    ghostty_surface_deny_clipboard_request(surface, st)
                     return
                 }
                 coordinator.enqueue(

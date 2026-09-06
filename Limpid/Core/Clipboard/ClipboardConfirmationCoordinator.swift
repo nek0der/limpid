@@ -93,7 +93,7 @@ final class ClipboardConfirmationCoordinator {
         guard pending == nil else {
             log.notice("clipboard request denied: another prompt is already up")
             if let surface = view.surface {
-                ghostty_surface_complete_clipboard_request(surface, "", state, false)
+                ghostty_surface_deny_clipboard_request(surface, state)
             }
             return
         }
@@ -119,9 +119,12 @@ final class ClipboardConfirmationCoordinator {
             NSPasteboard.general.declareTypes([.string], owner: nil)
             NSPasteboard.general.setString(req.contents, forType: .string)
         } else if let surface = req.view?.surface {
-            req.contents.withCString { ptr in
-                ghostty_surface_complete_clipboard_request(surface, ptr, req.state, true)
-            }
+            GhosttyFFI.completeClipboardRequest(
+                surface: surface,
+                text: req.contents,
+                state: req.state,
+                confirmed: true
+            )
         } else {
             log.notice("clipboard allow skipped: the pane closed before the user answered")
         }
@@ -129,16 +132,16 @@ final class ClipboardConfirmationCoordinator {
     }
 
     /// User clicked Deny (or the sheet was dismissed). For read /
-    /// unsafe-paste, complete with an empty string + `confirmed=false`
-    /// so libghostty drops the request. For the OSC 52 write path
-    /// (`state == nil`), there is nothing to complete — just clear
-    /// `pending` and leave the pasteboard untouched.
+    /// unsafe-paste, `ghostty_surface_deny_clipboard_request` drops the
+    /// request and frees the state libghostty allocated for it. For the
+    /// OSC 52 write path (`state == nil`), there is nothing to answer —
+    /// just clear `pending` and leave the pasteboard untouched.
     func deny() {
         guard let req = pending, !isCompleting else { return }
         isCompleting = true
         pending = nil
         if req.state != nil, let surface = req.view?.surface {
-            ghostty_surface_complete_clipboard_request(surface, "", req.state, false)
+            ghostty_surface_deny_clipboard_request(surface, req.state)
         }
         isCompleting = false
     }
@@ -147,8 +150,9 @@ final class ClipboardConfirmationCoordinator {
     /// per-request allocation through the deny path before dropping
     /// `pending`; otherwise the `ClipboardRequest` state libghostty
     /// allocated for the confirmation route would leak (only
-    /// `complete_clipboard_request` frees it — `Surface.deinit` does
-    /// not walk pending request states). The `=== view` gate ensures
+    /// `complete_clipboard_request` / `deny_clipboard_request` free it
+    /// — `Surface.deinit` does not walk pending request states). The
+    /// `=== view` gate ensures
     /// we only complete prompts that belong to the closing pane.
     func cancelPending(for view: SurfaceView) {
         guard pending?.view === view else { return }
