@@ -461,7 +461,9 @@ struct ContainerSlabView: View {
                     }
                 }
             }
-            .padding(.vertical, 4)
+            // The same inset the tab list and the horizontal strip
+            // take, so the first row of every list lands on one line.
+            .padding(.vertical, LimpidLayout.rowListInset)
             .animation(LimpidMotion.expand, value: foldSignature)
         }
     }

@@ -11,32 +11,63 @@ enum LimpidLayout {
 
     // MARK: - Window toolbar
 
-    /// Width reserved for the traffic-light buttons (close / minimize /
-    /// zoom) at the top-left of the window. We use this to leave room
-    /// in the main area's top strip when the sidebar is hidden.
-    static let trafficLightWidth: CGFloat = 80
+    /// Leading x of the close button. AppKit's own default is 9, which
+    /// reads tight against a flush sidebar: every row underneath starts
+    /// at `containerColumnIndentTop`, so a button at 9 sits closer to
+    /// the window edge than anything below it. Lining the two up gives
+    /// the row the same left margin as the labels it sits above.
+    static var trafficLightOriginX: CGFloat {
+        containerColumnIndentTop
+    }
 
-    /// Height of the top toolbar strip inside each column. Picked so
-    /// the vertical-center of the toolbar buttons (≈ 26pt from the
-    /// strip top) lines up with the repositioned AppKit traffic-light
-    /// row — see `repositionTrafficLights` (originY=22 from titlebar
-    /// bottom puts the close-button center near y=28 from the window
-    /// top).
+    /// Gap between the origins of two neighboring traffic lights, and
+    /// the size AppKit draws each one at — both measured on macOS 26
+    /// (buttons at x = 9 / 32 / 55, 14pt square). We move the row but
+    /// keep its rhythm; the previous 20pt spacing packed the buttons
+    /// tighter than the system does.
+    static let trafficLightSpacing: CGFloat = 23
+    static let trafficLightButtonSize: CGFloat = 14
+
+    /// Width the traffic-light row occupies from the window's leading
+    /// edge. We use it to leave room in the main area's top strip when
+    /// the sidebar is hidden. Derived rather than typed in so it cannot
+    /// drift away from the placement above.
+    static var trafficLightWidth: CGFloat {
+        trafficLightOriginX + 2 * trafficLightSpacing + trafficLightButtonSize
+    }
+
+    /// Height of the top toolbar strip inside each column. Everything
+    /// the strip carries — the toolbar content row and the AppKit
+    /// traffic lights — centers on its midline, so this is the one
+    /// number the strip's geometry is built from.
     static let topStripHeight: CGFloat = 52
 
-    // MARK: - 3-pane layout (Notes 2026-style)
+    /// Distance from the window top to the strip's midline. Both the
+    /// toolbar content row and `repositionTrafficLights` center on it,
+    /// which is what keeps the two rows on the same line.
+    static var topStripMidline: CGFloat {
+        topStripHeight / 2
+    }
+
+    // MARK: - 3-pane layout
 
     /// Container column width — clamped via min/max below.
     static let containerColumnWidth: CGFloat = 240
-    /// Horizontal inset from the window edge for the floating slab.
-    static let containerColumnInsetH: CGFloat = 10
-    /// Bottom inset for the slab so it stays clear of the window edge.
-    static let containerColumnInsetV: CGFloat = 10
 
     /// Tab column (tab list / mode body) default width. The current value
     /// lives on `WindowSession.tabColumnWidth` so the user can drag-resize
     /// it; double-clicking the divider resets to this default.
-    static let tabColumnWidth: CGFloat = 260
+    ///
+    /// Derived from the container column rather than set apart from it.
+    /// It used to be 260 against the container's 240, which gave the
+    /// wider column to the shorter names — a tab list holds `main` and
+    /// `shell`, the container list holds branch names long enough to
+    /// truncate. Two widths that near each other also read as a mistake
+    /// rather than as hierarchy.
+    static var tabColumnWidth: CGFloat {
+        containerColumnWidth
+    }
+
     static let tabColumnMinWidth: CGFloat = 200
     static let tabColumnMaxWidth: CGFloat = 500
 
@@ -64,12 +95,16 @@ enum LimpidLayout {
     static let containerListMinHeight: CGFloat = 100
 
     /// Distance from a column's top edge to where toolbar content (the
-    /// action capsule / container title) starts. Aligns container / tab / terminal column
-    /// toolbar content with the AppKit traffic-light row (center
-    /// around window y ≈ 28). container column lives inside a slab whose own top is
-    /// pushed down by `containerColumnInsetV`, so subtract that there.
-    static let toolbarContentTopInsetContainer: CGFloat = 4
-    static let toolbarContentTopInset: CGFloat = 14
+    /// action capsule / container title) starts. Derived rather than
+    /// typed in, so the space above the content always equals the space
+    /// below it: a literal 14 left 14 above and 6 below and read
+    /// top-heavy. One value covers all three columns because every one
+    /// of them starts at the window top; the container column needed a
+    /// smaller inset only while it sat inside an inset slab.
+    static var toolbarContentTopInset: CGFloat {
+        (topStripHeight - toolbarContentHeight) / 2
+    }
+
     /// Height of the toolbar content row itself (button frame height).
     static let toolbarContentHeight: CGFloat = 32
 
@@ -103,6 +138,12 @@ enum LimpidLayout {
 
     static let reorderRowSpacing: CGFloat = 6
 
+    /// Inset from a row's frame to its selection pill, so consecutive
+    /// pills never touch. `selectablePillBackground` defaults to it;
+    /// rows that compute their own content insets subtract it to get
+    /// the distance from the pill's edge rather than the row's.
+    static let rowPillInset: CGFloat = 10
+
     // MARK: - Container column row geometry
 
     /// Fixed-width slot for the leading marker. Every row reserves it,
@@ -127,7 +168,7 @@ enum LimpidLayout {
     /// Leading inset inside the row (after the slab interior).
     static let containerColumnIndentTop: CGFloat = 18
     /// Inside-row trailing padding (keeps the accessories comfortably
-    /// away from the active stroke).
+    /// away from the pill's trailing edge).
     static let containerColumnRowTrailingPadding: CGFloat = 18
 
     /// One slot of the row's trailing group. Only the bell reserves
@@ -175,10 +216,6 @@ enum LimpidLayout {
             + containerColumnTrailingSpacing
     }
 
-    /// Vertical offset applied to the top strip + tab bar so they land
-    /// at the same baseline as the sidebar card's first content row.
-    static let topStripPadding: CGFloat = 8
-
     // MARK: - Pull-request hover card
 
     /// Drawn size of the check-status glyph inside the hover card,
@@ -203,26 +240,24 @@ enum LimpidLayout {
     /// not feel sticky — nothing ties it to the open delay.
     static let prHoverCardDismissGrace: Duration = .milliseconds(150)
 
-    // MARK: - Sidebar card
+    // MARK: - Pane surface
 
-    /// The radius the sidebar card is drawn at, kept here so the
-    /// surfaces that have to rhyme with it can read one value: the
-    /// pane container and its swap-drop overlay, both in the terminal
-    /// column, are the only call sites. The card itself is struck from
-    /// a literal in `ThreePaneLayout`, which is the drift this token
-    /// does not currently prevent. Row pills round themselves through
-    /// `selectablePillBackground`'s own default.
-    static let sidebarCardCornerRadius: CGFloat = 10
-    /// Inset from the window edge for the sidebar card.
-    static let sidebarCardLeadingInset: CGFloat = 8
-    /// Top / bottom inset for the sidebar card.
-    static let sidebarCardVerticalInset: CGFloat = 8
+    /// Radius of the banner a pane shows when its process exits. The
+    /// pane itself is square and flush: it is the content, and a
+    /// terminal's character grid — a full-width tmux status row most
+    /// visibly — should not be clipped by a corner or held off the
+    /// column edge. The banner is a card floating over that content,
+    /// so it still rounds.
+    static let paneBannerCornerRadius: CGFloat = 10
 
-    /// Sidebar card width clamp (the user can drag the right edge).
+    // MARK: - Sidebar
+
+    /// Sidebar width clamp (the user can drag the right edge).
     static let sidebarMinWidth: CGFloat = 180
     static let sidebarMaxWidth: CGFloat = 400
 
-    /// Width of the transparent resize handle hugging the card's right edge.
+    /// Width of the transparent resize handle hugging the sidebar's
+    /// right edge.
     static let sidebarResizeHandleWidth: CGFloat = 6
 
     // MARK: - Tab pill
@@ -232,16 +267,33 @@ enum LimpidLayout {
     static let tabPillMinWidth: CGFloat = 100
     static let tabPillMaxWidth: CGFloat = 200
 
-    /// Tab pill height — matches the sidebar group row height so the
-    /// two strips align at the top of the window.
-    static let tabPillHeight: CGFloat = 32
+    /// Tab pill height. Derived from the container row rather than
+    /// typed in: the container list is the canonical row geometry and
+    /// the tab list follows it. It used to be a literal 32 that nothing
+    /// read at all, while the tab row's real height fell out of its
+    /// vertical padding — so the two lists ran at different pitches and
+    /// drifted further apart the further down you looked.
+    static var tabPillHeight: CGFloat {
+        containerColumnRowHeight
+    }
 
     // MARK: - Horizontal tab bar (tab column horizontal mode)
 
-    /// Height of the horizontal tab strip shown above terminal column in horizontal
-    /// mode. Sized to fit a pill (icon + title with vertical padding)
-    /// plus the strip's own vertical padding.
-    static let horizontalTabBarHeight: CGFloat = 52
+    /// Breathing room above a row list, between it and the toolbar row
+    /// it sits under. Every list that carries rows takes it — the
+    /// container list, the tab list, and the horizontal strip, which
+    /// takes it below its pills as well. Sharing one value is what puts
+    /// the first row of all three on the same line; a strip that
+    /// centered its pills in a taller frame used to sit 11pt lower than
+    /// the sidebar beside it.
+    static let rowListInset: CGFloat = 8
+
+    /// Height of the horizontal tab strip shown above the terminal
+    /// column in horizontal mode. Derived from the pill and the shared
+    /// inset so a change to the row geometry carries the strip with it.
+    static var horizontalTabBarHeight: CGFloat {
+        tabPillHeight + 2 * rowListInset
+    }
 
     /// Minimum width a tab keeps in horizontal mode. When the tabs no
     /// longer fit the strip at this width, the strip becomes
@@ -254,9 +306,13 @@ enum LimpidLayout {
     static let horizontalTabSpacing: CGFloat = 6
 
     /// Leading / trailing inset for the horizontal tab strip so the
-    /// first and last pills don't kiss the terminal column edges. Matches the
-    /// padding the vertical list inherits from `selectablePillBackground`.
-    static let horizontalTabStripInset: CGFloat = 10
+    /// first and last pills don't kiss the terminal column edges. It is
+    /// the vertical list's pill inset, read from the token rather than
+    /// repeated, because the comment claiming they match is only worth
+    /// having if nothing can drift them apart.
+    static var horizontalTabStripInset: CGFloat {
+        rowPillInset
+    }
 
     // MARK: - Pane
 

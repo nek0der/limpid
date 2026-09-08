@@ -83,11 +83,15 @@ struct ProjectSectionView: View {
                 worktreeRow(wt)
             }
         }
-        // The gap under the header is inside the animated height, so
-        // the rule spans it too and meets the dot it descends from
-        // instead of starting a row's worth of space below it.
-        .padding(.top, LimpidLayout.reorderRowSpacing)
+        // The rule spans the rows only, not the gap above them. It used
+        // to run up into that gap so it would meet the dot it descends
+        // from, but the header carries a pill whenever one of these
+        // worktrees owns selection, and a rule running into that pill's
+        // edge reads as a collision rather than as descent. Alignment
+        // already carries the relationship: the rule is centered on the
+        // marker slot, so it falls directly under the project's dot.
         .overlay(alignment: .leading) { worktreeRule }
+        .padding(.top, LimpidLayout.reorderRowSpacing)
         .frame(height: project.isExpanded ? Self.worktreeStackHeight(for: project) : 0, alignment: .top)
         .clipped()
         .allowsHitTesting(project.isExpanded)

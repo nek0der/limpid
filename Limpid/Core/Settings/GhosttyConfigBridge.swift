@@ -73,6 +73,19 @@ enum GhosttyConfigBridge {
         lines.append("cursor-style-blink = \(settings.terminal.cursorBlink.isOn)")
         lines.append("bell-features = \(mapBellFeatures(settings.terminal.bellAction))")
 
+        // Breathing room between the cell grid and the pane's edges.
+        // The pane is flush to its column, because a full-width row —
+        // a tmux status bar is the one that shows it — has to reach the
+        // edge, and a SwiftUI padding around the surface would inset
+        // that row along with everything else. Padding the grid from
+        // inside the terminal separates the two: `extend` carries the
+        // nearest cell's background into the padding, so a colored
+        // full-width row still runs edge to edge while ordinary text
+        // keeps its margin. libghostty's own default is 2, which reads
+        // as no margin at all once the pane stopped being inset.
+        lines.append("window-padding-x = 8")
+        lines.append("window-padding-color = extend")
+
         // MARK: - Resources dir (theme lookup only)
 
         // The `resources-dir` config key only affects libghostty's

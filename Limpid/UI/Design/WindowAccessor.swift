@@ -23,9 +23,9 @@ private let log = Logger.limpid("window.toolbar")
 struct WindowAccessor: NSViewRepresentable {
     let configure: (NSWindow) -> Void
     /// When `true`, the view observes `didResizeNotification` and
-    /// re-applies `repositionTrafficLights` after every resize. Pass
-    /// `false` for windows whose traffic lights stay at default
-    /// position (e.g. Settings).
+    /// re-applies `repositionTrafficLights` after every resize. Leave
+    /// it `false` for a window whose traffic lights should keep
+    /// AppKit's own placement.
     let repositionsTrafficLights: Bool
 
     init(repositionsTrafficLights: Bool = false, configure: @escaping (NSWindow) -> Void) {
@@ -62,9 +62,8 @@ struct WindowAccessor: NSViewRepresentable {
             configure?(window)
             guard repositionsTrafficLights else { return }
             // AppKit re-lays out the traffic lights back to their
-            // default position on every resize. The main window's
-            // floating slab needs them at a custom offset, so re-apply
-            // after every resize.
+            // default position on every resize, and we override their
+            // vertical placement, so re-apply after every resize.
             resizeObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didResizeNotification,
                 object: window,
@@ -94,23 +93,31 @@ struct WindowAccessor: NSViewRepresentable {
     }
 }
 
-/// Slide the three traffic-light buttons inward to land inside the container column
-/// floating slab. Apple's apps with flush-edge sidebars don't need
-/// this — Limpid does because its sidebar is a floating Liquid Glass
-/// card inset by `LimpidLayout.containerColumnInsetH`. The offset puts the
-/// close-button center near (x: 20, y: 14 from window top), inside
-/// the rounded slab corner.
+/// Place the three traffic-light buttons: pushed down onto the top
+/// strip's midline so their row shares a center with the toolbar
+/// content beside it (both land at `topStripMidline`, 26 from the
+/// window top, and the buttons occupy 19–33), and moved right so the
+/// row carries the same left margin as the sidebar rows below it — see
+/// `trafficLightOriginX`. The strip is the input and the buttons
+/// follow, not the other way round.
+///
+/// The spacing is AppKit's own rather than a number of our own: we are
+/// moving the row, not re-laying it out.
 @MainActor
 func repositionTrafficLights(in window: NSWindow) {
-    let originX: CGFloat = 26 // slab inset (10) + corner radius (10) + 6 margin
-    let originY: CGFloat = 22 // pushes the row below the slab top edge
-    let spacing: CGFloat = 20
+    // AppKit measures a titlebar subview from the titlebar's bottom, so
+    // the arithmetic below turns this into the button's top edge in
+    // window coordinates. Centering the row on the strip's midline puts
+    // it on the same line as the toolbar content beside it.
+    let originY = LimpidLayout.topStripMidline
+        - LimpidLayout.trafficLightButtonSize / 2
     let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
     for (index, type) in buttons.enumerated() {
         guard let button = window.standardWindowButton(type),
               let titlebar = button.superview else { continue }
         var frame = button.frame
-        frame.origin.x = originX + CGFloat(index) * spacing
+        frame.origin.x = LimpidLayout.trafficLightOriginX
+            + CGFloat(index) * LimpidLayout.trafficLightSpacing
         frame.origin.y = titlebar.bounds.height - originY - frame.height
         button.frame = frame
         button.autoresizingMask = [.maxXMargin, .minYMargin]
@@ -118,18 +125,15 @@ func repositionTrafficLights(in window: NSWindow) {
 }
 
 extension View {
-    /// Floating Liquid Glass toolbar for the main terminal window. The
-    /// container column sidebar is a floating card inset by `LimpidLayout.containerColumnInsetH`,
-    /// so the AppKit traffic lights need to slide inward to land
-    /// inside the card (otherwise they draw on bare window
-    /// background). Pair with the resize-aware observer in
-    /// `WindowAccessor` so the offset survives AppKit's re-layouts.
+    /// Transparent-title-bar toolbar for the main terminal window. The
+    /// AppKit traffic lights are pushed down so their row lines up with
+    /// the toolbar content in each column. Pair with the resize-aware
+    /// observer in `WindowAccessor` so the offset survives AppKit's
+    /// re-layouts.
     func limpidWindowToolbar(onWindow: ((NSWindow) -> Void)? = nil) -> some View {
         background(WindowAccessor(repositionsTrafficLights: true) { window in
             onWindow?(window)
             applyTransparentTitleToolbar(to: window, clearBackground: true)
-            // Container slab inset is 10pt + 10pt corner radius → push the
-            // close button to (26, 22) so it lands inside the slab.
             repositionTrafficLights(in: window)
         })
     }
@@ -138,10 +142,13 @@ extension View {
     /// title bar as the main window so the toolbar strip blends with
     /// the sidebar, but the window stays opaque — Settings has no
     /// terminal painting its own background, so a clear `NSWindow` would
-    /// show through in Mission Control / Exposé snapshots. Traffic
-    /// lights stay at their AppKit default (8, 14), which already
-    /// lands inside Settings' flush sidebar (Notes / Mail / System
-    /// Settings pattern).
+    /// show through in Mission Control / Exposé snapshots. The traffic
+    /// lights go through the same `repositionTrafficLights` the main
+    /// window uses, so they land on the strip's midline and at the
+    /// sidebar's own left margin here too. Settings' sidebar is
+    /// narrower than the main window's and does not resize, but the
+    /// margin the buttons align to is the row indent, which both
+    /// windows share.
     func limpidSettingsToolbar(onWindow: ((NSWindow) -> Void)? = nil) -> some View {
         background(WindowAccessor(repositionsTrafficLights: true) { window in
             onWindow?(window)

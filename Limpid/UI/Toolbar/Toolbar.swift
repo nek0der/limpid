@@ -29,7 +29,7 @@ struct ToolbarTabColumnSegment: View {
     @Environment(\.cwdEventTracker) private var cwdEventTracker
 
     var body: some View {
-        ToolbarRow(position: .tab) {
+        ToolbarRow {
             HStack(alignment: .center, spacing: 8) {
                 if !session.sidebarHidden {
                     ToolbarContainerTitle()
@@ -103,7 +103,7 @@ struct ToolbarTerminalColumnSegment: View {
     @Environment(\.surfaceRegistry) private var registry
 
     var body: some View {
-        ToolbarRow(position: .terminal) {
+        ToolbarRow {
             terminalColumnContent
         }
     }

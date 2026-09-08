@@ -129,7 +129,7 @@ struct HorizontalTabBar: View {
                 .id(tab.id)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, LimpidLayout.rowListInset)
         .padding(.horizontal, LimpidLayout.horizontalTabStripInset)
         .animation(.easeOut(duration: LimpidLayout.renamePillDuration), value: editingTabID)
         // Sliding-highlight animation, matching `TabsListView`: the

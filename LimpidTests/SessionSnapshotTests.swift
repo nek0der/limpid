@@ -12,6 +12,31 @@ import Testing
 @MainActor
 struct SessionSnapshotTests {
 
+    @Test("decoding migrates the tab column off the width it used to default to")
+    func decode_legacyTabColumnWidth_adoptsNewDefault() throws {
+        // Without this the test would pass vacuously if the default
+        // ever moved back onto the legacy value.
+        #expect(SessionSnapshot.legacyTabColumnWidth != Double(LimpidLayout.tabColumnWidth))
+        let session = WindowSession()
+        session.tabColumnWidth = CGFloat(SessionSnapshot.legacyTabColumnWidth)
+
+        let data = try JSONEncoder().encode(session.makeSnapshot())
+        let restored = try JSONDecoder().decode(SessionSnapshot.self, from: data)
+
+        #expect(restored.tabColumnWidth == Double(LimpidLayout.tabColumnWidth))
+    }
+
+    @Test("decoding keeps a tab column width the user actually chose")
+    func decode_customTabColumnWidth_isPreserved() throws {
+        let session = WindowSession()
+        session.tabColumnWidth = 313
+
+        let data = try JSONEncoder().encode(session.makeSnapshot())
+        let restored = try JSONDecoder().decode(SessionSnapshot.self, from: data)
+
+        #expect(restored.tabColumnWidth == 313)
+    }
+
     @Test("current schema version is 5")
     func currentVersion_isV5() {
         #expect(SessionSnapshot.currentVersion == 5)

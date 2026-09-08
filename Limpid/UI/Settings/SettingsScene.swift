@@ -1,15 +1,16 @@
 // SettingsScene.swift
 // Limpid — Settings window body, modeled on `ThreePaneLayout` so
 // Settings reads like the main window minus a column: detail pane
-// fills the whole window as a background plane, sidebar floats
-// above as a Liquid Glass slab. Traffic lights land *inside* the
-// slab (same `repositionTrafficLights` trick the main window uses)
-// so the toolbar feels integrated, not stuck above the sidebar.
+// fills the whole window as a background plane, and the sidebar sits
+// flush against the leading edge as a Liquid Glass surface. Traffic
+// lights land inside the sidebar, on the same strip midline and at the
+// same left margin the main window gives them, so the toolbar feels
+// integrated rather than stuck above the sidebar.
 //
 // Settings hosts itself in `Window(id:)` + `.windowStyle(
 // .hiddenTitleBar)` (see LimpidApp). `limpidSettingsToolbar()`
-// applies the transparent title bar + repositions the traffic
-// lights to land inside the slab.
+// applies the transparent title bar and places the traffic lights the
+// same way the main window does.
 
 import SwiftUI
 
@@ -43,18 +44,15 @@ struct SettingsScene: View {
                 // the main window is hidden.
                 .background(LimpidSettingsWindowMarker())
 
-            // Floating Liquid Glass slab with the section list.
-            // Same `liquidGlassPanel` + insets the main window uses
-            // on container column, so the visual rhythm matches across windows.
+            // Flush glass sidebar with the section list — the same
+            // treatment the main window gives its container sidebar, so
+            // the visual rhythm matches across windows.
             SettingsSidebarSlab(selection: $selection)
                 .frame(width: Self.sidebarWidth)
-                .liquidGlassPanel(
-                    cornerRadius: 10,
-                    isSolid: reduceTransparencyResolver.shouldReduceTransparency
+                .flushGlassSidebar(
+                    isSolid: reduceTransparencyResolver.shouldReduceTransparency,
+                    solidFill: LimpidColor.sidebarSolidFill
                 )
-                .padding(.leading, LimpidLayout.containerColumnInsetH)
-                .padding(.top, LimpidLayout.containerColumnInsetV)
-                .padding(.bottom, LimpidLayout.containerColumnInsetV)
                 .ignoresSafeArea(.all, edges: .top)
         }
         .ignoresSafeArea(.all)
@@ -74,10 +72,9 @@ struct SettingsScene: View {
     }
 
     /// Footprint reserved on the detail pane's leading edge so the
-    /// floating slab doesn't cover content. Includes the slab's
-    /// rim margin and a small gutter.
+    /// sidebar doesn't cover content, plus a small gutter.
     static var leadingInset: CGFloat {
-        LimpidLayout.containerColumnInsetH + sidebarWidth + 8
+        sidebarWidth + 8
     }
 
     @ViewBuilder
@@ -109,9 +106,9 @@ struct SettingsScene: View {
     }
 }
 
-/// Contents of the floating slab: a top spacer reserving the
-/// traffic-light row, then the section list. Mirrors `ContainerColumnContent`
-/// but slimmed down — Settings doesn't need an in-slab toolbar row.
+/// Contents of the sidebar: a top spacer reserving the traffic-light
+/// row, then the section list. Mirrors `ContainerColumnContent` but
+/// slimmed down — Settings doesn't need an in-sidebar toolbar row.
 ///
 /// We do NOT recolor the sidebar selection pill. macOS 26 Tahoe's
 /// `.listStyle(.sidebar)` ignores `.tint(_:)` for the selection
@@ -130,11 +127,16 @@ private struct SettingsSidebarSlab: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Reserve the traffic-light row inside the slab. The
-            // triad sits at y≈22 (see `repositionTrafficLights`);
-            // 36pt gives ~14pt of breathing room below it before
-            // the first list row.
-            Spacer().frame(height: 36)
+            // Reserve the traffic-light row. The triad occupies
+            // window-y 19–33 (see `repositionTrafficLights`), and the
+            // sidebar starts at the window top now that it is flush, so
+            // the reservation is measured from there. Reusing
+            // `topStripHeight` is what the main window's toolbar row
+            // spends, so the two windows open their lists at the same
+            // height — `List(.sidebar)` adds an inset of its own on top
+            // of it, which is why this is a shared starting point
+            // rather than a shared baseline.
+            Spacer().frame(height: LimpidLayout.topStripHeight)
             List(SettingsSection.allCases, selection: $selection) { section in
                 Label(section.title, systemImage: section.icon)
                     .tag(section)
