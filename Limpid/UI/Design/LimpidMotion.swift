@@ -51,6 +51,13 @@ enum LimpidMotion {
     /// layouts so the two modes can't drift.
     static let paneMergeHighlight: Animation = .spring(response: 0.28, dampingFraction: 0.86)
 
+    /// A selection indicator moving for a viewer who has asked for less
+    /// motion. Not nothing: Reduce Motion asks for the overshoot and the
+    /// parallax to go, and a control whose indicator jumps between states
+    /// reads as one that did not register the click at all. The travel here is
+    /// a few dozen points, which is what the setting is least concerned with.
+    static let reducedSlide: Animation = .easeInOut(duration: 0.18)
+
     /// Bottom-anchored transient banners (toast + worktree-move
     /// suggestion). The two share the same UX idiom (briefly-presented
     /// overlay tied to a `current?.id` keypath) and the same

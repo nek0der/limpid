@@ -111,6 +111,69 @@ struct AdvancedPane: View {
                 )
             }
 
+            // Only the instructions, not the whole prompt: the comment blocks
+            // below them carry escaping and diff markers the agent depends on,
+            // and a template that could break those would be a way to send
+            // feedback about code that does not exist.
+            Section {
+                // A prompt rather than a placeholder drawn over a `TextEditor`:
+                // the overlay had to guess the editor's own text insets, which
+                // put the default text a few points off the caret and let it
+                // run past the right edge. A field's prompt sits exactly where
+                // its text will.
+                TextField(
+                    "",
+                    text: $store.settings.advanced.reviewInstructions,
+                    prompt: Text(verbatim: ReviewPromptBuilder.defaultInstructions),
+                    axis: .vertical
+                )
+                .lineLimit(6...16)
+                .textFieldStyle(.plain)
+                // Without this the form keeps a label column for the empty
+                // label and trailing-aligns the field beside it, which pushed
+                // every line of the instructions against the right margin.
+                .labelsHidden()
+                .font(.system(size: 12, design: .monospaced))
+                // A form puts a field's content against its trailing edge,
+                // which for one line of a setting is right and for a block of
+                // prose is not: it ran the instructions up the right margin.
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(Text("Review instructions"))
+            } header: {
+                HStack {
+                    Text("Review")
+                    Spacer(minLength: 8)
+                    // Emptying the field is what restores the default, so the
+                    // button says that rather than "clear" — the field is
+                    // never empty on screen, it falls back to the text behind
+                    // it, and a reader who cleared it by hand would not know
+                    // that is what they had done.
+                    Button("Restore Default") {
+                        store.settings.advanced.reviewInstructions = ""
+                    }
+                    .disabled(store.settings.advanced.reviewInstructions.isEmpty)
+                }
+            } footer: {
+                Text(
+                    """
+                    Review writes this above the comments it hands to an agent. Leave \
+                    it empty for the text shown here, which follows the app's language.
+
+                    The worktree and the comment count are written above this text, \
+                    and the comments themselves below it; none of that can be edited \
+                    here. Rules that belong to \
+                    the project rather than to this handoff — how to run the tests, \
+                    whether to commit — go in the agent's own project instructions.
+
+                    Review pastes into the pane below it, so Limpid keeps Ghostty's \
+                    paste protection on for every pane: a multi-line paste into a \
+                    program that did not ask for bracketed paste is confirmed first. \
+                    This overrides that one setting in your own Ghostty config.
+                    """
+                )
+            }
+
             // Lives at the bottom of the last pane on purpose — this
             // is the kind of switch a user only reaches for when
             // something is wrong, and putting it next to the daily

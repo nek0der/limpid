@@ -100,7 +100,12 @@ make ghostty      # Only if vendor/ghostty/macos/GhosttyKit.xcframework is
                   # missing (fresh clone). `make test` does not rebuild it
                   # and will fail at link time without the xcframework.
 make xcodegen     # Regenerate the Xcode project from project.yml.
-make test         # Build + run the full test suite.
+make test         # Build + run the test suite.
+make review-core  # The review scenarios the test target cannot host — they
+                  # spawn processes, and the parallel suites reuse the
+                  # descriptor numbers another test asserts are closed. CI
+                  # runs this as its own job, so `make test` alone is not
+                  # enough to predict a green build.
 make lint         # swiftformat --lint + swiftlint --strict.
 ```
 

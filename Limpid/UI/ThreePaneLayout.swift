@@ -17,6 +17,7 @@ struct ThreePaneLayout: View {
     let state: AppState
     let app: GhosttyApp
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
+    @Environment(ToastCenter.self) private var toastCenter
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -70,6 +71,33 @@ struct ThreePaneLayout: View {
             }
         }
         .ignoresSafeArea(.all)
+        // Handled here rather than in the toolbar segment because the two
+        // layout branches each carry their own copy of that segment; a
+        // second listener would toggle review straight back closed.
+        .onReceive(NotificationCenter.default.publisher(for: .limpidReviewChanges)) { notification in
+            guard let owner = notification.object as? WindowSession, owner === state.session else { return }
+            ReviewPresentationCommand.toggle(
+                session: state.session,
+                presentation: state.reviewPresentation,
+                registry: state.registry
+            )
+        }
+        // A paste the user refused at the confirmation sheet delivered nothing.
+        // Review has already closed by then, so the store is reached through
+        // the pool rather than through the surface that was showing it.
+        .onReceive(NotificationCenter.default.publisher(for: .limpidReviewPasteDenied)) { notification in
+            guard let receipt = notification.object as? ReviewPasteReceipt else { return }
+            state.reviewStores.store(root: receipt.root).unmarkInserted(receipt.commentIDs)
+            // Said out loud, because the refusal arrives after review has told
+            // the reader it went and usually after review has closed. Without
+            // this the only two paths that refuse — the confirmation sheet,
+            // and a second request arriving while one is already up — took the
+            // comments back in silence.
+            toastCenter.show(ToastItem(
+                message: String(localized: "Review was not delivered. The comments stay in this review."),
+                undo: nil
+            ))
+        }
     }
 
     /// Opaque fill for the container slab when transparency is reduced. We

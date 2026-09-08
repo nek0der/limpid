@@ -21,6 +21,15 @@ enum TmuxClientProbe {
         "list-clients", "-F", "#{client_tty}\t#{session_id}\t#{session_name}"
     ]
 
+    /// What the kernel reports as the name of a tmux client process. It
+    /// truncates to `MAXCOMLEN`, which this is well inside, and it is already a
+    /// basename so an install path never reaches the comparison.
+    ///
+    /// Here rather than on `TmuxPanePresence`: the review probe compares
+    /// against it too, and that type is `@MainActor` with the whole surface
+    /// registry behind it.
+    static let clientProcessName = "tmux"
+
     /// Parse `list-clients` output into bindings keyed by client tty.
     ///
     /// A malformed line is skipped rather than failing the batch: the
@@ -74,13 +83,48 @@ enum TmuxClientProbe {
         var clients: [String: TmuxBinding] = [:]
         for socket in socketPaths(inServerDirectory: serverDirectory) {
             guard let output = runTmux(
-                tmuxPath: tmuxPath, socketPath: socket.path, timeout: timeout
+                tmuxPath: tmuxPath,
+                socketPath: socket.path,
+                arguments: listClientsArguments,
+                timeout: timeout
             ) else { continue }
             // Later servers win a tty collision, which cannot happen:
             // one tty drives at most one client.
             clients.merge(parseClients(output, socketPath: socket.path)) { _, new in new }
         }
         return clients
+    }
+
+    /// The tty that input written to a client's tty is delivered to.
+    ///
+    /// A client writes to the pty in front of the user, but what it types
+    /// goes to the active pane of the session it is attached to, which is a
+    /// different pty inside the server. Anything that asks the kernel what is
+    /// running in the foreground has to ask about that pane, not the client.
+    static func activePaneTTY(
+        tmuxPath: String,
+        socketPath: String,
+        sessionID: String,
+        timeout: TimeInterval = 0.5
+    ) -> String? {
+        guard let output = runTmux(
+            tmuxPath: tmuxPath,
+            socketPath: socketPath,
+            // `display-message -p` resolves the target session to its current
+            // window's active pane, which is the one receiving input.
+            arguments: ["display-message", "-p", "-t", sessionID, "#{pane_tty}"],
+            timeout: timeout
+        ) else { return nil }
+        return parsePaneTTY(output)
+    }
+
+    /// `nil` unless tmux answered with one device path. A server that cannot
+    /// resolve the target prints an error to stderr and an empty line here.
+    static func parsePaneTTY(_ output: String) -> String? {
+        guard let line = output.split(separator: "\n", omittingEmptySubsequences: true).first else { return nil }
+        let tty = String(line)
+        guard tty.hasPrefix("/dev/"), !tty.contains(" ") else { return nil }
+        return tty
     }
 
     /// `nil` on any failure — a dead socket, a wedged server, a tmux
@@ -90,11 +134,12 @@ enum TmuxClientProbe {
     private static func runTmux(
         tmuxPath: String,
         socketPath: String,
+        arguments: [String],
         timeout: TimeInterval
     ) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: tmuxPath)
-        process.arguments = ["-S", socketPath] + listClientsArguments
+        process.arguments = ["-S", socketPath] + arguments
         let output = Pipe()
         process.standardOutput = output
         process.standardError = Pipe()

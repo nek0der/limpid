@@ -137,6 +137,12 @@ run_case "GitLens is caught" fail bash -c '
 run_case "lazygit is caught" fail bash -c '
   echo "lazygit community convention" > note.md
 '
+run_case "Gerrit is caught" fail bash -c '
+  echo "Gerrit-style patch sets" > note.md
+'
+run_case "Phabricator is caught" fail bash -c '
+  echo "Phabricator differential" > note.md
+'
 
 # Word-boundary cases — these must NOT trigger. The pattern relies on `\b`
 # to avoid clobbering common English. If anyone drops a `\b` we want to
@@ -149,6 +155,13 @@ run_case "warping (substring of warp) is safe" pass bash -c '
 '
 run_case "scenario (substring of rio) is safe" pass bash -c '
   echo "common scenario" > note.md
+'
+# The review surface calls a comment reviewable, and the pattern deliberately
+# stops short of it: a term whose own vocabulary the app needs would be
+# suppressed line by line in the allow-list forever.
+run_case "reviewable (not a product name) is safe" pass bash -c '
+  echo "This file cannot be reviewed as text." > note.md
+  echo "reviewable comment" >> note.md
 '
 run_case "Rio de Janeiro (bare Rio is bounded) is caught" fail bash -c '
   echo "Rio de Janeiro" > note.md

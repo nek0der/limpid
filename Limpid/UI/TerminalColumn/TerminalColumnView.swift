@@ -8,10 +8,14 @@ import SwiftUI
 
 struct TerminalColumnView: View {
     @Environment(WindowSession.self) private var session
+    @Environment(ReviewPresentation.self) private var reviewPresentation
     let ghosttyApp: GhosttyApp
 
     var body: some View {
-        if session.activeTab != nil {
+        // Review outranks the empty state. Closing the last tab while a review
+        // was open took the surface off screen with the presentation still
+        // open — the toolbar said review was up, and nothing was.
+        if session.activeTab != nil || reviewPresentation.isPresented {
             PaneAreaView(ghosttyApp: ghosttyApp)
         } else {
             TerminalColumnEmptyState()
@@ -29,6 +33,7 @@ private struct TerminalColumnEmptyState: View {
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settings
     @Environment(AttentionState.self) private var attention
+    @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(\.frecencyStore) private var frecencyStore
 
     var body: some View {
@@ -60,7 +65,11 @@ private struct TerminalColumnEmptyState: View {
             WelcomeCommand(title: "Command Palette", action: .commandPalette, isEnabled: true) {
                 guard let frecencyStore else { return }
                 CommandPaletteActions.openCommandPalette(
-                    session, settings: settings, frecencyStore: frecencyStore, attention: attention
+                    session,
+                    settings: settings,
+                    frecencyStore: frecencyStore,
+                    attention: attention,
+                    reviewPresentation: reviewPresentation
                 )
             },
             WelcomeCommand(title: "Toggle Sidebar", action: .toggleSidebar, isEnabled: true) {

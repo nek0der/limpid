@@ -672,6 +672,15 @@ struct AdvancedSettings: Codable, Equatable {
     /// the pane's shell keeps the pty.
     var hostsAgentsInTmux: Bool = false
 
+    /// What review puts above the comments it hands to an agent.
+    ///
+    /// Empty means the built-in text, which is localized — so the default
+    /// follows the app's language rather than pinning one. Only the
+    /// instructions are the reader's: the worktree, the counts and the
+    /// comment blocks are generated, so editing this cannot lose them or
+    /// break the escaping the blocks depend on.
+    var reviewInstructions: String = ""
+
     /// See `LimpidSettings.unknownFields`.
     var unknownFields: [String: LimpidJSONValue] = [:]
 
@@ -679,6 +688,9 @@ struct AdvancedSettings: Codable, Equatable {
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.reviewInstructions = try c.decodeIfPresent(
+            String.self, forKey: .reviewInstructions
+        ) ?? ""
         self.ghosttyConfig = try c.decodeIfPresent(
             GhosttyConfig.self, forKey: .ghosttyConfig
         ) ?? .off
@@ -703,11 +715,13 @@ struct AdvancedSettings: Codable, Equatable {
         try c.encode(showPRStatusInSidebar, forKey: .showPRStatusInSidebar)
         try c.encode(showPRStatusOnlyWhenAttention, forKey: .showPRStatusOnlyWhenAttention)
         try c.encode(hostsAgentsInTmux, forKey: .hostsAgentsInTmux)
+        try c.encode(reviewInstructions, forKey: .reviewInstructions)
         try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case ghosttyConfig
+        case reviewInstructions
         case showPRStatusInSidebar
         case showPRStatusOnlyWhenAttention
         case hostsAgentsInTmux

@@ -23,6 +23,36 @@ final class SurfaceView: NSView {
     /// so Swift-side mutations stay confined to main.
     nonisolated(unsafe) var surface: ghostty_surface_t?
 
+    /// Text to hand the next clipboard read on this surface in place of the
+    /// system pasteboard. Review stages its feedback here so it can be
+    /// delivered through libghostty's paste path without touching what the
+    /// user has copied. See `deliverReviewText(_:receipt:)`.
+    @MainActor private var stagedPaste: String?
+
+    /// What the staged paste was carrying, so a refusal at the confirmation
+    /// sheet can reach the comments it was meant to deliver. Cleared with the
+    /// request it belongs to. See `deliverReviewText(_:receipt:)`.
+    @MainActor var reviewPasteReceipt: ReviewPasteReceipt?
+
+    /// Hand over the receipt and forget it: a request is answered once, and a
+    /// later paste must not be able to unmark comments this one delivered.
+    @MainActor
+    func takeReviewPasteReceipt() -> ReviewPasteReceipt? {
+        defer { reviewPasteReceipt = nil }
+        return reviewPasteReceipt
+    }
+
+    @MainActor
+    func stagePaste(_ text: String) {
+        stagedPaste = text
+    }
+
+    @MainActor
+    func takeStagedPaste() -> String? {
+        defer { stagedPaste = nil }
+        return stagedPaste
+    }
+
     /// One-shot flag flipped when `ghostty_surface_new` returns NULL.
     /// `PaneHostView` observes it via KVO-free re-evaluation (the host
     /// reads it during update) and renders an in-pane error card with

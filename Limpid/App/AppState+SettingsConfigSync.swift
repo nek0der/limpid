@@ -44,11 +44,27 @@ extension AppState {
             let latest = self.settingsStore.settings
             guard latest != self.lastAppliedSettings else { return }
             self.lastAppliedSettings = latest
+            let resourcesDir = GhosttyApp.resolveResourcesDir()
+            let appearance = GhosttyApp.currentAppearance(preference: latest.appearance.colorScheme)
+            let includeUserConfig = latest.advanced.ghosttyConfig.isOn
+            // Against what libghostty is actually handed, not against the
+            // settings document. Most of that document never reaches the
+            // terminal — the review instructions are a paragraph of prose — and
+            // reloading the whole configuration on every keystroke of one is
+            // work nothing asked for. Computed with the same appearance and
+            // user-config flag the reload uses, so the two cannot disagree.
+            let key = GhosttyConfigBridge.makeConfigString(
+                settings: latest,
+                resourcesDir: resourcesDir,
+                appearance: appearance
+            ) + "\n# includeUserConfig=\(includeUserConfig)"
+            guard key != self.lastAppliedConfigKey else { return }
+            self.lastAppliedConfigKey = key
             GhosttyConfigBridge.reloadConfig(
                 app: ghosttyApp, settings: latest,
-                resourcesDir: GhosttyApp.resolveResourcesDir(),
-                includeUserConfig: latest.advanced.ghosttyConfig.isOn,
-                appearance: GhosttyApp.currentAppearance(preference: latest.appearance.colorScheme),
+                resourcesDir: resourcesDir,
+                includeUserConfig: includeUserConfig,
+                appearance: appearance,
                 surfaces: self.registry.allViews
             )
         }

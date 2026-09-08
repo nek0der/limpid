@@ -10,6 +10,7 @@ struct ToolbarPaletteField: View {
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settings
     @Environment(AttentionState.self) private var attention
+    @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(\.frecencyStore) private var frecencyStore
 
     private var isActive: Bool {
@@ -37,7 +38,11 @@ struct ToolbarPaletteField: View {
     private func openPalette() {
         guard let frecencyStore else { return }
         CommandPaletteActions.openCommandPalette(
-            session, settings: settings, frecencyStore: frecencyStore, attention: attention
+            session,
+            settings: settings,
+            frecencyStore: frecencyStore,
+            attention: attention,
+            reviewPresentation: reviewPresentation
         )
     }
 }
