@@ -69,27 +69,31 @@ enum LimpidColor {
 
     /// Row-state fills shared by the sidebar pills and the tab bar pills.
     /// Picking once here keeps the two strips visually in lockstep.
-    /// Active fill is intentionally subtle in dark mode — the rounded
-    /// stroke on top of it carries most of the "selected" signal.
+    /// The fill is the whole "selected" signal now that the pills carry
+    /// no stroke, so it cannot go any subtler than this without the
+    /// selection becoming hard to find.
     static let rowActiveFill: Color = .primary.opacity(0.08)
     static let rowHoverFill: Color = .primary.opacity(0.04)
     /// Subdued fill used on a parent row when one of its descendants
     /// owns selection (e.g. a project header whose worktree is the
-    /// active container). Lighter than `rowActiveFill` and paired with
-    /// no stroke so the descendant's pill remains the dominant cue.
+    /// active container). Lighter than `rowActiveFill`, which is the
+    /// whole difference now that no pill strokes itself: the ancestor
+    /// reads as "in the path of selection" without competing with the
+    /// selected row below it.
     static let rowAncestorActiveFill: Color = .primary.opacity(0.03)
     static let tabActiveFill: Color = .primary.opacity(0.10)
-    /// Stroke color applied to the *active* sidebar group pill so the
-    /// selection stands out without leaning on the accent palette. Used
-    /// by `SelectablePillBackground` and the Command Palette field
-    /// outline (`ToolbarPaletteField`). Adaptive so the stroke reads
+    /// Stroke color for a control that outlines itself without leaning
+    /// on the accent palette — the Command Palette field
+    /// (`ToolbarPaletteField`) and the pane search overlay, since the
+    /// row pills stopped stroking themselves. Adaptive so it reads
     /// against the near-white light-mode `.glassEffect` background as
-    /// well as the dark-mode slab.
+    /// well as the dark-mode sidebar.
     static let rowActiveBorder: Color = .init(
         light: Color.black.opacity(0.18),
         dark: Color.white.opacity(0.28)
     )
-    /// Hairline used around the sidebar card and the floating glass capsule.
+    /// Hairline along the sidebar's trailing edge and around the
+    /// floating glass capsule.
     static let toolbarHairline: Color = .primary.opacity(0.08)
 
     /// Color used for the notification bell across tab column / container column / toolbar.
@@ -103,6 +107,28 @@ enum LimpidColor {
     /// Ahead/behind indicators next to a Worktree label. Kept subdued
     /// since they appear on every git-backed row.
     static let gitAheadBehindText: Color = .primary.opacity(0.55)
+
+    /// Opaque fills for the two navigation surfaces when transparency is
+    /// reduced. macOS resolves `windowBackgroundColor` and
+    /// `controlBackgroundColor` to the same value — measured on macOS 26,
+    /// #FFFFFF in light and #1E1E1E in dark — so painting a sidebar with
+    /// either leaves it the exact tone of the content beside it, with a
+    /// hairline as the only separation. In light mode that reads as one
+    /// undivided white surface.
+    ///
+    /// These step away from the content the way the system's own
+    /// sidebars do, and in the same direction the glass tints run:
+    /// darker in light, lighter in dark, with the sidebar one step
+    /// further out than the tab column so the ramp reads sidebar →
+    /// list → content.
+    static let sidebarSolidFill: Color = .init(
+        light: Color(white: 0.94),
+        dark: Color(white: 0.16)
+    )
+    static let tabColumnSolidFill: Color = .init(
+        light: Color(white: 0.97),
+        dark: Color(white: 0.14)
+    )
 
     /// Background tint for the tab column (tab list). Slightly lighter
     /// than the toolbar / window root so the column reads as a distinct
@@ -128,9 +154,10 @@ enum LimpidColor {
         dark: Color.clear
     )
 
-    /// Vertical hairline used in reduce-transparency mode, where tab column and
-    /// terminal column share one opaque tone and so need an explicit boundary in both
-    /// appearances.
+    /// Vertical hairline used in reduce-transparency mode. The tab and
+    /// terminal columns take opaque tones one step apart there, which
+    /// is thin enough at a column seam to want an explicit boundary in
+    /// both appearances.
     static let tabColumnTrailingDividerOpaque: Color = .init(
         light: Color.black.opacity(0.08),
         dark: Color.white.opacity(0.10)

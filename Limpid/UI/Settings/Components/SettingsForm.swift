@@ -27,18 +27,19 @@ struct SettingsForm<Content: View>: View {
 
     var body: some View {
         // Detail pane fills the whole window as `SettingsScene`'s
-        // background plane, so we offset content right of the
-        // floating sidebar slab (`SettingsScene.leadingInset`).
-        // Top spacer matches the slab's traffic-light reservation
-        // so the title baseline aligns with the first sidebar row.
+        // background plane, so we offset content right of the sidebar
+        // (`SettingsScene.leadingInset`). What lines the title up with
+        // the traffic-light row is the title's own top padding below,
+        // not a spacer here.
         HStack(spacing: 0) {
             Spacer().frame(width: SettingsScene.leadingInset)
             VStack(alignment: .leading, spacing: 0) {
-                // Title sits on the same y as the traffic-light row
-                // (which `repositionTrafficLights` parks at y≈22).
-                // 12pt top padding lands the title baseline next to
-                // the triad — same affordance the main window's
-                // toolbar shows on its container slab.
+                // Title sits beside the traffic-light row, which
+                // `repositionTrafficLights` centers on the strip's
+                // midline (window-y 26, buttons spanning 19–33). The
+                // padding below lands the title next to the triad —
+                // same affordance the main window's toolbar shows on
+                // its container sidebar.
                 Text(title)
                     .font(.title2)
                     .fontWeight(.semibold)

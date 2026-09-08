@@ -41,9 +41,9 @@ final class WindowTitleSync {
         if window.title != title {
             window.title = title
             // Setting title makes AppKit re-lay out the titlebar, which
-            // resets traffic lights to default position. Re-apply our
-            // slab-aligned offset so the shell title (vim / claude /
-            // etc.) updating doesn't visibly knock the buttons sideways.
+            // resets traffic lights to their default position. Re-apply
+            // our placement so the shell title (vim / claude / etc.)
+            // updating doesn't visibly knock the buttons sideways.
             repositionTrafficLights(in: window)
         }
     }

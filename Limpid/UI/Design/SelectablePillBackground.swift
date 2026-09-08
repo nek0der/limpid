@@ -1,8 +1,12 @@
 // SelectablePillBackground.swift
 // Limpid — shared selection / hover treatment for any list row that
-// behaves like a "pill": ContainerRow, TabRow, and anything we
-// add later. One modifier means the two lists can never visually
-// drift apart (cornerRadius, fill, stroke).
+// behaves like a "pill": ContainerRow, TabRow, AttentionRow, and
+// anything we add later. One modifier means the lists can never
+// visually drift apart (cornerRadius, fill).
+//
+// Selection is carried by fill alone. A stroked outline was tried and
+// dropped: on a row that already sits inside a filled pill it read as
+// a second frame around the first.
 
 import SwiftUI
 
@@ -16,7 +20,7 @@ extension View {
         isHovering: Bool,
         isDescendantActive: Bool = false,
         cornerRadius: CGFloat = 12,
-        horizontalPadding: CGFloat = 10,
+        horizontalPadding: CGFloat = LimpidLayout.rowPillInset,
         leadingPadding: CGFloat? = nil
     ) -> some View {
         modifier(SelectablePillBackground(
@@ -35,9 +39,9 @@ private struct SelectablePillBackground: ViewModifier {
     let isHovering: Bool
     /// `true` when a *descendant* of this row owns selection (e.g. a
     /// worktree selected under its project header). We dim the pill to
-    /// a softer fill and drop the white stroke so the ancestor reads
-    /// as "in the path of selection" without competing with the actual
-    /// selected row below it.
+    /// a softer fill so the ancestor reads as "in the path of
+    /// selection" without competing with the actual selected row
+    /// below it.
     let isDescendantActive: Bool
     let cornerRadius: CGFloat
     let horizontalPadding: CGFloat
@@ -48,10 +52,6 @@ private struct SelectablePillBackground: ViewModifier {
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(fill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .stroke(stroke, lineWidth: 0.5)
-                    )
                     .padding(.leading, leadingPadding)
                     .padding(.trailing, horizontalPadding)
             )
@@ -68,16 +68,5 @@ private struct SelectablePillBackground: ViewModifier {
             return LimpidColor.rowHoverFill
         }
         return .clear
-    }
-
-    private var stroke: Color {
-        // Hardcoded white reads on the dark slab but disappears against
-        // the near-white light-mode `.glassEffect(.regular)` background,
-        // killing the only stroke-based selection cue (the
-        // `.primary.opacity(0.08)` fill is already barely-visible in
-        // light mode by itself). Route through the adaptive accent
-        // token instead so each appearance gets a contrast-appropriate
-        // value.
-        isActive ? LimpidColor.rowActiveBorder : .clear
     }
 }

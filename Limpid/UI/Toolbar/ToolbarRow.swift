@@ -6,34 +6,25 @@
 // Why a wrapper instead of dropping `.padding(.top, X)` ad-hoc:
 //   * one place to tweak the alignment when the traffic-light
 //     reposition origin changes
-//   * caller stays declarative — `ToolbarRow(.container) { … }` vs.
-//     wrestling with `.frame(height:alignment:) + padding`
+//   * caller stays declarative — `ToolbarRow { … }` vs. wrestling
+//     with `.frame(height:alignment:) + padding`
+//
+// Every column starts at the window top, so all three share one inset.
+// The container column needed a smaller one only while its content sat
+// inside a slab inset from the window edge.
 
 import SwiftUI
 
 struct ToolbarRow<Content: View>: View {
-    enum Position { case container, tab, terminal }
-
-    let position: Position
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         VStack(spacing: 0) {
-            Color.clear.frame(height: topInset)
+            Color.clear.frame(height: LimpidLayout.toolbarContentTopInset)
             content()
                 .frame(height: LimpidLayout.toolbarContentHeight)
             Spacer(minLength: 0)
         }
         .frame(height: LimpidLayout.topStripHeight)
-    }
-
-    private var topInset: CGFloat {
-        // Container column sits inside a slab that's already offset by `containerColumnInsetV`
-        // from the window top, so it needs *less* inner top inset to
-        // reach the same window-y as tab / terminal column.
-        switch position {
-        case .container: LimpidLayout.toolbarContentTopInsetContainer
-        case .tab, .terminal: LimpidLayout.toolbarContentTopInset
-        }
     }
 }

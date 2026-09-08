@@ -3,8 +3,9 @@
 // entire vertical strip (toolbar on top of the body, single background
 // fill). In horizontal tab mode toolbar and content split into
 // independent rows so the tab bar + terminal can span the full width
-// while the toolbar keeps the tab/terminal column boundary. container column floats over
-// tab column's left edge as a Liquid Glass slab in both modes.
+// while the toolbar keeps the tab/terminal column boundary. The container
+// column is a flush Liquid Glass sidebar on the window's leading edge in
+// both modes, with the tab column's background running underneath it.
 
 import AppKit
 import SwiftUI
@@ -36,23 +37,20 @@ struct ThreePaneLayout: View {
             }
             .ignoresSafeArea(.container)
             .background(windowBaseFill.ignoresSafeArea())
-            // Overlay plane: container slab (or, if hidden, the floating toolbar
-            // capsule). The slab starts at y=0 so its toolbar row lines
-            // up vertically with the AppKit traffic-light strip.
+            // Overlay plane: container sidebar (or, if hidden, the floating
+            // toolbar capsule). The sidebar is flush to the window's leading,
+            // top and bottom edges, so its toolbar row lines up vertically
+            // with the AppKit traffic-light strip without any compensation.
             if !state.session.sidebarHidden {
                 ZStack(alignment: .trailing) {
                     ContainerColumnContent()
                         .frame(width: state.session.sidebarWidth)
-                        .liquidGlassPanel(
-                            cornerRadius: 10,
+                        .flushGlassSidebar(
                             isSolid: reduceTransparencyResolver.shouldReduceTransparency,
                             solidFill: containerColumnSolidFill
                         )
                     SidebarResizeHandle(session: state.session)
                 }
-                .padding(.leading, LimpidLayout.containerColumnInsetH)
-                .padding(.top, LimpidLayout.containerColumnInsetV)
-                .padding(.bottom, LimpidLayout.containerColumnInsetV)
                 .ignoresSafeArea(.all, edges: .top)
                 // Lateral slides of large surfaces are a classic
                 // vestibular trigger (WCAG 2.3.3); drop the move half
@@ -100,11 +98,12 @@ struct ThreePaneLayout: View {
         }
     }
 
-    /// Opaque fill for the container slab when transparency is reduced. We
-    /// match the native window background so the slab reads as the same
-    /// surface System Settings paints in the same mode.
+    /// Opaque fill for the container sidebar when transparency is
+    /// reduced. One step off the content tone rather than equal to it —
+    /// see `LimpidColor.sidebarSolidFill` for why the native window
+    /// background cannot carry that separation on its own.
     private var containerColumnSolidFill: Color {
-        Color(nsColor: .windowBackgroundColor)
+        LimpidColor.sidebarSolidFill
     }
 
     @ViewBuilder
@@ -152,10 +151,10 @@ private struct HorizontalModeBody: View {
                 .frame(width: leadingInset + tabColumnBoxWidth)
                 .background(tabColumnTint)
                 // Glass mode separates the columns by their distinct
-                // tints, so the toolbar row keeps its hairline. Reduce-
-                // transparency mode shares one opaque tone across both
-                // columns, so the rule would read as an arbitrary line —
-                // drop it there.
+                // tints, so the toolbar row keeps its hairline. The
+                // opaque tones carry the same separation on their own,
+                // so the rule would read as an arbitrary line there —
+                // drop it.
                 .overlay(alignment: .trailing) {
                     if !reduce {
                         LimpidColor.tabColumnTrailingDivider.frame(width: 0.5)
@@ -227,8 +226,8 @@ private struct HorizontalModeBody: View {
 
 /// tab column — background fills from the window's left edge to the
 /// right edge of the tab column content area, so the column reads as a single
-/// surface that extends *under* the floating container slab. The tab column toolbar /
-/// body content is offset right past the slab so it never collides.
+/// surface that extends *under* the container sidebar. The tab column toolbar /
+/// body content is offset right past the sidebar so it never collides.
 /// The right edge carries a drag-resize divider; double-click resets.
 private struct TabColumn: View {
     @Environment(WindowSession.self) private var session
@@ -251,9 +250,10 @@ private struct TabColumn: View {
             TabColumnResizeHandle(session: session)
         }
         .frame(width: leadingInset + tabColumnBoxWidth)
-        // Glass mode leans on the column tints (dark divider is clear);
-        // reduce-transparency mode shares one tone, so it needs a
-        // visible hairline to keep the tab/terminal column seam legible.
+        // Glass mode leans on the column tints (dark divider is clear).
+        // The opaque tones are a step apart rather than one shade, but
+        // a single step is thin at this size, so the seam keeps a
+        // visible hairline there.
         .overlay(alignment: .trailing) {
             divider.frame(width: 0.5)
         }
@@ -313,10 +313,11 @@ private struct TerminalColumn: View {
 /// - **Off (default):** the stock translucent column tints
 ///   (`tabColumnBackground` / `terminalColumnBackground`) wash over the window's
 ///   behind-window glass, so the panes read as Liquid Glass.
-/// - **On:** translucency is undesirable, so both columns take the
-///   native `windowBackgroundColor` tone (matching System Settings),
-///   and the `tabColumnTrailingDivider` hairline carries the boundary that the
-///   two distinct tints would otherwise provide.
+/// - **On:** translucency is undesirable, so the tab column takes the
+///   opaque `tabColumnSolidFill` and the terminal column the native
+///   `windowBackgroundColor`. They used to share the window tone and
+///   lean on a hairline, but once the sidebar went flush it shared that
+///   tone too, and light mode resolved all three to one white surface.
 private struct ColumnBackdrop: View {
     enum Role { case list, content }
     let appearance: AppearanceSettings
@@ -325,7 +326,7 @@ private struct ColumnBackdrop: View {
 
     var body: some View {
         if reduceTransparency {
-            Color(nsColor: .windowBackgroundColor).opacity(appearance.backgroundOpacity)
+            solidTint.opacity(appearance.backgroundOpacity)
         } else {
             stockTint.opacity(appearance.backgroundOpacity * 0.5)
         }
@@ -334,13 +335,19 @@ private struct ColumnBackdrop: View {
     private var stockTint: Color {
         role == .list ? LimpidColor.tabColumnBackground : LimpidColor.terminalColumnBackground
     }
+
+    private var solidTint: Color {
+        role == .list ? LimpidColor.tabColumnSolidFill : Color(nsColor: .windowBackgroundColor)
+    }
 }
 
-/// X position of the container slab's right edge for the given session.
+/// X position of the container sidebar's right edge for the given
+/// session. The sidebar starts at the window's leading edge, so its
+/// width is the whole footprint.
 @MainActor
 enum ContainerColumnFootprint {
     static func width(for session: WindowSession) -> CGFloat {
-        LimpidLayout.containerColumnInsetH + session.sidebarWidth
+        session.sidebarWidth
     }
 
     /// Minimum tab column box width when the sidebar is hidden. Sized so the

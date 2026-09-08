@@ -107,19 +107,14 @@ struct AttentionRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 18)
+        .padding(.horizontal, LimpidLayout.containerColumnIndentTop)
         .padding(.vertical, 5)
         // Faded once seen, full-strength while it still wants a reply.
         .opacity(isViewed ? 0.5 : 1)
-        .background(alignment: .center) {
-            if isCurrent {
-                // White-system selection (matches container column/tab column row treatment) —
-                // not the accent blue, which clashed.
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.primary.opacity(0.08))
-                    .padding(.horizontal, 8)
-            }
-        }
+        // The same treatment the container and tab lists use, through
+        // the same modifier, rather than a hand-rolled background that
+        // drifted from them in radius, inset and hover.
+        .selectablePillBackground(isActive: isCurrent, isHovering: isHovering)
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
         .onHover { isHovering = $0 }
@@ -210,7 +205,7 @@ extension ContainerSlabView {
     /// Groups / Projects keep their color dot (it encodes which one).
     func containerIcon(for container: ContainerID) -> String? {
         if case .loose = container {
-            "tray.full"
+            ContainerSymbol.quickTabs
         } else {
             nil
         }

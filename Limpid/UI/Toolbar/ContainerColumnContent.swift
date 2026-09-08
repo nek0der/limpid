@@ -1,10 +1,11 @@
 // ContainerColumnContent.swift
-// Limpid — the *whole* container slab interior: a 52pt top toolbar row that
-// shares space with the traffic-light buttons (which AppKit renders
-// over the slab's top-left corner), followed by the scrollable
-// container list. Lives inside the floating Liquid Glass slab so the
-// toolbar buttons read as "part of the sidebar" instead of a separate
-// toolbar — matches the "traffic lights live inside the sidebar" intent.
+// Limpid — the *whole* container sidebar interior: a 52pt top toolbar
+// row that shares space with the traffic-light buttons (which AppKit
+// renders over the sidebar's top-left corner), followed by the
+// scrollable container list. Lives inside the flush Liquid Glass
+// sidebar so the toolbar buttons read as "part of the sidebar" instead
+// of a separate toolbar — matches the "traffic lights live inside the
+// sidebar" intent.
 
 import SwiftUI
 
@@ -17,7 +18,7 @@ struct ContainerColumnContent: View {
         @Bindable var historyPresentation = historyPresentation
         @Bindable var session = session
         VStack(spacing: 0) {
-            ToolbarRow(position: .container) {
+            ToolbarRow {
                 HStack(spacing: 0) {
                     Spacer().frame(width: LimpidLayout.trafficLightWidth)
                     Spacer()

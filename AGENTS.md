@@ -122,7 +122,7 @@ Short index of load-bearing files. Skim these before touching their domain.
   and the forced-override keys handed to `libghostty`.
 - `Limpid/Core/Models/WindowSession.swift` — the session-state hub used by
   tabs, groups, projects, and restore.
-- `Limpid/UI/Design/LiquidGlassPanel.swift` — entry point for the macOS 26
+- `Limpid/UI/Design/GlassSurfaces.swift` — entry point for the macOS 26
   `.glassEffect` panel treatment.
 - `Limpid/UI/Design/VerticalSplitView.swift` — the container slab's list /
   Waiting split, and why its position is persisted only from a divider

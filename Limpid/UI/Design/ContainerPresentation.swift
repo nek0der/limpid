@@ -7,6 +7,19 @@
 
 import SwiftUI
 
+/// SF Symbol per container kind, kept out of `ContainerPresentation`
+/// so surfaces that cannot reach a `@MainActor` view type — the command
+/// palette catalog, for one — still draw the same glyph as the toolbar.
+/// The set divides containers by what they own rather than by whether
+/// they exist on disk: a receptacle, a stack of tabs, a repository, a
+/// branch.
+enum ContainerSymbol {
+    static let quickTabs = "tray"
+    static let group = "rectangle.stack"
+    static let project = "book.closed"
+    static let worktree = "arrow.triangle.branch"
+}
+
 @MainActor
 struct ContainerPresentation {
     /// SF Symbol name for the leading icon.
@@ -22,21 +35,31 @@ struct ContainerPresentation {
     init(container: ContainerID, session: WindowSession) {
         switch container {
         case .loose:
-            self.icon = "tray"
+            self.icon = ContainerSymbol.quickTabs
             self.tint = .secondary
             self.title = String(localized: "Quick Tabs")
             self.subtitle = Self.tabCount(container, session)
 
         case let .group(gid):
             let group = session.group(gid)
-            self.icon = "folder"
+            // Not a folder: a group is a set of tabs the user made
+            // inside Limpid, with nothing on disk behind it. The folder
+            // metaphor belongs to `.project`, which really is a
+            // directory — leaving both on it said the two were the same
+            // kind of thing with one filled in.
+            self.icon = ContainerSymbol.group
             self.tint = Self.palette(group?.paletteIndex)
             self.title = group?.name ?? String(localized: "Group")
             self.subtitle = Self.tabCount(container, session)
 
         case let .project(pid):
             let project = session.project(pid)
-            self.icon = "folder.fill"
+            // A repository, not a folder. What a project owns is
+            // worktrees and branches, so a folder icon promises a file
+            // listing the user never gets. The shape is the one the
+            // forges spend on a repository, which is what a git user
+            // reads without being taught.
+            self.icon = ContainerSymbol.project
             self.tint = Self.palette(project?.paletteIndex)
             self.title = project?.name ?? String(localized: "Project")
             // Subtitle = current branch of the project's main
@@ -50,7 +73,7 @@ struct ContainerPresentation {
         case let .worktree(pid, wid):
             let project = session.project(pid)
             let wt = session.worktree(projectID: pid, worktreeID: wid)
-            self.icon = "arrow.triangle.branch"
+            self.icon = ContainerSymbol.worktree
             self.tint = Self.palette(project?.paletteIndex)
             self.title = wt?.label ?? project?.name ?? String(localized: "Worktree")
             // Subtitle = current branch in this worktree. We pair it

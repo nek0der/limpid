@@ -23,7 +23,7 @@ struct TabRow: View {
     /// content edge. The vertical list keeps the default so pills sit
     /// inset from the column edges; the horizontal strip collapses it
     /// so adjacent pills don't carry a wide phantom gap on each side.
-    var pillHorizontalPadding: CGFloat = 10
+    var pillHorizontalPadding: CGFloat = LimpidLayout.rowPillInset
 
     @State private var isEditing = false
     @State private var isHovering = false
@@ -170,8 +170,25 @@ struct TabRow: View {
         return pieces.joined(separator: " ")
     }
 
+    /// Content inset from the pill's leading edge, and its trailing
+    /// twin. Both are the container row's inset minus the pill's own,
+    /// then grown by `pillHorizontalPadding` per the note at the call
+    /// site, so the tab list shows the same gaps the container list
+    /// does without carrying a second set of numbers.
+    private var contentLeadingPadding: CGFloat {
+        LimpidLayout.containerColumnIndentTop
+            - LimpidLayout.rowPillInset
+            + pillHorizontalPadding
+    }
+
+    private var contentTrailingPadding: CGFloat {
+        LimpidLayout.containerColumnRowTrailingPadding
+            - LimpidLayout.rowPillInset
+            + pillHorizontalPadding
+    }
+
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: LimpidLayout.containerColumnRowContentSpacing) {
             // Leading identity glyph: a bolt mark when an agent has
             // a live session in the tab (currently Claude, via the shim
             // hooks), otherwise a plain terminal mark. Always present so
@@ -181,7 +198,10 @@ struct TabRow: View {
             Image(systemName: isAgentTab ? "bolt" : "terminal")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 16, height: 16)
+                .frame(
+                    width: LimpidLayout.containerColumnMarkerSlot,
+                    height: LimpidLayout.containerColumnMarkerSlot
+                )
                 // A mark rather than a second glyph: the glyph already
                 // carries "agent vs plain terminal", and hosting is an
                 // orthogonal fact about the same pane. Sits on the
@@ -247,63 +267,82 @@ struct TabRow: View {
                 }
             }
             Spacer(minLength: 4)
-            if let state = aggregateAgentState,
-               let iconName = state.iconName,
-               let iconColor = state.iconColor
-            {
-                // Agent rows show the lifecycle badge as their single
-                // status mark. The bell is suppressed here so we don't
-                // stack two indicators for the same event — the agent's
-                // OS notification + history entry still fire; the bell
-                // is reserved for non-agent unread (terminal OSC 9/777,
-                // child-exit, etc.) on rows that have no agent badge.
-                let tooltip = agentTooltip(for: state)
-                Image(systemName: iconName)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(state == .finished && aggregateViewed
-                        ? Color.secondary
-                        : iconColor)
-                    .frame(width: 16, height: 16)
-                    .help(tooltip)
-                    // Match `ContainerRow`'s sister fix: SF Symbol names
-                    // alone don't carry meaning, especially when the
-                    // color is the only sighted differentiator.
-                    .accessibilityLabel(Text(tooltip))
-            } else {
-                NotificationBell(
-                    isUnread: hasUnread,
-                    isRinging: isRinging,
-                    reservesSlot: true
-                )
-            }
-            if isZoomed {
-                // Always-visible state indicator with a tap target so the
-                // user can leave zoom mode without remembering ⌘⇧Return.
-                // Sits between the bell (passive status) and the close
-                // button (action) since it's an actionable affordance.
-                Button(action: onUnzoom) {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 16, height: 16)
-                        .contentShape(Rectangle())
+            // One trailing group, spaced like `ContainerRow`'s: the
+            // status mark and the close sit closer to each other than
+            // either does to the title, because they are one thing.
+            HStack(spacing: LimpidLayout.containerColumnTrailingSpacing) {
+                if let state = aggregateAgentState,
+                   let iconName = state.iconName,
+                   let iconColor = state.iconColor
+                {
+                    // Agent rows show the lifecycle badge as their single
+                    // status mark. The bell is suppressed here so we don't
+                    // stack two indicators for the same event — the agent's
+                    // OS notification + history entry still fire; the bell
+                    // is reserved for non-agent unread (terminal OSC 9/777,
+                    // child-exit, etc.) on rows that have no agent badge.
+                    let tooltip = agentTooltip(for: state)
+                    Image(systemName: iconName)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(state == .finished && aggregateViewed
+                            ? Color.secondary
+                            : iconColor)
+                        .frame(
+                            width: LimpidLayout.containerColumnTrailingSlot,
+                            height: LimpidLayout.containerColumnTrailingSlot
+                        )
+                        .help(tooltip)
+                        // Match `ContainerRow`'s sister fix: SF Symbol names
+                        // alone don't carry meaning, especially when the
+                        // color is the only sighted differentiator.
+                        .accessibilityLabel(Text(tooltip))
+                } else {
+                    NotificationBell(
+                        isUnread: hasUnread,
+                        isRinging: isRinging,
+                        reservesSlot: true
+                    )
                 }
-                .buttonStyle(.plain)
-                .help("Unzoom Pane")
-                .accessibilityLabel(Text("Unzoom Pane"))
+                if isZoomed {
+                    // Always-visible state indicator with a tap target so the
+                    // user can leave zoom mode without remembering ⌘⇧Return.
+                    // Sits between the bell (passive status) and the close
+                    // button (action) since it's an actionable affordance.
+                    Button(action: onUnzoom) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(
+                                width: LimpidLayout.containerColumnTrailingSlot,
+                                height: LimpidLayout.containerColumnTrailingSlot
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Unzoom Pane")
+                    .accessibilityLabel(Text("Unzoom Pane"))
+                }
+                // Present only while the row is active or hovered, holding
+                // no slot the rest of the time — the trade `ContainerRow`
+                // documents for its own hover delete. Fading a reserved slot
+                // instead froze that gap into every row, so the status mark
+                // never reached the row's right edge.
+                if isActive || isHovering {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .frame(
+                                width: LimpidLayout.containerColumnTrailingSlot,
+                                height: LimpidLayout.containerColumnTrailingSlot
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close Tab")
+                    .accessibilityLabel(Text("Close Tab"))
+                }
             }
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16, height: 16)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Close Tab")
-            .accessibilityLabel(Text("Close Tab"))
-            .opacity(isActive || isHovering ? 1 : 0)
-            .allowsHitTesting(isActive || isHovering)
         }
         // Hold the *visible* pill inset (icon-to-pill-edge) constant
         // across vertical / horizontal layouts. Because the pill
@@ -311,9 +350,14 @@ struct TabRow: View {
         // content padding has to grow in lockstep — otherwise the
         // horizontal strip (which uses pillHorizontalPadding = 0) reads
         // as more spacious on the left than the vertical list.
-        .padding(.leading, 18 + pillHorizontalPadding)
-        .padding(.trailing, 4 + pillHorizontalPadding)
-        .padding(.vertical, 10)
+        //
+        // The visible inset itself is the container row's, minus the
+        // pill's own: the container list is the canonical row geometry
+        // and the tab list follows it rather than carrying a second set
+        // of numbers that can drift.
+        .padding(.leading, contentLeadingPadding)
+        .padding(.trailing, contentTrailingPadding)
+        .frame(height: LimpidLayout.tabPillHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .selectablePillBackground(
             isActive: isActive,
@@ -484,7 +528,7 @@ struct TabsListView: View {
                         )
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, LimpidLayout.rowListInset)
                 // Sliding-highlight animation: matchedGeometryEffect in
                 // `paneMergeDropTarget` needs an explicit value-keyed
                 // animation to interpolate the rectangle between rows

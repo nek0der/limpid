@@ -13,7 +13,7 @@
 // disable the toggle (and explain why) in that state.
 //
 // The store lives in the environment alongside `SettingsStore` so
-// `LiquidGlassPanel` consumers can read `.shouldReduceTransparency`
+// `GlassSurfaces` consumers can read `.shouldReduceTransparency`
 // without threading both inputs through every modifier call.
 
 import AppKit

@@ -7,9 +7,9 @@
 // the last container row silently refused tab drops (no `dropEntered`,
 // no highlight, no `performDrop`), observed on macOS 26. Hosting the two
 // panes as real `NSSplitView` subviews fixes that. `VSplitView` fixes it
-// too, but SwiftUI exposes no way to style its divider, and the slab is
-// designed around an inset hairline rule rather than the system one.
-// `dividerColor` and `drawDivider(in:)` can only be reached by
+// too, but SwiftUI exposes no way to style its divider, and the sidebar
+// wants a hairline rule rather than the thicker system one.
+// `dividerColor` and `dividerThickness` can only be reached by
 // overriding them, which needs the split view to be ours.
 //
 // The panes are `NSHostingView`s. They do inherit the enclosing SwiftUI
@@ -20,18 +20,13 @@
 import AppKit
 import SwiftUI
 
-/// `NSSplitView` drawing the slab's inset hairline instead of the
-/// system divider.
+/// `NSSplitView` drawing a hairline rule instead of the thicker system
+/// divider.
 final class LimpidSplitView: NSSplitView {
     /// Height of the band that counts as the divider for input. Both the
     /// drag area and the double-click area are derived from it, so the
     /// two can't disagree about where the divider is.
     static let grabThickness: CGFloat = 8
-
-    /// Inset so the rule doesn't run edge-to-edge into the sidebar
-    /// frame; matches the header's horizontal padding, as the
-    /// hand-rolled rule this view replaced did.
-    static let ruleInset: CGFloat = 18
 
     /// Invoked when the divider itself is double-clicked.
     var onDividerDoubleClick: (() -> Void)?
@@ -58,15 +53,6 @@ final class LimpidSplitView: NSSplitView {
     /// the default thickness follows.
     override var dividerThickness: CGFloat {
         1
-    }
-
-    /// `dividerColor` alone fills edge to edge; the slab's rule is
-    /// inset, so we draw it ourselves.
-    override func drawDivider(in rect: NSRect) {
-        let inset = rect.insetBy(dx: Self.ruleInset, dy: 0)
-        guard inset.width > 0 else { return }
-        dividerColor.setFill()
-        inset.fill()
     }
 
     override func layout() {

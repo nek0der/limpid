@@ -138,6 +138,11 @@ final class SettingsStore {
             loaded.appearance.transparency = .off
             loaded.appearance.backgroundOpacity = 1.0
             loaded.appearance.accentColor = .blue
+            // Same reason as the accent: `.system` would render the
+            // hero in whichever appearance the contributor's Mac
+            // happens to be in, so the README image would flip between
+            // light and dark depending on who regenerated it.
+            loaded.appearance.colorScheme = .light
             // Pinned for the same reason, and it has to be pinned in
             // both directions: this setting is opt-in, so without it
             // the hero would show the sidebar's request marks only for
@@ -211,6 +216,17 @@ final class SettingsStore {
     /// Synchronous write — used by `scheduleSave` and at app
     /// termination so an in-flight debounce doesn't lose data.
     func saveNow() {
+        // Demo mode pins appearance and advanced values so the hero
+        // screenshot does not depend on the contributor's own
+        // preferences. Those pins are for the run, not for the file:
+        // `make screenshot` quits the app through
+        // `applicationWillTerminate`, and without this guard every
+        // capture wrote them into the real `settings.json` — the same
+        // file the installed build reads, since demo mode does not
+        // change the bundle identifier. `SessionStore` guards both of
+        // its write paths for the same reason; this is the one that
+        // was missing.
+        guard !DemoFixture.isDemoActive else { return }
         let url = settingsFileURL
         SecureFileWrite.ensureUserOnlyDirectory(url.deletingLastPathComponent())
         do {

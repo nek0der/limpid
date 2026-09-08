@@ -30,7 +30,7 @@ extension View {
         dragState: LimpidDragState,
         highlightNamespace: Namespace.ID,
         sourceTabID: UUID?,
-        pillHorizontalPadding: CGFloat = 10
+        pillHorizontalPadding: CGFloat = LimpidLayout.rowPillInset
     ) -> some View {
         overlay {
             if dragState.current == .pane {

@@ -56,10 +56,10 @@ struct PaneContainerView: View {
                 // appears; force the host to fill the available area so
                 // the underlying `NSView` keeps receiving frame updates.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // Clip the libghostty `NSView` to match the rounded
-                // toolbar around the pane. Sidebar uses the same radius
-                // (10pt) so the two cards visually rhyme.
-                .clipShape(RoundedRectangle(cornerRadius: LimpidLayout.sidebarCardCornerRadius, style: .continuous))
+                // Keep the libghostty `NSView` inside the pane's bounds.
+                // Square, because the grid it draws runs to the edges —
+                // a rounded corner clips a tmux status row visibly.
+                .clipShape(Rectangle())
                 .overlay(
                     // Bell flash — a soft full-pane tint that pulses for
                     // a fraction of a second when the shell rings BEL.
@@ -67,7 +67,7 @@ struct PaneContainerView: View {
                     // status hue (warning yellow felt too alarming for
                     // a routine BEL). Pane-scoped so a split layout
                     // tells the user which pane rang.
-                    RoundedRectangle(cornerRadius: LimpidLayout.sidebarCardCornerRadius, style: .continuous)
+                    Rectangle()
                         // 0.22 here is an OPACITY strength (not a duration).
                         // It happens to numerically match the easeOut
                         // duration below; the values are unrelated — one
@@ -79,9 +79,6 @@ struct PaneContainerView: View {
                 .animation(.easeOut(duration: 0.22), value: bellRinging)
                 .opacity(opacity)
                 .animation(.easeOut(duration: 0.15), value: opacity)
-                // Breathing room between adjacent panes / window edges,
-                // matching the sidebar card's inset rhythm.
-                .padding(LimpidLayout.sidebarCardVerticalInset)
 
             if let exitCode {
                 VStack(spacing: 8) {
@@ -97,10 +94,16 @@ struct PaneContainerView: View {
                 }
                 .padding(.vertical, 16)
                 .padding(.horizontal, 24)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: LimpidLayout.sidebarCardCornerRadius, style: .continuous))
+                .background(
+                    .thinMaterial,
+                    in: RoundedRectangle(cornerRadius: LimpidLayout.paneBannerCornerRadius, style: .continuous)
+                )
                 .overlay(
-                    RoundedRectangle(cornerRadius: LimpidLayout.sidebarCardCornerRadius, style: .continuous)
-                        .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                    RoundedRectangle(
+                        cornerRadius: LimpidLayout.paneBannerCornerRadius,
+                        style: .continuous
+                    )
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
                 )
                 .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))

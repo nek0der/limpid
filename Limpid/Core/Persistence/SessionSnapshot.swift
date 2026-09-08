@@ -29,6 +29,10 @@ struct SessionSnapshot: Codable, @unchecked Sendable {
     var activeContainerID: ContainerID
     var sidebarWidth: Double
     var tabColumnWidth: Double = LimpidLayout.tabColumnWidth
+
+    /// What `tabColumnWidth` defaulted to before the two columns were
+    /// unified. Only the decoder reads it — see the note there.
+    static let legacyTabColumnWidth: Double = 260
     /// Container column Waiting region height as a fraction of slab height.
     /// Optional so a state.json written before this field existed still
     /// decodes (synthesized Decodable uses decodeIfPresent for
@@ -137,7 +141,17 @@ struct SessionSnapshot: Codable, @unchecked Sendable {
         self.activeTabID = try c.decodeIfPresent(UUID.self, forKey: .activeTabID)
         self.activeContainerID = try c.decode(ContainerID.self, forKey: .activeContainerID)
         self.sidebarWidth = try c.decode(Double.self, forKey: .sidebarWidth)
-        self.tabColumnWidth = try c.decodeIfPresent(Double.self, forKey: .tabColumnWidth) ?? LimpidLayout.tabColumnWidth
+        // A stored 260 is the width the tab column used to default to,
+        // back when it was wider than the container column beside it.
+        // Reading it back verbatim would keep that mismatch on every
+        // window that already exists, so the change would only ever
+        // reach fresh installs. We take the trade: a user who dragged
+        // the divider to exactly 260 loses that, everyone else gets the
+        // columns squared up.
+        let storedTabColumnWidth = try c.decodeIfPresent(Double.self, forKey: .tabColumnWidth)
+        self.tabColumnWidth = storedTabColumnWidth == Self.legacyTabColumnWidth
+            ? LimpidLayout.tabColumnWidth
+            : storedTabColumnWidth ?? LimpidLayout.tabColumnWidth
         self.attentionHeightFraction = try c.decodeIfPresent(Double.self, forKey: .attentionHeightFraction)
         self.sidebarHidden = try c.decode(Bool.self, forKey: .sidebarHidden)
         self.tabColumnHorizontal = try c.decodeIfPresent(Bool.self, forKey: .tabColumnHorizontal) ?? false

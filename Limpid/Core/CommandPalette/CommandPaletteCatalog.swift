@@ -136,7 +136,7 @@ enum CommandPaletteCatalog {
                 category: .navigate,
                 title: group.name,
                 subtitle: nil,
-                icon: "folder",
+                icon: ContainerSymbol.group,
                 shortcutDisplay: nil,
                 action: .activateGroup(group.id)
             ))
@@ -155,7 +155,7 @@ enum CommandPaletteCatalog {
                 category: .navigate,
                 title: project.name,
                 subtitle: shortenPath(project.rootURL.path),
-                icon: "tray.full",
+                icon: ContainerSymbol.project,
                 shortcutDisplay: nil,
                 action: .activateProject(project.id)
             ))
@@ -166,7 +166,7 @@ enum CommandPaletteCatalog {
                     category: .navigate,
                     title: worktree.label,
                     subtitle: shortenPath(worktree.workingDirectory.path),
-                    icon: "arrow.triangle.branch",
+                    icon: ContainerSymbol.worktree,
                     shortcutDisplay: nil,
                     action: .activateWorktree(
                         projectID: project.id,

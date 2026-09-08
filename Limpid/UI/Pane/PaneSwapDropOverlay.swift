@@ -87,7 +87,6 @@ struct PaneSwapDropOverlay: View {
                             // keeps the full slot extent so drops between
                             // panes still register.
                             highlight(for: zone, in: geo.size)
-                                .padding(LimpidLayout.sidebarCardVerticalInset)
                                 .allowsHitTesting(false)
                                 .transition(.opacity)
                         }
@@ -201,14 +200,14 @@ struct PaneSwapDropOverlay: View {
             ? accent
             : Color.secondary
         ZStack {
-            RoundedRectangle(cornerRadius: LimpidLayout.sidebarCardCornerRadius, style: .continuous)
+            Rectangle()
                 .fill(fillColor)
             Group {
                 if active {
-                    RoundedRectangle(cornerRadius: LimpidLayout.sidebarCardCornerRadius, style: .continuous)
+                    Rectangle()
                         .strokeBorder(strokeColor, lineWidth: 2)
                 } else {
-                    RoundedRectangle(cornerRadius: LimpidLayout.sidebarCardCornerRadius, style: .continuous)
+                    Rectangle()
                         .strokeBorder(
                             strokeColor,
                             style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])

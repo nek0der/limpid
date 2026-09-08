@@ -586,7 +586,7 @@ struct ContainerRow: View {
                 // Quick Tabs sits above the sections, alone, with no
                 // parent to align to. The glyph is what tells it apart
                 // from a project.
-                Image(systemName: "tray")
+                Image(systemName: ContainerSymbol.quickTabs)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.secondary)
             case let .group(g, _):
