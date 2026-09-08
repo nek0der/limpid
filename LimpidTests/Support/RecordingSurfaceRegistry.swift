@@ -28,4 +28,36 @@ final class RecordingSurfaceRegistry: SurfaceViewProviding {
         lastReconcileIDs = activeIDs
         reconcileCount += 1
     }
+
+    private(set) var lastVisibleIDs: Set<UUID>?
+
+    func updateOcclusion(visibleIDs: Set<UUID>) {
+        lastVisibleIDs = visibleIDs
+    }
+
+    /// What review's text is handed to, by pane. A pane with no entry has no
+    /// destination, which is what a closed pane looks like from here.
+    var deliverers: [UUID: RecordingReviewDeliverer] = [:]
+
+    func deliverer(for id: UUID) -> (any ReviewTextDelivering)? {
+        deliverers[id]
+    }
+}
+
+/// Takes review's text and remembers it, or refuses.
+@MainActor
+final class RecordingReviewDeliverer: ReviewTextDelivering {
+    private(set) var delivered: [String] = []
+    private(set) var receipts: [ReviewPasteReceipt?] = []
+    /// When set, the delivery throws instead of landing — a terminal that did
+    /// not take the paste.
+    var failure: (any Error)?
+
+    func deliverReviewText(_ prompt: ReviewPrompt, receipt: ReviewPasteReceipt?) throws {
+        if let failure {
+            throw failure
+        }
+        delivered.append(prompt.text)
+        receipts.append(receipt)
+    }
 }

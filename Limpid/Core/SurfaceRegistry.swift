@@ -23,6 +23,15 @@ protocol SurfaceViewProviding: AnyObject {
     /// used by TabActions when a pane close mutates the tree so
     /// orphaned SurfaceViews don't pile up.
     func reconcile(activeIDs: Set<UUID>)
+    /// Mark surfaces visible or occluded. Here rather than only on the
+    /// concrete registry because callers hold the protocol: one of them
+    /// reached the method by downcasting, which meant it did nothing at all
+    /// wherever the registry was a test double or the no-op.
+    func updateOcclusion(visibleIDs: Set<UUID>)
+    /// The pane's text destination, or `nil` when it has none. Separate from
+    /// `view(for:)` so review's delivery path can be answered without a
+    /// `SurfaceView` — the concrete registry returns the view itself.
+    func deliverer(for id: UUID) -> (any ReviewTextDelivering)?
 }
 
 @MainActor
@@ -56,6 +65,11 @@ final class SurfaceRegistry: SurfaceViewProviding {
     func unregister(_ id: UUID) {
         guard let removed = views.removeValue(forKey: id) else { return }
         idByView.removeValue(forKey: ObjectIdentifier(removed))
+        // A prompt still waiting on that pane has to be answered here, and in
+        // `reconcile` for the same reason. Left pending, it holds a libghostty
+        // request that is never completed or denied, and a review paste waiting
+        // on that answer stays recorded as delivered.
+        ClipboardConfirmationCoordinator.shared?.cancelPending(for: removed)
     }
 
     /// Reverse lookup: which pane id owns this `SurfaceView`?
@@ -94,8 +108,13 @@ final class SurfaceRegistry: SurfaceViewProviding {
         for id in stale {
             if let removed = views.removeValue(forKey: id) {
                 idByView.removeValue(forKey: ObjectIdentifier(removed))
+                ClipboardConfirmationCoordinator.shared?.cancelPending(for: removed)
             }
         }
+    }
+
+    func deliverer(for id: UUID) -> (any ReviewTextDelivering)? {
+        view(for: id)
     }
 
     // MARK: - Occlusion (energy)
@@ -143,4 +162,8 @@ final class NoopSurfaceRegistry: SurfaceViewProviding {
     func register(_ view: SurfaceView, for id: UUID) {}
     func unregister(_ id: UUID) {}
     func reconcile(activeIDs: Set<UUID>) {}
+    func updateOcclusion(visibleIDs: Set<UUID>) {}
+    func deliverer(for id: UUID) -> (any ReviewTextDelivering)? {
+        nil
+    }
 }

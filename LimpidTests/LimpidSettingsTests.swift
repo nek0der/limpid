@@ -61,10 +61,18 @@ struct LimpidSettingsTests {
         settings.advanced.showPRStatusInSidebar = true
         settings.advanced.showPRStatusOnlyWhenAttention = true
         settings.advanced.hostsAgentsInTmux = true
+        settings.advanced.reviewInstructions = "Fix these."
 
         let data = try JSONEncoder().encode(settings)
         let restored = try JSONDecoder().decode(LimpidSettings.self, from: data)
         #expect(restored == settings)
+    }
+
+    @Test func existingAdvancedSettingsDefaultReviewInstructions() throws {
+        let data = Data(#"{"hostsAgentsInTmux":true}"#.utf8)
+        let restored = try JSONDecoder().decode(AdvancedSettings.self, from: data)
+        #expect(restored.hostsAgentsInTmux)
+        #expect(restored.reviewInstructions.isEmpty)
     }
 
     @Test("malformed JSON throws a DecodingError rather than crashing")

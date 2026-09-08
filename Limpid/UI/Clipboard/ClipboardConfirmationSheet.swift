@@ -11,6 +11,10 @@ struct ClipboardConfirmationSheet: View {
     let onAllow: () -> Void
     let onDeny: () -> Void
 
+    private var preview: String {
+        String(request.contents.unicodeScalars.prefix(8192))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
@@ -28,7 +32,7 @@ struct ClipboardConfirmationSheet: View {
             }
 
             ScrollView {
-                Text(request.contents)
+                Text(verbatim: preview)
                     .font(.system(.body, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -37,6 +41,12 @@ struct ClipboardConfirmationSheet: View {
             .frame(minHeight: 80, maxHeight: 200)
             .background(LimpidColor.terminalColumnBackground)
             .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            if preview.utf8.count < request.contents.utf8.count {
+                Text("Preview shortened. Allowing sends the entire text.")
+                    .font(LimpidFont.caption)
+                    .foregroundStyle(LimpidColor.secondaryText)
+            }
 
             HStack {
                 Spacer()

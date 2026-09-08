@@ -119,6 +119,12 @@ enum GhosttyConfigBridge {
         // Limpid handles its own close-confirm via SwiftUI .alert,
         // so disable libghostty's confirm dialog.
         lines.append("confirm-close-surface = false")
+        // Review pastes repository content — a diff an agent wrote, or one
+        // that arrived with a clone — into whatever the pane is running. The
+        // confirmation an unbracketed multi-line paste goes through is what
+        // keeps a shell from taking those lines as commands, so it is not a
+        // setting a layered user config may switch off.
+        lines.append("clipboard-paste-protection = true")
         // Tell shell-integration to keep its hands off the cursor.
         // Default zsh / fish integration sends DECSCUSR (`ESC[<n> q`)
         // on every prompt, which clobbers Limpid's `cursor-style`
@@ -188,16 +194,21 @@ enum GhosttyConfigBridge {
     static func writeConfigFile(
         settings: LimpidSettings,
         resourcesDir: String?,
-        appearance: Appearance
+        appearance: Appearance,
+        directory: URL? = nil,
+        processID: Int32 = ProcessInfo.processInfo.processIdentifier
     ) -> String? {
         let body = makeConfigString(
             settings: settings,
             resourcesDir: resourcesDir,
             appearance: appearance
         )
-        let dir = (NSTemporaryDirectory() as NSString).appendingPathComponent("dev.limpid")
+        let dir = directory?.path ?? (NSTemporaryDirectory() as NSString).appendingPathComponent("dev.limpid")
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        let path = (dir as NSString).appendingPathComponent("ghostty-config.limpid")
+        // We isolate concurrent Dev and Release instances so one cannot replace
+        // the file between another instance writing it and libghostty reading it.
+        let name = "ghostty-config-\(processID).limpid"
+        let path = (dir as NSString).appendingPathComponent(name)
         do {
             try body.write(toFile: path, atomically: true, encoding: .utf8)
             return path

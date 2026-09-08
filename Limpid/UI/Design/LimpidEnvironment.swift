@@ -15,6 +15,9 @@ import Sparkle
 import SwiftUI
 
 extension EnvironmentValues {
+    /// We share open drafts through the app-owned pool to avoid concurrent writers.
+    @Entry var reviewStores = ReviewStorePool(shouldPersist: false)
+
     /// libghostty surface registry — UUID ↔ SurfaceView lookup.
     /// Typed as the protocol so views (and `TabActions`) don't
     /// see the concrete `SurfaceRegistry`; tests can swap in their

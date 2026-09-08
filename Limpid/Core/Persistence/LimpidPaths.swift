@@ -34,7 +34,8 @@ enum LimpidPaths {
 
     /// Folder name under `~/Library/Application Support/` where the
     /// session snapshot (`state.json`), notification history
-    /// (`notifications.json`), scrollback dumps, and `settings.json`
+    /// (`notifications.json`), scrollback dumps, review drafts
+    /// (`reviews/`), and `settings.json`
     /// live. Different per build so a Release crash can't corrupt the
     /// in-progress Debug session and vice versa; tests route into a
     /// separate sandbox so a missed `init(directory:)` injection can't

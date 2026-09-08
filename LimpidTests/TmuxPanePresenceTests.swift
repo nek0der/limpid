@@ -33,7 +33,7 @@ struct TmuxPanePresenceTests {
     /// with nothing else failing.
     @Test("compares against the bare client name")
     func clientProcessName_isABasename() {
-        #expect(!TmuxPanePresence.clientProcessName.contains("/"))
-        #expect(TmuxPanePresence.clientProcessName == "tmux")
+        #expect(!TmuxClientProbe.clientProcessName.contains("/"))
+        #expect(TmuxClientProbe.clientProcessName == "tmux")
     }
 }

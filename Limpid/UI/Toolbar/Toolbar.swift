@@ -18,6 +18,9 @@ import SwiftUI
 /// same shape: container name, subtitle (path / count / git overlay),
 /// and a trailing actions button.
 struct ToolbarTabColumnSegment: View {
+    /// Read for the Review Changes entry below, which is live whenever review
+    /// is — including with nothing to review, so it can close it.
+    @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(WindowSession.self) private var session
     @Environment(NotificationHistoryStore.self) private var historyStore
     @Environment(\.surfaceRegistry) private var registry
@@ -50,6 +53,17 @@ struct ToolbarTabColumnSegment: View {
                         systemImage: "ellipsis",
                         help: "Container Actions"
                     ) {
+                        Button {
+                            NotificationCenter.default.post(name: .limpidReviewChanges, object: session)
+                        } label: {
+                            Label("Review Changes", systemImage: ReviewPresentation.symbol)
+                        }
+                        .accessibilityLabel(Text("Review Changes"))
+                        .disabled(!ReviewAgents.canReview(
+                            session: session,
+                            presentation: reviewPresentation
+                        ))
+                        Divider()
                         Button(role: .destructive) {
                             TabActions.closeAllTabsInActiveContainer(
                                 session,
@@ -81,6 +95,7 @@ struct ToolbarTabColumnSegment: View {
 
 struct ToolbarTerminalColumnSegment: View {
     @Environment(WindowSession.self) private var session
+    @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(SettingsStore.self) private var settings
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(UpdateStateModel.self) private var updateState
@@ -103,6 +118,27 @@ struct ToolbarTerminalColumnSegment: View {
             ToolbarPaletteField()
 
             Spacer(minLength: 0)
+
+            ToolbarActionCapsule {
+                // One control opens and closes review, so it carries the
+                // current state in its label. It stays live with no directory
+                // to review, because that is the state review has to close
+                // from.
+                ToolbarCapsuleButton(
+                    systemImage: ReviewPresentation.symbol,
+                    help: reviewPresentation.isPresented ? "Close Review" : "Review Changes",
+                    isEnabled: ReviewAgents.canReview(
+                        session: session,
+                        presentation: reviewPresentation
+                    )
+                ) {
+                    ReviewPresentationCommand.toggle(
+                        session: session,
+                        presentation: reviewPresentation,
+                        registry: registry
+                    )
+                }
+            }
 
             if updateState.showsBadge, let updater {
                 ToolbarUpdateButton(updater: updater)

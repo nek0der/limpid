@@ -176,7 +176,11 @@ struct CommandPaletteTests {
         try withTempDir { dir in
             let frecency = FrecencyStore(directory: dir)
             CommandPaletteActions.openCommandPalette(
-                session, settings: settings, frecencyStore: frecency, attention: AttentionState()
+                session,
+                settings: settings,
+                frecencyStore: frecency,
+                attention: AttentionState(),
+                reviewPresentation: nil
             )
             #expect(session.commandPaletteState != nil)
             #expect(!session.commandPaletteState!.allItems.isEmpty)
@@ -190,7 +194,11 @@ struct CommandPaletteTests {
         try withTempDir { dir in
             let frecency = FrecencyStore(directory: dir)
             CommandPaletteActions.openCommandPalette(
-                session, settings: settings, frecencyStore: frecency, attention: AttentionState()
+                session,
+                settings: settings,
+                frecencyStore: frecency,
+                attention: AttentionState(),
+                reviewPresentation: nil
             )
             CommandPaletteActions.closeCommandPalette(session)
             #expect(session.commandPaletteState == nil)
@@ -227,11 +235,19 @@ struct CommandPaletteTests {
         try withTempDir { dir in
             let frecency = FrecencyStore(directory: dir)
             CommandPaletteActions.openCommandPalette(
-                session, settings: settings, frecencyStore: frecency, attention: AttentionState()
+                session,
+                settings: settings,
+                frecencyStore: frecency,
+                attention: AttentionState(),
+                reviewPresentation: nil
             )
             let first = session.commandPaletteState
             CommandPaletteActions.openCommandPalette(
-                session, settings: settings, frecencyStore: frecency, attention: AttentionState()
+                session,
+                settings: settings,
+                frecencyStore: frecency,
+                attention: AttentionState(),
+                reviewPresentation: nil
             )
             #expect(session.commandPaletteState === first)
         }

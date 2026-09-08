@@ -19,6 +19,17 @@ final class AppState {
     /// them. Declared here rather than built in `init` because it needs
     /// nothing but its collaborators, which are handed to `start`.
     let tmuxPresence = TmuxPanePresence()
+    /// One draft pool for the whole app: every review surface opened on
+    /// the same repository root shares a `ReviewStore`, so two surfaces
+    /// can never race each other writing the same on-disk draft. Owned
+    /// here because the environment default only stands in for Previews
+    /// and tests.
+    let reviewStores = ReviewStorePool(shouldPersist: !DemoFixture.isDemoActive)
+    /// App-owned review surface state — which directory "Review
+    /// Changes" is showing, and the pane docked under it. Kept out of
+    /// `WindowSession` so a temporary inspection mode is never persisted
+    /// into session restoration.
+    let reviewPresentation = ReviewPresentation()
     let session: WindowSession
     /// Attention-ring state — finished-turn viewed / dismissed
     /// bookkeeping, the container column Waiting list, and the ⌘J
@@ -84,10 +95,16 @@ final class AppState {
     /// .always / .never) against macOS's accessibility flag into a
     /// single Bool the Liquid Glass slab observes.
     let reduceTransparencyResolver: ReduceTransparencyResolver
-    /// Tracks the last settings value pushed to libghostty so the
-    /// observation hook below only fires `reloadConfig` when the
-    /// terminal-affecting subset actually changes.
+    /// The settings document the observation hook last acted on, so a write
+    /// that leaves it identical does not start the work below again. Which of
+    /// those writes actually reach libghostty is decided by
+    /// `lastAppliedConfigKey`.
     var lastAppliedSettings: LimpidSettings
+    /// What libghostty was last handed, plus whether the user's own config was
+    /// included — the two together are what a reload has to differ from. Not
+    /// the text itself: the suffix makes it a comparison key. See
+    /// `scheduleSettingsReload`.
+    var lastAppliedConfigKey: String?
     /// Coalesces a burst of settings mutations into one libghostty
     /// reload. A slider drag fires `value = Int($0)` on every delta —
     /// without this debounce, dragging font-size 11 → 16 triggers five
@@ -495,12 +512,11 @@ final class AppState {
             // `settingsStore` and the MainActor helpers below.
             MainActor.assumeIsolated {
                 guard let self, let app = self.ghosttyApp else { return }
-                // OS-side change matters only when the user is set to
-                // `.system`; `.light` / `.dark` overrides ignore the OS
-                // signal (libghostty stays on the pinned theme, NSApp
-                // appearance was already applied in init / settings sync).
+                // We rebuild only system appearance and invalidate the settings cache
+                // because this reload changes the configuration behind that cache.
                 let pref = self.settingsStore.settings.appearance.colorScheme
                 guard pref == .system else { return }
+                self.lastAppliedConfigKey = nil
                 GhosttyConfigBridge.reloadConfig(
                     app: app,
                     settings: self.settingsStore.settings,
@@ -610,6 +626,8 @@ struct LimpidApp: App {
                 .environment(state.prHoverPresentation)
                 .environment(\.prStatusSyncer, state.prStatusSyncer)
                 .environment(\.surfaceRegistry, state.registry)
+                .environment(\.reviewStores, state.reviewStores)
+                .environment(state.reviewPresentation)
                 .environment(\.claudeSessionTracker, state.claudeSessionTracker)
                 .environment(\.codexSessionTracker, state.codexSessionTracker)
                 .environment(\.cwdEventTracker, state.cwdEventTracker)
@@ -745,7 +763,8 @@ struct LimpidApp: App {
                         state.session,
                         settings: state.settingsStore,
                         frecencyStore: state.frecencyStore,
-                        attention: state.attention
+                        attention: state.attention,
+                        reviewPresentation: state.reviewPresentation
                     )
                 } label: {
                     Label("Command Palette", systemImage: "text.magnifyingglass")
@@ -758,6 +777,7 @@ struct LimpidApp: App {
                         settings: state.settingsStore,
                         frecencyStore: state.frecencyStore,
                         attention: state.attention,
+                        reviewPresentation: state.reviewPresentation,
                         initialQuery: ""
                     )
                 } label: {
@@ -771,41 +791,44 @@ struct LimpidApp: App {
                     Label("Notification History", systemImage: "bell")
                 }
                 .limpidShortcut(.notificationHistory, in: state.settingsStore)
+
+                ReviewChangesMenuItem(state: state)
             }
             CommandGroup(after: .textEditing) {
-                // Find affordances are pane-scoped — the in-pane
-                // overlay lives on the active surface, so without
-                // one there's nothing to search. The Section
-                // disables on `activeTab`; the per-button gates on
-                // findNext/findPrevious tighten further so they only
-                // light up once a search overlay actually exists.
+                // The menu owns Find in both readers. Review handles its own
+                // matches; terminal navigation requires an existing search.
+                let performFind: (LimpidShortcutAction) -> Void = { action in
+                    ReviewPresentationCommand.find(
+                        action, session: state.session, presentation: state.reviewPresentation, registry: state.registry
+                    )
+                }
                 let focusedPaneID = state.session.activeTab?.splitTree.effectiveFocusedLeafID
                 let hasActiveSearch = focusedPaneID.map {
                     state.session.paneSearchStates[$0] != nil
                 } ?? false
                 Section {
                     Button {
-                        SearchActions.beginSearch(state.session)
+                        performFind(.find)
                     } label: {
                         Label("Find…", systemImage: "magnifyingglass")
                     }
                     .limpidShortcut(.find, in: state.settingsStore)
                     Button {
-                        SearchActions.searchNext(state.session, registry: state.registry)
+                        performFind(.findNext)
                     } label: {
                         Label("Find Next", systemImage: "chevron.down")
                     }
                     .limpidShortcut(.findNext, in: state.settingsStore)
-                    .disabled(!hasActiveSearch)
+                    .disabled(!hasActiveSearch && !state.reviewPresentation.isPresented)
                     Button {
-                        SearchActions.searchPrevious(state.session, registry: state.registry)
+                        performFind(.findPrevious)
                     } label: {
                         Label("Find Previous", systemImage: "chevron.up")
                     }
                     .limpidShortcut(.findPrevious, in: state.settingsStore)
-                    .disabled(!hasActiveSearch)
+                    .disabled(!hasActiveSearch && !state.reviewPresentation.isPresented)
                 }
-                .disabled(state.session.activeTab == nil)
+                .disabled(state.session.activeTab == nil && !state.reviewPresentation.isPresented)
             }
             PaneCommands(state: state)
         }

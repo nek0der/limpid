@@ -24,11 +24,6 @@ final class TmuxPanePresence {
     /// to.
     nonisolated static let pollInterval: TimeInterval = 2
 
-    /// What `proc_name` reports for a tmux client. It truncates to
-    /// `MAXCOMLEN`, which this is well inside, and it is already a
-    /// basename so an install path never reaches the comparison.
-    nonisolated static let clientProcessName = "tmux"
-
     private var timer: Timer?
     private weak var registry: (any SurfaceViewProviding)?
     private weak var session: WindowSession?
@@ -69,7 +64,7 @@ final class TmuxPanePresence {
         for paneID in session.tabs.flatMap({ $0.splitTree.allLeafIDs() }) {
             guard let surface = registry.view(for: paneID)?.surface,
                   let pid = GhosttyFFI.surfaceForegroundPID(surface),
-                  Self.processName(of: pid) == Self.clientProcessName
+                  Self.processName(of: pid) == TmuxClientProbe.clientProcessName
             else { continue }
             found.insert(paneID)
         }
@@ -86,7 +81,7 @@ final class TmuxPanePresence {
         var buffer = [CChar](repeating: 0, count: 256)
         let written = proc_name(pid, &buffer, UInt32(buffer.count))
         guard written > 0 else { return nil }
-        let name = String(cString: buffer)
+        guard let name = String(bytes: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, encoding: .utf8) else { return nil }
         return name.isEmpty ? nil : name
     }
 }

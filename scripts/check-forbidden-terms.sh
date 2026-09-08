@@ -16,11 +16,15 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
+# Terminals and editors first, then the code-review tools: this app grew a
+# review surface, and a comparison to another product reads as a clone note
+# however technically it is meant. Only names that are not also ordinary
+# English — "reviewable" is a word this app's own strings use.
 # Every term wraps in `\b` (PCRE word boundary, -P) so common English words
 # don't false-match; `-i` makes it case-insensitive. The companion
 # `test-check-forbidden-terms.sh` pins each entry with a positive and a
 # negative case so an accidental edit can't silently disable one.
-pattern='\b(cmux|manaflow|superisland|notchi|wezterm|alacritty|kitty|iterm2?|vs ?code|vscode|calyx|warp|zellij|tabby|hyper(\.app)?|rio|orca|stablyai|gitlens|lazygit)\b'
+pattern='\b(cmux|manaflow|superisland|notchi|wezterm|alacritty|kitty|iterm2?|vs ?code|vscode|calyx|warp|zellij|tabby|hyper(\.app)?|rio|orca|stablyai|gitlens|lazygit|gerrit|phabricator)\b'
 
 # Skip this script + its allow-list (they name the terms by necessity) and the
 # vendored upstream shell-integration (it legitimately credits Kitty and uses

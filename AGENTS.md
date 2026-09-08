@@ -27,6 +27,7 @@ make dev         # Debug build + launch
 make build       # Debug build only
 make run         # Launch the most recently built app
 make test        # XCTest + Swift Testing suites
+make review-core # the terminal-probe scenario that runs outside the test target
 make dmg         # Release DMG artifact
 make screenshot  # Regenerate .github/assets/hero.png (builds Release first)
 make xcodegen    # Regenerate Limpid.xcodeproj from project.yml
@@ -56,7 +57,7 @@ Limpid/
   App/         entry point, scenes, commands
   Core/        models, settings, notifications, git, persistence, clipboard
   FFI/         libghostty C ABI wrapper (`GhosttyFFI`)
-  UI/          SwiftUI views (sidebar, tab column, terminal column, toolbar, design system, clipboard sheet)
+  UI/          SwiftUI views (sidebar, tab column, terminal column, toolbar, design system, clipboard sheet, review surface)
   Resources/   Info.plist, Localizable.xcstrings, assets
 LimpidTests/   Swift Testing (new) + XCTest (legacy, being migrated)
 vendor/ghostty/  submodule of our fork github.com/nek0der/ghostty (branch `limpid`),
@@ -127,6 +128,9 @@ Short index of load-bearing files. Skim these before touching their domain.
   Waiting split, and why its position is persisted only from a divider
   drag. Records `NSSplitView` behavior measured on macOS 26 that the SDK
   headers describe differently.
+- `Limpid/Core/Review/ReviewStore.swift` — the review's state machine: what
+  each comment state means, why a comment is validated against Git rather than
+  trusted, and which failures the banner is allowed to clear.
 - `Limpid/Core/Updates/SparkleUpdater.swift` — Sparkle auto-update wiring.
 
 ## 5. Do not touch
@@ -142,7 +146,12 @@ Short index of load-bearing files. Skim these before touching their domain.
 - The forced-override config keys passed to `libghostty`
   (`background-opacity=0`, `shell-integration-features=no-cursor`, …). They
   protect the UI compositor; removing one will silently break the rendering
-  path.
+  path. `clipboard-paste-protection = true` is in that block for a different
+  reason: review pastes repository content into whatever the pane is running,
+  and the confirmation an unbracketed multi-line paste goes through is what
+  keeps a shell from taking those lines as commands. It overrides a user's own
+  opt-out in `~/.config/ghostty/config` for every pane, which the Advanced pane
+  says out loud — there is no per-surface form of it in the C ABI.
 - `Localizable.xcstrings` — if you hand-edit the JSON, validate that Xcode can
   re-parse it. A malformed `xcstrings` file fails the build.
 

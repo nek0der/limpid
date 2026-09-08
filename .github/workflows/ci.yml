@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -24,7 +27,7 @@ jobs:
       - name: Select latest Xcode
         run: |
           set -euo pipefail
-          XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          XCODE=$(printf '%s\n' /Applications/Xcode*.app | sort -V | tail -1)
           echo "Selecting $XCODE"
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
@@ -101,6 +104,26 @@ jobs:
           mint bootstrap
       - name: Run SwiftFormat (lint mode, gating)
         run: mint run swiftformat --lint .
+
+  review-core:
+    name: Review core scenarios
+    needs: [format, lint]
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Select latest Xcode
+        run: |
+          set -euo pipefail
+          XCODE=$(printf '%s\n' /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+      # No Xcode project and no libghostty: this compiles the terminal probe on
+      # its own so the one review scenario the parallel test target cannot host
+      # still runs somewhere. The probe brings its own pty through `script`, so
+      # it does not need the runner to have a terminal.
+      - name: Run the terminal probe scenario
+        run: scripts/validate-review-core.sh
 
   lint:
     name: SwiftLint

@@ -370,6 +370,8 @@ enum TabActions {
         case .toggleTabLayout: session.tabColumnHorizontal.toggle()
         case .notificationHistory:
             NotificationCenter.default.post(name: .limpidToggleNotificationHistory, object: nil)
+        case .reviewChanges:
+            NotificationCenter.default.post(name: .limpidReviewChanges, object: session)
         // Palette / quick-open share the .view category but are
         // launched from `AppState` shortcuts rather than this dispatch
         // path — they intentionally no-op here.

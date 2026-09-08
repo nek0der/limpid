@@ -16,6 +16,12 @@ struct DividerResizeHandle: View {
     let minWidth: CGFloat
     let maxWidth: CGFloat
     let defaultWidth: CGFloat
+    /// Names the divider for VoiceOver, which also gets increment and
+    /// decrement from it. Optional only so a caller cannot forget to say what
+    /// its divider adjusts; every handle in the app passes one.
+    var accessibilityLabel: Text?
+    /// How far one increment moves the divider.
+    var accessibilityStep: CGFloat = 24
 
     @State private var dragStart: CGFloat?
 
@@ -59,6 +65,14 @@ struct DividerResizeHandle: View {
                             }
                     )
             )
+            .accessibilityElement()
+            .accessibilityHidden(accessibilityLabel == nil)
+            .accessibilityLabel(accessibilityLabel ?? Text(verbatim: ""))
+            .accessibilityValue(Text(verbatim: "\(Int(currentWidth().rounded()))"))
+            .accessibilityAdjustableAction { direction in
+                let delta = direction == .increment ? accessibilityStep : -accessibilityStep
+                setWidth((currentWidth() + delta).clampedToResizeRange(min: minWidth, max: maxWidth))
+            }
     }
 }
 
@@ -72,7 +86,8 @@ struct SidebarResizeHandle: View {
             setWidth: { session.sidebarWidth = $0 },
             minWidth: LimpidLayout.sidebarMinWidth,
             maxWidth: LimpidLayout.sidebarMaxWidth,
-            defaultWidth: LimpidLayout.containerColumnWidth
+            defaultWidth: LimpidLayout.containerColumnWidth,
+            accessibilityLabel: Text("Sidebar Width")
         )
     }
 }
@@ -87,7 +102,8 @@ struct TabColumnResizeHandle: View {
             setWidth: { session.tabColumnWidth = $0 },
             minWidth: LimpidLayout.tabColumnMinWidth,
             maxWidth: LimpidLayout.tabColumnMaxWidth,
-            defaultWidth: LimpidLayout.tabColumnWidth
+            defaultWidth: LimpidLayout.tabColumnWidth,
+            accessibilityLabel: Text("Tab Column Width")
         )
     }
 }

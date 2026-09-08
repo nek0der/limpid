@@ -193,6 +193,10 @@ struct PRHoverCardHost: View {
         // changes on every scroll frame, and animating that makes the
         // card lag behind the row it belongs to.
         .animation(
+            // Shorter and unsprung under Reduce Motion rather than nothing:
+            // the card appearing and disappearing with no transition at all
+            // reads as a glitch, which is not what the setting asked for.
+            // Same substitution the toast and the move suggestion make.
             reduceMotion ? nil : LimpidMotion.prHoverCard,
             value: presentation.visible?.rowID
         )

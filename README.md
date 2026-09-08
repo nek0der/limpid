@@ -30,6 +30,9 @@ A branch with an open request shows it on its sidebar row — open, draft, merge
 ### Claude Code & Codex, together
 Both CLIs are recognized natively, with live status, prompt-aware tab names, and per-pane session resume that survives restarts — including the actual scrollback, not just session IDs.
 
+### Review the diff before you hand it back (⌥⌘R)
+Read the branch or the working tree inside Limpid, comment on the lines you want changed, and send the comments to the agent in the pane below as one prompt. Files you have finished with can be marked and hidden, and comments outlive a restart. A comment whose code has moved since you wrote it is held back rather than sent, so the agent never gets a line number that no longer means anything.
+
 ### Designed to disappear
 A native macOS three-pane sidebar plus a Liquid Glass toolbar — calm, out of the way, native.
 
@@ -39,6 +42,7 @@ A native macOS three-pane sidebar plus a Liquid Glass toolbar — calm, out of t
 |---|---|
 | ⌘J | Jump to next waiting agent |
 | ⌥⌘N | New worktree |
+| ⌥⌘R | Review changes |
 | ⌘T | New tab |
 | ⌘W | Close pane |
 | ⇧⌘P | Command palette |

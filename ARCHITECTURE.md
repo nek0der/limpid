@@ -47,6 +47,10 @@ in `Core/`, no `Settings` ↔ `Persistence` cycles.
 | `Limpid/UI/SurfaceView.swift` | The `NSView` subclass that owns the libghostty surface + Metal layer |
 | `Limpid/UI/Pane/PaneHostView.swift` | `NSViewRepresentable` bridging `SurfaceRegistry` ↔ SplitTree |
 | `Limpid/Core/Git/PRStatusSyncer.swift` | Schedules forge CLI lookups per sidebar row and writes them into `PRStatusStore` (opt-in; `gh` / `glab`) |
+| `Limpid/Core/Review/ReviewStore.swift` | Review state: the comment lifecycle (written → inserted → resolved), read marks, and the draft it restores from |
+| `Limpid/Core/Review/ReviewGitCommand.swift` | Every Git read the review makes, and the patch bytes both the change poll and the diff hash |
+| `Limpid/Core/Actions/ReviewInsertion.swift` | The order an insert happens in: resolve the pane, validate, deliver, then record |
+| `Limpid/Core/Review/ReviewPresentation.swift` | Where review sits in a window, and which terminal it delivers to — following the focused pane until the reader pins one |
 | `Limpid/Core/Updates/SparkleUpdater.swift` | Sparkle integration (only `ObservableObject` site has been removed) |
 
 ---
@@ -99,18 +103,21 @@ of dereferencing into freed memory.
 `GhosttyConfigBridge` always emits a fixed set of keys
 (`background-opacity=0`, `term=xterm-256color`,
 `shell-integration-features=no-cursor`, `confirm-close-surface=false`,
-`custom-shader-animation=false`, plus three forced `keybind=` lines)
+`custom-shader-animation=false`, `clipboard-paste-protection=true`, plus
+three forced `keybind=` lines)
 regardless of user settings — they protect the UI compositor and the
 rendering path. Removing one silently breaks the app. See the
 forced-overrides comment block in `GhosttyConfigBridge.makeConfigString`.
 
 ### Persistence
 
-All four top-level stores (`SessionStore`, `SettingsStore`,
-`NotificationHistoryStore`, `FrecencyStore`) route through
+All five top-level stores (`SessionStore`, `SettingsStore`,
+`NotificationHistoryStore`, `FrecencyStore`, and the review's
+`FileReviewDraftStore`) route through
 `PersistenceCoders.makeEncoder()` / `.makeDecoder()` for JSON shape
-consistency and through `PersistenceTiming.interactive` /
-`.coalescing` for debounces. `SettingsStore` keeps its own encoder
+consistency and `PersistenceTiming.interactive` / `.coalescing` for debounces.
+Review navigation metadata is coalesced on a serial write queue; comment
+edits wait for storage so a failed save keeps the composer open. `SettingsStore` keeps its own encoder
 inline (always pretty-printed) because `settings.json` is the one
 file the user is expected to open in an editor.
 

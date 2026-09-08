@@ -178,4 +178,27 @@ struct GhosttyConfigBridgeTests {
         #expect(config.contains("jump_to_prompt:1"))
         #expect(!config.contains("keybind = super+down=ignore"))
     }
+
+    @Test func generatedConfigurationsDoNotOverwriteAnotherProcess() throws {
+        try withTempDir { directory in
+            let first = GhosttyConfigBridge.writeConfigFile(
+                settings: .default, resourcesDir: "/resources", appearance: .light,
+                directory: directory, processID: 101
+            )
+            let firstPath = try #require(first)
+            let before = try String(contentsOfFile: firstPath, encoding: .utf8)
+            let second = GhosttyConfigBridge.writeConfigFile(
+                settings: .default, resourcesDir: "/resources", appearance: .dark,
+                directory: directory, processID: 202
+            )
+            let secondPath = try #require(second)
+            #expect(firstPath != secondPath)
+            let retained = try String(contentsOfFile: firstPath, encoding: .utf8)
+            #expect(retained == before)
+            #expect(retained.contains("Apple System Colors Light"))
+            let dark = try String(contentsOfFile: secondPath, encoding: .utf8)
+            #expect(!dark.contains("Apple System Colors Light"))
+        }
+    }
+
 }

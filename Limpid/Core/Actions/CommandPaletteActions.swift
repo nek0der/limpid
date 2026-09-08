@@ -6,6 +6,14 @@
 import Foundation
 
 extension Notification.Name {
+    static let limpidReviewChanges = Notification.Name("dev.limpid.reviewChanges")
+    static let limpidReviewFind = Notification.Name("dev.limpid.reviewFind")
+    /// Posted when a review paste is refused at the confirmation sheet. The
+    /// comments were already recorded as sent by then — the paste action
+    /// answers long before the sheet does — so this is what takes the mark
+    /// back off them.
+    static let limpidReviewPasteDenied = Notification.Name("dev.limpid.reviewPasteDenied")
+
     /// Posted when the command palette opens so the overlay grabs focus.
     static let limpidCommandPaletteFocus = Notification.Name("dev.limpid.commandPaletteFocus")
 
@@ -28,6 +36,9 @@ enum CommandPaletteActions {
         settings: SettingsStore,
         frecencyStore: FrecencyStore,
         attention: AttentionState,
+        // Review can be up over a container with nothing to review, and the
+        // palette is one of the ways to close it.
+        reviewPresentation: ReviewPresentation?,
         initialQuery: String = ">"
     ) {
         if session.commandPaletteState != nil {
@@ -36,7 +47,10 @@ enum CommandPaletteActions {
         }
         let state = CommandPaletteState()
         state.allItems = CommandPaletteCatalog.buildItems(
-            session: session, settings: settings, attention: attention
+            session: session,
+            settings: settings,
+            attention: attention,
+            reviewPresentation: reviewPresentation
         )
         state.initialQuery = initialQuery.isEmpty ? nil : initialQuery
         state.applyFilter(query: "", frecencyStore: frecencyStore)

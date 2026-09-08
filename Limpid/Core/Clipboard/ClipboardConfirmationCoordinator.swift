@@ -51,6 +51,7 @@ struct PendingClipboardRequest: Identifiable {
     /// Opaque libghostty request state. `nonisolated(unsafe)` because it
     /// crosses the C ABI — passed straight back to the completion call.
     nonisolated(unsafe) let state: UnsafeMutableRawPointer?
+
 }
 
 /// Holds at most one pending request. If a second request arrives
@@ -79,6 +80,24 @@ final class ClipboardConfirmationCoordinator {
     /// observed by the read inside the setter, producing a spurious
     /// second `complete_clipboard_request(... false)`.
     private var isCompleting = false
+    private let reviewPasteLedger = ReviewPasteLedger()
+
+    /// The review paste whose clipboard read is in flight.
+    ///
+    /// A request cannot take it off the surface itself. The callback that
+    /// raises the sheet runs inside the read that started the paste but hops
+    /// to the main queue before it gets here, and by then the read has
+    /// finished and cleared the surface. It is parked here for the length of
+    /// that one call instead, and taken in the callback's own frame.
+    @MainActor static var inFlightReviewDelivery: ReviewPasteDelivery?
+
+    /// The parked delivery's receipt, if this request is the one it belongs
+    /// to. Taken rather than read: one paste has one answer, and taking it
+    /// moves the duty to report a refusal along with it.
+    @MainActor static func takeInFlightReviewReceipt() -> ReviewPasteReceipt? {
+        defer { inFlightReviewDelivery = nil }
+        return inFlightReviewDelivery?.handedOn()
+    }
 
     /// Enqueue a request from libghostty. Called on the main actor
     /// after the C callback hops over. Returns silently if another
@@ -88,9 +107,10 @@ final class ClipboardConfirmationCoordinator {
         kind: ClipboardConfirmationKind,
         contents: String,
         view: SurfaceView,
-        state: UnsafeMutableRawPointer?
+        state: UnsafeMutableRawPointer?,
+        receipt: ReviewPasteReceipt? = nil
     ) {
-        guard pending == nil else {
+        guard reviewPasteLedger.enqueue(receipt: receipt) else {
             log.notice("clipboard request denied: another prompt is already up")
             if let surface = view.surface {
                 ghostty_surface_deny_clipboard_request(surface, state)
@@ -105,6 +125,24 @@ final class ClipboardConfirmationCoordinator {
         )
     }
 
+    /// Tell review that a paste it started never reached the terminal.
+    ///
+    /// The paste action answers as soon as the request begins, so review has
+    /// already recorded the comments as inserted, and usually closed, by the
+    /// time a refusal arrives. This is what takes the mark back off them.
+    ///
+    /// Reachable from the clipboard callbacks as well as from here. A receipt
+    /// is taken out of the surface synchronously, one main-queue hop before it
+    /// reaches this class, and a pane that dies inside that hop leaves a
+    /// delivery that never happened recorded as one that did.
+    @MainActor static func reportReviewPasteDenied(_ receipt: ReviewPasteReceipt?) {
+        guard let receipt else { return }
+        NotificationCenter.default.post(
+            name: .limpidReviewPasteDenied,
+            object: receipt
+        )
+    }
+
     /// User clicked Allow. The read and unsafe-paste paths complete
     /// libghostty's request (which lets it actually deliver the
     /// pasteboard contents to the shell). The OSC 52 write path skips
@@ -115,10 +153,12 @@ final class ClipboardConfirmationCoordinator {
         guard let req = pending, !isCompleting else { return }
         isCompleting = true
         pending = nil
+        let surface = req.view?.surface
+        reviewPasteLedger.allow(paneIsAlive: surface != nil || (req.kind == .osc52Write && req.state == nil))
         if req.kind == .osc52Write, req.state == nil {
             NSPasteboard.general.declareTypes([.string], owner: nil)
             NSPasteboard.general.setString(req.contents, forType: .string)
-        } else if let surface = req.view?.surface {
+        } else if let surface {
             GhosttyFFI.completeClipboardRequest(
                 surface: surface,
                 text: req.contents,
@@ -127,7 +167,9 @@ final class ClipboardConfirmationCoordinator {
             )
         } else {
             log.notice("clipboard allow skipped: the pane closed before the user answered")
+
         }
+
         isCompleting = false
     }
 
@@ -140,6 +182,7 @@ final class ClipboardConfirmationCoordinator {
         guard let req = pending, !isCompleting else { return }
         isCompleting = true
         pending = nil
+        reviewPasteLedger.deny()
         if req.state != nil, let surface = req.view?.surface {
             ghostty_surface_deny_clipboard_request(surface, req.state)
         }

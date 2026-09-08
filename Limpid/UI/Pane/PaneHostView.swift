@@ -38,6 +38,7 @@ struct PaneHostView: View {
     @Environment(AttentionState.self) private var attention
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(LimpidDragState.self) private var dragState
+    @Environment(ReviewPresentation.self) private var reviewPresentation
 
     private var isBeingDragged: Bool {
         dragState.current == .pane && dragState.currentSourceID == paneID.uuidString
@@ -55,6 +56,7 @@ struct PaneHostView: View {
                     attention: attention,
                     toastCenter: toastCenter,
                     dragState: dragState,
+                    reviewPresentation: reviewPresentation,
                     size: geo.size
                 )
                 if surfaceView.creationFailed {
@@ -182,6 +184,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
     let attention: AttentionState
     let toastCenter: ToastCenter
     let dragState: LimpidDragState
+    let reviewPresentation: ReviewPresentation
     let size: CGSize
 
     /// SwiftUI honors `Equatable` on representables and skips
@@ -306,7 +309,14 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
             guard let session else { return }
             attention.focusMoved(to: paneID, in: session)
         }
-        view.shouldFocusOnMount = { [weak session] in
+        view.shouldFocusOnMount = { [weak session, weak reviewPresentation] in
+            // While review is open the origin pane is mounted below the review
+            // surface. Letting it grab the keyboard on mount would send the
+            // reviewer's keystrokes to the agent they are reviewing. A click
+            // still focuses it, which is the deliberate act this is not.
+            if reviewPresentation?.isPresented == true {
+                return false
+            }
             guard let tab = session?.tab(containing: paneID) else { return false }
             // Fall back to the first leaf when focus is unset, so a
             // multi-pane tab never grabs the keyboard in every pane at once

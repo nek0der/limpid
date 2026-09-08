@@ -549,6 +549,11 @@ extension WindowSession {
             // outside Limpid first.
             let lower = stderr.lowercased()
             if lower.contains("not a working tree") || lower.contains("no such file or directory") {
+                // The draft goes with it here too. Git having lost the
+                // worktree first does not make the comments about it any more
+                // current, and a new worktree at the same path would open
+                // holding them.
+                ReviewStore.removeDraft(root: wt.workingDirectory)
                 let ids = removeWorktree(projectID: projectID, worktreeID: worktreeID)
                 requestSyncRefetch(projectID: projectID)
                 return ids
@@ -567,6 +572,12 @@ extension WindowSession {
         // and close all tabs that lived in it (per the same contract
         // as removing a group/project).
         let ids = removeWorktree(projectID: projectID, worktreeID: worktreeID)
+        // And the review draft written against it. Kept for a worktree that is
+        // merely unreachable — an unmounted volume comes back and its comments
+        // should come back with it — but a deleted one is gone, and a new
+        // worktree made at the same path would otherwise open holding comments
+        // about code that no longer exists.
+        ReviewStore.removeDraft(root: wt.workingDirectory)
         requestSyncRefetch(projectID: projectID)
         return ids
     }

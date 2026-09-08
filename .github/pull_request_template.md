@@ -23,6 +23,7 @@
 
 - [ ] `make lint` clean locally
 - [ ] `make test` passes
+- [ ] `make review-core` passes (its own CI job; `make test` does not cover it)
 - [ ] Tests added or updated where applicable
 - [ ] User-facing strings added to `Localizable.xcstrings` with both en and ja
 - [ ] Verified manually on macOS 26 (Tahoe) — see "How verified" above

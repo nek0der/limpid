@@ -18,16 +18,24 @@ enum CommandPaletteCatalog {
         let hasClosedTabs: Bool
         let hasActiveSearch: Bool
         let hasWaitingAttention: Bool
+        let canReview: Bool
     }
 
     static func buildItems(
         session: WindowSession,
         settings: SettingsStore,
-        attention: AttentionState
+        attention: AttentionState,
+        reviewPresentation: ReviewPresentation? = nil
     ) -> [CommandPaletteItem] {
         var items: [CommandPaletteItem] = []
         items.reserveCapacity(80)
-        appendShortcutActions(to: &items, session: session, settings: settings, attention: attention)
+        appendShortcutActions(
+            to: &items,
+            session: session,
+            settings: settings,
+            attention: attention,
+            reviewPresentation: reviewPresentation
+        )
         appendTabs(to: &items, session: session)
         appendGroups(to: &items, session: session)
         appendProjects(to: &items, session: session)
@@ -43,7 +51,8 @@ enum CommandPaletteCatalog {
         to items: inout [CommandPaletteItem],
         session: WindowSession,
         settings: SettingsStore,
-        attention: AttentionState
+        attention: AttentionState,
+        reviewPresentation: ReviewPresentation?
     ) {
         let hasActiveTab = session.activeTab != nil
         let hasMultipleTabs = session.tabs(in: session.activeContainerID).count > 1
@@ -70,7 +79,8 @@ enum CommandPaletteCatalog {
             isProjectActive: isProjectActive,
             hasClosedTabs: hasClosedTabs,
             hasActiveSearch: hasActiveSearch,
-            hasWaitingAttention: hasWaitingAttention
+            hasWaitingAttention: hasWaitingAttention,
+            canReview: ReviewAgents.canReview(session: session, presentation: reviewPresentation)
         )
 
         for action in LimpidShortcutAction.allCases {
@@ -254,6 +264,7 @@ enum CommandPaletteCatalog {
         case .focusPaneRight: context.reachable(.right)
         case .focusPaneUp: context.reachable(.up)
         case .focusPaneDown: context.reachable(.down)
+        case .reviewChanges: context.canReview
         case .commandPalette, .quickOpen: false
         default: true
         }

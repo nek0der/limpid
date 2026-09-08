@@ -247,7 +247,7 @@ final class GhosttyApp {
     /// available types" flag are ignored: we only ever serve
     /// `text/plain` from `NSPasteboard`, which is what the paste and
     /// OSC 52 requesters ask for.
-    private static let readClipboardCallback: ghostty_runtime_read_clipboard_cb = { userdata, clipboard, state, _, _, _ in
+    private static let readClipboardCallback: ghostty_runtime_read_clipboard_cb = { userdata, clipboard, state, _, _, isListing in
         // macOS has no primary selection. Reporting it as unsupported
         // lets libghostty answer the program immediately instead of
         // waiting on a completion that would never arrive.
@@ -257,17 +257,59 @@ final class GhosttyApp {
         guard let userdata else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
         nonisolated(unsafe) let ud = userdata
         nonisolated(unsafe) let st = state
+        // Taken here rather than after the hop. This callback runs inline on
+        // whichever thread asked, and review asks from the main thread inside
+        // its own paste action — so the text it staged cannot be claimed by a
+        // completion that was already queued. A listing request — what a
+        // clipboard read becomes when the program asked to be told the
+        // available types rather than handed the text — answers with MIME
+        // types and never carries the text, so it must not consume the stage
+        // either.
+        let staged: (text: String, receipt: ReviewPasteReceipt?)? = if !isListing, Thread.isMainThread {
+            MainActor.assumeIsolated {
+                guard let view = SurfaceView.liveView(forUserdata: ud),
+                      let text = view.takeStagedPaste()
+                else { return nil }
+                // Taken with the text it belongs to: the two are one delivery,
+                // and a receipt left on the surface outlives its own paste.
+                return (text, view.takeReviewPasteReceipt())
+            }
+        } else {
+            nil
+        }
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
+                // Everything below is a way out, and the pane can die under
+                // any of them: the text and its receipt came off the surface
+                // in the frame above. Unless something claims this delivery it
+                // reports itself as refused, which is what stops comments from
+                // staying marked over a paste that never happened.
+                let delivery = ReviewPasteDelivery(receipt: staged?.receipt)
+                defer { delivery.failIfUnsettled() }
                 guard let view = SurfaceView.liveView(forUserdata: ud),
                       let surface = view.surface
                 else { return }
+                // Parked for the length of the call below. A paste that needs
+                // confirming raises the sheet from inside it, and the callback
+                // that raises it cannot reach back to the surface: it hops to
+                // the main queue before it enqueues, and by then this read has
+                // finished and taken its receipt.
+                ClipboardConfirmationCoordinator.inFlightReviewDelivery = delivery
                 GhosttyFFI.completeClipboardRequest(
                     surface: surface,
-                    text: NSPasteboard.general.string(forType: .string) ?? "",
+                    // Review stages the text it delivers on the surface so a
+                    // paste can carry it without going through the user's
+                    // clipboard. Anything else reads the pasteboard as before.
+                    text: staged?.text ?? NSPasteboard.general.string(forType: .string) ?? "",
                     state: st,
                     confirmed: false
                 )
+                ClipboardConfirmationCoordinator.inFlightReviewDelivery = nil
+                // Whatever is left belongs to a paste that completed outright:
+                // it has no answer left to wait for, and keeping it would let
+                // the next refusal unmark comments that did arrive. A paste
+                // that raised the sheet was claimed inside the call above.
+                delivery.landed()
             }
         }
         return GHOSTTY_CLIPBOARD_READ_STARTED
@@ -299,8 +341,21 @@ final class GhosttyApp {
         // path on every user paste. Mirrors the sibling
         // `writeClipboardCallback`, which already copies up front.
         let contents = GhosttyFFI.clipboardText(from: confirm)
+        // Taken in this frame and for the same reason as `contents`: we are
+        // running inside the clipboard read that parked it, and the hop below
+        // outlives that read. Off the main thread there is nothing to take —
+        // a review paste is always started from it.
+        let receipt: ReviewPasteReceipt? = Thread.isMainThread
+            ? MainActor.assumeIsolated { ClipboardConfirmationCoordinator.takeInFlightReviewReceipt() }
+            : nil
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
+                // Same hop, same hazard as the read above: the receipt is
+                // already out of its parking slot, and a pane that dies here
+                // would leave the comments marked over nothing. Every way out
+                // reports unless the sheet takes it.
+                let delivery = ReviewPasteDelivery(receipt: receipt)
+                defer { delivery.failIfUnsettled() }
                 guard let view = SurfaceView.liveView(forUserdata: ud),
                       let surface = view.surface
                 else { return }
@@ -319,7 +374,8 @@ final class GhosttyApp {
                     kind: kind,
                     contents: contents,
                     view: view,
-                    state: st
+                    state: st,
+                    receipt: delivery.handedOn()
                 )
             }
         }

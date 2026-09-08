@@ -1,4 +1,4 @@
-.PHONY: build build-release run dev test fmt lint dmg xcodegen ghostty screenshot clean help
+.PHONY: build build-release run dev test review-core fmt lint dmg xcodegen ghostty screenshot clean help
 
 SCHEME  := Limpid
 PROJECT := Limpid.xcodeproj
@@ -16,6 +16,7 @@ help:
 	@echo "  make run       Launch the built app"
 	@echo "  make dev       build + run"
 	@echo "  make test      Run XCTest / Swift Testing suites"
+	@echo "  make review-core  Run the review scenarios without building the app"
 	@echo "  make fmt       Auto-format with SwiftFormat"
 	@echo "  make lint      Lint (SwiftFormat lint + SwiftLint), mirrors CI"
 	@echo "  make dmg       Package a release DMG"
@@ -49,6 +50,12 @@ dev: build run
 
 test: $(PBXPROJ)
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' test
+
+# The terminal probe on its own, which is the one review scenario the test
+# target cannot host: it spawns processes, and the parallel suites reuse the
+# descriptor numbers another test asserts are closed.
+review-core:
+	scripts/validate-review-core.sh
 
 fmt:
 	mint run swiftformat .
