@@ -6,24 +6,22 @@
 
 import Foundation
 
-typealias CodexAgentStateStore = PaneStore<CodexAgentStateRecord>
+typealias CodexAgentStateStore = AgentStateStore<CodexAgentStateRecord>
 
-extension PaneStore where Record == CodexAgentStateRecord {
+extension AgentStateStore where Record == CodexAgentStateRecord {
     convenience init() {
         self.init(
             directory: LimpidPaths.applicationSupportDirectory()
                 .appendingPathComponent("codex-agent-states", isDirectory: true),
-            maxRecords: 200,
-            fileSuffix: ".state.json",
+            maxRetiredRecords: 200,
             logCategory: "codex.agent.state.store"
         )
     }
 
-    convenience init(directory: URL, maxRecords: Int = 200) {
+    convenience init(directory: URL, maxRetiredRecords: Int = 200) {
         self.init(
             directory: directory,
-            maxRecords: maxRecords,
-            fileSuffix: ".state.json",
+            maxRetiredRecords: maxRetiredRecords,
             logCategory: "codex.agent.state.store"
         )
     }

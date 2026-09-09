@@ -42,7 +42,9 @@ Set by Limpid before spawning the pty:
 |---|---|
 | `PATH` | Original `PATH` with this directory prepended |
 | `ZDOTDIR` | Redirected to `zdotdir/` so the `PATH` edit survives the user's rc |
-| `LIMPID_PANE_ID` | UUID of the owning split-tree leaf (one per pane) |
+| `LIMPID_PANE_ID` | UUID of the launching split-tree leaf; not current ownership inside tmux |
+| `LIMPID_AGENT_RUN_ID` | UUID of this Claude invocation; lifecycle-state filename key |
+| `LIMPID_AGENT_TMUX_HOST_MODE` | `limpidHosted` for automatic hosting, `manual` inside user tmux |
 | `LIMPID_SHIM_DIR` | This directory, so `zdotdir/.zshrc` can re-prepend it |
 | `LIMPID_SESSIONS_DIR` | Directory to write session records into |
 | `LIMPID_AGENT_STATES_DIR` | Directory to write agent-state records into |
@@ -52,6 +54,20 @@ Set by Limpid before spawning the pty:
 
 `PaneShellEnvironment` and `ClaudeShimLocator` are the source of truth
 for the values.
+
+Lifecycle records are keyed by `LIMPID_AGENT_RUN_ID`, not by the launching
+pane. Inside tmux the receiver records the server socket, PID/start time, and
+`TMUX_PANE` without contacting the server. Swift resolves current pane membership
+and joins it to the tmux client's outer tty. This lets
+a detached session move to another Limpid pane without moving or overwriting
+the agent record.
+
+Each shim entry mints a new run ID, including nested agent launches. Native
+resume hints are written only outside tmux and include the owning run ID.
+Records without enough tmux identity remain unresolved instead of attaching
+to the inherited launch pane. Existing pre-upgrade runs may need a new hook
+event before their attachment becomes visible. Manual tmux requires this shim
+on the inner shell's PATH; no global agent hooks are installed.
 
 ## Why shell scripts and not a Swift binary
 

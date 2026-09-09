@@ -1,5 +1,5 @@
 // AgentStateTracker.swift
-// Limpid — generic per-pane lifecycle tracker for any `AgentSpec`
+// Limpid — generic runtime lifecycle tracker and pane projection for any `AgentSpec`
 // flavour. Sub-phase 2.2d collapsed `ClaudeAgentStateTracker` and
 // `CodexAgentStateTracker` (~785 LOC of near-identical code) into one
 // parameterised class. Both trackers shared the same skeleton —
@@ -20,7 +20,7 @@ import OSLog
 
 @MainActor
 final class AgentStateTracker<S: AgentSpec> {
-    typealias Store = PaneStore<S.StateRecord>
+    typealias Store = AgentStateStore<S.StateRecord>
     typealias SessionStore = PaneStore<S.SessionRecord>
 
     let store: Store
@@ -30,6 +30,8 @@ final class AgentStateTracker<S: AgentSpec> {
     /// `state=idle` record would auto-resume a `/quit`ted session on
     /// the next launch). Claude leaves this nil.
     let sessionStore: SessionStore?
+    let resumeIntents: AgentResumeIntentStore
+    private let processStatus: (String?) -> AgentProcessStatus
 
     private weak var session: WindowSession?
     /// Auto-marks the focused pane's finished turn as viewed when it
@@ -41,10 +43,15 @@ final class AgentStateTracker<S: AgentSpec> {
     /// `running → finished` transitions fire a macOS notification;
     /// tests pass nil.
     private weak var notificationManager: LimpidNotificationManager?
-    /// Snapshot of the last badges per pane. Diffed against the
-    /// current dict to detect transitions; the authoritative copy
-    /// lives on `Tab`.
-    private var previousBadges: [UUID: AgentBadge] = [:]
+    private weak var tmuxPresence: TmuxPanePresence?
+    /// We diff per invocation, even while detached, so attaching another
+    /// client neither duplicates notifications nor invents transitions.
+    private var notificationOutbox = AgentNotificationOutbox()
+    private var acceptedRecords: [String: S.StateRecord] = [:]
+    var socketPaths: Set<String> {
+        Set(acceptedRecords.values.compactMap(\.tmuxSocketPath))
+    }
+
     /// Set once the bootstrap apply has run. Skips notifications +
     /// auto-viewed marking on the first pass so a restored
     /// `.finished` record from a previous run doesn't fire a banner.
@@ -60,9 +67,15 @@ final class AgentStateTracker<S: AgentSpec> {
 
     private let log: Logger
 
-    init(store: Store, sessionStore: SessionStore? = nil) {
+    init(
+        store: Store,
+        sessionStore: SessionStore? = nil,
+        processStatus: @escaping (String?) -> AgentProcessStatus = AgentProcessStatus.inspect
+    ) {
         self.store = store
         self.sessionStore = sessionStore
+        self.resumeIntents = AgentResumeIntentStore(directory: store.directory.appendingPathComponent("resume-intents"))
+        self.processStatus = processStatus
         self.log = Logger.limpid("\(S.label).agent.state.tracker")
     }
 
@@ -79,17 +92,19 @@ final class AgentStateTracker<S: AgentSpec> {
 
     // MARK: - Bootstrap
 
-    /// Sync every alive pane's badge against the on-disk records,
+    /// Project every on-disk runtime record onto its current pane,
     /// then arm the directory watcher + PID sweep. Called once per
     /// launch after `SessionStore` has restored the snapshot.
     func bootstrap(
         into session: WindowSession,
         attention: AttentionState? = nil,
-        notificationManager: LimpidNotificationManager? = nil
+        notificationManager: LimpidNotificationManager? = nil,
+        tmuxPresence: TmuxPanePresence? = nil
     ) {
         self.session = session
         self.attention = attention
         self.notificationManager = notificationManager
+        self.tmuxPresence = tmuxPresence
         // Demo mode treats `DemoFixture` as the whole truth — any
         // badge we'd pull from the Application Support directory
         // would clobber the in-memory fixture (the disk lookup
@@ -104,15 +119,19 @@ final class AgentStateTracker<S: AgentSpec> {
         startPIDSweep()
     }
 
-    /// Drop the on-disk record for a pane that has been closed for
-    /// good. Idempotent.
+    /// Drop direct runtime records launched from a pane that closed. tmux
+    /// runtimes survive because the outer client is not their owner.
     func didClosePane(_ paneID: UUID) {
-        store.delete(paneID: paneID)
+        store.deleteRecords(launchedFrom: paneID, includingTmux: false)
         session?.applyAcrossTabs { tab in
             if tab[keyPath: S.badgesKeyPath][paneID] != nil {
                 tab[keyPath: S.badgesKeyPath][paneID] = nil
             }
         }
+    }
+
+    func refreshPresentation() {
+        applyAllRecordsToSession()
     }
 
     // MARK: - Directory watch
@@ -174,45 +193,113 @@ final class AgentStateTracker<S: AgentSpec> {
         pidTimer = timer
     }
 
-    private func runPIDSweep() {
-        let hasSessionStore = sessionStore != nil
+    func runPIDSweep() {
+        var didDeleteRecord = false
         for record in store.allRecords() {
-            guard let pidString = record.pid, let pid = pid_t(pidString) else { continue }
             // `kill(pid, 0)` returns 0 if the process exists; ESRCH
             // means "no such process". Anything else (EPERM etc.)
             // leaves the badge alone — better to show a stale state
             // than to wipe a live session.
-            guard kill(pid, 0) != 0, errno == ESRCH else { continue }
-            guard let paneID = UUID(uuidString: record.paneId) else { continue }
-            store.delete(paneID: paneID)
-            // Codex companion: drop the resume record too — `/quit`
-            // is indistinguishable from a crash from our point of
-            // view, so leaving the session in place would auto-resume
-            // a conversation the user just dismissed. Claude side
-            // skips this branch (sessionStore == nil).
-            sessionStore?.delete(paneID: paneID)
-            session?.applyAcrossTabs { tab in
-                if tab[keyPath: S.badgesKeyPath][paneID] != nil {
-                    tab[keyPath: S.badgesKeyPath][paneID] = nil
-                }
-                if hasSessionStore, tab[keyPath: S.sessionsKeyPath][paneID] != nil {
-                    tab[keyPath: S.sessionsKeyPath][paneID] = nil
-                }
+            guard processStatus(record.pid) == .dead else { continue }
+            // A pending independent intent is preserved until startup can
+            // consume it. Busy cleanup remains on disk for the next sweep.
+            if resumeIntents.record(runID: record.storageID) != nil {
+                continue
             }
+            if removeDeadRecord(record) {
+                didDeleteRecord = true
+            }
+        }
+        if didDeleteRecord {
+            applyAllRecordsToSession()
+        }
+    }
+
+    /// The launch pane is not ownership. We coordinate with SessionStart
+    /// and compare invocation IDs before removing a native resume hint.
+    private func deleteOwnedResumeHint(for record: S.StateRecord) throws -> RecordMutationOutcome {
+        guard !record.isTmuxRuntime, let sessionStore,
+              let paneID = UUID(uuidString: record.paneId)
+        else { return .applied }
+        let url = sessionStore.directory.appendingPathComponent("\(paneID.uuidString).json")
+        return try AgentFileLock.withLock(for: url) {
+            guard let hint = sessionStore.record(forPaneID: paneID) else { return .notFound }
+            guard hint.runId == record.runId else { return .preconditionChanged }
+            if record.runId == nil,
+               store.allRecords().contains(where: {
+                   $0.paneId == record.paneId && $0.storageID != record.storageID
+               })
+            {
+                return .preconditionChanged
+            }
+            try FileManager.default.removeItem(at: url)
+            session?.applyAcrossTabs { tab in
+                tab[keyPath: S.sessionsKeyPath][paneID] = nil
+            }
+            return .applied
+        }
+    }
+
+    private func removeDeadRecord(_ record: S.StateRecord) -> Bool {
+        do {
+            guard try deleteOwnedResumeHint(for: record) != .busy else { return false }
+            return try store.removeIfUnchanged(record) == .applied
+        } catch {
+            // Retain the runtime as the retry token; never claim that its
+            // companion hint was removed after an I/O failure.
+            log.error("deferred runtime cleanup: \(error.localizedDescription, privacy: .private)")
+            return false
         }
     }
 
     // MARK: - Apply records to session
 
+    private func loadOrderedRecords() -> [S.StateRecord] {
+        let diskRecords = store.allRecords()
+        let readIDs = Set(diskRecords.map(\.storageID))
+        acceptedRecords = acceptedRecords.filter { id, _ in readIDs.contains(id) || store.recordExists(recordID: id) != false }
+        for record in diskRecords {
+            if let previous = acceptedRecords[record.storageID] {
+                if let revision = record.revision, let prior = previous.revision, revision <= prior {
+                    continue
+                }
+                if record.revision == nil, record.updatedAt < previous.updatedAt {
+                    continue
+                }
+            }
+            acceptedRecords[record.storageID] = record
+        }
+        return Array(acceptedRecords.values)
+    }
+
     private func applyAllRecordsToSession() {
         guard let session else { return }
-        let records = store.allRecords()
-        var byPaneID: [UUID: S.StateRecord] = [:]
-        byPaneID.reserveCapacity(records.count)
+        let records = loadOrderedRecords()
+        var recordsByPaneID: [UUID: [S.StateRecord]] = [:]
+        var runtimes: [AgentRuntimePresentation] = []
         for record in records {
-            guard let id = UUID(uuidString: record.paneId) else { continue }
-            byPaneID[id] = record
+            let targets: Set<UUID> = if record.isTmuxRuntime {
+                Set((tmuxPresence?.attachments(for: record.tmuxEndpoint) ?? [:]).keys)
+            } else if let paneID = UUID(uuidString: record.paneId) {
+                [paneID]
+            } else {
+                []
+            }
+            for target in targets {
+                recordsByPaneID[target, default: []].append(record)
+            }
+            if let badge = S.makeBadge(from: record) {
+                runtimes.append(AgentRuntimePresentation(
+                    kind: S.kind, runID: record.storageID, revision: record.revision,
+                    badge: badge, paneIDs: targets,
+                    tmuxLocations: record.isTmuxRuntime ? (tmuxPresence?.attachments(for: record.tmuxEndpoint) ?? [:]) : [:],
+                    attachmentResolution: record.isTmuxRuntime
+                        ? (tmuxPresence?.resolution(for: record.tmuxEndpoint) ?? .unresolved)
+                        : (targets.isEmpty ? .detached : .attached)
+                ))
+            }
         }
+        attention?.replaceRuntimes(runtimes, kind: S.kind)
         var alive: Set<UUID> = []
         for tab in session.tabs {
             for paneID in tab.splitTree.allLeafIDs() {
@@ -222,7 +309,7 @@ final class AgentStateTracker<S: AgentSpec> {
 
         for tab in session.tabs {
             session.update(tab.id) { mutTab in
-                reconcile(&mutTab, byPaneID: byPaneID)
+                reconcile(&mutTab, recordsByPaneID: recordsByPaneID)
             }
         }
 
@@ -231,23 +318,28 @@ final class AgentStateTracker<S: AgentSpec> {
         // Only fire after the first apply — restored `.finished`
         // records from before Limpid relaunched aren't real
         // transitions.
-        if hasBootstrapped {
-            emitFinishedNotifications(session: session)
-        }
-        rebuildPreviousBadges(session: session)
+        let events = notificationOutbox.observe(runtimes, now: ProcessInfo.processInfo.systemUptime, isBootstrap: !hasBootstrapped)
+        emitFinishedNotifications(session: session, events: events)
 
         // Auto-mark the currently-focused pane's freshly-arrived
         // finished turn as viewed — the user is looking at it as it
         // lands. The helper bails on the bootstrap pass.
         markCurrentlyFocusedViewed(session: session)
 
-        store.cleanup(keeping: alive)
+        let orphans = AgentLifecyclePolicy.removableRecords(records, alivePanes: alive, processStatus: processStatus)
+        for record in records where orphans.contains(record.storageID) && resumeIntents.record(runID: record.storageID) == nil {
+            _ = removeDeadRecord(record)
+        }
+        store.pruneRetired()
     }
 
     /// Refresh one tab's per-pane badges from the on-disk records and
     /// call into `S.applyTabTitle` so flavour-specific titling (Codex
     /// firstPrompt → tab.title) lands in the same atomic update.
-    private func reconcile(_ tab: inout Tab, byPaneID: [UUID: S.StateRecord]) {
+    private func reconcile(
+        _ tab: inout Tab,
+        recordsByPaneID: [UUID: [S.StateRecord]]
+    ) {
         var current = tab[keyPath: S.badgesKeyPath]
         // One walk over the split tree: feeds both the per-pane
         // reconcile loop and the stale-cleanup membership check
@@ -256,15 +348,12 @@ final class AgentStateTracker<S: AgentSpec> {
         // event so the allocation noise stacks up.
         let leafIDs = tab.splitTree.allLeafIDs()
         for paneID in leafIDs {
-            if let record = byPaneID[paneID],
+            if let record = dominantRecord(in: recordsByPaneID[paneID] ?? []),
                let badge = S.makeBadge(from: record)
             {
-                // Drop out-of-order async updates.
-                if let existing = current[paneID],
-                   existing.updatedAt > badge.updatedAt
-                {
-                    continue
-                }
+                // Each run has already been reduced by revision. Comparing
+                // this aggregate against the prior pane timestamp would let
+                // a newer low-priority run hide an older needs-input run.
                 if current[paneID] != badge {
                     current[paneID] = badge
                 }
@@ -286,6 +375,26 @@ final class AgentStateTracker<S: AgentSpec> {
         S.applyTabTitle(&tab, badges: current)
     }
 
+    private func dominantRecord(in records: [S.StateRecord]) -> S.StateRecord? {
+        records.max { lhs, rhs in
+            let lhsPriority = displayPriority(lhs)
+            let rhsPriority = displayPriority(rhs)
+            if lhsPriority != rhsPriority {
+                return lhsPriority < rhsPriority
+            }
+            // Revisions only order events within one run, never peers.
+            if lhs.updatedAt == rhs.updatedAt {
+                return lhs.storageID < rhs.storageID
+            }
+            return lhs.updatedAt < rhs.updatedAt
+        }
+    }
+
+    private func displayPriority(_ record: S.StateRecord) -> Int {
+        guard let badge = S.makeBadge(from: record) else { return -1 }
+        return attention?.displayPriority(kind: S.kind, runID: record.storageID, badge: badge) ?? badge.state.priority
+    }
+
     private func markCurrentlyFocusedViewed(session: WindowSession) {
         guard hasBootstrapped,
               let attention,
@@ -296,36 +405,27 @@ final class AgentStateTracker<S: AgentSpec> {
         attention.markViewed(paneID: paneID, in: session)
     }
 
-    /// Diff every leaf's prior badge against its current badge and
-    /// hand the transition to `AgentNotificationEmitter`.
-    private func emitFinishedNotifications(session: WindowSession) {
+    /// Emit one transition per invocation, regardless of client count.
+    private func emitFinishedNotifications(session: WindowSession, events: [AgentRuntimeTransition]) {
         guard let notificationManager else { return }
-        let emitter = AgentNotificationEmitter(
-            kind: S.kind,
-            notificationManager: notificationManager
-        )
-        for tab in session.tabs {
-            for paneID in tab.splitTree.allLeafIDs() {
-                guard let current = tab[keyPath: S.badgesKeyPath][paneID] else { continue }
-                emitter.handleTransition(
-                    tab: tab,
-                    paneID: paneID,
-                    previous: previousBadges[paneID],
-                    current: current,
-                    session: session
-                )
-            }
+        for transition in events {
+            let runtime = transition.runtime
+            let focused = session.activeTab?.splitTree.focusedLeafID
+            let preferred = focused.flatMap { runtime.paneIDs.contains($0) ? $0 : nil }
+            guard let paneID = preferred ?? runtime.paneIDs.sorted(by: { $0.uuidString < $1.uuidString }).first,
+                  let tab = session.tab(containing: paneID)
+            else { continue }
+            let emitter = AgentNotificationEmitter(
+                kind: S.kind, notificationManager: notificationManager,
+                suppressWhenPaneFocused: runtime.tmuxLocations[paneID]?.isActive ?? true,
+                runtimeID: runtime.id
+            )
+            emitter.handleTransition(
+                tab: tab, paneID: paneID, previous: transition.previous,
+                current: runtime.badge, session: session
+            )
+            notificationOutbox.acknowledge(transition)
         }
-    }
-
-    private func rebuildPreviousBadges(session: WindowSession) {
-        var next: [UUID: AgentBadge] = [:]
-        for tab in session.tabs {
-            for (paneID, badge) in tab[keyPath: S.badgesKeyPath] {
-                next[paneID] = badge
-            }
-        }
-        previousBadges = next
     }
 }
 
@@ -340,15 +440,41 @@ extension AgentStateTracker where S == CodexAgent {
     /// to a `WindowSession` yet at this point) — drops state +
     /// session files in lockstep.
     func cleanupDeadSessionsOnLaunch() {
-        guard let sessionStore else { return }
+        guard sessionStore != nil else { return }
         for record in store.allRecords() {
-            var isAlive = false
-            if let pidString = record.pid, let pid = pid_t(pidString) {
-                let killRC = kill(pid, 0)
-                let killErrno = errno
-                isAlive = killRC == 0 || killErrno == EPERM
+            if record.isTmuxRuntime, record.pid == nil {
+                continue
             }
-            if isAlive {
+            let status = processStatus(record.pid)
+            if status == .alive {
+                continue
+            }
+            if status == .unknown, record.resumeAttemptedAt == nil, record.killedByLimpidAt == nil {
+                continue
+            }
+
+            if let intent = resumeIntents.record(runID: record.storageID),
+               intent.runID == record.storageID, intent.pid == record.pid,
+               intent.paneID.uuidString == record.paneId,
+               Date().timeIntervalSince(intent.createdAt) < AgentResumeIntentStore.lifetime,
+               let hint = sessionStore?.record(forPaneID: intent.paneID),
+               hint.runId == intent.ownerRunID, hint.sessionId == intent.sessionID
+            {
+                do {
+                    let outcome = try store.update(recordID: record.storageID, matching: {
+                        $0.pid == record.pid && $0.revision == record.revision
+                    }, transform: { latest in
+                        latest.pid = nil
+                        latest.killedByLimpidAt = nil
+                        latest.state = "unknown"
+                        latest.resumeAttemptedAt = AgentDateParsing.formatISO8601(Date())
+                    })
+                    if outcome == .applied {
+                        try resumeIntents.remove(runID: record.storageID)
+                    }
+                } catch {
+                    log.error("deferred resume protection: \(error.localizedDescription, privacy: .private)")
+                }
                 continue
             }
 
@@ -369,24 +495,30 @@ extension AgentStateTracker where S == CodexAgent {
                let date = AgentDateParsing.parseISO8601(killedAt),
                Date().timeIntervalSince(date) < 86400
             {
-                var updated = record
-                updated.killedByLimpidAt = nil
-                updated.pid = nil
                 // Best-effort: if the write fails (disk full, sandbox
                 // permission flake) the marker stays on disk and the
                 // next launch retries the exact same clear. Failing
                 // the whole cleanup loop for one stale-marker row
                 // would be worse than letting the row come back next
                 // launch.
-                try? store.save(updated)
+                _ = try? store.update(recordID: record.storageID, matching: {
+                    $0.pid == record.pid && $0.revision == record.revision
+                }, transform: { latest in
+                    latest.killedByLimpidAt = nil
+                    latest.pid = nil
+                    latest.state = "unknown"
+                    latest.resumeAttemptedAt = AgentDateParsing.formatISO8601(Date())
+                })
                 continue
             }
 
             // No marker (or stale marker). Delete both state and
             // session records.
-            guard let paneID = UUID(uuidString: record.paneId) else { continue }
-            store.delete(paneID: paneID)
-            sessionStore.delete(paneID: paneID)
+            if removeDeadRecord(record) {
+                // The runtime/hint cleanup completed; an expired intent no
+                // longer has an owner. Failure here is harmless stale metadata.
+                try? resumeIntents.remove(runID: record.storageID)
+            }
         }
     }
 
@@ -400,22 +532,36 @@ extension AgentStateTracker where S == CodexAgent {
     func preserveLiveSessionsOnTerminate() {
         let nowISO = AgentDateParsing.formatISO8601(Date())
         for record in store.allRecords() {
-            guard let pidString = record.pid, let pid = pid_t(pidString) else {
+            // A tmux-hosted process survives Limpid, so it needs neither a
+            // forced-kill marker nor a native resume on the next launch.
+            guard !record.isTmuxRuntime else { continue }
+            guard let pidString = record.pid else {
                 continue
             }
-            let killRC = kill(pid, 0)
-            let killErrno = errno
-            let isAlive = killRC == 0 || killErrno == EPERM
-            guard isAlive else { continue }
-            var updated = record
-            updated.killedByLimpidAt = nowISO
+            guard processStatus(record.pid) == .alive else { continue }
+            if let paneID = UUID(uuidString: record.paneId),
+               let hint = sessionStore?.record(forPaneID: paneID), hint.runId == record.runId
+            {
+                do {
+                    try resumeIntents.save(AgentResumeIntent(
+                        runID: record.storageID,
+                        paneID: paneID,
+                        sessionID: hint.sessionId,
+                        ownerRunID: hint.runId,
+                        pid: pidString,
+                        createdAt: Date()
+                    ))
+                } catch {
+                    log.error("could not persist resume intent: \(error.localizedDescription, privacy: .private)")
+                }
+            }
             // Best-effort: this runs from `applicationWillTerminate`
             // and the process is about to exit anyway. A failed save
             // costs us the resume marker for one row — the next
             // launch's PID sweep correctly treats the row as having
             // exited cleanly, which is the safer fail-mode than
             // blocking termination on a disk error.
-            try? store.save(updated)
+            _ = try? store.update(recordID: record.storageID) { $0.killedByLimpidAt = nowISO }
         }
     }
 }

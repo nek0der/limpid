@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct TmuxBinding: Codable, Equatable, Sendable {
+struct TmuxBinding: Codable, Equatable {
     /// Absolute path of the server's socket. Addressed by path rather
     /// than by `-L <name>` because a server started with `-S` is only
     /// reachable this way, and the path is what we discovered it by.
@@ -21,4 +21,10 @@ struct TmuxBinding: Codable, Equatable, Sendable {
     /// server restart while names do, which is what `tmux-resurrect`
     /// and `tmux-continuum` rely on.
     var sessionName: String
+    /// Absent on legacy snapshots, whose restore target is the session name.
+    var serverPID: String?
+    var serverStartedAt: String?
+    /// A failed observation preserves the hint for a conservative restore
+    /// attempt. It still blocks native agent resume until tmux resolves it.
+    var isProvisional: Bool?
 }

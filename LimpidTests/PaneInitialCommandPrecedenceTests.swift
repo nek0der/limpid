@@ -43,6 +43,24 @@ struct PaneInitialCommandPrecedenceTests {
         #expect(command.hasPrefix("tmux -S "))
     }
 
+    @Test("a provisional tmux binding still blocks duplicate agent resume")
+    func provisionalTmux_beatsAgentResume() throws {
+        var tab = tab()
+        var provisional = binding()
+        provisional.serverPID = "42"
+        provisional.serverStartedAt = "100"
+        provisional.isProvisional = true
+        tab.tmuxBindings[pane] = provisional
+        tab.claudeSessions[pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
+        tab.codexSessions[pane] = CodexSessionInfo(sessionId: "x1", cwd: nil)
+
+        let command = try #require(PaneHostRepresentable.resolveInitialCommand(tab: tab, paneID: pane))
+
+        #expect(command.hasPrefix("tmux -S "))
+        #expect(!command.contains("claude --resume"))
+        #expect(!command.contains("codex resume"))
+    }
+
     @Test("an agent resume still fires when the pane was not in tmux")
     func noBinding_fallsThroughToAgentResume() throws {
         var tab = tab()

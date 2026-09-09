@@ -249,27 +249,16 @@ final class AppState {
 
         self.session = session
         self.attention = AttentionState()
-        tmuxPresence.start(registry: registry, session: session)
 
         let historyStore = NotificationHistoryStore()
         self.historyStore = historyStore
         self.frecencyStore = FrecencyStore()
         let notificationManager = LimpidNotificationManager(historyStore: historyStore)
         self.notificationManager = notificationManager
-        // Defer the agent-state tracker bootstrap to here so it can
-        // route "Claude finished" macOS notifications through the
-        // freshly-constructed manager. The tracker itself was
-        // initialised above with the session graph; only the bootstrap
-        // call had to wait.
-        claudeAgentStateTracker.bootstrap(
-            into: session,
-            attention: attention,
-            notificationManager: notificationManager
-        )
-        codexAgentStateTracker.bootstrap(
-            into: session,
-            attention: attention,
-            notificationManager: notificationManager
+        Self.bootstrapAgentTracking(
+            trackers: (claudeAgentStateTracker, codexAgentStateTracker),
+            session: session, attention: attention,
+            notifications: notificationManager, terminal: (tmuxPresence, registry)
         )
         // Cwd-change → worktree-move suggestion pipeline. The tracker
         // watches the shim's `cwd-events` dir; every fresh record
@@ -314,15 +303,14 @@ final class AppState {
         // window / responder actually has focus. Without this it
         // falls back to the older "is any Limpid window key" check.
         LimpidNotificationDelegate.registry = registry
-        // Tap-to-jump: when the user clicks a delivered notification,
-        // route through `jumpToPane` so we land on the originating
-        // pane — the active-tab observer further down takes care of
-        // markRead / Dock badge decrement on the resulting tab swap.
+        // Tap-to-jump resolves a live runtime first so tmux reattachments
+        // follow their current pane, then falls back through the persisted
+        // pane, tab, and container carried by the notification.
         // Closure body lives in `handleNotificationTap` so `init`'s
         // cyclomatic complexity doesn't balloon.
-        LimpidNotificationDelegate.onTap = { [weak session, registry] payload in
+        LimpidNotificationDelegate.onTap = { [weak session, weak attention, registry] payload in
             guard let session else { return }
-            AppState.handleNotificationTap(payload, session: session, registry: registry)
+            AppState.handleNotificationTap(payload, session: session, registry: registry, attention: attention)
         }
         delegate.install()
 
@@ -553,8 +541,14 @@ final class AppState {
     static func handleNotificationTap(
         _ payload: NotificationTapPayload,
         session: WindowSession,
-        registry: any SurfaceViewProviding
+        registry: any SurfaceViewProviding,
+        attention: AttentionState? = nil
     ) {
+        if let runtimeID = payload.runtimeID, let attention,
+           attention.focusRuntime(runtimeID, in: session, registry: registry)
+        {
+            return
+        }
         if let paneID = payload.paneID,
            session.tab(containing: paneID) != nil
         {
