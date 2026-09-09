@@ -231,6 +231,7 @@ struct ToolbarUpdateButton: View {
             .regular.tint(tintColor.opacity(isHovering ? 0.85 : 0.65)),
             in: Capsule()
         )
+        .clipShape(Capsule())
         .overlay(Capsule().stroke(LimpidColor.toolbarHairline, lineWidth: 0.5))
         .onHover { isHovering = $0 }
         .help(Text(helpText))
@@ -500,7 +501,7 @@ struct ToolbarCapsuleDivider: View {
 /// the container column toolbar (add / bell / sidebar) and the terminal column toolbar (new tab /
 /// split row / split col). Caller provides the buttons + dividers via
 /// the trailing closure; the capsule supplies clip shape, glass
-/// material, stroke, and shadow.
+/// material, and stroke.
 struct ToolbarActionCapsule<Content: View>: View {
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
     @ViewBuilder let content: () -> Content
@@ -518,7 +519,7 @@ struct ToolbarActionCapsule<Content: View>: View {
     }
 }
 
-/// Single-button glass tile. Same materials/stroke/shadow as
+/// Single-button glass tile. Same material/stroke treatment as
 /// `ToolbarActionCapsule` but uses a rounded square shape so a lone
 /// button doesn't render as a near-perfect circle (Capsule applied to
 /// a 32×28 frame collapses to that). Used for the tab column toolbar ellipsis
@@ -560,7 +561,11 @@ private struct ToolbarGlassBackground<S: Shape>: ViewModifier {
                 shape.fill(Color(nsColor: .windowBackgroundColor))
             )
         } else {
-            content.glassEffect(.regular, in: shape)
+            content
+                .glassEffect(.regular, in: shape)
+                // Keep the system glass shadow inside the control's
+                // outline so toolbar controls sit flush with the row.
+                .clipShape(shape)
         }
     }
 }
