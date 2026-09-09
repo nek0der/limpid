@@ -206,6 +206,8 @@ struct CodexShimScriptTests {
         #expect(argv.contains("new-session"))
         #expect(argv.contains("-e"))
         #expect(argv.contains("LIMPID_PANE_ID=547D688D-39DF-4A06-BD6F-316C3385532C"))
+        #expect(argv.contains { $0.hasPrefix("LIMPID_AGENT_RUN_ID=") })
+        #expect(argv.contains("LIMPID_AGENT_TMUX_HOST_MODE=limpidHosted"))
         // `-A` would attach to an existing session of the same name and
         // silently drop the command, handing back the running agent.
         #expect(!argv.contains("-A"))

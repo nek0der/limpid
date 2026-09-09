@@ -10,7 +10,11 @@ import Foundation
 struct CodexAgentStateRecord: AgentLifecycleRecord, Equatable {
     /// Bumped on a breaking on-disk migration.
     var schemaVersion: Int
-    /// UUID of the owning split-tree leaf.
+    /// One shim invocation. Nil only for schema-v1 pane-scoped records.
+    var runId: String?
+    /// Per-runtime ordering independent of wall-clock timestamp resolution.
+    var revision: Int?
+    /// UUID of the split-tree leaf that launched this runtime.
     var paneId: String
     /// The lifecycle state encoded by the hook script.
     var state: String
@@ -49,9 +53,16 @@ struct CodexAgentStateRecord: AgentLifecycleRecord, Equatable {
     /// late (Codex TUI quirk), the state is unrecoverable but we
     /// at least don't auto-resume forever after a `/quit`.
     var killedByLimpidAt: String?
-    /// `true` while the agent is running inside a tmux session Limpid
-    /// hosts for it. Absent otherwise: the shim only wraps an agent
-    /// when the user asked for it, and the receiver only sees `$TMUX`
-    /// from inside. Drives the mark on the tab column's identity icon.
+    /// Evidence that a known-dead direct runtime already received its one resume attempt.
+    var resumeAttemptedAt: String?
+    /// `true` while the agent runs inside tmux, whether entered manually or
+    /// hosted by Limpid. Drives the mark on the tab column's identity icon.
     var isTmuxHosted: Bool?
+    /// Stable tmux endpoint fields. All three are present together.
+    var tmuxSocketPath: String?
+    var tmuxSessionId: String?
+    var tmuxPaneId: String?
+    /// Missing on older records; we leave their tmux attachment unresolved.
+    var tmuxServerPID: String?
+    var tmuxServerStartedAt: String?
 }

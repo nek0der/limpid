@@ -21,6 +21,9 @@ enum AgentResumeCommandBuilder<S: AgentSpec> {
     ///    Codex overrides to skip when a Claude session is live on
     ///    the same pane (Claude wins the priority race).
     static func initialCommand(for tab: Tab, paneID: UUID) -> String? {
+        // An unresolved tmux restore hint is not permission to create a
+        // duplicate native invocation while its original runtime survives.
+        guard tab.tmuxBindings[paneID] == nil else { return nil }
         guard let info = tab[keyPath: S.sessionsKeyPath][paneID],
               !info.sessionId.isEmpty
         else {

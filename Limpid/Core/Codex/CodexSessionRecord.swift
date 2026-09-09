@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct CodexSessionRecord: PaneScopedRecord, Equatable {
+struct CodexSessionRecord: AgentResumeRecord, Equatable {
     /// Bumped if we ever need a breaking on-disk migration.
     var schemaVersion: Int
     /// UUID string of the split-tree leaf this session belongs to.
@@ -20,4 +20,6 @@ struct CodexSessionRecord: PaneScopedRecord, Equatable {
     var updatedAt: String
     /// Which hook fired last. Diagnostic only.
     var lastHookEvent: String?
+    /// The invocation owning this resume hint; nil for legacy records.
+    var runId: String?
 }

@@ -15,11 +15,10 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
 
     /// Tap-handler closure invoked from `didReceive` with the full
     /// routing payload the notification's `userInfo` carried —
-    /// AppState walks `paneID → tabID → containerID` in order so a
-    /// stale notification (pane / tab / container deleted before
-    /// the user tapped) still lands somewhere sensible instead of
-    /// silently no-op'ing. Same `nonisolated(unsafe)` rationale as
-    /// `registry`.
+    /// AppState walks `runtimeID → paneID → tabID → containerID` so a
+    /// tmux runtime follows its current attachment and a stale record still
+    /// lands on the persisted fallback. Same `nonisolated(unsafe)` rationale
+    /// as `registry`.
     nonisolated(unsafe) static var onTap: (@MainActor @Sendable (NotificationTapPayload) -> Void)?
 
     override init() {
@@ -136,11 +135,13 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
 /// keeping each as an optional lets `AppState` fall back step by step
 /// instead of silently failing when the deepest target is gone.
 struct NotificationTapPayload {
+    let runtimeID: String?
     let paneID: UUID?
     let tabID: UUID?
     let containerID: ContainerID?
 
     init(userInfo: [AnyHashable: Any]) {
+        self.runtimeID = userInfo["runtimeID"] as? String
         self.paneID = (userInfo["paneID"] as? String).flatMap(UUID.init(uuidString:))
         self.tabID = (userInfo["tabID"] as? String).flatMap(UUID.init(uuidString:))
         self.containerID = (userInfo["containerJSON"] as? String)

@@ -26,19 +26,14 @@ struct TmuxReattachCommandBuilderTests {
         TmuxBinding(socketPath: socket, sessionID: id, sessionName: name)
     }
 
-    /// Id first, name second. Ids are server-scoped and cannot be
-    /// reused; names survive a server restart, which is what
-    /// `tmux-resurrect` and `tmux-continuum` rebuild sessions under.
-    /// Trying both costs one failed attach and covers both worlds.
-    @Test("attaches by session id, falling back to the name")
-    func initialCommand_binding_triesIDThenName() throws {
+    /// A legacy binding cannot authenticate its server-scoped id, so its
+    /// persistent name is the only safe restore target.
+    @Test("legacy bindings use the name instead of an unverified numeric id")
+    func initialCommand_legacyBinding_usesName() throws {
         let command = try #require(
             TmuxReattachCommandBuilder.initialCommand(for: tab(binding()), paneID: pane)
         )
-        #expect(command == """
-        tmux -S '/private/tmp/tmux-501/default' attach -t '$3' 2>/dev/null \
-        || tmux -S '/private/tmp/tmux-501/default' attach -t 'work'
-        """)
+        #expect(command == "tmux -S '/private/tmp/tmux-501/default' attach -t '=work'")
     }
 
     @Test("declines when the pane has no binding")
@@ -75,7 +70,59 @@ struct TmuxReattachCommandBuilderTests {
                 for: tab(binding(id: "")), paneID: pane
             )
         )
-        #expect(command == "tmux -S '/private/tmp/tmux-501/default' attach -t 'work'")
+        #expect(command == "tmux -S '/private/tmp/tmux-501/default' attach -t '=work'")
+    }
+
+    @Test("a provisional binding still attempts the verified restore targets")
+    func initialCommand_provisionalBinding_attemptsRestore() throws {
+        var provisional = binding()
+        provisional.serverPID = "42"
+        provisional.serverStartedAt = "100"
+        provisional.isProvisional = true
+        let command = try #require(
+            TmuxReattachCommandBuilder.initialCommand(for: tab(provisional), paneID: pane)
+        )
+        #expect(command.contains("if-shell -F"))
+        #expect(command.contains("attach-session -t"))
+    }
+
+    @Test("a restarted server falls back to the persisted session name")
+    func initialCommand_verifiedBinding_includesNameFallback() throws {
+        var verified = binding()
+        verified.serverPID = "42"
+        verified.serverStartedAt = "100"
+        let command = try #require(
+            TmuxReattachCommandBuilder.initialCommand(for: tab(verified), paneID: pane)
+        )
+        #expect(command.contains("attach-session -t '\\''$3'\\'''"))
+        #expect(command.contains("attach-session -t '\\''=work'\\'''"))
+    }
+
+    @Test("invalid generation data never uses the server-scoped id")
+    func initialCommand_invalidGeneration_usesNameOnly() throws {
+        var invalid = binding()
+        invalid.serverPID = "not-a-pid"
+        invalid.serverStartedAt = "100"
+        let command = try #require(
+            TmuxReattachCommandBuilder.initialCommand(for: tab(invalid), paneID: pane)
+        )
+        #expect(command == "tmux -S '/private/tmp/tmux-501/default' attach -t '=work'")
+        #expect(!command.contains("$3"))
+    }
+
+    @Test("quotes a fallback name inside both parser layers")
+    func initialCommand_verifiedBinding_quotesFallbackName() throws {
+        var verified = binding(name: "it's here; display-message unsafe")
+        verified.serverPID = "42"
+        verified.serverStartedAt = "100"
+        let command = try #require(
+            TmuxReattachCommandBuilder.initialCommand(for: tab(verified), paneID: pane)
+        )
+        let expected = "tmux -S '/private/tmp/tmux-501/default' if-shell -F "
+            + "'#{&&:#{==:#{pid},42},#{==:#{start_time},100}}' "
+            + "'attach-session -t '\\''$3'\\''' "
+            + "'attach-session -t '\\''=it'\\''\\'\\'''\\''s here; display-message unsafe'\\'''"
+        #expect(command == expected)
     }
 
     /// Everything here reaches a shell, and tmux permits a quote in a
@@ -87,6 +134,6 @@ struct TmuxReattachCommandBuilderTests {
                 for: tab(binding(id: "", name: "it's here; rm -rf /")), paneID: pane
             )
         )
-        #expect(command.contains("'it'\\''s here; rm -rf /'"))
+        #expect(command.contains("'=it'\\''s here; rm -rf /'"))
     }
 }

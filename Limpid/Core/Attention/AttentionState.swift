@@ -13,6 +13,12 @@ import Foundation
 @MainActor
 @Observable
 final class AttentionState {
+    /// Runtime facts are transient; native session snapshots stay compatible.
+    var runtimesByKind: [AgentKind: [AgentRuntimePresentation]] = [:]
+    var viewedRuntimeTokens: [String: String] = [:]
+    var dismissedRuntimeTokens: [String: String] = [:]
+    var onRuntimeAttentionChanged: (() -> Void)?
+    var selectedRuntimeID: String?
     /// Per-pane "I've dismissed this finished turn" — the user pressed
     /// the row's ×. Keyed to the badge's `updatedAt`; a newer finished
     /// turn (later stamp) resurfaces automatically. `needsInput` / `error`
@@ -46,6 +52,7 @@ final class AttentionState {
     /// The row fades but stays. Cleared automatically when the next turn
     /// starts (badge `updatedAt` advances).
     func markViewed(paneID: UUID, in session: WindowSession) {
+        markVisibleRuntimesViewed(paneID: paneID)
         guard let stamp = currentFinishedStamp(paneID: paneID, in: session) else { return }
         if viewedAt[paneID] != stamp {
             viewedAt[paneID] = stamp
@@ -71,12 +78,20 @@ final class AttentionState {
 
     /// Whether a `.finished` pane has been dismissed for its current turn.
     func isDismissed(paneID: UUID, badgeUpdatedAt: Date) -> Bool {
+        let matching = allRuntimes.filter { $0.paneIDs.contains(paneID) && $0.badge.updatedAt == badgeUpdatedAt }
+        if !matching.isEmpty {
+            return matching.allSatisfy { isDismissed($0) }
+        }
         guard let stamp = dismissedAt[paneID] else { return false }
         return badgeUpdatedAt <= stamp
     }
 
     /// Whether a `.finished` pane has been viewed for its current turn.
     func isViewed(paneID: UUID, badgeUpdatedAt: Date) -> Bool {
+        let matching = allRuntimes.filter { $0.paneIDs.contains(paneID) && $0.badge.updatedAt == badgeUpdatedAt }
+        if !matching.isEmpty {
+            return matching.allSatisfy { isViewed($0) }
+        }
         guard let stamp = viewedAt[paneID] else { return false }
         return badgeUpdatedAt <= stamp
     }
@@ -115,6 +130,7 @@ extension AttentionState {
     /// `{running, viewed-finished}` shows `running` instead of the
     /// stale gray check.
     private struct PaneAgentState {
+        let id: String
         let state: AgentState
         /// Only meaningful for `.finished` — every other state ignores it.
         let isViewed: Bool
@@ -129,24 +145,37 @@ extension AttentionState {
     /// filtered through here (a dismissed-finished pane is still a live
     /// session worth confirming before close).
     private func allAgentStates(in tab: Tab) -> [PaneAgentState] {
-        var states: [PaneAgentState] = []
+        let leaves = Set(tab.splitTree.allLeafIDs())
+        var states = allRuntimes.filter {
+            !$0.paneIDs.isDisjoint(with: leaves) && !($0.badge.state == .finished && isDismissed($0))
+        }.map { PaneAgentState(id: $0.id, state: $0.badge.state, isViewed: isViewed($0)) }
         for paneID in tab.splitTree.allLeafIDs() {
-            if let b = tab.claudeAgentBadges[paneID],
+            if runtimesByKind[.claude] == nil, let b = tab.claudeAgentBadges[paneID],
                !isFinishedAndDismissed(paneID: paneID, state: b.state, updatedAt: b.updatedAt)
             {
                 let viewed = b.state == .finished
                     && isViewed(paneID: paneID, badgeUpdatedAt: b.updatedAt)
-                states.append(PaneAgentState(state: b.state, isViewed: viewed))
+                states.append(PaneAgentState(id: "claude:\(paneID.uuidString)", state: b.state, isViewed: viewed))
             }
-            if let b = tab.codexAgentBadges[paneID],
+            if runtimesByKind[.codex] == nil, let b = tab.codexAgentBadges[paneID],
                !isFinishedAndDismissed(paneID: paneID, state: b.state, updatedAt: b.updatedAt)
             {
                 let viewed = b.state == .finished
                     && isViewed(paneID: paneID, badgeUpdatedAt: b.updatedAt)
-                states.append(PaneAgentState(state: b.state, isViewed: viewed))
+                states.append(PaneAgentState(id: "codex:\(paneID.uuidString)", state: b.state, isViewed: viewed))
             }
         }
         return states
+    }
+
+    private func scopeAgentStates(across tabs: [Tab]) -> [PaneAgentState] {
+        var unique: [String: PaneAgentState] = [:]
+        for tab in tabs {
+            for state in allAgentStates(in: tab) {
+                unique[state.id] = state
+            }
+        }
+        return unique.values.sorted { $0.id < $1.id }
     }
 
     /// Two-stage reducer: viewed-finished contributions are kept only
@@ -176,28 +205,22 @@ extension AttentionState {
     /// Aggregate across every tab in the given container — container column group /
     /// project / worktree row badge.
     func aggregateAgentState(in container: ContainerID, session: WindowSession) -> AgentState? {
-        Self.aggregateDemotingViewed(session.tabs(in: container).flatMap { allAgentStates(in: $0) })
+        Self.aggregateDemotingViewed(scopeAgentStates(across: session.tabs(in: container)))
     }
 
     /// Aggregate across project-direct + every worktree inside the
     /// project. Used by Project headers in container column.
     func aggregateAgentStateInProject(_ projectID: UUID, session: WindowSession) -> AgentState? {
         Self.aggregateDemotingViewed(
-            session.tabs
-                .filter { $0.container.projectID == projectID }
-                .flatMap { allAgentStates(in: $0) }
+            scopeAgentStates(across: session.tabs.filter { $0.container.projectID == projectID })
         )
     }
 
-    /// Per-state pane counts for the container column hover tooltip
-    /// (`"1 error · 2 needsInput · 1 finished · 3 idle"`). Both Claude
-    /// and Codex panes contribute; dismissed finished panes drop out.
+    /// Count invocations, not copies of them on multiple client surfaces.
     func agentStateBreakdown(in container: ContainerID, session: WindowSession) -> [AgentState: Int] {
         var out: [AgentState: Int] = [:]
-        for tab in session.tabs(in: container) {
-            for entry in allAgentStates(in: tab) {
-                out[entry.state, default: 0] += 1
-            }
+        for entry in scopeAgentStates(across: session.tabs(in: container)) {
+            out[entry.state, default: 0] += 1
         }
         return out
     }
@@ -205,10 +228,8 @@ extension AttentionState {
     /// Same as the container variant but keyed off `Project.id`.
     func agentStateBreakdownInProject(_ projectID: UUID, session: WindowSession) -> [AgentState: Int] {
         var out: [AgentState: Int] = [:]
-        for tab in session.tabs where tab.container.projectID == projectID {
-            for entry in allAgentStates(in: tab) {
-                out[entry.state, default: 0] += 1
-            }
+        for entry in scopeAgentStates(across: session.tabs.filter { $0.container.projectID == projectID }) {
+            out[entry.state, default: 0] += 1
         }
         return out
     }
@@ -234,6 +255,10 @@ extension AttentionState {
     }
 
     private func finishedAllViewed(across scopedTabs: [Tab]) -> Bool {
+        if !runtimesByKind.isEmpty {
+            let finished = scopeAgentStates(across: scopedTabs).filter { $0.state == .finished }
+            return !finished.isEmpty && finished.allSatisfy(\.isViewed)
+        }
         var sawFinished = false
         /// Returns false when this pane carries an *unviewed* finished
         /// turn (caller bails → green); otherwise notes any viewed
@@ -289,8 +314,9 @@ extension AttentionState {
         /// Focus has visited this finished turn — render the row faded
         /// ("seen, not yet replied"). Always false for needsInput / error.
         let isViewed: Bool
-        var id: UUID {
-            paneID
+        var runtimeID: String?
+        var id: String {
+            runtimeID ?? paneID.uuidString
         }
     }
 
@@ -305,6 +331,7 @@ extension AttentionState {
         let detail: String?
         /// Pre-computed so the sort comparator can stay self-contained.
         let isViewed: Bool
+        var runtimeID: String?
     }
 
     /// Per-pane agent info (state + when + last prompt) from whichever
@@ -318,11 +345,11 @@ extension AttentionState {
         let detail: String?
     }
 
-    private static func attentionInfo(in tab: Tab, paneID: UUID) -> AttentionInfo? {
-        let claude = tab.claudeAgentBadges[paneID].map {
+    private func attentionInfo(in tab: Tab, paneID: UUID) -> AttentionInfo? {
+        let claude = (runtimesByKind[.claude] == nil ? tab.claudeAgentBadges[paneID] : nil).map {
             AttentionInfo(state: $0.state, updatedAt: $0.updatedAt, lastPrompt: $0.lastPrompt, detail: $0.detail)
         }
-        let codex = tab.codexAgentBadges[paneID].map {
+        let codex = (runtimesByKind[.codex] == nil ? tab.codexAgentBadges[paneID] : nil).map {
             AttentionInfo(state: $0.state, updatedAt: $0.updatedAt, lastPrompt: $0.lastPrompt, detail: $0.detail)
         }
         switch (claude, codex) {
@@ -366,9 +393,24 @@ extension AttentionState {
     /// order, so "next to deal with" is always at the top.
     private func attentionTargets(in session: WindowSession) -> [AttentionTarget] {
         var targets: [AttentionTarget] = []
+        for runtime in allRuntimes {
+            let badge = runtime.badge
+            guard badge.state == .needsInput || badge.state == .error || badge.state == .finished,
+                  !(badge.state == .finished && isDismissed(runtime))
+            else { continue }
+            let focused = session.activeTab?.splitTree.focusedLeafID
+            let panes = runtime.paneIDs.sorted { $0.uuidString < $1.uuidString }
+            guard let paneID = focused.flatMap({ runtime.paneIDs.contains($0) ? $0 : nil }) ?? panes.first,
+                  let tab = session.tab(containing: paneID)
+            else { continue }
+            targets.append(AttentionTarget(
+                tabID: tab.id, paneID: paneID, state: badge.state, updatedAt: badge.updatedAt,
+                lastPrompt: badge.lastPrompt, detail: badge.detail, isViewed: isViewed(runtime), runtimeID: runtime.id
+            ))
+        }
         for tab in session.tabs {
             for paneID in tab.splitTree.allLeafIDs() {
-                guard let info = Self.attentionInfo(in: tab, paneID: paneID),
+                guard let info = attentionInfo(in: tab, paneID: paneID),
                       info.state == .needsInput || info.state == .error || info.state == .finished
                 else { continue }
                 // A finished turn the user has explicitly dismissed drops
@@ -438,7 +480,8 @@ extension AttentionState {
                 updatedAt: $0.updatedAt,
                 lastPrompt: $0.lastPrompt,
                 detail: $0.detail,
-                isViewed: $0.isViewed
+                isViewed: $0.isViewed,
+                runtimeID: $0.runtimeID
             )
         }
     }
@@ -469,6 +512,7 @@ extension AttentionState {
         let currentPane = session.activeTab?.splitTree.focusedLeafID
         let currentIndex = ordered.firstIndex {
             $0.tabID == currentTab && $0.paneID == currentPane
+                && ($0.runtimeID == nil || $0.runtimeID == selectedRuntimeID)
         }
         let target: AttentionTarget
         if let index = currentIndex {
@@ -477,7 +521,7 @@ extension AttentionState {
         } else {
             target = forward ? ordered[0] : ordered[ordered.count - 1]
         }
-        PaneActions.activateAndFocus(session, registry: registry, tabID: target.tabID, paneID: target.paneID)
+        focusAttention(in: session, registry: registry, tabID: target.tabID, paneID: target.paneID, runtimeID: target.runtimeID)
     }
 
     /// Jump straight to a specific target — used by the container column
@@ -486,8 +530,18 @@ extension AttentionState {
         in session: WindowSession,
         registry: any SurfaceViewProviding,
         tabID: UUID,
-        paneID: UUID
+        paneID: UUID,
+        runtimeID: String? = nil
     ) {
+        selectedRuntimeID = runtimeID
         PaneActions.activateAndFocus(session, registry: registry, tabID: tabID, paneID: paneID)
+        if let runtimeID,
+           let location = allRuntimes.first(where: { $0.id == runtimeID })?.tmuxLocations[paneID],
+           let tmuxPath = TmuxClientProbe.locateTmux()
+        {
+            DispatchQueue.global(qos: .userInitiated).async {
+                TmuxClientProbe.selectPane(tmuxPath: tmuxPath, location: location)
+            }
+        }
     }
 }

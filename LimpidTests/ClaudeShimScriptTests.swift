@@ -177,6 +177,8 @@ struct ClaudeShimScriptTests {
         let handover = try runShimHosted([])
         #expect(handover.claude.isEmpty)
         #expect(handover.tmux.prefix(4) == ["-L", "limpid-test.socket", "-f", "/dev/null"])
+        #expect(handover.tmux.contains { $0.hasPrefix("LIMPID_AGENT_RUN_ID=") })
+        #expect(handover.tmux.contains("LIMPID_AGENT_TMUX_HOST_MODE=limpidHosted"))
         let settings = try #require(handover.tmux.firstIndex(of: "--settings"))
         // Directly after `/usr/bin/env` comes the agent, then our flag.
         #expect(handover.tmux[settings - 2] == "/usr/bin/env")

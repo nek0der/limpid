@@ -15,6 +15,12 @@
 import Foundation
 
 enum TmuxClientProbe {
+    /// The string adapter keeps existing persistence and command APIs intact.
+    /// Identity comparisons use `TmuxSocketPath` rather than URL formatting.
+    static func normalizeSocketPath(_ path: String) -> String {
+        TmuxSocketPath(path)?.value ?? path
+    }
+
     /// Tab-separated because a session name may contain spaces, which
     /// tmux permits. Only the first two fields are structural.
     static let listClientsArguments = [
@@ -80,19 +86,123 @@ enum TmuxClientProbe {
         serverDirectory: URL,
         timeout: TimeInterval = 0.5
     ) -> [String: TmuxBinding] {
+        attachedClients(
+            tmuxPath: tmuxPath,
+            socketPaths: socketPaths(inServerDirectory: serverDirectory),
+            timeout: timeout
+        )
+    }
+
+    static func attachedClients(
+        tmuxPath: String,
+        socketPaths: [URL],
+        timeout: TimeInterval = 0.5
+    ) -> [String: TmuxBinding] {
         var clients: [String: TmuxBinding] = [:]
-        for socket in socketPaths(inServerDirectory: serverDirectory) {
+        for socket in socketPaths {
+            let path = normalizeSocketPath(socket.path)
             guard let output = runTmux(
                 tmuxPath: tmuxPath,
-                socketPath: socket.path,
+                socketPath: path,
                 arguments: listClientsArguments,
                 timeout: timeout
             ) else { continue }
             // Later servers win a tty collision, which cannot happen:
             // one tty drives at most one client.
-            clients.merge(parseClients(output, socketPath: socket.path)) { _, new in new }
+            clients.merge(parseClients(output, socketPath: path)) { _, new in new }
         }
         return clients
+    }
+
+    static func topology(tmuxPath: String, socketPaths: [URL], timeout: TimeInterval = 0.5) -> TmuxTopology {
+        probe(tmuxPath: tmuxPath, paths: Set(socketPaths.map(\.path)), timeout: timeout).snapshot
+    }
+
+    struct ProbeBatch {
+        var snapshot: TmuxTopology
+        var nextCursor: Int
+    }
+
+    static func probe(
+        tmuxPath: String, paths: Set<String>, cursor: Int = 0,
+        timeout: TimeInterval = TmuxTiming.queryTimeout
+    ) -> ProbeBatch {
+        var snapshot = TmuxTopology()
+        for raw in paths {
+            guard let key = TmuxSocketPath(raw) else { continue }
+            snapshot.socketAliases[raw] = key.value
+            snapshot.socketAliases[key.value] = key.value
+        }
+        let ordered = Set(snapshot.socketAliases.values).sorted()
+        guard !ordered.isEmpty else { return ProbeBatch(snapshot: snapshot, nextCursor: 0) }
+        let deadline = ProcessInfo.processInfo.systemUptime + TmuxTiming.pollBudget
+        var visited = 0
+        for offset in ordered.indices {
+            guard deadline - ProcessInfo.processInfo.systemUptime > TmuxTiming.terminationGrace + TmuxTiming.drainGrace else { break }
+            let path = ordered[(cursor + offset) % ordered.count]
+            visited += 1
+            snapshot.observedAt[path] = ProcessInfo.processInfo.systemUptime
+            var info = stat()
+            guard lstat(path, &info) == 0, info.st_uid == getuid(),
+                  (info.st_mode & S_IFMT) == S_IFSOCK
+            else { snapshot.outcomes[path] = .launchFailed
+                continue
+            }
+            let result = probeServer(tmuxPath: tmuxPath, socketPath: path, deadline: deadline, timeout: timeout)
+            snapshot.outcomes[path] = result.outcome
+            snapshot.panes += result.panes
+            snapshot.clients.merge(result.clients) { _, new in new }
+        }
+        return ProbeBatch(snapshot: snapshot, nextCursor: (cursor + visited) % ordered.count)
+    }
+
+    private struct ServerResult {
+        let outcome: TmuxCommandResult
+        var panes: [TmuxPaneLocation] = []
+        var clients: [String: TmuxBinding] = [:]
+    }
+
+    private static func probeServer(
+        tmuxPath: String, socketPath: String, deadline: TimeInterval, timeout: TimeInterval
+    ) -> ServerResult {
+        func query(_ arguments: [String]) -> TmuxCommandResult {
+            let available = deadline - ProcessInfo.processInfo.systemUptime - TmuxTiming.terminationGrace - TmuxTiming.drainGrace
+            guard available > 0 else { return .timedOut }
+            return TmuxCommand().run(executable: tmuxPath, arguments: ["-S", socketPath] + arguments, timeout: min(timeout, available))
+        }
+        let paneResult = query(TmuxTopology.paneArguments)
+        guard case let .success(paneText) = paneResult else { return ServerResult(outcome: paneResult) }
+        let panes = TmuxTopology.parsePanes(paneText, socketPath: socketPath)
+        guard !panes.isEmpty, panes.count == paneText.split(separator: "\n").count else { return ServerResult(outcome: .invalidOutput) }
+        let clientResult = query(listClientsArguments)
+        guard case let .success(clientText) = clientResult else { return ServerResult(outcome: clientResult) }
+        var clients = parseClients(clientText, socketPath: socketPath)
+        guard clients.count == clientText.split(separator: "\n").count else { return ServerResult(outcome: .invalidOutput) }
+        let identityResult = query(["display-message", "-p", "#{pid}\t#{start_time}"])
+        guard case let .success(identity) = identityResult else { return ServerResult(outcome: identityResult) }
+        let expected = identity.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard panes.allSatisfy({ expected == "\($0.serverPID)\t\($0.serverStartedAt)" })
+        else { return ServerResult(outcome: .invalidOutput) }
+        for tty in Array(clients.keys) {
+            clients[tty]?.serverPID = panes.first?.serverPID
+            clients[tty]?.serverStartedAt = panes.first?.serverStartedAt
+            clients[tty]?.isProvisional = false
+        }
+        return ServerResult(outcome: .success(""), panes: panes, clients: clients)
+    }
+
+    static func selectPane(tmuxPath: String, location: TmuxPaneLocation) {
+        // tmux evaluates this format, not a shell. Check server generation
+        // at execution time so a queued click cannot target a reused pane ID.
+        let target = "\(location.sessionID):\(location.windowID).\(location.paneID)"
+        let condition = "#{&&:#{==:#{pid},\(location.serverPID)},#{==:#{start_time},\(location.serverStartedAt)}}"
+        _ = runTmux(
+            tmuxPath: tmuxPath, socketPath: location.socketPath,
+            arguments: [
+                "if-shell", "-F", "-t", target, condition,
+                "select-window -t '\(target)' ; select-pane -t '\(target)'"
+            ], timeout: 0.5
+        )
     }
 
     /// The tty that input written to a client's tty is delivered to.
@@ -137,36 +247,9 @@ enum TmuxClientProbe {
         arguments: [String],
         timeout: TimeInterval
     ) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tmuxPath)
-        process.arguments = ["-S", socketPath] + arguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-        process.standardInput = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-        // `terminate` is what unblocks `waitUntilExit`; a timer alone
-        // would fire and leave us still waiting. The `isRunning` check
-        // is not redundant with `cancel()` below: a process that exits
-        // just before the deadline leaves a window in which the pid may
-        // already have been recycled, and signalling it then would
-        // reach somebody else.
-        let watchdog = DispatchWorkItem { [weak process] in
-            guard let process, process.isRunning else { return }
-            process.terminate()
-        }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
-        // Read before waiting: a server with many clients can fill the
-        // pipe buffer, and a child blocked on write never exits.
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        watchdog.cancel()
-        guard process.terminationStatus == 0 else { return nil }
-        return String(data: data, encoding: .utf8)
+        let result = TmuxCommand().run(executable: tmuxPath, arguments: ["-S", socketPath] + arguments, timeout: timeout)
+        guard case let .success(output) = result else { return nil }
+        return output
     }
 
     /// Sockets inside one server directory.

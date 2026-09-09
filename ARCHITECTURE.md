@@ -121,9 +121,18 @@ edits wait for storage so a failed save keeps the composer open. `SettingsStore`
 inline (always pretty-printed) because `settings.json` is the one
 file the user is expected to open in an editor.
 
-Per-pane agent stores (`Claude*Store`, `Codex*Store`, `CwdEventStore`)
-keep their own tighter config — they write tiny records on the hot
-path and the shim writes them in parallel from shell.
+Agent lifecycle stores are runtime-scoped: one UUID per shim invocation, with
+tmux socket/server-generation/pane metadata when a multiplexer sits between the
+agent and Limpid. Hooks never query tmux; `TmuxTopology` resolves current pane
+membership (including linked windows), and `TmuxPanePresence` joins clients to
+surface ttys. Unresolved tmux records never fall back to a launch pane or saved
+restore binding. `AgentRuntimePresentation` retains each invocation through
+notification and Attention processing; badges are only the final reduction.
+Native resume hints remain pane-scoped but carry the owning run ID; hooks and
+cleanup coordinate through `AgentFileLock` / macOS `lockf`. tmux hooks do not
+overwrite native resume hints. Cwd event stores still remain pane-scoped. All keep
+their own tighter config — they write tiny records on the hot path and the shim
+writes them in parallel from shell.
 
 Forward-compat shape (Phase 4-15 of relaunch):
 

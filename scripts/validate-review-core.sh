@@ -21,6 +21,9 @@ swiftc -Xfrontend -disable-sandbox -emit-module -emit-library \
     -module-cache-path "$review_output/modules" \
     Limpid/Core/Review/ReviewTerminalProbe.swift \
     Limpid/Core/Tmux/TmuxBinding.swift Limpid/Core/Tmux/TmuxClientProbe.swift \
+    Limpid/Core/Tmux/TmuxTopology.swift \
+    Limpid/Core/Tmux/TmuxSocketPath.swift \
+    Limpid/Core/Tmux/TmuxCommand.swift \
     Limpid/Core/Logging/LimpidLogger.swift \
     -o "$review_output/libLimpid.dylib"
 cat > "$review_output/RunScenarios.swift" <<'SWIFT'

@@ -121,14 +121,48 @@ struct AgentSessionInfo: Codable, Equatable {
 /// `*AgentStateRecord` types already expose these fields; this
 /// protocol just promotes them to the type system so the generic
 /// tracker can reach them without `Mirror`.
-protocol AgentLifecycleRecord: PaneScopedRecord {
+protocol AgentLifecycleRecord: Codable {
+    var paneId: String { get }
+    var runId: String? { get }
+    var revision: Int? { get }
+    var tmuxSocketPath: String? { get }
+    var tmuxSessionId: String? { get }
+    var tmuxPaneId: String? { get }
+    var tmuxServerPID: String? { get }
+    var tmuxServerStartedAt: String? { get }
+    var isTmuxHosted: Bool? { get }
     var pid: String? { get }
     var updatedAt: String { get }
 }
 
+extension AgentLifecycleRecord {
+    var tmuxEndpoint: TmuxRuntimeEndpoint? {
+        guard let socket = tmuxSocketPath, let pid = tmuxServerPID,
+              let start = tmuxServerStartedAt, !start.isEmpty, let pane = tmuxPaneId
+        else { return nil }
+        return TmuxRuntimeEndpoint(socketPath: socket, serverPID: pid, serverStartedAt: start, paneID: pane)
+    }
+
+    var isTmuxRuntime: Bool {
+        isTmuxHosted == true || tmuxSocketPath != nil || tmuxPaneId != nil
+    }
+
+    var storageID: String {
+        if let runId, UUID(uuidString: runId) != nil {
+            return runId.uppercased()
+        }
+        return paneId.uppercased()
+    }
+}
+
+protocol AgentResumeRecord: PaneScopedRecord {
+    var runId: String? { get }
+    var sessionId: String { get }
+}
+
 protocol AgentSpec {
     associatedtype StateRecord: AgentLifecycleRecord
-    associatedtype SessionRecord: PaneScopedRecord
+    associatedtype SessionRecord: AgentResumeRecord
 
     /// Runtime tag for this flavor, shared with the rest of the app.
     /// Composes with the type-level `AgentSpec` so a generic that

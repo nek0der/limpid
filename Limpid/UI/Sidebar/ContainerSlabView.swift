@@ -235,14 +235,21 @@ struct ContainerSlabView: View {
                                     isCurrent: entry.tabID == focusedTab && entry.paneID == focusedPane,
                                     isViewed: entry.isViewed,
                                     onDismiss: entry.state == .finished
-                                        ? { attention.dismiss(paneID: entry.paneID, in: session) }
+                                        ? {
+                                            if let id = entry.runtimeID {
+                                                attention.dismissRuntime(id)
+                                            } else {
+                                                attention.dismiss(paneID: entry.paneID, in: session)
+                                            }
+                                        }
                                         : nil
                                 ) {
                                     attention.focusAttention(
                                         in: session,
                                         registry: registry,
                                         tabID: entry.tabID,
-                                        paneID: entry.paneID
+                                        paneID: entry.paneID,
+                                        runtimeID: entry.runtimeID
                                     )
                                 }
                             }

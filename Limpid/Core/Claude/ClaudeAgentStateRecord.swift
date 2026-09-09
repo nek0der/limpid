@@ -10,8 +10,12 @@ import Foundation
 struct ClaudeAgentStateRecord: AgentLifecycleRecord, Equatable {
     /// Bumped on a breaking on-disk migration.
     var schemaVersion: Int
-    /// UUID of the owning split-tree leaf. Must equal the filename —
-    /// defense-in-depth against path traversal via crafted env.
+    /// One shim invocation. Nil only for schema-v1 pane-scoped records.
+    var runId: String?
+    /// Per-runtime ordering independent of wall-clock timestamp resolution.
+    var revision: Int?
+    /// UUID of the launching split-tree leaf. Runtime records use `runId`
+    /// as their filename; schema-v1 records use this value.
     var paneId: String
     /// Lifecycle state encoded by the hook script; decoded back into
     /// `ClaudeAgentState` by callers.
@@ -50,9 +54,14 @@ struct ClaudeAgentStateRecord: AgentLifecycleRecord, Equatable {
     /// more than one Claude / Codex session is alive — most recent
     /// `SessionStart` wins.
     var sessionStartedAt: String?
-    /// `true` while the agent is running inside a tmux session Limpid
-    /// hosts for it. Absent otherwise: the shim only wraps an agent
-    /// when the user asked for it, and the receiver only sees `$TMUX`
-    /// from inside. Drives the mark on the tab column's identity icon.
+    /// `true` while the agent runs inside tmux, whether entered manually or
+    /// hosted by Limpid. Drives the mark on the tab column's identity icon.
     var isTmuxHosted: Bool?
+    /// Stable tmux endpoint fields. All three are present together.
+    var tmuxSocketPath: String?
+    var tmuxSessionId: String?
+    var tmuxPaneId: String?
+    /// Missing on older records; we leave their tmux attachment unresolved.
+    var tmuxServerPID: String?
+    var tmuxServerStartedAt: String?
 }

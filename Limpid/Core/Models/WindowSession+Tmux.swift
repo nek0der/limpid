@@ -9,26 +9,41 @@ import OSLog
 private let log = Logger.limpid("tmux.capture")
 
 extension WindowSession {
-    /// Ask the installed tmux which of its sessions our panes are
-    /// showing, and record the answer. Mirrors
-    /// `captureScrollbackPaths(from:)`: both run once at quit against
-    /// the live surfaces.
-    ///
-    /// Asked here rather than kept up to date, because `makeSnapshot()`
-    /// runs on every tracked mutation and this spawns a process — the
-    /// answer only has to be right for the snapshot about to be
-    /// written. A user with no tmux pays a single `isExecutableFile`
-    /// check, and the probe times out per server so a wedged one cannot
-    /// hold up the quit.
-    func captureTmuxBindings(from registry: any SurfaceViewProviding) {
-        guard let tmuxPath = TmuxClientProbe.locateTmux() else { return }
-        captureTmuxBindings(
-            ttyForPane: { registry.view(for: $0)?.ttyName },
-            clients: TmuxClientProbe.attachedClients(
-                tmuxPath: tmuxPath,
-                serverDirectory: TmuxClientProbe.defaultServerDirectory()
-            )
-        )
+    /// Both ongoing capture and final flush consume the same verified values.
+    /// An unavailable server is not evidence that the user detached.
+    func captureTmuxBindings(
+        surfaces: [TmuxSurfaceSnapshot], bindings: [UUID: TmuxBinding],
+        observedAt: [String: TimeInterval], now: TimeInterval, detachedPaneIDs: Set<UUID>? = nil
+    ) {
+        for index in tabs.indices {
+            var next: [UUID: TmuxBinding] = [:]
+            for pane in tabs[index].splitTree.allLeafIDs() {
+                guard let surface = surfaces.first(where: { $0.paneID == pane }), surface.tty != nil else {
+                    next[pane] = tabs[index].tmuxBindings[pane]
+                    continue
+                }
+                guard surface.isTmuxClient else {
+                    // A newly mounted shell after a skipped/provisional
+                    // restore is not a user detach. Only a witnessed exit
+                    // from tmux grants authority to erase that restore hint.
+                    if let detachedPaneIDs, !detachedPaneIDs.contains(pane) {
+                        next[pane] = tabs[index].tmuxBindings[pane]
+                    }
+                    continue
+                }
+                if let binding = bindings[pane], let stamp = observedAt[binding.socketPath],
+                   now - stamp <= TmuxTiming.snapshotLifetime
+                {
+                    next[pane] = binding
+                } else if var prior = tabs[index].tmuxBindings[pane] {
+                    prior.isProvisional = true
+                    next[pane] = prior
+                }
+            }
+            if tabs[index].tmuxBindings != next {
+                tabs[index].tmuxBindings = next
+            }
+        }
     }
 
     /// Fold the clients tmux reported into each tab's `tmuxBindings`.

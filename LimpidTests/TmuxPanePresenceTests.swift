@@ -36,4 +36,23 @@ struct TmuxPanePresenceTests {
         #expect(!TmuxClientProbe.clientProcessName.contains("/"))
         #expect(TmuxClientProbe.clientProcessName == "tmux")
     }
+
+    @Test("one tmux session projects to every attached Limpid pane")
+    func paneIDs_multipleClients_returnsEveryPresentation() {
+        let first = UUID()
+        let second = UUID()
+        let other = UUID()
+        let bindings = [
+            first: TmuxBinding(socketPath: "/tmp/s", sessionID: "$1", sessionName: "work"),
+            second: TmuxBinding(socketPath: "/tmp/s", sessionID: "$1", sessionName: "work"),
+            other: TmuxBinding(socketPath: "/tmp/s", sessionID: "$2", sessionName: "other")
+        ]
+
+        #expect(TmuxPanePresence.paneIDs(
+            in: bindings,
+            socketPath: "/tmp/s",
+            sessionID: "$1",
+            aliases: ["/tmp/s": "/private/tmp/s"]
+        ) == [first, second])
+    }
 }

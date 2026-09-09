@@ -18,7 +18,7 @@ extension AgentStateTracker where S == CodexAgent {
     /// `(store:sessionStore:)` call below and recurses forever (the
     /// designated init declares `sessionStore: SessionStore? = nil`).
     convenience init() {
-        let store: PaneStore<CodexAgentStateRecord> = CodexAgentStateStore()
+        let store: AgentStateStore<CodexAgentStateRecord> = CodexAgentStateStore()
         let sessionStore: PaneStore<CodexSessionRecord>? = CodexSessionStore()
         self.init(store: store, sessionStore: sessionStore)
     }
