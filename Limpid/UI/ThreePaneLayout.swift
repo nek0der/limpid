@@ -150,16 +150,6 @@ private struct HorizontalModeBody: View {
                 }
                 .frame(width: leadingInset + tabColumnBoxWidth)
                 .background(tabColumnTint)
-                // Glass mode separates the columns by their distinct
-                // tints, so the toolbar row keeps its hairline. The
-                // opaque tones carry the same separation on their own,
-                // so the rule would read as an arbitrary line there —
-                // drop it.
-                .overlay(alignment: .trailing) {
-                    if !reduce {
-                        LimpidColor.tabColumnTrailingDivider.frame(width: 0.5)
-                    }
-                }
 
                 ToolbarTerminalColumnSegment()
                     .frame(maxWidth: .infinity)
@@ -178,7 +168,7 @@ private struct HorizontalModeBody: View {
                 }
                 .overlay(alignment: .bottom) {
                     if !reduce {
-                        LimpidColor.tabColumnTrailingDivider.frame(height: 0.5)
+                        LimpidColor.horizontalTabBarBottomDivider.frame(height: 0.5)
                     }
                 }
                 HStack(spacing: 0) {
@@ -250,24 +240,19 @@ private struct TabColumn: View {
             TabColumnResizeHandle(session: session)
         }
         .frame(width: leadingInset + tabColumnBoxWidth)
-        // Glass mode leans on the column tints (dark divider is clear).
-        // The opaque tones are a step apart rather than one shade, but
-        // a single step is thin at this size, so the seam keeps a
-        // visible hairline there.
+        // Glass mode separates the columns with tint alone; a rule at
+        // this flush seam reads as a shadow. The opaque tones are only
+        // one step apart, so Reduce Transparency keeps a hairline.
         .overlay(alignment: .trailing) {
-            divider.frame(width: 0.5)
+            if reduceTransparencyResolver.shouldReduceTransparency {
+                LimpidColor.tabColumnTrailingDividerOpaque.frame(width: 0.5)
+            }
         }
         .background(ColumnBackdrop(
             appearance: settings.settings.appearance,
             role: .list,
             reduceTransparency: reduceTransparencyResolver.shouldReduceTransparency
         ))
-    }
-
-    private var divider: Color {
-        reduceTransparencyResolver.shouldReduceTransparency
-            ? LimpidColor.tabColumnTrailingDividerOpaque
-            : LimpidColor.tabColumnTrailingDivider
     }
 
     private var leadingInset: CGFloat {

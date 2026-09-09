@@ -145,11 +145,10 @@ enum LimpidColor {
         dark: Color.black.opacity(0.28)
     )
 
-    /// Vertical hairline between the tab and terminal columns in the default
-    /// (translucent) appearance. Visible only in light mode — in dark
-    /// mode the two column tints already separate the columns, so the
-    /// line stays clear to avoid a hard rule over the glass.
-    static let tabColumnTrailingDivider: Color = .init(
+    /// Bottom hairline between the horizontal tab bar and terminal content.
+    /// It is visible only in light mode; the dark-mode tints already separate
+    /// the two regions, so the line stays clear there.
+    static let horizontalTabBarBottomDivider: Color = .init(
         light: Color.black.opacity(0.08),
         dark: Color.clear
     )

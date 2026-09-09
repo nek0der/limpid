@@ -65,6 +65,10 @@ private struct FlushGlassSidebarModifier: ViewModifier {
             content.background {
                 Color.clear
                     .glassEffect(.regular, in: Rectangle())
+                    // Regular glass draws outside its shape to cast a
+                    // shadow. This sidebar is flush rather than floating,
+                    // so keep that rendering inside the sidebar bounds.
+                    .clipped()
                     .allowsHitTesting(false)
             }
         }
