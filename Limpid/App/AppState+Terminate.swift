@@ -31,6 +31,7 @@ extension AppState {
         let settingsStore = self.settingsStore
         let registry = self.registry
         let codexAgentStateTracker = self.codexAgentStateTracker
+        let tmuxPresence = self.tmuxPresence
         return NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
@@ -44,15 +45,17 @@ extension AppState {
                 // And which tmux session each pane was showing, so the
                 // next launch reattaches instead of leaving it running
                 // unreferenced beside a fresh shell.
-                session.captureTmuxBindings(from: registry)
-                // Blank out the `pid` field on every codex state record
-                // that points at a still-running codex. Limpid is about to
-                // kill those processes alongside its own exit; without
-                // this step the next launch's PID sweep would mistake the
-                // forced kill for a `/quit` and drop the resume record.
-                // Records whose codex already exited (user typed `/quit`
-                // before ⌘Q) keep their dead pid → sweep deletes →
-                // session correctly not restored.
+                tmuxPresence.refreshLocalSurfaces()
+                session.captureTmuxBindings(
+                    surfaces: tmuxPresence.surfaces,
+                    bindings: tmuxPresence.bindingsByPaneID,
+                    observedAt: tmuxPresence.topology.observedAt,
+                    now: ProcessInfo.processInfo.systemUptime,
+                    detachedPaneIDs: tmuxPresence.detachedPaneIDs
+                )
+                tmuxPresence.stop()
+                // Independent intents protect direct Codex resume even if a
+                // concurrent hook owns the lifecycle record's advisory lock.
                 codexAgentStateTracker.preserveLiveSessionsOnTerminate()
                 store.saveSynchronously(session.makeSnapshot())
                 historyStore.flushSynchronously()

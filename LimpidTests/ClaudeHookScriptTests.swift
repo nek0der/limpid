@@ -58,7 +58,8 @@ struct ClaudeHookScriptTests {
                 #expect(process.terminationStatus == 0)
             }
 
-            let record = states.appendingPathComponent("\(paneID).state.json")
+            let recordID = extraEnvironment["LIMPID_AGENT_RUN_ID"] ?? paneID
+            let record = states.appendingPathComponent("\(recordID).state.json")
             guard let data = try? Data(contentsOf: record) else { return nil }
             return try JSONSerialization.jsonObject(with: data) as? [String: Any]
         }
@@ -201,6 +202,17 @@ struct ClaudeHookScriptTests {
     @Test("leaves the hosted flag off outside tmux")
     func outsideTmux_omitsTheHostedFlag() throws {
         #expect(try runHooks(midTurn())?["isTmuxHosted"] == nil)
+    }
+
+    @Test("keys one invocation by run id and increments its revision")
+    func runIdentity_multipleEvents_shareOneOrderedRecord() throws {
+        let runID = UUID().uuidString
+        let record = try runHooks(
+            midTurn(),
+            extraEnvironment: ["LIMPID_AGENT_RUN_ID": runID]
+        )
+        #expect(record?["runId"] as? String == runID)
+        #expect(record?["revision"] as? Int == 2)
     }
 
     /// The template is what Claude is actually told to call us on, so it

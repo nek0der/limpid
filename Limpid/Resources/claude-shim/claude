@@ -23,6 +23,11 @@ case "$self" in
   *) self="$PWD/$self" ;;
 esac
 self_dir="$(cd -- "$(dirname -- "$self")" && pwd -P)"
+runtime_common="$self_dir/../agent-shim/runtime-common.sh"
+if [ -r "$runtime_common" ]; then
+  . "$runtime_common"
+  limpid_ensure_run_id
+fi
 
 # Rebuild PATH with our own dir filtered out so command -v finds the
 # real claude. POSIX-only — no awk dependency, just IFS splitting.
@@ -89,7 +94,7 @@ interactive_first_args="-r --resume -c --continue"
 one_shot_flags="--version -v -V --help -h -p --print --bg --background"
 # Passed through explicitly rather than left to inheritance, for the
 # reason above.
-hosted_env_names="LIMPID_PANE_ID LIMPID_SESSIONS_DIR LIMPID_AGENT_STATES_DIR LIMPID_CWD_EVENTS_DIR"
+hosted_env_names="LIMPID_PANE_ID LIMPID_SESSIONS_DIR LIMPID_AGENT_STATES_DIR LIMPID_CWD_EVENTS_DIR LIMPID_AGENT_RUN_ID LIMPID_AGENT_TMUX_HOST_MODE LIMPID_AGENT_TMUX"
 
 should_host_in_tmux() {
   [ -n "${LIMPID_AGENT_TMUX:-}" ] && [ -x "${LIMPID_AGENT_TMUX:-}" ] || return 1
@@ -126,6 +131,12 @@ should_host_in_tmux() {
 hosts_in_tmux=0
 # Decided against the user's own arguments, before we add any of ours.
 should_host_in_tmux "$@" && hosts_in_tmux=1
+if [ "$hosts_in_tmux" = 1 ]; then
+  LIMPID_AGENT_TMUX_HOST_MODE="limpidHosted"
+elif [ -n "${TMUX:-}" ]; then
+  LIMPID_AGENT_TMUX_HOST_MODE="manual"
+fi
+export LIMPID_AGENT_TMUX_HOST_MODE
 
 # Hand off to the real agent, inside a tmux session of its own when the
 # user asked for that. Every exit from this script goes through here.

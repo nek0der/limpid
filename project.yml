@@ -75,6 +75,7 @@ targets:
           - "Resources/ghostty"
           - "Resources/claude-shim"
           - "Resources/codex-shim"
+          - "Resources/agent-shim"
       # Bundle libghostty's shell-integration scripts + the themes
       # we ship as Limpid's defaults (Apple System Colors Light/Dark).
       # `type: folder` keeps the directory structure intact under
@@ -93,6 +94,10 @@ targets:
       # directory is prepended to `PATH` too, so `codex` invocations are
       # intercepted the way `claude` ones are.
       - path: Limpid/Resources/codex-shim
+        type: folder
+      # Shared POSIX helpers sourced by both agent integrations. Kept as a
+      # folder resource so the relative path from each hook stays stable.
+      - path: Limpid/Resources/agent-shim
         type: folder
       # Ship the license + third-party attribution inside the app bundle so
       # the MIT / GPL notices travel with the distributed .app, satisfying the

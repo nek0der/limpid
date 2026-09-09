@@ -19,6 +19,64 @@ private let installedTmux: String? = {
 
 @Suite("TmuxClientProbe parsing")
 struct TmuxClientProbeParsingTests {
+    @Test(arguments: ["", ".", "../socket", "relative/socket", "/tmp/socket\u{0}suffix"])
+    func socketIdentity_invalidPaths_areRejected(path: String) {
+        #expect(TmuxSocketPath(path) == nil)
+    }
+
+    @Test("dot-dot follows symlink semantics instead of lexical URL shortening")
+    func socketIdentity_symlinkThenParent_matchesPhysicalParent() throws {
+        try withTempDir { directory in
+            let nested = directory.appendingPathComponent("physical/child")
+            try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+            let alias = directory.appendingPathComponent("alias")
+            try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: nested)
+            #expect(TmuxSocketPath(alias.path + "/../socket") == TmuxSocketPath(directory.path + "/physical/socket"))
+        }
+    }
+
+    @Test("an existing socket path keeps the same identity on every pass")
+    func normalizeSocketPath_existingPath_isIdempotent() throws {
+        try withTempDir { directory in
+            let path = directory.appendingPathComponent("socket").path
+            FileManager.default.createFile(atPath: path, contents: Data())
+            let canonical = TmuxClientProbe.normalizeSocketPath(path)
+            var repeated = canonical
+            for _ in 0..<5 {
+                repeated = TmuxClientProbe.normalizeSocketPath(repeated)
+            }
+            #expect(repeated == canonical)
+            #expect(TmuxClientProbe.normalizeSocketPath(canonical) == canonical)
+        }
+    }
+
+    @Test("custom symlinked directories and their physical paths identify one socket")
+    func normalizeSocketPath_customSymlinkAndMissingLeaf_areStable() throws {
+        try withTempDir { directory in
+            let physical = directory.appendingPathComponent("physical")
+            let alias = directory.appendingPathComponent("alias")
+            try FileManager.default.createDirectory(at: physical, withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: physical)
+            let physicalPath = physical.appendingPathComponent("socket, with spaces").path
+            let aliasPath = alias.appendingPathComponent("socket, with spaces").path
+            let before = TmuxClientProbe.normalizeSocketPath(aliasPath)
+            #expect(before == TmuxClientProbe.normalizeSocketPath(physicalPath))
+            FileManager.default.createFile(atPath: physicalPath, contents: Data())
+            #expect(TmuxClientProbe.normalizeSocketPath(aliasPath) == before)
+            #expect(TmuxClientProbe.normalizeSocketPath(before) == before)
+            try FileManager.default.removeItem(atPath: physicalPath)
+            #expect(TmuxClientProbe.normalizeSocketPath(aliasPath) == before)
+        }
+    }
+
+    @Test("normalizes the macOS /tmp symlink used by tmux")
+    func normalizeSocketPath_tmpAndPrivateTmpMatch() {
+        #expect(
+            TmuxClientProbe.normalizeSocketPath("/tmp/tmux-501/default")
+                == TmuxClientProbe.normalizeSocketPath("/private/tmp/tmux-501/default")
+        )
+    }
+
     @Test("reads one client per line, keyed by tty")
     func parseClients_singleClient_bindsToItsTTY() {
         let bindings = TmuxClientProbe.parseClients(
@@ -172,9 +230,50 @@ struct TmuxClientProbeLocateTests {
 @Suite(
     "TmuxClientProbe smoke",
     .tags(.smoke),
-    .disabled(if: installedTmux == nil, "no tmux installed")
+    .disabled(if: installedTmux == nil && ProcessInfo.processInfo.environment["LIMPID_REQUIRE_TMUX_TESTS"] != "1", "no tmux installed")
 )
 struct TmuxClientProbeSmokeTests {
+    @Test("an unresponsive real server cannot block a later probe")
+    func stoppedServer_returnsWithinDeadlineAndRecovers() throws {
+        let tmux = try #require(installedTmux)
+        let socket = "/private/tmp/limpid-deadline-\(UUID().uuidString.prefix(8)).sock"
+        _ = try run(tmux, ["-S", socket, "-f", "/dev/null", "new-session", "-d", "-s", "deadline", "sleep 30"])
+        let rawPID = try run(tmux, ["-S", socket, "display-message", "-p", "#{pid}"])
+        let pid = try #require(Int32(rawPID.trimmingCharacters(in: .whitespacesAndNewlines)))
+        let rescue = DispatchWorkItem { @Sendable in kill(pid, SIGCONT) }
+        defer {
+            rescue.cancel()
+            kill(pid, SIGCONT)
+            _ = try? run(tmux, ["-S", socket, "kill-server"])
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: rescue)
+        kill(pid, SIGSTOP)
+        let start = ProcessInfo.processInfo.systemUptime
+        let stopped = TmuxClientProbe.topology(tmuxPath: tmux, socketPaths: [URL(fileURLWithPath: socket)], timeout: 0.1)
+        #expect(ProcessInfo.processInfo.systemUptime - start < 1.5)
+        #expect(stopped.outcomes[socket] == .timedOut)
+        kill(pid, SIGCONT)
+        let recovered = TmuxClientProbe.topology(tmuxPath: tmux, socketPaths: [URL(fileURLWithPath: socket)])
+        #expect(recovered.panes.count == 1)
+    }
+
+    @Test("a real socket survives discovery, parsing, and endpoint matching")
+    func topology_realSocket_roundTripsThroughEveryBoundary() throws {
+        let tmux = try #require(installedTmux)
+        let socket = "/private/tmp/limpid-runtime-\(UUID().uuidString.prefix(8)).sock"
+        defer { _ = try? run(tmux, ["-S", socket, "kill-server"]) }
+        _ = try run(tmux, ["-S", socket, "-f", "/dev/null", "new-session", "-d", "-s", "runtime", "sleep 120"])
+        let raw = try run(tmux, ["-S", socket, "display-message", "-p", "#{pid}\t#{start_time}\t#{pane_id}"])
+        let fields = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\t").map(String.init)
+        #expect(fields.count == 3)
+        guard fields.count == 3 else { return }
+        let endpoint = TmuxRuntimeEndpoint(socketPath: socket, serverPID: fields[0], serverStartedAt: fields[1], paneID: fields[2])
+        let discovered = TmuxClientProbe.normalizeSocketPath(socket)
+        let snapshot = TmuxClientProbe.topology(tmuxPath: tmux, socketPaths: [URL(fileURLWithPath: discovered)])
+        #expect(snapshot.locations(for: endpoint).count == 1)
+        #expect(TmuxClientProbe.normalizeSocketPath(discovered) == discovered)
+    }
+
     /// The format string is the whole contract with tmux, and a typo in
     /// it yields empty output rather than an error. Only a real server
     /// can say whether we asked for the right fields.

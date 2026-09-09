@@ -24,6 +24,11 @@ protocol AgentNotificationBadge {
 struct AgentNotificationEmitter {
     let kind: AgentKind
     let notificationManager: LimpidNotificationManager
+    /// Background tmux panes are not visible merely because their client
+    /// surface is focused. Those transitions still deserve a banner.
+    var suppressWhenPaneFocused = true
+    /// Nil for legacy pane-only notification producers.
+    var runtimeID: String?
 
     /// Pane-level transition handler. Called once per leaf per
     /// reconciliation pass with the prior + current badge for that
@@ -126,10 +131,11 @@ struct AgentNotificationEmitter {
             paneID: paneID,
             tabID: tab.id,
             containerID: tab.container,
-            requireFocus: true,
+            requireFocus: suppressWhenPaneFocused,
             kind: .desktop,
             tabTitleSnapshot: tab.displayTitle,
-            containerLabel: session.containerLabel(for: tab.container)
+            containerLabel: session.containerLabel(for: tab.container),
+            runtimeID: runtimeID
         )
         // Agent events fire the macOS banner + history entry (above) but
         // deliberately do NOT bump the per-pane unread count that drives

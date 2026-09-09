@@ -141,7 +141,8 @@ struct ClaudeAgentStateStoreTests {
                     lastPrompt: nil
                 ))
             }
-            store.cleanup(keeping: [live])
+            let removable = AgentLifecyclePolicy.removableRecords(store.allRecords(), alivePanes: [live], processStatus: { _ in .dead })
+            store.cleanup(removing: removable)
             #expect(store.record(forPaneID: live) != nil)
             #expect(store.record(forPaneID: orphan) == nil)
         }

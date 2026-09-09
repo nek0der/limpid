@@ -57,7 +57,8 @@ final class LimpidNotificationManager {
         tabTitleSnapshot: String? = nil,
         containerLabel: String? = nil,
         exitCode: Int? = nil,
-        durationSeconds: Double? = nil
+        durationSeconds: Double? = nil,
+        runtimeID: String? = nil
     ) {
         // Always log the entry to the in-app history, even if macOS
         // declines to present the banner — the history panel is the
@@ -77,7 +78,8 @@ final class LimpidNotificationManager {
             )
         )
 
-        guard rateLimiter.allow(key: paneID) else {
+        let rateLimitID = runtimeID?.split(separator: ":").last.flatMap { UUID(uuidString: String($0)) } ?? paneID
+        guard rateLimiter.allow(key: rateLimitID) else {
             log.debug("rate-limited notification for pane \(paneID, privacy: .public)")
             return
         }
@@ -86,13 +88,10 @@ final class LimpidNotificationManager {
         content.title = sanitizedTitle
         content.body = sanitizedBody
         content.sound = .default
-        // userInfo carries the routing keys the tap handler needs:
-        // paneID first, then tabID, then containerID as a JSON blob
-        // (ContainerID is an enum with associated values, so it can't
-        // ride in userInfo as a primitive). `kind` is informational
-        // for now — kept so future tap categories (bell vs command
-        // finished vs OSC 9/777) can branch without re-deriving the
-        // origin.
+        // userInfo carries the routing keys the tap handler needs. Agent
+        // notifications resolve runtimeID first; paneID, tabID, and the
+        // ContainerID JSON blob provide progressively wider fallbacks.
+        // `kind` is informational for future notification categories.
         var userInfo: [String: Any] = [
             "paneID": paneID.uuidString,
             "requireFocus": requireFocus,
@@ -100,6 +99,9 @@ final class LimpidNotificationManager {
         ]
         if let tabID {
             userInfo["tabID"] = tabID.uuidString
+        }
+        if let runtimeID {
+            userInfo["runtimeID"] = runtimeID
         }
         if let containerID,
            let data = try? JSONEncoder().encode(containerID),
@@ -109,13 +111,10 @@ final class LimpidNotificationManager {
         }
         content.userInfo = userInfo
 
-        // Pin the request identifier to the pane id so back-to-back
-        // alerts from the same pane replace the previous banner in
-        // place instead of stacking up in Notification Center —
-        // UNUserNotificationCenter replaces a delivered notification
-        // when a new request reuses its identifier.
+        // Agent runs sharing a tmux client must not replace each other's
+        // banners. Non-agent notifications retain the pane-level identity.
         let request = UNNotificationRequest(
-            identifier: paneID.uuidString,
+            identifier: runtimeID ?? paneID.uuidString,
             content: content,
             trigger: nil
         )

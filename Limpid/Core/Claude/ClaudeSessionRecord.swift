@@ -8,7 +8,7 @@
 
 import Foundation
 
-struct ClaudeSessionRecord: PaneScopedRecord, Equatable {
+struct ClaudeSessionRecord: AgentResumeRecord, Equatable {
     /// Bumped if we ever need a breaking on-disk migration. Old
     /// records without the field decode as schemaVersion == 0 and
     /// are treated as "unknown — keep but refuse to resume" by
@@ -30,4 +30,6 @@ struct ClaudeSessionRecord: PaneScopedRecord, Equatable {
     /// Which hook fired last (SessionStart / SessionEnd). Diagnostic
     /// only, never load-bearing.
     var lastHookEvent: String?
+    /// The invocation owning this resume hint; nil for legacy records.
+    var runId: String?
 }
