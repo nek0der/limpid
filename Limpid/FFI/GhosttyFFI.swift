@@ -11,6 +11,23 @@ import GhosttyKit
 /// symbols directly — extend this enum with a Swift-friendly signature
 /// instead.
 enum GhosttyFFI {
+    /// Returns the modifiers AppKit should use to translate a physical key
+    /// into text. The original modifiers still belong on the key event sent
+    /// back to libghostty; this filtered value only controls text translation
+    /// and `consumed_mods`.
+    static func keyTranslationMods(
+        for surface: ghostty_surface_t,
+        original: ghostty_input_mods_e
+    ) -> ghostty_input_mods_e {
+        ghostty_surface_key_translation_mods(surface, original)
+    }
+
+    /// Reloads libghostty's keyboard map after macOS selects another input
+    /// source. Surfaces consult that map when `macos-option-as-alt` is unset.
+    static func keyboardDidChange(for app: ghostty_app_t) {
+        ghostty_app_keyboard_changed(app)
+    }
+
     /// Copies configuration diagnostics while the config handle still owns
     /// their C strings. The returned Swift strings remain valid after the
     /// caller updates libghostty or frees the handle.

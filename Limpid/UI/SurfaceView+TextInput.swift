@@ -135,7 +135,11 @@ extension SurfaceView: @preconcurrency NSTextInputClient {
         }
 
         if let event = activeKeyEvent ?? NSApp.currentEvent, event.type == .keyDown {
-            forward(event, action: GHOSTTY_ACTION_PRESS)
+            forward(
+                event,
+                action: GHOSTTY_ACTION_PRESS,
+                translationEvent: activeKeyEvent == nil ? nil : activeTranslationKeyEvent
+            )
         }
     }
 

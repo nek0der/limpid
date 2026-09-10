@@ -16,6 +16,11 @@ private let log = Logger.limpid("ghostty.app")
 final class GhosttyApp {
     nonisolated(unsafe) let handle: ghostty_app_t
 
+    /// NotificationCenter owns this non-Sendable token until teardown. The
+    /// observer is installed and invoked on MainActor; `nonisolated(unsafe)`
+    /// only permits `deinit` to remove it before freeing the app handle.
+    private nonisolated(unsafe) var keyboardSelectionObserver: (any NSObjectProtocol)?
+
     /// The finalized config handle retained for libghostty soft reloads.
     /// `nonisolated(unsafe)` only lets the nonisolated deinit free the last
     /// handle; replacement remains confined to MainActor.
@@ -122,6 +127,17 @@ final class GhosttyApp {
         ghostty_app_set_color_scheme(handle, colorScheme)
         ghostty_app_update_config(handle, config)
 
+        keyboardSelectionObserver = NotificationCenter.default.addObserver(
+            forName: NSTextInputContext.keyboardSelectionDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                GhosttyFFI.keyboardDidChange(for: self.handle)
+            }
+        }
+
         log.notice("ghostty app created")
     }
 
@@ -136,6 +152,9 @@ final class GhosttyApp {
     static let placeholder = WeakBox()
 
     nonisolated deinit {
+        if let keyboardSelectionObserver {
+            NotificationCenter.default.removeObserver(keyboardSelectionObserver)
+        }
         ghostty_app_free(handle)
         ghostty_config_free(config)
     }
