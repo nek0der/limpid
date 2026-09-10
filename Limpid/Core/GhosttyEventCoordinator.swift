@@ -16,6 +16,7 @@ final class GhosttyEventCoordinator {
     private weak var session: WindowSession?
     private let registry: any SurfaceViewProviding
     private let notificationManager: LimpidNotificationManager
+    private let bellFeaturesProvider: () -> BellFeatures
     private weak var attention: AttentionState?
 
     /// Pending SET_TITLE applies, keyed by pane id. We debounce title
@@ -36,11 +37,13 @@ final class GhosttyEventCoordinator {
         session: WindowSession,
         registry: any SurfaceViewProviding,
         notificationManager: LimpidNotificationManager,
+        bellFeaturesProvider: @escaping () -> BellFeatures,
         attention: AttentionState? = nil
     ) {
         self.session = session
         self.registry = registry
         self.notificationManager = notificationManager
+        self.bellFeaturesProvider = bellFeaturesProvider
         self.attention = attention
     }
 
@@ -317,24 +320,23 @@ final class GhosttyEventCoordinator {
             log.error("RING_BELL: no paneID for view")
             return
         }
-        let features = BellFeatures.default
+        let features = bellFeaturesProvider()
         // Shells ring BEL for "tab completion: no match" — extremely
         // frequent when the user is actively typing. Treat the source
         // pane being focused as "the user is right here, no need to
-        // alert" and suppress every attention-grabbing channel; only
-        // the system beep (an audible cue, easy to disable via shell
-        // config) remains.
+        // bounce the Dock". The pane flash still fires because it is the
+        // visible feedback the Visual setting promises in that state.
         let isFocusedSource = LimpidNotificationDelegate.isKeyAndFocused
             && (view.window?.firstResponder === view)
         let hasSystem = features.contains(.system)
         let hasAttention = features.contains(.attention)
-        let hasBorder = features.contains(.border)
+        let hasPaneFlash = features.contains(.paneFlash)
         log.notice(
             """
             RING_BELL focusedSource=\(isFocusedSource, privacy: .public) \
             features=(system=\(hasSystem, privacy: .public) \
             attention=\(hasAttention, privacy: .public) \
-            border=\(hasBorder, privacy: .public))
+            paneFlash=\(hasPaneFlash, privacy: .public))
             """
         )
 
@@ -344,7 +346,7 @@ final class GhosttyEventCoordinator {
         if features.contains(.attention), !isFocusedSource {
             NSApp.requestUserAttention(.informationalRequest)
         }
-        if features.contains(.border), !isFocusedSource {
+        if features.contains(.paneFlash) {
             session?.setBell(paneID: paneID, ringing: true)
             // Cancel the previous drain — without this, a second BEL
             // within the flash window would leave the first task to

@@ -77,7 +77,6 @@ enum GhosttyConfigBridge {
         lines.append("scrollback-limit-bytes = unlimited")
         lines.append("cursor-style = \(mapCursorStyle(settings.terminal.cursorStyle))")
         lines.append("cursor-style-blink = \(settings.terminal.cursorBlink.isOn)")
-        lines.append("bell-features = \(mapBellFeatures(settings.terminal.bellAction))")
 
         // Breathing room between the cell grid and the pane's edges.
         // The pane is flush to its column, because a full-width row —
@@ -92,21 +91,9 @@ enum GhosttyConfigBridge {
         lines.append("window-padding-x = 8")
         lines.append("window-padding-color = extend")
 
-        // MARK: - Resources dir (theme lookup only)
-
-        // The `resources-dir` config key only affects libghostty's
-        // bundled-theme resolution (see the absolute theme path below).
-        // It does NOT feed shell integration — that path comes from
-        // `$GHOSTTY_RESOURCES_DIR`, which we export before `ghostty_init`
-        // in `GhosttyApp.bootstrap`. Keep both in sync if the layout moves.
-        if let resourcesDir {
-            lines.append("resources-dir = \(resourcesDir)")
-        }
-
         // Theme: pick the bundled `Apple System Colors` pair so the
         // cell foreground + ANSI palette track macOS Terminal.app.
-        // Must come AFTER `resources-dir` and uses an
-        // absolute path because libghostty's named-theme lookup only
+        // Use an absolute path because libghostty's named-theme lookup only
         // checks `~/.config/ghostty/themes/` and a hardcoded
         // `Ghostty.app/...` — neither sees our Limpid.app bundle.
         if let resourcesDir {
@@ -239,13 +226,13 @@ enum GhosttyConfigBridge {
 
     // MARK: - Live reload
 
-    /// Validate the optional user layer in isolation so diagnostics caused by
-    /// Limpid's generated compatibility settings are never attributed to the
-    /// user's file. The runtime config is built separately below because its
-    /// forced overrides must still load after the user layer.
-    static func userConfigDiagnostics(at path: String? = nil) -> [String]? {
+    /// Finalize a config and copy its diagnostics. A path validates that file;
+    /// `nil` validates Ghostty's default user config. Runtime callers invoke
+    /// this before adding Limpid's generated layer so our errors are never
+    /// attributed to the user's file.
+    static func configDiagnostics(at path: String? = nil) -> [String]? {
         guard let cfg = ghostty_config_new() else {
-            log.error("ghostty_config_new() returned nil during user config validation")
+            log.error("ghostty_config_new() returned nil during config validation")
             return nil
         }
         defer { ghostty_config_free(cfg) }
@@ -280,7 +267,7 @@ enum GhosttyConfigBridge {
         surfaces: [SurfaceView] = []
     ) -> [String]? {
         let diagnostics: [String]? = if includeUserConfig {
-            userConfigDiagnostics()
+            configDiagnostics()
         } else {
             []
         }
@@ -356,16 +343,6 @@ enum GhosttyConfigBridge {
         }
     }
 
-    /// Limpid's `BellAction` → libghostty's `bell-features` flags.
-    /// Multiple flags space-separated.
-    private static func mapBellFeatures(_ action: BellAction) -> String {
-        switch action {
-        case .none: "no-visual,no-audio,no-system,no-attention,no-title"
-        case .visual: "visual,attention,no-audio,no-system"
-        case .audio: "audio,attention,no-visual,no-system"
-        case .both: "visual,audio,attention,no-system"
-        }
-    }
 }
 
 // MARK: - Notification name

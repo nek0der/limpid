@@ -16,8 +16,7 @@ struct GhosttyConfigBridgeTests {
 
     // MARK: - Helpers
 
-    /// Convenience to inspect the generated config without pulling in
-    /// the resources-dir noise.
+    /// Convenience to inspect config that does not need a bundled theme.
     private func generate(_ settings: LimpidSettings) -> String {
         GhosttyConfigBridge.makeConfigString(settings: settings, resourcesDir: nil, appearance: .dark)
     }
@@ -129,7 +128,7 @@ struct GhosttyConfigBridgeTests {
         #expect(value(of: "shell-integration-features", in: generate(.default)) == "no-cursor")
     }
 
-    // MARK: - Resources dir
+    // MARK: - Bundled theme
 
     @Test("resources-dir is omitted when no path is supplied")
     func makeConfig_nilResourcesDir_omitsLine() {
@@ -137,11 +136,31 @@ struct GhosttyConfigBridgeTests {
         #expect(value(of: "resources-dir", in: config) == nil)
     }
 
-    @Test("resources-dir is emitted verbatim when supplied")
-    func makeConfig_withResourcesDir_emitsLine() {
+    @Test("resources path selects a bundled theme without emitting a removed config key")
+    func makeConfig_withResourcesDir_usesAbsoluteThemeOnly() {
         let path = "/tmp/limpid-resources/\(UUID().uuidString)"
         let config = GhosttyConfigBridge.makeConfigString(settings: .default, resourcesDir: path, appearance: .dark)
-        #expect(value(of: "resources-dir", in: config) == path)
+        #expect(value(of: "resources-dir", in: config) == nil)
+        #expect(value(of: "theme", in: config) == "\(path)/themes/Apple System Colors")
+    }
+
+    @Test("generated config is accepted for every Bell choice", arguments: BellAction.allCases)
+    func generatedConfig_hasNoDiagnostics(bellAction: BellAction) throws {
+        try withTempDir { directory in
+            var settings = LimpidSettings.default
+            settings.terminal.bellAction = bellAction
+            let resourcesDir = try #require(GhosttyApp.resolveResourcesDir())
+            let body = GhosttyConfigBridge.makeConfigString(
+                settings: settings,
+                resourcesDir: resourcesDir,
+                appearance: .dark
+            )
+            let path = directory.appendingPathComponent("generated-ghostty-config")
+            try body.write(to: path, atomically: true, encoding: .utf8)
+
+            let diagnostics = try #require(GhosttyConfigBridge.configDiagnostics(at: path.path))
+            #expect(diagnostics.isEmpty)
+        }
     }
 
     // MARK: - Ordering guarantee
@@ -188,11 +207,11 @@ struct GhosttyConfigBridgeTests {
             let path = directory.appendingPathComponent("ghostty-config")
             try "font-siz = 13\n".write(to: path, atomically: true, encoding: .utf8)
 
-            let invalid = try #require(GhosttyConfigBridge.userConfigDiagnostics(at: path.path))
+            let invalid = try #require(GhosttyConfigBridge.configDiagnostics(at: path.path))
             #expect(invalid.contains { $0.contains("font-siz: unknown field") })
 
             try "font-size = 13\n".write(to: path, atomically: true, encoding: .utf8)
-            let clean = try #require(GhosttyConfigBridge.userConfigDiagnostics(at: path.path))
+            let clean = try #require(GhosttyConfigBridge.configDiagnostics(at: path.path))
             #expect(clean.isEmpty)
         }
     }

@@ -25,7 +25,7 @@ final class GhosttyApp {
         // Initialize global ghostty state (argv) once per process.
         _ = GhosttyApp.bootstrap
         let userConfigDiagnostics: [String] = if settings.advanced.ghosttyConfig.isOn {
-            GhosttyConfigBridge.userConfigDiagnostics() ?? []
+            GhosttyConfigBridge.configDiagnostics() ?? []
         } else {
             []
         }
@@ -192,9 +192,9 @@ final class GhosttyApp {
         // ("no resources dir set") — which kills OSC 7 cwd reporting,
         // prompt marks, and title updates. Export the path explicitly
         // before init so the env branch resolves it without needing the
-        // terminfo sentinel. Note the `resources-dir` *config* key does
-        // NOT feed this path (it only resolves bundled themes); the two
-        // are independent in libghostty.
+        // terminfo sentinel. This fork has no `resources-dir` config key;
+        // bundled themes use absolute paths while this environment value
+        // supplies shell integration and Ghostty's other shared resources.
         if getenv("GHOSTTY_RESOURCES_DIR") == nil,
            let dir = GhosttyApp.resolveResourcesDir()
         {

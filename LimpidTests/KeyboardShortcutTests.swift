@@ -36,6 +36,12 @@ struct KeyboardShortcutTests {
         #expect(s.ghosttyTrigger == "super+shift+t")
     }
 
+    @Test("Stored Return uses Ghostty's Enter key name")
+    func ghosttyTrigger_returnUsesEnterAlias() {
+        let shortcut = StoredShortcut(key: "return", modifiers: [.command, .shift])
+        #expect(shortcut.ghosttyTrigger == "super+shift+enter")
+    }
+
     @Test("Display string maps named keys to glyphs")
     func displayString_namedKeys() {
         #expect(StoredShortcut(key: "left", modifiers: [.command]).displayString == "⌘←")
@@ -204,7 +210,7 @@ struct KeyboardShortcutTests {
 
     @Test("Validate rejects a trigger already used by another action")
     func validate_conflictDetected() throws {
-        var kb = KeyboardSettings()
+        let kb = KeyboardSettings()
         // newTab default is ⌘T. Try to bind closeSurface to ⌘T.
         let stolen = try #require(LimpidShortcutAction.newTab.defaultShortcut)
         let result = kb.validate(stolen, for: .closeSurface)
