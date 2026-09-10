@@ -114,9 +114,46 @@ struct GhosttyConfigBridgeTests {
         #expect(value(of: "background-opacity", in: generate(settings)) == "0")
     }
 
-    @Test("term is pinned to xterm-256color so terminfo always resolves")
-    func makeConfig_term_isPinnedToXterm256() {
+    @Test("term falls back when no bundled database is available")
+    func makeConfig_term_fallsBackWithoutResources() {
         #expect(value(of: "term", in: generate(.default)) == "xterm-256color")
+        #expect(GhosttyConfigBridge.resolvedTerm(resourcesDir: "/missing/share/ghostty") == "xterm-256color")
+    }
+
+    @Test("term names the compiled database shipped beside Ghostty resources")
+    func makeConfig_term_usesBundledXtermGhostty() throws {
+        let resourcesDir = try #require(GhosttyApp.resolveResourcesDir())
+        let config = GhosttyConfigBridge.makeConfigString(
+            settings: .default,
+            resourcesDir: resourcesDir
+        )
+        #expect(value(of: "term", in: config) == "xterm-ghostty")
+        let database = URL(fileURLWithPath: resourcesDir)
+            .deletingLastPathComponent()
+            .appendingPathComponent("terminfo/78/xterm-ghostty")
+        #expect(FileManager.default.fileExists(atPath: database.path))
+    }
+
+    @Test("bundled terminfo is readable and advertises extended underline capabilities")
+    func bundledTerminfo_isReadableByNcurses() throws {
+        let resourcesDir = try #require(GhosttyApp.resolveResourcesDir())
+        let database = URL(fileURLWithPath: resourcesDir)
+            .deletingLastPathComponent()
+            .appendingPathComponent("terminfo")
+        let output = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/infocmp")
+        process.arguments = ["-x", "-A", database.path, "xterm-ghostty"]
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        process.waitUntilExit()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let text = try #require(String(bytes: data, encoding: .utf8))
+
+        #expect(process.terminationStatus == 0)
+        #expect(text.contains("Smulx="))
+        #expect(text.contains("Setulc="))
     }
 
     @Test("confirm-close-surface is disabled (Limpid owns the confirm UI)")
@@ -124,9 +161,12 @@ struct GhosttyConfigBridgeTests {
         #expect(value(of: "confirm-close-surface", in: generate(.default)) == "false")
     }
 
-    @Test("shell-integration-features disables cursor management")
-    func makeConfig_shellIntegrationFeatures_disablesCursor() {
-        #expect(value(of: "shell-integration-features", in: generate(.default)) == "no-cursor")
+    @Test("shell integration preserves local terminfo without exporting it to SSH hosts")
+    func makeConfig_shellIntegrationFeatures_preserveLocalTerminfo() {
+        #expect(
+            value(of: "shell-integration-features", in: generate(.default)) ==
+                "no-cursor,sudo,ssh-env"
+        )
     }
 
     // MARK: - Bundled theme
