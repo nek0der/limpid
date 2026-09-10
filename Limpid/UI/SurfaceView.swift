@@ -736,6 +736,7 @@ extension SurfaceView {
         }
         surface = s
         creationFailed = false
+        app.applyColorScheme(to: s)
 
         // Push the initial size now that libghostty owns the layer.
         pushSurfaceSize()

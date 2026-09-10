@@ -28,6 +28,7 @@ extension AppState {
                 userEnabled: current.appearance.transparency.isOn
             )
             Self.applyColorScheme(current.appearance.colorScheme)
+            self.syncGhosttyColorScheme()
             self.scheduleSettingsReload()
         }
     }
@@ -45,18 +46,16 @@ extension AppState {
             guard latest != self.lastAppliedSettings else { return }
             self.lastAppliedSettings = latest
             let resourcesDir = GhosttyApp.resolveResourcesDir()
-            let appearance = GhosttyApp.currentAppearance(preference: latest.appearance.colorScheme)
             let includeUserConfig = latest.advanced.ghosttyConfig.isOn
             // Against what libghostty is actually handed, not against the
             // settings document. Most of that document never reaches the
             // terminal — the review instructions are a paragraph of prose — and
             // reloading the whole configuration on every keystroke of one is
-            // work nothing asked for. Computed with the same appearance and
-            // user-config flag the reload uses, so the two cannot disagree.
+            // work nothing asked for. Computed with the same user-config flag
+            // the reload uses, so the two cannot disagree.
             let key = GhosttyConfigBridge.makeConfigString(
                 settings: latest,
-                resourcesDir: resourcesDir,
-                appearance: appearance
+                resourcesDir: resourcesDir
             ) + "\n# includeUserConfig=\(includeUserConfig)"
             guard key != self.lastAppliedConfigKey else { return }
             self.lastAppliedConfigKey = key
@@ -64,7 +63,6 @@ extension AppState {
                 app: ghosttyApp, settings: latest,
                 resourcesDir: resourcesDir,
                 includeUserConfig: includeUserConfig,
-                appearance: appearance,
                 surfaces: self.registry.allViews
             ) {
                 self.settingsStore.ghosttyConfigDiagnostics = diagnostics
@@ -75,6 +73,7 @@ extension AppState {
 
     func makeGhosttyEventCoordinator() -> GhosttyEventCoordinator {
         GhosttyEventCoordinator(
+            ghosttyApp: ghosttyApp,
             session: session,
             registry: registry,
             notificationManager: notificationManager,
@@ -90,5 +89,13 @@ extension AppState {
         registry.secureInputManager.setAutomaticEnabled(
             app?.isAutomaticSecureInputEnabled ?? true
         )
+    }
+
+    func syncGhosttyColorScheme() {
+        guard let ghosttyApp else { return }
+        let colorScheme = GhosttyApp.currentColorScheme(
+            preference: settingsStore.settings.appearance.colorScheme
+        )
+        ghosttyApp.setColorScheme(colorScheme, surfaces: registry.allViews)
     }
 }
