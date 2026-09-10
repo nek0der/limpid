@@ -316,12 +316,8 @@ final class AppState {
         }
         delegate.install()
 
-        let coordinator = GhosttyEventCoordinator(
-            session: session, registry: registry,
-            notificationManager: notificationManager,
-            bellFeaturesProvider: { BellFeatures.forAction(settingsStore.settings.terminal.bellAction) },
-            attention: attention
-        )
+        let coordinator = makeGhosttyEventCoordinator()
+        syncSecureInputPreference(from: ghosttyApp)
         self.eventCoordinator = coordinator
         GhosttyActionRouter.sink = { [weak coordinator] event in
             coordinator?.dispatch(event)
@@ -519,6 +515,7 @@ final class AppState {
                 ) {
                     self.settingsStore.ghosttyConfigDiagnostics = diagnostics
                 }
+                self.syncSecureInputPreference(from: app)
             }
         }
     }

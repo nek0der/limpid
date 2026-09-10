@@ -49,6 +49,8 @@ enum GhosttyEvent {
     /// libghostty wants the cursor shape changed (e.g. pointing hand
     /// over a link).
     case mouseShape(SurfaceView, shape: ghostty_action_mouse_shape_e)
+    /// libghostty detected that the pty entered or left password input.
+    case secureInput(SurfaceView, mode: SecureInputMode)
 }
 
 @MainActor
@@ -196,6 +198,13 @@ enum GhosttyActionRouter {
             let shape = action.action.mouse_shape
             log.debug("MOUSE_SHAPE \(shape.rawValue, privacy: .public)")
             return .mouseShape(view, shape: shape)
+
+        case GHOSTTY_ACTION_SECURE_INPUT:
+            guard let view = surfaceView(from: target),
+                  let mode = SecureInputMode(action.action.secure_input)
+            else { return nil }
+            log.debug("SECURE_INPUT mode=\(action.action.secure_input.rawValue, privacy: .public)")
+            return .secureInput(view, mode: mode)
 
         default:
             return nil

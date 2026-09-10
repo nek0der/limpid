@@ -69,6 +69,26 @@ extension AppState {
             ) {
                 self.settingsStore.ghosttyConfigDiagnostics = diagnostics
             }
+            self.syncSecureInputPreference(from: ghosttyApp)
         }
+    }
+
+    func makeGhosttyEventCoordinator() -> GhosttyEventCoordinator {
+        GhosttyEventCoordinator(
+            session: session,
+            registry: registry,
+            notificationManager: notificationManager,
+            bellFeaturesProvider: { [settingsStore] in
+                BellFeatures.forAction(settingsStore.settings.terminal.bellAction)
+            },
+            secureInputManager: registry.secureInputManager,
+            attention: attention
+        )
+    }
+
+    func syncSecureInputPreference(from app: GhosttyApp?) {
+        registry.secureInputManager.setAutomaticEnabled(
+            app?.isAutomaticSecureInputEnabled ?? true
+        )
     }
 }

@@ -21,6 +21,11 @@ final class GhosttyApp {
     /// Diagnostics copied from the user's finalized startup configuration.
     let userConfigDiagnostics: [String]
 
+    /// Effective libghostty preference controlling automatic password-prompt
+    /// protection. Refreshed alongside the live config so the Carbon boundary
+    /// honors an advanced user's explicit opt-out.
+    private(set) var isAutomaticSecureInputEnabled: Bool
+
     init(settings: LimpidSettings = .default) throws {
         // Initialize global ghostty state (argv) once per process.
         _ = GhosttyApp.bootstrap
@@ -56,6 +61,11 @@ final class GhosttyApp {
         }
 
         ghostty_config_finalize(cfg)
+        let isAutomaticSecureInputEnabled = Self.configBool(
+            cfg,
+            key: "macos-auto-secure-input",
+            defaultValue: true
+        )
 
         // Build runtime config with callbacks. `userdata` carries an
         // unretained pointer back to this `GhosttyApp` instance so the
@@ -82,6 +92,7 @@ final class GhosttyApp {
         self.handle = app
         self.config = cfg
         self.userConfigDiagnostics = userConfigDiagnostics
+        self.isAutomaticSecureInputEnabled = isAutomaticSecureInputEnabled
 
         // Register *this* instance for future wakeup callbacks. We pass
         // a placeholder pointer at runtime-config build time because
@@ -110,6 +121,26 @@ final class GhosttyApp {
     nonisolated deinit {
         ghostty_app_free(handle)
         ghostty_config_free(config)
+    }
+
+    func refreshRuntimePreferences(from config: ghostty_config_t) {
+        isAutomaticSecureInputEnabled = Self.configBool(
+            config,
+            key: "macos-auto-secure-input",
+            defaultValue: true
+        )
+    }
+
+    private static func configBool(
+        _ config: ghostty_config_t,
+        key: String,
+        defaultValue: Bool
+    ) -> Bool {
+        var value = defaultValue
+        let didRead = key.withCString { pointer in
+            ghostty_config_get(config, &value, pointer, UInt(key.utf8.count))
+        }
+        return didRead ? value : defaultValue
     }
 
     // MARK: - Resources dir

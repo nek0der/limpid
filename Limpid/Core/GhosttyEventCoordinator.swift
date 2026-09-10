@@ -17,6 +17,7 @@ final class GhosttyEventCoordinator {
     private let registry: any SurfaceViewProviding
     private let notificationManager: LimpidNotificationManager
     private let bellFeaturesProvider: () -> BellFeatures
+    private let secureInputManager: SecureInputManager
     private weak var attention: AttentionState?
 
     /// Pending SET_TITLE applies, keyed by pane id. We debounce title
@@ -38,12 +39,14 @@ final class GhosttyEventCoordinator {
         registry: any SurfaceViewProviding,
         notificationManager: LimpidNotificationManager,
         bellFeaturesProvider: @escaping () -> BellFeatures,
+        secureInputManager: SecureInputManager,
         attention: AttentionState? = nil
     ) {
         self.session = session
         self.registry = registry
         self.notificationManager = notificationManager
         self.bellFeaturesProvider = bellFeaturesProvider
+        self.secureInputManager = secureInputManager
         self.attention = attention
     }
 
@@ -80,6 +83,8 @@ final class GhosttyEventCoordinator {
             handleOpenUrl(url: url)
         case let .mouseShape(view, shape):
             handleMouseShape(view: view, shape: shape)
+        case let .secureInput(view, mode):
+            secureInputManager.set(mode, for: view)
         }
     }
 
