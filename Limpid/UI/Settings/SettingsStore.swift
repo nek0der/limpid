@@ -29,6 +29,11 @@ private let log = Logger.limpid("settings.store")
 @MainActor
 final class SettingsStore {
 
+    /// Current libghostty configuration diagnostics. These describe the
+    /// loaded config rather than a user preference, so they remain in memory
+    /// and are refreshed after startup and every live config reload.
+    var ghosttyConfigDiagnostics: [String] = []
+
     // MARK: - Language (UserDefaults / AppKit-visible)
 
     /// User-facing app language. `.system` reads OS Region prefs.

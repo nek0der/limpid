@@ -60,13 +60,15 @@ extension AppState {
             ) + "\n# includeUserConfig=\(includeUserConfig)"
             guard key != self.lastAppliedConfigKey else { return }
             self.lastAppliedConfigKey = key
-            GhosttyConfigBridge.reloadConfig(
+            if let diagnostics = GhosttyConfigBridge.reloadConfig(
                 app: ghosttyApp, settings: latest,
                 resourcesDir: resourcesDir,
                 includeUserConfig: includeUserConfig,
                 appearance: appearance,
                 surfaces: self.registry.allViews
-            )
+            ) {
+                self.settingsStore.ghosttyConfigDiagnostics = diagnostics
+            }
         }
     }
 }

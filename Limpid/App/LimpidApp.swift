@@ -181,7 +181,9 @@ final class AppState {
         Self.applyColorScheme(settingsStore.settings.appearance.colorScheme)
 
         do {
-            self.ghosttyApp = try GhosttyApp(settings: settingsStore.settings)
+            let ghosttyApp = try GhosttyApp(settings: settingsStore.settings)
+            self.ghosttyApp = ghosttyApp
+            settingsStore.ghosttyConfigDiagnostics = ghosttyApp.userConfigDiagnostics
         } catch {
             log.fault("GhosttyApp init failed: \(String(describing: error), privacy: .public)")
             self.ghosttyApp = nil
@@ -505,14 +507,16 @@ final class AppState {
                 let pref = self.settingsStore.settings.appearance.colorScheme
                 guard pref == .system else { return }
                 self.lastAppliedConfigKey = nil
-                GhosttyConfigBridge.reloadConfig(
+                if let diagnostics = GhosttyConfigBridge.reloadConfig(
                     app: app,
                     settings: self.settingsStore.settings,
                     resourcesDir: GhosttyApp.resolveResourcesDir(),
                     includeUserConfig: self.settingsStore.settings.advanced.ghosttyConfig.isOn,
                     appearance: GhosttyApp.currentAppearance(preference: pref),
                     surfaces: self.registry.allViews
-                )
+                ) {
+                    self.settingsStore.ghosttyConfigDiagnostics = diagnostics
+                }
             }
         }
     }

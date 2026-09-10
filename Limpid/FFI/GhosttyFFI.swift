@@ -11,6 +11,18 @@ import GhosttyKit
 /// symbols directly — extend this enum with a Swift-friendly signature
 /// instead.
 enum GhosttyFFI {
+    /// Copies configuration diagnostics while the config handle still owns
+    /// their C strings. The returned Swift strings remain valid after the
+    /// caller updates libghostty or frees the handle.
+    static func configDiagnostics(_ config: ghostty_config_t) -> [String] {
+        let count = ghostty_config_diagnostics_count(config)
+        return (0..<count).compactMap { index in
+            let diagnostic = ghostty_config_get_diagnostic(config, index)
+            guard let message = diagnostic.message else { return nil }
+            return String(cString: message)
+        }
+    }
+
     /// Returns the embedded libghostty version string (e.g. "1.3.1").
     static func version() -> String {
         let info = ghostty_info()
