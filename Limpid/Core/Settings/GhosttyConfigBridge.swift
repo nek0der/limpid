@@ -108,9 +108,11 @@ enum GhosttyConfigBridge {
         // is the design we chose to keep Limpid's toolbar consistent
         // across themes.
         lines.append("background-opacity = 0")
-        // Fall back to xterm-256color so we don't depend on a
-        // user-installed `xterm-ghostty` terminfo entry.
-        lines.append("term = xterm-256color")
+        // libghostty exports the database beside its resources directory as
+        // TERMINFO. Check the exact compiled alias before advertising it so a
+        // partial development/package build falls back instead of leaving
+        // every curses program unable to resolve $TERM.
+        lines.append("term = \(resolvedTerm(resourcesDir: resourcesDir))")
         // Limpid handles its own close-confirm via SwiftUI .alert,
         // so disable libghostty's confirm dialog.
         lines.append("confirm-close-surface = false")
@@ -120,7 +122,11 @@ enum GhosttyConfigBridge {
         // keeps a shell from taking those lines as commands, so it is not a
         // setting a layered user config may switch off.
         lines.append("clipboard-paste-protection = true")
-        // Tell shell-integration to keep its hands off the cursor.
+        // Tell shell integration to keep its hands off the cursor. Preserve
+        // the bundled TERMINFO through local sudo, and keep SSH compatible
+        // with hosts that do not have xterm-ghostty installed. We do not turn
+        // on ssh-terminfo because silently installing files on a remote host
+        // exceeds an embedded terminal's local configuration responsibility.
         // Default zsh / fish integration sends DECSCUSR (`ESC[<n> q`)
         // on every prompt, which clobbers Limpid's `cursor-style`
         // preference on the next keystroke. We own this setting
@@ -128,7 +134,7 @@ enum GhosttyConfigBridge {
         // override is always wrong here. (See Ghostty discussions
         // #3836 / #5144 / #8681 — the long-standing pitfall behind
         // "cursor-style doesn't change on existing shells".)
-        lines.append("shell-integration-features = no-cursor")
+        lines.append("shell-integration-features = no-cursor,sudo,ssh-env")
         // Limpid never loads custom shaders, so disable the draw timer
         // that fires at 120 Hz (DRAW_INTERVAL = 8 ms) when the surface
         // is focused. Without this, every focused surface burns ~120
@@ -304,6 +310,16 @@ enum GhosttyConfigBridge {
         case .bar: "bar"
         case .underline: "underline"
         }
+    }
+
+    static func resolvedTerm(resourcesDir: String?) -> String {
+        guard let resourcesDir else { return "xterm-256color" }
+        let database = URL(fileURLWithPath: resourcesDir)
+            .deletingLastPathComponent()
+            .appendingPathComponent("terminfo/78/xterm-ghostty")
+        return FileManager.default.fileExists(atPath: database.path)
+            ? "xterm-ghostty"
+            : "xterm-256color"
     }
 
 }

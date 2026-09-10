@@ -10,6 +10,7 @@
 #
 # Output:
 #   vendor/ghostty/macos/GhosttyKit.xcframework
+#   Limpid/Resources/terminfo/{67/ghostty,78/xterm-ghostty}
 #
 # Usage:
 #   ./scripts/build-ghostty.sh
@@ -50,4 +51,19 @@ if [[ ! -d "${XCFRAMEWORK}" ]]; then
   exit 1
 fi
 
+# Keep the complete compiled alias pair on the same vendor revision as the
+# library. ncurses selects the hexadecimal directory from the first character
+# of TERM, so the directory names must survive unchanged.
+TERMINFO_SOURCE="${GHOSTTY_DIR}/zig-out/share/terminfo"
+TERMINFO_DEST="${REPO_ROOT}/Limpid/Resources/terminfo"
+for entry in "67/ghostty" "78/xterm-ghostty"; do
+  if [[ ! -f "${TERMINFO_SOURCE}/${entry}" ]]; then
+    echo "Built terminfo entry missing: ${TERMINFO_SOURCE}/${entry}" >&2
+    exit 1
+  fi
+  mkdir -p "${TERMINFO_DEST}/$(dirname "${entry}")"
+  cp "${TERMINFO_SOURCE}/${entry}" "${TERMINFO_DEST}/${entry}"
+done
+
 echo "✓ Built ${XCFRAMEWORK}"
+echo "Synced ${TERMINFO_DEST}"

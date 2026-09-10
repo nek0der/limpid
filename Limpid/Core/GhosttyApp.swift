@@ -271,22 +271,16 @@ final class GhosttyApp {
     /// its allocator + state. Using a lazy `static let` guarantees a
     /// single execution even across concurrent first-touchers.
     private static let bootstrap: Void = {
-        // libghostty resolves its resources dir during `ghostty_init`:
-        // first from `$GHOSTTY_RESOURCES_DIR`, otherwise by walking up
-        // from the executable looking for a `terminfo/.../xterm-ghostty`
-        // sentinel. Our bundle ships the shell-integration scripts under
-        // `Resources/ghostty` but no `terminfo`, so the walk-up never
-        // matches and libghostty disables shell integration entirely
-        // ("no resources dir set") — which kills OSC 7 cwd reporting,
-        // prompt marks, and title updates. Export the path explicitly
-        // before init so the env branch resolves it without needing the
-        // terminfo sentinel. This fork has no `resources-dir` config key;
-        // bundled themes use absolute paths while this environment value
-        // supplies shell integration and Ghostty's other shared resources.
-        if getenv("GHOSTTY_RESOURCES_DIR") == nil,
-           let dir = GhosttyApp.resolveResourcesDir()
-        {
+        // Resolve before libghostty reads the environment. A Limpid launched
+        // from another Limpid pane inherits the parent's bundle path; keeping
+        // that value would pair this binary with another build's scripts and
+        // terminfo. `resolveResourcesDir` prefers this process's Bundle and
+        // only falls back to the explicit environment override when the
+        // bundle has no Ghostty resources (the supported source-run case).
+        if let dir = GhosttyApp.resolveResourcesDir() {
             setenv("GHOSTTY_RESOURCES_DIR", dir, 1)
+        } else {
+            unsetenv("GHOSTTY_RESOURCES_DIR")
         }
         let args = CommandLine.unsafeArgv
         let rc = ghostty_init(UInt(CommandLine.argc), args)

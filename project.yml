@@ -73,6 +73,7 @@ targets:
       - path: Limpid
         excludes:
           - "Resources/ghostty"
+          - "Resources/terminfo"
           - "Resources/claude-shim"
           - "Resources/codex-shim"
           - "Resources/agent-shim"
@@ -82,6 +83,11 @@ targets:
       # `.app/Contents/Resources/ghostty/`, which is where
       # `GhosttyApp.resolveResourcesDir()` looks first.
       - path: Limpid/Resources/ghostty
+        type: folder
+      # libghostty looks for this database beside its `ghostty` resources
+      # directory and exports TERMINFO to every pty. Keep the compiled aliases
+      # as a folder resource so ncurses' hexadecimal lookup directories survive.
+      - path: Limpid/Resources/terminfo
         type: folder
       # Bundle the Claude Code shim + hook receiver. `type: folder`
       # preserves the executable bit so the scripts stay runnable
