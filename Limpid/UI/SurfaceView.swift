@@ -78,6 +78,11 @@ final class SurfaceView: NSView {
     /// since `NSApp.currentEvent` can be unreliable mid-dispatch.
     var activeKeyEvent: NSEvent?
 
+    /// Text-translation counterpart to `activeKeyEvent`. It may omit Option
+    /// according to `macos-option-as-alt`, while the raw event retains the
+    /// modifiers that libghostty must encode and match against keybindings.
+    var activeTranslationKeyEvent: NSEvent?
+
     /// Buffer for `insertText:` calls that fire during a `keyDown` IME
     /// pass. When non-nil we're inside a key dispatch and IME committed
     /// text should accumulate here rather than be sent immediately —

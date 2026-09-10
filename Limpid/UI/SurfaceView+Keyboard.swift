@@ -181,11 +181,16 @@ extension SurfaceView {
         // command instead.
         activeKeyEvent = event
         defer { activeKeyEvent = nil }
+        let translationEvent = surface.map {
+            Self.translationEvent(from: event, surface: $0)
+        } ?? event
+        activeTranslationKeyEvent = translationEvent
+        defer { activeTranslationKeyEvent = nil }
         keyTextAccumulator = []
         defer { keyTextAccumulator = nil }
 
         let wasComposing = hasMarkedText()
-        let consumed = inputContext?.handleEvent(event) ?? false
+        let consumed = inputContext?.handleEvent(translationEvent) ?? false
         let accumulated = keyTextAccumulator ?? []
         // Treat ⌘ / ⌃ / ⌥ as "this is a keybind, not text composition".
         // Kotoeri returns `consumed = true` for ⇧⌘ combos without
@@ -211,11 +216,20 @@ extension SurfaceView {
                 // Regular (non-IME) text — forward as a key event
                 // so libghostty's encoder runs normally.
                 for text in accumulated {
-                    forward(event, action: GHOSTTY_ACTION_PRESS, overrideText: text)
+                    forward(
+                        event,
+                        action: GHOSTTY_ACTION_PRESS,
+                        overrideText: text,
+                        translationEvent: translationEvent
+                    )
                 }
             }
         } else if !hasMarkedText(), !consumed || hasKeybindModifiers {
-            forward(event, action: GHOSTTY_ACTION_PRESS)
+            forward(
+                event,
+                action: GHOSTTY_ACTION_PRESS,
+                translationEvent: translationEvent
+            )
         }
         // else: preedit active — the keystroke belongs to the IME.
     }
@@ -277,11 +291,16 @@ extension SurfaceView {
         _ event: NSEvent,
         action: ghostty_input_action_e,
         suppressText: Bool = false,
-        overrideText: String? = nil
+        overrideText: String? = nil,
+        translationEvent suppliedTranslationEvent: NSEvent? = nil
     ) -> Bool {
         guard let surface else { return false }
+        let translationEvent = suppliedTranslationEvent
+            ?? (event.type == .keyDown
+                ? Self.translationEvent(from: event, surface: surface)
+                : event)
         let consumedMods = Self.translateMods(
-            event.modifierFlags.subtracting([.control, .command])
+            translationEvent.modifierFlags.subtracting([.control, .command])
         )
         var key = Self.makeKeyEvent(from: event, action: action, consumedMods: consumedMods)
         // Text source: explicit override (IME accumulator) wins;
@@ -292,7 +311,7 @@ extension SurfaceView {
         } else if suppressText {
             nil
         } else {
-            Self.bindingText(from: event)
+            Self.bindingText(from: translationEvent)
         }
         // Only attach `key.text` when the candidate text is printable
         // (first byte ≥ 0x20). Control characters (`\r`, `\n`, `\t`,
