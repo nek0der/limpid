@@ -18,17 +18,26 @@ final class GhosttyApp {
 
     private nonisolated(unsafe) let config: ghostty_config_t
 
+    /// Diagnostics copied from the user's finalized startup configuration.
+    let userConfigDiagnostics: [String]
+
     init(settings: LimpidSettings = .default) throws {
         // Initialize global ghostty state (argv) once per process.
         _ = GhosttyApp.bootstrap
+        let userConfigDiagnostics: [String] = if settings.advanced.ghosttyConfig.isOn {
+            GhosttyConfigBridge.userConfigDiagnostics() ?? []
+        } else {
+            []
+        }
 
         let cfg = ghostty_config_new()
         guard let cfg else { throw Error.configInitFailed }
 
         // Layer 2 (Opt-in): user's ~/.config/ghostty/config. Off by
         // default — Limpid Settings is the single source of truth in
-        // the common case. Advanced users can flip the toggle to
-        // bring their keybinds + shell-integration prefs along.
+        // the common case. Advanced users can enable it for terminal
+        // preferences outside our UI. Limpid still clears personal
+        // keybinds because the menu bar owns application shortcuts.
         if settings.advanced.ghosttyConfig.isOn {
             ghostty_config_load_default_files(cfg)
         }
@@ -72,6 +81,7 @@ final class GhosttyApp {
 
         self.handle = app
         self.config = cfg
+        self.userConfigDiagnostics = userConfigDiagnostics
 
         // Register *this* instance for future wakeup callbacks. We pass
         // a placeholder pointer at runtime-config build time because

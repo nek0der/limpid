@@ -88,11 +88,14 @@ struct GhosttyConfigBridgeTests {
 
     // MARK: - Terminal
 
-    @Test("scrollback-limit forwards the user value")
+    @Test("scrollback uses the selected line count without an earlier byte ceiling")
     func makeConfig_scrollbackLines_isForwarded() {
         var settings = LimpidSettings.default
         settings.terminal.scrollbackLines = 12345
-        #expect(value(of: "scrollback-limit", in: generate(settings)) == "12345")
+        let config = generate(settings)
+        #expect(value(of: "scrollback-limit-lines", in: config) == "12345")
+        #expect(value(of: "scrollback-limit-bytes", in: config) == "unlimited")
+        #expect(value(of: "scrollback-limit", in: config) == nil)
     }
 
     @Test("cursor-style-blink toggle is forwarded as a bool")
@@ -177,6 +180,21 @@ struct GhosttyConfigBridgeTests {
         // the ignore loop must not shadow these.
         #expect(config.contains("jump_to_prompt:1"))
         #expect(!config.contains("keybind = super+down=ignore"))
+    }
+
+    @Test("user config diagnostics distinguish invalid and clean files")
+    func userConfigDiagnostics_reportOnlyInvalidConfig() throws {
+        try withTempDir { directory in
+            let path = directory.appendingPathComponent("ghostty-config")
+            try "font-siz = 13\n".write(to: path, atomically: true, encoding: .utf8)
+
+            let invalid = try #require(GhosttyConfigBridge.userConfigDiagnostics(at: path.path))
+            #expect(invalid.contains { $0.contains("font-siz: unknown field") })
+
+            try "font-size = 13\n".write(to: path, atomically: true, encoding: .utf8)
+            let clean = try #require(GhosttyConfigBridge.userConfigDiagnostics(at: path.path))
+            #expect(clean.isEmpty)
+        }
     }
 
     @Test func generatedConfigurationsDoNotOverwriteAnotherProcess() throws {

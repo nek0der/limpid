@@ -2209,6 +2209,23 @@
         }
       }
     },
+    "Ghostty config errors": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ghostty config errors"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ghostty 設定エラー"
+          }
+        }
+      }
+    },
     "Git could not load the changes. Try again.": {
       "extractionState": "manual",
       "localizations": {
@@ -2578,12 +2595,19 @@
         }
       }
     },
-    "Layers ~/.config/ghostty/config beneath the values above. Limpid always overrides window background, opacity, and decoration. Restart required.": {
+    "Loads settings from ~/.config/ghostty/config. Key bindings are not applied because Limpid manages its own shortcuts. Limpid also takes priority for some safety and display settings. Restart Limpid after editing the file.": {
+      "extractionState": "manual",
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loads settings from ~/.config/ghostty/config. Key bindings are not applied because Limpid manages its own shortcuts. Limpid also takes priority for some safety and display settings. Restart Limpid after editing the file."
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "~/.config/ghostty/config を上記の設定値の下に重ねます。ウィンドウ背景・不透明度・装飾は常に Limpid が上書きします。再起動が必要です。"
+            "value": "~/.config/ghostty/config の設定を読み込みます。ただし、キー割り当ては Limpid 側で管理しているため反映されません。また、安全性や表示に関わる一部の設定は Limpid の設定が優先されます。ファイルを編集した後は Limpid を再起動してください。"
           }
         }
       }

@@ -44,13 +44,32 @@ struct AdvancedPane: View {
                         set: { store.settings.advanced.ghosttyConfig = $0 ? .on : .off }
                     )
                 )
+                if store.settings.advanced.ghosttyConfig.isOn,
+                   !store.ghosttyConfigDiagnostics.isEmpty
+                {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label(
+                            "Ghostty config errors",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .foregroundStyle(.red)
+                        ForEach(Array(store.ghosttyConfigDiagnostics.enumerated()), id: \.offset) { _, diagnostic in
+                            Text(diagnostic)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .accessibilityElement(children: .contain)
+                }
             } header: {
                 Text("Ghostty Config")
             } footer: {
                 Text(
                     """
-                    Layers ~/.config/ghostty/config beneath the values above. \
-                    Limpid always overrides window background, opacity, and decoration. Restart required.
+                    Loads settings from ~/.config/ghostty/config. Key bindings are not applied because \
+                    Limpid manages its own shortcuts. Limpid also takes priority for some safety and display \
+                    settings. Restart Limpid after editing the file.
                     """
                 )
             }

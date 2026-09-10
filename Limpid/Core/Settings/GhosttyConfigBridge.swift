@@ -68,7 +68,13 @@ enum GhosttyConfigBridge {
         }
 
         // Terminal
-        lines.append("scrollback-limit = \(settings.terminal.scrollbackLines)")
+        // The UI expresses this preference in lines. Ghostty's legacy
+        // `scrollback-limit` spelling means bytes, while the explicit lines
+        // key preserves the contract the picker presents. Remove the separate
+        // byte ceiling so it cannot truncate history before the selected line
+        // limit; allocation remains lazy and Ghostty compresses idle history.
+        lines.append("scrollback-limit-lines = \(settings.terminal.scrollbackLines)")
+        lines.append("scrollback-limit-bytes = unlimited")
         lines.append("cursor-style = \(mapCursorStyle(settings.terminal.cursorStyle))")
         lines.append("cursor-style-blink = \(settings.terminal.cursorBlink.isOn)")
         lines.append("bell-features = \(mapBellFeatures(settings.terminal.bellAction))")
@@ -233,6 +239,25 @@ enum GhosttyConfigBridge {
 
     // MARK: - Live reload
 
+    /// Validate the optional user layer in isolation so diagnostics caused by
+    /// Limpid's generated compatibility settings are never attributed to the
+    /// user's file. The runtime config is built separately below because its
+    /// forced overrides must still load after the user layer.
+    static func userConfigDiagnostics(at path: String? = nil) -> [String]? {
+        guard let cfg = ghostty_config_new() else {
+            log.error("ghostty_config_new() returned nil during user config validation")
+            return nil
+        }
+        defer { ghostty_config_free(cfg) }
+        if let path {
+            path.withCString { ghostty_config_load_file(cfg, $0) }
+        } else {
+            ghostty_config_load_default_files(cfg)
+        }
+        ghostty_config_finalize(cfg)
+        return GhosttyFFI.configDiagnostics(cfg)
+    }
+
     /// Rebuild the libghostty config from the current `LimpidSettings`
     /// and push it into the running app. Triggers
     /// `Notification.Name.limpidConfigDidChange` so SwiftUI views
@@ -243,6 +268,9 @@ enum GhosttyConfigBridge {
     /// scrollback). Settings libghostty applies live (font size,
     /// theme, opacity, cursor) reach every running surface
     /// immediately.
+    ///
+    /// Returns diagnostics copied from the finalized user config, or `nil`
+    /// when its validation handle could not be created.
     static func reloadConfig(
         app: GhosttyApp,
         settings: LimpidSettings,
@@ -250,7 +278,12 @@ enum GhosttyConfigBridge {
         includeUserConfig: Bool,
         appearance: Appearance,
         surfaces: [SurfaceView] = []
-    ) {
+    ) -> [String]? {
+        let diagnostics: [String]? = if includeUserConfig {
+            userConfigDiagnostics()
+        } else {
+            []
+        }
         let path = writeConfigFile(
             settings: settings,
             resourcesDir: resourcesDir,
@@ -258,7 +291,7 @@ enum GhosttyConfigBridge {
         )
         guard let cfg = makeConfig(path: path, includeUserConfig: includeUserConfig) else {
             log.error("ghostty_config_new() returned nil during reload")
-            return
+            return nil
         }
         // libghostty clones `cfg` internally (`apprt/embedded.zig`
         // calls `config.clone(alloc)`), so the caller still owns
@@ -290,6 +323,7 @@ enum GhosttyConfigBridge {
             object: nil
         )
         log.notice("ghostty config reloaded (\(surfaces.count, privacy: .public) live surfaces)")
+        return diagnostics
     }
 
     /// Build a finalized libghostty config from the on-disk Limpid
