@@ -127,6 +127,7 @@ extension SurfaceView {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
+        onScrollGesture?()
         var scrollMods: Int32 = 0
         if event.hasPreciseScrollingDeltas {
             scrollMods |= 1 << 0

@@ -95,6 +95,34 @@ final class SurfaceView: NSView {
     /// `MOUSE_SHAPE` actions.
     var currentCursor: NSCursor = .iBeam
 
+    /// Latest viewport metrics reported by libghostty. Stored on the
+    /// persistent surface so a short-lived SwiftUI host can rebuild without
+    /// resetting the native scroller to the bottom.
+    private(set) var scrollbarState: TerminalScrollbarState?
+
+    /// Effective advanced `scrollbar` preference read from the finalized
+    /// libghostty config. The scroll geometry remains active when false so
+    /// wheel and binding-driven movement still position the Metal viewport.
+    var isScrollbarEnabled = true {
+        didSet {
+            onScrollbarStateChange?(scrollbarState)
+        }
+    }
+
+    /// The currently mounted AppKit scroll host installs this callback. It is
+    /// replaced on every remount while `scrollbarState` persists above.
+    var onScrollbarStateChange: ((TerminalScrollbarState?) -> Void)?
+
+    /// The scroll host uses a real wheel/trackpad gesture to flash the system
+    /// overlay. Scrollbar state also changes while output streams, so it cannot
+    /// serve as evidence of user interaction without making the overlay blink.
+    var onScrollGesture: (() -> Void)?
+
+    func updateScrollbarState(_ state: TerminalScrollbarState) {
+        scrollbarState = state
+        onScrollbarStateChange?(state)
+    }
+
     /// Live SurfaceViews keyed by the raw pointer libghostty uses as
     /// `userdata`. The value side is a `WeakBox` so a deallocated view
     /// auto-drops to `nil` without us having to chase removal from

@@ -78,6 +78,8 @@ final class GhosttyEventCoordinator {
             handleSearchTotal(view: view, total: total)
         case let .searchSelected(view, selected):
             handleSearchSelected(view: view, selected: selected)
+        case let .scrollbar(view, state):
+            view.updateScrollbarState(state)
         case let .closeSurface(view, _):
             handleCloseSurface(view: view)
         case let .mouseOverLink(view, url):

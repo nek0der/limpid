@@ -54,6 +54,15 @@ enum GhosttyFFI {
         return value
     }
 
+    /// Ask libghostty to perform one textual binding action. The action
+    /// buffer is borrowed only for this call.
+    @discardableResult
+    static func performBindingAction(_ action: String, on surface: ghostty_surface_t) -> Bool {
+        action.withCString { pointer in
+            ghostty_surface_binding_action(surface, pointer, UInt(action.utf8.count))
+        }
+    }
+
     /// Complete a clipboard read request with a single `text/plain`
     /// representation.
     ///
