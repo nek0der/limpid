@@ -20,6 +20,11 @@ private let log = Logger.limpid("ghostty.router")
 /// Type-safe event emitted by the libghostty action layer. Mirrors the
 /// `GHOSTTY_ACTION_*` tags Limpid actually handles.
 enum GhosttyEvent {
+    enum ReloadTarget {
+        case app
+        case surface(SurfaceView)
+    }
+
     case setTitle(SurfaceView, title: String)
     case setPwd(SurfaceView, pwd: String)
     case gotoTab(rawIndex: Int32)
@@ -51,6 +56,9 @@ enum GhosttyEvent {
     case mouseShape(SurfaceView, shape: ghostty_action_mouse_shape_e)
     /// libghostty detected that the pty entered or left password input.
     case secureInput(SurfaceView, mode: SecureInputMode)
+    /// libghostty changed conditional state and needs the current config
+    /// reapplied to either the whole app or one surface.
+    case softReload(ReloadTarget)
 }
 
 @MainActor
@@ -205,6 +213,18 @@ enum GhosttyActionRouter {
             else { return nil }
             log.debug("SECURE_INPUT mode=\(action.action.secure_input.rawValue, privacy: .public)")
             return .secureInput(view, mode: mode)
+
+        case GHOSTTY_ACTION_RELOAD_CONFIG:
+            guard action.action.reload_config.soft else { return nil }
+            switch target.tag {
+            case GHOSTTY_TARGET_APP:
+                return .softReload(.app)
+            case GHOSTTY_TARGET_SURFACE:
+                guard let view = surfaceView(from: target) else { return nil }
+                return .softReload(.surface(view))
+            default:
+                return nil
+            }
 
         default:
             return nil

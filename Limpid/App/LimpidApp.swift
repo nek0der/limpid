@@ -482,13 +482,9 @@ final class AppState {
             self.store.scheduleSave(self.session.makeSnapshot())
         }
 
-        // Live light/dark switching. libghostty can't follow macOS
-        // appearance on its own when embedded (ghostty#11017), so we
-        // listen for the distributed
-        // `AppleInterfaceThemeChangedNotification` and rebuild the
-        // config so every surface re-picks its theme. Surfaces
-        // refresh through the existing `ghostty_app_update_config`
-        // path that Settings → Appearance already uses.
+        // Follow system appearance only when the user selected that mode.
+        // The app and every surface receive the same resolved scheme; their
+        // soft-reload callbacks re-evaluate the paired light/dark theme.
         themeObserver = DistributedNotificationCenter.default.addObserver(
             forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
             object: nil,
@@ -499,23 +495,10 @@ final class AppState {
             // needs the explicit isolation handoff to let us touch
             // `settingsStore` and the MainActor helpers below.
             MainActor.assumeIsolated {
-                guard let self, let app = self.ghosttyApp else { return }
-                // We rebuild only system appearance and invalidate the settings cache
-                // because this reload changes the configuration behind that cache.
+                guard let self else { return }
                 let pref = self.settingsStore.settings.appearance.colorScheme
                 guard pref == .system else { return }
-                self.lastAppliedConfigKey = nil
-                if let diagnostics = GhosttyConfigBridge.reloadConfig(
-                    app: app,
-                    settings: self.settingsStore.settings,
-                    resourcesDir: GhosttyApp.resolveResourcesDir(),
-                    includeUserConfig: self.settingsStore.settings.advanced.ghosttyConfig.isOn,
-                    appearance: GhosttyApp.currentAppearance(preference: pref),
-                    surfaces: self.registry.allViews
-                ) {
-                    self.settingsStore.ghosttyConfigDiagnostics = diagnostics
-                }
-                self.syncSecureInputPreference(from: app)
+                self.syncGhosttyColorScheme()
             }
         }
     }

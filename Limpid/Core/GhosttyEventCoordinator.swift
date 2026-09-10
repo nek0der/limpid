@@ -13,6 +13,7 @@ private let log = Logger.limpid("ghostty.events")
 
 @MainActor
 final class GhosttyEventCoordinator {
+    private weak var ghosttyApp: GhosttyApp?
     private weak var session: WindowSession?
     private let registry: any SurfaceViewProviding
     private let notificationManager: LimpidNotificationManager
@@ -35,6 +36,7 @@ final class GhosttyEventCoordinator {
     private var pendingBellFlashes: [UUID: Task<Void, Never>] = [:]
 
     init(
+        ghosttyApp: GhosttyApp?,
         session: WindowSession,
         registry: any SurfaceViewProviding,
         notificationManager: LimpidNotificationManager,
@@ -42,6 +44,7 @@ final class GhosttyEventCoordinator {
         secureInputManager: SecureInputManager,
         attention: AttentionState? = nil
     ) {
+        self.ghosttyApp = ghosttyApp
         self.session = session
         self.registry = registry
         self.notificationManager = notificationManager
@@ -85,6 +88,11 @@ final class GhosttyEventCoordinator {
             handleMouseShape(view: view, shape: shape)
         case let .secureInput(view, mode):
             secureInputManager.set(mode, for: view)
+        case .softReload(.app):
+            ghosttyApp?.softReload(surface: nil)
+        case let .softReload(.surface(view)):
+            guard let surface = view.surface else { return }
+            ghosttyApp?.softReload(surface: surface)
         }
     }
 

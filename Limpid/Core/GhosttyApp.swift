@@ -16,7 +16,13 @@ private let log = Logger.limpid("ghostty.app")
 final class GhosttyApp {
     nonisolated(unsafe) let handle: ghostty_app_t
 
-    private nonisolated(unsafe) let config: ghostty_config_t
+    /// The finalized config handle retained for libghostty soft reloads.
+    /// `nonisolated(unsafe)` only lets the nonisolated deinit free the last
+    /// handle; replacement remains confined to MainActor.
+    private nonisolated(unsafe) var config: ghostty_config_t
+
+    /// Scheme already applied to the app and inherited by new surfaces.
+    private(set) var colorScheme: ghostty_color_scheme_e
 
     /// Diagnostics copied from the user's finalized startup configuration.
     let userConfigDiagnostics: [String]
@@ -52,10 +58,10 @@ final class GhosttyApp {
         // last so the Liquid Glass toolbar stays intact regardless
         // of what user config tried to set.
         let resourcesDir = GhosttyApp.resolveResourcesDir()
+        let colorScheme = GhosttyApp.currentColorScheme(preference: settings.appearance.colorScheme)
         if let path = GhosttyConfigBridge.writeConfigFile(
             settings: settings,
-            resourcesDir: resourcesDir,
-            appearance: GhosttyApp.currentAppearance(preference: settings.appearance.colorScheme)
+            resourcesDir: resourcesDir
         ) {
             path.withCString { ghostty_config_load_file(cfg, $0) }
         }
@@ -93,6 +99,7 @@ final class GhosttyApp {
         self.config = cfg
         self.userConfigDiagnostics = userConfigDiagnostics
         self.isAutomaticSecureInputEnabled = isAutomaticSecureInputEnabled
+        self.colorScheme = colorScheme
 
         // Register *this* instance for future wakeup callbacks. We pass
         // a placeholder pointer at runtime-config build time because
@@ -104,6 +111,9 @@ final class GhosttyApp {
         // route every wakeup to one of them.
         precondition(GhosttyApp.placeholder.target == nil, "GhosttyApp must be a singleton; second instance detected")
         GhosttyApp.placeholder.target = self
+
+        ghostty_app_set_color_scheme(handle, colorScheme)
+        ghostty_app_update_config(handle, config)
 
         log.notice("ghostty app created")
     }
@@ -129,6 +139,43 @@ final class GhosttyApp {
             key: "macos-auto-secure-input",
             defaultValue: true
         )
+    }
+
+    /// Take ownership of the finalized config after applying it. Keeping the
+    /// current handle lets libghostty's later soft-reload callbacks reapply the
+    /// same layered settings under a new conditional state.
+    func replaceConfig(with newConfig: ghostty_config_t, surfaces: [SurfaceView]) {
+        refreshRuntimePreferences(from: newConfig)
+        ghostty_app_update_config(handle, newConfig)
+        for view in surfaces {
+            guard let surface = view.surface else { continue }
+            ghostty_surface_update_config(surface, newConfig)
+        }
+        let oldConfig = config
+        config = newConfig
+        ghostty_config_free(oldConfig)
+    }
+
+    func softReload(surface: ghostty_surface_t?) {
+        if let surface {
+            ghostty_surface_update_config(surface, config)
+        } else {
+            ghostty_app_update_config(handle, config)
+        }
+    }
+
+    func setColorScheme(_ resolved: ghostty_color_scheme_e, surfaces: [SurfaceView]) {
+        guard resolved != colorScheme else { return }
+        colorScheme = resolved
+        for view in surfaces {
+            guard let surface = view.surface else { continue }
+            ghostty_surface_set_color_scheme(surface, resolved)
+        }
+        ghostty_app_set_color_scheme(handle, resolved)
+    }
+
+    func applyColorScheme(to surface: ghostty_surface_t) {
+        ghostty_surface_set_color_scheme(surface, colorScheme)
     }
 
     private static func configBool(
@@ -196,14 +243,24 @@ final class GhosttyApp {
     /// `NSGlobalDomain` rather than `NSApp.effectiveAppearance` so
     /// this is safe to call from `GhosttyApp.init` before
     /// NSApplication has finished its appearance graph.
-    static func currentAppearance(
+    static func currentColorScheme(
         preference: ColorSchemePreference
-    ) -> GhosttyConfigBridge.Appearance {
+    ) -> ghostty_color_scheme_e {
+        resolvedColorScheme(
+            preference: preference,
+            systemIsDark: UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+        )
+    }
+
+    static func resolvedColorScheme(
+        preference: ColorSchemePreference,
+        systemIsDark: Bool
+    ) -> ghostty_color_scheme_e {
         switch preference {
-        case .light: .light
-        case .dark: .dark
+        case .light: GHOSTTY_COLOR_SCHEME_LIGHT
+        case .dark: GHOSTTY_COLOR_SCHEME_DARK
         case .system:
-            UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark" ? .dark : .light
+            systemIsDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
         }
     }
 

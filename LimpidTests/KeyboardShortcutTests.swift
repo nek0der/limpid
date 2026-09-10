@@ -105,8 +105,7 @@ struct KeyboardShortcutTests {
         )
         let config = GhosttyConfigBridge.makeConfigString(
             settings: settings,
-            resourcesDir: nil,
-            appearance: .dark
+            resourcesDir: nil
         )
         guard
             let forcedIdx = config.range(of: "keybind = super+q=unbind"),
@@ -122,8 +121,7 @@ struct KeyboardShortcutTests {
     func bridge_defaultsEmitAllGhosttyActions() {
         let config = GhosttyConfigBridge.makeConfigString(
             settings: .default,
-            resourcesDir: nil,
-            appearance: .dark
+            resourcesDir: nil
         )
         for action in LimpidShortcutAction.allCases {
             guard let ghosttyAction = action.ghosttyAction,
@@ -181,8 +179,7 @@ struct KeyboardShortcutTests {
     func bridge_menuOwnedActionsResolveToIgnore() throws {
         let config = GhosttyConfigBridge.makeConfigString(
             settings: .default,
-            resourcesDir: nil,
-            appearance: .dark
+            resourcesDir: nil
         )
         // newTab / nextTab / focus* live in the menu; newWorktree is
         // Limpid-only (no ghostty action at all). All four must show
@@ -200,8 +197,7 @@ struct KeyboardShortcutTests {
     func bridge_emitsKeybindClear() {
         let config = GhosttyConfigBridge.makeConfigString(
             settings: .default,
-            resourcesDir: nil,
-            appearance: .dark
+            resourcesDir: nil
         )
         #expect(config.contains("keybind = clear"))
     }
@@ -343,8 +339,7 @@ struct KeyboardShortcutTests {
     func bridge_clearBeforeUserBindings() {
         let config = GhosttyConfigBridge.makeConfigString(
             settings: .default,
-            resourcesDir: nil,
-            appearance: .dark
+            resourcesDir: nil
         )
         guard
             let clearIdx = config.range(of: "keybind = clear"),

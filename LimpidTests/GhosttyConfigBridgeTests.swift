@@ -7,6 +7,7 @@
 // order, and with what derived value).
 
 import Foundation
+import GhosttyKit
 import Testing
 @testable import Limpid
 
@@ -18,7 +19,7 @@ struct GhosttyConfigBridgeTests {
 
     /// Convenience to inspect config that does not need a bundled theme.
     private func generate(_ settings: LimpidSettings) -> String {
-        GhosttyConfigBridge.makeConfigString(settings: settings, resourcesDir: nil, appearance: .dark)
+        GhosttyConfigBridge.makeConfigString(settings: settings, resourcesDir: nil)
     }
 
     /// Look up the first `key = value` line; returns the value with
@@ -132,16 +133,37 @@ struct GhosttyConfigBridgeTests {
 
     @Test("resources-dir is omitted when no path is supplied")
     func makeConfig_nilResourcesDir_omitsLine() {
-        let config = GhosttyConfigBridge.makeConfigString(settings: .default, resourcesDir: nil, appearance: .dark)
+        let config = GhosttyConfigBridge.makeConfigString(settings: .default, resourcesDir: nil)
         #expect(value(of: "resources-dir", in: config) == nil)
     }
 
-    @Test("resources path selects a bundled theme without emitting a removed config key")
-    func makeConfig_withResourcesDir_usesAbsoluteThemeOnly() {
+    @Test("resources path emits the bundled light and dark theme pair")
+    func makeConfig_withResourcesDir_usesAbsoluteThemePair() {
         let path = "/tmp/limpid-resources/\(UUID().uuidString)"
-        let config = GhosttyConfigBridge.makeConfigString(settings: .default, resourcesDir: path, appearance: .dark)
+        let config = GhosttyConfigBridge.makeConfigString(settings: .default, resourcesDir: path)
         #expect(value(of: "resources-dir", in: config) == nil)
-        #expect(value(of: "theme", in: config) == "\(path)/themes/Apple System Colors")
+        #expect(
+            value(of: "theme", in: config) ==
+                "light:\(path)/themes/Apple System Colors Light,dark:\(path)/themes/Apple System Colors"
+        )
+    }
+
+    @Test("fixed appearance wins over the system", arguments: [false, true])
+    func fixedAppearanceWinsOverSystem(systemIsDark: Bool) {
+        #expect(
+            GhosttyApp.resolvedColorScheme(preference: .light, systemIsDark: systemIsDark) ==
+                GHOSTTY_COLOR_SCHEME_LIGHT
+        )
+        #expect(
+            GhosttyApp.resolvedColorScheme(preference: .dark, systemIsDark: systemIsDark) ==
+                GHOSTTY_COLOR_SCHEME_DARK
+        )
+    }
+
+    @Test("system appearance follows the resolved macOS value", arguments: [false, true])
+    func systemAppearanceFollowsMacOS(systemIsDark: Bool) {
+        let expected = systemIsDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
+        #expect(GhosttyApp.resolvedColorScheme(preference: .system, systemIsDark: systemIsDark) == expected)
     }
 
     @Test("generated config is accepted for every Bell choice", arguments: BellAction.allCases)
@@ -152,8 +174,7 @@ struct GhosttyConfigBridgeTests {
             let resourcesDir = try #require(GhosttyApp.resolveResourcesDir())
             let body = GhosttyConfigBridge.makeConfigString(
                 settings: settings,
-                resourcesDir: resourcesDir,
-                appearance: .dark
+                resourcesDir: resourcesDir
             )
             let path = directory.appendingPathComponent("generated-ghostty-config")
             try body.write(to: path, atomically: true, encoding: .utf8)
@@ -219,22 +240,22 @@ struct GhosttyConfigBridgeTests {
     @Test func generatedConfigurationsDoNotOverwriteAnotherProcess() throws {
         try withTempDir { directory in
             let first = GhosttyConfigBridge.writeConfigFile(
-                settings: .default, resourcesDir: "/resources", appearance: .light,
+                settings: .default, resourcesDir: "/resources",
                 directory: directory, processID: 101
             )
             let firstPath = try #require(first)
             let before = try String(contentsOfFile: firstPath, encoding: .utf8)
             let second = GhosttyConfigBridge.writeConfigFile(
-                settings: .default, resourcesDir: "/resources", appearance: .dark,
+                settings: .default, resourcesDir: "/resources",
                 directory: directory, processID: 202
             )
             let secondPath = try #require(second)
             #expect(firstPath != secondPath)
             let retained = try String(contentsOfFile: firstPath, encoding: .utf8)
             #expect(retained == before)
-            #expect(retained.contains("Apple System Colors Light"))
+            #expect(retained.contains("light:/resources/themes/Apple System Colors Light"))
             let dark = try String(contentsOfFile: secondPath, encoding: .utf8)
-            #expect(!dark.contains("Apple System Colors Light"))
+            #expect(dark == before)
         }
     }
 
