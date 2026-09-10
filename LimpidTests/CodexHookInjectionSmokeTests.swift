@@ -11,13 +11,71 @@ import Foundation
 import Testing
 @testable import Limpid
 
+private struct InstalledCodex {
+    let executable: String
+    let searchPath: String
+}
+
+/// Ask the interactive login shell for the environment a Limpid pane gets.
+/// Xcode replaces PATH inside its test host, so reading that value directly
+/// can select a stale fallback that the user's shell never launches.
+private func loginShellSearchPath(environment: [String: String]) -> String? {
+    let fallbackShell = "/bin/zsh"
+    let requestedShell = environment["SHELL"] ?? fallbackShell
+    let shell = FileManager.default.isExecutableFile(atPath: requestedShell)
+        ? requestedShell
+        : fallbackShell
+    let marker = "__LIMPID_PATH__"
+    let output = Pipe()
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: shell)
+    process.arguments = ["-lic", "printf '\\n\(marker)%s\\n' \"$PATH\""]
+    process.environment = environment
+    process.standardOutput = output
+    process.standardError = FileHandle.nullDevice
+    guard (try? process.run()) != nil else { return nil }
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0,
+          let text = String(data: data, encoding: .utf8),
+          let line = text.split(separator: "\n").last(where: { $0.hasPrefix(marker) })
+    else { return nil }
+    return String(line.dropFirst(marker.count))
+}
+
+private func firstCodex(in searchPath: String) -> String? {
+    for directory in searchPath.split(separator: ":", omittingEmptySubsequences: false) {
+        let path = directory.isEmpty ? FileManager.default.currentDirectoryPath : String(directory)
+        let candidate = URL(fileURLWithPath: path).appendingPathComponent("codex").path
+        if FileManager.default.isExecutableFile(atPath: candidate) {
+            return candidate
+        }
+    }
+    return nil
+}
+
 /// Outside the suite because a `@Suite` trait cannot reference a static on
 /// the type it is decorating.
-private let installedCodex: String? = {
-    for candidate in ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]
-        where FileManager.default.isExecutableFile(atPath: candidate)
+private let installedCodex: InstalledCodex? = {
+    let environment = ProcessInfo.processInfo.environment
+    let processPath = environment["PATH"] ?? ""
+    if let override = environment["LIMPID_REAL_CODEX"],
+       FileManager.default.isExecutableFile(atPath: override)
     {
-        return candidate
+        return InstalledCodex(executable: override, searchPath: processPath)
+    }
+    if let loginPath = loginShellSearchPath(environment: environment),
+       let executable = firstCodex(in: loginPath)
+    {
+        return InstalledCodex(executable: executable, searchPath: loginPath)
+    }
+    if let executable = firstCodex(in: processPath) {
+        return InstalledCodex(executable: executable, searchPath: processPath)
+    }
+    for fallback in ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]
+        where FileManager.default.isExecutableFile(atPath: fallback)
+    {
+        return InstalledCodex(executable: fallback, searchPath: processPath)
     }
     return nil
 }()
@@ -25,7 +83,7 @@ private let installedCodex: String? = {
 @Suite(
     "Codex hook injection smoke",
     .tags(.smoke),
-    .disabled(if: installedCodex == nil, "no codex on PATH")
+    .disabled(if: installedCodex == nil, "no Codex executable found")
 )
 struct CodexHookInjectionSmokeTests {
     private struct DiscoveredHook: Decodable {
@@ -41,14 +99,22 @@ struct CodexHookInjectionSmokeTests {
         cwd: URL,
         extraArguments: [String]
     ) throws -> [DiscoveredHook] {
+        let installedCodex = try #require(installedCodex)
         let process = Process()
-        process.executableURL = try URL(fileURLWithPath: #require(installedCodex))
+        process.executableURL = URL(fileURLWithPath: installedCodex.executable)
         // Flags first, subcommand after: the layout `codex-shim/codex`
         // produces. Verifying the other order would leave the one the
         // user actually gets unproven.
         process.arguments = extraArguments + ["app-server"]
         var environment = ProcessInfo.processInfo.environment
         environment["CODEX_HOME"] = home.path
+        environment["PATH"] = installedCodex.searchPath
+        // A test launched from a Limpid pane inherits the flags that pane's
+        // shim injects. The explicit arguments above are the subject of this
+        // test, so allowing the inherited copy through a selected shim would
+        // count every hook twice and test a command the user never receives.
+        environment.removeValue(forKey: "LIMPID_CODEX_HOOK_ARGS")
+        environment.removeValue(forKey: "LIMPID_AGENT_TMUX")
         process.environment = environment
 
         let stdin = Pipe()
@@ -121,7 +187,16 @@ struct CodexHookInjectionSmokeTests {
                 )
             )
             let ours = hooks.filter { $0.source == "sessionFlags" }
-            #expect(ours.count == CodexHookInstaller.subscribedEvents.count)
+            let expected = Set(CodexHookInstaller.subscribedEvents.map {
+                $0.jsonKey.prefix(1).lowercased() + $0.jsonKey.dropFirst()
+            })
+            let actual = Set(ours.map(\.eventName))
+            let missing = expected.subtracting(actual).sorted()
+            let unexpected = actual.subtracting(expected).sorted()
+            #expect(
+                actual == expected,
+                "codex: \(installedCodex?.executable ?? "missing"); missing: \(missing); unexpected: \(unexpected)"
+            )
             #expect(
                 ours.allSatisfy { $0.trustStatus == "trusted" },
                 "untrusted: \(ours.filter { $0.trustStatus != "trusted" }.map(\.eventName))"
