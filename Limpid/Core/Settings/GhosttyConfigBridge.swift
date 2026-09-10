@@ -290,6 +290,7 @@ enum GhosttyConfigBridge {
         // every reload (font size slider, theme switch, OS dark-mode
         // flip) leaked a multi-kB `Config` struct.
         defer { ghostty_config_free(cfg) }
+        app.refreshRuntimePreferences(from: cfg)
         // App-level call delivers async messages to every surface's
         // renderer thread. Newly-spawned surfaces inherit the new
         // app-level config, so this still has to fire first.

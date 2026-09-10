@@ -37,6 +37,11 @@ protocol SurfaceViewProviding: AnyObject {
 @MainActor
 final class SurfaceRegistry: SurfaceViewProviding {
     private var views: [UUID: SurfaceView] = [:]
+    let secureInputManager: SecureInputManager
+
+    init(secureInputManager: SecureInputManager = SecureInputManager()) {
+        self.secureInputManager = secureInputManager
+    }
 
     /// Reverse index keyed by `ObjectIdentifier(view)` so
     /// `id(for view:)` is O(1). Every `register` / `unregister` keeps
@@ -55,16 +60,24 @@ final class SurfaceRegistry: SurfaceViewProviding {
         // A re-register under the same id swaps the value side; clean
         // the reverse entry for the old view so it doesn't keep a stale
         // pointer to a paneID that now belongs to someone else.
-        if let previous = views[id] {
+        if let previous = views[id], previous !== view {
             idByView.removeValue(forKey: ObjectIdentifier(previous))
+            secureInputManager.remove(previous)
+            previous.onSecureInputFocusChange = nil
         }
         views[id] = view
         idByView[ObjectIdentifier(view)] = id
+        view.onSecureInputFocusChange = { [weak secureInputManager, weak view] isFocused in
+            guard let view else { return }
+            secureInputManager?.focusDidChange(for: view, isFocused: isFocused)
+        }
     }
 
     func unregister(_ id: UUID) {
         guard let removed = views.removeValue(forKey: id) else { return }
         idByView.removeValue(forKey: ObjectIdentifier(removed))
+        secureInputManager.remove(removed)
+        removed.onSecureInputFocusChange = nil
         // A prompt still waiting on that pane has to be answered here, and in
         // `reconcile` for the same reason. Left pending, it holds a libghostty
         // request that is never completed or denied, and a review paste waiting
@@ -108,6 +121,8 @@ final class SurfaceRegistry: SurfaceViewProviding {
         for id in stale {
             if let removed = views.removeValue(forKey: id) {
                 idByView.removeValue(forKey: ObjectIdentifier(removed))
+                secureInputManager.remove(removed)
+                removed.onSecureInputFocusChange = nil
                 ClipboardConfirmationCoordinator.shared?.cancelPending(for: removed)
             }
         }

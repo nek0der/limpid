@@ -205,6 +205,14 @@ final class SurfaceView: NSView {
     /// arrived at.
     var onFocusEntry: (() -> Void)?
 
+    /// Reports keyboard focus changes to the process-wide Secure Event Input
+    /// coordinator without coupling this AppKit boundary to session state.
+    var onSecureInputFocusChange: ((Bool) -> Void)?
+
+    var hasSecureInputFocus: Bool {
+        window?.isKeyWindow == true && window?.firstResponder === self
+    }
+
     /// Asked on mount: is this pane the tab's focused leaf? Set by
     /// `PaneHostView` to gate focus on concurrent (re)mounts; `nil` = always.
     var shouldFocusOnMount: (() -> Bool)?
@@ -433,7 +441,10 @@ final class SurfaceView: NSView {
         super.viewDidMoveToWindow()
         tearDownWindowObservers()
 
-        guard let window else { return }
+        guard let window else {
+            onSecureInputFocusChange?(false)
+            return
+        }
         if surface == nil {
             createSurface()
         }
@@ -580,6 +591,7 @@ final class SurfaceView: NSView {
         // Unread is intentionally not cleared here (see the mouseDown
         // path); only the agent-state ack flows through `onFocusEntry`.
         onFocusEntry?()
+        onSecureInputFocusChange?(window?.isKeyWindow == true)
         return true
     }
 
@@ -587,6 +599,7 @@ final class SurfaceView: NSView {
         if let surface {
             ghostty_surface_set_focus(surface, false)
         }
+        onSecureInputFocusChange?(false)
         return true
     }
 

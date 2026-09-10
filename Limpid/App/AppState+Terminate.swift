@@ -57,6 +57,7 @@ extension AppState {
                 // Independent intents protect direct Codex resume even if a
                 // concurrent hook owns the lifecycle record's advisory lock.
                 codexAgentStateTracker.preserveLiveSessionsOnTerminate()
+                registry.secureInputManager.removeAll()
                 store.saveSynchronously(session.makeSnapshot())
                 historyStore.flushSynchronously()
                 frecencyStore.flushSynchronously()
