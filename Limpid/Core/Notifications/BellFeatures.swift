@@ -1,10 +1,8 @@
 // BellFeatures.swift
 // Limpid — which feedback channels fire when a pane rings the bell.
 //
-// Mirrors Ghostty's `BellFeatures` packed struct (near "BellFeatures"
-// in `vendor/ghostty/src/config/Config.zig`; line numbers shift with
-// upstream so we don't pin one). Defaults are hard-coded today and
-// will become per-profile once the preferences UI exposes them.
+// The terminal setting maps onto the three channels Limpid implements:
+// system audio, Dock attention, and the pane flash.
 
 import Foundation
 
@@ -13,17 +11,17 @@ struct BellFeatures: OptionSet {
 
     /// macOS system beep (`NSSound.beep`).
     static let system = BellFeatures(rawValue: 1 << 0)
-    /// Play a user-supplied audio file at `Limpid.bellAudioPath`. Not
-    /// wired yet.
-    static let audio = BellFeatures(rawValue: 1 << 1)
     /// Bounce the Dock icon (`NSApp.requestUserAttention`).
-    static let attention = BellFeatures(rawValue: 1 << 2)
-    /// Mark the bell on the tab title (icon prefix until focus
-    /// returns). Not wired yet.
-    static let title = BellFeatures(rawValue: 1 << 3)
-    /// Flash the originating pane's border for a moment.
-    static let border = BellFeatures(rawValue: 1 << 4)
+    static let attention = BellFeatures(rawValue: 1 << 1)
+    /// Flash the originating pane for a moment.
+    static let paneFlash = BellFeatures(rawValue: 1 << 2)
 
-    /// Defaults applied when no per-profile override is set.
-    static let `default`: BellFeatures = [.system, .attention, .border]
+    static func forAction(_ action: BellAction) -> BellFeatures {
+        switch action {
+        case .none: []
+        case .visual: [.attention, .paneFlash]
+        case .audio: [.system]
+        case .both: [.system, .attention, .paneFlash]
+        }
+    }
 }

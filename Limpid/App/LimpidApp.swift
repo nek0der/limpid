@@ -318,7 +318,9 @@ final class AppState {
 
         let coordinator = GhosttyEventCoordinator(
             session: session, registry: registry,
-            notificationManager: notificationManager, attention: attention
+            notificationManager: notificationManager,
+            bellFeaturesProvider: { BellFeatures.forAction(settingsStore.settings.terminal.bellAction) },
+            attention: attention
         )
         self.eventCoordinator = coordinator
         GhosttyActionRouter.sink = { [weak coordinator] event in

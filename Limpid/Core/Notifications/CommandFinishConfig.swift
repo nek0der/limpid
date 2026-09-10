@@ -25,7 +25,7 @@ struct CommandFinishConfig {
     /// the user.
     var minimumDuration: TimeInterval = 10
     /// Channels to fire. `.notify` posts to UNUserNotificationCenter;
-    /// `.bell` invokes the same fan-out as RING_BELL.
+    /// `.bell` plays the system beep.
     var channels: Channels = [.notify]
 
     struct Channels: OptionSet {

@@ -414,7 +414,8 @@ struct ShortcutModifiers: OptionSet, Codable, Hashable {
 ///   - A **named key** (`"return"`, `"left"`, `"f1"`, …) — for keys
 ///     that don't have a single useful character (arrows, function
 ///     keys, modifiers). These map to Ghostty's physical-key enum
-///     and to SwiftUI's `KeyEquivalent` constants.
+///     and to SwiftUI's `KeyEquivalent` constants. Our stored `return`
+///     name becomes Ghostty's `enter` alias at serialization time.
 ///
 /// Why not use Ghostty's `equal` / `bracket_left` / `digit_0` names
 /// for punctuation? Those parse as **physical** keys in libghostty,
@@ -436,7 +437,11 @@ struct StoredShortcut: Codable, Hashable {
     var ghosttyTrigger: String {
         // `+` only needs the alias for libghostty's parser;
         // `displayString` keeps the literal character as-is.
-        let emitted = key == "+" ? "plus" : key
+        let emitted = switch key {
+        case "+": "plus"
+        case "return": "enter"
+        default: key
+        }
         return (modifiers.ghosttyTokens + [emitted]).joined(separator: "+")
     }
 
