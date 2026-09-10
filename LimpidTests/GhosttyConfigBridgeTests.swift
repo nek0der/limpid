@@ -98,6 +98,20 @@ struct GhosttyConfigBridgeTests {
         #expect(value(of: "scrollback-limit", in: config) == nil)
     }
 
+    @Test("the finalized scrollbar preference controls the native indicator")
+    func finalizedConfig_scrollbarNeverDisablesIndicator() throws {
+        try withTempDir { directory in
+            let path = directory.appendingPathComponent("ghostty-config")
+            try "scrollbar = never\n".write(to: path, atomically: true, encoding: .utf8)
+            let config = try #require(ghostty_config_new())
+            defer { ghostty_config_free(config) }
+            path.path.withCString { ghostty_config_load_file(config, $0) }
+            ghostty_config_finalize(config)
+
+            #expect(!GhosttyApp.scrollbarEnabled(in: config))
+        }
+    }
+
     @Test("cursor-style-blink toggle is forwarded as a bool")
     func makeConfig_cursorBlink_isForwarded() {
         var settings = LimpidSettings.default

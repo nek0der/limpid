@@ -41,6 +41,8 @@ enum GhosttyEvent {
     case searchTotal(SurfaceView, total: Int?)
     /// Updated currently-selected match index (0-based).
     case searchSelected(SurfaceView, selected: Int?)
+    /// Updated scrollback extent and viewport position for one surface.
+    case scrollbar(SurfaceView, state: TerminalScrollbarState)
     /// Fired from `GhosttyApp.closeSurfaceCallback` (not the action
     /// callback). Lives in the same enum so all libghostty-driven
     /// session mutations flow through a single dispatch point.
@@ -168,6 +170,18 @@ enum GhosttyActionRouter {
             let selected: Int? = raw < 0 ? nil : Int(raw)
             log.notice("SEARCH_SELECTED selected=\(raw, privacy: .public)")
             return .searchSelected(view, selected: selected)
+
+        case GHOSTTY_ACTION_SCROLLBAR:
+            guard let view = surfaceView(from: target) else { return nil }
+            let payload = action.action.scrollbar
+            return .scrollbar(
+                view,
+                state: TerminalScrollbarState(
+                    total: payload.total,
+                    offset: payload.offset,
+                    length: payload.len
+                )
+            )
 
         case GHOSTTY_ACTION_COMMAND_FINISHED:
             guard let view = surfaceView(from: target) else { return nil }

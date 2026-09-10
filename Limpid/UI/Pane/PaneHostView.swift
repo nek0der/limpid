@@ -139,12 +139,12 @@ private struct PaneCreationFailureCard: View {
 }
 
 /// Short-lived wrapper that SwiftUI owns through `NSViewRepresentable`.
-/// Hosts the persistent, registry-owned `SurfaceView` as its only
-/// subview. Pinning the surface to `bounds` via autoresizing keeps it
-/// sized through divider drags and window resizes without needing to
-/// observe layout ourselves.
+/// Hosts the persistent, registry-owned surface through a native scroll host.
+/// We resize the host with the pane; the host sizes the surface from its
+/// viewport so scrollback growth cannot change the terminal's dimensions.
 final class PaneContainerNSView: NSView {
     private(set) var surfaceView: SurfaceView?
+    private var scrollHost: TerminalScrollView?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -156,17 +156,21 @@ final class PaneContainerNSView: NSView {
         fatalError("init(coder:) is not supported")
     }
 
-    /// Attach (or re-attach) the supplied `SurfaceView` as the sole subview.
-    /// If the surface is currently parented by a different container (it was
-    /// just lifted out of an old `PaneContainerNSView`), AppKit's
-    /// `addSubview` quietly removes it from the previous superview first.
+    /// Mount a scroll host around the supplied persistent surface. AppKit
+    /// reparents the surface when we move it from a previous host.
     func mount(_ view: SurfaceView) {
         guard surfaceView !== view else { return }
-        surfaceView?.removeFromSuperview()
+        scrollHost?.removeFromSuperview()
         surfaceView = view
-        view.frame = bounds
-        view.autoresizingMask = [.width, .height]
-        addSubview(view)
+        let scrollHost = TerminalScrollView(surfaceView: view)
+        self.scrollHost = scrollHost
+        scrollHost.frame = bounds
+        scrollHost.autoresizingMask = [.width, .height]
+        addSubview(scrollHost)
+    }
+
+    func applyExpectedSize(_ size: CGSize) {
+        scrollHost?.applyExpectedSize(size)
     }
 }
 
@@ -210,8 +214,8 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
     func makeNSView(context: Context) -> PaneContainerNSView {
         let container = PaneContainerNSView(frame: NSRect(origin: .zero, size: size))
         wireCallbacks(on: surfaceView)
-        surfaceView.applyExpectedSize(size)
         container.mount(surfaceView)
+        container.applyExpectedSize(size)
         // Defer createSurface to the next run-loop tick so the wrapper
         // is fully attached to its window first. Without this, the first
         // mount can land `viewDidMoveToWindow` with `window == nil`, the
@@ -227,11 +231,11 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
 
     func updateNSView(_ container: PaneContainerNSView, context: Context) {
         wireCallbacks(on: surfaceView)
-        surfaceView.applyExpectedSize(size)
         // Re-mount whenever SwiftUI hands us back the container — if the
         // surface was just reparented from another container on a fast
         // tab switch this picks it back up; otherwise it's a no-op.
         container.mount(surfaceView)
+        container.applyExpectedSize(size)
         // Defensive retry — `SurfaceView.viewDidMoveToWindow` early-
         // returns when `window == nil`, so `createSurface()` never runs
         // if AppKit ferries the view through a detached mount. This
@@ -254,6 +258,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
             return existing
         }
         let view = SurfaceView(ghosttyApp: ghosttyApp)
+        view.isScrollbarEnabled = ghosttyApp.isScrollbarEnabled
         let owningTab = session.tab(containing: paneID)
         view.initialWorkingDirectory = owningTab?.workingDirectory
         view.initialCommand = Self.resolveInitialCommand(

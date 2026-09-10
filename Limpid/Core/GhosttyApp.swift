@@ -32,6 +32,11 @@ final class GhosttyApp {
     /// honors an advanced user's explicit opt-out.
     private(set) var isAutomaticSecureInputEnabled: Bool
 
+    /// Effective libghostty preference for the native scroll indicator.
+    /// Read from the finalized config so Advanced `scrollbar=never` remains
+    /// authoritative even though the view itself belongs to Limpid.
+    private(set) var isScrollbarEnabled: Bool
+
     init(settings: LimpidSettings = .default) throws {
         // Initialize global ghostty state (argv) once per process.
         _ = GhosttyApp.bootstrap
@@ -72,6 +77,7 @@ final class GhosttyApp {
             key: "macos-auto-secure-input",
             defaultValue: true
         )
+        let isScrollbarEnabled = Self.scrollbarEnabled(in: cfg)
 
         // Build runtime config with callbacks. `userdata` carries an
         // unretained pointer back to this `GhosttyApp` instance so the
@@ -99,6 +105,7 @@ final class GhosttyApp {
         self.config = cfg
         self.userConfigDiagnostics = userConfigDiagnostics
         self.isAutomaticSecureInputEnabled = isAutomaticSecureInputEnabled
+        self.isScrollbarEnabled = isScrollbarEnabled
         self.colorScheme = colorScheme
 
         // Register *this* instance for future wakeup callbacks. We pass
@@ -139,6 +146,7 @@ final class GhosttyApp {
             key: "macos-auto-secure-input",
             defaultValue: true
         )
+        isScrollbarEnabled = Self.scrollbarEnabled(in: config)
     }
 
     /// Take ownership of the finalized config after applying it. Keeping the
@@ -148,6 +156,7 @@ final class GhosttyApp {
         refreshRuntimePreferences(from: newConfig)
         ghostty_app_update_config(handle, newConfig)
         for view in surfaces {
+            view.isScrollbarEnabled = isScrollbarEnabled
             guard let surface = view.surface else { continue }
             ghostty_surface_update_config(surface, newConfig)
         }
@@ -188,6 +197,23 @@ final class GhosttyApp {
             ghostty_config_get(config, &value, pointer, UInt(key.utf8.count))
         }
         return didRead ? value : defaultValue
+    }
+
+    private static func configString(
+        _ config: ghostty_config_t,
+        key: String,
+        defaultValue: String
+    ) -> String {
+        var value: UnsafePointer<CChar>?
+        let didRead = key.withCString { pointer in
+            ghostty_config_get(config, &value, pointer, UInt(key.utf8.count))
+        }
+        guard didRead, let value else { return defaultValue }
+        return String(cString: value)
+    }
+
+    static func scrollbarEnabled(in config: ghostty_config_t) -> Bool {
+        configString(config, key: "scrollbar", defaultValue: "system") != "never"
     }
 
     // MARK: - Resources dir
