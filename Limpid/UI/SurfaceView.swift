@@ -8,6 +8,28 @@ import OSLog
 
 private let log = Logger.limpid("surface.view")
 
+/// One-shot matcher for the title a shell reports immediately before running
+/// an app-injected command. Nonmatching prompt titles leave it armed because a
+/// slow shell can finish initialization after the command has been submitted.
+struct InjectedCommandTitleGuard {
+    private var pendingTitle: String?
+
+    mutating func arm(_ title: String) {
+        pendingTitle = GhosttyActionRouter.sanitizeInjectedCommandTitle(title)
+    }
+
+    mutating func consumeIfMatching(_ title: String) -> Bool {
+        guard let pendingTitle else { return false }
+        guard GhosttyActionRouter.sanitizeTitle(title) == pendingTitle else { return false }
+        self.pendingTitle = nil
+        return true
+    }
+
+    mutating func clear() {
+        pendingTitle = nil
+    }
+}
+
 /// `NSView` hosting one libghostty terminal surface.
 ///
 /// Drawing is delegated entirely to libghostty (Metal-backed); we just
@@ -205,6 +227,11 @@ final class SurfaceView: NSView {
     /// prompt first so the typed command lands on a clean line. See
     /// `Tab.initialCommands` for the model-level documentation.
     var initialCommand: String?
+
+    /// One-shot guard for the shell title emitted when Limpid submits its own
+    /// initial command. Kept on the surface because the title callback carries
+    /// that same identity but does not identify who emitted the OSC sequence.
+    private var injectedCommandTitleGuard = InjectedCommandTitleGuard()
 
     /// Extra environment variables merged into the pty environment when
     /// libghostty spawns the shell. Pre-existing entries with the same
@@ -796,11 +823,22 @@ extension SurfaceView {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
             guard let self, let surface = self.surface else { return }
+            self.injectedCommandTitleGuard.arm(body)
             body.withCString { ptr in
                 ghostty_surface_text(surface, ptr, UInt(strlen(ptr)))
             }
             self.sendReturnKey(to: surface)
         }
+    }
+
+    /// Suppress the shell's exact preexec title while allowing prompt and
+    /// program titles through unchanged.
+    func consumeInjectedCommandTitle(_ title: String) -> Bool {
+        injectedCommandTitleGuard.consumeIfMatching(title)
+    }
+
+    func clearInjectedCommandTitleGuard() {
+        injectedCommandTitleGuard.clear()
     }
 
     /// Synthesize a Return keypress (press + release) on `surface`.
