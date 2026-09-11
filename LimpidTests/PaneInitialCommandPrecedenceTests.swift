@@ -73,4 +73,54 @@ struct PaneInitialCommandPrecedenceTests {
     func nothingRecorded_isNil() {
         #expect(PaneHostRepresentable.resolveInitialCommand(tab: tab(), paneID: pane) == nil)
     }
+
+    @Test("the shell title for an injected command is suppressed exactly once")
+    func injectedCommandTitle_matchingFirstTitle_isConsumedOnce() {
+        var guardState = InjectedCommandTitleGuard()
+        guardState.arm("cd '/work' && claude --resume session")
+        let firstMatch = guardState.consumeIfMatching("cd '/work' && claude --resume session")
+        let repeatedMatch = guardState.consumeIfMatching("cd '/work' && claude --resume session")
+
+        #expect(firstMatch)
+        #expect(!repeatedMatch)
+    }
+
+    @Test("a late prompt title cannot disarm the injected command guard")
+    func injectedCommandTitle_nonmatchingPrompt_keepsGuard() {
+        var guardState = InjectedCommandTitleGuard()
+        guardState.arm("codex resume session")
+        let latePromptTitle = guardState.consumeIfMatching("~/dev/limpid")
+        let commandTitle = guardState.consumeIfMatching("codex resume session")
+
+        #expect(!latePromptTitle)
+        #expect(commandTitle)
+    }
+
+    @Test("the shell's control filtering still matches a multiline injected command")
+    func injectedCommandTitle_multilineCommand_matchesShellReport() {
+        var guardState = InjectedCommandTitleGuard()
+        guardState.arm("printf first\nprintf second")
+        let shellTitle = guardState.consumeIfMatching("printf firstprintf second")
+
+        #expect(shellTitle)
+    }
+
+    @Test("command completion clears a guard when the shell emits no title")
+    func injectedCommandTitle_commandFinished_clearsGuard() {
+        var guardState = InjectedCommandTitleGuard()
+        guardState.arm("codex resume session")
+        guardState.clear()
+        let laterTitle = guardState.consumeIfMatching("codex resume session")
+
+        #expect(!laterTitle)
+    }
+
+    @Test("router sanitization is shared by the command and received title")
+    func injectedCommandTitle_sanitizedInput_stillMatches() {
+        var guardState = InjectedCommandTitleGuard()
+        guardState.arm("cd '/tmp/zero\u{200B}' && claude --resume session")
+        let sanitizedTitle = guardState.consumeIfMatching("cd '/tmp/zero' && claude --resume session")
+
+        #expect(sanitizedTitle)
+    }
 }

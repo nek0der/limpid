@@ -135,6 +135,15 @@ final class GhosttyEventCoordinator {
             return
         }
 
+        // Our delayed initial command is an implementation detail, not a name
+        // the user chose for this tab. Shell integration reports that command
+        // through OSC 2 immediately before execution; consume only that one
+        // matching report and leave every later program title untouched.
+        if view.consumeInjectedCommandTitle(title) {
+            log.debug("SET_TITLE ignored: injected initial command")
+            return
+        }
+
         guard let owningTab = session.tab(containing: paneID) else {
             log.debug("SET_TITLE no owning tab for paneID")
             return
@@ -255,6 +264,10 @@ final class GhosttyEventCoordinator {
     /// COMMAND_FINISHED — the shell integration's preexec/precmd hook
     /// reported a finished foreground command.
     private func handleCommandFinished(view: SurfaceView, exitCode exit: Int, durationNs: UInt64) {
+        // A shell without title integration never emits the matching OSC 2.
+        // Command completion is the other exact lifetime boundary after which
+        // an initial-command title must no longer be suppressed.
+        view.clearInjectedCommandTitleGuard()
         guard let paneID = registry.id(for: view) else { return }
 
         let config = CommandFinishConfig.default
