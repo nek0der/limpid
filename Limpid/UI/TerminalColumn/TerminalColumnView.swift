@@ -73,9 +73,10 @@ private struct TerminalColumnEmptyState: View {
                 )
             },
             WelcomeCommand(title: "Toggle Sidebar", action: .toggleSidebar, isEnabled: true) {
-                withAnimation(LimpidMotion.sidebarToggle) {
-                    session.sidebarHidden.toggle()
-                }
+                NotificationCenter.default.post(
+                    name: .limpidToggleSidebarPresentation,
+                    object: session
+                )
             }
         ]
     }

@@ -1,11 +1,10 @@
 // ThreePaneLayout.swift
 // Limpid — window body. In vertical tab mode tab column + terminal column each own their
 // entire vertical strip (toolbar on top of the body, single background
-// fill). In horizontal tab mode toolbar and content split into
-// independent rows so the tab bar + terminal can span the full width
-// while the toolbar keeps the tab/terminal column boundary. The container
-// column is a flush Liquid Glass sidebar on the window's leading edge in
-// both modes, with the tab column's background running underneath it.
+// fill). In horizontal tab mode one toolbar spans the primary content
+// above the tab bar and terminal. The container column is flush while
+// reserved and becomes a shadowed overlay at compact widths, with the tab
+// column's background running underneath it.
 
 import AppKit
 import SwiftUI
@@ -19,53 +18,126 @@ struct ThreePaneLayout: View {
     let app: GhosttyApp
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
     @Environment(ToastCenter.self) private var toastCenter
+    /// Compact windows overlay the container slab instead of reserving a
+    /// column for it. This is presentation-only so narrowing a window never
+    /// overwrites the user's persisted sidebar preference.
+    @State private var isCompactSidebarPresented = false
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            // Background plane: vertical mode keeps the classic two-column
-            // layout; horizontal mode splits toolbar from content so they
-            // can have independent widths.
-            Group {
-                if state.session.tabColumnHorizontal {
-                    HorizontalModeBody(ghosttyApp: app)
-                } else {
-                    HStack(spacing: 0) {
-                        TabColumn()
-                        TerminalColumn(ghosttyApp: app)
+        GeometryReader { geometry in
+            let plan = MainWindowLayoutPlan.resolve(.init(
+                availableWidth: geometry.size.width,
+                requestedSidebarWidth: state.session.sidebarWidth,
+                requestedTabWidth: state.session.tabColumnWidth,
+                isSidebarHidden: state.session.sidebarHidden,
+                isCompactSidebarPresented: isCompactSidebarPresented,
+                isTabColumnHorizontal: state.session.tabColumnHorizontal,
+                isReviewPresented: state.reviewPresentation.isPresented
+            ))
+
+            ZStack(alignment: .topLeading) {
+                // Background plane: vertical mode keeps the classic two-column
+                // layout; horizontal mode splits toolbar from content so they
+                // can have independent widths.
+                Group {
+                    switch plan.tabOrientation {
+                    case .horizontal:
+                        HorizontalModeBody(
+                            ghosttyApp: app,
+                            plan: plan
+                        )
+                    case .vertical:
+                        HStack(spacing: 0) {
+                            TabColumn(
+                                plan: plan
+                            )
+                            TerminalColumn(ghosttyApp: app, plan: plan)
+                        }
                     }
                 }
-            }
-            .ignoresSafeArea(.container)
-            .background(windowBaseFill.ignoresSafeArea())
-            // Overlay plane: container sidebar (or, if hidden, the floating
-            // toolbar capsule). The sidebar is flush to the window's leading,
-            // top and bottom edges, so its toolbar row lines up vertically
-            // with the AppKit traffic-light strip without any compensation.
-            if !state.session.sidebarHidden {
-                ZStack(alignment: .trailing) {
+                .ignoresSafeArea(.container)
+                .background(windowBaseFill.ignoresSafeArea())
+                .allowsHitTesting(!plan.isCompactSidebarOverlayPresented)
+                .accessibilityHidden(plan.isCompactSidebarOverlayPresented)
+                if plan.isCompactSidebarOverlayPresented {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: dismissCompactSidebar)
+                        .ignoresSafeArea()
+                }
+                // Overlay plane: at compact widths the sidebar rides over the
+                // columns instead of forcing the terminal below its readable
+                // width. At wider sizes it resumes its persisted column.
+                if plan.isSidebarReserved {
+                    ZStack(alignment: .trailing) {
+                        ContainerColumnContent()
+                            .frame(width: min(plan.sidebarWidth, geometry.size.width))
+                            .flushGlassSidebar(
+                                isSolid: reduceTransparencyResolver.shouldReduceTransparency,
+                                solidFill: containerColumnSolidFill
+                            )
+                        SidebarResizeHandle(session: state.session)
+                    }
+                    .ignoresSafeArea(.all, edges: .top)
+                } else if plan.usesCompactSidebar {
                     ContainerColumnContent()
-                        .frame(width: state.session.sidebarWidth)
+                        .frame(width: min(plan.sidebarWidth, geometry.size.width))
                         .flushGlassSidebar(
                             isSolid: reduceTransparencyResolver.shouldReduceTransparency,
                             solidFill: containerColumnSolidFill
                         )
-                    SidebarResizeHandle(session: state.session)
+                        .transientLeadingPanelShadow()
+                        .ignoresSafeArea(.all, edges: .top)
+                        .offset(x: plan.isCompactSidebarOverlayPresented ? 0 : -plan.sidebarWidth)
+                        .opacity(reduceMotion && !plan.isCompactSidebarOverlayPresented ? 0 : 1)
+                        .allowsHitTesting(plan.isCompactSidebarOverlayPresented)
+                        .accessibilityHidden(!plan.isCompactSidebarOverlayPresented)
+                        .animation(
+                            reduceMotion ? nil : LimpidMotion.sidebarToggle,
+                            value: plan.isCompactSidebarOverlayPresented
+                        )
                 }
-                .ignoresSafeArea(.all, edges: .top)
-                // Lateral slides of large surfaces are a classic
-                // vestibular trigger (WCAG 2.3.3); drop the move half
-                // when Reduce Motion is on and let the opacity carry
-                // the transition. Same posture as the system's own
-                // Sidebar reveal under that setting.
-                .transition(reduceMotion
-                    ? .opacity
-                    : .move(edge: .leading).combined(with: .opacity))
-            } else {
-                FloatingHiddenToolbar()
-                    .padding(.leading, LimpidLayout.trafficLightWidth + 18)
-                    .padding(.top, LimpidLayout.toolbarContentTopInset)
-                    .ignoresSafeArea(.all, edges: .top)
-                    .transition(.opacity)
+                if !plan.isSidebarPresented {
+                    FloatingHiddenToolbar()
+                        .padding(.leading, LimpidLayout.trafficLightWidth + 10)
+                        .padding(.top, LimpidLayout.toolbarContentTopInset)
+                        .ignoresSafeArea(.all, edges: .top)
+                        .transition(reduceMotion
+                            ? .identity
+                            : .asymmetric(
+                                insertion: .opacity.animation(.easeOut(
+                                    duration: LimpidMotion.hiddenSidebarToolbarRevealDuration
+                                ).delay(LimpidMotion.hiddenSidebarToolbarRevealDelay)),
+                                removal: .opacity.animation(.easeOut(
+                                    duration: LimpidMotion.hiddenSidebarToolbarRemovalDuration
+                                ))
+                            ))
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .limpidToggleSidebarPresentation)) { note in
+                guard let owner = note.object as? WindowSession, owner === state.session else { return }
+                withAnimation(reduceMotion ? nil : LimpidMotion.sidebarToggle) {
+                    if plan.usesCompactSidebar {
+                        isCompactSidebarPresented.toggle()
+                    } else {
+                        state.session.sidebarHidden.toggle()
+                    }
+                }
+            }
+            .onChange(of: plan.usesCompactSidebar) { _, isCompact in
+                if !isCompact {
+                    isCompactSidebarPresented = false
+                }
+            }
+            .onChange(of: state.session.activeContainerID) { _, _ in
+                if plan.usesCompactSidebar {
+                    dismissCompactSidebar()
+                }
+            }
+            .onChange(of: state.reviewPresentation.isPresented) { _, isPresented in
+                if isPresented, plan.usesCompactSidebar {
+                    dismissCompactSidebar()
+                }
             }
         }
         .ignoresSafeArea(.all)
@@ -95,6 +167,12 @@ struct ThreePaneLayout: View {
                 message: String(localized: "Review was not delivered. The comments stay in this review."),
                 undo: nil
             ))
+        }
+    }
+
+    private func dismissCompactSidebar() {
+        withAnimation(reduceMotion ? nil : LimpidMotion.sidebarToggle) {
+            isCompactSidebarPresented = false
         }
     }
 
@@ -130,41 +208,40 @@ struct ThreePaneLayout: View {
 
 // MARK: - Horizontal tab mode
 
-/// Horizontal tab mode body — toolbar and content are independent rows.
-/// The toolbar row carries the tab/terminal column tints but no boundary rule, and the
-/// content row spans full width so the tab bar and terminal get maximum
-/// real estate.
+/// Horizontal tab mode body — one unified toolbar above a horizontal tab strip
+/// and terminal content. No vertical-tab width participates in this layout.
 private struct HorizontalModeBody: View {
     let ghosttyApp: GhosttyApp
+    let plan: MainWindowLayoutPlan
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settings
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
 
     var body: some View {
         VStack(spacing: 0) {
-            // Toolbar row — tab column toolbar at its usual width, terminal column toolbar fills rest.
+            // Horizontal tabs do not have a vertical tab column. Reserve only
+            // the visible sidebar or hidden-sidebar controls, then give the
+            // remaining titlebar to one responsive toolbar.
             HStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    Spacer().frame(width: leadingInset)
-                    ToolbarTabColumnSegment()
-                }
-                .frame(width: leadingInset + tabColumnBoxWidth)
-                .background(tabColumnTint)
-
-                ToolbarTerminalColumnSegment()
+                Spacer().frame(width: plan.horizontalToolbarLeadingInset)
+                ToolbarTerminalColumnSegment(plan: plan)
                     .frame(maxWidth: .infinity)
-                    .background(terminalColumnTint)
             }
             .frame(height: LimpidLayout.topStripHeight)
+            .background(terminalColumnTint)
 
             // Content row — full width, terminal column tint.
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    if !session.sidebarHidden {
-                        Spacer().frame(width: ContainerColumnFootprint.width(for: session))
+                    if plan.reservedSidebarWidth > 0 {
+                        Spacer().frame(width: plan.reservedSidebarWidth)
                     }
                     HorizontalTabBar(container: session.activeContainerID)
                         .frame(maxWidth: .infinity)
+                    if !plan.isCompactSidebarOverlayPresented {
+                        NewTabToolbarButton()
+                            .padding(.trailing, 8)
+                    }
                 }
                 .overlay(alignment: .bottom) {
                     if !reduce {
@@ -172,8 +249,8 @@ private struct HorizontalModeBody: View {
                     }
                 }
                 HStack(spacing: 0) {
-                    if !session.sidebarHidden {
-                        Spacer().frame(width: ContainerColumnFootprint.width(for: session))
+                    if plan.reservedSidebarWidth > 0 {
+                        Spacer().frame(width: plan.reservedSidebarWidth)
                     }
                     TerminalColumnView(ghosttyApp: ghosttyApp)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -186,25 +263,6 @@ private struct HorizontalModeBody: View {
 
     private var reduce: Bool {
         reduceTransparencyResolver.shouldReduceTransparency
-    }
-
-    private var leadingInset: CGFloat {
-        session.sidebarHidden ? 0 : ContainerColumnFootprint.width(for: session)
-    }
-
-    /// When the sidebar is hidden, the tab column box widens just enough that the
-    /// trailing action capsule (+ / …) lands clear of the floating
-    /// bell + sidebar-toggle capsule. We grow the *box*, not the
-    /// `leadingInset`, so the tab column tab bar below still starts at x=0
-    /// instead of jumping inwards.
-    private var tabColumnBoxWidth: CGFloat {
-        session.sidebarHidden
-            ? max(session.tabColumnWidth, ContainerColumnFootprint.minTabColumnWidthCollapsed)
-            : session.tabColumnWidth
-    }
-
-    private var tabColumnTint: some View {
-        ColumnBackdrop(appearance: settings.settings.appearance, role: .list, reduceTransparency: reduce)
     }
 
     private var terminalColumnTint: some View {
@@ -220,6 +278,7 @@ private struct HorizontalModeBody: View {
 /// body content is offset right past the sidebar so it never collides.
 /// The right edge carries a drag-resize divider; double-click resets.
 private struct TabColumn: View {
+    let plan: MainWindowLayoutPlan
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settings
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
@@ -228,18 +287,29 @@ private struct TabColumn: View {
         ZStack(alignment: .trailing) {
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    Spacer().frame(width: leadingInset)
-                    ToolbarTabColumnSegment()
+                    Spacer().frame(width: plan.reservedSidebarWidth)
+                    ToolbarTabColumnSegment(
+                        showsContainerIdentity: plan.regularContainerIdentityPlacement == .tabToolbar,
+                        showsNewTab: !plan.isCompactSidebarOverlayPresented
+                    )
                 }
-                .frame(width: leadingInset + tabColumnBoxWidth, height: LimpidLayout.topStripHeight)
+                .frame(
+                    width: plan.reservedSidebarWidth + plan.tabColumnWidth,
+                    height: LimpidLayout.topStripHeight
+                )
                 HStack(spacing: 0) {
-                    Spacer().frame(width: leadingInset)
+                    Spacer().frame(width: plan.reservedSidebarWidth)
                     TabColumnView()
                 }
             }
-            TabColumnResizeHandle(session: session)
+            TabColumnResizeHandle(
+                session: session,
+                displayedWidth: plan.tabColumnWidth,
+                minWidth: plan.tabColumnMinimumWidth,
+                maxWidth: plan.tabColumnMaximumWidth
+            )
         }
-        .frame(width: leadingInset + tabColumnBoxWidth)
+        .frame(width: plan.reservedSidebarWidth + plan.tabColumnWidth)
         // Glass mode separates the columns with tint alone; a rule at
         // this flush seam reads as a shadow. The opaque tones are only
         // one step apart, so Reduce Transparency keeps a hairline.
@@ -255,30 +325,18 @@ private struct TabColumn: View {
         ))
     }
 
-    private var leadingInset: CGFloat {
-        session.sidebarHidden ? 0 : ContainerColumnFootprint.width(for: session)
-    }
-
-    /// Same trick as horizontal mode: widen the tab column box (not the leading
-    /// inset) when the sidebar is hidden, so the toolbar action capsule
-    /// has room to clear the floating bell + sidebar-toggle while the tab column
-    /// list rows stay flush to the window's left edge.
-    private var tabColumnBoxWidth: CGFloat {
-        session.sidebarHidden
-            ? max(session.tabColumnWidth, ContainerColumnFootprint.minTabColumnWidthCollapsed)
-            : session.tabColumnWidth
-    }
 }
 
 /// terminal column — terminal pane area with its own toolbar on top.
 private struct TerminalColumn: View {
     let ghosttyApp: GhosttyApp
+    let plan: MainWindowLayoutPlan
     @Environment(SettingsStore.self) private var settings
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
 
     var body: some View {
         VStack(spacing: 0) {
-            ToolbarTerminalColumnSegment()
+            ToolbarTerminalColumnSegment(plan: plan)
                 .frame(height: LimpidLayout.topStripHeight)
             TerminalColumnView(ghosttyApp: ghosttyApp)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -323,30 +381,5 @@ private struct ColumnBackdrop: View {
 
     private var solidTint: Color {
         role == .list ? LimpidColor.tabColumnSolidFill : Color(nsColor: .windowBackgroundColor)
-    }
-}
-
-/// X position of the container sidebar's right edge for the given
-/// session. The sidebar starts at the window's leading edge, so its
-/// width is the whole footprint.
-@MainActor
-enum ContainerColumnFootprint {
-    static func width(for session: WindowSession) -> CGFloat {
-        session.sidebarWidth
-    }
-
-    /// Minimum tab column box width when the sidebar is hidden. Sized so the
-    /// trailing action capsule (+ / …) inside `ToolbarTabColumnSegment` lands
-    /// past the right edge of the `FloatingHiddenToolbar` capsule
-    /// (rendered at `trafficLightWidth + 18`), with a breathing gap
-    /// between the two. The tab column box widens to this whenever the user's
-    /// `tabColumnWidth` would otherwise be too narrow to fit both capsules.
-    static var minTabColumnWidthCollapsed: CGFloat {
-        let capsule = 2 * LimpidLayout.toolbarCapsuleButtonWidth
-            + LimpidLayout.toolbarCapsuleDividerWidth
-        let floatingToolbarRightEdge = LimpidLayout.trafficLightWidth + 18 + capsule
-        let toolbarGap: CGFloat = 12
-        let actionCapsuleTrailing: CGFloat = 8
-        return floatingToolbarRightEdge + toolbarGap + capsule + actionCapsuleTrailing
     }
 }

@@ -146,6 +146,7 @@ struct ReviewWorkspaceView: View {
     @Environment(\.surfaceRegistry) var registry
     @Environment(ToastCenter.self) var toastCenter
     @Environment(SettingsStore.self) var settingsStore
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
     @State var fileID: String?
     @State var selection = ReviewSelection()
     /// Editing reuses the composer rather than opening a modal on top of a
@@ -177,6 +178,12 @@ struct ReviewWorkspaceView: View {
     @State var pendingJump: ReviewJump?
     @State var isTreeLayout = false
     @State var hidesViewedFiles = false
+    /// The file list becomes a transient drawer when it cannot coexist with a
+    /// readable diff. This is presentation state, not a saved review choice.
+    @State var isCompactFileRailPresented = false
+    /// The drawer stays mounted until its closing offset reaches the edge;
+    /// removing it early would discard the animation's source view.
+    @State var isCompactFileRailMounted = false
     @State var search = ReviewSearch()
     /// One number column, sized to the file being read. Stored rather than
     /// computed: the scan is over every line of the diff, and a computed
@@ -283,7 +290,7 @@ struct ReviewWorkspaceView: View {
     }
 
     private func openSearch() {
-        guard fileID != nil else { return }
+        guard fileID != nil, !isCompactFileRailPresented else { return }
         search.isPresented = true
         // Asked for again even when it is already up: the reader may have
         // moved the keyboard elsewhere, and the Find key naming a field that
@@ -300,6 +307,7 @@ struct ReviewWorkspaceView: View {
     /// its own — and the reader can carry on with `j` or `c` from where the
     /// search left them.
     private func moveSearch(by delta: Int) {
+        guard !isCompactFileRailPresented else { return }
         // Only for an explicit move. Return and ⌘G answer for what is in the
         // field rather than for what the debounce has caught up with — but
         // typing arrives here as `delta == 0`, and syncing there scanned every
@@ -381,14 +389,6 @@ struct ReviewWorkspaceView: View {
         ].joined(separator: "|")
     }
 
-    private var totals: (added: Int, removed: Int) {
-        store.stats.values.reduce(into: (0, 0)) { total, stat in
-            guard !stat.isBinary else { return }
-            total.0 += stat.added
-            total.1 += stat.removed
-        }
-    }
-
     /// What Copy hands over, which has to be what Insert would send.
     ///
     /// Built from the comments Insert would keep, not from everything open:
@@ -421,6 +421,47 @@ struct ReviewWorkspaceView: View {
         // wrong; a button that grays out with nothing on screen explaining it
         // was worse than an error the reader can read.
         !isInserting && !isResolvingDestination && !openComments.isEmpty && destination != nil
+    }
+
+    var diffColumn: some View {
+        VStack(spacing: 0) {
+            selectedFileChrome
+            content
+            Divider()
+            ReviewFooterHints()
+        }
+    }
+
+    @ViewBuilder
+    private var selectedFileChrome: some View {
+        if let file = store.files.first(where: { $0.id == fileID }) {
+            ReviewFileBar(
+                file: file,
+                stat: store.stats[file.id],
+                // Only about the file actually loaded: the rest of the list
+                // keeps the counts it was read with.
+                isEmpty: store.diff?.file.id == file.id
+                    && store.diff?.hasVanished == true,
+                isComposerOpen: composer.isOpen,
+                isViewed: store.viewed.keys.contains(file.id),
+                layout: layoutBinding,
+                showsFileListButton: !showsInlineFileRail && !composer.isOpen && !search.isPresented,
+                onShowFiles: presentCompactFileRail,
+                onToggleViewed: { toggleViewed(file.id) }
+            )
+            Divider()
+            if search.isPresented {
+                ReviewFindBar(
+                    search: $search,
+                    hitCount: searchHits.count,
+                    position: searchPosition,
+                    onMove: moveSearch,
+                    onClose: closeSearch,
+                    focusRequest: findFocusRequest
+                )
+                Divider()
+            }
+        }
     }
 
     var body: some View {
@@ -461,77 +502,27 @@ struct ReviewWorkspaceView: View {
                 )
             }
             Divider()
-            HStack(spacing: 0) {
-                // The list goes away entirely when the surface is too narrow to
-                // hold it and a readable diff. Everything it carries — the
-                // layout switch, the filter, the read marks — is also reachable
-                // from the bar above the diff or from the keyboard.
-                if available >= ReviewRail.minimum + ReviewRail.diffMinimum {
-                    ReviewFileRail(
-                        files: store.files,
-                        stats: store.stats,
-                        commentCounts: store.commentCounts,
-                        viewed: Set(store.viewed.keys),
-                        selection: fileID,
-                        isTree: $isTreeLayout,
-                        hidesViewed: $hidesViewedFiles,
-                        onSelect: select,
-                        onToggleViewed: toggleViewed,
-                        available: available
-                    )
-                    // The grab area rides on the divider rather than beside it.
-                    // Laid out as a sibling it takes six points of its own, and
-                    // the diff's row colors stop at the table's edge — which
-                    // read as a gap between the file list and every changed
-                    // line.
-                    Divider()
-                        .overlay {
-                            DividerResizeHandle(
-                                currentWidth: { reviewPresentation.railWidth },
-                                setWidth: { reviewPresentation.railWidth = $0 },
-                                minWidth: ReviewRail.minimum,
-                                maxWidth: max(ReviewRail.minimum, min(ReviewRail.maximum, available - ReviewRail.diffMinimum)),
-                                defaultWidth: ReviewRail.default,
-                                accessibilityLabel: Text("File List Width")
-                            )
-                        }
-                }
-                VStack(spacing: 0) {
-                    if let file = store.files.first(where: { $0.id == fileID }) {
-                        ReviewFileBar(
-                            file: file,
-                            stat: store.stats[file.id],
-                            // Only about the file actually loaded: the rest of
-                            // the list keeps the counts it was read with,
-                            // which the banner above answers for.
-                            isEmpty: store.diff?.file.id == file.id
-                                && store.diff?.hasVanished == true,
-                            isComposerOpen: composer.isOpen,
-                            isViewed: store.viewed.keys.contains(file.id),
-                            layout: layoutBinding,
-                            onToggleViewed: { toggleViewed(file.id) }
-                        )
-                        Divider()
-                        if search.isPresented {
-                            ReviewFindBar(
-                                search: $search,
-                                hitCount: searchHits.count,
-                                position: searchPosition,
-                                onMove: moveSearch,
-                                onClose: closeSearch,
-                                focusRequest: findFocusRequest
-                            )
-                            Divider()
-                        }
-                    }
-                    content
-                    Divider()
-                    ReviewFooterHints()
-                }
-            }
+            reviewContentArea
         }
         .background(LimpidColor.terminalColumnBackground)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: showsInlineFileRail) { _, isInline in
+            if isInline {
+                isCompactFileRailPresented = false
+                isCompactFileRailMounted = false
+            }
+        }
+        .onDisappear {
+            isCompactFileRailPresented = false
+            isCompactFileRailMounted = false
+        }
+        .onExitCommand {
+            if isCompactFileRailPresented {
+                dismissCompactFileRail()
+            } else if !composer.isOpen, !search.isPresented {
+                onClose()
+            }
+        }
         .task {
             // Before the first list, so the choice is on screen with it rather
             // than appearing a moment later.
@@ -590,7 +581,7 @@ struct ReviewWorkspaceView: View {
         // over one that was right there — but the destination itself has not
         // changed, so this re-probes without emptying the chip first.
         .onChange(of: reviewPresentation.isStripCollapsed) { _, _ in
-            Task { await refreshDestination() }
+            Task<Void, Never> { await refreshDestination() }
         }
         // The scan follows the field by a moment. Long enough that a word typed
         // at speed is scanned once, short enough that the count does not read
@@ -637,107 +628,23 @@ struct ReviewWorkspaceView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "arrow.triangle.branch")
-                .foregroundStyle(LimpidColor.secondaryText)
-            Text("Review changes")
-                .font(LimpidFont.headline)
-            Text(verbatim: store.root.lastPathComponent)
-                .font(LimpidFont.caption)
-                .foregroundStyle(LimpidColor.secondaryText)
-                .lineLimit(1)
-                .textSelection(.enabled)
-            scopePicker
-            statPill
-            Spacer(minLength: 8)
-            Text("Insert into")
-                .font(LimpidFont.caption)
-                .foregroundStyle(LimpidColor.tertiaryText)
-            ReviewDestinationChip(destination: destination, isResolving: isResolvingDestination)
-            commentPill
-            Button("Refresh") { Task { await refresh() } }
-                .accessibilityLabel(Text("Refresh"))
-                .disabled(store.isLoading || isInserting)
-            // The surface is a review; the button does not have to say so
-            // again. It keeps the full phrase for VoiceOver, where the reader
-            // may be arriving from anywhere in the window.
-            Button("Insert", action: insert)
-                .buttonStyle(.borderedProminent)
-                .accessibilityLabel(Text("Insert Review"))
-                .disabled(!canInsert)
-            // Never disabled, not even mid-insert: validation runs Git once
-            // per commented file, and a surface that cannot be closed while
-            // that happens is a surface that can be stuck. The insert task
-            // re-checks its target before writing anything.
-            Button("Close", action: onClose)
-                .accessibilityLabel(Text("Close"))
-                // Escape belongs to whatever is open inside the surface first:
-                // the composer holds a draft, and the find bar is what the
-                // reader means to dismiss while it is up.
-                .keyboardShortcut(composer.isOpen || search.isPresented ? nil : .cancelAction)
-            // Off screen: ⌘F is a shortcut, not a control the header has room
-            // to name. Zero-sized rather than `.hidden()`, which would take
-            // the shortcut with it.
-
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 44)
-        .background(LimpidColor.tabColumnBackground)
-    }
-
-    private var statPill: some View {
-        HStack(spacing: 4) {
-            Text(verbatim: "+\(totals.added)")
-                .foregroundStyle(LimpidColor.success)
-            Text(verbatim: "−\(totals.removed)")
-                .foregroundStyle(LimpidColor.error)
-        }
-        .font(.caption.monospacedDigit())
-        .padding(.horizontal, 7)
-        .padding(.vertical, 2)
-        .overlay(Capsule().stroke(LimpidColor.panelDivider))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("Changed lines"))
-    }
-
-    /// What the review is of. In the header rather than over the file list,
-    /// because it decides the stats and the diff beside it as much as the
-    /// list — and because a popover for a choice between two is a window
-    /// opened over the thing the reader is trying to see.
-    ///
-    /// Absent in a repository with no branch to compare against: an offer of
-    /// one option is not a choice.
-    @ViewBuilder
-    private var scopePicker: some View {
-        if let base = store.base {
-            ReviewScopeSwitch(
-                base: base,
-                isBranch: store.scope != .uncommitted,
-                isEnabled: !store.isLoading && !isInserting
-            ) { isBranch in
+        ReviewHeader(
+            store: store,
+            destination: destination,
+            isResolvingDestination: isResolvingDestination,
+            isInserting: isInserting,
+            canInsert: canInsert,
+            prompt: prompt,
+            isShowingPrompt: $isShowingPrompt,
+            onSelectScope: { isBranch in
+                guard let base = store.base else { return }
                 Task { await changeScope(isBranch ? .branch(base: base) : .uncommitted) }
-            }
-        }
-    }
-
-    private var commentPill: some View {
-        Button {
-            isShowingPrompt.toggle()
-        } label: {
-            Label {
-                Text(verbatim: "\(store.insertableComments.count)")
-                    .font(.caption.monospacedDigit())
-            } icon: {
-                Image(systemName: "bubble.left.and.text.bubble.right")
-            }
-        }
-        .disabled(store.comments.isEmpty)
-        .accessibilityLabel(Text("Preview the comments to insert"))
-        .accessibilityValue(Text(verbatim: "\(store.insertableComments.count)"))
-        .help(Text("Preview what will be inserted"))
-        .popover(isPresented: $isShowingPrompt, arrowEdge: .bottom) {
-            ReviewPromptPreview(store: store, prompt: prompt, onJump: jump)
-        }
+            },
+            onRefresh: { Task { await refresh() } },
+            onInsert: insert,
+            onClose: onClose,
+            onJump: jump
+        )
     }
 
     private var layoutBinding: Binding<ReviewDiffLayout> {
@@ -754,7 +661,7 @@ struct ReviewWorkspaceView: View {
         selection.follow(layout, head: head, lines: store.diff?.lines ?? [])
     }
 
-    private func toggleViewed(_ fileID: String) {
+    func toggleViewed(_ fileID: String) {
         store.setViewed(fileID, !store.viewed.keys.contains(fileID))
     }
 
@@ -858,6 +765,8 @@ struct ReviewWorkspaceView: View {
                     onResolve: { store.setResolved($0.id, true) },
                     onEdit: beginEditing,
                     onDelete: { store.remove($0.id) },
+                    isOverlayPresented: isCompactFileRailPresented,
+                    onCloseOverlay: dismissCompactFileRail,
                     onClose: onClose
                 )
             }

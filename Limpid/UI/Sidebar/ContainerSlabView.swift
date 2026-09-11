@@ -260,6 +260,7 @@ struct ContainerSlabView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .clipped()
     }
 
     /// The scrolling upper pane of the slab: Quick Tabs, Groups,
@@ -471,8 +472,11 @@ struct ContainerSlabView: View {
             // The same inset the tab list and the horizontal strip
             // take, so the first row of every list lands on one line.
             .padding(.vertical, LimpidLayout.rowListInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .animation(LimpidMotion.expand, value: foldSignature)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
     }
 
     /// Mirror a divider drag or double-click reset onto the stored
@@ -549,6 +553,7 @@ struct ContainerSlabView: View {
                     .frame(width: LimpidLayout.containerColumnTrailingSlot, height: LimpidLayout.containerColumnTrailingSlot)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 18)
         .padding(.top, 18)
         .padding(.bottom, 4)
@@ -742,5 +747,7 @@ private struct FoldableSection<Header: View, Content: View>: View {
                 .allowsHitTesting(isExpanded)
                 .accessibilityHidden(!isExpanded)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
     }
 }

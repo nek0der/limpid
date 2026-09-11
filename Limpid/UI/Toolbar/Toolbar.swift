@@ -1,7 +1,6 @@
 // Toolbar.swift
-// Limpid — single top toolbar split into three segments that align
-// horizontally with container / tab / terminal column below. Mirrors Notes 2026's toolbar:
-//   ● ● ●  [+] [▭|]    [container] [⋯]  [+Tab] […actions…] [⋯] [search]
+// Limpid — one main-window toolbar whose segments align with the
+// container, tab, and terminal columns below.
 //
 // Each segment is a small SwiftUI HStack; the parent layout (`ThreePaneLayout`)
 // pins them to the right widths so the toolbar stays in lockstep with
@@ -13,80 +12,34 @@ import SwiftUI
 
 // MARK: - tab column toolbar segment
 
-/// tab column top toolbar — Notes 2026 puts the folder name and "X notes"
-/// subtitle here, with a `…` action menu pinned right. We mirror the
-/// same shape: container name, subtitle (path / count / git overlay),
-/// and a trailing actions button.
+/// The vertical tab column owns its context and New Tab action.
 struct ToolbarTabColumnSegment: View {
-    /// Read for the Review Changes entry below, which is live whenever review
-    /// is — including with nothing to review, so it can close it.
-    @Environment(ReviewPresentation.self) private var reviewPresentation
-    @Environment(WindowSession.self) private var session
-    @Environment(NotificationHistoryStore.self) private var historyStore
-    @Environment(\.surfaceRegistry) private var registry
-    @Environment(\.claudeSessionTracker) private var claudeSessionTracker
-    @Environment(\.codexSessionTracker) private var codexSessionTracker
-    @Environment(\.cwdEventTracker) private var cwdEventTracker
+    let showsContainerIdentity: Bool
+    let showsNewTab: Bool
 
     var body: some View {
         ToolbarRow {
-            HStack(alignment: .center, spacing: 8) {
-                if !session.sidebarHidden {
+            HStack(alignment: .center) {
+                if showsContainerIdentity {
                     ToolbarContainerTitle()
                 }
                 Spacer()
-                ToolbarActionCapsule {
-                    // New Tab sits left of the ellipsis menu so the
-                    // most-frequent action lives next to the tab
-                    // list itself — used to be on the far-right terminal column
-                    // toolbar, which meant a long cursor trip from
-                    // the tabs. The action capsule stays one
-                    // grouping so the tab column toolbar doesn't fragment.
-                    ToolbarCapsuleButton(
-                        systemImage: "plus",
-                        help: "New Tab (⌘T)"
-                    ) {
-                        TabActions.newTab(session)
-                    }
-                    ToolbarCapsuleDivider()
-                    ToolbarCapsuleMenuButton(
-                        systemImage: "ellipsis",
-                        help: "Container Actions"
-                    ) {
-                        Button {
-                            NotificationCenter.default.post(name: .limpidReviewChanges, object: session)
-                        } label: {
-                            Label("Review Changes", systemImage: ReviewPresentation.symbol)
-                        }
-                        .accessibilityLabel(Text("Review Changes"))
-                        .disabled(!ReviewAgents.canReview(
-                            session: session,
-                            presentation: reviewPresentation
-                        ))
-                        Divider()
-                        Button(role: .destructive) {
-                            TabActions.closeAllTabsInActiveContainer(
-                                session,
-                                registry: registry,
-                                claudeSessionTracker: claudeSessionTracker,
-                                codexSessionTracker: codexSessionTracker,
-                                cwdEventTracker: cwdEventTracker
-                            )
-                        } label: {
-                            Label("Close All Tabs", systemImage: "xmark")
-                        }
-                        .disabled(session.tabs(in: session.activeContainerID).isEmpty)
-                        Divider()
-                        Button {
-                            session.clearAllUnread()
-                            historyStore.markAllRead()
-                        } label: {
-                            Label("Mark All as Read", systemImage: "checkmark.circle")
-                        }
-                    }
+                if showsNewTab {
+                    NewTabToolbarButton()
+                        .padding(.trailing, 8)
                 }
-                .padding(.trailing, 8)
             }
+        }
+    }
+}
+
+/// Shared New Tab control used by whichever tab presentation is active.
+struct NewTabToolbarButton: View {
+    @Environment(WindowSession.self) private var session
+
+    var body: some View {
+        ToolbarIconButton(systemImage: "plus", help: "New Tab (⌘T)") {
+            TabActions.newTab(session)
         }
     }
 }
@@ -94,65 +47,51 @@ struct ToolbarTabColumnSegment: View {
 // MARK: - terminal column toolbar segment
 
 struct ToolbarTerminalColumnSegment: View {
+    let plan: MainWindowLayoutPlan
     @Environment(WindowSession.self) private var session
     @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(SettingsStore.self) private var settings
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(UpdateStateModel.self) private var updateState
+    @Environment(NotificationHistoryStore.self) private var historyStore
     @Environment(\.sparkleUpdater) private var updater
     @Environment(\.surfaceRegistry) private var registry
+    @Environment(\.claudeSessionTracker) private var claudeSessionTracker
+    @Environment(\.codexSessionTracker) private var codexSessionTracker
+    @Environment(\.cwdEventTracker) private var cwdEventTracker
 
     var body: some View {
         ToolbarRow {
-            terminalColumnContent
+            ViewThatFits(in: .horizontal) {
+                terminalColumnContent
+                    .frame(minWidth: plan.regularToolbarMinimumWidth)
+                compactTerminalColumnContent
+            }
         }
     }
 
     private var terminalColumnContent: some View {
-        HStack(spacing: 8) {
-            if session.sidebarHidden {
+        HStack(spacing: LimpidLayout.toolbarControlSpacing) {
+            if plan.regularContainerIdentityPlacement == .terminalToolbar {
                 ToolbarContainerTitle()
-                    .frame(minWidth: 200, alignment: .leading)
+                    .frame(minWidth: LimpidLayout.toolbarContainerTitleMinWidth, alignment: .leading)
             }
-
             ToolbarPaletteField()
-
             Spacer(minLength: 0)
-
-            ToolbarActionCapsule {
-                // One control opens and closes review, so it carries the
-                // current state in its label. It stays live with no directory
-                // to review, because that is the state review has to close
-                // from.
-                ToolbarCapsuleButton(
-                    systemImage: ReviewPresentation.symbol,
-                    help: reviewPresentation.isPresented ? "Close Review" : "Review Changes",
-                    isEnabled: ReviewAgents.canReview(
-                        session: session,
-                        presentation: reviewPresentation
-                    )
-                ) {
-                    ReviewPresentationCommand.toggle(
-                        session: session,
-                        presentation: reviewPresentation,
-                        registry: registry
-                    )
-                }
-            }
-
+            reviewButton
             if updateState.showsBadge, let updater {
                 ToolbarUpdateButton(updater: updater)
             }
-            ToolbarActionCapsule {
-                ToolbarCapsuleButton(
+            HStack(spacing: 2) {
+                ToolbarIconButton(
                     systemImage: "chevron.backward",
                     help: "Go Back",
                     isEnabled: session.canNavigateBack
                 ) {
                     session.navigateBack()
                 }
-                ToolbarCapsuleDivider()
-                ToolbarCapsuleButton(
+                ToolbarGroupDivider()
+                ToolbarIconButton(
                     systemImage: "chevron.forward",
                     help: "Go Forward",
                     isEnabled: session.canNavigateForward
@@ -160,8 +99,8 @@ struct ToolbarTerminalColumnSegment: View {
                     session.navigateForward()
                 }
             }
-            ToolbarActionCapsule {
-                ToolbarCapsuleButton(
+            HStack(spacing: 2) {
+                ToolbarIconButton(
                     systemImage: "rectangle.split.2x1",
                     help: "Split Right (⌘D)",
                     isEnabled: session.activeTab != nil
@@ -174,8 +113,8 @@ struct ToolbarTerminalColumnSegment: View {
                         toastCenter: toastCenter
                     )
                 }
-                ToolbarCapsuleDivider()
-                ToolbarCapsuleButton(
+                ToolbarGroupDivider()
+                ToolbarIconButton(
                     systemImage: "rectangle.split.1x2",
                     help: "Split Down (⌘⇧D)",
                     isEnabled: session.activeTab != nil
@@ -189,9 +128,114 @@ struct ToolbarTerminalColumnSegment: View {
                     )
                 }
             }
+            actionsMenu(density: .regular)
         }
         .padding(.horizontal, 12)
     }
+
+    /// Narrow-window toolbar. The command palette and review state remain
+    /// visible; navigation and split commands retain their menu entries and
+    /// keyboard shortcuts without forcing five fixed-width capsules offscreen.
+    private var compactTerminalColumnContent: some View {
+        HStack(spacing: LimpidLayout.toolbarControlSpacing) {
+            ToolbarPaletteField()
+            Spacer(minLength: 0)
+            reviewButton
+            if updateState.showsBadge, let updater {
+                ToolbarUpdateButton(updater: updater)
+            }
+            actionsMenu(density: .compact)
+        }
+        .padding(.horizontal, 12)
+    }
+
+    /// Review is a primary mode switch, so it remains directly reachable at
+    /// every width while its surrounding treatment matches other icon buttons.
+    private var reviewButton: some View {
+        ToolbarIconButton(
+            systemImage: ReviewPresentation.symbol,
+            help: reviewPresentation.isPresented ? "Close Review" : "Review Changes",
+            isEnabled: ReviewAgents.canReview(
+                session: session,
+                presentation: reviewPresentation
+            )
+        ) {
+            ReviewPresentationCommand.toggle(
+                session: session,
+                presentation: reviewPresentation,
+                registry: registry
+            )
+        }
+    }
+
+    /// One stable overflow owns secondary actions. Compact mode puts frequent
+    /// navigation and split commands ahead of the destructive tab action.
+    private func actionsMenu(density: ToolbarDensity) -> some View {
+        ToolbarIconMenuButton(systemImage: "ellipsis", help: "Actions") {
+            if density == .compact {
+                Button {
+                    session.navigateBack()
+                } label: {
+                    Label("Go Back", systemImage: "chevron.backward")
+                }
+                .disabled(!session.canNavigateBack)
+                Button {
+                    session.navigateForward()
+                } label: {
+                    Label("Go Forward", systemImage: "chevron.forward")
+                }
+                .disabled(!session.canNavigateForward)
+                Divider()
+                Button {
+                    split(.horizontal)
+                } label: {
+                    Label("Split Right", systemImage: "rectangle.split.2x1")
+                }
+                .disabled(session.activeTab == nil)
+                Button {
+                    split(.vertical)
+                } label: {
+                    Label("Split Down", systemImage: "rectangle.split.1x2")
+                }
+                .disabled(session.activeTab == nil)
+                Divider()
+            }
+            Button {
+                session.clearAllUnread()
+                historyStore.markAllRead()
+            } label: {
+                Label("Mark All as Read", systemImage: "checkmark.circle")
+            }
+            Divider()
+            Button(role: .destructive) {
+                TabActions.closeAllTabsInActiveContainer(
+                    session,
+                    registry: registry,
+                    claudeSessionTracker: claudeSessionTracker,
+                    codexSessionTracker: codexSessionTracker,
+                    cwdEventTracker: cwdEventTracker
+                )
+            } label: {
+                Label("Close All Tabs", systemImage: "xmark")
+            }
+            .disabled(session.tabs(in: session.activeContainerID).isEmpty)
+        }
+    }
+
+    private func split(_ direction: SplitDirection) {
+        PaneActions.split(
+            session,
+            direction: direction,
+            registry: registry,
+            minPaneSize: settings.settings.terminal.minPaneSize,
+            toastCenter: toastCenter
+        )
+    }
+}
+
+private enum ToolbarDensity: Equatable {
+    case regular
+    case compact
 }
 
 /// State-driven affordance rendered in the terminal column toolbar whenever the
@@ -200,11 +244,8 @@ struct ToolbarTerminalColumnSegment: View {
 /// what phase the update is in (available → downloading → installing
 /// → done). Tap opens `UpdatePopover`, which is also state-driven.
 ///
-/// We intentionally keep this as its own capsule (not a member of
-/// the back/forward capsule) so the affordance reads as distinct
-/// from navigation — the visual rhythm becomes
-/// `[update] [< | >] [split | split]`, with the tinted box pulling
-/// the eye independently of the chevrons.
+/// Unlike ordinary toolbar icons, the update control keeps a tinted glass badge
+/// because its color communicates progress, completion, or failure.
 struct ToolbarUpdateButton: View {
     let updater: SPUUpdater
 
@@ -221,8 +262,8 @@ struct ToolbarUpdateButton: View {
                 .font(.system(size: LimpidLayout.toolbarIconSize, weight: .medium))
                 .foregroundStyle(.white)
                 .frame(
-                    width: LimpidLayout.toolbarCapsuleButtonWidth,
-                    height: LimpidLayout.toolbarCapsuleButtonHeight
+                    width: LimpidLayout.toolbarButtonWidth,
+                    height: LimpidLayout.toolbarButtonHeight
                 )
                 .contentShape(Capsule())
         }
@@ -362,10 +403,8 @@ struct ProgressRing: View {
     }
 }
 
-/// Shared container title block — icon + name (bold) + subtitle
-/// (path / count) + optional git overlay. Used by BOTH the tab column toolbar
-/// (when the sidebar is shown) and the terminal column toolbar (when the sidebar
-/// is hidden), so the two never drift apart visually.
+/// Shared container title block. `MainWindowLayoutPlan` assigns its regular
+/// presentation to one toolbar; compact presentation omits the title.
 struct ToolbarContainerTitle: View {
     @Environment(WindowSession.self) private var session
 
@@ -400,11 +439,9 @@ struct ToolbarContainerTitle: View {
     }
 }
 
-/// Visual body of every toolbar capsule cell — 32×28 icon with hover
-/// fill. Shared between `ToolbarCapsuleButton` (tap action) and
-/// `ToolbarCapsuleMenuButton` (drop-down menu) so the two never drift
-/// out of sync (icon weight, color, hit area, hover treatment).
-struct ToolbarCapsuleLabel: View {
+/// Visual body shared by toolbar buttons and menus. The toolbar surface carries
+/// the glass; individual controls show a background only while hovering.
+struct ToolbarIconLabel: View {
     let systemImage: String
     let isEnabled: Bool
     let isHovering: Bool
@@ -413,21 +450,17 @@ struct ToolbarCapsuleLabel: View {
         Image(systemName: systemImage)
             .font(.system(size: LimpidLayout.toolbarIconSize, weight: .medium))
             .foregroundStyle(isEnabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
-            .frame(width: LimpidLayout.toolbarCapsuleButtonWidth, height: LimpidLayout.toolbarCapsuleButtonHeight)
+            .frame(width: LimpidLayout.toolbarButtonWidth, height: LimpidLayout.toolbarButtonHeight)
             .background(
-                RoundedRectangle(cornerRadius: LimpidLayout.toolbarCapsuleHoverCorner, style: .continuous)
+                RoundedRectangle(cornerRadius: LimpidLayout.toolbarButtonHoverCorner, style: .continuous)
                     .fill(isHovering && isEnabled ? LimpidColor.rowHoverFill : .clear)
             )
             .contentShape(Rectangle())
     }
 }
 
-/// Button used inside an action capsule. Hover fill uses a rounded
-/// rect so it reads cleanly when the button stands on its own (e.g.
-/// the container column toolbar where buttons aren't inside a capsule). Inside a
-/// capsule the surrounding `clipShape(Capsule())` clips this rect to
-/// the capsule outline, so the same code works for both layouts.
-struct ToolbarCapsuleButton: View {
+/// Consistent borderless icon button used across the main-window toolbar.
+struct ToolbarIconButton: View {
     let systemImage: String
     let help: LocalizedStringKey
     var isEnabled: Bool = true
@@ -437,7 +470,7 @@ struct ToolbarCapsuleButton: View {
 
     var body: some View {
         Button(action: action) {
-            ToolbarCapsuleLabel(
+            ToolbarIconLabel(
                 systemImage: systemImage,
                 isEnabled: isEnabled,
                 isHovering: isHovering
@@ -457,11 +490,11 @@ struct ToolbarCapsuleButton: View {
     }
 }
 
-/// Menu-triggering twin of `ToolbarCapsuleButton`. Uses the same
-/// `ToolbarCapsuleLabel` so the visual footprint (size, color, hover)
+/// Menu-triggering twin of `ToolbarIconButton`. Uses the same
+/// `ToolbarIconLabel` so the visual footprint (size, color, hover)
 /// stays identical to its tap-action siblings, while the click pops
 /// open a `Menu`.
-struct ToolbarCapsuleMenuButton<MenuContent: View>: View {
+struct ToolbarIconMenuButton<MenuContent: View>: View {
     let systemImage: String
     let help: LocalizedStringKey
     @ViewBuilder let menuContent: () -> MenuContent
@@ -472,7 +505,7 @@ struct ToolbarCapsuleMenuButton<MenuContent: View>: View {
         Menu {
             menuContent()
         } label: {
-            ToolbarCapsuleLabel(
+            ToolbarIconLabel(
                 systemImage: systemImage,
                 isEnabled: true,
                 isHovering: isHovering
@@ -488,112 +521,11 @@ struct ToolbarCapsuleMenuButton<MenuContent: View>: View {
     }
 }
 
-/// Vertical hairline used between buttons inside a segmented capsule.
-struct ToolbarCapsuleDivider: View {
+/// A quiet separator between related toolbar controls.
+struct ToolbarGroupDivider: View {
     var body: some View {
         Rectangle()
             .fill(LimpidColor.toolbarHairline)
-            .frame(width: LimpidLayout.toolbarCapsuleDividerWidth, height: LimpidLayout.toolbarCapsuleDividerHeight)
-    }
-}
-
-/// Liquid Glass action capsule — single shared component used by both
-/// the container column toolbar (add / bell / sidebar) and the terminal column toolbar (new tab /
-/// split row / split col). Caller provides the buttons + dividers via
-/// the trailing closure; the capsule supplies clip shape, glass
-/// material, and stroke.
-struct ToolbarActionCapsule<Content: View>: View {
-    @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        HStack(spacing: 0) {
-            content()
-        }
-        .clipShape(Capsule())
-        .modifier(ToolbarGlassBackground(
-            shape: Capsule(),
-            solid: reduceTransparencyResolver.shouldReduceTransparency
-        ))
-        .overlay(Capsule().stroke(LimpidColor.toolbarHairline, lineWidth: 0.5))
-    }
-}
-
-/// Single-button glass tile. Same material/stroke treatment as
-/// `ToolbarActionCapsule` but uses a rounded square shape so a lone
-/// button doesn't render as a near-perfect circle (Capsule applied to
-/// a 32×28 frame collapses to that). Used for the tab column toolbar ellipsis
-/// menu and any other one-off toolbar button.
-struct ToolbarActionTile<Content: View>: View {
-    @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
-    @ViewBuilder let content: () -> Content
-    private let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
-
-    var body: some View {
-        HStack(spacing: 0) {
-            content()
-        }
-        .clipShape(shape)
-        .modifier(ToolbarGlassBackground(
-            shape: shape,
-            solid: reduceTransparencyResolver.shouldReduceTransparency
-        ))
-        .overlay(shape.stroke(LimpidColor.toolbarHairline, lineWidth: 0.5))
-    }
-}
-
-/// Toolbar capsule / tile glass with a solid fallback. The system
-/// `.glassEffect` honors the macOS Reduce Transparency accessibility
-/// flag, but it does NOT honor Limpid's user-facing Transparency
-/// setting in `LimpidSettings.appearance` — `ReduceTransparencyResolver`
-/// folds the two and exposes the combined verdict. Without this
-/// modifier the container slab would paint solid while the floating
-/// toolbar capsules next to it kept the frosted glass, leaving a
-/// visibly inconsistent half-toggle for users who flipped Settings →
-/// Transparency off without the system flag.
-private struct ToolbarGlassBackground<S: Shape>: ViewModifier {
-    let shape: S
-    let solid: Bool
-
-    func body(content: Content) -> some View {
-        if solid {
-            content.background(
-                shape.fill(Color(nsColor: .windowBackgroundColor))
-            )
-        } else {
-            content
-                .glassEffect(.regular, in: shape)
-                // Keep the system glass shadow inside the control's
-                // outline so toolbar controls sit flush with the row.
-                .clipShape(shape)
-        }
-    }
-}
-
-// MARK: - Toolbar shared button
-
-struct ToolbarIconButton: View {
-    let systemImage: String
-    let help: LocalizedStringKey
-    let action: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: LimpidLayout.toolbarIconSize, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 30, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(isHovering ? LimpidColor.rowHoverFill : .clear)
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .help(help)
-        .accessibilityLabel(Text(help))
+            .frame(width: LimpidLayout.toolbarSeparatorWidth, height: LimpidLayout.toolbarSeparatorHeight)
     }
 }

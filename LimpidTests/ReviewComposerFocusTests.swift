@@ -57,22 +57,45 @@ struct ReviewComposerFocusTests {
         #expect(placeholder.isHidden)
     }
 
+    @Test func fileRailOverlayConsumesTableCommandsAndOwnsEscape() {
+        var composeCount = 0
+        var closeOverlayCount = 0
+        let parent = makeTable(
+            isOverlayPresented: true,
+            onCompose: { composeCount += 1 },
+            onCloseOverlay: { closeOverlayCount += 1 }
+        )
+        let coordinator = parent.makeCoordinator()
+
+        #expect(coordinator.handle(.comment))
+        #expect(composeCount == 0)
+        #expect(coordinator.handle(.close))
+        #expect(closeOverlayCount == 1)
+    }
+
     private func descendants(of view: NSView) -> [NSView] {
         view.subviews.flatMap { [$0] + descendants(of: $0) }
     }
 
-    private func makeTable() -> ReviewDiffTable {
+    private func makeTable(
+        isOverlayPresented: Bool = false,
+        onCompose: @escaping () -> Void = {},
+        onCloseOverlay: @escaping () -> Void = {}
+    ) -> ReviewDiffTable {
         let file = ReviewFile(path: "a.swift", layer: .unstaged, status: .modified)
         let line = ReviewLine(id: 0, kind: .added, text: "new", oldLine: nil, newLine: 1)
+        var selection = ReviewSelection()
+        selection.select(line.id)
         return ReviewDiffTable(
             rows: [ReviewRow(id: 0, kind: .code(line)), ReviewRow(id: 1, kind: .composer(line))],
             diffLines: [line], contentKey: "focus", widthKey: "focus", layout: .unified,
             files: [file], lineCommentCounts: [:], numberWidth: 26, expandedFileID: file.id, contentIdentity: file.id,
-            selection: .constant(ReviewSelection()), composerLineID: line.id, composerStartLine: nil,
+            selection: .constant(selection), composerLineID: line.id, composerStartLine: nil,
             composerIsEditing: false, composerText: .constant("focus-keep"),
-            onSelectFile: { _ in }, onCompose: {}, onCancelCompose: {}, onCommit: {}, onInsert: {}, onToggleTerminal: {},
+            onSelectFile: { _ in }, onCompose: onCompose, onCancelCompose: {}, onCommit: {}, onInsert: {}, onToggleTerminal: {},
             search: ReviewSearch(), onCloseSearch: {}, searchTargetLineID: nil, language: nil,
-            onToggleViewed: {}, onExpand: { _, _ in }, onResolve: { _ in }, onEdit: { _ in }, onDelete: { _ in }, onClose: {}
+            onToggleViewed: {}, onExpand: { _, _ in }, onResolve: { _ in }, onEdit: { _ in }, onDelete: { _ in },
+            isOverlayPresented: isOverlayPresented, onCloseOverlay: onCloseOverlay, onClose: {}
         )
     }
 }

@@ -24,7 +24,16 @@ final class WindowFrameSync: NSObject {
         // visible portion of the active screen so a frame saved on a
         // disconnected display doesn't strand the window off-screen.
         if let saved = session.windowFrame {
-            let target = WindowFrameSync.clamp(saved, to: NSScreen.screens)
+            // AppKit does not apply `contentMinSize` to programmatic
+            // `setFrame` calls. Expand the restored frame explicitly before
+            // setting it so an old snapshot cannot bypass the live-resize
+            // floor. Preserve the top edge, where the title bar lives.
+            let minimumFrameSize = window.frameRect(forContentRect: CGRect(
+                origin: .zero,
+                size: window.contentMinSize
+            )).size
+            let minimumSized = WindowFrameSync.expanding(saved, toAtLeast: minimumFrameSize)
+            let target = WindowFrameSync.clamp(minimumSized, to: NSScreen.screens)
             window.setFrame(target, display: false)
         }
 
@@ -67,6 +76,17 @@ final class WindowFrameSync: NSObject {
         if session.windowFrame != frame {
             session.windowFrame = frame
         }
+    }
+
+    static func expanding(_ rect: CGRect, toAtLeast minimumSize: CGSize) -> CGRect {
+        let width = max(rect.width, minimumSize.width)
+        let height = max(rect.height, minimumSize.height)
+        return CGRect(
+            x: rect.minX,
+            y: rect.maxY - height,
+            width: width,
+            height: height
+        )
     }
 
     /// Make sure `rect` sits at least partly on one of the supplied

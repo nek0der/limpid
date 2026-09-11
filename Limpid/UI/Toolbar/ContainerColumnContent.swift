@@ -21,34 +21,25 @@ struct ContainerColumnContent: View {
             ToolbarRow {
                 HStack(spacing: 0) {
                     Spacer().frame(width: LimpidLayout.trafficLightWidth)
-                    Spacer()
-                    // Standalone buttons (no surrounding capsule) — the
-                    // slab itself provides the material backdrop.
-                    HStack(spacing: 2) {
-                        // Add affordance moved next to GROUPS /
-                        // PROJECTS section headers — see
-                        // `ContainerSlabView.sectionHeader`. The
-                        // toolbar bar now only holds notification +
-                        // sidebar-toggle so it doesn't compete with
-                        // section-scoped affordances.
+                    HStack(spacing: 4) {
                         ToolbarBellButton()
-                        ToolbarCapsuleButton(systemImage: "sidebar.left", help: "Hide Sidebar (⌘1)") {
-                            withAnimation(LimpidMotion.sidebarToggle) {
-                                session.sidebarHidden = true
-                            }
+                        ToolbarIconButton(systemImage: "sidebar.left", help: "Hide Sidebar (⌘1)") {
+                            NotificationCenter.default.post(
+                                name: .limpidToggleSidebarPresentation,
+                                object: session
+                            )
                         }
                     }
+                    .padding(.leading, 10)
+                    Spacer()
                 }
-                .padding(.trailing, 12)
             }
             ContainerSlabView()
         }
     }
 }
 
-/// Notification bell — extracted from ToolbarTerminalColumnSegment so it can live
-/// inside the container slab next to the add menu (per the "traffic lights →
-/// add → bell → sidebar" arrangement).
+/// Notification bell shared by the sidebar and hidden-sidebar controls.
 struct ToolbarBellButton: View {
     @Environment(WindowSession.self) private var session
     @Environment(NotificationHistoryPresentation.self) private var historyPresentation
@@ -57,7 +48,7 @@ struct ToolbarBellButton: View {
 
     var body: some View {
         @Bindable var historyPresentation = historyPresentation
-        ToolbarCapsuleButton(
+        ToolbarIconButton(
             systemImage: session.windowHasUnread ? "bell.fill" : "bell",
             help: "Notification History"
         ) {
@@ -96,23 +87,19 @@ struct ToolbarBellButton: View {
     }
 }
 
-/// Capsule shown when the sidebar is hidden — same shape as the container column
-/// toolbar capsule above so the two stay visually consistent.
+/// Sidebar controls shown beside the traffic lights while the sidebar is hidden.
 struct FloatingHiddenToolbar: View {
     @Environment(WindowSession.self) private var session
 
     var body: some View {
         @Bindable var session = session
-        ToolbarActionCapsule {
-            // No `+` here — when the sidebar is hidden the section
-            // headers (where add lives now) aren't visible. Users
-            // reveal the sidebar first (⌘1) to add a Group/Project.
+        HStack(spacing: 4) {
             ToolbarBellButton()
-            ToolbarCapsuleDivider()
-            ToolbarCapsuleButton(systemImage: "sidebar.left", help: "Show Sidebar (⌘1)") {
-                withAnimation(LimpidMotion.sidebarToggle) {
-                    session.sidebarHidden = false
-                }
+            ToolbarIconButton(systemImage: "sidebar.left", help: "Show Sidebar (⌘1)") {
+                NotificationCenter.default.post(
+                    name: .limpidToggleSidebarPresentation,
+                    object: session
+                )
             }
         }
     }
