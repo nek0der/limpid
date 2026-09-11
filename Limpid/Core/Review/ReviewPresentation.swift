@@ -24,6 +24,12 @@ enum ReviewRail {
     /// What the diff needs to stay readable beside the list: two columns of
     /// code and the gutter between them.
     static let diffMinimum: CGFloat = 360
+    /// Smallest surface that can keep both the file list and readable diff
+    /// inline. Window layout uses the same boundary before reserving space for
+    /// navigation, so one panel does not force the other into an overlay.
+    static var inlineMinimumWidth: CGFloat {
+        minimum + diffMinimum
+    }
 
     /// How wide the list may be in a surface this wide, or `nil` when it has
     /// to go away entirely.
@@ -33,7 +39,7 @@ enum ReviewRail {
     /// that cannot shrink is a surface wider than the window, and on a
     /// half-screen tile the code ran off the edge with no way to bring it back.
     static func width(_ requested: CGFloat, in available: CGFloat) -> CGFloat? {
-        guard available - diffMinimum >= minimum else { return nil }
+        guard available >= inlineMinimumWidth else { return nil }
         return min(requested, available - diffMinimum)
     }
 }

@@ -28,6 +28,13 @@ struct ReviewFileRail: View {
     /// divider drag changes this view's own width every frame, and reading it
     /// from a geometry reader would rebuild the diff table beside it each time.
     let available: CGFloat
+    /// A transient compact-width drawer does not share horizontal space with
+    /// the diff, so it supplies its own width instead of using the inline
+    /// rail's readability clamp.
+    var widthOverride: CGFloat?
+    /// Present only when the rail is a drawer. The inline rail has no close
+    /// affordance because its divider and the window width own its visibility.
+    var onClose: (() -> Void)?
 
     @Environment(\.limpidAccent) private var accent
     /// Read here rather than passed in: the width changes on every frame of a
@@ -106,7 +113,7 @@ struct ReviewFileRail: View {
 
     /// The width this list actually takes, clamped so the diff keeps its own.
     private var width: CGFloat {
-        ReviewRail.width(reviewPresentation.railWidth, in: available) ?? ReviewRail.minimum
+        widthOverride ?? ReviewRail.width(reviewPresentation.railWidth, in: available) ?? ReviewRail.minimum
     }
 
     private var list: some View {
@@ -195,6 +202,15 @@ struct ReviewFileRail: View {
             // one `NSSegmentedControl`, and a tooltip attached to a segment's
             // label never reaches it.
             .help(Text("Flat list or folder tree"))
+            if let onClose {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Close"))
+                .help(Text("Close"))
+            }
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
@@ -286,7 +302,10 @@ struct ReviewFileRail: View {
     /// The heading the reader is under: the last one to have crossed the top.
     private var stuckID: String? {
         sections
-            .filter { (headerOffsets[$0.id] ?? .greatestFiniteMagnitude) <= 0 }
+            // At zero the source heading is already pinned by the scroll view.
+            // Drawing our overlay there duplicates it at rest and exposes a
+            // vertical seam when the compact drawer moves into place.
+            .filter { (headerOffsets[$0.id] ?? .greatestFiniteMagnitude) < 0 }
             .max { (headerOffsets[$0.id] ?? 0) < (headerOffsets[$1.id] ?? 0) }?
             .id
     }

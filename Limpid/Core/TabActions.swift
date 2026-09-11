@@ -11,6 +11,11 @@ import OSLog
 private let log = Logger.limpid("tab.actions")
 
 extension Notification.Name {
+    /// One process-local route for every sidebar toggle affordance. The main
+    /// layout decides whether a toggle changes the persisted wide-window
+    /// preference or the transient overlay used at compact widths.
+    static let limpidToggleSidebarPresentation = Notification.Name("dev.limpid.toggleSidebarPresentation")
+
     /// Posted by ⌘⇧R to start an inline rename on the active tab column tab.
     /// TabRow observes and flips its `isEditing` state when the
     /// notification carries its own tab id.
@@ -366,7 +371,8 @@ enum TabActions {
         session: WindowSession
     ) {
         switch action {
-        case .toggleSidebar: session.sidebarHidden.toggle()
+        case .toggleSidebar:
+            NotificationCenter.default.post(name: .limpidToggleSidebarPresentation, object: session)
         case .toggleTabLayout: session.tabColumnHorizontal.toggle()
         case .notificationHistory:
             NotificationCenter.default.post(name: .limpidToggleNotificationHistory, object: nil)

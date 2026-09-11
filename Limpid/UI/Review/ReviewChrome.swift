@@ -1,12 +1,220 @@
 // ReviewChrome.swift
-// Limpid — the review surface's furniture: its banners, its scope switch, and
-// the key bindings printed along its foot.
+// Limpid — the review surface's header, banners, scope switch, and
+// key bindings printed along its foot.
 //
 // Their own file rather than more of `ReviewPane`: none of them reads the
 // diff, and the workspace they were written inside had outgrown what one file
 // should hold.
 
 import SwiftUI
+
+struct ReviewHeader: View {
+    let store: ReviewStore
+    let destination: ReviewDestination?
+    let isResolvingDestination: Bool
+    let isInserting: Bool
+    let canInsert: Bool
+    let prompt: String
+    @Binding var isShowingPrompt: Bool
+    let onSelectScope: (Bool) -> Void
+    let onRefresh: () -> Void
+    let onInsert: () -> Void
+    let onClose: () -> Void
+    let onJump: (ReviewComment) -> Void
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            wide
+            medium
+            compact
+        }
+        .padding(.horizontal, 12)
+        .background(LimpidColor.tabColumnBackground)
+    }
+
+    private var wide: some View {
+        HStack(spacing: 10) {
+            title
+            rootName
+            scopePicker
+            statPill
+            Spacer(minLength: 8)
+            destinationControl
+            commentPill
+            refreshButton
+            insertButton
+            closeButton
+        }
+        .frame(height: 44)
+    }
+
+    /// Medium widths have room for every control, but not for a single row.
+    /// Keep related controls together across two balanced rows before the
+    /// minimum-width layout gives the destination a row of its own.
+    private var medium: some View {
+        VStack(spacing: 6) {
+            primaryRow
+            HStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    destinationControl
+                    scopePicker
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 8)
+                HStack(spacing: 10) {
+                    commentPill
+                    refreshButton
+                    statPill
+                }
+                .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    /// The destination gets its own line at narrow widths. Scope and status
+    /// remain visible below it instead of disappearing into a horizontal
+    /// scroll position with no on-screen affordance.
+    private var compact: some View {
+        VStack(spacing: 6) {
+            primaryRow
+            HStack(spacing: 10) {
+                destinationControl
+                    .layoutPriority(1)
+                Spacer(minLength: 8)
+                statPill
+            }
+            HStack(spacing: 10) {
+                scopePicker
+                Spacer(minLength: 8)
+                commentPill
+                refreshButton
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var primaryRow: some View {
+        HStack(spacing: 10) {
+            title
+            rootName
+            insertButton
+            closeButton
+        }
+    }
+
+    private var title: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.triangle.branch")
+                .foregroundStyle(LimpidColor.secondaryText)
+            Text("Review changes")
+                .font(LimpidFont.headline)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private var rootName: some View {
+        Text(verbatim: store.root.lastPathComponent)
+            .font(LimpidFont.caption)
+            .foregroundStyle(LimpidColor.secondaryText)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var destinationControl: some View {
+        HStack(spacing: 6) {
+            Text("Insert into")
+                .font(LimpidFont.caption)
+                .foregroundStyle(LimpidColor.tertiaryText)
+                .fixedSize(horizontal: true, vertical: false)
+            ReviewDestinationChip(destination: destination, isResolving: isResolvingDestination)
+        }
+    }
+
+    private var refreshButton: some View {
+        Button("Refresh", action: onRefresh)
+            .accessibilityLabel(Text("Refresh"))
+            .disabled(store.isLoading || isInserting)
+    }
+
+    private var insertButton: some View {
+        // The surface is a review; the button does not have to say so again.
+        // It keeps the full phrase for VoiceOver, where the reader may be
+        // arriving from anywhere in the window.
+        Button("Insert", action: onInsert)
+            .buttonStyle(.borderedProminent)
+            .accessibilityLabel(Text("Insert Review"))
+            .disabled(!canInsert)
+    }
+
+    private var closeButton: some View {
+        // Never disabled, not even mid-insert: validation runs Git once per
+        // commented file, and a surface that cannot be closed while that
+        // happens is a surface that can be stuck. The insert task re-checks
+        // its target before writing anything.
+        Button("Close", action: onClose)
+            .accessibilityLabel(Text("Close"))
+    }
+
+    private var totals: (added: Int, removed: Int) {
+        store.stats.values.reduce(into: (0, 0)) { total, stat in
+            guard !stat.isBinary else { return }
+            total.0 += stat.added
+            total.1 += stat.removed
+        }
+    }
+
+    private var statPill: some View {
+        HStack(spacing: 4) {
+            Text(verbatim: "+\(totals.added)")
+                .foregroundStyle(LimpidColor.success)
+            Text(verbatim: "−\(totals.removed)")
+                .foregroundStyle(LimpidColor.error)
+        }
+        .font(.caption.monospacedDigit())
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2)
+        .overlay(Capsule().stroke(LimpidColor.panelDivider))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("Changed lines"))
+    }
+
+    /// What the review is of. It decides the stats and the diff as much as the
+    /// file list, so it belongs to the header rather than either content pane.
+    @ViewBuilder
+    private var scopePicker: some View {
+        if let base = store.base {
+            ReviewScopeSwitch(
+                base: base,
+                isBranch: store.scope != .uncommitted,
+                isEnabled: !store.isLoading && !isInserting,
+                onSelect: onSelectScope
+            )
+        }
+    }
+
+    private var commentPill: some View {
+        Button {
+            isShowingPrompt.toggle()
+        } label: {
+            Label {
+                Text(verbatim: "\(store.insertableComments.count)")
+                    .font(.caption.monospacedDigit())
+            } icon: {
+                Image(systemName: "bubble.left.and.text.bubble.right")
+            }
+        }
+        .disabled(store.comments.isEmpty)
+        .accessibilityLabel(Text("Preview the comments to insert"))
+        .accessibilityValue(Text(verbatim: "\(store.insertableComments.count)"))
+        .help(Text("Preview what will be inserted"))
+        .popover(isPresented: $isShowingPrompt, arrowEdge: .bottom) {
+            ReviewPromptPreview(store: store, prompt: prompt, onJump: onJump)
+        }
+    }
+}
 
 /// Which of the two the review is of, with the selection sliding between them.
 ///
@@ -74,15 +282,14 @@ struct ReviewScopeSwitch: View {
             // control said so.
             segment(Text("Uncommitted"), tag: false)
                 .help(Text("Staged, unstaged and untracked changes, listed separately."))
-            // Git's own range notation rather than a sentence: it is what a
-            // reader of diffs already knows, and it fits a segment where
-            // "everything this branch adds since it left origin/main" does
-            // not. The one place it is loose — the view runs to the worktree,
-            // where the notation stops at `HEAD` — is what the tooltip is for.
-            segment(Text(verbatim: base + "..."), tag: true)
+            // A literal trailing ellipsis reads as truncation in a compact
+            // control. The tooltip and accessibility label carry the precise
+            // "changes since this branch" meaning instead.
+            segment(Text(verbatim: base), tag: true)
                 .accessibilityLabel(Text("Since \(base)"))
                 .help(Text("Everything this branch adds, including work not committed yet."))
         }
+        .fixedSize(horizontal: true, vertical: false)
         .coordinateSpace(.named(Self.space))
         .background(alignment: .leading) {
             Capsule()
@@ -140,18 +347,13 @@ struct ReviewFooterHints: View {
     @Environment(ReviewPresentation.self) private var reviewPresentation
 
     var body: some View {
-        HStack(spacing: 14) {
-            hint("j / k", String(localized: "Line"))
-            hint("⇧J / ⇧K", String(localized: "Extend"))
-            hint("] / [", String(localized: "Hunk"))
-            if reviewPresentation.diffLayout == .sideBySide {
-                hint("h / l", String(localized: "Column"))
+        ViewThatFits(in: .horizontal) {
+            hints
+                .fixedSize(horizontal: true, vertical: false)
+            ScrollView(.horizontal, showsIndicators: false) {
+                hints
+                    .fixedSize(horizontal: true, vertical: false)
             }
-            hint("n / p", String(localized: "File"))
-            hint("c", String(localized: "Comment"))
-            hint("v", String(localized: "Viewed"))
-            hint("⌘↩", String(localized: "Insert"))
-            hint("⌘⇧E", String(localized: "Terminal"))
         }
         .padding(.horizontal, 12)
         .frame(height: 22)
@@ -165,6 +367,22 @@ struct ReviewFooterHints: View {
         .accessibilityLabel(Text("Keyboard shortcuts"))
         .help(Text("Review shortcuts apply while the diff is focused."))
         .accessibilityHint(Text("Review shortcuts apply while the diff is focused."))
+    }
+
+    private var hints: some View {
+        HStack(spacing: 14) {
+            hint("j / k", String(localized: "Line"))
+            hint("⇧J / ⇧K", String(localized: "Extend"))
+            hint("] / [", String(localized: "Hunk"))
+            if reviewPresentation.diffLayout == .sideBySide {
+                hint("h / l", String(localized: "Column"))
+            }
+            hint("n / p", String(localized: "File"))
+            hint("c", String(localized: "Comment"))
+            hint("v", String(localized: "Viewed"))
+            hint("⌘↩", String(localized: "Insert"))
+            hint("⌘⇧E", String(localized: "Terminal"))
+        }
     }
 
     private func hint(_ key: String, _ label: String) -> some View {
@@ -254,10 +472,23 @@ struct ReviewFileBar: View {
     let isComposerOpen: Bool
     let isViewed: Bool
     @Binding var layout: ReviewDiffLayout
+    /// True when the inline file rail has yielded to the diff. The file bar
+    /// then becomes the stable place from which to open its transient drawer.
+    let showsFileListButton: Bool
+    let onShowFiles: () -> Void
     let onToggleViewed: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
+            if showsFileListButton {
+                Button(action: onShowFiles) {
+                    Image(systemName: "list.bullet.rectangle")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Files"))
+                .help(Text("Files"))
+            }
             // The tooltip belongs to the pair, not to the path itself:
             // selectable text installs its own hit area and answers the
             // pointer first, so a tooltip on it is never delivered. On the

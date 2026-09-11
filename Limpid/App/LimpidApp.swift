@@ -140,6 +140,14 @@ final class AppState {
     /// `NSWindow` is available.
     func bindWindow(_ window: NSWindow) {
         guard titleSync == nil else { return }
+        // SwiftUI derives a minimum from the root frame, but AppKit does not
+        // apply it to programmatic frame restoration. Establish the same floor
+        // on NSWindow for live resize; WindowFrameSync explicitly applies it
+        // to the persisted frame before restoring that frame below.
+        window.contentMinSize = NSSize(
+            width: LimpidLayout.mainWindowMinWidth,
+            height: LimpidLayout.mainWindowMinHeight
+        )
         titleSync = WindowTitleSync(session: session, window: window)
         frameSync = WindowFrameSync(session: session, window: window)
         fullScreenSync = WindowFullScreenSync(session: session, window: window)
@@ -584,7 +592,10 @@ struct LimpidApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(state: state)
-                .frame(minWidth: 640, minHeight: 400)
+                .frame(
+                    minWidth: LimpidLayout.mainWindowMinWidth,
+                    minHeight: LimpidLayout.mainWindowMinHeight
+                )
                 .containerBackground(.regularMaterial, for: .window)
                 // Tag this window's underlying NSWindow as a Limpid
                 // main window so `LimpidUpdateDriver.hasInlineTarget`
@@ -627,6 +638,7 @@ struct LimpidApp: App {
                 )
         }
         .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
         .commands {
             // ── App menu ──────────────────────────────────────
             // "Check for Updates…" lives just under "About Limpid".
@@ -721,9 +733,10 @@ struct LimpidApp: App {
             // ── View menu ─────────────────────────────────────
             CommandGroup(after: .sidebar) {
                 Button {
-                    withAnimation(LimpidMotion.sidebarToggle) {
-                        state.session.sidebarHidden.toggle()
-                    }
+                    NotificationCenter.default.post(
+                        name: .limpidToggleSidebarPresentation,
+                        object: state.session
+                    )
                 } label: {
                     Label("Toggle Sidebar", systemImage: "sidebar.left")
                 }

@@ -35,6 +35,12 @@ extension View {
     func liquidGlassPill() -> some View {
         modifier(LiquidGlassPillModifier())
     }
+
+    /// Separates a transient leading panel from content it temporarily covers.
+    /// Reserved columns stay flush and use only their trailing hairline.
+    func transientLeadingPanelShadow() -> some View {
+        shadow(color: Color.black.opacity(0.08), radius: 8, x: 3)
+    }
 }
 
 private struct FlushGlassSidebarModifier: ViewModifier {

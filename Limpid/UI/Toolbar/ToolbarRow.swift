@@ -1,6 +1,6 @@
 // ToolbarRow.swift
 // Limpid — shared wrapper that vertically positions toolbar content
-// (action capsule / container title) so every column's toolbar lands
+// (toolbar controls / container title) so every column's toolbar lands
 // at the same window-y as the AppKit traffic-light row.
 //
 // Why a wrapper instead of dropping `.padding(.top, X)` ad-hoc:

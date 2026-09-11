@@ -51,6 +51,33 @@ enum LimpidLayout {
 
     // MARK: - 3-pane layout
 
+    /// Smallest main-window content size we support. The responsive layout
+    /// temporarily overlays the container sidebar below its full three-column
+    /// requirement, leaving the tab list and primary content usable at this
+    /// floor instead of allowing fixed-width children to clip both edges.
+    static let mainWindowMinWidth: CGFloat = 560
+    static let mainWindowMinHeight: CGFloat = 400
+
+    /// Width ordinary terminal content should retain before the container
+    /// sidebar switches from a reserved column to a transient overlay. Review
+    /// uses `ReviewRail.inlineMinimumWidth` so its file list and diff remain
+    /// usable together.
+    static let terminalColumnMinWidth: CGFloat = 320
+
+    /// Below this the terminal toolbar keeps its primary controls visible and
+    /// folds navigation and split actions into one menu.
+    static let terminalToolbarFullWidth: CGFloat = 520
+
+    /// Minimum width of the active-container title inside a terminal toolbar.
+    static let toolbarContainerTitleMinWidth: CGFloat = 200
+    /// Standard gap between top-level toolbar controls.
+    static let toolbarControlSpacing: CGFloat = 8
+    /// Additional width needed when the terminal toolbar also owns the active
+    /// container identity, including the gap after the title.
+    static var terminalToolbarContainerContextWidth: CGFloat {
+        toolbarContainerTitleMinWidth + toolbarControlSpacing
+    }
+
     /// Container column width — clamped via min/max below.
     static let containerColumnWidth: CGFloat = 240
 
@@ -106,27 +133,22 @@ enum LimpidLayout {
     }
 
     /// Height of the toolbar content row itself (button frame height).
-    static let toolbarContentHeight: CGFloat = 32
+    static let toolbarContentHeight: CGFloat = 28
 
     /// Point size for SF Symbols rendered in the toolbar strip (+, …,
     /// bell, sidebar toggle, back/forward, split, update). Centralized
     /// so the container / tab / terminal column toolbar icons keep the same weight and scale
     /// as the system's Notes-style toolbar — bump here, not per call site.
-    static let toolbarIconSize: CGFloat = 18
+    static let toolbarIconSize: CGFloat = 14
 
-    /// Width × height of every clickable button inside a toolbar
-    /// capsule (action capsule, ellipsis menu). Keeping this in one
-    /// place ensures container / tab / terminal column toolbars all line up.
-    static let toolbarCapsuleButtonWidth: CGFloat = 38
-    static let toolbarCapsuleButtonHeight: CGFloat = 32
-    /// Inner corner radius of the hover highlight inside a capsule
-    /// button. Sits inside the capsule's clip path so the rounded
-    /// fill ends up clipped to the parent shape anyway.
-    static let toolbarCapsuleHoverCorner: CGFloat = 7
-    /// Width × height of the vertical hairline between buttons in a
-    /// toolbar capsule.
-    static let toolbarCapsuleDividerWidth: CGFloat = 0.5
-    static let toolbarCapsuleDividerHeight: CGFloat = 20
+    /// Width × height of every clickable icon in the main-window toolbar.
+    static let toolbarButtonWidth: CGFloat = 28
+    static let toolbarButtonHeight: CGFloat = 28
+    /// Corner radius of the transient hover highlight.
+    static let toolbarButtonHoverCorner: CGFloat = 7
+    /// Width × height of the separator between control scopes.
+    static let toolbarSeparatorWidth: CGFloat = 0.5
+    static let toolbarSeparatorHeight: CGFloat = 18
 
     // MARK: - Reorderable list spacing
 

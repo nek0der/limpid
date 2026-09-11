@@ -7,7 +7,7 @@ import SwiftUI
 /// Limpid motion constants. design-rules.md §7.
 ///
 /// **Guidelines**:
-/// - 200ms or less, ease-out by default.
+/// - Roughly 200ms or less, ease-out by default.
 /// - Animations should sit on the border of "barely noticeable".
 /// - No decorative motion.
 ///
@@ -16,7 +16,24 @@ import SwiftUI
 /// when (and only when) a view starts using a new curve.
 enum LimpidMotion {
     /// Sidebar show/hide toggle.
-    static let sidebarToggle: Animation = .easeInOut(duration: 0.22)
+    static let sidebarToggleDuration: TimeInterval = 0.22
+    static let sidebarToggle: Animation = .easeInOut(duration: sidebarToggleDuration)
+    /// The fixed controls appear during the final third of a closing sidebar,
+    /// after their moving copies have nearly left the window.
+    static var hiddenSidebarToolbarRevealDuration: TimeInterval {
+        sidebarToggleDuration * 0.36
+    }
+
+    static var hiddenSidebarToolbarRevealDelay: TimeInterval {
+        sidebarToggleDuration - hiddenSidebarToolbarRevealDuration
+    }
+
+    /// Opening removes the fixed controls quickly before the sidebar copies
+    /// move over the same titlebar positions.
+    static var hiddenSidebarToolbarRemovalDuration: TimeInterval {
+        sidebarToggleDuration * 0.25
+    }
+
     /// Reordering rows in the sidebar via menu Move Up/Down or drop
     /// commit — deliberate enough that the user sees the row settle.
     static let reorder: Animation = .easeInOut(duration: 0.2)

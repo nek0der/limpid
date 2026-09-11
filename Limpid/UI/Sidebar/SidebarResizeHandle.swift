@@ -95,14 +95,17 @@ struct SidebarResizeHandle: View {
 /// Drop-in for the tab column right edge.
 struct TabColumnResizeHandle: View {
     @Bindable var session: WindowSession
+    let displayedWidth: CGFloat
+    let minWidth: CGFloat
+    let maxWidth: CGFloat
 
     var body: some View {
         DividerResizeHandle(
-            currentWidth: { session.tabColumnWidth },
+            currentWidth: { displayedWidth },
             setWidth: { session.tabColumnWidth = $0 },
-            minWidth: LimpidLayout.tabColumnMinWidth,
-            maxWidth: LimpidLayout.tabColumnMaxWidth,
-            defaultWidth: LimpidLayout.tabColumnWidth,
+            minWidth: minWidth,
+            maxWidth: maxWidth,
+            defaultWidth: min(max(LimpidLayout.tabColumnWidth, minWidth), maxWidth),
             accessibilityLabel: Text("Tab Column Width")
         )
     }

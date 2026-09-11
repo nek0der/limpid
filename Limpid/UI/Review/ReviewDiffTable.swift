@@ -64,6 +64,7 @@ final class ReviewTableRowView: NSTableRowView {
 /// single letters above before they reach us.
 final class ReviewTableView: NSTableView {
     var onKey: ((ReviewTableKey) -> Bool)?
+    var hidesAccessibilityTree = false
     /// Asked to scroll both code columns sideways. Returns whether it took the
     /// event; the split layout has no horizontal scroll of its own to fall
     /// back on.
@@ -79,6 +80,14 @@ final class ReviewTableView: NSTableView {
 
     override var acceptsFirstResponder: Bool {
         true
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        hidesAccessibilityTree ? [] : super.accessibilityChildren()
+    }
+
+    override func accessibilityVisibleChildren() -> [Any]? {
+        hidesAccessibilityTree ? [] : super.accessibilityVisibleChildren()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -115,6 +124,21 @@ final class ReviewTableView: NSTableView {
             return
         }
         super.keyDown(with: event)
+    }
+}
+
+/// AppKit exposes a representable's document view independently of SwiftUI's
+/// accessibility modifiers, so the compact drawer needs a native boundary that
+/// can suppress and restore the diff hierarchy without mutating AppKit's cache.
+final class ReviewScrollView: NSScrollView {
+    var hidesAccessibilityTree = false
+
+    override func accessibilityChildren() -> [Any]? {
+        hidesAccessibilityTree ? [] : super.accessibilityChildren()
+    }
+
+    override func accessibilityVisibleChildren() -> [Any]? {
+        hidesAccessibilityTree ? [] : super.accessibilityVisibleChildren()
     }
 }
 
@@ -188,6 +212,10 @@ struct ReviewDiffTable: NSViewRepresentable {
     let onResolve: (ReviewComment) -> Void
     let onEdit: (ReviewComment) -> Void
     let onDelete: (ReviewComment) -> Void
+    /// A transient rail sits above the table and therefore owns Escape before
+    /// the composer, find bar, or Review surface beneath it.
+    let isOverlayPresented: Bool
+    let onCloseOverlay: () -> Void
     let onClose: () -> Void
     /// Read here and handed to the painter: the rows are AppKit, and the
     /// system accent they used instead is not the one the picker sets.
@@ -197,7 +225,7 @@ struct ReviewDiffTable: NSViewRepresentable {
         Coordinator(self)
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> ReviewScrollView {
         let table = ReviewTableView()
         table.headerView = nil
         // Plain, and with no inset of its own: the surface supplies the
@@ -242,7 +270,7 @@ struct ReviewDiffTable: NSViewRepresentable {
         }
         table.target = context.coordinator
         table.doubleAction = #selector(Coordinator.openComposerFromDoubleClick(_:))
-        let scroll = NSScrollView()
+        let scroll = ReviewScrollView()
         // Otherwise AppKit reserves room for a title bar that is not there,
         // which showed as a gap above the first line of every file.
         scroll.automaticallyAdjustsContentInsets = false
@@ -279,12 +307,20 @@ struct ReviewDiffTable: NSViewRepresentable {
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    func updateNSView(_ scroll: ReviewScrollView, context: Context) {
         let coordinator = context.coordinator
         coordinator.isUpdating = true
         defer { coordinator.isUpdating = false }
         let previousKey = coordinator.appliedKey
+        // SwiftUI's accessibilityHidden modifier does not cross the
+        // NSViewRepresentable boundary. Keep the native hierarchy out of
+        // VoiceOver while the compact file drawer owns this surface.
+        scroll.hidesAccessibilityTree = isOverlayPresented
+        scroll.setAccessibilityHidden(isOverlayPresented)
         guard let table = scroll.documentView as? ReviewTableView else { return }
+        table.hidesAccessibilityTree = isOverlayPresented
+        table.setAccessibilityHidden(isOverlayPresented)
+        coordinator.gutter.setAccessibilityHidden(isOverlayPresented)
         // Taken while the coordinator still holds the previous rows, and only
         // within one file: unfolding a gap inserts rows above what is on
         // screen, and the code the reader was reading must not slide away

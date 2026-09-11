@@ -11,6 +11,15 @@ extension ReviewDiffTable.Coordinator {
     // MARK: - Keyboard
 
     func handle(_ key: ReviewTableKey) -> Bool {
+        // The drawer visually and semantically covers the table. Consume every
+        // table command while it is up; Escape dismisses the drawer, and no
+        // other key may mutate or focus content hidden behind it.
+        if parent.isOverlayPresented {
+            if key == .close {
+                parent.onCloseOverlay()
+            }
+            return true
+        }
         switch key {
         case .close:
             // Escape closes what is open inside the surface before the
