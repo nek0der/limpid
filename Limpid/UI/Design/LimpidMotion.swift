@@ -18,21 +18,9 @@ enum LimpidMotion {
     /// Sidebar show/hide toggle.
     static let sidebarToggleDuration: TimeInterval = 0.22
     static let sidebarToggle: Animation = .easeInOut(duration: sidebarToggleDuration)
-    /// The fixed controls appear during the final third of a closing sidebar,
-    /// after their moving copies have nearly left the window.
-    static var hiddenSidebarToolbarRevealDuration: TimeInterval {
-        sidebarToggleDuration * 0.36
-    }
-
-    static var hiddenSidebarToolbarRevealDelay: TimeInterval {
-        sidebarToggleDuration - hiddenSidebarToolbarRevealDuration
-    }
-
-    /// Opening removes the fixed controls quickly before the sidebar copies
-    /// move over the same titlebar positions.
-    static var hiddenSidebarToolbarRemovalDuration: TimeInterval {
-        sidebarToggleDuration * 0.25
-    }
+    /// A control hidden during the sidebar's geometry change returns without
+    /// implying that it traveled with the column.
+    static let sidebarToggleAccessoryReveal: Animation = .easeOut(duration: 0.08)
 
     /// Reordering rows in the sidebar via menu Move Up/Down or drop
     /// commit — deliberate enough that the user sees the row settle.

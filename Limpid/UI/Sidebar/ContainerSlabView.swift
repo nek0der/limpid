@@ -13,6 +13,12 @@ import AppKit
 import SwiftUI
 
 struct ContainerSlabView: View {
+    /// The slab remains mounted while the sidebar is offscreen, but hidden
+    /// content must not respond to commands or retain modal presentation.
+    let isPresentationEnabled: Bool
+    /// Owned by the window so explicit commands can present while the slab is
+    /// disabled offscreen; visible row actions write through the same binding.
+    @Binding var creatingWorktreeFor: UUID?
     @Environment(WindowSession.self) private var session
     @Environment(AttentionState.self) private var attention
     @Environment(LimpidDragState.self) private var dragState
@@ -26,8 +32,6 @@ struct ContainerSlabView: View {
     @Environment(SettingsStore.self) private var settingsStore
     @Environment(\.prStatusSyncer) private var prStatusSyncer
 
-    /// Project whose Create-Worktree sheet should be presented, if any.
-    @State private var creatingWorktreeFor: UUID?
     /// Container (Project or Group) whose Settings sheet should be
     /// presented, if any. One sheet serves both kinds.
     @State private var openSettingsFor: ContainerSettingsTarget?
@@ -63,39 +67,45 @@ struct ContainerSlabView: View {
         // Breathing room between the Waiting region (or any container
         // column content) and the slab's bottom edge.
         .padding(.bottom, 12)
-        .sheet(item: Binding(
-            get: { creatingWorktreeFor.map { IdentifiedUUID(id: $0) } },
-            set: { creatingWorktreeFor = $0?.id }
-        )) { wrapped in
-            CreateWorktreeSheet(projectID: wrapped.id)
-                .environment(session)
-                .limpidAccentPropagated(limpidAccent)
-        }
-        .sheet(item: $openSettingsFor) { target in
+        // The slab stays mounted offscreen so its slide-out can complete.
+        // Disabling the subtree also tells an active inline rename to
+        // finalize and release the window's shared field editor.
+        .disabled(!isPresentationEnabled)
+        .sheet(item: presentationBinding($openSettingsFor)) { target in
             ContainerSettingsSheet(target: target)
                 .environment(session)
                 .limpidAccentPropagated(limpidAccent)
         }
         .worktreeOperationAlerts(
-            deletingWorktree: $deletingWorktree,
-            forceDeleteWorktree: $forceDeleteWorktree,
-            removingProject: $removingProject,
-            removingGroup: $removingGroup,
-            worktreeOperationError: $worktreeOperationError
+            deletingWorktree: presentationBinding($deletingWorktree),
+            forceDeleteWorktree: presentationBinding($forceDeleteWorktree),
+            removingProject: presentationBinding($removingProject),
+            removingGroup: presentationBinding($removingGroup),
+            worktreeOperationError: presentationBinding($worktreeOperationError)
         )
-        .onReceive(NotificationCenter.default.publisher(for: .limpidCreateWorktreeRequested)) { _ in
-            // Triggered by ⌘⌥W. Routes to the active project; if the
-            // user is not on a project, falls back to the first one.
-            if let pid = session.activeContainerID.projectID
-                ?? session.projects.first?.id
-            {
-                creatingWorktreeFor = pid
-            }
+        .onChange(of: isPresentationEnabled) { _, isEnabled in
+            guard !isEnabled else { return }
+            dismissPresentations()
         }
     }
 
-    /// Wrapper so we can drive `.sheet(item:)` from a plain UUID.
-    private struct IdentifiedUUID: Identifiable, Equatable { let id: UUID }
+    private func dismissPresentations() {
+        openSettingsFor = nil
+        deletingWorktree = nil
+        forceDeleteWorktree = nil
+        removingProject = nil
+        removingGroup = nil
+        worktreeOperationError = nil
+    }
+
+    /// Keep delayed operation results while hidden, but do not let the
+    /// offscreen slab present them. Reopening reveals the pending result.
+    private func presentationBinding<Value>(_ source: Binding<Value?>) -> Binding<Value?> {
+        Binding(
+            get: { isPresentationEnabled ? source.wrappedValue : nil },
+            set: { source.wrappedValue = $0 }
+        )
+    }
 
     /// Target of a "Delete Worktree…" gesture. Carries enough context
     /// for the confirmation alert + Force retry. Lives at slab level
@@ -509,6 +519,10 @@ struct ContainerSlabView: View {
             .environment(\.prStatusSyncer, prStatusSyncer)
             .environment(\.surfaceRegistry, registry)
             .limpidAccentPropagated(limpidAccent)
+            // `VerticalSplitView` hosts each pane in its own `NSHostingView`.
+            // Reapply disabled state at that boundary so inline editors
+            // reliably release focus when the offscreen slab closes.
+            .disabled(!isPresentationEnabled)
     }
 
     /// Palette color of a container, for the Waiting row's dot.

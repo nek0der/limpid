@@ -665,16 +665,16 @@ struct LimpidApp: App {
                 }
                 .limpidShortcut(.newTab, in: state.settingsStore)
                 // ⌘⌥N raises the Create Worktree sheet for the active
-                // project. Routed through a Notification so the
-                // sidebar (which owns the sheet state) can present it
-                // without us reaching across the view tree. Disabled
+                // project. Routed through a session-scoped Notification so
+                // the window layout can present it even when its always-
+                // mounted sidebar is disabled offscreen. Disabled
                 // when the active container isn't a project — the
                 // worktree concept doesn't apply to Quick Tabs or
                 // Groups.
                 Button {
                     NotificationCenter.default.post(
                         name: .limpidCreateWorktreeRequested,
-                        object: nil
+                        object: state.session
                     )
                 } label: {
                     Label("New Worktree…", systemImage: "arrow.triangle.branch")
@@ -837,7 +837,6 @@ struct ContentView: View {
         Group {
             if let app = state.ghosttyApp {
                 ThreePaneLayout(state: state, app: app)
-                    .animation(LimpidMotion.sidebarToggle, value: state.session.sidebarHidden)
             } else {
                 LibghosttyInitFailureView()
                     .environment(state)

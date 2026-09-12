@@ -27,6 +27,7 @@ struct ToolbarTabColumnSegment: View {
                 if showsNewTab {
                     NewTabToolbarButton()
                         .padding(.trailing, LimpidLayout.columnResizeHandleWidth)
+                        .transition(.asymmetric(insertion: .opacity, removal: .identity))
                 }
             }
         }

@@ -339,7 +339,7 @@ enum TabActions {
         switch action {
         case .newTab: newTab(session)
         case .newWorktree:
-            NotificationCenter.default.post(name: .limpidCreateWorktreeRequested, object: nil)
+            NotificationCenter.default.post(name: .limpidCreateWorktreeRequested, object: session)
         case .renameTab: renameActiveTab(session)
         case .reopenClosedTab: reopenClosedTab(session)
         case .closeSurface:
