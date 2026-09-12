@@ -23,7 +23,26 @@ extension SurfaceView {
     }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: currentCursor)
+        let isPaneDragArmed = paneID != nil
+            && dragState != nil
+            && NSEvent.modifierFlags.contains([.option, .command])
+        addCursorRect(bounds, cursor: isPaneDragArmed ? .arrow : currentCursor)
+    }
+
+    /// Rebuild every terminal cursor rect in this window.
+    ///
+    /// Modifier events go only to the focused surface, while a pane-drag can
+    /// begin over any visible split. Invalidating only `self` leaves a
+    /// stationary pointer over a non-focused sibling on its stale cursor.
+    func invalidateSurfaceCursorRectsInWindow() {
+        guard let window, let contentView = window.contentView else { return }
+        var pending = [contentView]
+        while let view = pending.popLast() {
+            if let surfaceView = view as? SurfaceView {
+                window.invalidateCursorRects(for: surfaceView)
+            }
+            pending.append(contentsOf: view.subviews)
+        }
     }
 
     // MARK: - Button events

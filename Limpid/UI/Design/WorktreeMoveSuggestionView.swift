@@ -104,6 +104,7 @@ private struct WorktreeMoveSuggestionCapsule: View {
         .overlay(
             Capsule().stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
+        .pointerStyle(.default)
         .frame(minWidth: 380)
     }
 

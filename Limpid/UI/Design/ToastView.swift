@@ -55,7 +55,6 @@ private struct ToastCapsule: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .pointerStyle(.link)
             }
             // No ⌘Z shortcut — Limpid runs terminal sessions where
             // ⌘Z routes into the focused pane (editor undo), so the
@@ -71,7 +70,6 @@ private struct ToastCapsule: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .pointerStyle(.link)
             .help("Dismiss")
             .accessibilityLabel(Text("Dismiss"))
         }
@@ -85,5 +83,6 @@ private struct ToastCapsule: View {
         .overlay(
             Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
+        .pointerStyle(.default)
     }
 }

@@ -23,6 +23,7 @@ struct CommandPaletteDropdown: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.20), lineWidth: 0.5)
             )
+            .pointerStyle(.default)
     }
 
     // MARK: - Results

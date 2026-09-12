@@ -1,7 +1,6 @@
 // ReviewAgentStrip.swift
 // Limpid — the divider above the origin pane and the destination it names.
 
-import AppKit
 import SwiftUI
 
 /// Sits between the review surface and the origin pane. It doubles as the
@@ -95,7 +94,7 @@ struct ReviewAgentStripHeader: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 26)
-        .background(LimpidColor.rowActiveFill)
+        .background(LimpidColor.rowActiveFill.pointerStyle(.rowResize))
         .overlay(alignment: .top) { Divider() }
         .overlay(alignment: .bottom) { Divider() }
         // The divider is the handle: a terminal's useful height depends on what
@@ -111,10 +110,6 @@ struct ReviewAgentStripHeader: View {
                 reviewPresentation.resizeStrip(to: ReviewStrip.default, in: available)
             }
         )
-        // Push and pop, like the app's other resize handles: setting the arrow
-        // on the way out overwrites whatever the view we moved onto had asked
-        // for — including the terminal's own cursor.
-        .modifier(ReviewHoverCursor(cursor: .resizeUpDown))
         .accessibilityElement(children: .contain)
         // Dragging is the only other way to set this height, and a divider is
         // not something a reader without a pointer can aim at.
@@ -331,35 +326,10 @@ struct ReviewDestinationChip: View {
 private extension View {
     /// Give a control inside the strip header the plain pointer back.
     ///
-    /// The header is itself the resize handle, and it pushes a resize cursor
-    /// for its whole area — including the two controls sitting in it, which
-    /// then invited a drag they do not answer. Pushed and popped the same way
-    /// one level further up the stack, so leaving the control returns to the
-    /// handle's cursor rather than clearing it.
+    /// The header is itself the resize handle, including the two controls
+    /// sitting in it. A nested pointer style keeps those controls from
+    /// advertising a drag they do not answer.
     func pointerOverHandle() -> some View {
-        modifier(ReviewHoverCursor(cursor: .arrow))
-    }
-}
-
-private struct ReviewHoverCursor: ViewModifier {
-    let cursor: NSCursor
-    @State private var isPushed = false
-
-    func body(content: Content) -> some View {
-        content.onHover { isInside in
-            guard isInside != isPushed else { return }
-            isPushed = isInside
-            if isInside {
-                cursor.push()
-            } else {
-                NSCursor.pop()
-            }
-        }
-        .onDisappear {
-            if isPushed {
-                NSCursor.pop()
-                isPushed = false
-            }
-        }
+        pointerStyle(.default)
     }
 }

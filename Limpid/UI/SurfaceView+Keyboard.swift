@@ -279,10 +279,11 @@ extension SurfaceView {
         if hasMarkedText() {
             return
         }
-        // Keep the pane-drag cursor in sync on every modifier change so
-        // ⌥⌘ press/release flips the cursor without waiting for a
-        // mouse move.
-        updatePaneDragCursor(event)
+        // A focused terminal still receives modifier changes while the
+        // pointer is over a SwiftUI overlay. Rebuild our cursor rect instead
+        // of setting NSCursor globally, so AppKit keeps the topmost overlay's
+        // pointer style while still updating a stationary pane-drag cue.
+        invalidateSurfaceCursorRectsInWindow()
         forward(event, action: GHOSTTY_ACTION_PRESS)
     }
 

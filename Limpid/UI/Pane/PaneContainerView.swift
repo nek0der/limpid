@@ -106,6 +106,7 @@ struct PaneContainerView: View {
                     .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
                 )
                 .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+                .pointerStyle(.default)
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }

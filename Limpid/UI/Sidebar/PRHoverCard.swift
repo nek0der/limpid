@@ -159,6 +159,7 @@ struct PRHoverCardHost: View {
                     .background(
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .fill(.regularMaterial)
+                            .pointerStyle(.default)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -327,6 +328,7 @@ struct PRHoverCardContent: View {
                 )
             }
             .buttonStyle(.borderless)
+            .pointerStyle(.link)
             Spacer()
         }
         .padding(.top, 2)
