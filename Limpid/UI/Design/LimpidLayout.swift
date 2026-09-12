@@ -340,11 +340,6 @@ enum LimpidLayout {
         rowPillInset
     }
 
-    // MARK: - Pane
-
-    /// Minimum size a pane can be resized to via the split divider.
-    static let paneMinSize: CGFloat = 80
-
     // MARK: - Timings
 
     /// Debounce window before the on-disk state file is rewritten.

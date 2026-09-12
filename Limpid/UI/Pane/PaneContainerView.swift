@@ -17,6 +17,7 @@ struct PaneContainerView: View {
     /// the SwiftUI view-tree diff anchors on the AppKit reference, not
     /// the UUID. See `ResolvedSplitNode` for the rationale.
     let surfaceView: SurfaceView
+    @Environment(\.surfaceRegistry) private var registry
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settingsStore
 
@@ -26,19 +27,20 @@ struct PaneContainerView: View {
     /// GTK apprt paints `unfocused-split-opacity` (which libghostty
     /// alone doesn't apply — Limpid runs its own split tree, so the
     /// fade has to live here).
-    private var resolvedOpacity: Double {
-        guard let tab = session.tab(containing: paneID) else { return 1.0 }
+    private var isFocusedPane: Bool {
+        guard let tab = session.tab(containing: paneID) else { return true }
         // Zoom hides every sibling, so a fade on the visible leaf would
         // dim "the only thing on screen" — keep it full-strength.
         if tab.zoomedLeafID != nil {
-            return 1.0
+            return true
         }
         let leaves = tab.splitTree.allLeafIDs()
-        guard leaves.count > 1 else { return 1.0 }
-        if tab.splitTree.effectiveFocusedLeafID == paneID {
-            return 1.0
-        }
-        return settingsStore.settings.appearance.unfocusedPaneOpacity
+        guard leaves.count > 1 else { return true }
+        return tab.splitTree.effectiveFocusedLeafID == paneID
+    }
+
+    private var resolvedOpacity: Double {
+        isFocusedPane ? 1.0 : settingsStore.settings.appearance.unfocusedPaneOpacity
     }
 
     var body: some View {
@@ -80,6 +82,25 @@ struct PaneContainerView: View {
                 .opacity(opacity)
                 .animation(.easeOut(duration: 0.15), value: opacity)
 
+            if let state = session.paneSearchStates[paneID] {
+                PaneSearchOverlay(
+                    paneID: paneID,
+                    state: state,
+                    surfaceView: surfaceView,
+                    isInteractive: isFocusedPane,
+                    inactiveOpacity: settingsStore.settings.appearance.unfocusedPaneOpacity,
+                    onClose: {
+                        SearchActions.endSearch(
+                            session,
+                            registry: registry,
+                            paneID: paneID
+                        )
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             if let exitCode {
                 VStack(spacing: 8) {
                     Image(systemName: exitCode == 0 ? "checkmark.circle" : "exclamationmark.triangle")
@@ -111,5 +132,6 @@ struct PaneContainerView: View {
             }
         }
         .animation(.easeOut(duration: 0.18), value: exitCode)
+        .animation(.easeOut(duration: 0.15), value: session.paneSearchStates[paneID] != nil)
     }
 }

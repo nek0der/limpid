@@ -75,30 +75,7 @@ struct PaneHostView: View {
                         .allowsHitTesting(false)
                         .transition(.opacity)
                 }
-                // Reuse the resolved `surfaceView` property —
-                // `PaneAreaView.resolveOrCreateSurfaceView` already
-                // registered it before passing it down, so the registry
-                // lookup would re-resolve the same reference at the
-                // cost of a per-render hashmap probe and a local
-                // shadow that hides the invariant.
-                if let state = session.paneSearchStates[paneID] {
-                    let surfaceView = self.surfaceView
-                    PaneSearchOverlay(
-                        paneID: paneID,
-                        state: state,
-                        surfaceView: surfaceView,
-                        onClose: {
-                            SearchActions.endSearch(
-                                session,
-                                registry: registry,
-                                paneID: paneID
-                            )
-                        }
-                    )
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
             }
-            .animation(.easeOut(duration: 0.15), value: session.paneSearchStates[paneID] != nil)
             .animation(.easeInOut(duration: 0.18), value: isBeingDragged)
         }
     }

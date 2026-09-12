@@ -61,6 +61,96 @@ struct SplitTreeTests {
 
     // MARK: - Resize ratio clamping
 
+    @Test("divider thickness is excluded from both pane minimums")
+    func resolvedRatio_directSplit_preservesVisiblePaneFloor() {
+        let ratio = PaneSplit.resolvedRatio(
+            0,
+            extent: 400,
+            firstMinimum: 80,
+            secondMinimum: 80
+        )
+        let firstVisibleExtent = 400 * ratio - Double(PaneSplit.dividerThickness / 2)
+        #expect(abs(firstVisibleExtent - 80) < 0.001)
+    }
+
+    @Test("minimum extent adds same-axis descendants and takes the maximum across the other axis")
+    func minimumExtent_nestedSplits_countsEveryLeafOnTheAxis() {
+        let a = UUID()
+        let b = UUID()
+        let c = UUID()
+        let horizontal = SplitTree(leafID: a)
+            .insert(at: a, direction: .horizontal, newID: b).tree
+            .insert(at: b, direction: .horizontal, newID: c).tree
+        let mixed = SplitTree(leafID: a)
+            .insert(at: a, direction: .horizontal, newID: b).tree
+            .insert(at: b, direction: .vertical, newID: c).tree
+
+        #expect(horizontal.root?.minimumExtent(along: .horizontal, leafMinimum: 80) == 252)
+        #expect(mixed.root?.minimumExtent(along: .horizontal, leafMinimum: 80) == 166)
+        #expect(mixed.root?.minimumExtent(along: .vertical, leafMinimum: 80) == 166)
+    }
+
+    @Test("a parent divider reserves the full minimum width of its nested subtree")
+    func resize_nestedSameAxisSplit_preservesEveryLeafFloor() throws {
+        let a = UUID()
+        let b = UUID()
+        let c = UUID()
+        let tree = SplitTree(leafID: a)
+            .insert(at: a, direction: .horizontal, newID: b).tree
+            .insert(at: b, direction: .horizontal, newID: c).tree
+
+        let resized = tree.resize(
+            splitAt: [],
+            by: 10000,
+            bounds: CGSize(width: 400, height: 300),
+            minSize: 80
+        )
+        let root = try #require(resized.root)
+        guard case let .split(split) = root else {
+            Issue.record("Expected a split root")
+            return
+        }
+        let secondVisibleExtent = 400 * (1 - split.ratio) - Double(PaneSplit.dividerThickness / 2)
+        #expect(abs(secondVisibleExtent - 166) < 0.001)
+    }
+
+    @Test("a nested same-axis divider is resized by its unique structural path")
+    func resize_leftNestedSameAxisSplit_changesOnlyTheInnerDivider() throws {
+        let a = UUID()
+        let b = UUID()
+        let c = UUID()
+        let tree = SplitTree(leafID: a)
+            .insert(at: a, direction: .horizontal, newID: b).tree
+            .insert(at: a, direction: .horizontal, newID: c).tree
+
+        let resized = tree.resize(
+            splitAt: [.first],
+            by: 100,
+            bounds: CGSize(width: 400, height: 300),
+            minSize: 80
+        )
+        let root = try #require(resized.root)
+        guard case let .split(outer) = root,
+              case let .split(inner) = outer.first
+        else {
+            Issue.record("Expected a left-nested split tree")
+            return
+        }
+        #expect(outer.ratio == 0.5)
+        #expect(inner.ratio == 0.75)
+    }
+
+    @Test("an undersized container uses a balanced fallback instead of an inverted clamp")
+    func resolvedRatio_insufficientExtent_balancesEquivalentSubtrees() {
+        let ratio = PaneSplit.resolvedRatio(
+            0.9,
+            extent: 100,
+            firstMinimum: 80,
+            secondMinimum: 80
+        )
+        #expect(ratio == 0.5)
+    }
+
     // MARK: - Equalize
 
     @Test("equalize resets every split ratio to 0.5 while preserving leaves and focus")
@@ -74,8 +164,8 @@ struct SplitTreeTests {
         let two = one.insert(at: b, direction: .vertical, newID: c).tree
         let bounds = CGSize(width: 800, height: 600)
         let dragged = two
-            .resize(node: a, by: 200, direction: .horizontal, bounds: bounds, minSize: 80)
-            .resize(node: b, by: 150, direction: .vertical, bounds: bounds, minSize: 80)
+            .resize(splitAt: [], by: 200, bounds: bounds, minSize: 80)
+            .resize(splitAt: [.second], by: 150, bounds: bounds, minSize: 80)
 
         let leveled = dragged.equalize()
 
@@ -100,7 +190,7 @@ struct SplitTreeTests {
         #expect(empty.equalize().root == nil)
     }
 
-    @Test("equalize(at:direction:) only rebalances the addressed subtree")
+    @Test("equalize(splitAt:) only rebalances the addressed subtree")
     func equalize_atInnerDivider_leavesOuterUntouched() {
         let a = UUID()
         let b = UUID()
@@ -113,10 +203,10 @@ struct SplitTreeTests {
         let two = one.insert(at: b, direction: .horizontal, newID: c).tree
         let bounds = CGSize(width: 800, height: 600)
         let dragged = two
-            .resize(node: a, by: 160, direction: .horizontal, bounds: bounds, minSize: 80)
-            .resize(node: b, by: 100, direction: .horizontal, bounds: bounds, minSize: 80)
+            .resize(splitAt: [], by: 160, bounds: bounds, minSize: 80)
+            .resize(splitAt: [.second], by: 100, bounds: bounds, minSize: 80)
 
-        let leveled = dragged.equalize(at: b, direction: .horizontal)
+        let leveled = dragged.equalize(splitAt: [.second])
 
         func ratios(_ node: PaneNode) -> [Double] {
             switch node {
@@ -237,6 +327,41 @@ struct SplitTreeTests {
         }
     }
 
+    @Test("rendered rectangles override stored ratios for directional adjacency")
+    func neighborLeaf_renderedRects_usesVisibleGeometry() {
+        let a = UUID()
+        let b = UUID()
+        let c = UUID()
+        let tree = SplitTree(leafID: a)
+            .insert(at: a, direction: .vertical, newID: b).tree
+            .insert(at: a, direction: .horizontal, newID: c).tree
+        let rects: [(id: UUID, rect: CGRect)] = [
+            (a, CGRect(x: 0, y: 0, width: 100, height: 100)),
+            (b, CGRect(x: 0, y: 106, width: 100, height: 194)),
+            (c, CGRect(x: 106, y: 150, width: 100, height: 150))
+        ]
+
+        #expect(tree.neighborLeaf(of: b, direction: .right, rects: rects) == c)
+    }
+
+    @Test("rendered rectangles preserve visual up and down directions")
+    func neighborLeaf_renderedRects_distinguishesVerticalDirections() {
+        let top = UUID()
+        let middle = UUID()
+        let bottom = UUID()
+        let tree = SplitTree(leafID: top)
+            .insert(at: top, direction: .vertical, newID: middle).tree
+            .insert(at: middle, direction: .vertical, newID: bottom).tree
+        let rects: [(id: UUID, rect: CGRect)] = [
+            (top, CGRect(x: 0, y: 0, width: 100, height: 80)),
+            (middle, CGRect(x: 0, y: 86, width: 100, height: 80)),
+            (bottom, CGRect(x: 0, y: 172, width: 100, height: 80))
+        ]
+
+        #expect(tree.neighborLeaf(of: middle, direction: .up, rects: rects) == top)
+        #expect(tree.neighborLeaf(of: middle, direction: .down, rects: rects) == bottom)
+    }
+
     // MARK: - Resize ratio clamping
 
     @Test("resize clamps absurd drag deltas to a valid ratio without crashing")
@@ -245,9 +370,8 @@ struct SplitTreeTests {
         let b = UUID()
         let tree = SplitTree(leafID: a).insert(at: a, direction: .horizontal, newID: b).tree
         let resized = tree.resize(
-            node: a,
+            splitAt: [],
             by: 99999,
-            direction: .horizontal,
             bounds: CGSize(width: 800, height: 600),
             minSize: 80
         )

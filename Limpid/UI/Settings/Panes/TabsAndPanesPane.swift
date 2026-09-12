@@ -10,16 +10,25 @@ struct TabsAndPanesPane: View {
         @Bindable var store = store
         SettingsForm(title: "Tabs & Panes", section: .tabsAndPanes) {
             Section {
-                Stepper(
-                    value: $store.settings.terminal.minPaneSize,
-                    in: 40...300,
-                    step: 20
-                ) {
-                    HStack {
-                        Text("Minimum pane size")
-                        Spacer()
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Minimum pane size")
+
+                    Spacer(minLength: 12)
+
+                    HStack(spacing: 8) {
                         Text("\(Int(store.settings.terminal.minPaneSize)) pt")
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
+                            .frame(width: 56, alignment: .trailing)
+                        Stepper(
+                            "Minimum pane size",
+                            value: $store.settings.terminal.minPaneSize,
+                            in: TerminalSettings.minPaneSizeRange,
+                            step: 20
+                        )
+                        .labelsHidden()
+                        .accessibilityLabel(Text("Minimum pane size"))
+                        .accessibilityValue(Text("\(Int(store.settings.terminal.minPaneSize)) pt"))
                     }
                 }
                 .settingsSearchTarget(SettingsSearchCatalog.minimumPaneSize.id)

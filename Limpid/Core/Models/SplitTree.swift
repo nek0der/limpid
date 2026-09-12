@@ -28,6 +28,13 @@ enum FocusDirection {
     case spatial(SpatialDirection)
 }
 
+enum PaneSplitBranch: Equatable {
+    case first
+    case second
+}
+
+typealias PaneSplitPath = [PaneSplitBranch]
+
 // MARK: - PaneNode
 
 indirect enum PaneNode: Codable, Equatable {
@@ -71,13 +78,57 @@ struct PaneSplit: Codable, Equatable {
         second = try c.decode(PaneNode.self, forKey: .second)
     }
 
-    /// Smallest fraction either pane may occupy, so a divider can't be
-    /// dragged past a pane's minimum visible width / height.
-    static let minRatio = 0.1
+    /// The rendered divider thickness. Geometry checks share this value so a
+    /// configured pane floor describes visible content, not the divider center.
+    static let dividerThickness: CGFloat = 6
 
-    /// Constrain a divider ratio to `[minRatio, 1 - minRatio]`.
+    /// Keep persisted ratios finite and inside the container. Bounds-dependent
+    /// pane floors are applied by `resolvedRatio`, where the real extent and
+    /// nested subtree requirements are available.
     static func clamped(_ ratio: Double) -> Double {
-        max(minRatio, min(ratio, 1 - minRatio))
+        guard ratio.isFinite else { return 0.5 }
+        return max(0, min(ratio, 1))
+    }
+
+    /// Resolve one divider ratio against the minimum extent of both subtrees.
+    /// When the container itself is too small, divide the available content
+    /// proportionally instead of constructing an inverted clamp range.
+    static func resolvedRatio(
+        _ proposed: Double,
+        extent: CGFloat,
+        firstMinimum: CGFloat,
+        secondMinimum: CGFloat
+    ) -> Double {
+        guard extent > dividerThickness else { return 0.5 }
+        let halfDivider = dividerThickness / 2
+        let lower = Double((firstMinimum + halfDivider) / extent)
+        let upper = 1 - Double((secondMinimum + halfDivider) / extent)
+        if lower <= upper {
+            return min(max(proposed, lower), upper)
+        }
+
+        let usableExtent = max(0, extent - dividerThickness)
+        let totalMinimum = firstMinimum + secondMinimum
+        let firstFraction = totalMinimum > 0 ? firstMinimum / totalMinimum : 0.5
+        let firstExtent = usableExtent * firstFraction
+        return clamped(Double((firstExtent + halfDivider) / extent))
+    }
+}
+
+extension PaneNode {
+    /// Minimum extent needed by every descendant leaf along one axis.
+    func minimumExtent(along axis: SplitDirection, leafMinimum: CGFloat) -> CGFloat {
+        switch self {
+        case .leaf:
+            return leafMinimum
+        case let .split(data):
+            let first = data.first.minimumExtent(along: axis, leafMinimum: leafMinimum)
+            let second = data.second.minimumExtent(along: axis, leafMinimum: leafMinimum)
+            if data.direction == axis {
+                return first + PaneSplit.dividerThickness + second
+            }
+            return max(first, second)
+        }
     }
 }
 
@@ -164,19 +215,18 @@ struct SplitTree: Codable, Equatable {
 
     // MARK: - Resize
 
-    /// Move the divider that wraps the given leaf along its parent split.
+    /// Move the divider at a structural path from the root. A path uniquely
+    /// identifies nested same-axis dividers that share the same first leaf.
     /// `amount` is in points; converted to a ratio delta using `bounds`.
     func resize(
-        node leafID: UUID,
+        splitAt path: PaneSplitPath,
         by amount: Double,
-        direction: SplitDirection,
         bounds: CGSize,
         minSize: CGFloat
     ) -> SplitTree {
         guard let root else { return self }
         let op = ResizeOp(
-            leafID: leafID,
-            direction: direction,
+            path: path,
             amount: amount,
             bounds: bounds,
             minSize: minSize
@@ -187,8 +237,7 @@ struct SplitTree: Codable, Equatable {
     /// Carries the per-call inputs through the recursive resize walk so
     /// the helper stays under the 5-parameter cap.
     private struct ResizeOp {
-        let leafID: UUID
-        let direction: SplitDirection
+        let path: PaneSplitPath
         let amount: Double
         let bounds: CGSize
         let minSize: CGFloat
@@ -203,24 +252,11 @@ struct SplitTree: Codable, Equatable {
         )
     }
 
-    /// Equalize only the subtree whose divider matches `direction` and
-    /// whose `first` subtree's first leaf is `leafID`. Other branches
-    /// stay at whatever ratio they were dragged to. Mirrors the
-    /// addressing used by `resize` so a divider's drag handle and its
-    /// double-click handle resolve to the same split node.
-    ///
-    /// Ambiguity caveat (matches `resize`): a tree like
-    /// `H(H(A, C), B)` — created by splitting A right twice while
-    /// holding focus on A — has the same `firstLeafID(of: data.first)`
-    /// for both H dividers. The topmost match wins, so double-clicking
-    /// the inner divider in that shape rebalances the outer. The
-    /// right-leaning shape that "split right, focus the new pane, split
-    /// right again" produces has unambiguous addresses, so the typical
-    /// power user flow is unaffected.
-    func equalize(at leafID: UUID, direction: SplitDirection) -> SplitTree {
+    /// Equalize only the subtree at a structural path from the root.
+    func equalize(splitAt path: PaneSplitPath) -> SplitTree {
         guard let root else { return self }
         return SplitTree(
-            root: Self.equalizeAt(in: root, leafID: leafID, direction: direction),
+            root: Self.equalizeAt(in: root, path: path),
             focusedLeafID: focusedLeafID
         )
     }
@@ -330,6 +366,25 @@ struct SplitTree: Codable, Equatable {
         guard let root else { return nil }
         var rects: [(id: UUID, rect: CGRect)] = []
         Self.collectLeafRects(root, in: CGRect(x: 0, y: 0, width: 1, height: 1), into: &rects)
+        return Self.neighborLeaf(of: leafID, direction: direction, rects: rects)
+    }
+
+    /// Resolve adjacency from the rectangles that are actually on screen.
+    /// Rendering may clamp stored ratios against pane floors, so callers with
+    /// mounted surfaces should use this overload rather than model geometry.
+    func neighborLeaf(
+        of leafID: UUID,
+        direction: SpatialDirection,
+        rects: [(id: UUID, rect: CGRect)]
+    ) -> UUID? {
+        Self.neighborLeaf(of: leafID, direction: direction, rects: rects)
+    }
+
+    private static func neighborLeaf(
+        of leafID: UUID,
+        direction: SpatialDirection,
+        rects: [(id: UUID, rect: CGRect)]
+    ) -> UUID? {
         guard let focused = rects.first(where: { $0.id == leafID })?.rect else { return nil }
         let candidates = rects.filter { $0.id != leafID }.filter { entry in
             switch direction {
@@ -495,10 +550,7 @@ struct SplitTree: Codable, Equatable {
             // Weight by leaf count in the same axis so every leaf along that
             // axis ends up equal width / height — `H(A, H(B, C))` lands as
             // `|1|1|1|`, not `|1/2|1/4|1/4|`. Mirrors ghostty's algorithm at
-            // `vendor/ghostty/src/datastruct/split_tree.zig:759`. `PaneSplit`'s
-            // `clamped(_:)` floors the ratio at `0.1`, so trees with > 9
-            // same-axis leaves trade some equality for the divider-min
-            // invariant — a deliberate corner-case sacrifice.
+            // `vendor/ghostty/src/datastruct/split_tree.zig:759`.
             let weightLeft = weight(data.first, sameDirection: data.direction)
             let weightRight = weight(data.second, sameDirection: data.direction)
             let total = weightLeft + weightRight
@@ -529,28 +581,26 @@ struct SplitTree: Codable, Equatable {
         }
     }
 
-    /// Walk the tree, equalize the first split whose divider matches the
-    /// `(leafID, direction)` address (same convention as `resizeSplit`),
-    /// and recurse into both children otherwise.
+    /// Walk the tree to the uniquely addressed split and equalize its subtree.
     private static func equalizeAt(
         in node: PaneNode,
-        leafID: UUID,
-        direction: SplitDirection
+        path: PaneSplitPath
     ) -> PaneNode {
+        guard !path.isEmpty else { return equalizeNode(node) }
         switch node {
         case .leaf:
             return node
         case let .split(data):
-            if data.direction == direction,
-               firstLeafID(of: data.first) == leafID
-            {
-                return equalizeNode(node)
-            }
+            let remaining = Array(path.dropFirst())
             return .split(PaneSplit(
                 direction: data.direction,
                 ratio: data.ratio,
-                first: equalizeAt(in: data.first, leafID: leafID, direction: direction),
-                second: equalizeAt(in: data.second, leafID: leafID, direction: direction)
+                first: path[0] == .first
+                    ? equalizeAt(in: data.first, path: remaining)
+                    : data.first,
+                second: path[0] == .second
+                    ? equalizeAt(in: data.second, path: remaining)
+                    : data.second
             ))
         }
     }
@@ -574,21 +624,28 @@ struct SplitTree: Codable, Equatable {
         case .leaf:
             return node
         case let .split(data):
-            // Only adjust the split whose direction matches the drag and
-            // whose subtree contains the dragged leaf on its `first` side.
-            if data.direction == op.direction,
-               containsLeaf(data.first, id: op.leafID)
-            {
-                let extent: CGFloat = switch op.direction {
+            if op.path.isEmpty {
+                let extent: CGFloat = switch data.direction {
                 case .horizontal: op.bounds.width
                 case .vertical: op.bounds.height
                 }
                 let safeExtent = max(extent, 1)
                 let ratioDelta = op.amount / Double(safeExtent)
                 let proposed = data.ratio + ratioDelta
-                let minRatio = Double(op.minSize / safeExtent)
-                let maxRatio = 1.0 - minRatio
-                let newRatio = min(max(proposed, minRatio), maxRatio)
+                let firstMinimum = data.first.minimumExtent(
+                    along: data.direction,
+                    leafMinimum: op.minSize
+                )
+                let secondMinimum = data.second.minimumExtent(
+                    along: data.direction,
+                    leafMinimum: op.minSize
+                )
+                let newRatio = PaneSplit.resolvedRatio(
+                    proposed,
+                    extent: safeExtent,
+                    firstMinimum: firstMinimum,
+                    secondMinimum: secondMinimum
+                )
                 return .split(PaneSplit(
                     direction: data.direction,
                     ratio: newRatio,
@@ -596,11 +653,18 @@ struct SplitTree: Codable, Equatable {
                     second: data.second
                 ))
             }
+            let remaining = Array(op.path.dropFirst())
+            let childOp = ResizeOp(
+                path: remaining,
+                amount: op.amount,
+                bounds: op.bounds,
+                minSize: op.minSize
+            )
             return .split(PaneSplit(
                 direction: data.direction,
                 ratio: data.ratio,
-                first: resizeSplit(in: data.first, op: op),
-                second: resizeSplit(in: data.second, op: op)
+                first: op.path[0] == .first ? resizeSplit(in: data.first, op: childOp) : data.first,
+                second: op.path[0] == .second ? resizeSplit(in: data.second, op: childOp) : data.second
             ))
         }
     }

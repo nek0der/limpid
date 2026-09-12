@@ -384,6 +384,9 @@ struct FontSettings: Codable, Equatable {
 // MARK: - Terminal
 
 struct TerminalSettings: Codable, Equatable {
+    static let defaultMinPaneSize: Double = 80
+    static let minPaneSizeRange: ClosedRange<Double> = 40...300
+
     /// Maximum number of scrollback lines per pane. libghostty
     /// allocates the ring at surface init, so changing this requires
     /// a new terminal — existing surfaces keep their original limit.
@@ -408,13 +411,11 @@ struct TerminalSettings: Codable, Equatable {
     /// Fixed directory used only when `quickTabCwdMode == .fixed`.
     var quickTabCwdPath: URL?
 
-    /// Smallest fraction of width / height (in points) either side of a
-    /// split divider may shrink to. Used to clamp divider drags and to
-    /// pre-flight `PaneActions.split` so panes can't be cut into 1-pixel
-    /// strips. Default `80` matches the historical hardcoded value;
-    /// raising it gives more breathing room before the split prompt
-    /// refuses.
-    var minPaneSize: Double = 80
+    /// Smallest visible width / height, in points, of every pane below a
+    /// split. Divider drags, restored layouts, and split pre-flights share
+    /// this value. Raising it gives more breathing room before a split is
+    /// refused.
+    var minPaneSize: Double = Self.defaultMinPaneSize
 
     /// See `LimpidSettings.unknownFields`.
     var unknownFields: [String: LimpidJSONValue] = [:]
@@ -435,7 +436,14 @@ struct TerminalSettings: Codable, Equatable {
             WorkingDirectoryMode.self, forKey: .quickTabCwdMode
         ) ?? .inheritPrevious
         self.quickTabCwdPath = try c.decodeIfPresent(URL.self, forKey: .quickTabCwdPath)
-        self.minPaneSize = try c.decodeIfPresent(Double.self, forKey: .minPaneSize) ?? 80
+        let decodedMinPaneSize = try c.decodeIfPresent(
+            Double.self,
+            forKey: .minPaneSize
+        ) ?? Self.defaultMinPaneSize
+        self.minPaneSize = min(
+            max(decodedMinPaneSize, Self.minPaneSizeRange.lowerBound),
+            Self.minPaneSizeRange.upperBound
+        )
         self.unknownFields = try CodableSidecar.decodeUnknownFields(
             from: decoder,
             knownKeys: Self.knownKeyStrings

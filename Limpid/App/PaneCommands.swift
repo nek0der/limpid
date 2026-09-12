@@ -104,7 +104,11 @@ struct PaneCommands: Commands {
             }
         }
         .limpidShortcut(action, in: state.settingsStore)
-        .disabled(PaneActions.adjacentLeaf(state.session, direction: direction) == nil)
+        .disabled(PaneActions.adjacentLeaf(
+            state.session,
+            registry: state.registry,
+            direction: direction
+        ) == nil)
     }
 
     private func focus(_ direction: SpatialDirection) {

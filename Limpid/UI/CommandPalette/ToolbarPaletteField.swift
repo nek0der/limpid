@@ -12,6 +12,7 @@ struct ToolbarPaletteField: View {
     @Environment(AttentionState.self) private var attention
     @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(\.frecencyStore) private var frecencyStore
+    @Environment(\.surfaceRegistry) private var registry
 
     private var isActive: Bool {
         session.commandPaletteState != nil
@@ -42,6 +43,7 @@ struct ToolbarPaletteField: View {
             settings: settings,
             frecencyStore: frecencyStore,
             attention: attention,
+            registry: registry,
             reviewPresentation: reviewPresentation
         )
     }

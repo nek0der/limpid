@@ -763,6 +763,7 @@ struct LimpidApp: App {
                         settings: state.settingsStore,
                         frecencyStore: state.frecencyStore,
                         attention: state.attention,
+                        registry: state.registry,
                         reviewPresentation: state.reviewPresentation
                     )
                 } label: {
@@ -776,6 +777,7 @@ struct LimpidApp: App {
                         settings: state.settingsStore,
                         frecencyStore: state.frecencyStore,
                         attention: state.attention,
+                        registry: state.registry,
                         reviewPresentation: state.reviewPresentation,
                         initialQuery: ""
                     )
