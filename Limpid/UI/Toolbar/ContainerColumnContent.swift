@@ -1,40 +1,25 @@
 // ContainerColumnContent.swift
-// Limpid — the *whole* container sidebar interior: a 52pt top toolbar
-// row that shares space with the traffic-light buttons (which AppKit
-// renders over the sidebar's top-left corner), followed by the
-// scrollable container list. Lives inside the flush Liquid Glass
-// sidebar so the toolbar buttons read as "part of the sidebar" instead
-// of a separate toolbar — matches the "traffic lights live inside the
-// sidebar" intent.
+// Limpid — the container sidebar interior: titlebar clearance followed
+// by the scrollable container list. The interactive titlebar controls
+// live in `ThreePaneLayout` so the sidebar can move beneath them.
 
 import SwiftUI
 
 struct ContainerColumnContent: View {
-    @Environment(WindowSession.self) private var session
-    @Environment(NotificationHistoryPresentation.self) private var historyPresentation
-    @Environment(\.surfaceRegistry) private var registry
+    /// The sidebar stays mounted offscreen. Only visible content may present
+    /// sheets or alerts.
+    let isPresentationEnabled: Bool
+    @Binding var creatingWorktreeFor: UUID?
 
     var body: some View {
-        @Bindable var historyPresentation = historyPresentation
-        @Bindable var session = session
         VStack(spacing: 0) {
-            ToolbarRow {
-                HStack(spacing: 0) {
-                    Spacer().frame(width: LimpidLayout.trafficLightWidth)
-                    HStack(spacing: 4) {
-                        ToolbarBellButton()
-                        ToolbarIconButton(systemImage: "sidebar.left", help: "Hide Sidebar (⌘1)") {
-                            NotificationCenter.default.post(
-                                name: .limpidToggleSidebarPresentation,
-                                object: session
-                            )
-                        }
-                    }
-                    .padding(.leading, 10)
-                    Spacer()
-                }
-            }
-            ContainerSlabView()
+            // The titlebar controls live in `ThreePaneLayout` so they remain
+            // fixed while this surface moves beneath them.
+            ToolbarRow { EmptyView() }
+            ContainerSlabView(
+                isPresentationEnabled: isPresentationEnabled,
+                creatingWorktreeFor: $creatingWorktreeFor
+            )
         }
     }
 }
@@ -87,15 +72,18 @@ struct ToolbarBellButton: View {
     }
 }
 
-/// Sidebar controls shown beside the traffic lights while the sidebar is hidden.
-struct FloatingHiddenToolbar: View {
+/// Sidebar controls fixed beside the traffic lights while the slab moves below.
+struct FloatingSidebarToolbar: View {
+    let isSidebarPresented: Bool
     @Environment(WindowSession.self) private var session
 
     var body: some View {
-        @Bindable var session = session
         HStack(spacing: 4) {
             ToolbarBellButton()
-            ToolbarIconButton(systemImage: "sidebar.left", help: "Show Sidebar (⌘1)") {
+            ToolbarIconButton(
+                systemImage: "sidebar.left",
+                help: isSidebarPresented ? "Hide Sidebar (⌘1)" : "Show Sidebar (⌘1)"
+            ) {
                 NotificationCenter.default.post(
                     name: .limpidToggleSidebarPresentation,
                     object: session

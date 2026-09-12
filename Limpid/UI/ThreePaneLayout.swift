@@ -18,10 +18,17 @@ struct ThreePaneLayout: View {
     let app: GhosttyApp
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
     @Environment(ToastCenter.self) private var toastCenter
+    @Environment(\.limpidAccent) private var limpidAccent
     /// Compact windows overlay the container slab instead of reserving a
     /// column for it. This is presentation-only so narrowing a window never
     /// overwrites the user's persisted sidebar preference.
     @State private var isCompactSidebarPresented = false
+    /// The New Tab control is hidden while its owning column changes position.
+    @State private var isSidebarTransitioning = false
+    @State private var sidebarTransitionTask: Task<Void, Never>?
+    /// Window-owned so an explicit command can present the sheet even while
+    /// the always-mounted sidebar is disabled offscreen.
+    @State private var creatingWorktreeFor: UUID?
 
     var body: some View {
         GeometryReader { geometry in
@@ -44,12 +51,14 @@ struct ThreePaneLayout: View {
                     case .horizontal:
                         HorizontalModeBody(
                             ghosttyApp: app,
-                            plan: plan
+                            plan: plan,
+                            isSidebarTransitioning: isSidebarTransitioning
                         )
                     case .vertical:
                         HStack(spacing: 0) {
                             TabColumn(
-                                plan: plan
+                                plan: plan,
+                                isSidebarTransitioning: isSidebarTransitioning
                             )
                             TerminalColumn(ghosttyApp: app, plan: plan)
                         }
@@ -65,57 +74,48 @@ struct ThreePaneLayout: View {
                         .onTapGesture(perform: dismissCompactSidebar)
                         .ignoresSafeArea()
                 }
-                // Overlay plane: at compact widths the sidebar rides over the
-                // columns instead of forcing the terminal below its readable
-                // width. At wider sizes it resumes its persisted column.
-                if plan.isSidebarReserved {
-                    ZStack(alignment: .trailing) {
-                        ContainerColumnContent()
-                            .frame(width: min(plan.sidebarWidth, geometry.size.width))
-                            .flushGlassSidebar(
-                                isSolid: reduceTransparencyResolver.shouldReduceTransparency,
-                                solidFill: containerColumnSolidFill
-                            )
+                // Keep one surface mounted across every presentation. Layout
+                // reservation changes underneath it while offset owns the
+                // visual lifecycle, so neither regular nor compact dismissal
+                // depends on SwiftUI retaining a conditionally removed view.
+                ZStack(alignment: .trailing) {
+                    ContainerColumnContent(
+                        isPresentationEnabled: plan.isSidebarPresented,
+                        creatingWorktreeFor: $creatingWorktreeFor
+                    )
+                    if plan.isSidebarReserved {
                         SidebarResizeHandle(session: state.session)
                     }
+                }
+                .frame(width: min(plan.sidebarWidth, geometry.size.width))
+                .flushGlassSidebar(
+                    isSolid: reduceTransparencyResolver.shouldReduceTransparency,
+                    solidFill: containerColumnSolidFill
+                )
+                .transientLeadingPanelShadow(isVisible: plan.usesCompactSidebar)
+                .ignoresSafeArea(.all, edges: .top)
+                .offset(x: reduceMotion ? 0 : plan.sidebarLeadingOffset)
+                .opacity(plan.isSidebarPresented ? 1 : 0)
+                .allowsHitTesting(plan.isSidebarPresented)
+                .accessibilityHidden(!plan.isSidebarPresented)
+                .animation(
+                    reduceMotion ? nil : LimpidMotion.sidebarToggle,
+                    value: plan.isSidebarPresented
+                )
+                // Keep titlebar controls in window coordinates. The sidebar
+                // surface moves underneath instead of dragging the controls
+                // across the traffic lights.
+                FloatingSidebarToolbar(isSidebarPresented: plan.isSidebarPresented)
+                    .padding(.leading, LimpidLayout.trafficLightWidth + 10)
+                    .padding(.top, LimpidLayout.toolbarContentTopInset)
                     .ignoresSafeArea(.all, edges: .top)
-                } else if plan.usesCompactSidebar {
-                    ContainerColumnContent()
-                        .frame(width: min(plan.sidebarWidth, geometry.size.width))
-                        .flushGlassSidebar(
-                            isSolid: reduceTransparencyResolver.shouldReduceTransparency,
-                            solidFill: containerColumnSolidFill
-                        )
-                        .transientLeadingPanelShadow()
-                        .ignoresSafeArea(.all, edges: .top)
-                        .offset(x: plan.isCompactSidebarOverlayPresented ? 0 : -plan.sidebarWidth)
-                        .opacity(reduceMotion && !plan.isCompactSidebarOverlayPresented ? 0 : 1)
-                        .allowsHitTesting(plan.isCompactSidebarOverlayPresented)
-                        .accessibilityHidden(!plan.isCompactSidebarOverlayPresented)
-                        .animation(
-                            reduceMotion ? nil : LimpidMotion.sidebarToggle,
-                            value: plan.isCompactSidebarOverlayPresented
-                        )
-                }
-                if !plan.isSidebarPresented {
-                    FloatingHiddenToolbar()
-                        .padding(.leading, LimpidLayout.trafficLightWidth + 10)
-                        .padding(.top, LimpidLayout.toolbarContentTopInset)
-                        .ignoresSafeArea(.all, edges: .top)
-                        .transition(reduceMotion
-                            ? .identity
-                            : .asymmetric(
-                                insertion: .opacity.animation(.easeOut(
-                                    duration: LimpidMotion.hiddenSidebarToolbarRevealDuration
-                                ).delay(LimpidMotion.hiddenSidebarToolbarRevealDelay)),
-                                removal: .opacity.animation(.easeOut(
-                                    duration: LimpidMotion.hiddenSidebarToolbarRemovalDuration
-                                ))
-                            ))
-                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .limpidToggleSidebarPresentation)) { note in
                 guard let owner = note.object as? WindowSession, owner === state.session else { return }
+                if plan.isSidebarPresented {
+                    state.historyPresentation.isPresented = false
+                }
+                beginSidebarTransition()
                 withAnimation(reduceMotion ? nil : LimpidMotion.sidebarToggle) {
                     if plan.usesCompactSidebar {
                         isCompactSidebarPresented.toggle()
@@ -127,6 +127,13 @@ struct ThreePaneLayout: View {
             .onChange(of: plan.usesCompactSidebar) { _, isCompact in
                 if !isCompact {
                     isCompactSidebarPresented = false
+                }
+            }
+            .onChange(of: plan.isSidebarPresented) { _, isPresented in
+                if !isPresented {
+                    // The sidebar remains mounted offscreen, so its hovered
+                    // rows do not receive `onDisappear` as a cleanup signal.
+                    state.prHoverPresentation.reset()
                 }
             }
             .onChange(of: state.session.activeContainerID) { _, _ in
@@ -141,6 +148,22 @@ struct ThreePaneLayout: View {
             }
         }
         .ignoresSafeArea(.all)
+        .onDisappear {
+            sidebarTransitionTask?.cancel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .limpidCreateWorktreeRequested)) { note in
+            guard let owner = note.object as? WindowSession, owner === state.session else { return }
+            creatingWorktreeFor = state.session.activeContainerID.projectID
+                ?? state.session.projects.first?.id
+        }
+        .sheet(item: Binding(
+            get: { creatingWorktreeFor.map { IdentifiedUUID(id: $0) } },
+            set: { creatingWorktreeFor = $0?.id }
+        )) { wrapped in
+            CreateWorktreeSheet(projectID: wrapped.id)
+                .environment(state.session)
+                .limpidAccentPropagated(limpidAccent)
+        }
         // Handled here rather than in the toolbar segment because the two
         // layout branches each carry their own copy of that segment; a
         // second listener would toggle review straight back closed.
@@ -171,8 +194,29 @@ struct ThreePaneLayout: View {
     }
 
     private func dismissCompactSidebar() {
+        guard isCompactSidebarPresented else { return }
+        beginSidebarTransition()
         withAnimation(reduceMotion ? nil : LimpidMotion.sidebarToggle) {
             isCompactSidebarPresented = false
+        }
+    }
+
+    private func beginSidebarTransition() {
+        sidebarTransitionTask?.cancel()
+        guard !reduceMotion else {
+            isSidebarTransitioning = false
+            return
+        }
+        isSidebarTransitioning = true
+        sidebarTransitionTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .seconds(LimpidMotion.sidebarToggleDuration))
+            } catch {
+                return
+            }
+            withAnimation(LimpidMotion.sidebarToggleAccessoryReveal) {
+                isSidebarTransitioning = false
+            }
         }
     }
 
@@ -206,6 +250,10 @@ struct ThreePaneLayout: View {
     }
 }
 
+private struct IdentifiedUUID: Identifiable {
+    let id: UUID
+}
+
 // MARK: - Horizontal tab mode
 
 /// Horizontal tab mode body — one unified toolbar above a horizontal tab strip
@@ -213,6 +261,7 @@ struct ThreePaneLayout: View {
 private struct HorizontalModeBody: View {
     let ghosttyApp: GhosttyApp
     let plan: MainWindowLayoutPlan
+    let isSidebarTransitioning: Bool
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settings
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
@@ -238,9 +287,10 @@ private struct HorizontalModeBody: View {
                     }
                     HorizontalTabBar(container: session.activeContainerID)
                         .frame(maxWidth: .infinity)
-                    if !plan.isCompactSidebarOverlayPresented {
+                    if !plan.isCompactSidebarOverlayPresented, !isSidebarTransitioning {
                         NewTabToolbarButton()
                             .padding(.trailing, 8)
+                            .transition(.asymmetric(insertion: .opacity, removal: .identity))
                     }
                 }
                 .overlay(alignment: .bottom) {
@@ -279,6 +329,7 @@ private struct HorizontalModeBody: View {
 /// The right edge carries a drag-resize divider; double-click resets.
 private struct TabColumn: View {
     let plan: MainWindowLayoutPlan
+    let isSidebarTransitioning: Bool
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settings
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
@@ -290,7 +341,7 @@ private struct TabColumn: View {
                     Spacer().frame(width: plan.reservedSidebarWidth)
                     ToolbarTabColumnSegment(
                         showsContainerIdentity: plan.regularContainerIdentityPlacement == .tabToolbar,
-                        showsNewTab: !plan.isCompactSidebarOverlayPresented
+                        showsNewTab: !plan.isCompactSidebarOverlayPresented && !isSidebarTransitioning
                     )
                 }
                 .frame(

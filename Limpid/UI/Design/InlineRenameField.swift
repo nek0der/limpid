@@ -45,6 +45,7 @@ struct InlineRenameField: View {
     var onCommit: (String) -> Void
     var onCancel: () -> Void
 
+    @Environment(\.isEnabled) private var isEnabled
     @FocusState private var fieldFocused: Bool
     @State private var rollback: String = ""
     @State private var didFinalize: Bool = false
@@ -102,6 +103,14 @@ struct InlineRenameField: View {
         }
         .font(font)
         .foregroundStyle(foregroundColor)
+        .onChange(of: isEnabled) { _, enabled in
+            // An offscreen sidebar remains mounted for its slide animation.
+            // Finalize explicitly so its shared field editor and event
+            // monitor cannot keep receiving input after the sidebar closes.
+            if !enabled, isEditing {
+                finalize(commit: true)
+            }
+        }
     }
 
     private func finalize(commit: Bool) {

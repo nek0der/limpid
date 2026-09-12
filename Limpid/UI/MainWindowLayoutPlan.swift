@@ -36,6 +36,10 @@ struct MainWindowLayoutPlan: Equatable {
 
     let tabOrientation: TabOrientation
     let sidebarPresentation: SidebarPresentation
+    /// The sidebar keeps its physical width independent of visibility so the
+    /// offscreen drawer retains stable geometry throughout its movement.
+    /// Reservation remains a separate concern through `reservedSidebarWidth`.
+    let sidebarWidth: CGFloat
     let regularContainerIdentityPlacement: ContainerIdentityPlacement
     let regularToolbarMinimumWidth: CGFloat
     let tabColumnMinimumWidth: CGFloat
@@ -52,15 +56,6 @@ struct MainWindowLayoutPlan: Equatable {
             isPresented
         case .hidden:
             false
-        }
-    }
-
-    var sidebarWidth: CGFloat {
-        switch sidebarPresentation {
-        case let .reserved(width), let .overlay(width, _):
-            width
-        case .hidden:
-            0
         }
     }
 
@@ -94,6 +89,13 @@ struct MainWindowLayoutPlan: Equatable {
         } else {
             false
         }
+    }
+
+    /// Leading-edge travel for the sidebar surface. Keeping this
+    /// independent from reservation lets the content columns resize without
+    /// changing the drawer's travel distance.
+    var sidebarLeadingOffset: CGFloat {
+        isSidebarPresented ? 0 : -sidebarWidth
     }
 
     static func resolve(_ input: Input) -> MainWindowLayoutPlan {
@@ -150,6 +152,7 @@ struct MainWindowLayoutPlan: Equatable {
         return MainWindowLayoutPlan(
             tabOrientation: orientation,
             sidebarPresentation: sidebarPresentation,
+            sidebarWidth: sidebarWidth,
             regularContainerIdentityPlacement: regularContainerPlacement,
             regularToolbarMinimumWidth: regularToolbarMinimum,
             tabColumnMinimumWidth: tabMinimum,

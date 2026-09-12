@@ -38,6 +38,8 @@ struct MainWindowLayoutPlanTests {
         let plan = resolve(width: 1100, isSidebarHidden: true)
 
         #expect(plan.sidebarPresentation == .hidden)
+        #expect(plan.sidebarWidth == LayoutFixture.sidebarWidth)
+        #expect(plan.sidebarLeadingOffset == -LayoutFixture.sidebarWidth)
         #expect(plan.reservedSidebarWidth == 0)
         #expect(plan.regularContainerIdentityPlacement == .terminalToolbar)
     }
@@ -85,6 +87,8 @@ struct MainWindowLayoutPlanTests {
 
         #expect(closed.sidebarPresentation == .overlay(width: LayoutFixture.sidebarWidth, isPresented: false))
         #expect(open.sidebarPresentation == .overlay(width: LayoutFixture.sidebarWidth, isPresented: true))
+        #expect(closed.sidebarLeadingOffset == -LayoutFixture.sidebarWidth)
+        #expect(open.sidebarLeadingOffset == 0)
         #expect(open.regularContainerIdentityPlacement == closed.regularContainerIdentityPlacement)
         #expect(open.primaryContentWidth == closed.primaryContentWidth)
     }
