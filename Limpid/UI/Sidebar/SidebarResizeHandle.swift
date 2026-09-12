@@ -16,6 +16,9 @@ struct DividerResizeHandle: View {
     let minWidth: CGFloat
     let maxWidth: CGFloat
     let defaultWidth: CGFloat
+    /// Width reserved for pointer hit testing. Column dividers use a wider
+    /// band than compact secondary surfaces so users do not grab a row drag.
+    var hitWidth: CGFloat = LimpidLayout.resizeHandleWidth
     /// Names the divider for VoiceOver, which also gets increment and
     /// decrement from it. Optional only so a caller cannot forget to say what
     /// its divider adjusts; every handle in the app passes one.
@@ -28,7 +31,7 @@ struct DividerResizeHandle: View {
     var body: some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(width: LimpidLayout.sidebarResizeHandleWidth)
+            .frame(width: hitWidth)
             .contentShape(Rectangle())
             .onHover { hovering in
                 if hovering {
@@ -87,6 +90,7 @@ struct SidebarResizeHandle: View {
             minWidth: LimpidLayout.sidebarMinWidth,
             maxWidth: LimpidLayout.sidebarMaxWidth,
             defaultWidth: LimpidLayout.containerColumnWidth,
+            hitWidth: LimpidLayout.columnResizeHandleWidth,
             accessibilityLabel: Text("Sidebar Width")
         )
     }
@@ -106,6 +110,7 @@ struct TabColumnResizeHandle: View {
             minWidth: minWidth,
             maxWidth: maxWidth,
             defaultWidth: min(max(LimpidLayout.tabColumnWidth, minWidth), maxWidth),
+            hitWidth: LimpidLayout.columnResizeHandleWidth,
             accessibilityLabel: Text("Tab Column Width")
         )
     }
