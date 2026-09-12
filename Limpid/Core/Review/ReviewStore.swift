@@ -215,14 +215,18 @@ final class ReviewStore {
             let selected = latestFiles.first { $0.id == selectedFileID }
                 ?? latestFiles.first { $0.id == lastFileID }
                 ?? latestFiles.first
-            let latestDiff: ReviewDiff?
+            var latestDiff: ReviewDiff?
             let latestSource: [String]
             var fileLoadError: (any Error)?
             if let selected {
                 do {
                     latestDiff = try await git.diff(selected, root: root, base: targetScope.base ?? base)
                     guard listGeneration == token, diffGeneration == token else { return .superseded }
-                    latestSource = await git.source(selected, root: root)
+                    let intralinePairs = ReviewIntralineDiff.pairs(for: latestDiff?.lines ?? [])
+                    async let sourceRead = git.source(selected, root: root)
+                    async let intralineRead = ReviewIntralineDiff.computeOffActor(intralinePairs)
+                    latestSource = await sourceRead
+                    latestDiff?.intralineHighlights = await intralineRead
                     guard listGeneration == token, diffGeneration == token else { return .superseded }
                 } catch is CancellationError {
                     return .superseded
@@ -283,14 +287,17 @@ final class ReviewStore {
             isLoading = running > 0
         }
         do {
-            let latest = try await git.diff(file, root: root, base: base)
+            var latest = try await git.diff(file, root: root, base: base)
             guard diffGeneration == token else { return }
-            // Before the diff is published, not after. The gutter is sized for
-            // the highest line number the file can ever show, which unfolding
+            // The gutter is sized for the highest line number the file can ever show, which unfolding
             // takes past anything in the patch — and a width that arrived a
             // moment later rebuilt every row and slid the whole diff sideways
             // under a reader who had already started reading it.
-            let content = await git.source(file, root: root)
+            let intralinePairs = ReviewIntralineDiff.pairs(for: latest.lines)
+            async let contentRead = git.source(file, root: root)
+            async let intralineRead = ReviewIntralineDiff.computeOffActor(intralinePairs)
+            latest.intralineHighlights = await intralineRead
+            let content = await contentRead
             guard diffGeneration == token else { return }
             source = content
             diff = latest

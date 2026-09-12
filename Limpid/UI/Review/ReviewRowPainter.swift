@@ -273,20 +273,21 @@ enum ReviewRowPainter {
     /// scrolled, the end of the line is something they are moving toward, not a
     /// thing to mark.
     static func drawCode(
-        _ text: String,
+        _ line: ReviewLine,
         in cell: NSRect,
         offset: CGFloat,
-        font: NSFont,
-        color: NSColor,
         language: ReviewSyntax.Language? = nil,
         match: String = "",
+        intralineRanges: [NSRange] = [],
         selectedRange: NSRange? = nil
     ) {
+        let text = line.text
+        let font = ReviewRowMetrics.font
         guard !text.isEmpty, cell.width > 0 else { return }
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         NSBezierPath(rect: cell).setClip()
-        let attributes = attributes(font: font, color: color, alignment: .left, truncates: offset <= 0)
+        let attributes = attributes(font: font, color: .labelColor, alignment: .left, truncates: offset <= 0)
         let height = (text as NSString).size(withAttributes: attributes).height
         let box = NSRect(
             x: cell.minX - offset,
@@ -299,6 +300,8 @@ enum ReviewRowPainter {
             language: language,
             match: match,
             attributes: attributes,
+            intralineRanges: intralineRanges,
+            intralineKind: line.kind,
             selectedRange: selectedRange
         ) {
             styled.draw(in: box)
@@ -311,26 +314,37 @@ enum ReviewRowPainter {
     /// search query. `nil` when neither applies and the caller should draw the
     /// plain string, which is most lines of most diffs.
     ///
-    /// The search goes on last on purpose. It is the reader's own question,
-    /// and it has to win over syntax that is only there to be skimmed.
+    /// Intraline background follows syntax, then search and active text
+    /// selection override it. The latter two are the reader's current actions
+    /// and must win over decoration that is only there to be skimmed.
     static func styled(
         _ text: String,
         language: ReviewSyntax.Language?,
         match: String,
         attributes: [NSAttributedString.Key: Any],
+        intralineRanges: [NSRange] = [],
+        intralineKind: ReviewLine.Kind,
         selectedRange: NSRange? = nil
     ) -> NSAttributedString? {
         let tokens = language.map { ReviewSyntax.tokens(in: text, language: $0) } ?? []
         let found = ReviewSearch.ranges(in: text, query: match)
+        let length = (text as NSString).length
+        let intraline = intralineRanges.filter {
+            $0.location >= 0 && $0.length > 0 && NSMaxRange($0) <= length
+        }
         let selection = selectedRange.flatMap { range -> NSRange? in
-            let length = (text as NSString).length
             guard range.location >= 0, range.length > 0, NSMaxRange(range) <= length else { return nil }
             return range
         }
-        guard !tokens.isEmpty || !found.isEmpty || selection != nil else { return nil }
+        guard !tokens.isEmpty || !intraline.isEmpty || !found.isEmpty || selection != nil else { return nil }
         let result = NSMutableAttributedString(string: text, attributes: attributes)
         for token in tokens {
             result.addAttribute(.foregroundColor, value: color(for: token.kind), range: NSRange(token.range, in: text))
+        }
+        if let color = intralineColor(for: intralineKind) {
+            for range in intraline {
+                result.addAttribute(.backgroundColor, value: color, range: range)
+            }
         }
         // The system's find color, with black text over it: that pairing is
         // what every find bar on the platform draws, and both the label color
@@ -359,6 +373,14 @@ enum ReviewRowPainter {
         case .string: .systemRed
         case .number: .systemOrange
         case .comment: .secondaryLabelColor
+        }
+    }
+
+    private static func intralineColor(for kind: ReviewLine.Kind) -> NSColor? {
+        switch kind {
+        case .removed: NSColor.systemRed.withAlphaComponent(0.32)
+        case .added: NSColor.systemGreen.withAlphaComponent(0.30)
+        case .fileHeader, .hunk, .context, .marker: nil
         }
     }
 

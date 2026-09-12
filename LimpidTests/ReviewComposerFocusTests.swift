@@ -129,7 +129,8 @@ struct ReviewComposerFocusTests {
         selection.select(line.id)
         return ReviewDiffTable(
             rows: [ReviewRow(id: 0, kind: .code(line)), ReviewRow(id: 1, kind: .composer(line))],
-            diffLines: [line], contentKey: "focus", widthKey: "focus", layout: .unified,
+            diffLines: [line], intralineHighlights: ReviewIntralineHighlights(),
+            contentKey: "focus", widthKey: "focus", layout: .unified,
             files: [file], lineCommentCounts: [:], numberWidth: 26, expandedFileID: file.id, contentIdentity: file.id,
             isInteractionEnabled: isInteractionEnabled,
             selection: .constant(selection), textSelection: .constant(ReviewTextSelection()),

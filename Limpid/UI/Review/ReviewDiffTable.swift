@@ -271,6 +271,8 @@ struct ReviewDiffTable: NSViewRepresentable {
     /// The patch the rows were built from, for the one question rows cannot
     /// answer cheaply: which changed block a line belongs to.
     let diffLines: [ReviewLine]
+    /// Precomputed off the main actor and keyed by the original line ids.
+    let intralineHighlights: ReviewIntralineHighlights
     /// Cheap stand-in for comparing the row list itself. `updateNSView` runs on
     /// every observable change in the surrounding view, and diffing up to
     /// 100,000 rows there would cost more than the reload it avoids.
