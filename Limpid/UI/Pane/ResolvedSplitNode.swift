@@ -24,15 +24,24 @@ indirect enum ResolvedSplitNode {
         _ node: PaneNode,
         resolveOrCreate: (UUID) -> SurfaceView?
     ) -> ResolvedSplitNode? {
+        build(node, path: [], resolveOrCreate: resolveOrCreate)
+    }
+
+    private static func build(
+        _ node: PaneNode,
+        path: PaneSplitPath,
+        resolveOrCreate: (UUID) -> SurfaceView?
+    ) -> ResolvedSplitNode? {
         switch node {
         case let .leaf(id):
             guard let view = resolveOrCreate(id) else { return nil }
             return .leaf(paneID: id, view: view)
         case let .split(data):
-            let first = build(data.first, resolveOrCreate: resolveOrCreate)
-            let second = build(data.second, resolveOrCreate: resolveOrCreate)
+            let first = build(data.first, path: path + [.first], resolveOrCreate: resolveOrCreate)
+            let second = build(data.second, path: path + [.second], resolveOrCreate: resolveOrCreate)
             if let l = first, let r = second {
                 return .split(ResolvedSplit(
+                    path: path,
                     direction: data.direction,
                     ratio: data.ratio,
                     first: l,
@@ -42,10 +51,29 @@ indirect enum ResolvedSplitNode {
             return first ?? second
         }
     }
+
+    /// Mirror `PaneNode.minimumExtent` after live surfaces are resolved.
+    /// A missing surface can collapse a persisted split during resolution, so
+    /// the renderer must calculate from this effective tree rather than the
+    /// on-disk shape.
+    func minimumExtent(along axis: SplitDirection, leafMinimum: CGFloat) -> CGFloat {
+        switch self {
+        case .leaf:
+            return leafMinimum
+        case let .split(data):
+            let first = data.first.minimumExtent(along: axis, leafMinimum: leafMinimum)
+            let second = data.second.minimumExtent(along: axis, leafMinimum: leafMinimum)
+            if data.direction == axis {
+                return first + PaneSplit.dividerThickness + second
+            }
+            return max(first, second)
+        }
+    }
 }
 
 @MainActor
 struct ResolvedSplit {
+    let path: PaneSplitPath
     let direction: SplitDirection
     let ratio: Double
     let first: ResolvedSplitNode

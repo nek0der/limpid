@@ -49,6 +49,40 @@ struct PaneActionsTests {
         #expect(session.tab(tab.id)?.zoomedLeafID == nil)
     }
 
+    @Test("split preflight accounts for siblings hidden by zoom")
+    func hasRoomToSplit_zoomedTree_rejectsInsufficientPaneArea() {
+        let a = UUID()
+        let b = UUID()
+        let c = UUID()
+        let d = UUID()
+        let tree = SplitTree(leafID: a)
+            .insert(at: a, direction: .horizontal, newID: b).tree
+            .insert(at: b, direction: .horizontal, newID: c).tree
+            .insert(at: c, direction: .horizontal, newID: d).tree
+
+        #expect(!PaneActions.hasRoomToSplit(
+            tree: tree,
+            paneID: d,
+            direction: .horizontal,
+            availableSize: CGSize(width: 400, height: 400),
+            minPaneSize: 80
+        ))
+    }
+
+    @Test("split preflight accepts a candidate that fits both axes")
+    func hasRoomToSplit_singlePane_acceptsSufficientPaneArea() {
+        let paneID = UUID()
+        let tree = SplitTree(leafID: paneID)
+
+        #expect(PaneActions.hasRoomToSplit(
+            tree: tree,
+            paneID: paneID,
+            direction: .horizontal,
+            availableSize: CGSize(width: 400, height: 400),
+            minPaneSize: 80
+        ))
+    }
+
     @Test("closeActivePane clears zoom when the zoomed leaf is the one removed")
     func closeActivePane_removesZoomedLeaf_clearsZoom() {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
@@ -95,14 +129,13 @@ struct PaneActionsTests {
 
     @Test("equalizeSplits routes the SplitTree primitive through the active tab")
     func equalizeSplits_drivesSplitTreeEqualize() throws {
-        let (session, tab, paneA) = WindowSessionFixture.withLooseTab()
+        let (session, tab, _) = WindowSessionFixture.withLooseTab()
         PaneActions.split(session, direction: .horizontal)
         // Drift the ratio off-center so equalize has work to do.
         session.update(tab.id) { t in
             t.splitTree = t.splitTree.resize(
-                node: paneA,
+                splitAt: [],
                 by: 200,
-                direction: .horizontal,
                 bounds: CGSize(width: 800, height: 600),
                 minSize: 80
             )

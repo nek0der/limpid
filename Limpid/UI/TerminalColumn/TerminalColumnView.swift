@@ -34,6 +34,7 @@ private struct TerminalColumnEmptyState: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AttentionState.self) private var attention
     @Environment(ReviewPresentation.self) private var reviewPresentation
+    @Environment(\.surfaceRegistry) private var registry
     @Environment(\.frecencyStore) private var frecencyStore
 
     var body: some View {
@@ -69,6 +70,7 @@ private struct TerminalColumnEmptyState: View {
                     settings: settings,
                     frecencyStore: frecencyStore,
                     attention: attention,
+                    registry: registry,
                     reviewPresentation: reviewPresentation
                 )
             },

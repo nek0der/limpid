@@ -17,12 +17,10 @@ enum PaneActions {
     /// Exits zoom so the freshly-inserted sibling is visible.
     ///
     /// Pass `registry` + `minPaneSize` + `toastCenter` to enable the
-    /// pre-flight geometry check: when the focused pane's measured
-    /// extent on the split axis can't accommodate `2 × minPaneSize +
-    /// 6pt` (the divider), the split is rejected and an info toast is
-    /// shown instead of producing a 1-pixel pane. All three are
-    /// optional so unit tests can drive `split` without an attached
-    /// view tree — pass none and the call goes straight through.
+    /// pre-flight geometry check. The candidate tree is compared with the
+    /// complete rendered pane area so splitting a zoomed pane cannot reveal
+    /// an undersized sibling when zoom is cleared. All three are optional so
+    /// unit tests can drive `split` without an attached view tree.
     static func split(
         _ session: WindowSession,
         direction: SplitDirection,
@@ -34,23 +32,25 @@ enum PaneActions {
         let pivotID = tab.splitTree.effectiveFocusedLeafID
         guard let pivotID else { return }
 
-        // Pre-flight: would the new sibling fit? Mirrors
-        // `SplitContainerView.dividerThickness = 6`. We keep the
-        // constant inline rather than reaching across the UI layer
-        // for an inert value — drift would be caught by the same
-        // visual review that placed it there.
         if let registry, let toastCenter, minPaneSize > 0,
-           let view = registry.view(for: pivotID)
+           let availableSize = renderedPaneAreaSize(
+               tab: tab,
+               pivotID: pivotID,
+               registry: registry
+           ),
+           !hasRoomToSplit(
+               tree: tab.splitTree,
+               paneID: pivotID,
+               direction: direction,
+               availableSize: availableSize,
+               minPaneSize: minPaneSize
+           )
         {
-            let need = CGFloat(2 * minPaneSize) + 6
-            let extent = direction == .horizontal ? view.frame.width : view.frame.height
-            if extent < need {
-                toastCenter.show(ToastItem(
-                    message: String(localized: "Not enough room to split"),
-                    undo: nil
-                ))
-                return
-            }
+            toastCenter.show(ToastItem(
+                message: String(localized: "Not enough room to split"),
+                undo: nil
+            ))
+            return
         }
 
         session.update(tab.id) { t in
@@ -60,6 +60,54 @@ enum PaneActions {
             // zoom so the user sees the freshly-created sibling.
             t.zoomedLeafID = nil
         }
+    }
+
+    /// Whether replacing a leaf with a split fits the complete pane area.
+    /// An already undersized window may accept a split only when the candidate
+    /// does not increase the tree's requirement on either axis.
+    static func hasRoomToSplit(
+        tree: SplitTree,
+        paneID: UUID,
+        direction: SplitDirection,
+        availableSize: CGSize,
+        minPaneSize: Double
+    ) -> Bool {
+        guard minPaneSize > 0,
+              let currentRoot = tree.root,
+              tree.contains(leafID: paneID)
+        else { return true }
+        let candidate = tree.insert(at: paneID, direction: direction, newID: UUID()).tree
+        guard let candidateRoot = candidate.root else { return false }
+
+        let floor = CGFloat(minPaneSize)
+        func fits(_ axis: SplitDirection, available: CGFloat) -> Bool {
+            let current = currentRoot.minimumExtent(along: axis, leafMinimum: floor)
+            let required = candidateRoot.minimumExtent(along: axis, leafMinimum: floor)
+            return required <= max(available, current) + 0.5
+        }
+        return fits(.horizontal, available: availableSize.width)
+            && fits(.vertical, available: availableSize.height)
+    }
+
+    /// Resolve the pane area's visible size. A zoomed surface fills the whole
+    /// area; otherwise the union of every mounted leaf includes all dividers.
+    private static func renderedPaneAreaSize(
+        tab: Tab,
+        pivotID: UUID,
+        registry: any SurfaceViewProviding
+    ) -> CGSize? {
+        if tab.zoomedLeafID != nil {
+            guard let view = registry.view(for: pivotID), view.window != nil else { return nil }
+            return view.bounds.size
+        }
+
+        let paneIDs = tab.splitTree.allLeafIDs()
+        let rects = paneIDs.compactMap { paneID -> CGRect? in
+            guard let view = registry.view(for: paneID), view.window != nil else { return nil }
+            return view.convert(view.bounds, to: nil)
+        }
+        guard rects.count == paneIDs.count, let first = rects.first else { return nil }
+        return rects.dropFirst().reduce(first) { $0.union($1) }.size
     }
 
     // MARK: - Close
@@ -187,12 +235,34 @@ enum PaneActions {
     /// actions and the Pane menu's per-direction enabled state.
     static func adjacentLeaf(
         _ session: WindowSession,
+        registry: (any SurfaceViewProviding)? = nil,
         direction: SpatialDirection
     ) -> PaneAdjacency? {
         guard let tab = session.activeTab, tab.zoomedLeafID == nil,
-              let current = tab.splitTree.effectiveFocusedLeafID,
-              let neighbor = tab.splitTree.neighborLeaf(of: current, direction: direction)
+              let current = tab.splitTree.effectiveFocusedLeafID
         else { return nil }
+        let paneIDs = tab.splitTree.allLeafIDs()
+        let renderedRects: [(id: UUID, rect: CGRect)] = registry.map { registry in
+            paneIDs.compactMap { paneID in
+                guard let view = registry.view(for: paneID), view.window != nil else { return nil }
+                let windowRect = view.convert(view.bounds, to: nil)
+                // AppKit window coordinates grow upward; SplitTree spatial
+                // directions use SwiftUI's top-down convention.
+                let topDownRect = CGRect(
+                    x: windowRect.minX,
+                    y: -windowRect.maxY,
+                    width: windowRect.width,
+                    height: windowRect.height
+                )
+                return (paneID, topDownRect)
+            }
+        } ?? []
+        let neighbor = if renderedRects.count == paneIDs.count {
+            tab.splitTree.neighborLeaf(of: current, direction: direction, rects: renderedRects)
+        } else {
+            tab.splitTree.neighborLeaf(of: current, direction: direction)
+        }
+        guard let neighbor else { return nil }
         return PaneAdjacency(tab: tab, current: current, neighbor: neighbor)
     }
 
@@ -214,7 +284,7 @@ enum PaneActions {
         registry: any SurfaceViewProviding,
         direction: SpatialDirection
     ) {
-        guard let adjacency = adjacentLeaf(session, direction: direction) else { return }
+        guard let adjacency = adjacentLeaf(session, registry: registry, direction: direction) else { return }
         // Focus shift only — never overwrite `tab.title`. The label is
         // owned by the tab (agent prompt or latest OSC 2); pulling each
         // pane's last-known title up on focus would make the name
@@ -234,7 +304,7 @@ enum PaneActions {
         registry: any SurfaceViewProviding,
         direction: SpatialDirection
     ) {
-        guard let adjacency = adjacentLeaf(session, direction: direction) else { return }
+        guard let adjacency = adjacentLeaf(session, registry: registry, direction: direction) else { return }
         // `swappingLeaves` moves focus to `current`, so it follows the
         // pane.
         session.update(adjacency.tab.id) {

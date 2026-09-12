@@ -27,15 +27,25 @@ struct SettingsFileWatcherTests {
         watcher.start()
         let fd = watcher.currentDirFD
         try #require(fd >= 0)
-        // Sanity: fd is open before the stop.
-        #expect(fcntl(fd, F_GETFD) != -1)
+        var watchedDirectory = stat()
+        try #require(fstat(fd, &watchedDirectory) == 0)
 
         watcher.stop()
         // The cancel handler runs on the source's main queue; give
         // it a turn before observing the close.
         try await Task.sleep(for: .milliseconds(100))
 
-        #expect(fcntl(fd, F_GETFD) == -1)
-        #expect(errno == EBADF)
+        var currentDescriptor = stat()
+        if fstat(fd, &currentDescriptor) == -1 {
+            #expect(errno == EBADF)
+        } else {
+            // Swift Testing runs suites concurrently, so the kernel may reuse
+            // the integer immediately. In that case, prove it no longer names
+            // the unique directory that this watcher opened.
+            #expect(
+                currentDescriptor.st_dev != watchedDirectory.st_dev
+                    || currentDescriptor.st_ino != watchedDirectory.st_ino
+            )
+        }
     }
 }

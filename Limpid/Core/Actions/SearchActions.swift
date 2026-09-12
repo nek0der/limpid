@@ -17,6 +17,28 @@ extension Notification.Name {
     static let limpidSearchFocus = Notification.Name("dev.limpid.searchFocus")
 }
 
+/// User-facing search order follows the screen from top to bottom. libghostty
+/// names its directions from the terminal cursor's reverse-history order, so
+/// its `previous` action advances visually and its `next` action moves back.
+enum PaneSearchDirection {
+    case forward
+    case backward
+
+    var bindingAction: String {
+        switch self {
+        case .forward: "navigate_search:previous"
+        case .backward: "navigate_search:next"
+        }
+    }
+
+    /// Convert libghostty's newest-first index into the top-to-bottom position
+    /// shown in the search field.
+    static func displayPosition(selected: Int, total: Int) -> Int? {
+        guard total > 0, selected >= 0, selected < total else { return nil }
+        return total - selected
+    }
+}
+
 @MainActor
 enum SearchActions {
     /// ⌘F — show the search overlay on the focused pane. Idempotent:
@@ -56,7 +78,7 @@ enum SearchActions {
               let view = registry.view(for: id),
               let surface = view.surface
         else { return }
-        let action = "navigate_search:next"
+        let action = PaneSearchDirection.forward.bindingAction
         _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
     }
 
@@ -70,7 +92,7 @@ enum SearchActions {
               let view = registry.view(for: id),
               let surface = view.surface
         else { return }
-        let action = "navigate_search:previous"
+        let action = PaneSearchDirection.backward.bindingAction
         _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
     }
 

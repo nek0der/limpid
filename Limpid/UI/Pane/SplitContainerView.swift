@@ -16,7 +16,7 @@ import UniformTypeIdentifiers
 struct SplitContainerView: View {
     let node: ResolvedSplitNode
     let onLeafFocus: (UUID) -> Void
-    let onResize: (UUID, Double, SplitDirection, CGSize) -> Void
+    let onResize: (PaneSplitPath, Double, CGSize) -> Void
     /// Invoked when a `pane:<uuid>` drag is dropped on a leaf inside the
     /// same window. `zone` distinguishes a center drop (swap the two
     /// panes' slots) from an edge drop (detach the source and insert it
@@ -27,16 +27,13 @@ struct SplitContainerView: View {
     /// (e.g. inserting into a slot the source is already in).
     let isZoneEffective: (_ source: UUID, _ target: UUID, _ zone: PaneDropZone) -> Bool
     /// Double-click on a divider — equalize the subtree rooted at that
-    /// split. The same `(firstLeafID, direction)` address the drag handle
-    /// already passes through `onResize`, so a divider's two gestures
-    /// resolve to the same split node.
-    let onEqualize: (UUID, SplitDirection) -> Void
+    /// split. The structural path is shared with `onResize`, so nested
+    /// same-axis dividers remain unambiguous.
+    let onEqualize: (PaneSplitPath) -> Void
     /// Smallest each side of a divider may shrink to, in points. Threaded
     /// through to recursive calls so the whole tree shares one floor;
     /// `PaneAreaView` resolves the value from `terminal.minPaneSize`.
     let minPaneSize: CGFloat
-
-    private let dividerThickness: CGFloat = 6
 
     var body: some View {
         switch node {
@@ -70,7 +67,8 @@ struct SplitContainerView: View {
 
     @ViewBuilder
     private func splitBody(data: ResolvedSplit, size: CGSize) -> some View {
-        let leftRect = leftRect(for: size, ratio: data.ratio, direction: data.direction)
+        let ratio = resolvedRatio(for: data, size: size)
+        let leftRect = leftRect(for: size, ratio: ratio, direction: data.direction)
         let rightRect = rightRect(for: size, leftRect: leftRect, direction: data.direction)
         let dividerCenter = dividerCenter(for: size, leftRect: leftRect, direction: data.direction)
 
@@ -109,8 +107,7 @@ struct SplitContainerView: View {
                 // that an `.onTapGesture(count: 2)` modifier would force.
                 .simultaneousGesture(
                     TapGesture(count: 2).onEnded {
-                        guard let firstLeafID = Self.firstLeafID(of: data.first) else { return }
-                        onEqualize(firstLeafID, data.direction)
+                        onEqualize(data.path)
                     }
                 )
                 .help("Double-click to equalize")
@@ -120,38 +117,25 @@ struct SplitContainerView: View {
     private func dragGesture(data: ResolvedSplit, size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 1)
             .onChanged { gesture in
-                guard let firstLeafID = Self.firstLeafID(of: data.first) else { return }
-                let newRatio: Double
-                switch data.direction {
+                let newRatio = switch data.direction {
                 case .horizontal:
-                    let clamped = min(max(minPaneSize, gesture.location.x), size.width - minPaneSize)
-                    newRatio = Double(clamped / size.width)
+                    Double(gesture.location.x / max(size.width, 1))
                 case .vertical:
-                    let clamped = min(max(minPaneSize, gesture.location.y), size.height - minPaneSize)
-                    newRatio = Double(clamped / size.height)
+                    Double(gesture.location.y / max(size.height, 1))
                 }
                 let currentExtent = data.direction == .horizontal ? Double(size.width) : Double(size.height)
                 let delta = (newRatio - data.ratio) * currentExtent
-                onResize(firstLeafID, delta, data.direction, size)
+                onResize(data.path, delta, size)
             }
-    }
-
-    /// Leftmost leaf's paneID — used as the resize op's anchor so the
-    /// underlying `SplitTree` mutation hits the correct branch.
-    private static func firstLeafID(of node: ResolvedSplitNode) -> UUID? {
-        switch node {
-        case let .leaf(id, _): id
-        case let .split(data): firstLeafID(of: data.first)
-        }
     }
 
     private func leftRect(for size: CGSize, ratio: Double, direction: SplitDirection) -> CGRect {
         var rect = CGRect(origin: .zero, size: size)
         switch direction {
         case .horizontal:
-            rect.size.width = size.width * ratio - dividerThickness / 2
+            rect.size.width = max(0, size.width * ratio - PaneSplit.dividerThickness / 2)
         case .vertical:
-            rect.size.height = size.height * ratio - dividerThickness / 2
+            rect.size.height = max(0, size.height * ratio - PaneSplit.dividerThickness / 2)
         }
         return rect
     }
@@ -160,11 +144,11 @@ struct SplitContainerView: View {
         var rect = CGRect(origin: .zero, size: size)
         switch direction {
         case .horizontal:
-            rect.origin.x = leftRect.width + dividerThickness
-            rect.size.width = size.width - rect.origin.x
+            rect.origin.x = leftRect.width + PaneSplit.dividerThickness
+            rect.size.width = max(0, size.width - rect.origin.x)
         case .vertical:
-            rect.origin.y = leftRect.height + dividerThickness
-            rect.size.height = size.height - rect.origin.y
+            rect.origin.y = leftRect.height + PaneSplit.dividerThickness
+            rect.size.height = max(0, size.height - rect.origin.y)
         }
         return rect
     }
@@ -172,9 +156,21 @@ struct SplitContainerView: View {
     private func dividerCenter(for size: CGSize, leftRect: CGRect, direction: SplitDirection) -> CGPoint {
         switch direction {
         case .horizontal:
-            CGPoint(x: leftRect.width + dividerThickness / 2, y: size.height / 2)
+            CGPoint(x: leftRect.width + PaneSplit.dividerThickness / 2, y: size.height / 2)
         case .vertical:
-            CGPoint(x: size.width / 2, y: leftRect.height + dividerThickness / 2)
+            CGPoint(x: size.width / 2, y: leftRect.height + PaneSplit.dividerThickness / 2)
         }
+    }
+
+    private func resolvedRatio(for data: ResolvedSplit, size: CGSize) -> Double {
+        let extent = data.direction == .horizontal ? size.width : size.height
+        let firstMinimum = data.first.minimumExtent(along: data.direction, leafMinimum: minPaneSize)
+        let secondMinimum = data.second.minimumExtent(along: data.direction, leafMinimum: minPaneSize)
+        return PaneSplit.resolvedRatio(
+            data.ratio,
+            extent: extent,
+            firstMinimum: firstMinimum,
+            secondMinimum: secondMinimum
+        )
     }
 }

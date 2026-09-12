@@ -81,13 +81,12 @@ struct PaneAreaView: View {
                                 t.splitTree.focusedLeafID = id
                             }
                         },
-                        onResize: { leafID, delta, direction, bounds in
+                        onResize: { splitPath, delta, bounds in
                             let floor = settings.settings.terminal.minPaneSize
                             session.update(tab.id) { t in
                                 t.splitTree = t.splitTree.resize(
-                                    node: leafID,
+                                    splitAt: splitPath,
                                     by: delta,
-                                    direction: direction,
                                     bounds: bounds,
                                     minSize: floor
                                 )
@@ -109,7 +108,8 @@ struct PaneAreaView: View {
                             guard let liveTab = session.tab(tab.id),
                                   liveTab.splitTree.contains(leafID: source),
                                   liveTab.splitTree.contains(leafID: target),
-                                  source != target
+                                  source != target,
+                                  isPaneDropSizeFeasible(source: source, target: target, zone: zone)
                             else { return }
                             session.update(tab.id) { t in
                                 t.splitTree = switch zone {
@@ -158,6 +158,13 @@ struct PaneAreaView: View {
                             // same outcome would suggest two different
                             // operations.
                             if zone != .center {
+                                guard isPaneDropSizeFeasible(
+                                    source: source,
+                                    target: target,
+                                    zone: zone
+                                ) else {
+                                    return false
+                                }
                                 let centerResult = tree.swappingLeaves(source, target)
                                 if result == centerResult {
                                     return false
@@ -165,7 +172,7 @@ struct PaneAreaView: View {
                             }
                             return true
                         },
-                        onEqualize: { leafID, direction in
+                        onEqualize: { splitPath in
                             // `LimpidMotion.expand` (0.2s easeInOut) gives the
                             // ratio change a soft transition; Reduce Motion
                             // users get the same final state without the
@@ -177,10 +184,7 @@ struct PaneAreaView: View {
                             // Void return shapes during type-check.
                             _ = withAnimation(LimpidMotion.expand) {
                                 session.update(tab.id) { t in
-                                    t.splitTree = t.splitTree.equalize(
-                                        at: leafID,
-                                        direction: direction
-                                    )
+                                    t.splitTree = t.splitTree.equalize(splitAt: splitPath)
                                 }
                             }
                         },
@@ -260,6 +264,49 @@ struct PaneAreaView: View {
                 }
             }
         }
+    }
+
+    /// An edge drop moves an existing leaf before creating the target split,
+    /// so checking only the target's current frame rejects layouts where the
+    /// removed source frees enough room. Compare the candidate tree's complete
+    /// requirement with the mounted pane area instead. When the window is
+    /// already undersized, allow rearrangements that do not make it worse.
+    private func isPaneDropSizeFeasible(
+        source: UUID,
+        target: UUID,
+        zone: PaneDropZone
+    ) -> Bool {
+        guard zone != .center,
+              let tree = session.activeTab?.splitTree,
+              let currentRoot = tree.root
+        else { return true }
+        let candidate = switch zone {
+        case .center: tree
+        case .left: tree.inserting(source, beside: target, on: .left)
+        case .right: tree.inserting(source, beside: target, on: .right)
+        case .top: tree.inserting(source, beside: target, on: .top)
+        case .bottom: tree.inserting(source, beside: target, on: .bottom)
+        }
+        guard let candidateRoot = candidate.root else { return false }
+
+        let paneIDs = tree.allLeafIDs()
+        let renderedRects = paneIDs.compactMap { paneID -> CGRect? in
+            guard let view = registry.view(for: paneID), view.window != nil else { return nil }
+            return view.convert(view.bounds, to: nil)
+        }
+        guard renderedRects.count == paneIDs.count,
+              let firstRect = renderedRects.first
+        else { return true }
+        let renderedBounds = renderedRects.dropFirst().reduce(firstRect) { $0.union($1) }
+
+        let floor = settings.settings.terminal.minPaneSize
+        func fits(_ axis: SplitDirection, available: CGFloat) -> Bool {
+            let current = currentRoot.minimumExtent(along: axis, leafMinimum: floor)
+            let required = candidateRoot.minimumExtent(along: axis, leafMinimum: floor)
+            return required <= max(available, current) + 0.5
+        }
+        return fits(.horizontal, available: renderedBounds.width)
+            && fits(.vertical, available: renderedBounds.height)
     }
 
     /// Review replaces the split tree but keeps the origin pane docked below

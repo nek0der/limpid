@@ -23,6 +23,7 @@ struct LimpidSettingsTests {
         #expect(s.transparency == .on)
         #expect(s.accentColor == .default)
         #expect(s.backgroundOpacity == 0.92)
+        #expect(s.unfocusedPaneOpacity == 0.7)
     }
 
     @Test("font defaults: nil family lets libghostty pick the system mono")
@@ -53,6 +54,7 @@ struct LimpidSettingsTests {
         settings.appearance.transparency = .off
         settings.appearance.accentColor = .blue
         settings.appearance.backgroundOpacity = 0.5
+        settings.appearance.unfocusedPaneOpacity = 0.45
         settings.font.family = "Fira Code"
         settings.font.size = 15
         settings.font.ligatures = true
@@ -131,6 +133,36 @@ struct LimpidSettingsTests {
         let decoded = try JSONDecoder().decode(LimpidSettings.self, from: data)
         #expect(decoded.terminal.quickTabCwdMode == .inheritPrevious)
         #expect(decoded.terminal.quickTabCwdPath == nil)
+    }
+
+    @Test("terminal pane minimum is clamped to the supported settings range")
+    func decode_terminalPaneMinimum_clampsToSupportedRange() throws {
+        let belowRange = try JSONDecoder().decode(
+            TerminalSettings.self,
+            from: Data(#"{"minPaneSize":1}"#.utf8)
+        )
+        let aboveRange = try JSONDecoder().decode(
+            TerminalSettings.self,
+            from: Data(#"{"minPaneSize":1000}"#.utf8)
+        )
+
+        #expect(belowRange.minPaneSize == TerminalSettings.minPaneSizeRange.lowerBound)
+        #expect(aboveRange.minPaneSize == TerminalSettings.minPaneSizeRange.upperBound)
+    }
+
+    @Test("unfocused pane opacity is clamped to its supported range")
+    func decode_unfocusedPaneOpacity_clampsToSupportedRange() throws {
+        let belowRange = try JSONDecoder().decode(
+            AppearanceSettings.self,
+            from: Data(#"{"unfocusedPaneOpacity":0}"#.utf8)
+        )
+        let aboveRange = try JSONDecoder().decode(
+            AppearanceSettings.self,
+            from: Data(#"{"unfocusedPaneOpacity":2}"#.utf8)
+        )
+
+        #expect(belowRange.unfocusedPaneOpacity == 0.15)
+        #expect(aboveRange.unfocusedPaneOpacity == 1.0)
     }
 
     /// Every `settings.json` written before the pull-request feature

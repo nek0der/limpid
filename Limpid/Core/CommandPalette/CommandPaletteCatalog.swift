@@ -21,10 +21,18 @@ enum CommandPaletteCatalog {
         let canReview: Bool
     }
 
+    private struct ShortcutDependencies {
+        let settings: SettingsStore
+        let attention: AttentionState
+        let registry: (any SurfaceViewProviding)?
+        let reviewPresentation: ReviewPresentation?
+    }
+
     static func buildItems(
         session: WindowSession,
         settings: SettingsStore,
         attention: AttentionState,
+        registry: (any SurfaceViewProviding)? = nil,
         reviewPresentation: ReviewPresentation? = nil
     ) -> [CommandPaletteItem] {
         var items: [CommandPaletteItem] = []
@@ -32,9 +40,12 @@ enum CommandPaletteCatalog {
         appendShortcutActions(
             to: &items,
             session: session,
-            settings: settings,
-            attention: attention,
-            reviewPresentation: reviewPresentation
+            dependencies: ShortcutDependencies(
+                settings: settings,
+                attention: attention,
+                registry: registry,
+                reviewPresentation: reviewPresentation
+            )
         )
         appendTabs(to: &items, session: session)
         appendGroups(to: &items, session: session)
@@ -50,9 +61,7 @@ enum CommandPaletteCatalog {
     private static func appendShortcutActions(
         to items: inout [CommandPaletteItem],
         session: WindowSession,
-        settings: SettingsStore,
-        attention: AttentionState,
-        reviewPresentation: ReviewPresentation?
+        dependencies: ShortcutDependencies
     ) {
         let hasActiveTab = session.activeTab != nil
         let hasMultipleTabs = session.tabs(in: session.activeContainerID).count > 1
@@ -62,13 +71,13 @@ enum CommandPaletteCatalog {
         // uses, so a Focus/Move action greys out in exactly the directions
         // it can't reach (also covers zoom + single-pane via `adjacentLeaf`).
         let reachable: (SpatialDirection) -> Bool = {
-            PaneActions.adjacentLeaf(session, direction: $0) != nil
+            PaneActions.adjacentLeaf(session, registry: dependencies.registry, direction: $0) != nil
         }
         let isProjectActive = session.activeContainerID.projectID != nil
         let hasClosedTabs = !session.closedTabStack.isEmpty
         let focusedPaneID = session.activeTab?.splitTree.effectiveFocusedLeafID
         let hasActiveSearch = focusedPaneID.map { session.paneSearchStates[$0] != nil } ?? false
-        let hasWaitingAttention = !attention.attentionEntries(in: session).isEmpty
+        let hasWaitingAttention = !dependencies.attention.attentionEntries(in: session).isEmpty
 
         let context = ActionEnabledContext(
             hasActiveTab: hasActiveTab,
@@ -80,11 +89,11 @@ enum CommandPaletteCatalog {
             hasClosedTabs: hasClosedTabs,
             hasActiveSearch: hasActiveSearch,
             hasWaitingAttention: hasWaitingAttention,
-            canReview: ReviewAgents.canReview(session: session, presentation: reviewPresentation)
+            canReview: ReviewAgents.canReview(session: session, presentation: dependencies.reviewPresentation)
         )
 
         for action in LimpidShortcutAction.allCases {
-            let shortcut = settings.settings.keyboard.shortcut(for: action)
+            let shortcut = dependencies.settings.settings.keyboard.shortcut(for: action)
             let enabled = isActionEnabled(action, context: context)
             let localizedTitle = String(localized: action.localizedTitle)
             var englishResource = action.localizedTitle

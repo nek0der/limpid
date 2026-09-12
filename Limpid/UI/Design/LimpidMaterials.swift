@@ -53,6 +53,12 @@ extension View {
     func limpidGlass(_ layer: LimpidGlassLayer) -> some View {
         modifier(LimpidGlassModifier(layer: layer))
     }
+
+    /// Paint glass behind interactive descendants without letting the glass
+    /// surface replace their hit-testing or pointer regions.
+    func limpidGlassBackground(_ layer: LimpidGlassLayer) -> some View {
+        modifier(LimpidGlassBackgroundModifier(layer: layer))
+    }
 }
 
 private struct LimpidGlassModifier: ViewModifier {
@@ -68,6 +74,21 @@ private struct LimpidGlassModifier: ViewModifier {
             layer.glass,
             in: RoundedRectangle(cornerRadius: layer.cornerRadius, style: .continuous)
         )
+    }
+}
+
+private struct LimpidGlassBackgroundModifier: ViewModifier {
+    let layer: LimpidGlassLayer
+
+    func body(content: Content) -> some View {
+        content.background {
+            Color.clear
+                .glassEffect(
+                    layer.glass,
+                    in: RoundedRectangle(cornerRadius: layer.cornerRadius, style: .continuous)
+                )
+                .allowsHitTesting(false)
+        }
     }
 }
 

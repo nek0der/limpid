@@ -36,6 +36,7 @@ enum CommandPaletteActions {
         settings: SettingsStore,
         frecencyStore: FrecencyStore,
         attention: AttentionState,
+        registry: (any SurfaceViewProviding)? = nil,
         // Review can be up over a container with nothing to review, and the
         // palette is one of the ways to close it.
         reviewPresentation: ReviewPresentation?,
@@ -50,6 +51,7 @@ enum CommandPaletteActions {
             session: session,
             settings: settings,
             attention: attention,
+            registry: registry,
             reviewPresentation: reviewPresentation
         )
         state.initialQuery = initialQuery.isEmpty ? nil : initialQuery
