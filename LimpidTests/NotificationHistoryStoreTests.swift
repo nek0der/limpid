@@ -87,6 +87,14 @@ struct NotificationHistoryStoreTests {
 
     // MARK: - unreadCount
 
+    @Test("visible delivery keeps agent rows unread until runtime handling")
+    func initialReadState_agentRowsRequireRuntimeHandling() {
+        #expect(LimpidNotificationManager.initialReadState(kind: .desktop, isSourceVisible: true))
+        #expect(!LimpidNotificationManager.initialReadState(kind: .agentFinished, isSourceVisible: true))
+        #expect(!LimpidNotificationManager.initialReadState(kind: .agentNeedsInput, isSourceVisible: true))
+        #expect(!LimpidNotificationManager.initialReadState(kind: .agentError, isSourceVisible: true))
+    }
+
     @Test("unreadCount starts at zero on an empty store")
     func unreadCount_emptyStore_isZero() throws {
         try withTempDir { dir in
@@ -174,6 +182,24 @@ struct NotificationHistoryStoreTests {
         }
     }
 
+    @Test("markRead(forPanes:) leaves every agent row to runtime reconciliation")
+    func markRead_forPanes_keepsAgentRowsUnread() throws {
+        try withTempDir { dir in
+            let store = makeStore(in: dir)
+            let paneID = UUID()
+            store.record(entry(kind: .agentFinished, paneID: paneID))
+            store.record(entry(kind: .agentNeedsInput, paneID: paneID))
+            store.record(entry(kind: .agentError, paneID: paneID))
+
+            store.markRead(forPanes: [paneID])
+
+            #expect(store.entries.first { $0.kind == .agentFinished }?.isRead == false)
+            #expect(store.entries.first { $0.kind == .agentNeedsInput }?.isRead == false)
+            #expect(store.entries.first { $0.kind == .agentError }?.isRead == false)
+            #expect(store.unreadCount == 3)
+        }
+    }
+
     // MARK: - delete / clearAll
 
     @Test("delete removes the matching entry from the list")
@@ -211,5 +237,104 @@ struct NotificationHistoryStoreTests {
             #expect(store.entries.isEmpty)
             #expect(store.unreadCount == 0)
         }
+    }
+
+    @Test("markRead(where:) flips only the matching unread entries")
+    func markReadWhere_flipsMatchingEntries() throws {
+        try withTempDir { dir in
+            let store = makeStore(in: dir)
+            let keep = UUID()
+            store.record(entry(id: keep, kind: .commandFinished))
+            store.record(entry(kind: .agentNeedsInput))
+            store.record(entry(kind: .agentNeedsInput, isRead: true))
+
+            store.markRead { $0.kind == .agentNeedsInput }
+
+            #expect(store.unreadCount == 1)
+            #expect(store.entries.first(where: { $0.id == keep })?.isRead == false)
+        }
+    }
+
+    @Test("runtime identity survives a disk round-trip and event tokens are optional on decode")
+    func runtimeIdentity_roundTripsAndEventTokenDecodesWhenAbsent() throws {
+        try withTempDir { dir in
+            let store = makeStore(in: dir)
+            store.record(NotificationEntry(
+                kind: .agentFinished,
+                paneID: nil,
+                tabTitleSnapshot: nil,
+                title: "t",
+                body: "b",
+                runtimeID: "codex:abc",
+                eventToken: "42"
+            ))
+            store.flushSynchronously()
+            let reloaded = makeStore(in: dir)
+            #expect(reloaded.entries.first?.runtimeID == "codex:abc")
+            #expect(reloaded.entries.first?.eventToken == "42")
+        }
+        try withTempDir { dir in
+            // A pre-`runtimeID` file has no such key at all.
+            let json = """
+            [{"id":"\(UUID().uuidString)","kind":"desktop","timestamp":"2026-09-12T00:00:00Z",\
+            "title":"t","body":"b","isRead":false}]
+            """
+            try Data(json.utf8).write(to: dir.appendingPathComponent("notifications.json"))
+            let store = makeStore(in: dir)
+            let legacy = try #require(store.entries.first)
+            #expect(legacy.runtimeID == nil)
+            #expect(legacy.eventToken == nil)
+        }
+        try withTempDir { dir in
+            // Runtime identity shipped before event identity. Keep that
+            // intermediate shape readable without guessing which later
+            // waiting episode it belongs to.
+            let json = """
+            [{"id":"\(UUID().uuidString)","kind":"agentNeedsInput","timestamp":"2026-09-12T00:00:00Z",\
+            "title":"t","body":"b","isRead":false,"runtimeID":"codex:abc"}]
+            """
+            try Data(json.utf8).write(to: dir.appendingPathComponent("notifications.json"))
+            let store = makeStore(in: dir)
+            let legacyAgent = try #require(store.entries.first)
+            #expect(legacyAgent.runtimeID == "codex:abc")
+            #expect(legacyAgent.eventToken == nil)
+        }
+    }
+
+    // MARK: - Kind decoding
+
+    @Test("an unknown kind on disk decodes to .desktop instead of quarantining the file")
+    func load_unknownKind_fallsBackToDesktop() throws {
+        try withTempDir { dir in
+            // Shape a newer build might write: one row whose kind this
+            // build has never heard of. Without the defensive decoder the
+            // whole array fails and `load()` moves the file aside.
+            let json = """
+            [{"id":"\(UUID().uuidString)","kind":"holographic","timestamp":"2026-09-12T00:00:00Z",\
+            "title":"t","body":"b","isRead":false}]
+            """
+            try Data(json.utf8).write(to: dir.appendingPathComponent("notifications.json"))
+            let store = makeStore(in: dir)
+            #expect(store.entries.count == 1)
+            #expect(store.entries.first?.kind == .desktop)
+        }
+    }
+
+    @Test("agent kinds round-trip through disk and map to their AgentState")
+    func agentKinds_roundTripAndMapToState() throws {
+        try withTempDir { dir in
+            let store = makeStore(in: dir)
+            store.record(entry(kind: .agentNeedsInput))
+            store.record(entry(kind: .agentFinished))
+            store.record(entry(kind: .agentError))
+            store.flushSynchronously()
+            let reloaded = makeStore(in: dir)
+            #expect(reloaded.entries.map(\.kind) == [.agentError, .agentFinished, .agentNeedsInput])
+        }
+        #expect(NotificationEntry.Kind.agentNeedsInput.agentState == .needsInput)
+        #expect(NotificationEntry.Kind.agentFinished.agentState == .finished)
+        #expect(NotificationEntry.Kind.agentError.agentState == .error)
+        #expect(NotificationEntry.Kind.commandFinished.agentState == nil)
+        #expect(NotificationEntry.Kind.desktop.agentState == nil)
     }
 }

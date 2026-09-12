@@ -1,5 +1,5 @@
 // AgentNotificationEmitter.swift
-// Limpid — shared "finished / needs input" macOS notification path
+// Limpid — shared "finished / needs input / error" notification path
 // for both Claude Code and Codex CLI panes. Before this lived as two
 // near-identical 80-line emit methods on each tracker; the only
 // per-kind differences were the localized title string and which
@@ -29,6 +29,9 @@ struct AgentNotificationEmitter {
     var suppressWhenPaneFocused = true
     /// Nil for legacy pane-only notification producers.
     var runtimeID: String?
+    /// Revision of the exact runtime event being delivered. Runtime IDs stay
+    /// stable for an invocation, while this value advances for each turn.
+    var eventToken: String?
 
     /// Pane-level transition handler. Called once per leaf per
     /// reconciliation pass with the prior + current badge for that
@@ -38,9 +41,11 @@ struct AgentNotificationEmitter {
     /// - `(running|compacting) → finished` → "X finished" with last prompt.
     /// - `* → needsInput` (when previous wasn't already needsInput) →
     ///   "X needs input" with the permission text / question.
-    ///
-    /// `.error` panes get no banner — the red icon is enough, and
-    /// agent-side rate-limit / billing dialogs already cover this.
+    /// - `* → error` (when previous wasn't already error) → a history
+    ///   row only, no banner. The red icon and the agent's own
+    ///   rate-limit / billing dialog already cover the moment; the row
+    ///   exists so the failure is still findable after the dialog is
+    ///   gone.
     func handleTransition(
         tab: Tab,
         paneID: UUID,
@@ -50,6 +55,15 @@ struct AgentNotificationEmitter {
     ) {
         if current.state == .needsInput, previous?.state != .needsInput {
             emitNeedsInput(
+                tab: tab,
+                paneID: paneID,
+                badge: current,
+                session: session
+            )
+            return
+        }
+        if current.state == .error, previous?.state != .error {
+            emitError(
                 tab: tab,
                 paneID: paneID,
                 badge: current,
@@ -91,7 +105,7 @@ struct AgentNotificationEmitter {
         } else {
             kind.finishedTitle
         }
-        send(tab: tab, paneID: paneID, title: title, body: body, session: session)
+        send(Delivery(title: title, body: body, kind: .agentFinished), tab: tab, paneID: paneID, session: session)
     }
 
     private func emitNeedsInput(
@@ -115,27 +129,68 @@ struct AgentNotificationEmitter {
             }
             return kind.needsInputTitle
         }()
-        send(tab: tab, paneID: paneID, title: title, body: body, session: session)
+        send(Delivery(title: title, body: body, kind: .agentNeedsInput), tab: tab, paneID: paneID, session: session)
+    }
+
+    private func emitError(
+        tab: Tab,
+        paneID: UUID,
+        badge: any AgentNotificationBadge,
+        session: WindowSession
+    ) {
+        let containerLabel = session.containerLabel(for: tab.container)
+        let title = containerLabel.isEmpty ? kind.errorTitle : containerLabel
+        // `detail` carries the hook's `error_type` (rate limit, billing,
+        // crash). The prompt is a poorer second choice here — the user
+        // wants to know *what broke*, not what they asked — but it still
+        // beats a bare "Claude hit an error" when the hook had nothing.
+        let body: String = {
+            if let detail = badge.detail,
+               let cleaned = Self.truncatedPrompt(detail)
+            {
+                return cleaned
+            }
+            if let prompt = badge.lastPrompt,
+               let cleaned = Self.truncatedPrompt(prompt)
+            {
+                return cleaned
+            }
+            return kind.errorTitle
+        }()
+        send(
+            Delivery(title: title, body: body, kind: .agentError, presentsBanner: false),
+            tab: tab, paneID: paneID, session: session
+        )
+    }
+
+    /// What one transition hands to the notification manager. Bundled
+    /// so the per-state emitters differ only in how they fill it in.
+    private struct Delivery {
+        let title: String
+        let body: String
+        let kind: NotificationEntry.Kind
+        var presentsBanner = true
     }
 
     private func send(
+        _ delivery: Delivery,
         tab: Tab,
         paneID: UUID,
-        title: String,
-        body: String,
         session: WindowSession
     ) {
         notificationManager.send(
-            title: title,
-            body: body,
+            title: delivery.title,
+            body: delivery.body,
             paneID: paneID,
             tabID: tab.id,
             containerID: tab.container,
             requireFocus: suppressWhenPaneFocused,
-            kind: .desktop,
+            kind: delivery.kind,
             tabTitleSnapshot: tab.displayTitle,
             containerLabel: session.containerLabel(for: tab.container),
-            runtimeID: runtimeID
+            runtimeID: runtimeID,
+            eventToken: eventToken,
+            presentsBanner: delivery.presentsBanner
         )
         // Agent events fire the macOS banner + history entry (above) but
         // deliberately do NOT bump the per-pane unread count that drives
@@ -185,6 +240,15 @@ extension AgentKind {
         switch self {
         case .claude: String(localized: "Claude needs input")
         case .codex: String(localized: "Codex needs input")
+        }
+    }
+
+    /// History-row title used when a pane transitions into `.error`
+    /// and there is no container label to anchor on.
+    var errorTitle: String {
+        switch self {
+        case .claude: String(localized: "Claude hit an error")
+        case .codex: String(localized: "Codex hit an error")
         }
     }
 }

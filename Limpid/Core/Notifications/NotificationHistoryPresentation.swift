@@ -1,11 +1,11 @@
 // NotificationHistoryPresentation.swift
-// Limpid — popover visibility state for the notification history panel.
+// Limpid — visibility and anchor state for the notification history panel.
 //
 // Carved out of `NotificationHistoryStore` so the "data" (entries +
-// persistence) and the "UI state" (is the popover visible?) live in
+// persistence) and the "UI state" (is the panel visible?) live in
 // separate observable objects. The bell button in the sidebar and the
-// segmented toolbar capsule both bind against this single instance so
-// either entry point toggles the same popover.
+// keyboard command both use this single instance so every entry point
+// toggles the same window-level panel.
 
 import Foundation
 import Observation
@@ -13,8 +13,13 @@ import Observation
 @MainActor
 @Observable
 final class NotificationHistoryPresentation {
-    /// Drives every notification-history popover's `isPresented` binding.
+    /// Drives the window-level notification history panel.
     var isPresented: Bool = false
+
+    /// Global frame of the bell that most recently rendered. ContentView
+    /// converts it back to window coordinates to place the floating panel
+    /// below the same control without a popover arrow.
+    var anchorFrame: CGRect = .zero
 
     init() {}
 }

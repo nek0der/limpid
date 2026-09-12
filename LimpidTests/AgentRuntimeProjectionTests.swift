@@ -158,29 +158,45 @@ struct AgentRuntimeProjectionTests {
         #expect(shared.locations(for: runtime.tmuxEndpoint).count == 2)
     }
 
-    @Test func notifications_arePerRunNotPerClientAndIgnoreReattach() throws {
-        let record = record(runID: UUID(), launchPaneID: UUID(), state: "needsInput", revision: 2)
-        let badge = try #require(CodexAgent.makeBadge(from: record))
-        let runtime = AgentRuntimePresentation(
-            kind: .codex,
-            runID: record.storageID,
-            revision: 2,
-            badge: badge,
-            paneIDs: [UUID(), UUID()],
-            tmuxLocations: [:]
-        )
-        let transitions = AgentRuntimeTransition.notifications(current: [runtime], previous: [:])
-        #expect(transitions.count == 1)
-        #expect(AgentRuntimeTransition.notifications(current: [runtime], previous: [runtime.runID: badge]).isEmpty)
-        let other = AgentRuntimePresentation(
+    @Test func attentionEpisodeToken_survivesSameStateRevisionsAndChangesAfterResolution() {
+        let runID = UUID().uuidString
+        let paneID = UUID()
+        func runtime(_ state: AgentState, revision: Int) -> AgentRuntimePresentation {
+            AgentRuntimePresentation(
+                kind: .codex,
+                runID: runID,
+                revision: revision,
+                badge: AgentBadge(state: state, updatedAt: Date()),
+                paneIDs: [paneID],
+                tmuxLocations: [:]
+            )
+        }
+
+        var tracker = AgentStateEpisodeTracker()
+        let firstWait = tracker.stamp([runtime(.needsInput, revision: 2)])[0]
+        let updatedWait = tracker.stamp([runtime(.needsInput, revision: 3)])[0]
+        let running = tracker.stamp([runtime(.running, revision: 4)])[0]
+        let nextWait = tracker.stamp([runtime(.needsInput, revision: 5)])[0]
+
+        #expect(firstWait.attentionEventToken == "2")
+        #expect(updatedWait.attentionEventToken == firstWait.attentionEventToken)
+        #expect(running.attentionEventToken == "4")
+        #expect(nextWait.attentionEventToken == "5")
+    }
+
+    @Test func attentionEpisodeToken_usesPersistedTokenAfterTrackerRestart() {
+        let persisted = AgentRuntimePresentation(
             kind: .codex,
             runID: UUID().uuidString,
-            revision: 1,
-            badge: badge,
-            paneIDs: runtime.paneIDs,
-            tmuxLocations: [:]
+            revision: 3,
+            badge: AgentBadge(state: .needsInput, updatedAt: Date()),
+            paneIDs: [UUID()],
+            tmuxLocations: [:],
+            stateEpisodeToken: "2"
         )
-        #expect(AgentRuntimeTransition.notifications(current: [runtime, other], previous: [runtime.runID: badge]).count == 1)
+
+        var restartedTracker = AgentStateEpisodeTracker()
+        #expect(restartedTracker.stamp([persisted])[0].attentionEventToken == "2")
     }
 
     @Test func backgroundTmuxPane_isNotMarkedViewedByOuterFocus() throws {

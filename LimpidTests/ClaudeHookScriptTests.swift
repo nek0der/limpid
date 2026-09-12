@@ -213,6 +213,19 @@ struct ClaudeHookScriptTests {
         )
         #expect(record?["runId"] as? String == runID)
         #expect(record?["revision"] as? Int == 2)
+        #expect(record?["stateEpisodeToken"] as? String == "2")
+    }
+
+    @Test("keeps one episode token across repeated waiting writes")
+    func waitingEpisode_repeatedState_keepsToken() throws {
+        let record = try runHooks([
+            payload("UserPromptSubmit"),
+            payload("Notification", extra: ["notification_type": "permission_prompt"]),
+            payload("Notification", extra: ["notification_type": "permission_prompt"])
+        ])
+        #expect(record?["state"] as? String == "needsInput")
+        #expect(record?["revision"] as? Int == 3)
+        #expect(record?["stateEpisodeToken"] as? String == "2")
     }
 
     /// The template is what Claude is actually told to call us on, so it

@@ -206,9 +206,6 @@ struct ContainerRow: View {
     /// `nil` means no claude is running / all idle — the row stays
     /// quiet. The caller computes it from `WindowSession.aggregateAgentState`.
     var agentState: AgentState?
-    /// True when the aggregate `.finished` is fully viewed — render the
-    /// check gray ("seen, not yet replied") instead of green.
-    var agentStateViewed: Bool = false
     /// Per-state pane counts used for the agent icon's hover tooltip.
     /// Empty dict when no claude is running.
     var agentBreakdown: [AgentState: Int] = [:]
@@ -851,9 +848,7 @@ struct ContainerRow: View {
                 let tooltip = agentTooltip(for: state)
                 Image(systemName: iconName)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(state == .finished && agentStateViewed
-                        ? Color.secondary
-                        : iconColor)
+                    .foregroundStyle(iconColor)
                     .frame(width: LimpidLayout.containerColumnTrailingSlot, height: LimpidLayout.containerColumnTrailingSlot)
                     .help(tooltip)
                     // Color is the only sighted differentiator (red /

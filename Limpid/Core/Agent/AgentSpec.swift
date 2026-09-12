@@ -125,6 +125,7 @@ protocol AgentLifecycleRecord: Codable {
     var paneId: String { get }
     var runId: String? { get }
     var revision: Int? { get }
+    var stateEpisodeToken: String? { get }
     var tmuxSocketPath: String? { get }
     var tmuxSessionId: String? { get }
     var tmuxPaneId: String? { get }

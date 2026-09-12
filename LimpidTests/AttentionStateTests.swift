@@ -19,6 +19,17 @@ struct AttentionStateTests {
         )
     }
 
+    /// Attention state whose clock sits shortly after the small epochs
+    /// the badges below use. Badges are stamped at 1970 for readability,
+    /// so with the wall clock every viewed finished turn would already
+    /// be past `viewedFinishedRetention` and vanish; the retention tests
+    /// move `now` explicitly where the ceiling is the subject.
+    private func makeAttention() -> AttentionState {
+        let attention = AttentionState()
+        attention.now = { Date(timeIntervalSince1970: 10000) }
+        return attention
+    }
+
     /// Add a fresh loose tab carrying one pane with the given Claude
     /// badge; returns the pane id.
     private func paneWithBadge(
@@ -32,9 +43,29 @@ struct AttentionStateTests {
         return paneID
     }
 
+    private func runtime(
+        _ state: AgentState,
+        paneID: UUID,
+        revision: Int,
+        episode: String
+    ) -> AgentRuntimePresentation {
+        AgentRuntimePresentation(
+            kind: .codex,
+            runID: "run",
+            revision: revision,
+            badge: AgentBadge(
+                state: state,
+                updatedAt: Date(timeIntervalSince1970: TimeInterval(revision))
+            ),
+            paneIDs: [paneID],
+            tmuxLocations: [:],
+            stateEpisodeToken: episode
+        )
+    }
+
     @Test func attentionEntries_includesWaitingStates_excludesRunningAndIdle() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let needs = paneWithBadge(session, .needsInput, at: 100)
         let err = paneWithBadge(session, .error, at: 100)
         let done = paneWithBadge(session, .finished, at: 100)
@@ -47,7 +78,7 @@ struct AttentionStateTests {
 
     @Test func attentionEntries_withinSeverityTier_ordersOldestFirst() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         // All same severity so only age decides — peers accumulate FIFO.
         let newest = paneWithBadge(session, .finished, at: 300)
         let oldest = paneWithBadge(session, .finished, at: 100)
@@ -65,7 +96,7 @@ struct AttentionStateTests {
     /// newer turn until it updated again.
     @Test func attentionEntries_codexFinishedNewerThanClaude_surfaceUsesCodexStamp() throws {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let tab = session.openTab(container: .loose)
         let pane = try #require(tab.splitTree.allLeafIDs().first)
         let claudeStamp = Date(timeIntervalSince1970: 100)
@@ -86,7 +117,7 @@ struct AttentionStateTests {
 
     @Test func attentionEntries_finishedTier_unviewedFloatsAboveViewed() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         // Older finished that the user has already glanced at — should
         // sink below the newer-but-unseen one. "Next to deal with" goes
         // up.
@@ -100,7 +131,7 @@ struct AttentionStateTests {
 
     @Test func attentionEntries_ordersBySeverity_beforeAge() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         // The error is newest and the finished oldest — severity must
         // still float the error to the top so it can't hide below an
         // older finished turn.
@@ -114,7 +145,7 @@ struct AttentionStateTests {
 
     @Test func dismiss_dropsFinishedPaneFromList() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let done = paneWithBadge(session, .finished, at: 100)
         #expect(attention.attentionEntries(in: session).contains { $0.paneID == done })
 
@@ -125,7 +156,7 @@ struct AttentionStateTests {
 
     @Test func dismiss_doesNotAffectNeedsInput() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let needs = paneWithBadge(session, .needsInput, at: 100)
 
         attention.dismiss(paneID: needs, in: session)
@@ -137,7 +168,7 @@ struct AttentionStateTests {
 
     @Test func dismissedFinished_resurfacesOnNewerFinishedTurn() throws {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let tab = session.openTab(container: .loose)
         let paneID = try #require(tab.splitTree.allLeafIDs().first)
 
@@ -153,7 +184,7 @@ struct AttentionStateTests {
 
     @Test func focusMoved_marksFinishedAsViewed_butKeepsItInTheList() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let pane = paneWithBadge(session, .finished, at: 100)
 
         attention.focusMoved(to: pane, in: session)
@@ -165,9 +196,21 @@ struct AttentionStateTests {
         #expect(entry?.isViewed == true)
     }
 
+    @Test func focusMoved_notifiesPaneHistorySync() {
+        let session = WindowSession()
+        let attention = makeAttention()
+        let pane = paneWithBadge(session, .running, at: 100)
+        var focusedPane: UUID?
+        attention.onPaneFocused = { focusedPane = $0 }
+
+        attention.focusMoved(to: pane, in: session)
+
+        #expect(focusedPane == pane)
+    }
+
     @Test func focusMoved_doesNotMarkNeedsInputAsViewed() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let pane = paneWithBadge(session, .needsInput, at: 100)
 
         attention.focusMoved(to: pane, in: session)
@@ -178,34 +221,9 @@ struct AttentionStateTests {
         #expect(entry?.isViewed == false)
     }
 
-    @Test func aggregateViewed_focusedPaneMarkedAfterBadgeArrives() throws {
-        // Models the "running → finished on the pane I'm looking at"
-        // path: focus is on the pane, then a finished badge lands, then
-        // the tracker calls `markViewed` (the production wiring lives
-        // in ClaudeAgentStateTracker.applyAllRecordsToSession). The
-        // WAITING entry should be viewed (gray) the moment that fires.
-        let session = WindowSession()
-        let attention = AttentionState()
-        let tab = session.openTab(container: .loose)
-        let paneID = try #require(tab.splitTree.allLeafIDs().first)
-        session.setActiveTab(tab.id)
-
-        session.update(tab.id) { $0.claudeAgentBadges[paneID] = badge(.finished, at: 100) }
-        // Tracker's auto-mark — mirrors the production call site.
-        attention.markViewed(paneID: paneID, in: session)
-
-        let entry = attention.attentionEntries(in: session).first { $0.paneID == paneID }
-        #expect(entry?.isViewed == true)
-        // Re-fetch the tab so we see the post-update badges (the local
-        // `tab` above is a value-type snapshot taken before the badge
-        // landed).
-        let updatedTab = try #require(session.tab(tab.id))
-        #expect(attention.isFinishedAggregateViewed(in: updatedTab))
-    }
-
     @Test func includeViewed_false_hidesViewedFinishedButKeepsNeedsInput() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let seen = paneWithBadge(session, .finished, at: 100)
         let unseen = paneWithBadge(session, .finished, at: 200)
         let needs = paneWithBadge(session, .needsInput, at: 300)
@@ -220,7 +238,7 @@ struct AttentionStateTests {
 
     @Test func hiddenViewedCount_reportsFilteredFinishedCount() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let a = paneWithBadge(session, .finished, at: 100)
         let b = paneWithBadge(session, .finished, at: 200)
         _ = paneWithBadge(session, .needsInput, at: 300)
@@ -237,7 +255,7 @@ struct AttentionStateTests {
 
     @Test func forget_dropsAttentionBookkeepingForClosedPane() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let pane = paneWithBadge(session, .finished, at: 100)
         attention.focusMoved(to: pane, in: session)
         attention.dismiss(paneID: pane, in: session)
@@ -252,7 +270,7 @@ struct AttentionStateTests {
 
     @Test func includeViewed_true_isTheDefaultAndShowsEverything() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let seen = paneWithBadge(session, .finished, at: 100)
         let unseen = paneWithBadge(session, .finished, at: 200)
         attention.focusMoved(to: seen, in: session)
@@ -265,7 +283,7 @@ struct AttentionStateTests {
 
     @Test func sweepingWithFocus_keepsEveryFinishedTurnListed() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let a = paneWithBadge(session, .finished, at: 100)
         let b = paneWithBadge(session, .finished, at: 200)
 
@@ -281,7 +299,7 @@ struct AttentionStateTests {
 
     @Test func severityBeatsViewed_errorAboveUnviewedFinished() {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         // An error always tops the list — even if the only finished pane
         // in the list is unseen. Severity is the primary axis; viewed is
         // a tiebreaker within a tier.
@@ -292,54 +310,13 @@ struct AttentionStateTests {
         #expect(order == [err, unseenFinished])
     }
 
-    // MARK: - Aggregate viewed (drives the container / tab column gray vs green check)
-
-    @Test func aggregateViewed_allFinishedViewed_returnsTrue() {
-        let session = WindowSession()
-        let attention = AttentionState()
-        let a = paneWithBadge(session, .finished, at: 100)
-        let b = paneWithBadge(session, .finished, at: 200)
-
-        attention.focusMoved(to: a, in: session)
-        attention.focusMoved(to: b, in: session)
-
-        #expect(attention.isFinishedAggregateViewed(in: .loose, session: session))
-    }
-
-    @Test func aggregateViewed_oneFinishedUnviewed_returnsFalse() {
-        let session = WindowSession()
-        let attention = AttentionState()
-        let a = paneWithBadge(session, .finished, at: 100)
-        _ = paneWithBadge(session, .finished, at: 200)
-
-        // Only `a` is viewed; the other finished pane keeps the
-        // aggregate green.
-        attention.focusMoved(to: a, in: session)
-
-        #expect(attention.isFinishedAggregateViewed(in: .loose, session: session) == false)
-    }
-
-    @Test func aggregateViewed_noFinishedPanes_returnsFalse() {
-        let session = WindowSession()
-        let attention = AttentionState()
-        _ = paneWithBadge(session, .needsInput, at: 100)
-        _ = paneWithBadge(session, .running, at: 100)
-
-        // "All finished panes are viewed" is vacuously true with zero
-        // finished panes, but we return false so the caller doesn't
-        // gray out a check that's lit by needsInput / error / running.
-        #expect(attention.isFinishedAggregateViewed(in: .loose, session: session) == false)
-    }
-
     // MARK: - Aggregate AgentState (drives container / tab column badge icon)
 
     @Test func aggregateAgentState_runningOutranksViewedFinished() {
-        // The bug this fixes: a container shows the gray check (viewed
-        // `.finished`) even while a sibling pane is still `.running`.
-        // Once the user has glanced at the finished turn, the running
-        // sibling should be what the container / tab column badge advertises.
+        // Once the user has handled the finished turn, the running
+        // sibling should be what the aggregate badge advertises.
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let done = paneWithBadge(session, .finished, at: 100)
         _ = paneWithBadge(session, .running, at: 200)
         attention.focusMoved(to: done, in: session)
@@ -348,10 +325,10 @@ struct AttentionStateTests {
     }
 
     @Test func aggregateAgentState_runningStaysBelowUnviewedFinished() {
-        // Unviewed `.finished` still outranks `.running` — the user
-        // hasn't seen the check yet, so we keep the green dot.
+        // Unviewed `.finished` still outranks `.running` because it
+        // represents a result the user has not handled yet.
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         _ = paneWithBadge(session, .finished, at: 100)
         _ = paneWithBadge(session, .running, at: 200)
 
@@ -359,10 +336,9 @@ struct AttentionStateTests {
     }
 
     @Test func aggregateAgentState_onlyViewedFinished_stillShowsCheck() {
-        // No other state present — the gray check stays so the row
-        // doesn't go silent on "all viewed".
+        // No other state is present, so the finished state remains visible.
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let done = paneWithBadge(session, .finished, at: 100)
         attention.focusMoved(to: done, in: session)
 
@@ -374,7 +350,7 @@ struct AttentionStateTests {
         // tiebreaker — an error must surface no matter what else sits
         // in the container.
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let done = paneWithBadge(session, .finished, at: 100)
         _ = paneWithBadge(session, .running, at: 200)
         _ = paneWithBadge(session, .error, at: 300)
@@ -383,26 +359,11 @@ struct AttentionStateTests {
         #expect(attention.aggregateAgentState(in: .loose, session: session) == .error)
     }
 
-    @Test func aggregateViewed_dismissedFinishedExcluded() {
-        let session = WindowSession()
-        let attention = AttentionState()
-        let a = paneWithBadge(session, .finished, at: 100)
-        let b = paneWithBadge(session, .finished, at: 200)
-
-        // `b` viewed; `a` dismissed → dismissed panes drop out of the
-        // aggregate entirely, so the remaining set (just `b`) is fully
-        // viewed → true.
-        attention.dismiss(paneID: a, in: session)
-        attention.focusMoved(to: b, in: session)
-
-        #expect(attention.isFinishedAggregateViewed(in: .loose, session: session))
-    }
-
     // MARK: - ⌘J cursor honours the includeViewed filter
 
     @Test func jumpToAttention_includeViewedFalse_skipsViewedFinished() throws {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let registry = NoopSurfaceRegistry()
         // Three finished panes; mark the middle one viewed and hide
         // viewed-finished. The cursor must walk only the two visible
@@ -428,7 +389,7 @@ struct AttentionStateTests {
 
     @Test func jumpToAttention_includeViewedTrue_walksEveryWaitingPane() throws {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let registry = NoopSurfaceRegistry()
         let a = paneWithBadge(session, .finished, at: 100)
         let b = paneWithBadge(session, .finished, at: 200)
@@ -447,9 +408,91 @@ struct AttentionStateTests {
         #expect(session.activeTab?.splitTree.focusedLeafID == b)
     }
 
+    // MARK: - Viewed-finished retention
+
+    @Test func runtimeViewedFinished_pastRetentionDropsAndNewEpisodeReturns() throws {
+        let session = WindowSession()
+        let attention = makeAttention()
+        let tab = session.openTab(container: .loose)
+        let paneID = try #require(tab.splitTree.allLeafIDs().first)
+        attention.replaceRuntimes([
+            runtime(.finished, paneID: paneID, revision: 100, episode: "100")
+        ], kind: .codex)
+        attention.markVisibleRuntimesViewed(paneID: paneID)
+
+        attention.now = {
+            Date(timeIntervalSince1970: 100 + AttentionState.viewedFinishedRetention + 60)
+        }
+        #expect(attention.attentionEntries(in: session).isEmpty)
+
+        let newRevision = Int(100 + AttentionState.viewedFinishedRetention + 30)
+        attention.replaceRuntimes([
+            runtime(.finished, paneID: paneID, revision: newRevision, episode: "new")
+        ], kind: .codex)
+        #expect(attention.attentionEntries(in: session).map(\.paneID) == [paneID])
+    }
+
+    @Test func viewedFinished_pastRetention_dropsOffListAndAggregate() throws {
+        let session = WindowSession()
+        let attention = makeAttention()
+        let pane = paneWithBadge(session, .finished, at: 100)
+        attention.focusMoved(to: pane, in: session)
+        let tab = try #require(session.tab(containing: pane))
+
+        // Just inside the ceiling: still listed (faded) and still a gray
+        // check on the tab.
+        attention.now = { Date(timeIntervalSince1970: 100 + AttentionState.viewedFinishedRetention - 60) }
+        #expect(attention.attentionEntries(in: session).map(\.paneID) == [pane])
+        #expect(attention.aggregateAgentState(in: tab) == .finished)
+
+        // Past the ceiling: gone from the list, the ⌘J cursor, and the
+        // tab / container aggregate — same as pressing ×.
+        attention.now = { Date(timeIntervalSince1970: 100 + AttentionState.viewedFinishedRetention + 60) }
+        #expect(attention.attentionEntries(in: session).isEmpty)
+        #expect(attention.aggregateAgentState(in: tab) == nil)
+        #expect(attention.hiddenViewedCount(in: session) == 0)
+    }
+
+    @Test func unviewedFinished_pastRetention_staysListed() {
+        let session = WindowSession()
+        let attention = makeAttention()
+        // Never focused, so never viewed — age alone must not hide a
+        // result the user has not looked at yet.
+        let pane = paneWithBadge(session, .finished, at: 100)
+        attention.now = { Date(timeIntervalSince1970: 100 + AttentionState.viewedFinishedRetention * 10) }
+        #expect(attention.attentionEntries(in: session).map(\.paneID) == [pane])
+    }
+
+    @Test func needsInput_neverAgesOut() {
+        let session = WindowSession()
+        let attention = makeAttention()
+        let pane = paneWithBadge(session, .needsInput, at: 100)
+        attention.focusMoved(to: pane, in: session)
+        attention.now = { Date(timeIntervalSince1970: 100 + AttentionState.viewedFinishedRetention * 10) }
+        #expect(attention.attentionEntries(in: session).map(\.paneID) == [pane])
+    }
+
+    @Test func viewedFinished_agedOut_resurfacesOnNewerTurn() throws {
+        let session = WindowSession()
+        let attention = makeAttention()
+        let pane = paneWithBadge(session, .finished, at: 100)
+        attention.focusMoved(to: pane, in: session)
+        let farFuture = 100 + AttentionState.viewedFinishedRetention * 2
+        attention.now = { Date(timeIntervalSince1970: farFuture) }
+        #expect(attention.attentionEntries(in: session).isEmpty)
+
+        // A new finished turn carries a newer stamp, so the retention
+        // rule (keyed to the viewed stamp) no longer applies.
+        let tab = try #require(session.tab(containing: pane))
+        session.update(tab.id) { $0.claudeAgentBadges[pane] = badge(.finished, at: farFuture - 30) }
+        let entries = attention.attentionEntries(in: session)
+        #expect(entries.map(\.paneID) == [pane])
+        #expect(entries.first?.isViewed == false)
+    }
+
     @Test func jumpToAttention_filterHidesEveryRow_isNoOp() throws {
         let session = WindowSession()
-        let attention = AttentionState()
+        let attention = makeAttention()
         let registry = NoopSurfaceRegistry()
         // Only one waiting pane and it's already viewed. With the filter
         // off the visible list is empty → ⌘J has nowhere to go and must

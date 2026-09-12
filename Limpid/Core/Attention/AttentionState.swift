@@ -18,6 +18,9 @@ final class AttentionState {
     var viewedRuntimeTokens: [String: String] = [:]
     var dismissedRuntimeTokens: [String: String] = [:]
     var onRuntimeAttentionChanged: (() -> Void)?
+    /// Lets the notification history acknowledge non-agent output when
+    /// focus moves between panes without changing the active tab.
+    var onPaneFocused: ((UUID) -> Void)?
     var selectedRuntimeID: String?
     /// Per-pane "I've dismissed this finished turn" — the user pressed
     /// the row's ×. Keyed to the badge's `updatedAt`; a newer finished
@@ -37,6 +40,24 @@ final class AttentionState {
     /// scoped (not persisted) so the user starts each launch with the
     /// fuller picture.
     var includeViewed: Bool = true
+
+    /// How long a *viewed* finished turn stays listed before it is
+    /// treated as dismissed. Viewing keeps a row available in the All
+    /// filter, so without a ceiling a turn the user glanced at days ago
+    /// keeps a slot in Waiting until they press ×. A day is long enough to still find yesterday's
+    /// result, short enough that a Monday sidebar doesn't open on
+    /// Friday's leftovers. `needsInput` / `error` never age out.
+    static let viewedFinishedRetention: TimeInterval = 24 * 60 * 60
+
+    /// Clock for the retention rule. Injected so tests can move time
+    /// instead of waiting a day.
+    var now: () -> Date = { Date() }
+
+    /// Whether a viewed finished turn stamped at `updatedAt` has aged
+    /// past `viewedFinishedRetention`.
+    func isPastRetention(_ updatedAt: Date) -> Bool {
+        now().timeIntervalSince(updatedAt) > Self.viewedFinishedRetention
+    }
 
     // MARK: - Mutation
 
@@ -64,6 +85,7 @@ final class AttentionState {
     func focusMoved(to newPane: UUID?, in session: WindowSession) {
         if let newPane {
             markViewed(paneID: newPane, in: session)
+            onPaneFocused?(newPane)
         }
     }
 
@@ -76,14 +98,19 @@ final class AttentionState {
 
     // MARK: - Queries
 
-    /// Whether a `.finished` pane has been dismissed for its current turn.
+    /// Whether a `.finished` pane has been dismissed for its current
+    /// turn — explicitly via ×, or implicitly because the turn was
+    /// viewed and has since aged past `viewedFinishedRetention`.
     func isDismissed(paneID: UUID, badgeUpdatedAt: Date) -> Bool {
         let matching = allRuntimes.filter { $0.paneIDs.contains(paneID) && $0.badge.updatedAt == badgeUpdatedAt }
         if !matching.isEmpty {
             return matching.allSatisfy { isDismissed($0) }
         }
-        guard let stamp = dismissedAt[paneID] else { return false }
-        return badgeUpdatedAt <= stamp
+        if let stamp = dismissedAt[paneID], badgeUpdatedAt <= stamp {
+            return true
+        }
+        guard let viewedStamp = viewedAt[paneID], badgeUpdatedAt <= viewedStamp else { return false }
+        return isPastRetention(badgeUpdatedAt)
     }
 
     /// Whether a `.finished` pane has been viewed for its current turn.
@@ -128,7 +155,7 @@ extension AttentionState {
     /// The viewed flag is what lets the aggregator demote a "check
     /// already glanced at" below a sibling that's still running, so
     /// `{running, viewed-finished}` shows `running` instead of the
-    /// stale gray check.
+    /// stale finished check.
     private struct PaneAgentState {
         let id: String
         let state: AgentState
@@ -234,62 +261,6 @@ extension AttentionState {
         return out
     }
 
-    // MARK: - Aggregate viewed (drives gray vs green check)
-
-    /// Whether a scope's `.finished` contribution is entirely *viewed* —
-    /// drives the gray (vs green) container / tab column check. True only when there is
-    /// at least one finished pane and every finished pane has been
-    /// viewed; a single unseen finished turn keeps the check green.
-    /// Dismissed finished panes are excluded from the aggregate, so they
-    /// don't count here either.
-    func isFinishedAggregateViewed(in tab: Tab) -> Bool {
-        finishedAllViewed(across: [tab])
-    }
-
-    func isFinishedAggregateViewed(in container: ContainerID, session: WindowSession) -> Bool {
-        finishedAllViewed(across: session.tabs(in: container))
-    }
-
-    func isFinishedAggregateViewedInProject(_ projectID: UUID, session: WindowSession) -> Bool {
-        finishedAllViewed(across: session.tabs.filter { $0.container.projectID == projectID })
-    }
-
-    private func finishedAllViewed(across scopedTabs: [Tab]) -> Bool {
-        if !runtimesByKind.isEmpty {
-            let finished = scopeAgentStates(across: scopedTabs).filter { $0.state == .finished }
-            return !finished.isEmpty && finished.allSatisfy(\.isViewed)
-        }
-        var sawFinished = false
-        /// Returns false when this pane carries an *unviewed* finished
-        /// turn (caller bails → green); otherwise notes any viewed
-        /// finished. Claude / Codex badges are distinct types, so we feed
-        /// each in separately.
-        func check(_ state: AgentState, _ updatedAt: Date, _ paneID: UUID) -> Bool {
-            guard state == .finished,
-                  !isDismissed(paneID: paneID, badgeUpdatedAt: updatedAt)
-            else { return true }
-            if !isViewed(paneID: paneID, badgeUpdatedAt: updatedAt) {
-                return false
-            }
-            sawFinished = true
-            return true
-        }
-        for tab in scopedTabs {
-            for paneID in tab.splitTree.allLeafIDs() {
-                if let b = tab.claudeAgentBadges[paneID],
-                   !check(b.state, b.updatedAt, paneID)
-                {
-                    return false
-                }
-                if let b = tab.codexAgentBadges[paneID],
-                   !check(b.state, b.updatedAt, paneID)
-                {
-                    return false
-                }
-            }
-        }
-        return sawFinished
-    }
 }
 
 // MARK: - Attention list + cursor

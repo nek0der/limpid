@@ -70,19 +70,35 @@ final class NotificationHistoryStore {
         scheduleSave()
     }
 
-    /// Mark every unread entry whose `paneID` is in `paneIDs` as read.
-    /// Called when the user navigates to a tab — viewing the source
-    /// session should naturally clear the matching history dots so
-    /// the popover doesn't accumulate stale unread indicators after
-    /// the user has already seen the activity.
+    /// Mark every unread non-agent entry whose `paneID` is in `paneIDs`
+    /// as read. Agent rows are reconciled from their runtime episode;
+    /// pane identity cannot prove that a background tmux pane was seen
+    /// or that an input request was resolved.
     func markRead(forPanes paneIDs: Set<UUID>) {
         guard !paneIDs.isEmpty else { return }
         var changed = false
         for i in entries.indices {
             guard !entries[i].isRead,
                   let pid = entries[i].paneID,
-                  paneIDs.contains(pid)
+                  paneIDs.contains(pid),
+                  entries[i].kind.agentState == nil
             else { continue }
+            entries[i].isRead = true
+            changed = true
+        }
+        if changed {
+            scheduleSave()
+        }
+    }
+
+    /// Mark every unread entry satisfying `predicate` as read. Used by
+    /// `NotificationReadSync` to retire agent rows whose runtime has
+    /// moved on, so the unread count only counts what still needs the
+    /// user. Saves only when something actually changed, which also
+    /// keeps the observation loop (sync observes `entries`) quiet.
+    func markRead(where predicate: (NotificationEntry) -> Bool) {
+        var changed = false
+        for i in entries.indices where !entries[i].isRead && predicate(entries[i]) {
             entries[i].isRead = true
             changed = true
         }

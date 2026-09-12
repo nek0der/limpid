@@ -290,11 +290,15 @@ if [ -n "$new_state" ]; then
   prev_last_prompt=""
   prev_first_prompt=""
   prev_session_started=""
+  prev_state=""
+  prev_state_episode=""
   if [ -f "$state_final" ]; then
     prev_run_started="$(plutil -extract runStartedAt raw -o - "$state_final" 2>/dev/null)"
     prev_last_prompt="$(plutil -extract lastPrompt raw -o - "$state_final" 2>/dev/null)"
     prev_first_prompt="$(plutil -extract firstPrompt raw -o - "$state_final" 2>/dev/null)"
     prev_session_started="$(plutil -extract sessionStartedAt raw -o - "$state_final" 2>/dev/null)"
+    prev_state="$(plutil -extract state raw -o - "$state_final" 2>/dev/null)"
+    prev_state_episode="$(plutil -extract stateEpisodeToken raw -o - "$state_final" 2>/dev/null)"
   fi
   case "$hook_event" in
     UserPromptSubmit)
@@ -389,12 +393,18 @@ if [ -n "$new_state" ]; then
   if command -v limpid_next_revision >/dev/null 2>&1; then
     revision="$(limpid_next_revision "$state_final")"
   fi
+  if [ "$prev_state" = "$new_state" ] && [ -n "$prev_state_episode" ]; then
+    state_episode="$prev_state_episode"
+  else
+    state_episode="$revision"
+  fi
+  episode_field=",\"stateEpisodeToken\":\"$state_episode\""
   runtime_field=",\"runId\":\"$run_id\",\"revision\":$revision"
   if [ -n "$tmux_socket" ] && [ -n "$tmux_pane" ]; then
     runtime_field="$runtime_field,\"tmuxSocketPath\":\"$(json_escape "$tmux_socket")\",\"tmuxPaneId\":\"$tmux_pane\",\"tmuxServerPID\":\"$LIMPID_RUNTIME_TMUX_SERVER_PID\",\"tmuxServerStartedAt\":\"$LIMPID_RUNTIME_TMUX_SERVER_START\""
   fi
   {
-    printf '{"schemaVersion":2,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s%s%s}\n' \
+    printf '{"schemaVersion":2,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s%s%s%s}\n' \
       "$pane_id" \
       "$new_state" \
       "$detail_safe" \
@@ -407,6 +417,7 @@ if [ -n "$new_state" ]; then
       "$prompt_field" \
       "$first_prompt_field" \
       "$session_started_field" \
+      "$episode_field" \
       "$runtime_field"
   } > "$state_tmp" 2>/dev/null && mv -f "$state_tmp" "$state_final" 2>/dev/null || rm -f "$state_tmp" 2>/dev/null
   # A legacy writer may still own its record. Lifecycle cleanup owns removal.

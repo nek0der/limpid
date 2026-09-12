@@ -191,18 +191,26 @@ struct ContainerSlabView: View {
     /// row jumps focus to that pane.
     @ViewBuilder
     private var attentionRegion: some View {
-        let entries = attention.attentionEntries(in: session)
         // The pane the user is currently looking at — its row gets a
         // highlight so "where am I" is obvious while cycling with ⌘J.
         let focusedTab = session.activeTabID
         let focusedPane = session.activeTab?.splitTree.focusedLeafID
-        VStack(alignment: .leading, spacing: 0) {
-            attentionHeader(count: entries.count, attention: attention, accent: limpidAccent)
-            // TimelineView re-renders once per minute. The label is
-            // "just now" under 60s and steps to "1m / 2m / …" from there
-            // — so second-grain ticking would only be visible flicker.
-            // 60s keeps the m/h/d label honest without churning the slab.
-            TimelineView(.periodic(from: .now, by: 60)) { context in
+        // TimelineView re-renders once per minute. The label is
+        // "just now" under 60s and steps to "1m / 2m / …" from there
+        // — so second-grain ticking would only be visible flicker.
+        // 60s keeps the m/h/d label honest without churning the slab.
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            // The list itself is derived inside the tick, not outside
+            // it: a viewed finished turn drops out once it ages past
+            // `AttentionState.viewedFinishedRetention`, and that rule
+            // reads the wall clock. Evaluated above the TimelineView,
+            // an aged-out row would stay listed until some unrelated
+            // state change happened to re-render the slab.
+            let entries = attention.attentionEntries(in: session)
+            // The header carries the per-state counts, so it belongs
+            // inside the tick as well.
+            VStack(alignment: .leading, spacing: 0) {
+                attentionHeader(entries: entries, attention: attention)
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 2) {
                         if entries.isEmpty {
@@ -211,8 +219,8 @@ struct ContainerSlabView: View {
                             //   - filter on + things hidden → "N hidden"
                             //   - everything else → "All clear" (inbox
                             //     zero feels intentional, not broken)
-                            // Calm wording, no affordance — the eye in
-                            // the header is the user's way back.
+                            // Calm wording, no affordance — the filter
+                            // in the header is the user's way back.
                             //
                             // Branches are kept separate (not a ternary)
                             // so each `Text(_:)` call resolves to the
@@ -237,13 +245,11 @@ struct ContainerSlabView: View {
                                 AttentionRow(
                                     timestamp: entry.updatedAt,
                                     now: context.date,
+                                    state: entry.state,
                                     containerLabel: session.containerLabel(for: tab.container),
-                                    containerColor: containerColor(for: tab.container),
-                                    containerIcon: containerIcon(for: tab.container),
                                     tabTitle: tab.displayTitle,
                                     prompt: attentionPreview(entry),
                                     isCurrent: entry.tabID == focusedTab && entry.paneID == focusedPane,
-                                    isViewed: entry.isViewed,
                                     onDismiss: entry.state == .finished
                                         ? {
                                             if let id = entry.runtimeID {
@@ -289,7 +295,6 @@ struct ContainerSlabView: View {
                     hasUnread: hasUnread(in: .loose),
                     isRinging: isRinging(in: .loose),
                     agentState: agentState(in: .loose),
-                    agentStateViewed: attention.isFinishedAggregateViewed(in: .loose, session: session),
                     agentBreakdown: agentBreakdown(in: .loose),
                     onActivate: { session.setActiveContainer(.loose) },
                     onToggleExpand: nil,
@@ -347,7 +352,6 @@ struct ContainerSlabView: View {
                                 hasUnread: hasUnread(in: .group(group.id)),
                                 isRinging: isRinging(in: .group(group.id)),
                                 agentState: agentState(in: .group(group.id)),
-                                agentStateViewed: attention.isFinishedAggregateViewed(in: .group(group.id), session: session),
                                 agentBreakdown: agentBreakdown(in: .group(group.id)),
                                 onActivate: { session.setActiveContainer(.group(group.id)) },
                                 onToggleExpand: nil,
@@ -523,22 +527,6 @@ struct ContainerSlabView: View {
             // Reapply disabled state at that boundary so inline editors
             // reliably release focus when the offscreen slab closes.
             .disabled(!isPresentationEnabled)
-    }
-
-    /// Palette color of a container, for the Waiting row's dot.
-    /// `.loose` (Quick Tabs) has no palette, so it falls back to the
-    /// neutral default color.
-    private func containerColor(for container: ContainerID) -> Color {
-        switch container {
-        case .loose:
-            LimpidColor.paletteColor(nil)
-        case let .group(gid):
-            LimpidColor.paletteColor(session.group(gid)?.paletteIndex)
-        case let .project(pid):
-            LimpidColor.paletteColor(session.project(pid)?.paletteIndex)
-        case let .worktree(pid, _):
-            LimpidColor.paletteColor(session.project(pid)?.paletteIndex)
-        }
     }
 
     private func sectionHeader(

@@ -6,12 +6,47 @@ import Foundation
 
 struct NotificationEntry: Codable, Identifiable, Equatable {
     enum Kind: String, Codable {
-        /// OSC 9 / OSC 777 — explicit shell-driven notification.
+        /// OSC 9 / OSC 777 — explicit shell-driven notification. Also
+        /// the decode fallback for any raw value this build doesn't
+        /// know, so a newer build's history still loads here.
         case desktop
         /// COMMAND_FINISHED — long-running command finished hook.
         case commandFinished
-        /// Bell character / RING_BELL action.
+        /// Bell character / RING_BELL action. Reserved — the bell
+        /// handler fans out to beep / Dock bounce / pane flash and does
+        /// not write history today.
         case bell
+        /// Claude / Codex finished a turn (`running → finished`).
+        case agentFinished
+        /// Claude / Codex is blocked on a permission prompt or an
+        /// AskUserQuestion (`→ needsInput`).
+        case agentNeedsInput
+        /// Claude / Codex hit a `StopFailure` (rate limit, billing,
+        /// crash). Recorded in history without a banner — the red
+        /// badge and the Waiting row already carry the alarm.
+        case agentError
+
+        /// Agent-originated kinds share a glyph family with the
+        /// Waiting list, so the panel can render them through
+        /// `AgentState` presentation instead of its own icon set.
+        var agentState: AgentState? {
+            switch self {
+            case .agentFinished: .finished
+            case .agentNeedsInput: .needsInput
+            case .agentError: .error
+            case .desktop, .commandFinished, .bell: nil
+            }
+        }
+
+        /// Defensive decode: history files written by a newer build
+        /// may carry kinds this build lacks. Folding them to
+        /// `.desktop` keeps the whole array decodable — the
+        /// alternative is `NotificationHistoryStore.load` quarantining
+        /// the entire file over one unknown row.
+        init(from decoder: any Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = Kind(rawValue: raw) ?? .desktop
+        }
     }
 
     let id: UUID
@@ -35,8 +70,21 @@ struct NotificationEntry: Codable, Identifiable, Equatable {
     let exitCode: Int?
     let durationSeconds: Double?
     /// User-facing read state. Flipped true when the row is opened in
-    /// the history panel, or when the user explicitly marks all read.
+    /// the history panel, when the user explicitly marks all read, or
+    /// — for agent rows — when `NotificationReadSync` sees the agent
+    /// move past the state that produced the row.
     var isRead: Bool
+    /// `AgentRuntimePresentation.id` of the invocation that produced an
+    /// agent row. Lets the panel show whether that agent is *still*
+    /// waiting and lets tapping the row follow a tmux-hosted agent to
+    /// its current pane. Nil for shell / command rows and for rows
+    /// recorded before this field existed.
+    let runtimeID: String?
+    /// Stable token for the runtime state episode that produced this agent
+    /// row. A single invocation can ask for input more than once, so runtimeID
+    /// alone cannot tell whether a later waiting state is this row's event.
+    /// Nil for non-agent rows and history written before this field existed.
+    let eventToken: String?
 
     init(
         id: UUID = UUID(),
@@ -49,7 +97,9 @@ struct NotificationEntry: Codable, Identifiable, Equatable {
         body: String,
         exitCode: Int? = nil,
         durationSeconds: Double? = nil,
-        isRead: Bool = false
+        isRead: Bool = false,
+        runtimeID: String? = nil,
+        eventToken: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -62,5 +112,7 @@ struct NotificationEntry: Codable, Identifiable, Equatable {
         self.exitCode = exitCode
         self.durationSeconds = durationSeconds
         self.isRead = isRead
+        self.runtimeID = runtimeID
+        self.eventToken = eventToken
     }
 }

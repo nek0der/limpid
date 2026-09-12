@@ -53,12 +53,6 @@ struct TabRow: View {
         attention.aggregateAgentState(in: tab)
     }
 
-    /// Whether the tab's finished turn(s) are all viewed — drives the
-    /// gray (vs green) check on the activity badge.
-    private var aggregateViewed: Bool {
-        attention.isFinishedAggregateViewed(in: tab)
-    }
-
     /// Leading identity icon: does an AI agent (Claude or Codex) have
     /// a live session in any of this tab's panes — whether actively
     /// working or sitting idle? Distinct from `aggregateAgentState`,
@@ -284,9 +278,7 @@ struct TabRow: View {
                     let tooltip = agentTooltip(for: state)
                     Image(systemName: iconName)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(state == .finished && aggregateViewed
-                            ? Color.secondary
-                            : iconColor)
+                        .foregroundStyle(iconColor)
                         .frame(
                             width: LimpidLayout.containerColumnTrailingSlot,
                             height: LimpidLayout.containerColumnTrailingSlot

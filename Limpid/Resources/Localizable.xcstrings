@@ -11,6 +11,126 @@
         }
       }
     },
+    "Agent responses and completed commands appear as notifications.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの応答やコマンドの完了を通知します。"
+          }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて"
+          }
+        }
+      }
+    },
+    "Claude hit an error": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude でエラーが発生"
+          }
+        }
+      }
+    },
+    "Clear all notifications?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての通知を消去しますか？"
+          }
+        }
+      }
+    },
+    "Codex hit an error": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex でエラーが発生"
+          }
+        }
+      }
+    },
+    "Commands": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コマンド"
+          }
+        }
+      }
+    },
+    "Earlier": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "それ以前"
+          }
+        }
+      }
+    },
+    "Failed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失敗"
+          }
+        }
+      }
+    },
+    "Next": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次"
+          }
+        }
+      }
+    },
+    "No agent notifications": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント通知はありません"
+          }
+        }
+      }
+    },
+    "No command notifications": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コマンド通知はありません"
+          }
+        }
+      }
+    },
+    "Notification filter": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知の表示範囲"
+          }
+        }
+      }
+    },
     "About": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "About" } },
@@ -1737,6 +1857,26 @@
         }
       }
     },
+    "Show every waiting turn, including ones you have viewed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閲覧済みを含めてすべて表示"
+          }
+        }
+      }
+    },
+    "Show only turns that still need you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対応が必要なものだけ表示"
+          }
+        }
+      }
+    },
     "Show PR status in sidebar": {
       "localizations": {
         "ja": {
@@ -1863,6 +2003,16 @@
         }
       }
     },
+    "Today": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日"
+          }
+        }
+      }
+    },
     "Try Again": {
       "localizations": {
         "en": {
@@ -1875,6 +2025,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "再試行"
+          }
+        }
+      }
+    },
+    "Waiting filter": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting の表示範囲"
           }
         }
       }
@@ -5476,6 +5636,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ワークツリー"
+          }
+        }
+      }
+    },
+    "Yesterday": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "昨日"
           }
         }
       }

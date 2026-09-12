@@ -25,50 +25,57 @@ struct ContainerColumnContent: View {
 }
 
 /// Notification bell shared by the sidebar and hidden-sidebar controls.
+///
+/// The badge counts unread *history* rows, not per-pane unread. The
+/// two used to diverge: agent turns are recorded in history but never
+/// bump a pane's unread count, so the panel could open on a dozen
+/// unread rows under a bell that showed nothing. History is the
+/// number the panel header and the Dock badge display too, so the
+/// three now move together.
 struct ToolbarBellButton: View {
     @Environment(WindowSession.self) private var session
+    @Environment(NotificationHistoryStore.self) private var historyStore
     @Environment(NotificationHistoryPresentation.self) private var historyPresentation
-    @Environment(\.surfaceRegistry) private var registry
-    @Environment(\.limpidAccent) private var accent
+    @State private var isHovering = false
 
     var body: some View {
-        @Bindable var historyPresentation = historyPresentation
-        ToolbarIconButton(
-            systemImage: session.windowHasUnread ? "bell.fill" : "bell",
-            help: "Notification History"
-        ) {
-            historyPresentation.isPresented.toggle()
-        }
-        .overlay(alignment: .topTrailing) {
-            if session.windowHasUnread {
-                Text(badgeText)
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 4)
-                    .frame(minWidth: 14, minHeight: 14)
-                    .background(Capsule().fill(LimpidColor.notificationBell))
-                    .offset(x: -4, y: 2)
-                    .symbolEffect(.bounce, value: session.windowIsRinging)
-                    .accessibilityLabel("\(session.windowUnreadCount) unread")
+        let unread = historyStore.unreadCount
+        Button {
+            toggleNotificationHistory(historyPresentation, session: session)
+        } label: {
+            ToolbarIconLabel(
+                systemImage: unread > 0 ? "bell.fill" : "bell",
+                isEnabled: true,
+                isHovering: isHovering
+            )
+            .overlay(alignment: .topTrailing) {
+                if unread > 0 {
+                    Text(badgeText(unread))
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: 14, minHeight: 14)
+                        .background(Capsule().fill(LimpidColor.notificationBell))
+                        .offset(x: -4, y: 2)
+                        .symbolEffect(.bounce, value: session.windowIsRinging)
+                }
             }
         }
-        .popover(isPresented: $historyPresentation.isPresented, arrowEdge: .bottom) {
-            NotificationHistoryView(
-                isPaneAlive: { paneID in
-                    session.tab(containing: paneID) != nil
-                },
-                onJumpToPane: { paneID in
-                    jumpToPane(paneID, session: session, registry: registry)
-                }
-            )
-            .limpidAccentPropagated(accent)
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help("Notification History")
+        .accessibilityLabel(Text("Notification History"))
+        .accessibilityValue(Text("\(unread) unread"))
+        .onGeometryChange(for: CGRect.self) { geometry in
+            geometry.frame(in: .global)
+        } action: { frame in
+            historyPresentation.anchorFrame = frame
         }
     }
 
-    private var badgeText: String {
-        let n = session.windowUnreadCount
-        return n > 99 ? "99+" : "\(n)"
+    private func badgeText(_ n: Int) -> String {
+        n > 99 ? "99+" : "\(n)"
     }
 }
 
