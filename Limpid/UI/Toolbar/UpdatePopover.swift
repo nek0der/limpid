@@ -70,7 +70,7 @@ struct UpdatePopover: View {
 /// Reusable metadata block (version / size / date) used by Available
 /// and ReadyToInstall states.
 private struct UpdateMetadata: View {
-    let item: SUAppcastItem
+    let item: UpdateDisplayItem
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -154,7 +154,7 @@ private struct CheckingView: View {
 }
 
 private struct AvailableView: View {
-    let item: SUAppcastItem
+    let item: UpdateDisplayItem
     let reply: OneShot<SPUUserUpdateChoice>
     let dismiss: () -> Void
 
@@ -202,7 +202,7 @@ private struct AvailableView: View {
 }
 
 private struct DownloadingView: View {
-    let item: SUAppcastItem
+    let item: UpdateDisplayItem
     let expected: UInt64?
     let received: UInt64
     let cancel: OneShot<Void>
@@ -253,7 +253,7 @@ private struct ExtractingView: View {
 }
 
 private struct ReadyToInstallView: View {
-    let item: SUAppcastItem
+    let item: UpdateDisplayItem
     let reply: OneShot<SPUUserUpdateChoice>
     let dismiss: () -> Void
 
