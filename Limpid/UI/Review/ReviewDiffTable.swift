@@ -64,6 +64,12 @@ final class ReviewTableRowView: NSTableRowView {
 /// single letters above before they reach us.
 final class ReviewTableView: NSTableView {
     var onKey: ((ReviewTableKey) -> Bool)?
+    var onCopyCode: (() -> Bool)?
+    var hasTextSelection: (() -> Bool)?
+    var textPosition: ((NSPoint, ReviewTextPosition?) -> ReviewTextPosition?)?
+    var onCodePress: ((ReviewTextPosition, Bool) -> Void)?
+    var onTextSelection: ((ReviewTextSelection) -> Void)?
+    var onSelectTextUnit: ((ReviewTextPosition, Int) -> Void)?
     var hidesAccessibilityTree = false
     /// Asked to scroll both code columns sideways. Returns whether it took the
     /// event; the split layout has no horizontal scroll of its own to fall
@@ -77,6 +83,16 @@ final class ReviewTableView: NSTableView {
     /// arrow keys are not ours and reach `NSTableView` directly, and a stale
     /// press was still deciding the column for them long after it happened.
     private(set) var lastClickX: CGFloat?
+    private var textDragAnchor: ReviewTextPosition?
+    private var textDragOrigin: NSPoint?
+    private var textPressExtendsLineSelection = false
+    private var didDragText = false
+    private var latestTextDragEvent: NSEvent?
+    /// `nonisolated(unsafe)` permits `deinit` to invalidate the RunLoop timer.
+    /// Every write occurs in MainActor-isolated mouse handling, and `deinit`
+    /// runs only after those handlers have released the table.
+    private nonisolated(unsafe) var textAutoscrollTimer: Timer?
+    private var consumesMouseUp = false
 
     override var acceptsFirstResponder: Bool {
         true
@@ -91,8 +107,88 @@ final class ReviewTableView: NSTableView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        stopTextAutoscroll()
         lastClickX = convert(event.locationInWindow, from: nil).x
-        super.mouseDown(with: event)
+        let point = convert(event.locationInWindow, from: nil)
+        guard let position = textPosition?(point, nil) else {
+            onTextSelection?(ReviewTextSelection())
+            super.mouseDown(with: event)
+            return
+        }
+        window?.makeFirstResponder(self)
+        if event.clickCount > 1 {
+            consumesMouseUp = true
+            onSelectTextUnit?(position, event.clickCount)
+            return
+        }
+        textDragAnchor = position
+        textDragOrigin = point
+        textPressExtendsLineSelection = event.modifierFlags.contains(.shift)
+        didDragText = false
+        onTextSelection?(ReviewTextSelection(anchor: position, head: position))
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let anchor = textDragAnchor, let origin = textDragOrigin else {
+            super.mouseDragged(with: event)
+            return
+        }
+        updateTextDrag(with: event, anchor: anchor, origin: origin)
+        latestTextDragEvent = event
+        if textAutoscrollTimer == nil {
+            let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let anchor = self.textDragAnchor,
+                          let origin = self.textDragOrigin,
+                          let event = self.latestTextDragEvent
+                    else { return }
+                    self.updateTextDrag(with: event, anchor: anchor, origin: origin)
+                }
+            }
+            textAutoscrollTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    private func updateTextDrag(with event: NSEvent, anchor: ReviewTextPosition, origin: NSPoint) {
+        autoscroll(with: event)
+        let point = convert(event.locationInWindow, from: nil)
+        guard hypot(point.x - origin.x, point.y - origin.y) >= 2,
+              let head = textPosition?(point, anchor)
+        else { return }
+        didDragText = true
+        var selection = ReviewTextSelection()
+        selection.select(from: anchor, to: head)
+        onTextSelection?(selection)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if consumesMouseUp {
+            consumesMouseUp = false
+            return
+        }
+        guard let anchor = textDragAnchor else {
+            super.mouseUp(with: event)
+            return
+        }
+        if !didDragText {
+            onCodePress?(anchor, textPressExtendsLineSelection)
+        }
+        textDragAnchor = nil
+        textDragOrigin = nil
+        textPressExtendsLineSelection = false
+        didDragText = false
+        stopTextAutoscroll()
+    }
+
+    private func stopTextAutoscroll() {
+        textAutoscrollTimer?.invalidate()
+        textAutoscrollTimer = nil
+        latestTextDragEvent = nil
+    }
+
+    deinit {
+        textAutoscrollTimer?.invalidate()
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -110,6 +206,14 @@ final class ReviewTableView: NSTableView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if window?.firstResponder === self,
+           event.type == .keyDown,
+           modifiers == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "c"
+        {
+            return onCopyCode?() ?? false
+        }
         guard window?.firstResponder === self, event.type == .keyDown,
               let key = ReviewTableKey(event: event), key == .insert || key == .toggleTerminal
         else {
@@ -124,6 +228,26 @@ final class ReviewTableView: NSTableView {
             return
         }
         super.keyDown(with: event)
+    }
+
+    override func menu(for _: NSEvent) -> NSMenu? {
+        guard !selectedRowIndexes.isEmpty || hasTextSelection?() == true else { return nil }
+        let menu = NSMenu()
+        let copy = NSMenuItem(
+            title: hasTextSelection?() == true
+                ? String(localized: "Copy Selected Text")
+                : String(localized: "Copy Code"),
+            action: #selector(copySelectedCode(_:)),
+            keyEquivalent: "c"
+        )
+        copy.keyEquivalentModifierMask = .command
+        copy.target = self
+        menu.addItem(copy)
+        return menu
+    }
+
+    @objc private func copySelectedCode(_: Any?) {
+        _ = onCopyCode?()
     }
 }
 
@@ -169,7 +293,13 @@ struct ReviewDiffTable: NSViewRepresentable {
     /// The diff the rows were built from — the file and the fingerprint of its
     /// patch. Unfolding does not change it; a refresh does.
     let contentIdentity: String
+    /// False while a replacement snapshot is loading. The SwiftUI hit-test
+    /// gate does not stop an already-focused `NSTableView` receiving keys.
+    var isInteractionEnabled = true
     @Binding var selection: ReviewSelection
+    /// Independent from the line range above: dragging over code copies exact
+    /// characters without changing which lines a comment would cover.
+    @Binding var textSelection: ReviewTextSelection
     /// Read only: every transition goes through `onCompose` / `onCancelCompose`
     /// so the workspace can keep the edit target in step with the line.
     let composerLineID: Int?
@@ -263,6 +393,25 @@ struct ReviewDiffTable: NSViewRepresentable {
         table.dataSource = context.coordinator
         table.onKey = { [weak coordinator = context.coordinator] key in
             coordinator?.handle(key) ?? false
+        }
+        table.onCopyCode = { [weak coordinator = context.coordinator] in
+            coordinator?.copySelectedCode() ?? false
+        }
+        table.hasTextSelection = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.textSelection.isEmpty == false
+        }
+        table.textPosition = { [weak coordinator = context.coordinator, weak table] point, anchor in
+            guard let coordinator, let table else { return nil }
+            return coordinator.textPosition(at: point, continuingFrom: anchor, in: table)
+        }
+        table.onCodePress = { [weak coordinator = context.coordinator] position, extends in
+            coordinator?.selectCodeLine(at: position, extending: extends)
+        }
+        table.onTextSelection = { [weak coordinator = context.coordinator] selection in
+            coordinator?.parent.textSelection = selection
+        }
+        table.onSelectTextUnit = { [weak coordinator = context.coordinator] position, clickCount in
+            coordinator?.selectTextUnit(at: position, clickCount: clickCount)
         }
         table.onScrollCode = { [weak coordinator = context.coordinator, weak table] delta in
             guard let table else { return false }
@@ -397,6 +546,7 @@ struct ReviewDiffTable: NSViewRepresentable {
         coordinator.refreshSearch(in: table, scroll: scroll)
         coordinator.clampCodeOffset(in: table)
         coordinator.syncSelection(in: table)
+        coordinator.syncTextSelection(in: table)
         coordinator.focusComposerIfNeeded(in: table)
         coordinator.refreshGutter(in: table)
     }

@@ -11,14 +11,8 @@ extension ReviewDiffTable.Coordinator {
     // MARK: - Keyboard
 
     func handle(_ key: ReviewTableKey) -> Bool {
-        // The drawer visually and semantically covers the table. Consume every
-        // table command while it is up; Escape dismisses the drawer, and no
-        // other key may mutate or focus content hidden behind it.
-        if parent.isOverlayPresented {
-            if key == .close {
-                parent.onCloseOverlay()
-            }
-            return true
+        if let handled = handlePresentationGate(key) {
+            return handled
         }
         switch key {
         case .close:
@@ -51,6 +45,27 @@ extension ReviewDiffTable.Coordinator {
             move(key)
         }
         return true
+    }
+
+    /// Returns a result only when presentation state owns the key before the
+    /// normal table commands do.
+    private func handlePresentationGate(_ key: ReviewTableKey) -> Bool? {
+        // The drawer visually and semantically covers the table. Consume every
+        // table command while it is up; Escape dismisses the drawer, and no
+        // other key may mutate or focus content hidden behind it.
+        if parent.isOverlayPresented {
+            if key == .close {
+                parent.onCloseOverlay()
+            }
+            return true
+        }
+        if !parent.isInteractionEnabled {
+            if key == .close {
+                parent.onClose()
+            }
+            return true
+        }
+        return nil
     }
 
     /// The keys that only move the cursor, split out from the ones that do

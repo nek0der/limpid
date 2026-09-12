@@ -73,14 +73,55 @@ struct ReviewComposerFocusTests {
         #expect(closeOverlayCount == 1)
     }
 
+    @Test func loadingSnapshotConsumesMutationKeysButStillAllowsClosing() {
+        var composeCount = 0
+        var closeCount = 0
+        let parent = makeTable(
+            isInteractionEnabled: false,
+            onCompose: { composeCount += 1 },
+            onClose: { closeCount += 1 }
+        )
+        let coordinator = parent.makeCoordinator()
+
+        #expect(coordinator.handle(.comment))
+        #expect(composeCount == 0)
+        #expect(coordinator.handle(.close))
+        #expect(closeCount == 1)
+    }
+
+    @Test func textDragPastDocumentEndClampsToTheLastCodeRow() {
+        let parent = makeTable()
+        let coordinator = parent.makeCoordinator()
+        let table = ReviewTableView(frame: NSRect(x: 0, y: 0, width: 600, height: 200))
+        let column = NSTableColumn(identifier: .init("review"))
+        column.width = 600
+        table.addTableColumn(column)
+        table.rowHeight = ReviewRowMetrics.code
+        let dataSource = FixedReviewTableDataSource(rowCount: parent.rows.count)
+        table.dataSource = dataSource
+        table.reloadData()
+        let anchor = ReviewTextPosition(rowIndex: 0, lineID: 0, side: nil, utf16Offset: 0)
+
+        let result = coordinator.textPosition(
+            at: NSPoint(x: 200, y: 10000),
+            continuingFrom: anchor,
+            in: table
+        )
+
+        #expect(result?.rowIndex == 0)
+        #expect(result?.lineID == 0)
+    }
+
     private func descendants(of view: NSView) -> [NSView] {
         view.subviews.flatMap { [$0] + descendants(of: $0) }
     }
 
     private func makeTable(
         isOverlayPresented: Bool = false,
+        isInteractionEnabled: Bool = true,
         onCompose: @escaping () -> Void = {},
-        onCloseOverlay: @escaping () -> Void = {}
+        onCloseOverlay: @escaping () -> Void = {},
+        onClose: @escaping () -> Void = {}
     ) -> ReviewDiffTable {
         let file = ReviewFile(path: "a.swift", layer: .unstaged, status: .modified)
         let line = ReviewLine(id: 0, kind: .added, text: "new", oldLine: nil, newLine: 1)
@@ -90,12 +131,30 @@ struct ReviewComposerFocusTests {
             rows: [ReviewRow(id: 0, kind: .code(line)), ReviewRow(id: 1, kind: .composer(line))],
             diffLines: [line], contentKey: "focus", widthKey: "focus", layout: .unified,
             files: [file], lineCommentCounts: [:], numberWidth: 26, expandedFileID: file.id, contentIdentity: file.id,
-            selection: .constant(selection), composerLineID: line.id, composerStartLine: nil,
+            isInteractionEnabled: isInteractionEnabled,
+            selection: .constant(selection), textSelection: .constant(ReviewTextSelection()),
+            composerLineID: line.id, composerStartLine: nil,
             composerIsEditing: false, composerText: .constant("focus-keep"),
             onSelectFile: { _ in }, onCompose: onCompose, onCancelCompose: {}, onCommit: {}, onInsert: {}, onToggleTerminal: {},
             search: ReviewSearch(), onCloseSearch: {}, searchTargetLineID: nil, language: nil,
             onToggleViewed: {}, onExpand: { _, _ in }, onResolve: { _ in }, onEdit: { _ in }, onDelete: { _ in },
-            isOverlayPresented: isOverlayPresented, onCloseOverlay: onCloseOverlay, onClose: {}
+            isOverlayPresented: isOverlayPresented, onCloseOverlay: onCloseOverlay, onClose: onClose
         )
+    }
+}
+
+private final class FixedReviewTableDataSource: NSObject, NSTableViewDataSource {
+    let rowCount: Int
+
+    init(rowCount: Int) {
+        self.rowCount = rowCount
+    }
+
+    func numberOfRows(in _: NSTableView) -> Int {
+        rowCount
+    }
+
+    func tableView(_: NSTableView, objectValueFor _: NSTableColumn?, row _: Int) -> Any? {
+        nil
     }
 }

@@ -8,11 +8,24 @@
 
 import SwiftUI
 
+enum ReviewHeaderMetrics {
+    /// Match the regular macOS button height used by the actions in this
+    /// header. Every custom capsule uses this value so mixed SwiftUI and
+    /// native controls still share one visual baseline.
+    static let controlHeight: CGFloat = 28
+
+    /// Enough for two signed five-digit counts at the caption size. A fixed
+    /// slot keeps a refreshed count from changing which `ViewThatFits` layout
+    /// wins and moving the scope control under the pointer.
+    static let statWidth: CGFloat = 104
+}
+
 struct ReviewHeader: View {
     let store: ReviewStore
     let destination: ReviewDestination?
     let isResolvingDestination: Bool
     let isInserting: Bool
+    let isSnapshotReady: Bool
     let canInsert: Bool
     let prompt: String
     @Binding var isShowingPrompt: Bool
@@ -174,9 +187,12 @@ struct ReviewHeader: View {
                 .foregroundStyle(LimpidColor.error)
         }
         .font(.caption.monospacedDigit())
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
         .padding(.horizontal, 7)
-        .padding(.vertical, 2)
+        .frame(width: ReviewHeaderMetrics.statWidth, height: ReviewHeaderMetrics.controlHeight)
         .overlay(Capsule().stroke(LimpidColor.panelDivider))
+        .opacity(isSnapshotReady ? 1 : 0)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Changed lines"))
     }
@@ -192,6 +208,7 @@ struct ReviewHeader: View {
                 isEnabled: !store.isLoading && !isInserting,
                 onSelect: onSelectScope
             )
+            .opacity(isSnapshotReady ? 1 : 0)
         }
     }
 
@@ -224,21 +241,17 @@ struct ReviewHeader: View {
 /// it that does not appear to respond.
 struct ReviewScopeSwitch: View {
     let base: String
-    /// What the store is actually reading. Follows the tap by however long
-    /// Git takes, which is why it is not what the pill is drawn from.
+    /// What the completed snapshot represents. It changes only when the new
+    /// file list and diff are ready, so the pill never labels old code as the
+    /// scope the reader just requested.
     let isBranch: Bool
     var isEnabled = true
     let onSelect: (Bool) -> Void
 
     @Environment(\.limpidAccent) private var accent
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Where the pill is, which is not the same thing as what is being read.
-    ///
-    /// Moved from the tap rather than derived from the store: the scope
-    /// changes inside an async reload, and a value that arrives outside the
-    /// tap's transaction is a value `.animation(_:value:)` has already stopped
-    /// watching for. Driving it here also means the control answers the click
-    /// at once instead of when Git does.
+    /// Where the pill is. Stored only to animate the committed scope change;
+    /// it must not move ahead of the snapshot it describes.
     @State private var showsBranch: Bool
     /// Each segment's frame in the control's own space, so the pill can be
     /// given a width and an origin. An ordinary frame change animates;
@@ -301,6 +314,7 @@ struct ReviewScopeSwitch: View {
                 .opacity(selected.isEmpty ? 0 : 1)
         }
         .padding(2)
+        .frame(height: ReviewHeaderMetrics.controlHeight)
         .background(Capsule().fill(LimpidColor.rowActiveFill.opacity(0.6)))
         // The reload can end somewhere the tap did not ask for — a retarget,
         // or a scope the store refused — and the pill has to follow it back.
@@ -318,14 +332,13 @@ struct ReviewScopeSwitch: View {
 
     private func segment(_ label: Text, tag: Bool) -> some View {
         Button {
-            withAnimation(motion) { showsBranch = tag }
             onSelect(tag)
         } label: {
             label
                 .font(LimpidFont.caption)
                 .foregroundStyle(showsBranch == tag ? LimpidColor.primaryText : LimpidColor.secondaryText)
                 .padding(.horizontal, 9)
-                .padding(.vertical, 3)
+                .frame(height: ReviewHeaderMetrics.controlHeight - 4)
                 .contentShape(Capsule())
                 .onGeometryChange(for: CGRect.self) { proxy in
                     proxy.frame(in: .named(Self.space))
@@ -455,6 +468,7 @@ struct ReviewBanner: View {
 /// method on the workspace, which had grown past what one view body should
 /// hold.
 struct ReviewFileBar: View {
+    let root: URL
     let file: ReviewFile
     let stat: ReviewFileStat?
     /// Whether the diff loaded for this file came back empty.
@@ -505,6 +519,9 @@ struct ReviewFileBar: View {
                     .textSelection(.enabled)
             }
             .contentShape(Rectangle())
+            .contextMenu {
+                ReviewFileActionsMenu(root: root, file: file)
+            }
             // The middle of a deep path is what the bar drops first, and that
             // is usually the part saying which of two similarly named files
             // this is.

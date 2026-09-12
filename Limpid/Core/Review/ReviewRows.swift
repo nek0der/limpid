@@ -260,6 +260,25 @@ struct ReviewSelection: Equatable {
     }
 }
 
+enum ReviewCopyPayload {
+    /// Code only — no diff markers or line numbers — in the same order and
+    /// column the reader selected. This is shared by the keyboard and context
+    /// menu paths so they cannot put different text on the pasteboard.
+    static func code(
+        lines: [ReviewLine],
+        selection: ReviewSelection,
+        layout: ReviewDiffLayout
+    ) -> String? {
+        guard let start = selection.startLineID, let end = selection.endLineID else { return nil }
+        let side = layout == .sideBySide ? selection.side : nil
+        let selected = lines
+            .filter { (start...end).contains($0.id) && ReviewSide.covers($0, on: side) }
+            .map(\.text)
+        guard !selected.isEmpty else { return nil }
+        return selected.joined(separator: "\n")
+    }
+}
+
 enum ReviewRowBuilder {
     /// What a diff line becomes, or nothing for Git's own file metadata, which
     /// says nothing a reader of the change needs.

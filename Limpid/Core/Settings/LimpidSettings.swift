@@ -681,6 +681,15 @@ struct AdvancedSettings: Codable, Equatable {
     /// break the escaping the blocks depend on.
     var reviewInstructions: String = ""
 
+    /// The application Review uses when opening a reviewed file. `nil` leaves
+    /// file handling to macOS's default application for that file type.
+    ///
+    /// We persist the bundle identifier rather than the selected bundle's URL:
+    /// applications move when they are updated or installed on another volume.
+    /// The display name is only a last-known label for a missing application;
+    /// opening always resolves the identifier again through `NSWorkspace`.
+    var reviewFileApplication: ReviewFileApplication?
+
     /// See `LimpidSettings.unknownFields`.
     var unknownFields: [String: LimpidJSONValue] = [:]
 
@@ -691,6 +700,9 @@ struct AdvancedSettings: Codable, Equatable {
         self.reviewInstructions = try c.decodeIfPresent(
             String.self, forKey: .reviewInstructions
         ) ?? ""
+        self.reviewFileApplication = try c.decodeIfPresent(
+            ReviewFileApplication.self, forKey: .reviewFileApplication
+        )
         self.ghosttyConfig = try c.decodeIfPresent(
             GhosttyConfig.self, forKey: .ghosttyConfig
         ) ?? .off
@@ -716,15 +728,58 @@ struct AdvancedSettings: Codable, Equatable {
         try c.encode(showPRStatusOnlyWhenAttention, forKey: .showPRStatusOnlyWhenAttention)
         try c.encode(hostsAgentsInTmux, forKey: .hostsAgentsInTmux)
         try c.encode(reviewInstructions, forKey: .reviewInstructions)
+        try c.encodeIfPresent(reviewFileApplication, forKey: .reviewFileApplication)
         try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case ghosttyConfig
         case reviewInstructions
+        case reviewFileApplication
         case showPRStatusInSidebar
         case showPRStatusOnlyWhenAttention
         case hostsAgentsInTmux
+    }
+
+    private static let knownKeyStrings: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))
+}
+
+/// A user-selected application for opening files from Review.
+///
+/// `bundleIdentifier` is the durable identity. `lastKnownDisplayName` keeps
+/// Settings intelligible when the selected application has since been removed;
+/// it never participates in locating or launching the application.
+struct ReviewFileApplication: Codable, Equatable {
+    let bundleIdentifier: String
+    let lastKnownDisplayName: String
+
+    /// See `LimpidSettings.unknownFields`.
+    var unknownFields: [String: LimpidJSONValue] = [:]
+
+    init(bundleIdentifier: String, lastKnownDisplayName: String) {
+        self.bundleIdentifier = bundleIdentifier
+        self.lastKnownDisplayName = lastKnownDisplayName
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.bundleIdentifier = try c.decode(String.self, forKey: .bundleIdentifier)
+        self.lastKnownDisplayName = try c.decode(String.self, forKey: .lastKnownDisplayName)
+        self.unknownFields = try CodableSidecar.decodeUnknownFields(
+            from: decoder,
+            knownKeys: Self.knownKeyStrings
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(bundleIdentifier, forKey: .bundleIdentifier)
+        try c.encode(lastKnownDisplayName, forKey: .lastKnownDisplayName)
+        try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
+    }
+
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case bundleIdentifier, lastKnownDisplayName
     }
 
     private static let knownKeyStrings: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))

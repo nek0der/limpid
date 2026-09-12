@@ -480,16 +480,15 @@ struct ReviewTests {
         let store = withTempStore(git: repository)
         await store.refresh()
         #expect(store.files.count == 2)
-        // Opened once so there is something to lose: `load` clears the diff
-        // before it asks Git, so a check that has never seen one cannot tell a
-        // failure from a fresh store.
+        // Opened once so there is a completed snapshot to preserve while the
+        // next file is being read.
         await store.load(good)
         #expect(store.diff?.fingerprint == "g1")
         await store.load(bad)
-        // The failure is reported, the diff does not keep showing the file
-        // that did load, and the list it came from is left standing: one
-        // unreadable file is not a broken review.
-        #expect(store.diff == nil)
+        // The failure is reported and the completed snapshot stays
+        // authoritative: the rail still points at `good`, so replacing its
+        // code with an empty intermediate state would be misleading.
+        #expect(store.diff?.fingerprint == "g1")
         #expect(store.errorMessage != nil)
         #expect(store.files.count == 2)
         await store.load(good)

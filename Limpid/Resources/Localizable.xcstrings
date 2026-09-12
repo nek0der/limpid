@@ -6376,6 +6376,312 @@
         }
       }
     },
+    "Review Files": {
+      "comment": "Advanced pane section for the application used to open reviewed files",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review Files"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レビューファイル"
+          }
+        }
+      }
+    },
+    "Review Instructions": {
+      "comment": "Advanced pane section for instructions added to review comments",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review Instructions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レビュー指示"
+          }
+        }
+      }
+    },
+    "Choose App…": {
+      "comment": "Advanced pane button for selecting the application that opens review files",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose App…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリを選択…"
+          }
+        }
+      }
+    },
+    "Copy Code": {
+      "comment": "Review code excerpt action",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Code"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードをコピー"
+          }
+        }
+      }
+    },
+    "Copy Selected Text": {
+      "comment": "Review action for copying an exact character selection",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Selected Text"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択したテキストをコピー"
+          }
+        }
+      }
+    },
+    "Copy Absolute Path": {
+      "comment": "Review file action that copies the canonical absolute path",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Absolute Path"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "絶対パスをコピー"
+          }
+        }
+      }
+    },
+    "Copy Relative Path": {
+      "comment": "Review file action that copies the repository-relative path",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Relative Path"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相対パスをコピー"
+          }
+        }
+      }
+    },
+    "Choose an application bundle that has a bundle identifier.": {
+      "comment": "Advanced pane validation message for an app bundle without an identifier",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose an application bundle that has a bundle identifier."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドル識別子を持つアプリケーションバンドルを選択してください。"
+          }
+        }
+      }
+    },
+    "Choose Review App": {
+      "comment": "Advanced pane open-panel title",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Review App"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レビュー用アプリを選択"
+          }
+        }
+      }
+    },
+    "Default Application": {
+      "comment": "Advanced pane label when Review opens files with macOS's default application",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default Application"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトのアプリケーション"
+          }
+        }
+      }
+    },
+    "Review files will open in this app automatically when it becomes available again.": {
+      "comment": "Advanced pane explanation for an unavailable selected review app",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review files will open in this app automatically when it becomes available again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリが再び利用可能になると、自動的にこのアプリでレビューファイルを開きます。"
+          }
+        }
+      }
+    },
+    "Open review files with": {
+      "comment": "Advanced pane label for the app used to open review files",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open review files with"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レビュー対象ファイルを開くアプリ"
+          }
+        }
+      }
+    },
+    "Open in %@": {
+      "comment": "Review file action that opens a file in the configured application",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@で開く"
+          }
+        }
+      }
+    },
+    "Open in Default Application": {
+      "comment": "Review file action that uses the macOS default application",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in Default Application"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトのアプリケーションで開く"
+          }
+        }
+      }
+    },
+    "Selected app unavailable": {
+      "comment": "Advanced pane warning when a configured review app cannot be found",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected app unavailable"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択したアプリを利用できません"
+          }
+        }
+      }
+    },
+    "The selected app cannot be used.": {
+      "comment": "Advanced pane alert title for an invalid application selection",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected app cannot be used."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択したアプリは使用できません。"
+          }
+        }
+      }
+    },
+    "The selected review app, %@, is no longer available.": {
+      "comment": "Review file action error when the configured application cannot be found",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected review app, %@, is no longer available."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択したレビュー用アプリ「%@」は利用できなくなりました。"
+          }
+        }
+      }
+    },
+    "Use Default Application": {
+      "comment": "Advanced pane button that removes the selected review application",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Default Application"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトのアプリケーションを使用"
+          }
+        }
+      }
+    },
     "Review inserted. Press Return to send it.": {
       "localizations": {
         "en": {
