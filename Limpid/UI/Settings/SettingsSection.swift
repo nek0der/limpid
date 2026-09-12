@@ -12,20 +12,26 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case appearance
     case font
     case terminal
+    case tabsAndPanes
     case keyboard
+    case integrations
+    case review
     case advanced
 
     var id: String {
         rawValue
     }
 
-    var title: LocalizedStringKey {
+    var title: LocalizedStringResource {
         switch self {
         case .general: "General"
         case .appearance: "Appearance"
         case .font: "Font"
         case .terminal: "Terminal"
+        case .tabsAndPanes: "Tabs & Panes"
         case .keyboard: "Keyboard"
+        case .integrations: "Integrations"
+        case .review: "Review"
         case .advanced: "Advanced"
         }
     }
@@ -36,7 +42,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: "paintbrush"
         case .font: "textformat"
         case .terminal: "terminal"
+        case .tabsAndPanes: "rectangle.split.2x1"
         case .keyboard: "keyboard"
+        case .integrations: "puzzlepiece.extension"
+        case .review: "text.document"
         case .advanced: "wrench.and.screwdriver"
         }
     }

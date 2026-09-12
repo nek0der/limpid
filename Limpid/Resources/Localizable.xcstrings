@@ -11,6 +11,294 @@
         }
       }
     },
+    "About": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "About" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "情報" } }
+      }
+    },
+    "Alert Style": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Alert Style" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "通知方法" } }
+      }
+    },
+    "Accent color": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Accent color" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "アクセントカラー" } }
+      }
+    },
+    "Agent instructions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Agent instructions" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェントへの指示" } }
+      }
+    },
+    "Agents": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Agents" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェント" } }
+      }
+    },
+    "App Language": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "App Language" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "アプリの言語" } }
+      }
+    },
+    "Auto update": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Auto update" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "自動更新" } }
+      }
+    },
+    "Background opacity": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Background opacity" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "背景の不透明度" } }
+      }
+    },
+    "Blinking cursor": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Blinking cursor" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "点滅カーソル" } }
+      }
+    },
+    "Blink": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Blink" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "点滅" } }
+      }
+    },
+    "Check for updates": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Check for updates" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "アップデートを確認" } }
+      }
+    },
+    "Close confirmation": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Close confirmation" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "閉じるときの確認" } }
+      }
+    },
+    "Color scheme": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Color scheme" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "カラースキーム" } }
+      }
+    },
+    "Cursor style": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Cursor style" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "カーソルの形状" } }
+      }
+    },
+    "Font family": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Font family" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フォントファミリー" } }
+      }
+    },
+    "Font size": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Font size" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フォントサイズ" } }
+      }
+    },
+    "Ghostty configuration": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ghostty configuration" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Ghostty設定" } }
+      }
+    },
+    "History": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "History" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "履歴" } }
+      }
+    },
+    "Inactive pane opacity": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Inactive pane opacity" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "非アクティブペインの不透明度" } }
+      }
+    },
+    "Keyboard Shortcut": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Keyboard Shortcut" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "キーボードショートカット" } }
+      }
+    },
+    "Limpid version": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Limpid version" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Limpidのバージョン" } }
+      }
+    },
+    "Line spacing": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Line spacing" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "行間" } }
+      }
+    },
+    "No Settings Found": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No Settings Found" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "設定が見つかりません" } }
+      }
+    },
+    "Open settings file": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open settings file" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "設定ファイルを開く" } }
+      }
+    },
+    "Open settings.json in Default Editor": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open settings.json in Default Editor" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "settings.jsonを既定のエディタで開く" } }
+      }
+    },
+    "Pane Layout": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pane Layout" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ペインレイアウト" } }
+      }
+    },
+    "Panes": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Panes" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ペイン" } }
+      }
+    },
+    "Pull request attention": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pull request attention" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "要対応のプルリクエスト" } }
+      }
+    },
+    "Pull request status": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pull request status" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プルリクエストの状態" } }
+      }
+    },
+    "Pull Requests": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pull Requests" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プルリクエスト" } }
+      }
+    },
+    "Quick Tab directory": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Quick Tab directory" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Quick Tabのディレクトリ" } }
+      }
+    },
+    "Quit confirmation": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Quit confirmation" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "終了確認" } }
+      }
+    },
+    "Reset": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reset" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "リセット" } }
+      }
+    },
+    "Reset all settings": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reset all settings" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "すべての設定をリセット" } }
+      }
+    },
+    "Reset review application": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reset review application" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "レビュー用アプリをリセット" } }
+      }
+    },
+    "Reset review instructions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reset review instructions" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "レビュー指示をリセット" } }
+      }
+    },
+    "Reset shortcuts": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reset shortcuts" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ショートカットをリセット" } }
+      }
+    },
+    "Restore All Settings to Defaults": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Restore All Settings to Defaults" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "すべての設定を初期値に戻す" } }
+      }
+    },
+    "Restore Default Review App": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Restore Default Review App" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "レビュー用アプリを初期値に戻す" } }
+      }
+    },
+    "Restore Default Review Instructions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Restore Default Review Instructions" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "レビュー指示を初期値に戻す" } }
+      }
+    },
+    "Review application": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Review application" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "レビュー用アプリ" } }
+      }
+    },
+    "Search Settings": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Search Settings" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "設定を検索" } }
+      }
+    },
+    "Scrollback lines": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Scrollback lines" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "スクロールバック行数" } }
+      }
+    },
+    "Split size": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Split size" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "分割サイズ" } }
+      }
+    },
+    "Style": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Style" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "スタイル" } }
+      }
+    },
+    "Tabs & Panes": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Tabs & Panes" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タブとペイン" } }
+      }
+    },
+    "Terminal bell": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Terminal bell" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ターミナルベル" } }
+      }
+    },
+    "Typography": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Typography" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タイポグラフィ" } }
+      }
+    },
     "\"Only when an agent is active\" prompts only when a tracked agent is live in the affected pane.": {
       "localizations": {
         "ja": {
@@ -1152,12 +1440,18 @@
         }
       }
     },
-    "Confirmations": {
+    "Action Confirmations": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Action Confirmations"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "確認"
+            "value": "操作の確認"
           }
         }
       }

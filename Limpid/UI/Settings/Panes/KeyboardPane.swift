@@ -39,7 +39,7 @@ struct KeyboardPane: View {
 
     var body: some View {
         @Bindable var store = store
-        SettingsForm(title: "Keyboard") {
+        SettingsForm(title: "Keyboard", section: .keyboard) {
             ForEach(LimpidShortcutCategory.allCases) { category in
                 let actions = LimpidShortcutAction.allCases
                     .filter { $0.category == category }
@@ -50,6 +50,7 @@ struct KeyboardPane: View {
                             keyboard: $store.settings.keyboard,
                             recordingAction: $recordingAction
                         )
+                        .settingsSearchTarget(SettingsSearchCatalog.shortcutID(action))
                     }
                 } header: {
                     Text(category.sectionTitle)
@@ -65,6 +66,7 @@ struct KeyboardPane: View {
                     Text("Restore Defaults")
                 }
                 .disabled(!hasAnyOverride)
+                .settingsSearchTarget(SettingsSearchCatalog.keyboardRestoreDefaults.id)
             } footer: {
                 Text(footerKey)
             }

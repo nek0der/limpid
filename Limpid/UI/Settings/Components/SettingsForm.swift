@@ -23,7 +23,12 @@ import SwiftUI
 
 struct SettingsForm<Content: View>: View {
     let title: LocalizedStringKey
+    let section: SettingsSection
     @ViewBuilder var content: Content
+
+    @Environment(\.settingsRevealRequest) private var revealRequest
+    @Environment(\.accessibilityReduceMotion) private var shouldReduceMotion
+    @State private var highlightedEntryID: String?
 
     var body: some View {
         // Detail pane fills the whole window as `SettingsScene`'s
@@ -47,11 +52,37 @@ struct SettingsForm<Content: View>: View {
                     .padding(.top, 18)
                     .padding(.bottom, 0)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Form { content }
-                    .formStyle(.grouped)
-                    .scrollContentBackground(.hidden)
-                    .scrollBounceBehavior(.basedOnSize)
-                    .controlSize(.regular)
+                ScrollViewReader { proxy in
+                    Form { content }
+                        .formStyle(.grouped)
+                        .scrollContentBackground(.hidden)
+                        .scrollBounceBehavior(.basedOnSize)
+                        .controlSize(.regular)
+                        .environment(\.settingsHighlightedEntryID, highlightedEntryID)
+                        .task(id: revealRequest?.sequence) {
+                            highlightedEntryID = nil
+                            guard let request = revealRequest,
+                                  request.section == section
+                            else { return }
+                            // The task starts after this pane is mounted. Yield
+                            // once so Form has published its row identities.
+                            await Task.yield()
+                            guard !Task.isCancelled else { return }
+                            if shouldReduceMotion {
+                                proxy.scrollTo(request.entryID, anchor: .center)
+                            } else {
+                                withAnimation(.easeInOut(duration: 0.22)) {
+                                    proxy.scrollTo(request.entryID, anchor: .center)
+                                }
+                            }
+                            highlightedEntryID = request.entryID
+                            try? await Task.sleep(for: .seconds(1.5))
+                            guard !Task.isCancelled,
+                                  revealRequest?.sequence == request.sequence
+                            else { return }
+                            highlightedEntryID = nil
+                        }
+                }
             }
         }
     }

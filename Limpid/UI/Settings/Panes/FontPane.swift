@@ -10,9 +10,10 @@ struct FontPane: View {
 
     var body: some View {
         @Bindable var store = store
-        SettingsForm(title: "Font") {
+        SettingsForm(title: "Font", section: .font) {
             Section {
                 FontFamilyPicker(family: $store.settings.font.family)
+                    .settingsSearchTarget(SettingsSearchCatalog.fontFamily.id)
                 SliderRowInt(
                     title: "Size",
                     value: Binding(
@@ -22,12 +23,14 @@ struct FontPane: View {
                     range: 8...24,
                     suffix: "pt"
                 )
+                .settingsSearchTarget(SettingsSearchCatalog.fontSize.id)
             } footer: {
                 Text("Size applies live. Family applies on new terminals only.")
             }
 
             Section {
                 Toggle("Ligatures", isOn: $store.settings.font.ligatures)
+                    .settingsSearchTarget(SettingsSearchCatalog.ligatures.id)
                 SliderRowInt(
                     title: "Line height",
                     value: Binding(
@@ -37,6 +40,9 @@ struct FontPane: View {
                     range: -2...6,
                     suffix: "px"
                 )
+                .settingsSearchTarget(SettingsSearchCatalog.lineHeight.id)
+            } header: {
+                Text("Typography")
             }
         }
     }
