@@ -24,7 +24,13 @@ extension ReviewWorkspaceView {
     func select(_ id: String) {
         resetSearchPosition()
         cancelComposing()
-        fileID = id
+        guard id != fileID, let file = store.files.first(where: { $0.id == id }) else { return }
+        Task {
+            await store.load(file)
+            guard store.diff?.file.id == id else { return }
+            fileID = id
+            store.rememberOpenFile(id)
+        }
     }
 
     func refresh() async {
@@ -33,6 +39,7 @@ extension ReviewWorkspaceView {
         // one's problem.
         store.clearError()
         selection = ReviewSelection()
+        textSelection.clear()
         composer.cancel()
         pendingJump = nil
         // Read before the wait and compared after it, the same way `insert`
@@ -44,30 +51,31 @@ extension ReviewWorkspaceView {
         // load the new surface is waiting for. The rail would say one file
         // and the diff would show another.
         let opening = reviewPresentation.opening
-        await store.refresh()
+        let result = await store.reload(selectedFileID: fileID)
         guard reviewPresentation.opening == opening else { return }
-        // The file being read stays open. Clearing `fileID` first sent every
-        // refresh back to the top of the first changed file, losing both which
-        // file the reader was in and where they were in it.
-        if let id = fileID, let file = store.files.first(where: { $0.id == id }) {
-            await store.load(file)
-        } else {
-            // Nothing open means this is the first refresh of an opening, and
-            // the file the reader left off in is a better answer than the
-            // first changed one. It falls back to the first when the worktree
-            // has moved past it.
-            fileID = store.resumeFileID ?? store.files.first?.id
+        if case let .applied(selected) = result {
+            fileID = selected
+            if let selected {
+                store.rememberOpenFile(selected)
+            }
         }
+        hasPreparedInitialSnapshot = true
     }
 
-    /// Switching what the review is of throws the open file away with the
-    /// list: its id names a layer the new list does not carry, and leaving it
-    /// selected showed an empty diff area over a list full of files.
-    func changeScope(_ next: ReviewScope) async {
-        fileID = nil
+    /// Switching scope prepares the entire destination snapshot before the
+    /// current one is replaced. The old diff remains authoritative while Git
+    /// works; clearing each field on the way made the surface visibly empty.
+    @discardableResult
+    func changeScope(_ next: ReviewScope) async -> Bool {
         cancelComposing()
-        await store.setScope(next)
-        fileID = store.files.first?.id
+        guard case let .applied(selected) = await store.reload(scope: next, selectedFileID: nil) else {
+            return false
+        }
+        fileID = selected
+        if let selected {
+            store.rememberOpenFile(selected)
+        }
+        return true
     }
 
     func beginComposing() {

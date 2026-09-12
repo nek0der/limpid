@@ -25,7 +25,9 @@ final class ReviewStore {
     /// it never fails the refresh that produced the list itself.
     private(set) var stats: [String: ReviewFileStat] = [:]
     private(set) var comments: [ReviewComment] = []
-    /// No snapshot is selected while a file is loading or after a failed read.
+    /// The last complete selected snapshot. It remains authoritative while a
+    /// replacement loads or fails, so the rail never names code from an empty
+    /// intermediate state.
     private(set) var diff: ReviewDiff?
     private(set) var isLoading = false
     /// Whether a change list has come back yet. A store that has just been
@@ -107,13 +109,6 @@ final class ReviewStore {
     private var navigationSaveTask: Task<Void, Never>?
     private var navigationGeneration = UUID()
 
-    /// `nonisolated` so the off-actor write helper answers to the same cap the
-    /// reader does; a draft written past it is one `init` refuses to load.
-    nonisolated static let maxComments = 100
-    nonisolated static let maxCommentBytes = 4096
-    /// The excerpt is context for the agent, not the diff itself; a long run
-    /// is quoted up to here and the prompt points at the line numbers.
-    nonisolated static let maxCodeExcerpt = 2048
     init(
         root: URL,
         git: any ReviewRepositoryReading = LiveReviewRepository(),
@@ -133,16 +128,6 @@ final class ReviewStore {
         }
     }
 
-    /// Forget the draft written against a worktree that is being deleted.
-    ///
-    /// Only on the explicit delete. A worktree that is merely unreachable — an
-    /// external volume that is not mounted — comes back, and its comments
-    /// should come back with it. Without this, a new worktree made at the same
-    /// path inherited comments written about code that is gone.
-    nonisolated static func removeDraft(root: URL, directory: URL = ReviewStorePool.defaultDirectory) {
-        ReviewDraftWriteCoordinator.shared.remove(root: root.resolvingSymlinksInPath(), directory: directory)
-    }
-
     /// Read what the repository offers to compare against. Separate from a
     /// refresh because it changes far more slowly than the diff does, and a
     /// failure to find one is not a failure to load the changes.
@@ -151,26 +136,16 @@ final class ReviewStore {
         base = try? await git.defaultBase(at: root)
     }
 
-    /// Changing what the review is of invalidates anything in flight: a diff
-    /// read for the old scope must not land on the new one's list.
-    func setScope(_ next: ReviewScope) async {
-        guard next != scope else { return }
-        scope = next
-        // A file load already in flight was started against the old scope and
-        // would write its diff over the new scope's list when it lands. The
-        // token it compares against is the one that says so.
-        diffGeneration = UUID()
-        diff = nil
-        source = []
-        gapSpans = [:]
-        files = []
-        hasLoaded = false
-        await refresh()
+    func refresh() async {
+        await refresh(scope: scope)
     }
 
-    func refresh() async {
+    /// Replaces the change list only after its files and statistics arrive,
+    /// avoiding an intermediate empty or partially updated snapshot.
+    private func refresh(scope nextScope: ReviewScope) async {
         let token = UUID()
         listGeneration = token
+        diffGeneration = UUID()
         running += 1
         isLoading = true
         defer {
@@ -178,10 +153,22 @@ final class ReviewStore {
             isLoading = running > 0
         }
         do {
-            let latest = try await git.files(at: root, scope: scope)
+            async let fileRead = git.files(at: root, scope: nextScope)
+            async let statRead = try? git.stats(at: root, scope: nextScope)
+            let (latest, latestStats) = try await (fileRead, statRead)
             guard listGeneration == token else { return }
-            hasLoaded = true
+            let keepsOpenDiff = diff.map { loaded in
+                nextScope == scope && latest.contains(where: { $0.id == loaded.file.id })
+            } ?? false
+            scope = nextScope
             files = latest
+            stats = latestStats ?? [:]
+            if !keepsOpenDiff {
+                diff = nil
+                source = []
+                gapSpans = [:]
+            }
+            hasLoaded = true
             hasPendingChanges = false
             hasListRefreshFailed = false
             listRefreshMessage = nil
@@ -191,9 +178,6 @@ final class ReviewStore {
             if !hasUnreadableDraft {
                 errorMessage = nil
             }
-            let latestStats = try? await git.stats(at: root, scope: scope)
-            guard listGeneration == token else { return }
-            stats = latestStats ?? [:]
             pruneViewed()
         } catch is CancellationError {
             // A newer refresh took over, or the surface went away. Neither is
@@ -208,14 +192,92 @@ final class ReviewStore {
         }
     }
 
+    /// Loads a complete review snapshot and publishes it in one main-actor
+    /// turn. The visible snapshot remains intact while Git works. Returns the
+    /// file included in the committed snapshot, or `nil` for an empty result
+    /// and for a failure that leaves the previous snapshot authoritative.
+    func reload(scope nextScope: ReviewScope? = nil, selectedFileID: String?) async -> ReviewReloadResult {
+        let targetScope = nextScope ?? scope
+        let token = UUID()
+        listGeneration = token
+        diffGeneration = token
+        running += 1
+        isLoading = true
+        defer {
+            running -= 1
+            isLoading = running > 0
+        }
+        do {
+            async let fileRead = git.files(at: root, scope: targetScope)
+            async let statRead = try? git.stats(at: root, scope: targetScope)
+            let (latestFiles, latestStats) = try await (fileRead, statRead)
+            guard listGeneration == token, diffGeneration == token else { return .superseded }
+            let selected = latestFiles.first { $0.id == selectedFileID }
+                ?? latestFiles.first { $0.id == lastFileID }
+                ?? latestFiles.first
+            let latestDiff: ReviewDiff?
+            let latestSource: [String]
+            var fileLoadError: (any Error)?
+            if let selected {
+                do {
+                    latestDiff = try await git.diff(selected, root: root, base: targetScope.base ?? base)
+                    guard listGeneration == token, diffGeneration == token else { return .superseded }
+                    latestSource = await git.source(selected, root: root)
+                    guard listGeneration == token, diffGeneration == token else { return .superseded }
+                } catch is CancellationError {
+                    return .superseded
+                } catch {
+                    guard listGeneration == token, diffGeneration == token else { return .superseded }
+                    latestDiff = nil
+                    latestSource = []
+                    fileLoadError = error
+                }
+            } else {
+                latestDiff = nil
+                latestSource = []
+            }
+            guard listGeneration == token, diffGeneration == token else { return .superseded }
+            scope = targetScope
+            files = latestFiles
+            stats = latestStats ?? [:]
+            diff = latestDiff
+            source = latestSource
+            gapSpans = [:]
+            hasLoaded = true
+            hasPendingChanges = false
+            hasListRefreshFailed = false
+            listRefreshMessage = nil
+            applyFileLoadError(fileLoadError)
+            pruneViewed()
+            if let selected, let latestDiff {
+                reconcileLoadedDiff(latestDiff, for: selected)
+            }
+            return .applied(selectedFileID: selected?.id)
+        } catch is CancellationError {
+            return .superseded
+        } catch {
+            guard listGeneration == token, diffGeneration == token else { return .superseded }
+            hasLoaded = true
+            hasListRefreshFailed = true
+            listRefreshMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
+            return .failed
+        }
+    }
+
+    private func applyFileLoadError(_ error: (any Error)?) {
+        if let error {
+            errorMessage = error.localizedDescription
+        } else {
+            clearOperationError()
+        }
+    }
+
     func load(_ file: ReviewFile) async {
         let token = UUID()
         diffGeneration = token
         running += 1
         isLoading = true
-        diff = nil
-        source = []
-        gapSpans = [:]
         defer {
             running -= 1
             isLoading = running > 0
@@ -232,30 +294,27 @@ final class ReviewStore {
             guard diffGeneration == token else { return }
             source = content
             diff = latest
+            gapSpans = [:]
             clearOperationError()
-            for comment in comments where comment.file.id == file.id {
-                // Both directions: a comment can come back into date when the
-                // worktree is put back the way it was, and one that stayed
-                // marked would keep being held out of the prompt.
-                if comment.fingerprint == latest.fingerprint {
-                    staleCommentIDs.remove(comment.id)
-                } else {
-                    staleCommentIDs.insert(comment.id)
-                }
-            }
-            // After the error is cleared, so a draft that cannot be written
-            // still says so. The counts can sit still while the content moves,
-            // which makes opening the file the moment to check its mark
-            // against the diff the reader is actually looking at — and the
-            // moment to record a fingerprint for a mark made from the list,
-            // which has never had one to compare.
-            reconcileViewMark(for: file, against: latest.fingerprint)
+            reconcileLoadedDiff(latest, for: file)
         } catch is CancellationError {
             // Another file took over, or the surface went away.
         } catch {
             guard diffGeneration == token else { return }
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func reconcileLoadedDiff(_ latest: ReviewDiff, for file: ReviewFile) {
+        for comment in comments where comment.file.id == file.id {
+            // A comment can come back into date when the worktree is restored.
+            if comment.fingerprint == latest.fingerprint {
+                staleCommentIDs.remove(comment.id)
+            } else {
+                staleCommentIDs.insert(comment.id)
+            }
+        }
+        reconcileViewMark(for: file, against: latest.fingerprint)
     }
 
     /// Compares the worktree against what is displayed, and says so.

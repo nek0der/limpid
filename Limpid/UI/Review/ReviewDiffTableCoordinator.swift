@@ -34,6 +34,12 @@ extension ReviewDiffTable {
         /// The selection the rows were last drawn against, so a cursor move can
         /// be answered by repainting the rows it actually touched.
         private var appliedSelection = ReviewSelection()
+        /// Character selection is repainted independently from the comment
+        /// range, so a drag over code does not rebuild the row list.
+        var appliedTextSelection = ReviewTextSelection()
+        /// Reused throughout one drag; laying out a very long line for every
+        /// mouse event would turn character selection into input lag.
+        let codeTextLayout = ReviewCodeTextLayout()
         /// The row list the selection was last applied against.
         ///
         /// Typing in the composer updates this view on every character without
@@ -71,7 +77,7 @@ extension ReviewDiffTable {
         /// How far both code columns are scrolled to the left in the split
         /// layout. One value for both: the columns are read together, and the
         /// divider between them is a fixed part of the row.
-        private var codeOffset: CGFloat = 0
+        var codeOffset: CGFloat = 0
         private var lastScrollOffset: CGFloat = 0
         private var cachedWidest: CGFloat?
         private var cachedWidestKey: String?
@@ -117,6 +123,23 @@ extension ReviewDiffTable {
 
         init(_ parent: ReviewDiffTable) {
             self.parent = parent
+        }
+
+        func copySelectedCode() -> Bool {
+            guard parent.isInteractionEnabled,
+                  !parent.isOverlayPresented,
+                  let payload = ReviewCopyPayload.text(
+                      rows: parent.rows,
+                      selection: parent.textSelection
+                  ) ?? ReviewCopyPayload.code(
+                      lines: parent.diffLines,
+                      selection: parent.selection,
+                      layout: parent.layout
+                  )
+            else { return false }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            return pasteboard.setString(payload, forType: .string)
         }
 
         deinit {
@@ -532,13 +555,16 @@ extension ReviewDiffTable {
                     isSelected: parent.selection.contains(line.id),
                     numberWidth: parent.numberWidth,
                     language: parent.language,
-                    match: parent.search.query
+                    match: parent.search.query,
+                    selectedRange: parent.textSelection.range(in: line, at: row, on: nil)
                 )
                 return view
             case let .splitCode(pair):
                 let view = reuse(tableView, "review-split", ReviewSplitCodeRowView.init)
                 view.configure(pair, context: ReviewSplitRowContext(
                     selection: parent.selection,
+                    textSelection: parent.textSelection,
+                    rowIndex: row,
                     commentCounts: parent.lineCommentCounts,
                     numberWidth: parent.numberWidth,
                     codeOffset: codeOffset,

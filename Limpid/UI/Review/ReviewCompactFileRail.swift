@@ -65,6 +65,7 @@ extension ReviewWorkspaceView {
             }
             compactFileRailOverlay
         }
+        .allowsHitTesting(!store.isLoading)
         // The drawer's leading-edge motion would otherwise paint into the tab
         // column during the first and last animation frames.
         .clipped()
@@ -76,6 +77,7 @@ extension ReviewWorkspaceView {
     private var inlineFileRail: some View {
         if showsInlineFileRail {
             ReviewFileRail(
+                root: store.root,
                 files: store.files,
                 stats: store.stats,
                 commentCounts: store.commentCounts,
@@ -118,6 +120,7 @@ extension ReviewWorkspaceView {
                     .accessibilityHidden(true)
             }
             ReviewFileRail(
+                root: store.root,
                 files: store.files,
                 stats: store.stats,
                 commentCounts: store.commentCounts,

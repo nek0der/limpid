@@ -10,6 +10,8 @@ import AppKit
 /// should carry.
 struct ReviewSplitRowContext {
     let selection: ReviewSelection
+    let textSelection: ReviewTextSelection
+    let rowIndex: Int
     let commentCounts: [Int: Int]
     let numberWidth: CGFloat
     let codeOffset: CGFloat
@@ -32,6 +34,8 @@ struct ReviewSplitRowContext {
 final class ReviewSplitCodeRowView: NSView {
     private var pair: ReviewSplitPair?
     private var selection = ReviewSelection()
+    private var textSelection = ReviewTextSelection()
+    private var rowIndex = 0
     private var commentCounts: [Int: Int] = [:]
     private var numberWidth = ReviewRowMetrics.defaultNumberWidth
     /// What the find bar is looking for, marked in the code as it is drawn.
@@ -71,6 +75,8 @@ final class ReviewSplitCodeRowView: NSView {
     func configure(_ pair: ReviewSplitPair, context: ReviewSplitRowContext) {
         self.pair = pair
         selection = context.selection
+        textSelection = context.textSelection
+        rowIndex = context.rowIndex
         commentCounts = context.commentCounts
         numberWidth = context.numberWidth
         codeOffset = context.codeOffset
@@ -134,6 +140,18 @@ final class ReviewSplitCodeRowView: NSView {
     }
 
     override func resetCursorRects() {
+        if let pair {
+            for side in ReviewSide.allCases where pair.line(on: side)?.isCommentable == true {
+                let cell = cellRect(for: side)
+                let start = cell.minX
+                    + ReviewRowMetrics.sideGutterTotal(numberWidth: numberWidth)
+                    + ReviewRowMetrics.codeLeadingInset
+                addCursorRect(
+                    NSRect(x: start, y: cell.minY, width: max(cell.maxX - start, 0), height: cell.height),
+                    cursor: .iBeam
+                )
+            }
+        }
         guard let marker = activeMarkerRect() else { return }
         addCursorRect(marker, cursor: .pointingHand)
     }
@@ -202,7 +220,8 @@ final class ReviewSplitCodeRowView: NSView {
             offset: codeOffset,
             font: metrics.font, color: .labelColor,
             language: language,
-            match: match
+            match: match,
+            selectedRange: textSelection.range(in: line, at: rowIndex, on: side)
         )
     }
 }

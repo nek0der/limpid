@@ -321,7 +321,8 @@ final class ReviewCodeRowView: NSView {
         isSelected: Bool,
         numberWidth: CGFloat,
         language: ReviewSyntax.Language? = nil,
-        match: String = ""
+        match: String = "",
+        selectedRange: NSRange? = nil
     ) {
         codeLeading?.constant = ReviewRowMetrics.gutterTotal(numberWidth: numberWidth) + ReviewRowMetrics.codeLeadingInset
         // The attributed form only when there is something to draw with it:
@@ -336,7 +337,8 @@ final class ReviewCodeRowView: NSView {
                 color: .labelColor,
                 alignment: .left,
                 truncates: true
-            )
+            ),
+            selectedRange: selectedRange
         ) {
             code.attributedStringValue = styled
         } else {
@@ -355,6 +357,11 @@ final class ReviewCodeRowView: NSView {
         // and naming it leaves the code as its value: read once, after where
         // it is.
         code.setAccessibilityLabel(reviewLinePosition(line))
+        window?.invalidateCursorRects(for: self)
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(code.frame, cursor: .iBeam)
     }
 }
 

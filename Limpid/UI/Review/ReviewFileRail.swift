@@ -1,6 +1,7 @@
 // ReviewFileRail.swift
 // Limpid — the changed-file list, with enough on it to pick a reading order.
 
+import AppKit
 import SwiftUI
 
 /// The list used to say only which paths changed, and said the same path twice
@@ -11,6 +12,7 @@ import SwiftUI
 /// or one directory reworked, and the useful order differs. Both filter from
 /// the same field: a change of any size outgrows a list you can only scroll.
 struct ReviewFileRail: View {
+    let root: URL
     let files: [ReviewFile]
     let stats: [String: ReviewFileStat]
     let commentCounts: [String: Int]
@@ -436,6 +438,10 @@ struct ReviewFileRail: View {
             .padding(.trailing, Self.contentTrailing)
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // A plain button derives its hit test from drawn descendants, not
+            // from the flexible frame around them. Give that frame a shape so
+            // the empty part of the row selects the same file as its name.
+            .contentShape(Rectangle())
             // Edge to edge, and square: an inset rounded pill reads as one
             // item lifted out of the list, and what is wanted here is the row
             // the reader is on. The inset lives in the content instead.
@@ -447,6 +453,8 @@ struct ReviewFileRail: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            ReviewFileActionsMenu(root: root, file: file)
+            Divider()
             Button(isViewed ? "Mark as Not Viewed" : "Mark as Viewed") {
                 onToggleViewed(file.id)
             }
@@ -514,5 +522,68 @@ struct ReviewFileRail: View {
                 .fixedSize()
             }
         }
+    }
+}
+
+/// File-system actions shared by the rail row and the selected-file bar.
+/// Resolving at invocation time keeps moved applications and symlinks out of
+/// the view state, while one menu keeps both entry points consistent.
+struct ReviewFileActionsMenu: View {
+    let root: URL
+    let file: ReviewFile
+
+    @Environment(SettingsStore.self) private var settingsStore
+    @Environment(ToastCenter.self) private var toastCenter
+
+    private var fileURL: URL? {
+        ReviewFileAction.fileURL(for: file.path, in: root)
+    }
+
+    private var application: ReviewFileApplicationResolution {
+        ReviewFileAction.application(for: settingsStore.settings.advanced.reviewFileApplication)
+    }
+
+    private var openTitle: String {
+        if let name = application.displayName {
+            return String(localized: "Open in \(name)")
+        }
+        return String(localized: "Open in Default Application")
+    }
+
+    var body: some View {
+        Button("Copy Relative Path") {
+            copy(file.path)
+        }
+        Button("Copy Absolute Path") {
+            if let fileURL {
+                copy(fileURL.path)
+            }
+        }
+        .disabled(fileURL == nil)
+        Button(openTitle) {
+            guard let fileURL else { return }
+            Task {
+                do {
+                    try await ReviewFileAction.open(fileURL, with: application)
+                } catch {
+                    toastCenter.show(ToastItem(message: error.localizedDescription, undo: nil))
+                }
+            }
+        }
+        .disabled(fileURL.map { !FileManager.default.fileExists(atPath: $0.path) } ?? true)
+        Button("Reveal in Finder") {
+            guard let fileURL else { return }
+            let target = FileManager.default.fileExists(atPath: fileURL.path)
+                ? fileURL
+                : fileURL.deletingLastPathComponent()
+            ReviewFileAction.revealInFinder(target)
+        }
+        .disabled(fileURL == nil)
+    }
+
+    private func copy(_ value: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
     }
 }

@@ -12,6 +12,7 @@ import Foundation
 final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
     var files: [ReviewFile] = []
     var nextFilesGate: ReviewFilesGate?
+    var nextDiffFailureGate: ReviewDiffFailureGate?
     var stats: [String: ReviewFileStat] = [:]
     var diffs: [String: ReviewDiff] = [:]
     var fingerprints: [String: String] = [:]
@@ -38,6 +39,11 @@ final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
 
     func diff(_ file: ReviewFile, root _: URL, base _: String?) async throws -> ReviewDiff {
         diffCalls.append(file.id)
+        if let gate = nextDiffFailureGate {
+            nextDiffFailureGate = nil
+            await gate.answer()
+            throw ReviewError.gitFailed
+        }
         if unsupportedDiffs.contains(file.id) {
             throw ReviewError.unsupported
         }
@@ -64,6 +70,30 @@ final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
     }
 }
 
+/// Holds one diff request until a newer repository snapshot can overtake it.
+actor ReviewDiffFailureGate {
+    private var response: CheckedContinuation<Void, Never>?
+    private var observer: CheckedContinuation<Void, Never>?
+
+    func answer() async {
+        await withCheckedContinuation { continuation in
+            response = continuation
+            observer?.resume()
+            observer = nil
+        }
+    }
+
+    func waitUntilRequested() async {
+        guard response == nil else { return }
+        await withCheckedContinuation { observer = $0 }
+    }
+
+    func resume() {
+        response?.resume()
+        response = nil
+    }
+}
+
 /// A draft store that keeps what it is given, so two stores over the same
 /// root can be made to hand a draft between them.
 ///
@@ -73,11 +103,16 @@ final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
 final class RecordingReviewDraftStore: ReviewDraftStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var drafts: [URL: ReviewDraft] = [:]
+    /// Set to simulate a draft that had to be quarantined while opening.
+    var isLoadFailing = false
     /// Set to fail every save, which is how a caller's rollback is exercised.
     var isFailing = false
 
     func load(root: URL) throws -> ReviewDraft? {
-        lock.withLock { drafts[root] }
+        if isLoadFailing {
+            throw ReviewError.draftUnreadable
+        }
+        return lock.withLock { drafts[root] }
     }
 
     func save(_ draft: ReviewDraft, root: URL) throws {

@@ -2,6 +2,82 @@
 // Limpid — the drawing shared by the review rows and the frozen gutter.
 
 import AppKit
+
+/// Converts between the pointer and AppKit's UTF-16 selection positions using
+/// the same font the row painter uses. TextKit owns glyph boundaries here;
+/// dividing x by a character width would fail for tabs, CJK, emoji and
+/// ligatures even in a nominally monospaced font.
+@MainActor
+final class ReviewCodeTextLayout {
+    private let storage = NSTextStorage()
+    private let manager = NSLayoutManager()
+    private let container = NSTextContainer(size: NSSize(width: CGFloat.greatestFiniteMagnitude, height: 64))
+    private var cachedText = ""
+    private var cachedFont: NSFont?
+
+    init() {
+        container.lineFragmentPadding = 0
+        container.maximumNumberOfLines = 1
+        container.lineBreakMode = NSLineBreakMode.byClipping
+        manager.addTextContainer(container)
+        storage.addLayoutManager(manager)
+    }
+
+    func utf16Offset(in text: String, x: CGFloat, font: NSFont) -> Int {
+        let value = text as NSString
+        guard value.length > 0, x > 0 else { return 0 }
+        if cachedText != text || cachedFont != font {
+            cachedText = text
+            cachedFont = font
+            storage.setAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+        }
+        manager.ensureLayout(for: container)
+        guard x < manager.usedRect(for: container).maxX else { return value.length }
+        var fraction: CGFloat = 0
+        let glyph = manager.glyphIndex(
+            for: NSPoint(x: x, y: manager.usedRect(for: container).midY),
+            in: container,
+            fractionOfDistanceThroughGlyph: &fraction
+        )
+        let character = manager.characterIndexForGlyph(at: glyph)
+        let glyphRange = NSRange(location: glyph, length: 1)
+        let characterRange = manager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        let candidate = fraction < 0.5 ? character : NSMaxRange(characterRange)
+        return Self.composedCharacterBoundary(near: candidate, in: value)
+    }
+
+    static func wordRange(in text: String, at utf16Offset: Int) -> NSRange {
+        let value = text as NSString
+        guard value.length > 0 else { return NSRange(location: 0, length: 0) }
+        let index = min(max(utf16Offset, 0), value.length - 1)
+        var range = value.rangeOfComposedCharacterSequence(at: index)
+        guard isWord(value.substring(with: range)) else { return range }
+        while range.location > 0 {
+            let previous = value.rangeOfComposedCharacterSequence(at: range.location - 1)
+            guard isWord(value.substring(with: previous)) else { break }
+            range = NSRange(location: previous.location, length: NSMaxRange(range) - previous.location)
+        }
+        while NSMaxRange(range) < value.length {
+            let next = value.rangeOfComposedCharacterSequence(at: NSMaxRange(range))
+            guard isWord(value.substring(with: next)) else { break }
+            range.length = NSMaxRange(next) - range.location
+        }
+        return range
+    }
+
+    private static func isWord(_ text: String) -> Bool {
+        text.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) || $0 == "_" }
+    }
+
+    private static func composedCharacterBoundary(near offset: Int, in text: NSString) -> Int {
+        guard offset > 0, offset < text.length else { return min(max(offset, 0), text.length) }
+        let range = text.rangeOfComposedCharacterSequence(at: offset)
+        guard range.location != offset else { return offset }
+        let end = NSMaxRange(range)
+        return offset - range.location < end - offset ? range.location : end
+    }
+}
+
 import SwiftUI
 
 /// Colors shared by the scrolling rows and the frozen gutter, which draws the
@@ -203,7 +279,8 @@ enum ReviewRowPainter {
         font: NSFont,
         color: NSColor,
         language: ReviewSyntax.Language? = nil,
-        match: String = ""
+        match: String = "",
+        selectedRange: NSRange? = nil
     ) {
         guard !text.isEmpty, cell.width > 0 else { return }
         NSGraphicsContext.saveGraphicsState()
@@ -217,7 +294,13 @@ enum ReviewRowPainter {
             width: cell.width + offset,
             height: height
         )
-        if let styled = styled(text, language: language, match: match, attributes: attributes) {
+        if let styled = styled(
+            text,
+            language: language,
+            match: match,
+            attributes: attributes,
+            selectedRange: selectedRange
+        ) {
             styled.draw(in: box)
         } else {
             (text as NSString).draw(in: box, withAttributes: attributes)
@@ -234,11 +317,17 @@ enum ReviewRowPainter {
         _ text: String,
         language: ReviewSyntax.Language?,
         match: String,
-        attributes: [NSAttributedString.Key: Any]
+        attributes: [NSAttributedString.Key: Any],
+        selectedRange: NSRange? = nil
     ) -> NSAttributedString? {
         let tokens = language.map { ReviewSyntax.tokens(in: text, language: $0) } ?? []
         let found = ReviewSearch.ranges(in: text, query: match)
-        guard !tokens.isEmpty || !found.isEmpty else { return nil }
+        let selection = selectedRange.flatMap { range -> NSRange? in
+            let length = (text as NSString).length
+            guard range.location >= 0, range.length > 0, NSMaxRange(range) <= length else { return nil }
+            return range
+        }
+        guard !tokens.isEmpty || !found.isEmpty || selection != nil else { return nil }
         let result = NSMutableAttributedString(string: text, attributes: attributes)
         for token in tokens {
             result.addAttribute(.foregroundColor, value: color(for: token.kind), range: NSRange(token.range, in: text))
@@ -251,6 +340,12 @@ enum ReviewRowPainter {
             let span = NSRange(range, in: text)
             result.addAttribute(.backgroundColor, value: NSColor.findHighlightColor, range: span)
             result.addAttribute(.foregroundColor, value: NSColor.black, range: span)
+        }
+        // Selection is the reader's active operation, so it wins over both
+        // syntax and find highlighting where they overlap.
+        if let selection {
+            result.addAttribute(.backgroundColor, value: NSColor.selectedTextBackgroundColor, range: selection)
+            result.addAttribute(.foregroundColor, value: NSColor.selectedTextColor, range: selection)
         }
         return result
     }

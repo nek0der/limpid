@@ -7,10 +7,12 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AdvancedPane: View {
     @Environment(SettingsStore.self) private var store
     @State private var confirmReset: Bool = false
+    @State private var isReviewApplicationSelectionInvalid: Bool = false
 
     var body: some View {
         @Bindable var store = store
@@ -130,6 +132,33 @@ struct AdvancedPane: View {
                 )
             }
 
+            Section {
+                HStack(spacing: 10) {
+                    Text(reviewFileApplicationName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 12)
+                    Button("Choose App…") {
+                        chooseReviewFileApplication()
+                    }
+                    if store.settings.advanced.reviewFileApplication != nil {
+                        Button("Restore Default") {
+                            store.settings.advanced.reviewFileApplication = nil
+                        }
+                    }
+                }
+                if case .configuredApplicationMissing = ReviewFileAction.application(
+                    for: store.settings.advanced.reviewFileApplication
+                ) {
+                    Label("Selected app unavailable", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Review files will open in this app automatically when it becomes available again.")
+                        .font(.caption)
+                }
+            } header: {
+                Text("Review Files")
+            }
+
             // Only the instructions, not the whole prompt: the comment blocks
             // below them carry escaping and diff markers the agent depends on,
             // and a template that could break those would be a way to send
@@ -161,7 +190,7 @@ struct AdvancedPane: View {
                 .accessibilityLabel(Text("Review instructions"))
             } header: {
                 HStack {
-                    Text("Review")
+                    Text("Review Instructions")
                     Spacer(minLength: 8)
                     // Emptying the field is what restores the default, so the
                     // button says that rather than "clear" — the field is
@@ -220,6 +249,34 @@ struct AdvancedPane: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This cannot be undone.")
+        }
+        .alert("The selected app cannot be used.", isPresented: $isReviewApplicationSelectionInvalid) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Choose an application bundle that has a bundle identifier.")
+        }
+    }
+
+    private var reviewFileApplicationName: String {
+        ReviewFileAction.application(for: store.settings.advanced.reviewFileApplication).displayName
+            ?? String(localized: "Default Application")
+    }
+
+    private func chooseReviewFileApplication() {
+        let panel = NSOpenPanel()
+        panel.title = String(localized: "Choose Review App")
+        panel.prompt = String(localized: "Choose")
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            guard let application = ReviewFileAction.application(fromBundleAt: url) else {
+                isReviewApplicationSelectionInvalid = true
+                return
+            }
+            store.settings.advanced.reviewFileApplication = application
         }
     }
 }

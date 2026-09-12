@@ -313,22 +313,120 @@ struct ReviewStoreRegressionTests {
         #expect(fixture.store.staleCommentIDs.isEmpty)
     }
 
-    @Test func changingScopeClearsTheLoadedFile() async throws {
+    @Test func reloadKeepsTheVisibleSnapshotUntilTheReplacementIsComplete() async throws {
         let fixture = try fixture()
         let repository = fixture.repository
         let store = fixture.store
-        let file = fixture.file
-        repository.sources[file.id] = ["new"]
         await store.refresh()
-        await store.load(file)
+        await store.load(fixture.file)
+
         let branch = ReviewFile(path: "branch.swift", layer: .branch, status: .modified)
-        repository.files = [branch]
-        await store.setScope(.branch(base: "main"))
-        #expect(store.diff == nil)
-        #expect(store.source.isEmpty)
-        #expect(store.gapSpans.isEmpty)
+        let branchLines = try ReviewDiffParser.parse("@@ -1,1 +1,1 @@\n-old\n+new")
+        let branchDiff = ReviewDiff(
+            file: branch,
+            fingerprint: "branch",
+            lines: branchLines
+        )
+        repository.diffs[branch.id] = branchDiff
+        let gate = ReviewFilesGate()
+        repository.nextFilesGate = gate
+        let reload = Task { await store.reload(scope: .branch(base: "main"), selectedFileID: nil) }
+        await gate.waitUntilRequested()
+
+        #expect(store.scope == .uncommitted)
+        #expect(store.files == [fixture.file])
+        #expect(store.diff?.fingerprint == "f1")
+
+        await gate.resume(with: [branch])
+        #expect(await reload.value == .applied(selectedFileID: branch.id))
+        #expect(store.scope == .branch(base: "main"))
         #expect(store.files == [branch])
-        #expect(store.hasLoaded)
+        #expect(store.diff?.fingerprint == "branch")
+    }
+
+    @Test func reloadPublishesTheListWhenItsInitialFileFails() async throws {
+        let repository = FakeReviewRepository()
+        let bad = ReviewFile(path: "bad.swift", layer: .unstaged, status: .modified)
+        let good = ReviewFile(path: "good.swift", layer: .unstaged, status: .modified)
+        repository.files = [bad, good]
+        repository.failingDiffs = [bad.id]
+        let lines = try ReviewDiffParser.parse("@@ -1,1 +1,1 @@\n-old\n+new")
+        repository.diffs[good.id] = ReviewDiff(
+            file: good,
+            fingerprint: "good",
+            lines: lines
+        )
+        let store = withTempStore(git: repository)
+
+        #expect(await store.reload(selectedFileID: nil) == .applied(selectedFileID: bad.id))
+        #expect(store.files == [bad, good])
+        #expect(store.diff == nil)
+        #expect(store.errorMessage != nil)
+
+        await store.load(good)
+        #expect(store.diff?.fingerprint == "good")
+    }
+
+    @Test func successfulReloadRestoresAnUnreadableDraftWarningAfterAFileError() async throws {
+        let repository = FakeReviewRepository()
+        let file = ReviewFile(path: "a.swift", layer: .unstaged, status: .modified)
+        repository.files = [file]
+        repository.failingDiffs = [file.id]
+        let drafts = RecordingReviewDraftStore()
+        drafts.isLoadFailing = true
+        let store = ReviewStore(
+            root: URL(fileURLWithPath: "/tmp/limpid-review-unreadable-draft-reload"),
+            git: repository,
+            drafts: drafts
+        )
+
+        _ = await store.reload(selectedFileID: nil)
+        #expect(store.errorMessage == ReviewError.gitFailed.localizedDescription)
+
+        repository.failingDiffs = []
+        let lines = try ReviewDiffParser.parse("@@ -1,1 +1,1 @@\n-old\n+new")
+        repository.diffs[file.id] = ReviewDiff(file: file, fingerprint: "current", lines: lines)
+        _ = await store.reload(selectedFileID: nil)
+
+        #expect(store.errorMessage == ReviewError.draftUnreadable.localizedDescription)
+    }
+
+    @Test func initialReloadResumesTheSavedFileFromTheIncomingList() async throws {
+        let repository = FakeReviewRepository()
+        let first = ReviewFile(path: "first.swift", layer: .unstaged, status: .modified)
+        let saved = ReviewFile(path: "saved.swift", layer: .unstaged, status: .modified)
+        let lines = try ReviewDiffParser.parse("@@ -1,1 +1,1 @@\n-old\n+new")
+        repository.files = [first, saved]
+        repository.diffs[first.id] = ReviewDiff(file: first, fingerprint: "first", lines: lines)
+        repository.diffs[saved.id] = ReviewDiff(file: saved, fingerprint: "saved", lines: lines)
+        let drafts = RecordingReviewDraftStore()
+        let root = URL(fileURLWithPath: "/tmp/limpid-review-initial-resume")
+        try drafts.save(ReviewDraft(lastFileID: saved.id), root: root)
+        let store = ReviewStore(root: root, git: repository, drafts: drafts)
+
+        #expect(await store.reload(selectedFileID: nil) == .applied(selectedFileID: saved.id))
+        #expect(store.diff?.file == saved)
+    }
+
+    @Test func obsoleteFailingDiffCannotReplaceANewerSnapshot() async throws {
+        let fixture = try fixture()
+        let repository = fixture.repository
+        let store = fixture.store
+        let gate = ReviewDiffFailureGate()
+        repository.nextDiffFailureGate = gate
+        let obsolete = Task { await store.reload(selectedFileID: nil) }
+        await gate.waitUntilRequested()
+
+        let latest = ReviewFile(path: "latest.swift", layer: .unstaged, status: .modified)
+        let lines = try ReviewDiffParser.parse("@@ -1,1 +1,1 @@\n-old\n+new")
+        repository.files = [latest]
+        repository.diffs[latest.id] = ReviewDiff(file: latest, fingerprint: "latest", lines: lines)
+        #expect(await store.reload(selectedFileID: nil) == .applied(selectedFileID: latest.id))
+
+        await gate.resume()
+        #expect(await obsolete.value == .superseded)
+        #expect(store.files == [latest])
+        #expect(store.diff?.fingerprint == "latest")
     }
 
     @Test func excerptBudgetCountsUTF8Bytes() async throws {

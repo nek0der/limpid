@@ -149,6 +149,9 @@ struct ReviewWorkspaceView: View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @State var fileID: String?
     @State var selection = ReviewSelection()
+    /// Exact code characters selected for copying. Comment ranges remain in
+    /// `selection`; the two gestures have different lifetimes and semantics.
+    @State var textSelection = ReviewTextSelection()
     /// Editing reuses the composer rather than opening a modal on top of a
     /// surface that already covers the window, so which comment is being
     /// rewritten has to travel with it.
@@ -189,6 +192,10 @@ struct ReviewWorkspaceView: View {
     /// computed: the scan is over every line of the diff, and a computed
     /// property would repeat it on every keystroke in the composer.
     @State var numberWidth = ReviewRowMetrics.defaultNumberWidth
+    /// The pooled store may still contain the snapshot from the previous time
+    /// this repository was open. Keep it behind the loading surface until Git
+    /// has confirmed what belongs to this opening.
+    @State var hasPreparedInitialSnapshot = false
 
     /// The comments that still stand. Resolved ones stay in the draft as the
     /// record of what was asked, and leave everything that acts on a comment:
@@ -436,6 +443,7 @@ struct ReviewWorkspaceView: View {
     private var selectedFileChrome: some View {
         if let file = store.files.first(where: { $0.id == fileID }) {
             ReviewFileBar(
+                root: store.root,
                 file: file,
                 stat: store.stats[file.id],
                 // Only about the file actually loaded: the rest of the list
@@ -502,10 +510,36 @@ struct ReviewWorkspaceView: View {
                 )
             }
             Divider()
-            reviewContentArea
+            ZStack {
+                if hasPreparedInitialSnapshot {
+                    reviewContentArea
+                } else {
+                    Color.clear
+                        .accessibilityHidden(true)
+                }
+                if isSlowToLoad {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(8)
+                        .background(.regularMaterial, in: Capsule())
+                        .allowsHitTesting(false)
+                        .accessibilityLabel(Text("Loading changes…"))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(LimpidColor.terminalColumnBackground)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // A warm read should not flash a spinner, but a slow initial read must
+        // still explain the otherwise empty protected snapshot area.
+        .task(id: store.isLoading) {
+            guard store.isLoading else {
+                isSlowToLoad = false
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+            isSlowToLoad = !Task.isCancelled && store.isLoading
+        }
         .onChange(of: showsInlineFileRail) { _, isInline in
             if isInline {
                 isCompactFileRailPresented = false
@@ -546,17 +580,6 @@ struct ReviewWorkspaceView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 await store.detectChanges()
-            }
-        }
-        .task(id: fileID) {
-            selection = ReviewSelection()
-            cancelComposing()
-            if let file = store.files.first(where: { $0.id == fileID }) {
-                // Recorded before the load rather than after it: the load can
-                // be taken over by the next file, and where the reader went is
-                // true either way.
-                store.rememberOpenFile(file.id)
-                await store.load(file)
             }
         }
         // A pane switch re-resolves at once. Waiting for the next tick of the
@@ -609,8 +632,12 @@ struct ReviewWorkspaceView: View {
             }
             composer.retarget(start: start, end: end, side: new.side)
         }
-        .onChange(of: store.diff?.fingerprint, initial: true) { _, _ in
+        // A fingerprint describes content, not identity. Two files can have
+        // the same patch, so include the file id or a selection and pending
+        // jump from the previous file can survive the switch.
+        .onChange(of: store.diff.map { $0.file.id + "|" + $0.fingerprint }, initial: true) { _, _ in
             selection = ReviewSelection()
+            textSelection.clear()
             cancelComposing()
             // A comment opened from the list names a line in a file that may
             // still be loading; the jump lands once the diff is here.
@@ -623,6 +650,12 @@ struct ReviewWorkspaceView: View {
             }
             numberWidth = ReviewRowMetrics.numberWidth(forHighestLine: highestLine)
         }
+        // Cards, composers and expanded gaps can move the same code to another
+        // rendered row. Rebase by line identity and clear only if an endpoint
+        // actually disappeared.
+        .onChange(of: contentKey) { _, _ in
+            textSelection = textSelection.rebased(in: rows) ?? ReviewTextSelection()
+        }
     }
 
     // MARK: - Header
@@ -633,6 +666,7 @@ struct ReviewWorkspaceView: View {
             destination: destination,
             isResolvingDestination: isResolvingDestination,
             isInserting: isInserting,
+            isSnapshotReady: hasPreparedInitialSnapshot,
             canInsert: canInsert,
             prompt: prompt,
             isShowingPrompt: $isShowingPrompt,
@@ -657,6 +691,7 @@ struct ReviewWorkspaceView: View {
     private func setLayout(_ layout: ReviewDiffLayout) {
         guard layout != reviewPresentation.diffLayout else { return }
         reviewPresentation.diffLayout = layout
+        textSelection.clear()
         let head = selection.headLineID.flatMap { id in store.diff?.lines.first { $0.id == id } }
         selection.follow(layout, head: head, lines: store.diff?.lines ?? [])
     }
@@ -690,7 +725,8 @@ struct ReviewWorkspaceView: View {
         if !store.scope.layers.contains(comment.file.layer) {
             guard let base = store.base else { return }
             Task {
-                await changeScope(comment.file.layer == .branch ? .branch(base: base) : .uncommitted)
+                guard await changeScope(comment.file.layer == .branch ? .branch(base: base) : .uncommitted)
+                else { return }
                 jump(to: comment)
             }
             return
@@ -721,7 +757,10 @@ struct ReviewWorkspaceView: View {
 
     private var content: some View {
         Group {
-            if store.files.isEmpty, !store.isLoading, store.hasLoaded, !store.hasListRefreshFailed {
+            if !hasPreparedInitialSnapshot {
+                Color.clear
+                    .accessibilityHidden(true)
+            } else if store.files.isEmpty, store.hasLoaded, !store.hasListRefreshFailed {
                 Text("No changes to review.")
                     .foregroundStyle(LimpidColor.secondaryText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -737,7 +776,9 @@ struct ReviewWorkspaceView: View {
                     numberWidth: numberWidth,
                     expandedFileID: fileID,
                     contentIdentity: (fileID ?? "") + "|" + (store.diff?.fingerprint ?? ""),
+                    isInteractionEnabled: !store.isLoading,
                     selection: $selection,
+                    textSelection: $textSelection,
                     composerLineID: composer.lineID,
                     composerStartLine: composerStartLine,
                     composerIsEditing: composer.editingCommentID != nil,
@@ -772,29 +813,5 @@ struct ReviewWorkspaceView: View {
             }
         }
         .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .top) {
-            if isSlowToLoad {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(8)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(.top, 10)
-                    // Over the diff, not in place of it: the list stays
-                    // readable and clickable while one file is being read.
-                    .allowsHitTesting(false)
-                    .accessibilityLabel(Text("Loading changes…"))
-            }
-        }
-        // Delayed for the same reason the open is: a warm file arrives inside
-        // a frame or two, and a spinner that appears and leaves in that time
-        // reads as a fault rather than as progress.
-        .task(id: store.isLoading) {
-            guard store.isLoading else {
-                isSlowToLoad = false
-                return
-            }
-            try? await Task.sleep(for: .milliseconds(250))
-            isSlowToLoad = !Task.isCancelled && store.isLoading
-        }
     }
 }

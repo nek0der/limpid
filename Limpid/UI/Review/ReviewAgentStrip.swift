@@ -310,7 +310,7 @@ struct ReviewDestinationChip: View {
                 .lineLimit(1)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 3)
+        .frame(height: ReviewHeaderMetrics.controlHeight)
         // Sized to what it says. A fixed width stretched the capsule to its
         // cap whatever the name was, which put the text in the middle of a
         // long empty pill; a name too long for the header truncates instead.

@@ -50,6 +50,13 @@ enum ReviewScope: Equatable {
     }
 }
 
+/// Outcome of replacing the review's visible repository snapshot.
+enum ReviewReloadResult: Equatable {
+    case applied(selectedFileID: String?)
+    case failed
+    case superseded
+}
+
 /// Where in Git a change was found. `ReviewFile.id` is built from this, so the
 /// cases keep their raw values: a draft written before a case was added still
 /// points at the file it was written about.
