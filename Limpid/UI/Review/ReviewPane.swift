@@ -768,6 +768,7 @@ struct ReviewWorkspaceView: View {
                 ReviewDiffTable(
                     rows: rows,
                     diffLines: store.diff?.lines ?? [],
+                    intralineHighlights: store.diff?.intralineHighlights ?? ReviewIntralineHighlights(),
                     contentKey: contentKey,
                     widthKey: widthKey,
                     layout: reviewPresentation.diffLayout,

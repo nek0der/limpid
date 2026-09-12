@@ -556,6 +556,7 @@ extension ReviewDiffTable {
                     numberWidth: parent.numberWidth,
                     language: parent.language,
                     match: parent.search.query,
+                    intralineRanges: parent.intralineHighlights[line.id],
                     selectedRange: parent.textSelection.range(in: line, at: row, on: nil)
                 )
                 return view
@@ -564,6 +565,7 @@ extension ReviewDiffTable {
                 view.configure(pair, context: ReviewSplitRowContext(
                     selection: parent.selection,
                     textSelection: parent.textSelection,
+                    intralineHighlights: parent.intralineHighlights,
                     rowIndex: row,
                     commentCounts: parent.lineCommentCounts,
                     numberWidth: parent.numberWidth,

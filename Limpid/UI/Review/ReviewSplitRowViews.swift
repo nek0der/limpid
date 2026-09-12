@@ -11,6 +11,7 @@ import AppKit
 struct ReviewSplitRowContext {
     let selection: ReviewSelection
     let textSelection: ReviewTextSelection
+    let intralineHighlights: ReviewIntralineHighlights
     let rowIndex: Int
     let commentCounts: [Int: Int]
     let numberWidth: CGFloat
@@ -35,6 +36,7 @@ final class ReviewSplitCodeRowView: NSView {
     private var pair: ReviewSplitPair?
     private var selection = ReviewSelection()
     private var textSelection = ReviewTextSelection()
+    private var intralineHighlights = ReviewIntralineHighlights()
     private var rowIndex = 0
     private var commentCounts: [Int: Int] = [:]
     private var numberWidth = ReviewRowMetrics.defaultNumberWidth
@@ -76,6 +78,7 @@ final class ReviewSplitCodeRowView: NSView {
         self.pair = pair
         selection = context.selection
         textSelection = context.textSelection
+        intralineHighlights = context.intralineHighlights
         rowIndex = context.rowIndex
         commentCounts = context.commentCounts
         numberWidth = context.numberWidth
@@ -87,6 +90,12 @@ final class ReviewSplitCodeRowView: NSView {
         setAccessibilityLabel(String(localized: "Old \(old) → new \(new)"))
         // A static text element is read from its value, not its label.
         setAccessibilityValue(String(localized: "Old \(old) → new \(new)"))
+        let hasIntraline = [pair.old, pair.new].compactMap(\.self).contains {
+            !intralineHighlights[$0.id].isEmpty
+        }
+        setAccessibilityHelp(
+            hasIntraline ? String(localized: "Changed characters are highlighted.") : nil
+        )
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
     }
@@ -212,15 +221,15 @@ final class ReviewSplitCodeRowView: NSView {
         )
         let codeX = rect.minX + metrics.sideGutterTotal(numberWidth: numberWidth) + metrics.codeLeadingInset
         ReviewRowPainter.drawCode(
-            line.text,
+            line,
             in: NSRect(
                 x: codeX, y: rect.minY,
                 width: max(rect.maxX - codeX - metrics.codeTrailingInset, 0), height: rect.height
             ),
             offset: codeOffset,
-            font: metrics.font, color: .labelColor,
             language: language,
             match: match,
+            intralineRanges: intralineHighlights[line.id],
             selectedRange: textSelection.range(in: line, at: rowIndex, on: side)
         )
     }

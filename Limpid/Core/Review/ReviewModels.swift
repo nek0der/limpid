@@ -213,6 +213,9 @@ struct ReviewDiff {
     let file: ReviewFile
     let fingerprint: String
     let lines: [ReviewLine]
+    /// Character-level decoration computed from the paired changed lines.
+    /// Stored with its snapshot so it can never describe a previous file.
+    var intralineHighlights = ReviewIntralineHighlights()
     /// Unsupported content remains visible in the file list with an explanation.
     var notice: String?
     /// Whether Git answered with no patch at all — the file's change has been

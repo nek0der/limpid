@@ -6444,6 +6444,23 @@
         }
       }
     },
+    "Changed characters are highlighted.": {
+      "comment": "VoiceOver help for a review line with intraline changes",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changed characters are highlighted."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更された文字を強調表示しています。"
+          }
+        }
+      }
+    },
     "Copy Selected Text": {
       "comment": "Review action for copying an exact character selection",
       "localizations": {
