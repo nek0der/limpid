@@ -1,11 +1,11 @@
 // AccentColorPicker.swift
-// Limpid — inline accent picker dropped straight into the Appearance
-// pane's `LabeledContent` value slot. Modeled on macOS Tahoe System
-// Settings → Appearance → Accent Color: a horizontal row of solid
-// swatches with a Multicolor (rainbow angular gradient) leading dot
-// for the "follow the OS" choice and a ring in the chosen hue
-// around the active swatch. No textual label under the row — the
-// swatch hue already names itself, so the label would be noise.
+// Limpid — inline accent picker used by the Appearance pane. Modeled
+// on macOS Tahoe System Settings → Appearance → Accent Color: a
+// horizontal row of solid swatches with a Multicolor (rainbow angular
+// gradient) leading dot for the "follow the OS" choice and a ring in
+// the chosen hue around the active swatch. No textual label under the
+// row — the swatch hue already names itself, so the label would be
+// noise.
 
 import SwiftUI
 

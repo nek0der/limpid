@@ -5,9 +5,9 @@
 // mono-digit slider values via `SliderRow`.
 //
 // The Accent row mirrors System Settings → Appearance: solid swatches
-// laid out in the `LabeledContent` value slot, with the leading dot
-// painting a Multicolor (rainbow) gradient to mean "follow the OS
-// accent". See `AccentColorPicker`.
+// aligned with a centered leading label, with the leading dot painting
+// a Multicolor (rainbow) gradient to mean "follow the OS accent". See
+// `AccentColorPicker`.
 
 import SwiftUI
 
@@ -17,7 +17,7 @@ struct AppearancePane: View {
 
     var body: some View {
         @Bindable var store = store
-        SettingsForm(title: "Appearance") {
+        SettingsForm(title: "Appearance", section: .appearance) {
             Section {
                 Picker(
                     "Theme",
@@ -27,19 +27,21 @@ struct AppearancePane: View {
                     Text("Light").tag(ColorSchemePreference.light)
                     Text("Dark").tag(ColorSchemePreference.dark)
                 }
+                .settingsSearchTarget(SettingsSearchCatalog.theme.id)
             }
 
             Section {
-                LabeledContent {
+                HStack(alignment: .center) {
+                    Text("Accent")
+                    Spacer(minLength: 12)
                     AccentColorPicker(
                         current: store.settings.appearance.accentColor,
                         onSelect: { choice in
                             store.settings.appearance.accentColor = choice
                         }
                     )
-                } label: {
-                    Text("Accent")
                 }
+                .settingsSearchTarget(SettingsSearchCatalog.accentColor.id)
             } footer: {
                 Text("Painted on focus rings, drop targets, and other highlights.")
             }
@@ -53,11 +55,13 @@ struct AppearancePane: View {
                     )
                 )
                 .disabled(reduceTransparencyResolver.systemReducesTransparency)
+                .settingsSearchTarget(SettingsSearchCatalog.transparency.id)
                 SliderRow(
                     title: "Opacity",
                     value: $store.settings.appearance.backgroundOpacity,
                     range: 0.5...1.0
                 )
+                .settingsSearchTarget(SettingsSearchCatalog.backgroundOpacity.id)
             } footer: {
                 // Only when the OS forces opacity: explain why the toggle
                 // is disabled. The enabled state is self-explanatory, so
@@ -73,6 +77,7 @@ struct AppearancePane: View {
                     value: $store.settings.appearance.unfocusedPaneOpacity,
                     range: 0.15...1.0
                 )
+                .settingsSearchTarget(SettingsSearchCatalog.unfocusedPaneOpacity.id)
             } footer: {
                 Text("Dims the unfocused leaves when a tab carries more than one pane.")
             }

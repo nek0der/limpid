@@ -17,7 +17,12 @@ import SwiftUI
 struct SettingsScene: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
-    @State private var selection: SettingsSection = .general
+    @AppStorage("settings.last-section") private var selectedSectionRaw = SettingsSection.general.rawValue
+    @State private var searchText = ""
+    @State private var selectedSearchResultID: String?
+    @State private var revealRequest: SettingsRevealRequest?
+    @State private var revealSequence: UInt = 0
+    @State private var searchFocusRequest: UInt = 0
 
     /// Slab width — matches the proportions of the main window's container column.
     private static let sidebarWidth: CGFloat = 210
@@ -47,17 +52,28 @@ struct SettingsScene: View {
             // Flush glass sidebar with the section list — the same
             // treatment the main window gives its container sidebar, so
             // the visual rhythm matches across windows.
-            SettingsSidebarSlab(selection: $selection)
-                .frame(width: Self.sidebarWidth)
-                .flushGlassSidebar(
-                    isSolid: reduceTransparencyResolver.shouldReduceTransparency,
-                    solidFill: LimpidColor.sidebarSolidFill
-                )
-                .ignoresSafeArea(.all, edges: .top)
+            SettingsSidebarSlab(
+                selection: selectedSectionBinding,
+                searchText: $searchText,
+                selectedSearchResultID: $selectedSearchResultID,
+                searchResults: searchResults,
+                searchFocusRequest: searchFocusRequest,
+                onActivateResult: activateSearchResult,
+                onMoveSelection: moveSearchSelection,
+                onSubmit: submitSearch,
+                onCancel: clearSearchSelection
+            )
+            .frame(width: Self.sidebarWidth)
+            .flushGlassSidebar(
+                isSolid: reduceTransparencyResolver.shouldReduceTransparency,
+                solidFill: LimpidColor.sidebarSolidFill
+            )
+            .ignoresSafeArea(.all, edges: .top)
         }
         .ignoresSafeArea(.all)
         .frame(minWidth: 720, minHeight: 480)
         .environment(\.locale, settings.appLanguage.locale ?? .current)
+        .environment(\.settingsRevealRequest, revealRequest)
         // Force the entire Settings tree to rebuild when the user
         // picks a new language. `.environment(\.locale, …)` on its
         // own isn't enough on macOS 26 — already-rendered Text
@@ -68,6 +84,23 @@ struct SettingsScene: View {
         // language until reopened. `.id(appLanguage)` makes SwiftUI
         // tear down + rebuild the subtree with the fresh locale.
         .id(settings.appLanguage)
+        .focusedSceneValue(
+            \.settingsSearchFocusAction,
+            SettingsSearchFocusAction {
+                searchFocusRequest &+= 1
+            }
+        )
+        .onChange(of: searchText) { _, newValue in
+            guard !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                clearSearchSelection()
+                return
+            }
+            if let selectedSearchResultID,
+               !searchResults.contains(where: { $0.id == selectedSearchResultID })
+            {
+                self.selectedSearchResultID = nil
+            }
+        }
         .limpidSettingsToolbar()
     }
 
@@ -75,6 +108,23 @@ struct SettingsScene: View {
     /// sidebar doesn't cover content, plus a small gutter.
     static var leadingInset: CGFloat {
         sidebarWidth + 8
+    }
+
+    private var selectedSection: SettingsSection {
+        SettingsSection(rawValue: selectedSectionRaw) ?? .general
+    }
+
+    private var selectedSectionBinding: Binding<SettingsSection> {
+        Binding(
+            get: { selectedSection },
+            set: { selectedSectionRaw = $0.rawValue }
+        )
+    }
+
+    private var searchResults: [SettingsSearchEntry] {
+        SettingsSearchIndex(
+            locale: settings.appLanguage.locale ?? .current
+        ).search(searchText)
     }
 
     @ViewBuilder
@@ -95,14 +145,49 @@ struct SettingsScene: View {
 
     @ViewBuilder
     private var detailPane: some View {
-        switch selection {
+        switch selectedSection {
         case .general: GeneralPane()
         case .appearance: AppearancePane()
         case .font: FontPane()
         case .terminal: TerminalPane()
+        case .tabsAndPanes: TabsAndPanesPane()
         case .keyboard: KeyboardPane()
+        case .integrations: IntegrationsPane()
+        case .review: ReviewSettingsPane()
         case .advanced: AdvancedPane()
         }
+    }
+
+    private func activateSearchResult(_ entry: SettingsSearchEntry) {
+        selectedSearchResultID = entry.id
+        selectedSectionRaw = entry.section.rawValue
+        revealSequence &+= 1
+        revealRequest = SettingsRevealRequest(
+            sequence: revealSequence,
+            entryID: entry.id,
+            section: entry.section
+        )
+    }
+
+    private func moveSearchSelection(_ delta: Int) {
+        selectedSearchResultID = SettingsSearchNavigation.movedSelection(
+            from: selectedSearchResultID,
+            by: delta,
+            in: searchResults
+        )
+    }
+
+    private func submitSearch() {
+        guard let entry = SettingsSearchNavigation.submittedEntry(
+            selectedID: selectedSearchResultID,
+            in: searchResults
+        ) else { return }
+        activateSearchResult(entry)
+    }
+
+    private func clearSearchSelection() {
+        selectedSearchResultID = nil
+        revealRequest = nil
     }
 }
 
@@ -123,6 +208,14 @@ struct SettingsScene: View {
 /// publishes an official override API — it costs nothing today.
 private struct SettingsSidebarSlab: View {
     @Binding var selection: SettingsSection
+    @Binding var searchText: String
+    @Binding var selectedSearchResultID: String?
+    let searchResults: [SettingsSearchEntry]
+    let searchFocusRequest: UInt
+    let onActivateResult: (SettingsSearchEntry) -> Void
+    let onMoveSelection: (Int) -> Void
+    let onSubmit: () -> Void
+    let onCancel: () -> Void
     @Environment(\.limpidAccent) private var accent
 
     var body: some View {
@@ -137,13 +230,34 @@ private struct SettingsSidebarSlab: View {
             // of it, which is why this is a shared starting point
             // rather than a shared baseline.
             Spacer().frame(height: LimpidLayout.topStripHeight)
-            List(SettingsSection.allCases, selection: $selection) { section in
-                Label(section.title, systemImage: section.icon)
-                    .tag(section)
+            SettingsSearchField(
+                text: $searchText,
+                focusRequest: searchFocusRequest,
+                onMoveSelection: onMoveSelection,
+                onSubmit: onSubmit,
+                onCancel: onCancel
+            )
+            .frame(height: 24)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 6)
+
+            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                List(SettingsSection.allCases, selection: $selection) { section in
+                    Label(section.title, systemImage: section.icon)
+                        .tag(section)
+                }
+                .tint(accent)
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+            } else {
+                SettingsSearchResultList(
+                    query: searchText,
+                    results: searchResults,
+                    selectedID: $selectedSearchResultID,
+                    onActivate: onActivateResult
+                )
+                .tint(accent)
             }
-            .tint(accent)
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
         }
     }
 }

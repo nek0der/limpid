@@ -16,13 +16,16 @@ struct GeneralPane: View {
 
     var body: some View {
         @Bindable var settings = settings
-        SettingsForm(title: "General") {
+        SettingsForm(title: "General", section: .general) {
             Section {
                 Picker("Display Language", selection: $settings.appLanguage) {
                     ForEach(AppLanguage.allCases) { lang in
                         Text(lang.localizedTitle).tag(lang)
                     }
                 }
+                .settingsSearchTarget(SettingsSearchCatalog.displayLanguage.id)
+            } header: {
+                Text("Language")
             } footer: {
                 Text("App content updates immediately. The macOS menu bar updates on next launch.")
             }
@@ -49,18 +52,28 @@ private struct ConfirmationsSection: View {
     var body: some View {
         @Bindable var settings = settings
         Section {
-            policyPicker("Quit Limpid", binding: $settings.settings.confirmations.quit)
+            policyPicker(
+                "Quit Limpid",
+                id: SettingsSearchCatalog.confirmationQuit.id,
+                binding: $settings.settings.confirmations.quit
+            )
             policyPicker(
                 "Close Tab (Keyboard)",
+                id: SettingsSearchCatalog.confirmationCloseTabKeyboard.id,
                 binding: $settings.settings.confirmations.closeTabKeyboard
             )
             policyPicker(
                 "Close Tab (X Button)",
+                id: SettingsSearchCatalog.confirmationCloseTabMouse.id,
                 binding: $settings.settings.confirmations.closeTabMouse
             )
-            policyPicker("Close Pane", binding: $settings.settings.confirmations.closePane)
+            policyPicker(
+                "Close Pane",
+                id: SettingsSearchCatalog.confirmationClosePane.id,
+                binding: $settings.settings.confirmations.closePane
+            )
         } header: {
-            Text("Confirmations")
+            Text("Action Confirmations")
         } footer: {
             Text("\"Only when an agent is active\" prompts only when a tracked agent is live in the affected pane.")
         }
@@ -68,6 +81,7 @@ private struct ConfirmationsSection: View {
 
     private func policyPicker(
         _ title: LocalizedStringKey,
+        id: String,
         binding: Binding<ConfirmPolicy>
     ) -> some View {
         Picker(title, selection: binding) {
@@ -75,6 +89,7 @@ private struct ConfirmationsSection: View {
                 Text(policy.localizedTitle).tag(policy)
             }
         }
+        .settingsSearchTarget(id)
     }
 }
 
@@ -99,6 +114,7 @@ private struct AboutSection: View {
                     .textSelection(.enabled)
                     .monospacedDigit()
             }
+            .settingsSearchTarget(SettingsSearchCatalog.appVersion.id)
         }
     }
 
@@ -134,6 +150,7 @@ private struct UpdatesSection: View {
                     updater.automaticallyChecksForUpdates = newValue
                 }
             ))
+            .settingsSearchTarget(SettingsSearchCatalog.automaticUpdates.id)
             HStack {
                 Text("Updates")
                 Spacer()
@@ -158,6 +175,7 @@ private struct UpdatesSection: View {
                 }
                 .disabled(stateModel.isBusy)
             }
+            .settingsSearchTarget(SettingsSearchCatalog.checkForUpdates.id)
             // Inline the same state-driven popover content underneath
             // the button so a user who initiated the check from
             // Settings sees the result here, not just on the terminal column toolbar
@@ -170,10 +188,9 @@ private struct UpdatesSection: View {
                 UpdatePopover(updater: updater, dismiss: {
                     stateModel.state = .idle
                 }, width: nil)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(.background.tertiary)
-                    )
+                // Keep the embedded update view transparent so it
+                // inherits the adaptive grouped-form surface instead
+                // of drawing a second card inside the section.
             }
         } header: {
             Text("Software Update")

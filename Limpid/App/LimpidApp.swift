@@ -787,42 +787,7 @@ struct LimpidApp: App {
 
                 ReviewChangesMenuItem(state: state)
             }
-            CommandGroup(after: .textEditing) {
-                // The menu owns Find in both readers. Review handles its own
-                // matches; terminal navigation requires an existing search.
-                let performFind: (LimpidShortcutAction) -> Void = { action in
-                    ReviewPresentationCommand.find(
-                        action, session: state.session, presentation: state.reviewPresentation, registry: state.registry
-                    )
-                }
-                let focusedPaneID = state.session.activeTab?.splitTree.effectiveFocusedLeafID
-                let hasActiveSearch = focusedPaneID.map {
-                    state.session.paneSearchStates[$0] != nil
-                } ?? false
-                Section {
-                    Button {
-                        performFind(.find)
-                    } label: {
-                        Label("Find…", systemImage: "magnifyingglass")
-                    }
-                    .limpidShortcut(.find, in: state.settingsStore)
-                    Button {
-                        performFind(.findNext)
-                    } label: {
-                        Label("Find Next", systemImage: "chevron.down")
-                    }
-                    .limpidShortcut(.findNext, in: state.settingsStore)
-                    .disabled(!hasActiveSearch && !state.reviewPresentation.isPresented)
-                    Button {
-                        performFind(.findPrevious)
-                    } label: {
-                        Label("Find Previous", systemImage: "chevron.up")
-                    }
-                    .limpidShortcut(.findPrevious, in: state.settingsStore)
-                    .disabled(!hasActiveSearch && !state.reviewPresentation.isPresented)
-                }
-                .disabled(state.session.activeTab == nil && !state.reviewPresentation.isPresented)
-            }
+            SettingsAwareFindCommands(state: state)
             PaneCommands(state: state)
         }
 

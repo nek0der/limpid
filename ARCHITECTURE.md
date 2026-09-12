@@ -170,7 +170,8 @@ reading a newer file degrades cleanly.
 - **New settings section** — `Codable` struct in `LimpidSettings.swift`
   with `unknownFields` + `CodingKeys: CaseIterable`, add property to
   `LimpidSettings`, drop pane in `UI/Settings/Panes/`, register in
-  `SettingsScene`.
+  `SettingsScene`, and add every searchable row to
+  `SettingsSearchCatalog` with the same stable anchor ID used by its view.
 - **New keyboard shortcut** — case in `LimpidShortcutAction` (5
   compiler-enforced spots: `defaultShortcut`, `localizedTitle`,
   `category`, `iconName`, `ghosttyAction`), menu bar `Button` in

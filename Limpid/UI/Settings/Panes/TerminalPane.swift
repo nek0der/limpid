@@ -1,5 +1,5 @@
 // TerminalPane.swift
-// Limpid — Settings → Terminal. Scrollback, bell, cursor.
+// Limpid — Settings for terminal history, bell, and cursor behavior.
 
 import SwiftUI
 
@@ -8,7 +8,7 @@ struct TerminalPane: View {
 
     var body: some View {
         @Bindable var store = store
-        SettingsForm(title: "Terminal") {
+        SettingsForm(title: "Terminal", section: .terminal) {
             Section {
                 // Same Picker shape as Bell / Cursor so all three
                 // ranged settings read uniformly. If the on-disk
@@ -25,61 +25,39 @@ struct TerminalPane: View {
                         Text("\(current.formatted()) lines (custom)").tag(current)
                     }
                 }
+                .settingsSearchTarget(SettingsSearchCatalog.scrollback.id)
+            } header: {
+                Text("History")
             } footer: {
                 Text("Applies to new terminals only.")
             }
 
             Section {
-                Picker("Bell", selection: $store.settings.terminal.bellAction) {
+                Picker("Alert Style", selection: $store.settings.terminal.bellAction) {
                     Text("None").tag(BellAction.none)
                     Text("Visual").tag(BellAction.visual)
                     Text("Audio").tag(BellAction.audio)
                     Text("Visual + Audio").tag(BellAction.both)
                 }
+                .settingsSearchTarget(SettingsSearchCatalog.bell.id)
+            } header: {
+                Text("Bell")
             }
 
             Section {
-                Picker("Cursor", selection: $store.settings.terminal.cursorStyle) {
+                Picker("Style", selection: $store.settings.terminal.cursorStyle) {
                     Text("Block").tag(CursorStyle.block)
                     Text("I-Beam").tag(CursorStyle.bar)
                     Text("Underline").tag(CursorStyle.underline)
                 }
-                Toggle("Cursor blink", isOn: Binding(
+                .settingsSearchTarget(SettingsSearchCatalog.cursorStyle.id)
+                Toggle("Blink", isOn: Binding(
                     get: { store.settings.terminal.cursorBlink == .on },
                     set: { store.settings.terminal.cursorBlink = $0 ? .on : .off }
                 ))
-            }
-
-            Section {
-                Stepper(
-                    value: $store.settings.terminal.minPaneSize,
-                    in: 40...300,
-                    step: 20
-                ) {
-                    HStack {
-                        Text("Minimum pane size")
-                        Spacer()
-                        Text("\(Int(store.settings.terminal.minPaneSize)) pt")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } footer: {
-                Text("Splits and divider drags can't push any pane below this floor.")
-            }
-
-            Section {
-                // Reuses the same control the Group settings sheet uses
-                // so the Quick Tabs default reads identically wherever
-                // a working-directory mode is configurable.
-                WorkingDirectoryField(
-                    label: "Default working directory",
-                    mode: $store.settings.terminal.quickTabCwdMode,
-                    path: $store.settings.terminal.quickTabCwdPath
-                )
+                .settingsSearchTarget(SettingsSearchCatalog.cursorBlink.id)
             } header: {
-                Text("Quick Tabs")
-            } footer: {
-                Text("Where new Quick Tabs open. Containers can override this in their own settings.")
+                Text("Cursor")
             }
         }
     }
