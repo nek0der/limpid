@@ -4,7 +4,6 @@
 // updates a session field in real time, and resets to a default on
 // double-click — matches how AppKit window splitters behave.
 
-import AppKit
 import SwiftUI
 
 struct DividerResizeHandle: View {
@@ -33,13 +32,7 @@ struct DividerResizeHandle: View {
             .fill(Color.clear)
             .frame(width: hitWidth)
             .contentShape(Rectangle())
-            .onHover { hovering in
-                if hovering {
-                    NSCursor.resizeLeftRight.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
+            .pointerStyle(.columnResize)
             // `.gesture(...)` + `.onTapGesture(...)` don't compose: a
             // DragGesture with `minimumDistance: 0` claims every mouse
             // down, so the tap can never complete. Combine them with

@@ -869,6 +869,7 @@ struct ContentView: View {
 
                     Color.clear
                         .contentShape(Rectangle())
+                        .pointerStyle(.default)
                         .onTapGesture {
                             CommandPaletteActions.closeCommandPalette(state.session)
                         }

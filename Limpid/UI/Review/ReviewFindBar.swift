@@ -33,6 +33,7 @@ struct ReviewFindBar: View {
                 focusRequest: focusRequest
             )
             .accessibilityLabel(Text("Find in file"))
+            .pointerStyle(.horizontalText)
             .onChange(of: search.query) { _, _ in
                 // A new query starts at its first hit rather than wherever
                 // the previous one had reached. Which hit that is comes from
@@ -49,6 +50,7 @@ struct ReviewFindBar: View {
                 Image(systemName: "chevron.up").font(.system(size: 10))
             }
             .buttonStyle(.plain)
+            .pointerStyle(.default)
             .disabled(hitCount == 0)
             .accessibilityLabel(Text("Previous Match"))
             Button {
@@ -57,6 +59,7 @@ struct ReviewFindBar: View {
                 Image(systemName: "chevron.down").font(.system(size: 10))
             }
             .buttonStyle(.plain)
+            .pointerStyle(.default)
             .disabled(hitCount == 0)
             .accessibilityLabel(Text("Next Match"))
             Button {
@@ -65,12 +68,13 @@ struct ReviewFindBar: View {
                 Image(systemName: "xmark").font(.system(size: 10))
             }
             .buttonStyle(.plain)
+            .pointerStyle(.default)
             .accessibilityLabel(Text("Close Find Bar"))
         }
         .foregroundStyle(LimpidColor.secondaryText)
         .padding(.horizontal, 10)
         .frame(height: 26)
-        .background(LimpidColor.rowActiveFill.opacity(0.5))
+        .background(LimpidColor.rowActiveFill.opacity(0.5).pointerStyle(.default))
     }
 
     /// Blank until there is something to count, so an empty field does not

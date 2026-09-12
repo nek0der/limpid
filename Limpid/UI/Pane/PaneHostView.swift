@@ -135,6 +135,7 @@ private struct PaneCreationFailureCard: View {
             .controlSize(.small)
         }
         .padding(20)
+        .pointerStyle(.default)
     }
 }
 

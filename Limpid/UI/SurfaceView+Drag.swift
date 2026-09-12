@@ -202,8 +202,8 @@ extension SurfaceView: NSDraggingSource {
     /// pane, so the user gets a visual cue that the click would pick
     /// the pane up (instead of the I-beam we keep for selection during
     /// regular use). Restored to `currentCursor` once the modifiers
-    /// drop. Called from `flagsChanged` and `mouseMoved` so press,
-    /// release, and re-enter all keep the cursor in sync.
+    /// drop. Mouse movement updates it directly; stationary modifier
+    /// changes rebuild the surface's cursor rect in `flagsChanged`.
     func updatePaneDragCursor(_ event: NSEvent) {
         guard paneID != nil, dragState != nil else { return }
         let armed = event.modifierFlags.contains([.option, .command])

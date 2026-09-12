@@ -20,13 +20,7 @@ struct SplitDividerView: View {
                 height: direction == .vertical ? 6 : nil
             )
             .contentShape(Rectangle())
-            .onHover { hovering in
-                isHovering = hovering
-                if hovering {
-                    (direction == .horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
+            .pointerStyle(direction == .horizontal ? .columnResize : .rowResize)
+            .onHover { isHovering = $0 }
     }
 }

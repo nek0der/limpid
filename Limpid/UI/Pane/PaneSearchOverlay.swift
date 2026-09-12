@@ -40,6 +40,7 @@ struct PaneSearchOverlay: View {
                     matchCounter
                         .padding(.trailing, 8)
                 }
+                .pointerStyle(.horizontalText)
                 .onChange(of: state.needle) { _, new in scheduleSearch(needle: new) }
                 .onSubmit {
                     if NSEvent.modifierFlags.contains(.shift) {
@@ -55,6 +56,7 @@ struct PaneSearchOverlay: View {
                     .font(.system(size: 11, weight: .semibold))
             }
             .buttonStyle(.borderless)
+            .pointerStyle(.default)
             .help("Previous match (⇧⏎)")
             .accessibilityLabel(Text("Previous match (⇧⏎)"))
 
@@ -63,6 +65,7 @@ struct PaneSearchOverlay: View {
                     .font(.system(size: 11, weight: .semibold))
             }
             .buttonStyle(.borderless)
+            .pointerStyle(.default)
             .help("Next match (⏎)")
             .accessibilityLabel(Text("Next match (⏎)"))
 
@@ -71,12 +74,17 @@ struct PaneSearchOverlay: View {
                     .font(.system(size: 11, weight: .semibold))
             }
             .buttonStyle(.borderless)
+            .pointerStyle(.default)
             .help("Close (Esc)")
             .accessibilityLabel(Text("Close (Esc)"))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(.regularMaterial)
+                .pointerStyle(.default)
+        }
         .overlay(
             // Adaptive hairline — pure white at 10% disappears against
             // the near-white light-mode material; route through the
