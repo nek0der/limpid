@@ -26,7 +26,7 @@ struct ToolbarTabColumnSegment: View {
                 Spacer()
                 if showsNewTab {
                     NewTabToolbarButton()
-                        .padding(.trailing, 8)
+                        .padding(.trailing, LimpidLayout.columnResizeHandleWidth)
                 }
             }
         }

@@ -278,9 +278,13 @@ enum LimpidLayout {
     static let sidebarMinWidth: CGFloat = 180
     static let sidebarMaxWidth: CGFloat = 400
 
-    /// Width of the transparent resize handle hugging the sidebar's
-    /// right edge.
-    static let sidebarResizeHandleWidth: CGFloat = 6
+    /// Default width of an invisible resize handle.
+    static let resizeHandleWidth: CGFloat = 6
+
+    /// Width of the transparent resize handles between main-window columns.
+    /// Rows remain selectable outside this band; their trailing controls start
+    /// farther inward at `containerColumnRowTrailingPadding`.
+    static let columnResizeHandleWidth: CGFloat = 12
 
     // MARK: - Tab pill
 
