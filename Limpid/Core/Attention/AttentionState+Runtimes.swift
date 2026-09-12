@@ -26,11 +26,18 @@ extension AttentionState {
     }
 
     func isViewed(_ runtime: AgentRuntimePresentation) -> Bool {
-        viewedRuntimeTokens[runtime.id] == runtime.eventToken
+        viewedRuntimeTokens[runtime.id] == runtime.attentionEventToken
     }
 
+    /// Explicit × or a viewed finished turn past
+    /// `viewedFinishedRetention` — same rule as the pane-keyed variant.
     func isDismissed(_ runtime: AgentRuntimePresentation) -> Bool {
-        dismissedRuntimeTokens[runtime.id] == runtime.eventToken
+        if dismissedRuntimeTokens[runtime.id] == runtime.attentionEventToken {
+            return true
+        }
+        return runtime.badge.state == .finished
+            && isViewed(runtime)
+            && isPastRetention(runtime.badge.updatedAt)
     }
 
     func displayPriority(kind: AgentKind, runID: String, badge: AgentBadge) -> Int {
@@ -45,7 +52,7 @@ extension AttentionState {
 
     func dismissRuntime(_ id: String) {
         guard let runtime = allRuntimes.first(where: { $0.id == id }), runtime.badge.state == .finished else { return }
-        dismissedRuntimeTokens[id] = runtime.eventToken
+        dismissedRuntimeTokens[id] = runtime.attentionEventToken
         onRuntimeAttentionChanged?()
     }
 
@@ -58,7 +65,7 @@ extension AttentionState {
                 continue
             }
             if !isViewed(runtime) {
-                viewedRuntimeTokens[runtime.id] = runtime.eventToken
+                viewedRuntimeTokens[runtime.id] = runtime.attentionEventToken
                 changed = true
             }
         }

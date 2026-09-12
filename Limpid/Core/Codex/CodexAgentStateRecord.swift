@@ -14,6 +14,8 @@ struct CodexAgentStateRecord: AgentLifecycleRecord, Equatable {
     var runId: String?
     /// Per-runtime ordering independent of wall-clock timestamp resolution.
     var revision: Int?
+    /// Revision at which the current lifecycle-state episode began.
+    var stateEpisodeToken: String?
     /// UUID of the split-tree leaf that launched this runtime.
     var paneId: String
     /// The lifecycle state encoded by the hook script.

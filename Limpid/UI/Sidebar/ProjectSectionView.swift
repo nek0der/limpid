@@ -181,9 +181,6 @@ struct ProjectSectionView: View {
             agentState: aggregatesWholeProject
                 ? attention.aggregateAgentStateInProject(project.id, session: session)
                 : attention.aggregateAgentState(in: .project(project.id), session: session),
-            agentStateViewed: aggregatesWholeProject
-                ? attention.isFinishedAggregateViewedInProject(project.id, session: session)
-                : attention.isFinishedAggregateViewed(in: .project(project.id), session: session),
             agentBreakdown: aggregatesWholeProject
                 ? attention.agentStateBreakdownInProject(project.id, session: session)
                 : attention.agentStateBreakdown(in: .project(project.id), session: session),
@@ -308,10 +305,6 @@ struct ProjectSectionView: View {
             hasUnread: session.hasUnread(in: .worktree(projectID: project.id, worktreeID: wt.id)),
             isRinging: session.isRinging(in: .worktree(projectID: project.id, worktreeID: wt.id)),
             agentState: attention.aggregateAgentState(in: .worktree(projectID: project.id, worktreeID: wt.id), session: session),
-            agentStateViewed: attention.isFinishedAggregateViewed(
-                in: .worktree(projectID: project.id, worktreeID: wt.id),
-                session: session
-            ),
             agentBreakdown: attention.agentStateBreakdown(in: .worktree(projectID: project.id, worktreeID: wt.id), session: session),
             onActivate: {
                 session.setActiveContainer(.worktree(projectID: project.id, worktreeID: wt.id))

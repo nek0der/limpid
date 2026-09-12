@@ -25,7 +25,12 @@ struct AgentNotificationOutbox {
         let createdAt: TimeInterval
     }
 
-    private var previous: [AgentRunKey: AgentBadge] = [:]
+    private struct Observed {
+        let badge: AgentBadge
+        let attentionEventToken: String
+    }
+
+    private var previous: [AgentRunKey: Observed] = [:]
     private var pending: [AgentRunKey: Pending] = [:]
 
     mutating func observe(
@@ -40,18 +45,27 @@ struct AgentNotificationOutbox {
         var ready: [AgentRuntimeTransition] = []
         for runtime in runtimes {
             guard let key = runtime.key else { continue }
-            let prior = previous[key]
-            previous[key] = runtime.badge
+            let priorObservation = previous[key]
+            let prior = priorObservation?.badge
+            previous[key] = Observed(
+                badge: runtime.badge,
+                attentionEventToken: runtime.attentionEventToken
+            )
             if isBootstrap {
                 continue
             }
             if let event = pending[key], event.key.state != runtime.badge.state {
                 pending[key] = nil
             }
-            if AgentRuntimeTransition.isNotifiable(previous: prior, current: runtime.badge) {
+            let beginsAttentionEpisode = (runtime.badge.state == .needsInput || runtime.badge.state == .error)
+                && priorObservation?.attentionEventToken != runtime.attentionEventToken
+            if beginsAttentionEpisode || AgentRuntimeTransition.isNotifiable(previous: prior, current: runtime.badge) {
                 pending[key] = Pending(
                     key: AgentNotificationEventKey(run: key, revision: runtime.eventToken, state: runtime.badge.state),
-                    previous: prior,
+                    // Same-state snapshots can conceal an intervening
+                    // running state. Nil lets the emitter announce the
+                    // new persisted attention episode in that case.
+                    previous: beginsAttentionEpisode ? nil : prior,
                     createdAt: now
                 )
             }

@@ -47,6 +47,7 @@ final class AgentStateTracker<S: AgentSpec> {
     /// We diff per invocation, even while detached, so attaching another
     /// client neither duplicates notifications nor invents transitions.
     private var notificationOutbox = AgentNotificationOutbox()
+    private var stateEpisodeTracker = AgentStateEpisodeTracker()
     private var acceptedRecords: [String: S.StateRecord] = [:]
     var socketPaths: Set<String> {
         Set(acceptedRecords.values.compactMap(\.tmuxSocketPath))
@@ -131,6 +132,12 @@ final class AgentStateTracker<S: AgentSpec> {
     }
 
     func refreshPresentation() {
+        // Same rule as bootstrap: the tmux presence poll and the
+        // attention callback both land here, and in demo mode a disk
+        // pass would replace the fixture's badges with an empty runtime
+        // list — which is exactly how the hero screenshot lost its
+        // Waiting rows.
+        guard !DemoFixture.isDemoActive else { return }
         applyAllRecordsToSession()
     }
 
@@ -293,12 +300,14 @@ final class AgentStateTracker<S: AgentSpec> {
                     kind: S.kind, runID: record.storageID, revision: record.revision,
                     badge: badge, paneIDs: targets,
                     tmuxLocations: record.isTmuxRuntime ? (tmuxPresence?.attachments(for: record.tmuxEndpoint) ?? [:]) : [:],
+                    stateEpisodeToken: record.stateEpisodeToken,
                     attachmentResolution: record.isTmuxRuntime
                         ? (tmuxPresence?.resolution(for: record.tmuxEndpoint) ?? .unresolved)
                         : (targets.isEmpty ? .detached : .attached)
                 ))
             }
         }
+        runtimes = stateEpisodeTracker.stamp(runtimes)
         attention?.replaceRuntimes(runtimes, kind: S.kind)
         var alive: Set<UUID> = []
         for tab in session.tabs {
@@ -400,7 +409,8 @@ final class AgentStateTracker<S: AgentSpec> {
               let attention,
               let activeTabID = session.activeTabID,
               let tab = session.tab(activeTabID),
-              let paneID = tab.splitTree.focusedLeafID
+              let paneID = tab.splitTree.focusedLeafID,
+              LimpidNotificationDelegate.isPaneFocused(paneIDString: paneID.uuidString)
         else { return }
         attention.markViewed(paneID: paneID, in: session)
     }
@@ -418,7 +428,8 @@ final class AgentStateTracker<S: AgentSpec> {
             let emitter = AgentNotificationEmitter(
                 kind: S.kind, notificationManager: notificationManager,
                 suppressWhenPaneFocused: runtime.tmuxLocations[paneID]?.isActive ?? true,
-                runtimeID: runtime.id
+                runtimeID: runtime.id,
+                eventToken: runtime.attentionEventToken
             )
             emitter.handleTransition(
                 tab: tab, paneID: paneID, previous: transition.previous,

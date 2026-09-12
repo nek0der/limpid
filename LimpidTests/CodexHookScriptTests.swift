@@ -231,6 +231,19 @@ struct CodexHookScriptTests {
         )
         #expect(record?["runId"] as? String == runID)
         #expect(record?["revision"] as? Int == 2)
+        #expect(record?["stateEpisodeToken"] as? String == "2")
+    }
+
+    @Test("keeps one episode token across repeated waiting writes")
+    func waitingEpisode_repeatedState_keepsToken() throws {
+        let record = try runHooks([
+            payload("UserPromptSubmit"),
+            payload("PermissionRequest"),
+            payload("PermissionRequest")
+        ])
+        #expect(record?["state"] as? String == "needsInput")
+        #expect(record?["revision"] as? Int == 3)
+        #expect(record?["stateEpisodeToken"] as? String == "2")
     }
 
     @Test("Stop maps to finished")

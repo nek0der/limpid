@@ -14,6 +14,8 @@ struct ClaudeAgentStateRecord: AgentLifecycleRecord, Equatable {
     var runId: String?
     /// Per-runtime ordering independent of wall-clock timestamp resolution.
     var revision: Int?
+    /// Revision at which the current lifecycle-state episode began.
+    var stateEpisodeToken: String?
     /// UUID of the launching split-tree leaf. Runtime records use `runId`
     /// as their filename; schema-v1 records use this value.
     var paneId: String

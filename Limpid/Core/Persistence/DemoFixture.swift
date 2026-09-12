@@ -299,6 +299,27 @@ enum DemoFixture {
             sessionStartedAt: Date(timeIntervalSinceNow: -900)
         )
 
+        // Park the `codex` tab on a permission prompt so the Waiting list
+        // shows the orange "needs input" tier above the green finished
+        // one — the two states the list exists to tell apart. `detail`
+        // takes the "tool: argument" shape the Codex hook writes for a
+        // PreToolUse that then asks for permission.
+        var agentsCodexTab = singlePaneTab(
+            id: agentsCodexTabID,
+            title: "codex",
+            container: .group(agentsGroupID),
+            paneID: agentsCodexPaneID
+        )
+        agentsCodexTab.codexAgentBadges[agentsCodexPaneID] = CodexAgentBadge(
+            state: .needsInput,
+            detail: "Bash: git push origin feat/pricing-page",
+            runStartedAt: Date(timeIntervalSinceNow: -400),
+            contextTokens: nil,
+            updatedAt: Date(timeIntervalSinceNow: -240),
+            lastPrompt: "Ship the pricing page copy and open a PR.",
+            sessionStartedAt: Date(timeIntervalSinceNow: -2400)
+        )
+
         let tabs: [Tab] = [
             singlePaneTab(
                 id: looseTabID,
@@ -307,12 +328,7 @@ enum DemoFixture {
                 paneID: looseTabPaneID
             ),
             agentsClaudeTab,
-            singlePaneTab(
-                id: agentsCodexTabID,
-                title: "codex",
-                container: .group(agentsGroupID),
-                paneID: agentsCodexPaneID
-            ),
+            agentsCodexTab,
             singlePaneTab(
                 id: scratchNotesTabID,
                 title: "notes",

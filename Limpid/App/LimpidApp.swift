@@ -123,6 +123,8 @@ final class AppState {
     private var frameSync: WindowFrameSync?
     private var fullScreenSync: WindowFullScreenSync?
     private var dockBadgeSync: DockBadgeSync?
+    /// Retires agent history rows the Waiting side already handled. Observer-only, like `dockBadgeSync`.
+    private var notificationReadSync: NotificationReadSync?
     private var gitSync: GitSyncCoordinator?
     /// Sidebar pull-request status: data, hover state, and the
     /// scheduler that fills them. See each type for its own contract.
@@ -258,10 +260,12 @@ final class AppState {
         self.codexSessionTracker = codexSessionTracker
 
         self.session = session
-        self.attention = AttentionState()
+        let attention = AttentionState()
+        self.attention = attention
 
         let historyStore = NotificationHistoryStore()
         self.historyStore = historyStore
+        attention.onPaneFocused = { [weak historyStore] in historyStore?.markRead(forPanes: [$0]) }
         self.frecencyStore = FrecencyStore()
         let notificationManager = LimpidNotificationManager(historyStore: historyStore)
         self.notificationManager = notificationManager
@@ -331,9 +335,10 @@ final class AppState {
             coordinator?.dispatch(event)
         }
         self.dockBadgeSync = DockBadgeSync(
-            session: session,
+            historyStore: historyStore,
             notificationManager: notificationManager
         )
+        self.notificationReadSync = NotificationReadSync(historyStore: historyStore, attention: attention)
         self.gitSync = GitSyncCoordinator(session: session)
 
         let toolLocator = ToolLocator()
@@ -399,10 +404,7 @@ final class AppState {
 
     // MARK: - Active-tab change hook
 
-    /// Single hook point for "the user is now looking at this tab":
-    ///   1. Mark every history entry for the tab's panes as read.
-    ///   2. Flash each pane that was carrying an unread badge, then
-    ///      clear the badge.
+    /// Handles history acknowledgement and pane badge clearing when the visible tab changes.
     /// Driven off `activeTabID` changes so every navigation path —
     /// TabRow click, container-header click, ⌘1-9, ⌘[ / ⌘], ⌘⇧T
     /// restore — goes through the same code. Initial fire (snapshot
@@ -437,7 +439,11 @@ final class AppState {
 
         guard let tab = session.activeTab else { return }
         let paneIDs = Set(tab.splitTree.allLeafIDs())
-        historyStore.markRead(forPanes: paneIDs)
+        // Only the focused leaf is visible; clearing a split tab would
+        // silently retire history from background panes.
+        if let focusedPaneID = tab.splitTree.focusedLeafID {
+            historyStore.markRead(forPanes: [focusedPaneID])
+        }
         for paneID in paneIDs where session.paneState(paneID).hasUnread {
             if !isInitial {
                 flashPane(paneID, session: session)
@@ -779,7 +785,7 @@ struct LimpidApp: App {
                 .limpidShortcut(.quickOpen, in: state.settingsStore)
 
                 Button {
-                    state.historyPresentation.isPresented.toggle()
+                    toggleNotificationHistory(state.historyPresentation, session: state.session)
                 } label: {
                     Label("Notification History", systemImage: "bell")
                 }
@@ -850,6 +856,7 @@ struct ContentView: View {
             WorktreeMoveSuggestionHost()
         }
         .overlay { PRHoverCardHost() }
+        .overlay { NotificationHistoryOverlay(state: state) }
         .overlay {
             if let paletteState = state.session.commandPaletteState,
                state.session.paletteFieldFrame.width > 0
@@ -898,7 +905,7 @@ struct ContentView: View {
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: .limpidToggleNotificationHistory)) { _ in
-            state.historyPresentation.isPresented.toggle()
+            toggleNotificationHistory(state.historyPresentation, session: state.session)
         }
         .onReceive(NotificationCenter.default.publisher(for: .limpidOpenSettings)) { _ in
             openWindow(id: LimpidApp.settingsWindowID)
