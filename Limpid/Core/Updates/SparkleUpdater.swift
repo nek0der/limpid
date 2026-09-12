@@ -12,17 +12,41 @@
 import Sparkle
 import SwiftUI
 
-// MARK: - Convenience helpers
+// MARK: - Update presentation
 
-extension SUAppcastItem {
-    /// Display version with a leading `v` so the UI consistently reads
-    /// `v0.1.99` rather than the bare `0.1.99`. Sparkle's
-    /// `displayVersionString` returns the raw `sparkle:shortVersionString`
-    /// from the appcast (no prefix), which is too easily confused with
-    /// other numeric strings in the popover (file size, %, dates).
-    var displayVersion: String {
-        "v\(displayVersionString)"
+/// Immutable appcast fields needed by Limpid's update UI.
+///
+/// Sparkle owns `SUAppcastItem` construction and version-dependent state. We
+/// copy presentation values at the user-driver boundary so fallback and Debug
+/// states never need to manufacture framework objects with private APIs.
+struct UpdateDisplayItem {
+    let displayVersion: String
+    let contentLength: UInt64
+    let date: Date?
+    let releaseNotesURL: URL?
+
+    init(appcastItem: SUAppcastItem) {
+        // The prefix keeps versions distinct from file sizes, percentages,
+        // and dates shown in the same compact metadata block.
+        self.displayVersion = "v\(appcastItem.displayVersionString)"
+        self.contentLength = appcastItem.contentLength
+        self.date = appcastItem.date
+        self.releaseNotesURL = appcastItem.releaseNotesURL
     }
+
+    init(
+        displayVersion: String,
+        contentLength: UInt64 = 0,
+        date: Date? = nil,
+        releaseNotesURL: URL? = nil
+    ) {
+        self.displayVersion = displayVersion
+        self.contentLength = contentLength
+        self.date = date
+        self.releaseNotesURL = releaseNotesURL
+    }
+
+    static let placeholder = UpdateDisplayItem(displayVersion: "v0.0.0")
 }
 
 // MARK: - Main window marker
@@ -186,10 +210,10 @@ extension OneShot where Argument == Void {
 enum UpdateState {
     case idle
     case checking(cancel: OneShot<Void>)
-    case available(item: SUAppcastItem, reply: OneShot<SPUUserUpdateChoice>)
-    case downloading(item: SUAppcastItem, expectedBytes: UInt64?, receivedBytes: UInt64, cancel: OneShot<Void>)
+    case available(item: UpdateDisplayItem, reply: OneShot<SPUUserUpdateChoice>)
+    case downloading(item: UpdateDisplayItem, expectedBytes: UInt64?, receivedBytes: UInt64, cancel: OneShot<Void>)
     case extracting(progress: Double)
-    case readyToInstall(item: SUAppcastItem, reply: OneShot<SPUUserUpdateChoice>)
+    case readyToInstall(item: UpdateDisplayItem, reply: OneShot<SPUUserUpdateChoice>)
     /// `retry` is Sparkle's escape hatch for the install phase: when
     /// `applicationWillTerminate` is canceled or stalls, calling it
     /// gives the user driver another shot at terminating. Nil only in
@@ -209,9 +233,9 @@ enum UpdateState {
 final class UpdateStateModel {
     var state: UpdateState = .idle
 
-    /// Convenience: appcast item attached to the current state, if any.
+    /// Convenience: display item attached to the current state, if any.
     /// Used by the toolbar help-text tooltip without case-matching.
-    var pendingItem: SUAppcastItem? {
+    var pendingItem: UpdateDisplayItem? {
         switch state {
         case let .available(item, _),
              let .downloading(item, _, _, _),
@@ -337,7 +361,7 @@ final class UpdaterStack {
         /// each step visually inspectable in toolbar + popover. Skip /
         /// Later route to `.idle` immediately.
         static func simulate(into model: UpdateStateModel) {
-            guard let item = makeFakeItem() else { return }
+            let item = makeFakeItem()
             let reply = OneShot<SPUUserUpdateChoice> { [weak model] choice in
                 guard let model else { return }
                 switch choice {
@@ -356,7 +380,7 @@ final class UpdaterStack {
         /// feeling delays. Pressing Install in `.readyToInstall` then
         /// hands off to `runFakeInstallStage` to complete the loop.
         private static func runFakeInstallPipeline(
-            item: SUAppcastItem,
+            item: UpdateDisplayItem,
             into model: UpdateStateModel
         ) {
             let cancel = OneShot<Void> { [weak model] in model?.state = .idle }
@@ -377,7 +401,7 @@ final class UpdaterStack {
         }
 
         private static func runFakeDownload(
-            item: SUAppcastItem,
+            item: UpdateDisplayItem,
             total: UInt64,
             cancel: OneShot<Void>,
             in model: UpdateStateModel
@@ -409,7 +433,7 @@ final class UpdaterStack {
         /// kicks off the installing → installed → idle tail; Skip /
         /// Later short-circuit back to idle.
         private static func makeReadyReply(
-            item _: SUAppcastItem,
+            item _: UpdateDisplayItem,
             model: UpdateStateModel
         ) -> OneShot<SPUUserUpdateChoice> {
             OneShot<SPUUserUpdateChoice> { [weak model] choice in
@@ -440,33 +464,17 @@ final class UpdaterStack {
             }
         }
 
-        private static func makeFakeItem() -> SUAppcastItem? {
-            // Keys mirror Sparkle's appcast XML element / attribute
-            // names exactly — `sparkle:version` not `version`, `url`
-            // and `length` live inside `enclosure`. Element values
-            // with attributes are dicts with a `"content"` key.
+        private static func makeFakeItem() -> UpdateDisplayItem {
             // `pubDate` floats one day behind "today" so designers
             // iterating on the popover see a realistic Release Date
             // instead of a hardcoded literal that drifts out of
             // relevance over time.
-            let pubFormatter = DateFormatter()
-            pubFormatter.dateFormat = "EEE, d MMM yyyy HH:mm:ss xx"
-            pubFormatter.locale = Locale(identifier: "en_US_POSIX")
-            let pubDateString = pubFormatter.string(from: Date().addingTimeInterval(-86400))
-            let dict: [String: Any] = [
-                "sparkle:version": "0.1.99",
-                "sparkle:shortVersionString": "0.1.99",
-                "enclosure": [
-                    "url": "https://example.invalid/limpid-mock.dmg",
-                    "length": "60817408",
-                    "type": "application/octet-stream"
-                ],
-                "pubDate": pubDateString,
-                "sparkle:releaseNotesLink": [
-                    "content": "https://nek0der.github.io/limpid/Limpid-0.1.5.md"
-                ]
-            ]
-            return SUAppcastItem(dictionary: dict)
+            UpdateDisplayItem(
+                displayVersion: "v0.1.99",
+                contentLength: 60_817_408,
+                date: Date().addingTimeInterval(-86400),
+                releaseNotesURL: URL(string: "https://nek0der.github.io/limpid/Limpid-0.1.5.md")
+            )
         }
     }
 #endif

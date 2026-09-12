@@ -164,7 +164,10 @@ final class LimpidUpdateDriver: NSObject, SPUUserDriver {
         consumePendingCallback()
         let replyOnce = OneShot(reply)
         if hasInlineTarget {
-            stateModel.state = .available(item: appcastItem, reply: replyOnce)
+            stateModel.state = .available(
+                item: UpdateDisplayItem(appcastItem: appcastItem),
+                reply: replyOnce
+            )
         } else {
             // Don't also write state when we're handing off entirely
             // to the standard alert — otherwise a window that opens
@@ -195,9 +198,9 @@ final class LimpidUpdateDriver: NSObject, SPUUserDriver {
     func showDownloadInitiated(cancellation: @escaping () -> Void) {
         consumePendingCallback()
         let cancelOnce = OneShot(cancellation)
-        // Carry forward the appcast item if we have one in state;
+        // Carry forward the display item if we have one in state;
         // otherwise show a placeholder.
-        let item = stateModel.pendingItem ?? Self.placeholderItem
+        let item = stateModel.pendingItem ?? .placeholder
         stateModel.state = .downloading(
             item: item,
             expectedBytes: nil,
@@ -263,7 +266,7 @@ final class LimpidUpdateDriver: NSObject, SPUUserDriver {
         consumePendingCallback()
         let replyOnce = OneShot(reply)
         if hasInlineTarget {
-            let item = stateModel.pendingItem ?? Self.placeholderItem
+            let item = stateModel.pendingItem ?? .placeholder
             stateModel.state = .readyToInstall(item: item, reply: replyOnce)
         } else {
             standard.showReady(
@@ -324,30 +327,4 @@ final class LimpidUpdateDriver: NSObject, SPUUserDriver {
         stateModel.state = .idle
     }
 
-    // MARK: - Helpers
-
-    /// Sparkle can hand us callback events even when no appcast item
-    /// is associated (rare — e.g. resumed download with stale state).
-    /// Using a placeholder avoids forcing `pendingItem` to be optional
-    /// across the UI.
-    private static let placeholderItem: SUAppcastItem = {
-        let dict: [String: Any] = [
-            "sparkle:version": "0.0.0",
-            "enclosure": [
-                "url": "https://invalid.placeholder/limpid.dmg",
-                "length": "0",
-                "type": "application/octet-stream"
-            ]
-        ]
-        // The dictionary is fully static, but `SUAppcastItem.init?`
-        // has tightened its validation across Sparkle releases.
-        // `preconditionFailure` (vs `!`) keeps the failure
-        // self-documenting so a future Sparkle bump that rejects the
-        // shape crashes loudly with the right message instead of
-        // silently faulting on a bare `nil!`.
-        guard let item = SUAppcastItem(dictionary: dict) else {
-            preconditionFailure("Static Sparkle placeholder failed to construct — SUAppcastItem init contract changed")
-        }
-        return item
-    }()
 }
