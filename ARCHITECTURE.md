@@ -19,12 +19,18 @@ Limpid/
   UI/          SwiftUI views, NSViewRepresentable bridges, design system
   FFI/         libghostty C ABI wrapper (GhosttyFFI)
   Resources/   Info.plist, xcstrings, claude-shim, codex-shim, themes
+rust/
+  limpid-rust-bridge/  OS-independent Rust code exposed through a stable C ABI
 ```
 
-Dependency direction is strictly **App → Core → FFI**. UI may consume
-Core models but never reaches into private state; Core never imports
-SwiftUI. The agent twin (`Core/Claude` ↔ `Core/Codex`) has zero
-cross-module references — each is independent and parallel-shaped.
+Swift dependencies flow from **App / UI → Core → external boundaries**.
+The libghostty boundary lives in `FFI/`; the Rust boundary lives behind
+`Core/Rust/LimpidRustBridge.swift` and the C header in
+`rust/limpid-rust-bridge/include/`. Rust remains independent of Swift and
+Apple frameworks. UI may consume Core models but never reaches into private
+state; Core never imports SwiftUI. The agent twin (`Core/Claude` ↔
+`Core/Codex`) has zero cross-module references — each is independent and
+parallel-shaped.
 
 Verified clean (architecture audit, 2026-06): no circular dependencies,
 no `UI/` → `Core/Models/` private internal access, no SwiftUI imports
@@ -43,6 +49,8 @@ in `Core/`, no `Settings` ↔ `Persistence` cycles.
 | `Limpid/Core/Settings/LimpidSettings.swift` | Settings model + section structs, all `Codable` |
 | `Limpid/Core/Settings/GhosttyConfigBridge.swift` | Generates the libghostty config string + the forced-override keys |
 | `Limpid/Core/GhosttyApp.swift` | Wraps `ghostty_app_t`, runtime callbacks, lifecycle |
+| `Limpid/Core/Rust/LimpidRustBridge.swift` | The typed Swift entry point for the versioned Rust C ABI |
+| `scripts/build-rust-bridge.sh` | Builds the architecture-specific Rust static library into Xcode DerivedData |
 | `Limpid/Core/SurfaceRegistry.swift` | `[UUID: SurfaceView]` mapping — single source of truth for AppKit surface lifetime |
 | `Limpid/UI/SurfaceView.swift` | The `NSView` subclass that owns the libghostty surface + Metal layer |
 | `Limpid/UI/Pane/PaneHostView.swift` | `NSViewRepresentable` bridging `SurfaceRegistry` ↔ SplitTree |
@@ -97,6 +105,20 @@ between the callback firing on libghostty's thread and the MainActor
 hop landing; `SurfaceView.liveView(forUserdata:)` resolves the
 pointer through a weak registry so a freed view returns nil instead
 of dereferencing into freed memory.
+
+### Rust ABI boundary
+
+Swift imports Rust only through the C declarations in
+`rust/limpid-rust-bridge/include/`. Exported functions use fixed-width C types,
+and `limpid_rust_abi_version()` is the compatibility contract checked by the
+Swift smoke test. Do not expose Rust layout, ownership, or panic behavior
+across this boundary.
+
+Xcode invokes `scripts/build-rust-bridge.sh` on every app build and lets Cargo
+own the fine-grained Rust dependency graph. The script places Cargo output in
+DerivedData and replaces the linked static library only when its contents
+change, so new Rust modules cannot be missed without forcing unchanged Swift
+targets to relink.
 
 ### Forced-override Ghostty config keys
 

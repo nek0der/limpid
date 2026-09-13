@@ -2,8 +2,9 @@
 
 > `CLAUDE.md` is a symlink to this file. They are the same document.
 
-Limpid is a macOS 26 terminal app written in Swift 6 + SwiftUI that embeds
-`libghostty` through its C ABI. It ships a native macOS three-pane sidebar
+Limpid is a macOS 26 terminal app written primarily in Swift 6 + SwiftUI. It
+embeds `libghostty` through its C ABI and links OS-independent Rust code through
+a separate versioned C ABI. It ships a native macOS three-pane sidebar
 (container slab + flush tab / terminal columns), Tabs / Groups / Projects with git-worktree CRUD,
 Sparkle auto-update, JSON session restoration, and en/ja localization. It is
 an individual open-source project; expect a single-active-developer cadence.
@@ -26,7 +27,8 @@ The Makefile is the canonical entry point — `make help` lists every target.
 make dev         # Debug build + launch
 make build       # Debug build only
 make run         # Launch the most recently built app
-make test        # XCTest + Swift Testing suites
+make test        # Rust, XCTest, and Swift Testing suites
+make rust-test   # Rust workspace tests only
 make review-core # the terminal-probe scenario that runs outside the test target
 make dmg         # Release DMG artifact
 make screenshot  # Regenerate .github/assets/hero.png (builds Release first)
@@ -60,18 +62,20 @@ Limpid/
   UI/          SwiftUI views (sidebar, tab column, terminal column, toolbar, design system, clipboard sheet, review surface)
   Resources/   Info.plist, Localizable.xcstrings, assets
 LimpidTests/   Swift Testing (new) + XCTest (legacy, being migrated)
+rust/          OS-independent Rust crates; `limpid-rust-bridge` owns the C ABI
 vendor/ghostty/  submodule of our fork github.com/nek0der/ghostty (branch `limpid`),
                  currently pinned to `23c1ffad0 "Add scrollback save/restore C API"`.
                  Upstream ghostty-org is tracked via the `upstream` remote for rebases.
                  Run `git -C vendor/ghostty describe` for the current pin.
-scripts/       build-ghostty.sh, package-dmg.sh, ExportOptions.plist
+scripts/       Rust/Ghostty build bridges, packaging, and validation scripts
+Cargo.toml     Rust workspace source of truth; toolchain is pinned separately
 project.yml    xcodegen source of truth for the .xcodeproj
 ```
 
 ## 3. Code conventions
 
-Most of the style is enforced by `make lint` (`swiftformat --lint` +
-`swiftlint --strict`). The rules a linter can't check:
+Most of the style is enforced by `make lint` (`cargo fmt`, Clippy,
+`swiftformat --lint`, and `swiftlint --strict`). The rules a linter can't check:
 
 - **English only** for source, comments, commits, PR titles / bodies.
   No emoji anywhere. US spelling (`color`, `normalize`, `gray`); some
@@ -120,6 +124,8 @@ Short index of load-bearing files. Skim these before touching their domain.
 
 - `Limpid/Core/Settings/GhosttyConfigBridge.swift` — four-layer config model
   and the forced-override keys handed to `libghostty`.
+- `Limpid/Core/Rust/LimpidRustBridge.swift` — typed Swift entry point for the
+  versioned Rust C ABI; `scripts/build-rust-bridge.sh` owns Xcode integration.
 - `Limpid/Core/Models/WindowSession.swift` — the session-state hub used by
   tabs, groups, projects, and restore.
 - `Limpid/UI/Design/GlassSurfaces.swift` — entry point for the macOS 26

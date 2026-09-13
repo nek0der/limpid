@@ -29,13 +29,16 @@ jobs:
       - name: Select latest Xcode
         run: |
           set -euo pipefail
-          XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          XCODE=$(printf '%s\n' /Applications/Xcode*.app | sort -V | tail -1)
           echo "Selecting $XCODE"
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
 
       - name: Install tooling
         run: brew install xcodegen zig@0.16
+
+      - name: Select pinned Rust toolchain
+        run: rustup show active-toolchain
 
       - name: Restore GhosttyKit.xcframework cache
         id: cache-ghostty

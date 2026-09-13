@@ -44,6 +44,11 @@ settings:
     ARCHS: arm64
     ONLY_ACTIVE_ARCH: YES
     GENERATE_INFOPLIST_FILE: YES
+    # Any target importing Limpid's Swift module must also resolve the Clang
+    # module recorded by the Rust bridge wrapper, including LimpidTests.
+    SWIFT_INCLUDE_PATHS:
+      - $(inherited)
+      - $(SRCROOT)/rust/limpid-rust-bridge/include
     OTHER_LDFLAGS:
       - -framework Carbon
       - -framework Metal
@@ -202,8 +207,18 @@ targets:
         PRODUCT_MODULE_NAME: Limpid
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
+        # Cargo reads its rustup-managed toolchain outside the repository, which
+        # cannot be expressed as stable Xcode build-script inputs. Keep the
+        # exception scoped to the target that owns the Rust build phase.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         FRAMEWORK_SEARCH_PATHS:
           - $(PROJECT_DIR)/vendor/ghostty/macos
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - $(DERIVED_FILE_DIR)/limpid-rust
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -llimpid_rust_bridge
       configs:
         # Debug builds get a distinct bundle id + display name so the
         # daily-driver dmg (`dev.limpid.Limpid` / "Limpid") and the
@@ -219,6 +234,22 @@ targets:
       - framework: vendor/ghostty/macos/GhosttyKit.xcframework
         embed: false
       - package: Sparkle
+    preBuildScripts:
+      - name: Build Rust bridge
+        script: '"$SRCROOT/scripts/build-rust-bridge.sh"'
+        # Cargo owns the complete Rust dependency graph. Invoke it on every
+        # Xcode build so adding a module cannot leave a stale static library;
+        # Cargo's incremental check keeps unchanged builds fast.
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/Cargo.toml
+          - $(SRCROOT)/Cargo.lock
+          - $(SRCROOT)/rust-toolchain.toml
+          - $(SRCROOT)/scripts/build-rust-bridge.sh
+          - $(SRCROOT)/rust/limpid-rust-bridge/Cargo.toml
+          - $(SRCROOT)/rust/limpid-rust-bridge/src/lib.rs
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/limpid-rust/liblimpid_rust_bridge.a
 
   LimpidTests:
     type: bundle.unit-test

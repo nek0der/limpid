@@ -13,6 +13,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, ubuntu-24.04, windows-2025]
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Select pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Run Clippy
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Run tests
+        run: cargo test --locked --workspace --all-targets
+
   build:
     name: Build (macOS 26)
     needs: [format, lint]
@@ -34,6 +53,9 @@ jobs:
 
       - name: Install tooling
         run: brew install xcodegen zig@0.16 tmux
+
+      - name: Select pinned Rust toolchain
+        run: rustup show active-toolchain
 
       - name: Restore GhosttyKit.xcframework cache
         id: cache-ghostty
