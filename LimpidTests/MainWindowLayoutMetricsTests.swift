@@ -23,6 +23,17 @@ struct MainWindowLayoutPlanTests {
         #expect(plan.regularContainerIdentityPlacement == .tabToolbar)
     }
 
+    @Test("The window minimum is the tab column beside the review at their minimums")
+    func windowMinimum_isDerivedFromReview() {
+        #expect(LimpidLayout.mainWindowMinWidth == LimpidLayout.tabColumnMinWidth + LimpidLayout.reviewMinWidth)
+
+        let plan = resolve(width: LimpidLayout.mainWindowMinWidth, requestedTabWidth: 500, isReviewPresented: true)
+
+        #expect(plan.sidebarPresentation == .overlay(width: LayoutFixture.sidebarWidth, isPresented: false))
+        #expect(plan.tabColumnWidth == LimpidLayout.tabColumnMinWidth)
+        #expect(plan.primaryContentWidth >= LimpidLayout.reviewMinWidth)
+    }
+
     @Test("A minimum-width vertical review overlays its sidebar")
     func verticalReviewMinimum_preservesReviewWidth() {
         let plan = resolve(width: 560, requestedTabWidth: 500, isReviewPresented: true)
@@ -171,7 +182,7 @@ struct WindowFrameRestorationTests {
 
         let restored = WindowFrameSync.expanding(saved, toAtLeast: minimum)
 
-        #expect(restored == CGRect(x: 100, y: 78, width: 560, height: 422))
+        #expect(restored == CGRect(x: 100, y: 78, width: LimpidLayout.mainWindowMinWidth, height: 422))
         #expect(restored.maxY == saved.maxY)
     }
 

@@ -259,15 +259,21 @@ struct ReviewAgentStripHeader: View {
     }
 }
 
-/// The destination, as one chip. Review is bound to the pane below it, so
-/// this reports where the text goes and what is running there — it does not
-/// ask, and it does not refuse.
+/// The destination, as the leading half of the insert control. Review is
+/// bound to the pane below it, so this reports where the text goes and what
+/// is running there — it does not ask, and it does not refuse.
+///
+/// Also used with the ring of the accent it is drawn in: the dot alone says
+/// whether there is a terminal, and the accent says this is where the insert
+/// button acts.
 struct ReviewDestinationChip: View {
     let destination: ReviewDestination?
     /// The probe spawns processes, so there is a moment after a pane switch
     /// where the answer is not known yet. Reporting that as "no terminal" told
     /// the reader something false about a pane that has one.
     var isResolving = false
+
+    @Environment(\.limpidAccent) private var accent
 
     private var name: String {
         if let destination {
@@ -276,12 +282,25 @@ struct ReviewDestinationChip: View {
         return isResolving ? String(localized: "Checking…") : String(localized: "No terminal")
     }
 
-    /// Not localized: an em dash is the same in every language, and it stands
-    /// in for a command name, which we never translate either.
-    private var status: String {
-        destination?.foreground ?? "—"
+    /// The command in front, when it adds anything. An agent pane is usually
+    /// titled after its agent, and "claude · claude" says one thing twice.
+    /// The dash for an unresolved command is not localized: it stands in for
+    /// a command name, which we never translate either.
+    private var status: String? {
+        guard let destination else { return nil }
+        guard let foreground = destination.foreground else { return "—" }
+        return foreground == destination.title ? nil : foreground
     }
 
+    private var summary: String {
+        if let status {
+            return name + " · " + status
+        }
+        return name
+    }
+
+    /// The one signal of whether there is somewhere to send to. The ring
+    /// used to carry the same color, which said it twice.
     private var tint: Color {
         if destination != nil {
             return LimpidColor.success
@@ -289,37 +308,48 @@ struct ReviewDestinationChip: View {
         return isResolving ? LimpidColor.warning : LimpidColor.error
     }
 
-    private var capsule: some View {
+    private var chip: some View {
         HStack(spacing: 5) {
             Circle().fill(tint).frame(width: 6, height: 6)
             Text(verbatim: name)
                 .font(LimpidFont.caption)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Text(verbatim: "·")
-                .font(LimpidFont.caption)
-                .foregroundStyle(LimpidColor.tertiaryText)
-            Text(verbatim: status)
-                .font(LimpidFont.caption.monospaced())
-                .foregroundStyle(LimpidColor.secondaryText)
-                .lineLimit(1)
+            if let status {
+                Text(verbatim: "·")
+                    .font(LimpidFont.caption)
+                    .foregroundStyle(LimpidColor.tertiaryText)
+                // The name gives way first: a command is short and is the
+                // half that says what the paste will land in.
+                Text(verbatim: status)
+                    .font(LimpidFont.caption.monospaced())
+                    .foregroundStyle(LimpidColor.secondaryText)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 9)
+        // Fills whatever width it is given, and asks for no more than its
+        // text: `WidthFloorLayout` in the header decides how far a long name
+        // may be squeezed. Filling matters because a truncated line ends on
+        // a character boundary, a few points short of the width it was
+        // offered, and a fill sized to the text left that strip unpainted
+        // beside the insert button.
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: ReviewHeaderMetrics.controlHeight)
-        // Sized to what it says. A fixed width stretched the capsule to its
-        // cap whatever the name was, which put the text in the middle of a
-        // long empty pill; a name too long for the header truncates instead.
-        .fixedSize(horizontal: false, vertical: true)
-        .overlay(
-            Capsule().stroke(tint.opacity(0.45), lineWidth: 1)
-        )
+        // A plain block: the header clips and outlines it together with the
+        // insert button, so any shape drawn here would show as a seam.
+        .background(accent.opacity(0.12))
     }
 
     var body: some View {
-        capsule
+        chip
+            // A truncated name has no other way out. The text is not
+            // selectable, so the tooltip is delivered here.
+            .help(Text(verbatim: summary))
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text("Review Destination"))
-            .accessibilityValue(Text(verbatim: name + " " + status))
+            .accessibilityValue(Text(verbatim: summary))
     }
 }
 

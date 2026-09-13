@@ -55,8 +55,21 @@ enum LimpidLayout {
     /// temporarily overlays the container sidebar below its full three-column
     /// requirement, leaving the tab list and primary content usable at this
     /// floor instead of allowing fixed-width children to clip both edges.
-    static let mainWindowMinWidth: CGFloat = 560
+    ///
+    /// Derived rather than chosen: the narrowest window is the tab list at
+    /// its minimum beside the review at its minimum. The review header is the
+    /// widest fixed row in the window, and at the previous floor of 560 it
+    /// clipped its own Close button.
+    static let mainWindowMinWidth: CGFloat = tabColumnMinWidth + reviewMinWidth
     static let mainWindowMinHeight: CGFloat = 400
+
+    /// The narrowest the review surface may be. What its header needs to
+    /// keep every control readable on two rows, with the destination name
+    /// still a few characters long. Enforced through the window minimum
+    /// rather than on the surface: the diff column below carries its own,
+    /// smaller floor (`ReviewRail.diffMinimum`), and a floor here would put
+    /// the surface past the width the window layout keeps clear for it.
+    static let reviewMinWidth: CGFloat = 400
 
     /// Width ordinary terminal content should retain before the container
     /// sidebar switches from a reserved column to a transient overlay. Review
