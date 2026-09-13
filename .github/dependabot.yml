@@ -20,6 +20,23 @@ updates:
         update-types:
           - version-update:semver-major
 
+  # Cargo: monthly minor and patch updates. Cargo.lock is committed because
+  # the workspace ships a native library; major upgrades stay explicit reviews.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - dependencies
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+
   # Submodules: monthly, no auto-updates of any kind. `vendor/ghostty`
   # tracks a fast-moving upstream that frequently breaks our build at
   # the Zig / Metal layer; bumps are vetted manually in a dedicated PR.

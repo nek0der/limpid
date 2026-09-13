@@ -31,6 +31,9 @@ xcuserdata/
 Package.resolved
 Packages/
 
+# Cargo
+/target/
+
 # CocoaPods / Carthage
 Pods/
 Carthage/Build/

@@ -1,0 +1,15 @@
+[workspace]
+members = ["rust/limpid-rust-bridge"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+rust-version = "1.98.1"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

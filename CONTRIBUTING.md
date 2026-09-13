@@ -19,9 +19,11 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
   xcodebuild -downloadComponent MetalToolchain
   ```
 - [Homebrew](https://brew.sh)
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) and Zig 0.16.0
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen), Zig 0.16.0, and Rustup
   ```bash
-  brew install xcodegen zig@0.16
+  brew install xcodegen zig@0.16 rustup
+  export PATH="$(brew --prefix rustup)/bin:$PATH"
+  rustup show active-toolchain
   ```
   `zig@0.16` is keg-only; the build script invokes it by its full path
   (`/opt/homebrew/opt/zig@0.16/bin/zig`), so no `PATH` change is required.
@@ -53,10 +55,13 @@ cd limpid
 # 3. Build libghostty as an xcframework (10–20 min on first run; cached after)
 make ghostty
 
-# 4. Generate the Xcode project
+# 4. Verify the pinned Rust workspace
+make rust-test
+
+# 5. Generate the Xcode project
 make xcodegen
 
-# 5. Build + launch (Debug)
+# 6. Build + launch (Debug)
 make dev
 ```
 
@@ -100,13 +105,13 @@ make ghostty      # Only if vendor/ghostty/macos/GhosttyKit.xcframework is
                   # missing (fresh clone). `make test` does not rebuild it
                   # and will fail at link time without the xcframework.
 make xcodegen     # Regenerate the Xcode project from project.yml.
-make test         # Build + run the test suite.
+make test         # Run the Rust and Swift test suites.
 make review-core  # The review scenarios the test target cannot host — they
                   # spawn processes, and the parallel suites reuse the
                   # descriptor numbers another test asserts are closed. CI
                   # runs this as its own job, so `make test` alone is not
                   # enough to predict a green build.
-make lint         # swiftformat --lint + swiftlint --strict.
+make lint         # cargo fmt + Clippy + SwiftFormat + SwiftLint.
 ```
 
 `make help` lists every available target.
