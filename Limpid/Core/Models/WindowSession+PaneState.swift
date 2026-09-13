@@ -1,7 +1,7 @@
 // WindowSession+PaneState.swift
 // Limpid — per-pane state mutators. Persisted bits (`unreadCount`)
 // live on `Tab.paneStates`; transient bits (bell-ringing, child-exit
-// code) live on `WindowSession.paneTransients` so flipping them
+// code, and OSC 7 working directory) live on `WindowSession.paneTransients` so changing them
 // doesn't churn the autosave hook. Both sets of verbs live here, plus
 // the `tabID(forPane:)` lookup every mutator funnels through.
 
@@ -112,6 +112,15 @@ extension WindowSession {
         paneTransients[paneID] = t
     }
 
+    /// Record the latest OSC 7 working directory for one pane without making
+    /// shell navigation part of the persisted session model.
+    func setWorkingDirectory(paneID: UUID, path: String) {
+        var t = paneTransients[paneID] ?? PaneTransients()
+        guard t.workingDirectory != path else { return }
+        t.workingDirectory = path
+        paneTransients[paneID] = t
+    }
+
     // MARK: - Transient accessors (UI side)
 
     /// Bell ring state for `paneID`. Defaults to `false`.
@@ -122,5 +131,10 @@ extension WindowSession {
     /// Most recent child-exit code stamped on `paneID`, if any.
     func childExitCode(paneID: UUID) -> UInt32? {
         paneTransients[paneID]?.childExitCode
+    }
+
+    /// Latest OSC 7 working directory reported by `paneID`, if any.
+    func workingDirectory(paneID: UUID) -> String? {
+        paneTransients[paneID]?.workingDirectory
     }
 }

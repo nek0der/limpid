@@ -46,6 +46,10 @@ struct ClaudeAgentStateRecord: AgentLifecycleRecord, Equatable {
     /// records or when sed extraction failed (embedded quotes,
     /// multi-line input).
     var lastPrompt: String?
+    /// Base for showing what changed since the prompt was sent. Missing for
+    /// older records and non-Git working directories.
+    var turnBaseTree: String?
+    var turnRoot: String?
     /// First user prompt of the session, captured once at the first
     /// `UserPromptSubmit` and never overwritten. Used by the Rust title
     /// reducer when Claude has not supplied a better title.

@@ -13,6 +13,17 @@ struct ReviewSettingsPane: View {
         @Bindable var store = store
         SettingsForm(title: "Review", section: .review) {
             Section {
+                Toggle(
+                    "Open the turn's changes when jumping to a finished agent",
+                    isOn: $store.settings.jumpOpensTurnReview
+                )
+                .accessibilityLabel(Text("Open the turn's changes when jumping to a finished agent"))
+                .settingsSearchTarget(SettingsSearchCatalog.jumpOpensTurnReview.id)
+            } header: {
+                Text("Finished Agents")
+            }
+
+            Section {
                 HStack(spacing: 10) {
                     Text(reviewFileApplicationName)
                         .lineLimit(1)

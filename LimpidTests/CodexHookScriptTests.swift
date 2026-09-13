@@ -20,7 +20,8 @@ struct CodexHookScriptTests {
     /// real records are never touched.
     private func runHooks(
         _ payloads: [[String: Any]],
-        extraEnvironment: [String: String] = [:]
+        extraEnvironment: [String: String] = [:],
+        afterEach: ((URL, URL, String, Int) throws -> Void)? = nil
     ) throws -> [String: Any]? {
         try withTempDir { dir in
             let root = try #require(RepoFixture.limpidRoot)
@@ -30,7 +31,7 @@ struct CodexHookScriptTests {
             let states = dir.appendingPathComponent("states")
             let paneID = UUID().uuidString
 
-            for payload in payloads {
+            for (eventIndex, payload) in payloads.enumerated() {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/sh")
                 process.arguments = [script.path]
@@ -56,6 +57,7 @@ struct CodexHookScriptTests {
                 // The receiver's stated failure policy is to exit 0 no matter
                 // what, so that a broken hook never blocks Codex from running.
                 #expect(process.terminationStatus == 0)
+                try afterEach?(dir, states, paneID, eventIndex)
             }
 
             let recordID = extraEnvironment["LIMPID_AGENT_RUN_ID"] ?? paneID
@@ -67,6 +69,75 @@ struct CodexHookScriptTests {
 
     private func runHook(_ payload: [String: Any]) throws -> [String: Any]? {
         try runHooks([payload])
+    }
+
+    private func gitOutput(_ arguments: [String], in directory: URL) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", directory.path] + arguments
+        let output = Pipe()
+        process.standardOutput = output
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+        return String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    }
+
+    private func gitExitStatus(_ arguments: [String], in directory: URL) throws -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", directory.path] + arguments
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+
+    private func scratchTree(in repository: URL) throws -> String {
+        try withTempDir { directory in
+            let index = directory.appendingPathComponent("index")
+            try FileManager.default.copyItem(
+                at: repository.appendingPathComponent(".git/index"),
+                to: index
+            )
+            let environment = ProcessInfo.processInfo.environment.merging(
+                ["GIT_INDEX_FILE": index.path, "GIT_OPTIONAL_LOCKS": "0"]
+            ) { _, new in new }
+            for arguments in [["add", "-A"], ["write-tree"]] {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+                process.arguments = ["-C", repository.path] + arguments
+                process.environment = environment
+                let output = Pipe()
+                process.standardOutput = output
+                try process.run()
+                process.waitUntilExit()
+                #expect(process.terminationStatus == 0)
+                if arguments == ["write-tree"] {
+                    return String(
+                        data: output.fileHandleForReading.readDataToEndOfFile(),
+                        encoding: .utf8
+                    )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                }
+            }
+            return ""
+        }
+    }
+
+    private func pathWithoutGit(in directory: URL) throws -> String {
+        let bin = directory.appendingPathComponent("bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        for command in [
+            "awk", "cat", "cp", "dirname", "grep", "head", "mkdir", "mv",
+            "plutil", "ps", "readlink", "rm", "sed", "sleep", "tail", "tr"
+        ] {
+            let candidates = ["/usr/bin/\(command)", "/bin/\(command)", "/usr/sbin/\(command)"]
+            guard let source = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) else { continue }
+            try FileManager.default.createSymbolicLink(
+                at: bin.appendingPathComponent(command),
+                withDestinationURL: URL(fileURLWithPath: source)
+            )
+        }
+        return bin.path
     }
 
     /// A turn in flight: the receiver has stamped `runStartedAt` and is
@@ -88,6 +159,78 @@ struct CodexHookScriptTests {
         ]
         base.merge(extra) { _, new in new }
         return base
+    }
+
+    @Test("captures an exact private prompt snapshot without changing the real index")
+    func promptSnapshot_isPrivateAndSessionEndCleansIt() async throws {
+        let repo = try await TempGitRepo.make()
+        defer { repo.cleanup() }
+        let file = repo.url.appendingPathComponent("pending.txt")
+        try Data("before prompt\n".utf8).write(to: file)
+        let status = try gitOutput(["status", "--porcelain"], in: repo.url)
+        let expectedRoot = try gitOutput(["rev-parse", "--show-toplevel"], in: repo.url)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedTree = try scratchTree(in: repo.url)
+        let indexURL = repo.url.appendingPathComponent(".git/index")
+        let indexMTime = try #require(
+            try (FileManager.default.attributesOfItem(atPath: indexURL.path)[.modificationDate]) as? Date
+        )
+        var baseTree = ""
+        _ = try runHooks(
+            [
+                payload("UserPromptSubmit", extra: ["cwd": repo.url.path]),
+                payload("Stop", extra: ["cwd": repo.url.path]),
+                payload("SessionEnd", extra: ["cwd": repo.url.path, "reason": "other"])
+            ],
+            afterEach: { _, states, paneID, eventIndex in
+                let snapshotKey = paneID.lowercased()
+                let recordURL = states.appendingPathComponent("\(paneID).state.json")
+                let privateIndexURL = repo.url.appendingPathComponent(".git/limpid/turn-\(snapshotKey).index")
+                let record = try JSONSerialization.jsonObject(with: Data(contentsOf: recordURL)) as? [String: Any]
+                if eventIndex == 0 {
+                    baseTree = try #require(record?["turnBaseTree"] as? String)
+                    #expect(baseTree == expectedTree)
+                    #expect(record?["turnRoot"] as? String == expectedRoot)
+                    #expect(try gitOutput(["rev-parse", "refs/limpid/turn/\(snapshotKey)"], in: repo.url)
+                        .trimmingCharacters(in: .whitespacesAndNewlines) == baseTree)
+                    #expect(FileManager.default.fileExists(atPath: privateIndexURL.path))
+                } else if eventIndex == 1 {
+                    #expect(record?["turnBaseTree"] as? String == baseTree)
+                    #expect(record?["turnRoot"] as? String == expectedRoot)
+                } else {
+                    #expect(record?["turnBaseTree"] == nil)
+                    #expect(try gitExitStatus(["show-ref", "--verify", "--quiet", "refs/limpid/turn/\(snapshotKey)"], in: repo.url) == 1)
+                    #expect(!FileManager.default.fileExists(atPath: privateIndexURL.path))
+                }
+            }
+        )
+        #expect(!baseTree.isEmpty)
+        #expect(try gitOutput(["status", "--porcelain"], in: repo.url) == status)
+        #expect(
+            try (FileManager.default.attributesOfItem(atPath: indexURL.path)[.modificationDate]) as? Date == indexMTime
+        )
+    }
+
+    @Test("skips disabled, non-repository, and missing-Git snapshots")
+    func promptSnapshot_skipConditionsOmitFields() async throws {
+        let repo = try await TempGitRepo.make()
+        defer { repo.cleanup() }
+        let disabled = try runHooks(
+            [payload("UserPromptSubmit", extra: ["cwd": repo.url.path])],
+            extraEnvironment: ["LIMPID_TURN_SNAPSHOT": "0"]
+        )
+        let outsideRepository = try runHooks([payload("UserPromptSubmit")])
+        let missingGit = try withTempDir { directory in
+            try runHooks(
+                [payload("UserPromptSubmit", extra: ["cwd": repo.url.path])],
+                extraEnvironment: ["PATH": pathWithoutGit(in: directory)]
+            )
+        }
+        for optionalRecord in [disabled, outsideRepository, missingGit] {
+            let record = try #require(optionalRecord)
+            #expect(record["turnBaseTree"] == nil)
+            #expect(record["turnRoot"] == nil)
+        }
     }
 
     /// The receiver's header states that it needs a branch for every name

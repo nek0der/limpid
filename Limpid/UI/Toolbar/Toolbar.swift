@@ -51,6 +51,7 @@ struct ToolbarTerminalColumnSegment: View {
     let plan: MainWindowLayoutPlan
     @Environment(WindowSession.self) private var session
     @Environment(ReviewPresentation.self) private var reviewPresentation
+    @Environment(AttentionState.self) private var attention
     @Environment(SettingsStore.self) private var settings
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(UpdateStateModel.self) private var updateState
@@ -158,11 +159,13 @@ struct ToolbarTerminalColumnSegment: View {
             help: reviewPresentation.isPresented ? "Close Review" : "Review Changes",
             isEnabled: ReviewAgents.canReview(
                 session: session,
+                attention: attention,
                 presentation: reviewPresentation
             )
         ) {
             ReviewPresentationCommand.toggle(
                 session: session,
+                attention: attention,
                 presentation: reviewPresentation,
                 registry: registry
             )

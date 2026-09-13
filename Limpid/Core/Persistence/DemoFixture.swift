@@ -277,6 +277,8 @@ enum DemoFixture {
             lastPrompt: "Refactor addOrActivateProject to return a Result"
                 + " so callers can surface filesystem errors"
                 + " instead of silently falling back.",
+            turnBaseTree: "0123456789abcdef0123456789abcdef01234567",
+            turnRoot: limpidRoot.path,
             sessionStartedAt: Date(timeIntervalSinceNow: -3600)
         )
 

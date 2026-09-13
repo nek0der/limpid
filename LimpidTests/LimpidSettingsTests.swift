@@ -26,6 +26,11 @@ struct LimpidSettingsTests {
         #expect(s.unfocusedPaneOpacity == 0.7)
     }
 
+    @Test("jumping to a finished agent opens its turn by default")
+    func default_jumpOpensTurnReview() {
+        #expect(LimpidSettings.default.jumpOpensTurnReview)
+    }
+
     @Test("font defaults: nil family lets libghostty pick the system mono")
     func default_fontDefaults() {
         let s = LimpidSettings.default.font
@@ -68,10 +73,23 @@ struct LimpidSettingsTests {
             bundleIdentifier: "com.example.Editor",
             lastKnownDisplayName: "Example Editor"
         )
+        settings.jumpOpensTurnReview = false
 
         let data = try JSONEncoder().encode(settings)
         let restored = try JSONDecoder().decode(LimpidSettings.self, from: data)
         #expect(restored == settings)
+    }
+
+    @Test("settings written before turn review default the jump behavior on")
+    func decode_missingJumpOpensTurnReview_defaultsToOn() throws {
+        let data = try JSONEncoder().encode(LimpidSettings.default)
+        var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object["jumpOpensTurnReview"] = nil
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(LimpidSettings.self, from: legacy)
+
+        #expect(decoded.jumpOpensTurnReview)
     }
 
     @Test func existingAdvancedSettingsDefaultReviewFields() throws {

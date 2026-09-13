@@ -200,8 +200,15 @@ wt_pretool_hook="$self_dir/limpid-pretool-worktree-hook"
 # wrapping inside the field gets stripped before exec. Our shim path
 # typically contains `Limpid Dev.app` or `Limpid.app`, so we side-
 # step the issue by exposing the hooks under a no-space TMPDIR
-# symlink. Re-created on every invocation; cheap and idempotent.
-link_dir="${TMPDIR:-/tmp}/limpid-claude-shim"
+# symlink. Re-created on every invocation; cheap and idempotent. The app
+# identity keeps concurrently installed Dev and Release builds from changing
+# the live target underneath each other's sessions.
+hook_namespace="${LIMPID_CLAUDE_HOOK_NAMESPACE:-default}"
+case "$hook_namespace" in
+  '' | *[!A-Za-z0-9._-]*) hook_namespace="default" ;;
+esac
+[ "${#hook_namespace}" -le 128 ] || hook_namespace="default"
+link_dir="${TMPDIR:-/tmp}/limpid-claude-shim-$hook_namespace"
 mkdir -p "$link_dir" 2>/dev/null
 hook_link="$link_dir/limpid-hook"
 ln -sf "$hook" "$hook_link" 2>/dev/null

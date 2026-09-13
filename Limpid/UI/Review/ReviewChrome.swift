@@ -26,10 +26,12 @@ struct ReviewHeader: View {
     let isResolvingDestination: Bool
     let isInserting: Bool
     let isSnapshotReady: Bool
+    let scopeSelectionWithoutAnimation: ReviewScope?
     let canInsert: Bool
+    let offeredTurnScope: ReviewScope?
     let prompt: String
     @Binding var isShowingPrompt: Bool
-    let onSelectScope: (Bool) -> Void
+    let onSelectScope: (ReviewScope) -> Void
     let onRefresh: () -> Void
     let onInsert: () -> Void
     let onClose: () -> Void
@@ -201,15 +203,25 @@ struct ReviewHeader: View {
     /// file list, so it belongs to the header rather than either content pane.
     @ViewBuilder
     private var scopePicker: some View {
-        if let base = store.base {
+        let scopes = availableScopes
+        if scopes.count > 1 {
             ReviewScopeSwitch(
-                base: base,
-                isBranch: store.scope != .uncommitted,
+                scopes: scopes,
+                selection: store.scope,
+                selectionWithoutAnimation: scopeSelectionWithoutAnimation,
                 isEnabled: !store.isLoading && !isInserting,
                 onSelect: onSelectScope
             )
             .opacity(isSnapshotReady ? 1 : 0)
         }
+    }
+
+    private var availableScopes: [ReviewScope] {
+        ReviewScope.pickerOptions(
+            current: store.scope,
+            offeredTurn: offeredTurnScope,
+            branchBase: store.base
+        )
     }
 
     private var commentPill: some View {
@@ -233,44 +245,52 @@ struct ReviewHeader: View {
     }
 }
 
-/// Which of the two the review is of, with the selection sliding between them.
+/// Which snapshot the review is of, with the selection sliding between them.
 ///
 /// Not `.pickerStyle(.segmented)`: on macOS that is an `NSSegmentedControl`,
 /// and AppKit swaps its highlight rather than moving it — leaving the one
 /// control that decides what the whole surface is showing as the only one on
 /// it that does not appear to respond.
 struct ReviewScopeSwitch: View {
-    let base: String
+    let scopes: [ReviewScope]
     /// What the completed snapshot represents. It changes only when the new
     /// file list and diff are ready, so the pill never labels old code as the
     /// scope the reader just requested.
-    let isBranch: Bool
+    let selection: ReviewScope
+    /// A command-driven destination is not a simulated picker gesture. The
+    /// pill appears at that scope when its snapshot commits.
+    let selectionWithoutAnimation: ReviewScope?
     var isEnabled = true
-    let onSelect: (Bool) -> Void
+    let onSelect: (ReviewScope) -> Void
 
     @Environment(\.limpidAccent) private var accent
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Where the pill is. Stored only to animate the committed scope change;
     /// it must not move ahead of the snapshot it describes.
-    @State private var showsBranch: Bool
+    @State private var displayedSelection: ReviewScope
     /// Each segment's frame in the control's own space, so the pill can be
     /// given a width and an origin. An ordinary frame change animates;
     /// handing a shape between two backgrounds is a pair of transitions, and
     /// naming a different `matchedGeometryEffect` source relinks rather than
     /// travels.
-    @State private var frames: [Bool: CGRect] = [:]
+    @State private var frames: [String: CGRect] = [:]
+    /// `ViewThatFits` builds all header candidates while choosing one. A
+    /// per-instance space keeps their measured segment frames from mixing.
+    @Namespace private var coordinateSpace
 
-    /// `nonisolated` so the geometry closure can name it: the reader is on the
-    /// main actor, but the closure is not, and a coordinate space name has no
-    /// state to protect.
-    private nonisolated static let space = "review-scope-switch"
-
-    init(base: String, isBranch: Bool, isEnabled: Bool = true, onSelect: @escaping (Bool) -> Void) {
-        self.base = base
-        self.isBranch = isBranch
+    init(
+        scopes: [ReviewScope],
+        selection: ReviewScope,
+        selectionWithoutAnimation: ReviewScope? = nil,
+        isEnabled: Bool = true,
+        onSelect: @escaping (ReviewScope) -> Void
+    ) {
+        self.scopes = scopes
+        self.selection = selection
+        self.selectionWithoutAnimation = selectionWithoutAnimation
         self.isEnabled = isEnabled
         self.onSelect = onSelect
-        _showsBranch = State(initialValue: isBranch)
+        _displayedSelection = State(initialValue: selection)
     }
 
     /// `nil` here would be the obvious reading of Reduce Motion and the wrong
@@ -282,28 +302,23 @@ struct ReviewScopeSwitch: View {
     }
 
     private var selected: CGRect {
-        frames[showsBranch] ?? .zero
+        // The option builder keeps this true. The guard is the final visual
+        // boundary if a future caller violates that contract: a stale frame
+        // must not leave an unlabeled selection pill beside the live options.
+        guard scopes.contains(displayedSelection) else { return .zero }
+        return frames[id(for: displayedSelection)] ?? .zero
     }
 
     var body: some View {
         HStack(spacing: 2) {
-            // The tooltip says the one thing the label cannot: this side
-            // keeps the index and the working copy apart, so a file edited
-            // and partly staged is listed twice and commented on twice. A
-            // reader who wants one reading per file wants the other segment,
-            // which folds both into a single diff — and nothing on the
-            // control said so.
-            segment(Text("Uncommitted"), tag: false)
-                .help(Text("Staged, unstaged and untracked changes, listed separately."))
-            // A literal trailing ellipsis reads as truncation in a compact
-            // control. The tooltip and accessibility label carry the precise
-            // "changes since this branch" meaning instead.
-            segment(Text(verbatim: base), tag: true)
-                .accessibilityLabel(Text("Since \(base)"))
-                .help(Text("Everything this branch adds, including work not committed yet."))
+            ForEach(scopes, id: \.selfID) { scope in
+                segment(label(for: scope), tag: scope)
+                    .accessibilityLabel(accessibilityLabel(for: scope))
+                    .help(help(for: scope))
+            }
         }
         .fixedSize(horizontal: true, vertical: false)
-        .coordinateSpace(.named(Self.space))
+        .coordinateSpace(.named(coordinateSpace))
         .background(alignment: .leading) {
             Capsule()
                 .fill(accent.opacity(0.3))
@@ -318,9 +333,13 @@ struct ReviewScopeSwitch: View {
         .background(Capsule().fill(LimpidColor.rowActiveFill.opacity(0.6)))
         // The reload can end somewhere the tap did not ask for — a retarget,
         // or a scope the store refused — and the pill has to follow it back.
-        .onChange(of: isBranch) { _, latest in
-            guard latest != showsBranch else { return }
-            withAnimation(motion) { showsBranch = latest }
+        .onChange(of: selection) { _, latest in
+            guard latest != displayedSelection else { return }
+            if Self.animatesSelection(to: latest, selectionWithoutAnimation: selectionWithoutAnimation) {
+                withAnimation(motion) { displayedSelection = latest }
+            } else {
+                displayedSelection = latest
+            }
         }
         // Disabled while the reload it started is in flight, but not dimmed:
         // the pill has just moved to say the switch took, and fading the
@@ -330,24 +349,63 @@ struct ReviewScopeSwitch: View {
         .accessibilityLabel(Text("Review scope"))
     }
 
-    private func segment(_ label: Text, tag: Bool) -> some View {
-        Button {
+    static func animatesSelection(
+        to selection: ReviewScope,
+        selectionWithoutAnimation: ReviewScope?
+    ) -> Bool {
+        selection != selectionWithoutAnimation
+    }
+
+    private func segment(_ label: Text, tag: ReviewScope) -> some View {
+        // Geometry transforms are Sendable closures. Capture the namespace on
+        // the main actor before entering one rather than reaching back into
+        // SwiftUI's actor-isolated property from that closure.
+        let space = coordinateSpace
+        return Button {
             onSelect(tag)
         } label: {
             label
                 .font(LimpidFont.caption)
-                .foregroundStyle(showsBranch == tag ? LimpidColor.primaryText : LimpidColor.secondaryText)
+                .foregroundStyle(displayedSelection == tag ? LimpidColor.primaryText : LimpidColor.secondaryText)
                 .padding(.horizontal, 9)
                 .frame(height: ReviewHeaderMetrics.controlHeight - 4)
                 .contentShape(Capsule())
                 .onGeometryChange(for: CGRect.self) { proxy in
-                    proxy.frame(in: .named(Self.space))
+                    proxy.frame(in: .named(space))
                 } action: { frame in
-                    frames[tag] = frame
+                    frames[id(for: tag)] = frame
                 }
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(showsBranch == tag ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAddTraits(displayedSelection == tag ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private func id(for scope: ReviewScope) -> String {
+        scope.selfID
+    }
+
+    private func label(for scope: ReviewScope) -> Text {
+        switch scope {
+        case .uncommitted: Text("Uncommitted")
+        case .turn: Text("This turn")
+        case let .branch(base): Text(verbatim: base)
+        }
+    }
+
+    private func accessibilityLabel(for scope: ReviewScope) -> Text {
+        switch scope {
+        case .uncommitted: Text("Uncommitted")
+        case .turn: Text("This turn")
+        case let .branch(base): Text("Since \(base)")
+        }
+    }
+
+    private func help(for scope: ReviewScope) -> Text {
+        switch scope {
+        case .uncommitted: Text("Staged, unstaged and untracked changes, listed separately.")
+        case .turn: Text(ReviewLayer.turn.detail)
+        case .branch: Text("Everything this branch adds, including work not committed yet.")
+        }
     }
 }
 

@@ -94,6 +94,7 @@ extension WindowSession {
         // `paneSearchStates` after the SurfaceView is unregistered.
         for leafID in closing.splitTree.allLeafIDs() {
             paneSearchStates.removeValue(forKey: leafID)
+            paneTransients.removeValue(forKey: leafID)
         }
         tabs.remove(at: index)
 

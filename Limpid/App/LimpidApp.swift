@@ -366,6 +366,7 @@ final class AppState {
         startActiveTabSync()
         startSettingsConfigSync()
 
+        configureTurnReview()
         // Arm the settings.json watcher last so the store + sync
         // hook are both ready before an external edit can fire.
         let watcher = SettingsFileWatcher(store: settingsStore)
@@ -375,6 +376,32 @@ final class AppState {
         // Register the ⌘Q + tab/pane close gates. Gate bodies live in
         // `AppState+QuitGate.swift`.
         registerConfirmGates()
+    }
+
+    private func configureTurnReview() {
+        attention.isTurnReviewEnabled = { [weak settingsStore] in
+            settingsStore?.settings.jumpOpensTurnReview == true
+        }
+        attention.onFinishedTurnFocused = { [weak self] paneID, tree, root in
+            guard let self,
+                  let target = ReviewAgents.turnTarget(
+                      session: session,
+                      attention: attention,
+                      paneID: paneID,
+                      root: URL(fileURLWithPath: root)
+                  ),
+                  target.scope == .turn(baseTree: tree, paneID: paneID)
+            else { return }
+            reviewPresentation.open(
+                target.root,
+                originPaneID: paneID,
+                initialScope: target.scope,
+                transientOwnerPaneID: session.tab(containing: paneID)?.container.projectID == nil
+                    ? paneID
+                    : nil,
+                isTransientOwnerTmuxHosted: target.isTmuxHosted
+            )
+        }
     }
 
     /// `AppState` is process-lifetime in shipping Limpid, so deinit
@@ -799,6 +826,7 @@ struct LimpidApp: App {
                 .limpidShortcut(.notificationHistory, in: state.settingsStore)
 
                 ReviewChangesMenuItem(state: state)
+                ReviewThisTurnMenuItem(state: state)
             }
             SettingsAwareFindCommands(state: state)
             PaneCommands(state: state)

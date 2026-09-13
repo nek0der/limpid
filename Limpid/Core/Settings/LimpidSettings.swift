@@ -27,6 +27,7 @@ struct LimpidSettings: Codable, Equatable {
     var keyboard: KeyboardSettings = .init()
     var confirmations: ConfirmationSettings = .init()
     var advanced: AdvancedSettings = .init()
+    var jumpOpensTurnReview = true
 
     /// Trailing root-level keys the current build doesn't recognize.
     /// Preserved across decode → encode so a newer build's writes
@@ -60,6 +61,10 @@ struct LimpidSettings: Codable, Equatable {
             ConfirmationSettings.self, forKey: .confirmations
         ) ?? .init()
         self.advanced = try c.decode(AdvancedSettings.self, forKey: .advanced)
+        self.jumpOpensTurnReview = try c.decodeIfPresent(
+            Bool.self,
+            forKey: .jumpOpensTurnReview
+        ) ?? true
         self.unknownFields = try CodableSidecar.decodeUnknownFields(
             from: decoder,
             knownKeys: Self.knownKeyStrings
@@ -75,11 +80,12 @@ struct LimpidSettings: Codable, Equatable {
         try c.encode(keyboard, forKey: .keyboard)
         try c.encode(confirmations, forKey: .confirmations)
         try c.encode(advanced, forKey: .advanced)
+        try c.encode(jumpOpensTurnReview, forKey: .jumpOpensTurnReview)
         try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
-        case schemaVersion, appearance, font, terminal, keyboard, confirmations, advanced
+        case schemaVersion, appearance, font, terminal, keyboard, confirmations, advanced, jumpOpensTurnReview
     }
 
     private static let knownKeyStrings: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))

@@ -10,7 +10,7 @@ import Foundation
 enum LimpidPaths {
     /// Bundle identifier of the *currently running* binary. Falls back
     /// to the Release id when the bundle dictionary is missing.
-    private static var bundleID: String {
+    static var bundleID: String {
         Bundle.main.bundleIdentifier ?? "dev.limpid.Limpid"
     }
 

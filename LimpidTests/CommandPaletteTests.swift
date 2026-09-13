@@ -34,10 +34,9 @@ struct CommandPaletteTests {
 
     @Test("empty query matches everything with score 0")
     func fuzzyMatch_emptyQuery_matchesAll() throws {
-        let result = FuzzyMatch.score(query: "", candidate: "anything")
-        #expect(result != nil)
-        #expect(result?.score == 0)
-        #expect(try #require(result?.matchedIndices.isEmpty))
+        let result = try #require(FuzzyMatch.score(query: "", candidate: "anything"))
+        #expect(result.score == 0)
+        #expect(result.matchedIndices.isEmpty)
     }
 
     @Test("no match returns nil")
@@ -133,6 +132,52 @@ struct CommandPaletteTests {
         )
         let shortcutItems = items.filter { $0.category == .actions }
         #expect(shortcutItems.count == LimpidShortcutAction.allCases.count)
+    }
+
+    @Test("Review This Turn is enabled only when the focused pane has a base")
+    func catalog_reviewTurnTracksFocusedPaneBase() throws {
+        try withTempDir { directory in
+            let (session, _, paneID) = WindowSessionFixture.withLooseTab()
+            let settings = SettingsStore(directory: directory)
+            let attention = AttentionState()
+
+            var items = CommandPaletteCatalog.buildItems(
+                session: session,
+                settings: settings,
+                attention: attention
+            )
+            #expect(items.first(where: { $0.id == "shortcut.reviewTurn" })?.isEnabled == false)
+            #expect(items.first(where: { $0.id == "shortcut.reviewChanges" })?.isEnabled == false)
+
+            let tabID = try #require(session.activeTabID)
+            session.update(tabID) {
+                $0.claudeAgentBadges[paneID] = AgentBadge(
+                    state: .finished,
+                    updatedAt: Date(),
+                    turnBaseTree: String(repeating: "a", count: 40),
+                    turnRoot: "/tmp/turn-review"
+                )
+            }
+            items = CommandPaletteCatalog.buildItems(
+                session: session,
+                settings: settings,
+                attention: attention
+            )
+            #expect(items.first(where: { $0.id == "shortcut.reviewTurn" })?.isEnabled == true)
+            #expect(items.first(where: { $0.id == "shortcut.reviewChanges" })?.isEnabled == true)
+            #expect(ReviewAgents.turnScope(
+                session: session,
+                attention: attention,
+                paneID: paneID,
+                root: URL(fileURLWithPath: "/tmp/other-review")
+            ) == nil)
+            #expect(ReviewAgents.turnScope(
+                session: session,
+                attention: attention,
+                paneID: paneID,
+                root: URL(fileURLWithPath: "/tmp/turn-review")
+            ) != nil)
+        }
     }
 
     @Test("catalog includes open tabs with display titles")

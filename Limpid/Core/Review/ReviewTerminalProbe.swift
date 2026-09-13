@@ -45,6 +45,41 @@ enum ReviewTerminalProbe {
         ) ?? surfaceTTY
     }
 
+    /// The current directory inside the tmux pane driven by `surfaceTTY`.
+    ///
+    /// `nil` is deliberately distinct from the outer shell's directory. If
+    /// the client detached or the server stopped answering, insertion must be
+    /// refused rather than validated against a terminal it will not reach.
+    static func hostedWorkingDirectory(
+        surfaceTTY: String,
+        surfaceForeground: String? = nil,
+        knownBinding: TmuxBinding? = nil
+    ) -> String? {
+        if let surfaceForeground, surfaceForeground != TmuxClientProbe.clientProcessName {
+            return nil
+        }
+        guard let tmuxPath = TmuxClientProbe.locateTmux() else { return nil }
+        var socketPaths = TmuxClientProbe.socketPaths(
+            inServerDirectory: TmuxClientProbe.defaultServerDirectory()
+        )
+        if let knownBinding {
+            let knownPath = TmuxClientProbe.normalizeSocketPath(knownBinding.socketPath)
+            if !socketPaths.contains(where: { TmuxClientProbe.normalizeSocketPath($0.path) == knownPath }) {
+                socketPaths.append(URL(fileURLWithPath: knownPath))
+            }
+        }
+        let clients = TmuxClientProbe.attachedClients(
+            tmuxPath: tmuxPath,
+            socketPaths: socketPaths
+        )
+        guard let binding = clients[surfaceTTY] else { return nil }
+        return TmuxClientProbe.activePanePath(
+            tmuxPath: tmuxPath,
+            socketPath: binding.socketPath,
+            sessionID: binding.sessionID
+        )
+    }
+
     /// The command in the foreground process group of `tty`.
     ///
     /// `KERN_PROC_TTY` lists every process whose controlling terminal is that

@@ -80,8 +80,21 @@ enum ReviewStrip {
 @MainActor
 @Observable
 final class ReviewPresentation {
-    /// The selected project or worktree while the terminal area shows review.
+    /// The repository shown while the terminal area shows review.
     var directory: URL?
+
+    /// The pane that owns a transient turn review opened from Quick Tabs or a
+    /// Group, and `nil` for repository-scoped Project / Worktree review.
+    ///
+    /// Quick Tabs and Groups do not imply a repository boundary. Tying their
+    /// review to the pane that produced the turn keeps a stale snapshot from
+    /// following the reader into another tab, pane, or working directory.
+    private(set) var transientOwnerPaneID: UUID?
+
+    /// Whether the transient owner runs behind a tmux client. Its outer pty
+    /// reports the shell directory from before tmux attached, so OSC 7 cannot
+    /// decide whether the hosted turn has left its repository.
+    private(set) var isTransientOwnerTmuxHosted = false
 
     /// The pane docked below the review surface, and the destination for the
     /// assembled feedback — which is why review never needs to ask which agent
@@ -144,6 +157,12 @@ final class ReviewPresentation {
     /// exactly while there is no directory.
     private(set) var opening: UUID?
 
+    /// Scope requested by the action that opened Review, or by a later jump
+    /// into the same repository. The generation lets an identical scope be
+    /// requested twice after the reader has switched away from it manually.
+    private(set) var requestedScope: ReviewScope?
+    private(set) var scopeRequestID = UUID()
+
     var isPresented: Bool {
         directory != nil
     }
@@ -154,19 +173,42 @@ final class ReviewPresentation {
     /// the shortcut table names its icon from off the main actor.
     nonisolated static let symbol = "doc.text.magnifyingglass"
 
-    func open(_ directory: URL, originPaneID: UUID?) {
+    func open(
+        _ directory: URL,
+        originPaneID: UUID?,
+        initialScope: ReviewScope? = nil,
+        transientOwnerPaneID: UUID? = nil,
+        isTransientOwnerTmuxHosted: Bool = false
+    ) {
+        let normalized = directory.resolvingSymlinksInPath()
+        if self.directory?.resolvingSymlinksInPath() == normalized, let initialScope {
+            self.originPaneID = originPaneID
+            self.transientOwnerPaneID = transientOwnerPaneID
+            self.isTransientOwnerTmuxHosted = transientOwnerPaneID != nil && isTransientOwnerTmuxHosted
+            isDestinationPinned = false
+            requestedScope = initialScope
+            scopeRequestID = UUID()
+            return
+        }
         insertedPaneID = nil
         self.originPaneID = originPaneID
+        self.transientOwnerPaneID = transientOwnerPaneID
+        self.isTransientOwnerTmuxHosted = transientOwnerPaneID != nil && isTransientOwnerTmuxHosted
         isDestinationPinned = false
         isStripCollapsed = false
-        self.directory = directory
+        requestedScope = initialScope
+        scopeRequestID = UUID()
+        self.directory = normalized
         opening = UUID()
     }
 
     func close() {
         directory = nil
         originPaneID = nil
+        transientOwnerPaneID = nil
+        isTransientOwnerTmuxHosted = false
         isDestinationPinned = false
+        requestedScope = nil
         opening = nil
     }
 
@@ -174,6 +216,10 @@ final class ReviewPresentation {
     /// having gone to the trouble of picking a terminal, they do not mean it
     /// to be taken back by the next tab they look at.
     func pinDestination(to paneID: UUID) {
+        if let transientOwnerPaneID, paneID != transientOwnerPaneID {
+            close()
+            return
+        }
         originPaneID = paneID
         isDestinationPinned = true
     }
@@ -183,6 +229,10 @@ final class ReviewPresentation {
     /// without catching up would leave the strip on the pinned pane until the
     /// reader happened to move focus again.
     func followFocus(_ paneID: UUID?) {
+        if let transientOwnerPaneID, paneID != transientOwnerPaneID {
+            close()
+            return
+        }
         isDestinationPinned = false
         if let paneID {
             originPaneID = paneID
@@ -192,15 +242,31 @@ final class ReviewPresentation {
     /// The focus moved. Ignored while the destination is pinned, which is the
     /// whole of what a pin does.
     func focusedPaneChanged(to paneID: UUID?) {
+        if let transientOwnerPaneID {
+            if paneID != transientOwnerPaneID {
+                close()
+            }
+            return
+        }
         guard !isDestinationPinned else { return }
         originPaneID = paneID
+    }
+
+    /// Reconcile the current repository of a transient review's owner pane.
+    /// Project / Worktree review ignores this because its lifetime remains
+    /// owned by the container rather than the shell's current directory.
+    func transientOwnerRepositoryChanged(to root: URL?) {
+        guard transientOwnerPaneID != nil else { return }
+        let normalizedRoot = root?.resolvingSymlinksInPath()
+        guard directory?.resolvingSymlinksInPath() != normalizedRoot else { return }
+        close()
     }
 
     /// The entry point is one control, so it has to close what it opened.
     /// Re-opening on a different directory rather than closing keeps the
     /// button meaningful after the user switches container while review is up.
     func toggle(_ directory: URL, originPaneID: UUID?) {
-        if self.directory == directory {
+        if self.directory?.resolvingSymlinksInPath() == directory.resolvingSymlinksInPath() {
             close()
         } else {
             open(directory, originPaneID: originPaneID)
@@ -218,8 +284,12 @@ final class ReviewPresentation {
         guard isPresented else { return }
         insertedPaneID = nil
         self.originPaneID = originPaneID
+        transientOwnerPaneID = nil
+        isTransientOwnerTmuxHosted = false
         isDestinationPinned = false
-        self.directory = directory
+        requestedScope = nil
+        scopeRequestID = UUID()
+        self.directory = directory.resolvingSymlinksInPath()
     }
 
     func toggleStrip() {

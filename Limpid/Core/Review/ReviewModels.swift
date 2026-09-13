@@ -7,10 +7,9 @@ import Observation
 
 /// What the review is a review of.
 ///
-/// Two shapes rather than a set of toggles. A reader is either looking at what
-/// they have not committed yet, or at everything the branch adds; listing both
-/// at once would carry the same file twice with different content and no way
-/// to say which comment was written about which.
+/// Separate shapes rather than a set of toggles. Listing scopes together would
+/// carry the same file more than once with different content and no way to say
+/// which snapshot a comment was written about.
 enum ReviewScope: Equatable {
     /// Staged, unstaged and untracked changes, kept apart.
     ///
@@ -18,6 +17,11 @@ enum ReviewScope: Equatable {
     /// else in this app a worktree is a checkout, and one scope reading from
     /// another scope's worktree is a sentence nobody can parse.
     case uncommitted
+    /// What changed since the prompt was sent, represented as one index-backed
+    /// layer because that index already includes tracked additions and
+    /// deletions. The snapshot cannot identify who changed an edit in a shared
+    /// worktree, so this scope deliberately makes no authorship claim.
+    case turn(baseTree: String, paneID: UUID)
     /// Everything between the branch point and the worktree — commits and
     /// uncommitted work in one diff, which is what "review the branch" means
     /// once an agent has started committing its own work.
@@ -30,14 +34,32 @@ enum ReviewScope: Equatable {
     var base: String? {
         switch self {
         case .uncommitted: nil
+        case .turn: nil
         case let .branch(base): base
+        }
+    }
+
+    var isTurn: Bool {
+        if case .turn = self {
+            return true
+        }
+        return false
+    }
+
+    /// Stable within the control; selector values are intentionally excluded
+    /// because changing the recorded tree should not replace the segment.
+    var selfID: String {
+        switch self {
+        case .uncommitted: "uncommitted"
+        case .turn: "turn"
+        case .branch: "branch"
         }
     }
 
     /// The layers this scope names its files with. `ReviewFile.id` carries the
     /// layer, so this is what tells a file, a comment or a read mark which
-    /// scope it belongs to — and the two scopes name theirs with disjoint sets
-    /// apart from `untracked`, which both list.
+    /// scope it belongs to. The turn and branch layers stay disjoint from the
+    /// staged, unstaged, and untracked working-copy layers.
     ///
     /// Here rather than beside either reader: the store prunes read marks with
     /// it on the main actor, and `ReviewGit` lists and counts files with it off
@@ -45,8 +67,36 @@ enum ReviewScope: Equatable {
     var layers: [ReviewLayer] {
         switch self {
         case .uncommitted: [.staged, .unstaged, .untracked]
+        case .turn: [.turn]
         case .branch: [.branch, .untracked]
         }
+    }
+
+    /// The choices that can truthfully label the snapshot on screen.
+    ///
+    /// A destination change may stop offering the turn being read, and a new
+    /// prompt may offer another turn with the same segment identity. Neither
+    /// event replaces an already-loaded snapshot, so we keep its exact scope
+    /// in the control until the reader explicitly changes it. Otherwise the
+    /// selection has no matching segment, and a new turn can appear selected
+    /// while the diff still belongs to the previous one.
+    static func pickerOptions(
+        current: ReviewScope,
+        offeredTurn: ReviewScope?,
+        branchBase: String?
+    ) -> [ReviewScope] {
+        var result: [ReviewScope] = [.uncommitted]
+        if current.isTurn {
+            result.append(current)
+        } else if let offeredTurn {
+            result.append(offeredTurn)
+        }
+        if case .branch = current {
+            result.append(current)
+        } else if let branchBase {
+            result.append(.branch(base: branchBase))
+        }
+        return result
     }
 }
 
@@ -61,13 +111,15 @@ enum ReviewReloadResult: Equatable {
 /// cases keep their raw values: a draft written before a case was added still
 /// points at the file it was written about.
 enum ReviewLayer: String, Codable, CaseIterable {
-    /// Listed first because it is the whole list when it is present — the
-    /// rail's section order is this order.
+    /// Whole-snapshot layers lead the rail because each is the entire list
+    /// when present. The rail's section order is this declaration order.
+    case turn
     case branch
     case staged, unstaged, untracked
 
     var title: String {
         switch self {
+        case .turn: String(localized: "This turn")
         case .branch: String(localized: "On this branch")
         case .staged: String(localized: "Staged")
         case .unstaged: String(localized: "Unstaged")
@@ -80,6 +132,11 @@ enum ReviewLayer: String, Codable, CaseIterable {
     /// is the only place that says what was diffed against what.
     var detail: String {
         switch self {
+        case .turn:
+            String(
+                // swiftlint:disable:next line_length
+                localized: "What changed since the prompt was sent, whoever changed it: the snapshot taken at the prompt against the working tree."
+            )
         case .branch: String(localized: "Everything this branch adds, including work not committed yet.")
         case .staged: String(localized: "Waiting for the next commit: HEAD against the index.")
         case .unstaged: String(localized: "Edited but not staged: the index against the working tree.")
@@ -359,9 +416,15 @@ enum ReviewError: Error, LocalizedError {
     case checkInterrupted
     case commentLimitReached, commentTooLong, nothingToInsert, promptTooLong, timedOut
     case instructionsInvalid, instructionsTooLong
+    case turnBaseMissing
+    case unsavedComment
 
     var errorDescription: String? {
         switch self {
+        case .unsavedComment:
+            String(localized: "Save or cancel the comment before changing review scope.")
+        case .turnBaseMissing:
+            String(localized: "The snapshot for this turn is gone. Showing uncommitted changes instead.")
         case .invalidDiff: String(localized: "This diff could not be parsed.")
         case .unsupported: String(localized: "This file cannot be reviewed as text.")
         case .tooLarge: String(localized: "This diff exceeds the review size limit.")

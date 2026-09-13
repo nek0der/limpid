@@ -111,9 +111,12 @@ struct WindowSessionTests {
         let s = WindowSession()
         let a = s.openTab(container: .loose)
         let b = s.openTab(container: .loose)
+        let paneID = a.splitTree.allLeafIDs()[0]
+        s.setWorkingDirectory(paneID: paneID, path: "/tmp/transient")
         s.closeTab(a.id)
         #expect(s.tabs.count == 1)
         #expect(s.tabs.first?.id == b.id)
+        #expect(s.workingDirectory(paneID: paneID) == nil)
     }
 
     @Test("closeTab on the active tab moves focus to a surviving tab")

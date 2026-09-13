@@ -19,6 +19,7 @@ enum CommandPaletteCatalog {
         let hasActiveSearch: Bool
         let hasWaitingAttention: Bool
         let canReview: Bool
+        let canReviewTurn: Bool
     }
 
     private struct ShortcutDependencies {
@@ -89,7 +90,16 @@ enum CommandPaletteCatalog {
             hasClosedTabs: hasClosedTabs,
             hasActiveSearch: hasActiveSearch,
             hasWaitingAttention: hasWaitingAttention,
-            canReview: ReviewAgents.canReview(session: session, presentation: dependencies.reviewPresentation)
+            canReview: ReviewAgents.canReview(
+                session: session,
+                attention: dependencies.attention,
+                presentation: dependencies.reviewPresentation
+            ),
+            canReviewTurn: ReviewAgents.turnScope(
+                session: session,
+                attention: dependencies.attention,
+                paneID: focusedPaneID
+            ) != nil
         )
 
         for action in LimpidShortcutAction.allCases {
@@ -274,6 +284,7 @@ enum CommandPaletteCatalog {
         case .focusPaneUp: context.reachable(.up)
         case .focusPaneDown: context.reachable(.down)
         case .reviewChanges: context.canReview
+        case .reviewTurn: context.canReviewTurn
         case .commandPalette, .quickOpen: false
         default: true
         }

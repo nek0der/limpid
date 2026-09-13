@@ -66,7 +66,12 @@ extension ReviewWorkspaceView {
     /// current one is replaced. The old diff remains authoritative while Git
     /// works; clearing each field on the way made the surface visibly empty.
     @discardableResult
-    func changeScope(_ next: ReviewScope) async -> Bool {
+    func changeScope(_ next: ReviewScope, animatesSelection: Bool = true) async -> Bool {
+        guard !composer.hasUnsavedText else {
+            store.report(ReviewError.unsavedComment)
+            return false
+        }
+        scopeSelectionWithoutAnimation = animatesSelection ? nil : next
         cancelComposing()
         guard case let .applied(selected) = await store.reload(scope: next, selectedFileID: nil) else {
             return false
@@ -168,7 +173,9 @@ extension ReviewWorkspaceView {
                         registry: registry,
                         originPaneID: { reviewPresentation.originPaneID },
                         instructions: settingsStore.settings.advanced.reviewInstructions,
-                        isSameReview: { reviewPresentation.opening == opening }
+                        isSameReview: { reviewPresentation.opening == opening },
+                        requiresMatchingRepository: reviewPresentation.transientOwnerPaneID != nil,
+                        isTmuxHosted: reviewPresentation.isTransientOwnerTmuxHosted
                     )
                 )
                 if let tab = session.tab(containing: outcome.paneID) {

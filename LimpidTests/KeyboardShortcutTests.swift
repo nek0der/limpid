@@ -72,6 +72,17 @@ struct KeyboardShortcutTests {
         #expect(kb.shortcut(for: .newTab) == LimpidShortcutAction.newTab.defaultShortcut)
     }
 
+    @Test("Review This Turn uses the View category and option-command-J")
+    func reviewTurn_hasExpectedDefault() {
+        #expect(LimpidShortcutAction.reviewTurn.category == .view)
+        #expect(LimpidShortcutAction.reviewTurn.localizedTitle == "Review This Turn")
+        #expect(LimpidShortcutAction.reviewTurn.iconName == ReviewPresentation.symbol)
+        #expect(
+            LimpidShortcutAction.reviewTurn.defaultShortcut
+                == StoredShortcut(key: "j", modifiers: [.command, .option])
+        )
+    }
+
     @Test("Override wins over the default")
     func shortcut_overrideWins() {
         var kb = KeyboardSettings()

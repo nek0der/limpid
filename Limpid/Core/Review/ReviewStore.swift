@@ -20,6 +20,9 @@ final class ReviewStore {
     /// written in the other one. `nil` in a repository with no branch to
     /// compare against, which is what hides the mode.
     private(set) var base: String?
+    /// The loaded turn scope, or the first offered for restoring comments.
+    /// Later offers cannot replace a snapshot that remains visible.
+    private(set) var turnScope: ReviewScope?
     private(set) var files: [ReviewFile] = []
     /// Keyed by `ReviewFile.id`. Decoration for the list, so a failure to read
     /// it never fails the refresh that produced the list itself.
@@ -30,9 +33,8 @@ final class ReviewStore {
     /// intermediate state.
     private(set) var diff: ReviewDiff?
     private(set) var isLoading = false
-    /// Whether a change list has come back yet. A store that has just been
-    /// created has no files and is not loading, and for that one frame the
-    /// surface said "No changes to review." over a repository full of them.
+    /// Whether a change list has arrived, preventing a premature empty state
+    /// before the first Git read completes.
     private(set) var hasLoaded = false
     /// Errors remain visible until the next explicit operation succeeds.
     private(set) var errorMessage: String?
@@ -153,16 +155,15 @@ final class ReviewStore {
             isLoading = running > 0
         }
         do {
-            async let fileRead = git.files(at: root, scope: nextScope)
-            async let statRead = try? git.stats(at: root, scope: nextScope)
-            let (latest, latestStats) = try await (fileRead, statRead)
+            let (latest, latestStats) = try await listSnapshot(scope: nextScope)
             guard listGeneration == token else { return }
             let keepsOpenDiff = diff.map { loaded in
                 nextScope == scope && latest.contains(where: { $0.id == loaded.file.id })
             } ?? false
+            rememberTurnScope(nextScope)
             scope = nextScope
             files = latest
-            stats = latestStats ?? [:]
+            stats = latestStats
             if !keepsOpenDiff {
                 diff = nil
                 source = []
@@ -183,6 +184,11 @@ final class ReviewStore {
             // A newer refresh took over, or the surface went away. Neither is
             // something to report, and the list on screen still belongs to the
             // run that put it there.
+        } catch ReviewError.turnBaseMissing where nextScope.isTurn {
+            guard listGeneration == token else { return }
+            offerTurnScope(nextScope)
+            await refresh(scope: .uncommitted)
+            errorMessage = ReviewError.turnBaseMissing.localizedDescription
         } catch {
             guard listGeneration == token else { return }
             hasLoaded = true
@@ -208,57 +214,44 @@ final class ReviewStore {
             isLoading = running > 0
         }
         do {
-            async let fileRead = git.files(at: root, scope: targetScope)
-            async let statRead = try? git.stats(at: root, scope: targetScope)
-            let (latestFiles, latestStats) = try await (fileRead, statRead)
+            let (latestFiles, latestStats) = try await listSnapshot(scope: targetScope)
             guard listGeneration == token, diffGeneration == token else { return .superseded }
             let selected = latestFiles.first { $0.id == selectedFileID }
                 ?? latestFiles.first { $0.id == lastFileID }
                 ?? latestFiles.first
-            var latestDiff: ReviewDiff?
-            let latestSource: [String]
-            var fileLoadError: (any Error)?
-            if let selected {
-                do {
-                    latestDiff = try await git.diff(selected, root: root, base: targetScope.base ?? base)
-                    guard listGeneration == token, diffGeneration == token else { return .superseded }
-                    let intralinePairs = ReviewIntralineDiff.pairs(for: latestDiff?.lines ?? [])
-                    async let sourceRead = git.source(selected, root: root)
-                    async let intralineRead = ReviewIntralineDiff.computeOffActor(intralinePairs)
-                    latestSource = await sourceRead
-                    latestDiff?.intralineHighlights = await intralineRead
-                    guard listGeneration == token, diffGeneration == token else { return .superseded }
-                } catch is CancellationError {
-                    return .superseded
-                } catch {
-                    guard listGeneration == token, diffGeneration == token else { return .superseded }
-                    latestDiff = nil
-                    latestSource = []
-                    fileLoadError = error
-                }
-            } else {
-                latestDiff = nil
-                latestSource = []
-            }
+            let loadedDiff = try await loadDiff(
+                for: selected,
+                scope: targetScope,
+                generation: token
+            )
             guard listGeneration == token, diffGeneration == token else { return .superseded }
+            rememberTurnScope(targetScope)
             scope = targetScope
             files = latestFiles
-            stats = latestStats ?? [:]
-            diff = latestDiff
-            source = latestSource
+            stats = latestStats
+            diff = loadedDiff.diff
+            source = loadedDiff.source
             gapSpans = [:]
             hasLoaded = true
             hasPendingChanges = false
             hasListRefreshFailed = false
             listRefreshMessage = nil
-            applyFileLoadError(fileLoadError)
+            applyFileLoadError(loadedDiff.error)
             pruneViewed()
-            if let selected, let latestDiff {
+            if let selected, let latestDiff = loadedDiff.diff {
                 reconcileLoadedDiff(latestDiff, for: selected)
             }
             return .applied(selectedFileID: selected?.id)
         } catch is CancellationError {
             return .superseded
+        } catch ReviewError.turnBaseMissing where targetScope.isTurn {
+            guard listGeneration == token, diffGeneration == token else { return .superseded }
+            offerTurnScope(targetScope)
+            let result = await reload(scope: .uncommitted, selectedFileID: selectedFileID)
+            if case .applied = result {
+                errorMessage = ReviewError.turnBaseMissing.localizedDescription
+            }
+            return result
         } catch {
             guard listGeneration == token, diffGeneration == token else { return .superseded }
             hasLoaded = true
@@ -287,14 +280,14 @@ final class ReviewStore {
             isLoading = running > 0
         }
         do {
-            var latest = try await git.diff(file, root: root, base: base)
+            var latest = try await git.diff(file, root: root, scope: scopeForFile(file))
             guard diffGeneration == token else { return }
             // The gutter is sized for the highest line number the file can ever show, which unfolding
             // takes past anything in the patch — and a width that arrived a
             // moment later rebuilt every row and slid the whole diff sideways
             // under a reader who had already started reading it.
             let intralinePairs = ReviewIntralineDiff.pairs(for: latest.lines)
-            async let contentRead = git.source(file, root: root)
+            async let contentRead = git.source(file, root: root, scope: scopeForFile(file))
             async let intralineRead = ReviewIntralineDiff.computeOffActor(intralinePairs)
             latest.intralineHighlights = await intralineRead
             let content = await contentRead
@@ -338,20 +331,13 @@ final class ReviewStore {
         // list that replaced it — and raising the banner stopped the poll,
         // which left it up until the reader refreshed by hand.
         let token = listGeneration
-        guard let latest = try? await git.files(at: root, scope: scope),
-              running == 0, listGeneration == token
-        else { return }
-        guard latest == files else {
-            hasPendingChanges = true
-            return
-        }
-        // The open file is the one being read and commented on, so its
-        // content is worth a second call; the rest of the list is covered by
-        // the names and statuses above.
-        // The fingerprint alone: this runs on a timer, and building the rows to
-        // throw them away parses the whole patch and walks every line of it.
-        guard let current = diff,
-              let latest = try? await git.fingerprint(current.file, root: root, base: base)
+        let current = diff
+        guard let hasChanges = try? await git.hasChanges(
+            at: root,
+            scope: scope,
+            comparedTo: files,
+            currentDiff: current
+        ), running == 0, listGeneration == token
         else { return }
         // The same token again, for the same reason the comment above gives.
         // Carrying it only past the first await left this one able to answer
@@ -361,8 +347,8 @@ final class ReviewStore {
         // since been reloaded to match it — and raising the banner anyway.
         // Raising it stops the poll, so the banner then sits over a view that
         // is current until the reader refreshes by hand.
-        guard running == 0, listGeneration == token, diff?.fingerprint == current.fingerprint else { return }
-        hasPendingChanges = latest != current.fingerprint
+        guard running == 0, listGeneration == token, diff?.fingerprint == current?.fingerprint else { return }
+        hasPendingChanges = hasChanges
     }
 
     /// The comments an insert would carry right now.
@@ -561,7 +547,7 @@ final class ReviewStore {
         var fingerprints: [String: String] = [:]
         for file in Set(open.map(\.file)) where latestFiles.contains(file) {
             do {
-                fingerprints[file.id] = try await git.diff(file, root: root, base: base).fingerprint
+                fingerprints[file.id] = try await git.diff(file, root: root, scope: scopeForFile(file)).fingerprint
             } catch is CancellationError {
                 throw CancellationError()
             } catch ReviewError.checkInterrupted {
@@ -830,13 +816,40 @@ final class ReviewStore {
     /// longer changes, which is the same silence as aging it out.
     private func scopes(for comments: [ReviewComment]) -> [ReviewScope] {
         var result: [ReviewScope] = []
-        if comments.contains(where: { $0.file.layer != .branch }) {
+        if comments.contains(where: { [.staged, .unstaged, .untracked].contains($0.file.layer) }) {
             result.append(.uncommitted)
+        }
+        if let turnScope, comments.contains(where: { $0.file.layer == .turn }) {
+            result.append(turnScope)
         }
         if let base, comments.contains(where: { $0.file.layer == .branch }) {
             result.append(.branch(base: base))
         }
         return result
+    }
+
+    /// Turn reads share one private index. Listing refreshes it, so statistics
+    /// follow that refresh rather than racing it as the ordinary scopes may.
+    private func listSnapshot(scope: ReviewScope) async throws -> ([ReviewFile], [String: ReviewFileStat]) {
+        if scope.isTurn {
+            let files = try await git.files(at: root, scope: scope)
+            let stats = await (try? git.stats(at: root, scope: scope)) ?? [:]
+            return (files, stats)
+        }
+        async let files = git.files(at: root, scope: scope)
+        async let stats = try? git.stats(at: root, scope: scope)
+        return try await (files, stats ?? [:])
+    }
+
+    private func rememberTurnScope(_ candidate: ReviewScope) {
+        guard candidate.isTurn else { return }
+        turnScope = candidate
+    }
+
+    func offerTurnScope(_ candidate: ReviewScope?) {
+        if turnScope == nil, let candidate {
+            rememberTurnScope(candidate)
+        }
     }
 
     /// Takes the banner down ahead of an operation the reader has just asked
@@ -949,52 +962,32 @@ final class ReviewStore {
 
 }
 
-/// Serialized with a lock rather than by isolating the type. The one method
-/// hands back a `@MainActor` store and is only called from view code, but the
-/// pool is an `@Entry` default value, which SwiftUI builds outside any actor —
-/// so the type itself cannot be `@MainActor`.
-final class ReviewStorePool: @unchecked Sendable {
-    /// Where the stores this pool hands out keep their drafts. In demo mode
-    /// that is nowhere: `DemoFixture` is an app-level fact, so which one it is
-    /// arrives from above rather than being read here.
-    private let drafts: any ReviewDraftStoring
-
-    /// Demo mode keeps its comments in memory: the fixture is a stage set, and
-    /// writing its review into the reader's own draft directory would outlive
-    /// the demo.
-    init(shouldPersist: Bool = true, directory: URL? = nil) {
-        drafts = shouldPersist
-            ? FileReviewDraftStore(directory: directory ?? Self.defaultDirectory)
-            : EphemeralReviewDraftStore()
-    }
-
-    private final class WeakStore {
-        weak var value: ReviewStore?
-        init(_ value: ReviewStore) {
-            self.value = value
+private extension ReviewStore {
+    /// Reads the selected file without letting a recoverable file failure
+    /// discard the complete list that Git already returned.
+    func loadDiff(
+        for selected: ReviewFile?,
+        scope: ReviewScope,
+        generation: UUID
+    ) async throws -> ReviewLoadedDiff {
+        guard let selected else { return ReviewLoadedDiff(diff: nil, source: [], error: nil) }
+        do {
+            var latestDiff = try await git.diff(selected, root: root, scope: scope)
+            guard listGeneration == generation, diffGeneration == generation else { throw CancellationError() }
+            let intralinePairs = ReviewIntralineDiff.pairs(for: latestDiff.lines)
+            async let sourceRead = git.source(selected, root: root, scope: scope)
+            async let intralineRead = ReviewIntralineDiff.computeOffActor(intralinePairs)
+            let source = await sourceRead
+            latestDiff.intralineHighlights = await intralineRead
+            guard listGeneration == generation, diffGeneration == generation else { throw CancellationError() }
+            return ReviewLoadedDiff(diff: latestDiff, source: source, error: nil)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch ReviewError.turnBaseMissing {
+            throw ReviewError.turnBaseMissing
+        } catch {
+            guard listGeneration == generation, diffGeneration == generation else { throw CancellationError() }
+            return ReviewLoadedDiff(diff: nil, source: [], error: error)
         }
     }
-
-    /// Where drafts live. Named here rather than at each use so the deletion
-    /// path and the pool cannot end up looking in two places.
-    static var defaultDirectory: URL {
-        LimpidPaths.applicationSupportDirectory().appendingPathComponent("reviews")
-    }
-
-    private let lock = NSLock()
-    private var openStores: [String: WeakStore] = [:]
-
-    @MainActor
-    func store(root: URL) -> ReviewStore {
-        if let existing = lock.withLock({
-            openStores = openStores.filter { $0.value.value != nil }
-            return openStores[root.path]?.value
-        }) {
-            return existing
-        }
-        let store = ReviewStore(root: root, drafts: drafts)
-        lock.withLock { openStores[root.path] = WeakStore(store) }
-        return store
-    }
-
 }

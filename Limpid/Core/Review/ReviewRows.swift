@@ -133,6 +133,12 @@ struct ReviewComposerState: Equatable {
         lineID != nil
     }
 
+    /// Text the reader has authored but has not committed to the review draft.
+    /// Navigation may discard an empty composer, but never this content.
+    var hasUnsavedText: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     mutating func compose(start: Int, end: Int, side: ReviewSide?) {
         startLineID = min(start, end)
         lineID = max(start, end)

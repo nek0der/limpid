@@ -8,6 +8,7 @@
 
 import Foundation
 import Testing
+@testable import Limpid
 
 @Suite("Claude shim", .tags(.smoke), .disabled(if: !RepoFixture.hasLocalRepo, "no local git"))
 struct ClaudeShimScriptTests {
@@ -15,6 +16,7 @@ struct ClaudeShimScriptTests {
     /// have been exec'd with.
     private func runShim(
         _ args: [String],
+        hookNamespace: String? = nil,
         sourceLocation: SourceLocation = #_sourceLocation
     ) throws -> [String] {
         try withTempDir { dir in
@@ -37,12 +39,14 @@ struct ClaudeShimScriptTests {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
             process.arguments = [shim.path] + args
-            process.environment = [
+            var environment = [
                 "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                 "HOME": dir.path,
                 "TMPDIR": dir.path,
                 "LIMPID_REAL_CLAUDE": stub.path
             ]
+            environment["LIMPID_CLAUDE_HOOK_NAMESPACE"] = hookNamespace
+            process.environment = environment
             try process.run()
             process.waitUntilExit()
             #expect(process.terminationStatus == 0, sourceLocation: sourceLocation)
@@ -74,11 +78,40 @@ struct ClaudeShimScriptTests {
         return hooks?["SessionStart"] as? [[String: Any]] ?? []
     }
 
+    private func sessionStartCommand(_ argv: [String]) throws -> String {
+        let decodedPayload = try settingsPayload(in: argv)
+        let payload = try #require(decodedPayload)
+        let group = try #require(sessionStartGroups(payload).first)
+        let hooks = try #require(group["hooks"] as? [[String: Any]])
+        return try #require(hooks.first?["command"] as? String)
+    }
+
     @Test("injects our settings when the user passes none")
     func noUserSettings_injectsOurs() throws {
         let argv = try runShim([])
         let payload = try settingsPayload(in: argv)
         #expect(sessionStartGroups(payload).count == 1)
+    }
+
+    /// The hook path is captured by a running Claude process. Separate stable
+    /// names let a new invocation refresh its own build without redirecting a
+    /// session launched by another installed build.
+    @Test("namespaces the no-space hook link by build identity")
+    func hookLink_separatesBuilds() throws {
+        let releaseArguments = try runShim([], hookNamespace: "dev.limpid.Limpid")
+        let release = try sessionStartCommand(releaseArguments)
+        let developmentArguments = try runShim([], hookNamespace: "dev.limpid.Limpid.dev")
+        let development = try sessionStartCommand(developmentArguments)
+
+        #expect(release.hasSuffix("/limpid-claude-shim-dev.limpid.Limpid/limpid-hook"))
+        #expect(development.hasSuffix("/limpid-claude-shim-dev.limpid.Limpid.dev/limpid-hook"))
+        #expect(release != development)
+    }
+
+    @Test("exports the running build identity for the hook link")
+    func environment_carriesHookNamespace() {
+        let environment = ClaudeShimLocator.environment(forPaneID: nil)
+        #expect(environment["LIMPID_CLAUDE_HOOK_NAMESPACE"] == LimpidPaths.bundleID)
     }
 
     @Test("merges with the user's settings instead of losing to them")

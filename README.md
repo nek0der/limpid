@@ -33,6 +33,8 @@ Both CLIs are recognized natively, with live status, prompt-aware tab names, and
 ### Review the diff before you hand it back (⌥⌘R)
 Read the branch or the working tree inside Limpid, comment on the lines you want changed, and send the comments to the agent in the pane below as one prompt. Files you have finished with can be marked and hidden, and comments outlive a restart. A comment whose code has moved since you wrote it is held back rather than sent, so the agent never gets a line number that no longer means anything.
 
+When an agent finishes, press ⌘J and Review opens the diff since the prompt was sent. Read it, leave line comments, and send them to the pane below without searching through earlier worktree changes. Use ⌥⌘J to open that turn directly from the focused pane.
+
 ### Designed to disappear
 A native macOS three-pane sidebar plus a Liquid Glass toolbar — calm, out of the way, native.
 
@@ -43,6 +45,7 @@ A native macOS three-pane sidebar plus a Liquid Glass toolbar — calm, out of t
 | ⌘J | Jump to next waiting agent |
 | ⌥⌘N | New worktree |
 | ⌥⌘R | Review changes |
+| ⌥⌘J | Review this turn |
 | ⌘T | New tab |
 | ⌘W | Close pane |
 | ⇧⌘P | Command palette |

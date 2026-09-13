@@ -11,21 +11,56 @@ import SwiftUI
 enum ReviewPresentationCommand {
     static func toggle(
         session: WindowSession,
+        attention: AttentionState,
         presentation: ReviewPresentation,
         registry: (any SurfaceViewProviding)? = nil
     ) {
         if presentation.isPresented {
             reveal(session: session, registry: registry)
-        }
-        guard let directory = ReviewAgents.directory(session: session) else {
-            // The active container has nothing to review, but review may still
-            // be open over it; closing is the only reading left.
             presentation.close()
             return
         }
-        presentation.toggle(
-            directory,
-            originPaneID: session.activeTab?.splitTree.effectiveFocusedLeafID
+        let paneID = session.activeTab?.splitTree.effectiveFocusedLeafID
+        if let directory = ReviewAgents.directory(session: session) {
+            presentation.open(directory, originPaneID: paneID)
+            return
+        }
+        guard ReviewAgents.isTransientTurnContainer(session: session, paneID: paneID),
+              let target = ReviewAgents.turnTarget(
+                  session: session,
+                  attention: attention,
+                  paneID: paneID
+              )
+        else { return }
+        presentation.open(
+            target.root,
+            originPaneID: paneID,
+            initialScope: target.scope,
+            transientOwnerPaneID: paneID,
+            isTransientOwnerTmuxHosted: target.isTmuxHosted
+        )
+    }
+
+    static func openTurn(
+        session: WindowSession,
+        attention: AttentionState,
+        presentation: ReviewPresentation
+    ) {
+        let paneID = session.activeTab?.splitTree.effectiveFocusedLeafID
+        guard let target = ReviewAgents.turnTarget(
+            session: session,
+            attention: attention,
+            paneID: paneID
+        ) else { return }
+        presentation.open(
+            target.root,
+            originPaneID: paneID,
+            initialScope: target.scope,
+            transientOwnerPaneID: ReviewAgents.isTransientTurnContainer(
+                session: session,
+                paneID: paneID
+            ) ? paneID : nil,
+            isTransientOwnerTmuxHosted: target.isTmuxHosted
         )
     }
 
@@ -77,7 +112,28 @@ struct ReviewChangesMenuItem: View {
         .limpidShortcut(.reviewChanges, in: state.settingsStore)
         .disabled(!ReviewAgents.canReview(
             session: state.session,
+            attention: state.attention,
             presentation: state.reviewPresentation
         ))
+    }
+}
+
+struct ReviewThisTurnMenuItem: View {
+    let state: AppState
+
+    var body: some View {
+        let paneID = state.session.activeTab?.splitTree.effectiveFocusedLeafID
+        Button {
+            NotificationCenter.default.post(name: .limpidReviewTurn, object: state.session)
+        } label: {
+            Label("Review This Turn", systemImage: ReviewPresentation.symbol)
+        }
+        .accessibilityLabel(Text("Review This Turn"))
+        .limpidShortcut(.reviewTurn, in: state.settingsStore)
+        .disabled(ReviewAgents.turnScope(
+            session: state.session,
+            attention: state.attention,
+            paneID: paneID
+        ) == nil)
     }
 }

@@ -475,6 +475,7 @@ final class GhosttyEventCoordinator {
         pendingBellFlashes[paneID]?.cancel()
         pendingBellFlashes.removeValue(forKey: paneID)
         session.paneSearchStates.removeValue(forKey: paneID)
+        session.paneTransients.removeValue(forKey: paneID)
         guard let owningTab = session.tab(containing: paneID) else {
             registry.unregister(paneID)
             return
@@ -523,6 +524,7 @@ final class GhosttyEventCoordinator {
                 t.pwd = pwd
             }
         }
+        session.setWorkingDirectory(paneID: paneID, path: pwd)
     }
 
     // MARK: - Link / cursor handlers

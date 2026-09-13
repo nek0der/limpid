@@ -21,6 +21,10 @@ final class AttentionState {
     /// Lets the notification history acknowledge non-agent output when
     /// focus moves between panes without changing the active tab.
     var onPaneFocused: ((UUID) -> Void)?
+    /// Injected by `AppState` so Core can keep attention navigation unified
+    /// without owning Settings or the window's Review presentation.
+    var isTurnReviewEnabled: () -> Bool = { false }
+    var onFinishedTurnFocused: ((UUID, String, String) -> Void)?
     var selectedRuntimeID: String?
     /// Per-pane "I've dismissed this finished turn" — the user pressed
     /// the row's ×. Keyed to the badge's `updatedAt`; a newer finished
@@ -282,6 +286,8 @@ extension AttentionState {
         /// message (needsInput) or error type. Preferred over
         /// `lastPrompt` for the preview line when present.
         let detail: String?
+        let turnBaseTree: String?
+        let turnRoot: String?
         /// Focus has visited this finished turn — render the row faded
         /// ("seen, not yet replied"). Always false for needsInput / error.
         let isViewed: Bool
@@ -300,6 +306,8 @@ extension AttentionState {
         let updatedAt: Date
         let lastPrompt: String?
         let detail: String?
+        let turnBaseTree: String?
+        let turnRoot: String?
         /// Pre-computed so the sort comparator can stay self-contained.
         let isViewed: Bool
         var runtimeID: String?
@@ -314,14 +322,30 @@ extension AttentionState {
         let updatedAt: Date
         let lastPrompt: String?
         let detail: String?
+        let turnBaseTree: String?
+        let turnRoot: String?
     }
 
     private func attentionInfo(in tab: Tab, paneID: UUID) -> AttentionInfo? {
         let claude = (runtimesByKind[.claude] == nil ? tab.claudeAgentBadges[paneID] : nil).map {
-            AttentionInfo(state: $0.state, updatedAt: $0.updatedAt, lastPrompt: $0.lastPrompt, detail: $0.detail)
+            AttentionInfo(
+                state: $0.state,
+                updatedAt: $0.updatedAt,
+                lastPrompt: $0.lastPrompt,
+                detail: $0.detail,
+                turnBaseTree: $0.turnBaseTree,
+                turnRoot: $0.turnRoot
+            )
         }
         let codex = (runtimesByKind[.codex] == nil ? tab.codexAgentBadges[paneID] : nil).map {
-            AttentionInfo(state: $0.state, updatedAt: $0.updatedAt, lastPrompt: $0.lastPrompt, detail: $0.detail)
+            AttentionInfo(
+                state: $0.state,
+                updatedAt: $0.updatedAt,
+                lastPrompt: $0.lastPrompt,
+                detail: $0.detail,
+                turnBaseTree: $0.turnBaseTree,
+                turnRoot: $0.turnRoot
+            )
         }
         switch (claude, codex) {
         case let (c?, x?):
@@ -376,7 +400,9 @@ extension AttentionState {
             else { continue }
             targets.append(AttentionTarget(
                 tabID: tab.id, paneID: paneID, state: badge.state, updatedAt: badge.updatedAt,
-                lastPrompt: badge.lastPrompt, detail: badge.detail, isViewed: isViewed(runtime), runtimeID: runtime.id
+                lastPrompt: badge.lastPrompt, detail: badge.detail,
+                turnBaseTree: badge.turnBaseTree, turnRoot: badge.turnRoot,
+                isViewed: isViewed(runtime), runtimeID: runtime.id
             ))
         }
         for tab in session.tabs {
@@ -401,6 +427,8 @@ extension AttentionState {
                     updatedAt: info.updatedAt,
                     lastPrompt: info.lastPrompt,
                     detail: info.detail,
+                    turnBaseTree: info.turnBaseTree,
+                    turnRoot: info.turnRoot,
                     isViewed: viewedNow
                 ))
             }
@@ -451,6 +479,8 @@ extension AttentionState {
                 updatedAt: $0.updatedAt,
                 lastPrompt: $0.lastPrompt,
                 detail: $0.detail,
+                turnBaseTree: $0.turnBaseTree,
+                turnRoot: $0.turnRoot,
                 isViewed: $0.isViewed,
                 runtimeID: $0.runtimeID
             )
@@ -504,6 +534,10 @@ extension AttentionState {
         paneID: UUID,
         runtimeID: String? = nil
     ) {
+        let target = attentionTargets(in: session).first {
+            $0.tabID == tabID && $0.paneID == paneID
+                && $0.runtimeID == runtimeID
+        }
         selectedRuntimeID = runtimeID
         PaneActions.activateAndFocus(session, registry: registry, tabID: tabID, paneID: paneID)
         if let runtimeID,
@@ -513,6 +547,11 @@ extension AttentionState {
             DispatchQueue.global(qos: .userInitiated).async {
                 TmuxClientProbe.selectPane(tmuxPath: tmuxPath, location: location)
             }
+        }
+        if target?.state == .finished, isTurnReviewEnabled(),
+           let tree = target?.turnBaseTree, let root = target?.turnRoot
+        {
+            onFinishedTurnFocused?(paneID, tree, root)
         }
     }
 }

@@ -168,6 +168,41 @@ edits wait for storage so a failed save keeps the composer open. `SettingsStore`
 inline (always pretty-printed) because `settings.json` is the one
 file the user is expected to open in an editor.
 
+### Turn review snapshots
+
+At `UserPromptSubmit`, each agent hook copies the worktree's real index into
+`<git-dir>/limpid/turn-<pane>.index`, runs `git add -A` against that private
+index, writes its tree, and protects the tree with
+`refs/limpid/turn/<pane>`. The ref keeps the otherwise-unreachable tree out of
+Git's normal garbage collection while the session is active without adding a
+commit or changing history. Review never writes that hook index. It refreshes
+`turn-<pane>.read.index` instead and compares the recorded tree with the
+read-side index through `git diff --cached`, so a reload cannot race the next
+prompt snapshot. Both indexes are separate from the real index; user staging
+state and `git status` remain untouched.
+
+Project and Worktree review remains repository-scoped as focus moves between
+their panes. Turn badges from another repository are not eligible while those
+containers are active, even if the shell has changed directory. A turn review
+opened from Quick Tabs or a Group is instead owned
+by the pane that produced the snapshot: switching tab or pane, closing that
+pane, or moving its working directory outside the recorded repository closes
+the review. A tmux-hosted owner is the exception: OSC 7 describes the host
+shell rather than the active tmux pane, so focus and cwd changes do not close
+the review. Insert instead resolves the current hosted pane path and checks its
+repository again after comment validation. The same post-validation check runs
+for non-tmux owners, so an asynchronous close cannot leave a window for
+delivery to an unrelated shell.
+While its owner context remains unchanged, the loaded snapshot stays
+authoritative when a later prompt records a new tree. The scope control keeps
+the exact turn already on screen until the reader explicitly chooses another
+scope or jumps to another finished turn. This preserves in-progress comments
+and prevents a newer turn label from describing an older diff. A scope request
+is refused while the composer contains unsaved text; the reader must save or
+cancel it before the loaded diff can change. A turn is
+offered after leaving that scope only when
+the current destination still carries a matching root and base tree.
+
 Agent lifecycle stores are runtime-scoped: one UUID per shim invocation, with
 tmux socket/server-generation/pane metadata when a multiplexer sits between the
 agent and Limpid. Hooks never query tmux; `TmuxTopology` resolves current pane

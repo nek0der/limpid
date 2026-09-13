@@ -99,13 +99,14 @@ struct SessionSnapshotTests {
         #expect(s.activeContainerID == .loose)
     }
 
-    @Test("transient pane state (bell / child exit) resets on restore; unread persists")
+    @Test("transient pane state resets on restore; unread persists")
     func restore_resetsTransientPaneStateButKeepsUnread() throws {
         let s = WindowSession()
         let tab = s.openTab(container: .loose)
         let paneID = try #require(tab.splitTree.allLeafIDs().first)
         s.setBell(paneID: paneID, ringing: true)
         s.setChildExited(paneID: paneID, code: 137)
+        s.setWorkingDirectory(paneID: paneID, path: "/tmp/transient")
         s.markUnread(paneID: paneID)
 
         let snap = s.makeSnapshot()
@@ -114,6 +115,7 @@ struct SessionSnapshotTests {
 
         #expect(restored.isBellRinging(paneID: paneID) == false)
         #expect(restored.childExitCode(paneID: paneID) == nil)
+        #expect(restored.workingDirectory(paneID: paneID) == nil)
         #expect(restored.paneState(paneID).unreadCount == 1)
     }
 

@@ -153,6 +153,7 @@ enum PaneActions {
             t.codexAgentBadges.removeValue(forKey: leafID)
         }
         session.paneSearchStates.removeValue(forKey: leafID)
+        session.paneTransients.removeValue(forKey: leafID)
         registry.unregister(leafID)
         claudeSessionTracker?.didClosePane(leafID)
         codexSessionTracker?.didClosePane(leafID)

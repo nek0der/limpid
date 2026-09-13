@@ -3,6 +3,33 @@
 
 import Foundation
 
+/// Publishes only the newest completed refresh for one canonical read index.
+/// `add -A` finishes out of order when a poll overlaps an explicit operation;
+/// allowing the older completion to win would make later validation go back
+/// to an earlier working-tree snapshot.
+final class ReviewTurnIndexPublisher: @unchecked Sendable {
+    static let shared = ReviewTurnIndexPublisher()
+
+    private let lock = NSLock()
+    private var latestTokens: [String: UUID] = [:]
+
+    func begin(for indexPath: String) -> UUID {
+        lock.withLock {
+            let token = UUID()
+            latestTokens[indexPath] = token
+            return token
+        }
+    }
+
+    func publish(stagingPath: String, to indexPath: String, token: UUID) throws {
+        try lock.withLock {
+            guard latestTokens[indexPath] == token else { throw CancellationError() }
+            guard rename(stagingPath, indexPath) == 0 else { throw ReviewError.gitFailed }
+            latestTokens.removeValue(forKey: indexPath)
+        }
+    }
+}
+
 /// We serialize process lifecycle and shared results with a lock. Each pipe has one reader.
 private final class ReviewGitCommand: @unchecked Sendable {
     /// How long one Git call may take before it is terminated. Long enough for
@@ -51,7 +78,7 @@ private final class ReviewGitCommand: @unchecked Sendable {
         }
     }
 
-    func run(arguments: [String], root: URL, limit: Int) throws -> Data {
+    func run(arguments: [String], root: URL, limit: Int, environment additions: [String: String] = [:]) throws -> Data {
         let stdout = Pipe()
         let stderr = Pipe()
         try lock.withLock {
@@ -74,6 +101,9 @@ private final class ReviewGitCommand: @unchecked Sendable {
             // Repository identity comes from root, never an inherited shell override.
             for key in Array(environment.keys) where key.hasPrefix("GIT_") {
                 environment.removeValue(forKey: key)
+            }
+            for (key, value) in additions {
+                environment[key] = value
             }
             environment["LC_ALL"] = "C"
             environment["GIT_OPTIONAL_LOCKS"] = "0"
@@ -155,12 +185,19 @@ private final class ReviewGitCommand: @unchecked Sendable {
         return data
     }
 
-    static func execute(_ arguments: [String], root: URL, limit: Int) async throws -> Data {
+    static func execute(
+        _ arguments: [String],
+        root: URL,
+        limit: Int,
+        environment: [String: String] = [:]
+    ) async throws -> Data {
         let command = ReviewGitCommand()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
-                    continuation.resume(with: Result { try command.run(arguments: arguments, root: root, limit: limit) })
+                    continuation.resume(with: Result {
+                        try command.run(arguments: arguments, root: root, limit: limit, environment: environment)
+                    })
                 }
             }
         } onCancel: {
@@ -198,29 +235,92 @@ enum ReviewGit {
     /// after it says it is done.
     private static func selector(for layer: ReviewLayer, in scope: ReviewScope, root: URL) async throws -> [String]? {
         switch layer {
-        case .staged: ["--cached"]
-        case .unstaged: []
+        case .turn:
+            guard case let .turn(baseTree, _) = scope else { return nil }
+            return ["--cached", baseTree]
+        case .staged: return ["--cached"]
+        case .unstaged: return []
         case .branch:
             if let base = scope.base {
-                try await [mergeBase(base, root: root)]
+                return try await [mergeBase(base, root: root)]
             } else {
-                nil
+                return nil
             }
-        case .untracked: nil
+        case .untracked: return nil
         }
     }
 
     static func files(at root: URL, scope: ReviewScope = .uncommitted) async throws -> [ReviewFile] {
+        let environment = try await turnEnvironment(for: scope, root: root, refresh: true)
+        return try await files(at: root, scope: scope, environment: environment)
+    }
+
+    /// Compares a fresh private turn index to the snapshot currently displayed
+    /// without publishing it. A poll must observe newer work, not make that
+    /// newer work the source that later file loads use.
+    static func hasChanges(
+        at root: URL,
+        scope: ReviewScope,
+        comparedTo displayedFiles: [ReviewFile],
+        currentDiff: ReviewDiff?
+    ) async throws -> Bool {
+        if scope.isTurn {
+            let locations = try await turnIndexLocations(for: scope, root: root)
+            let stagingIndex = try await captureTurnIndex(at: locations, root: root)
+            defer { try? FileManager.default.removeItem(at: stagingIndex) }
+            let environment = ["GIT_INDEX_FILE": stagingIndex.path]
+            let latestFiles = try await files(at: root, scope: scope, environment: environment)
+            guard latestFiles == displayedFiles else { return true }
+            guard let currentDiff else { return false }
+            // Conflict rows deliberately have no patch fingerprint. Their
+            // presence and status were compared in the list above, so asking
+            // for a patch would turn that empty sentinel into a false change.
+            guard currentDiff.file.status != .unmerged else { return false }
+            let latest = try await patchFingerprint(
+                currentDiff.file,
+                root: root,
+                scope: scope,
+                environment: environment
+            )
+            return latest.fingerprint != currentDiff.fingerprint
+        }
+
+        let latestFiles = try await files(at: root, scope: scope)
+        guard latestFiles == displayedFiles else { return true }
+        guard let currentDiff else { return false }
+        return try await fingerprint(currentDiff.file, root: root, scope: scope) != currentDiff.fingerprint
+    }
+
+    private static func files(
+        at root: URL,
+        scope: ReviewScope,
+        environment: [String: String]
+    ) async throws -> [ReviewFile] {
         var result: [ReviewFile] = []
         for layer in scope.layers {
             guard let selector = try await selector(for: layer, in: scope, root: root) else { continue }
             let args = ["diff"] + selector + diffOptions + ["--name-status", "-z", "-M"]
-            result += try await parseNames(command(args, root: root), layer: layer)
+            result += try await parseNames(command(args, root: root, environment: environment), layer: layer)
         }
-        // Untracked files are in neither tree, so they are listed the same way
-        // whichever the review is of.
-        let untracked = try await splitPaths(command(["ls-files", "--others", "--exclude-standard", "-z"], root: root))
-        result += untracked.map { ReviewFile(path: $0, layer: .untracked, status: .untracked) }
+        // Ordinary scopes need a separate untracked listing. A turn's private
+        // index already contains those additions in its single layer.
+        if scope.layers.contains(.untracked) {
+            let untracked = try await splitPaths(command(["ls-files", "--others", "--exclude-standard", "-z"], root: root))
+            result += untracked.map { ReviewFile(path: $0, layer: .untracked, status: .untracked) }
+        }
+        // `git add -A` in a private turn index turns the real index's
+        // stage-1/2/3 conflict entries into one stage-0 file containing
+        // conflict markers. Preserve the real index's conflict state so turn
+        // review takes the same safe path as the ordinary review scopes.
+        if scope.isTurn {
+            let unmergedPaths = try await realIndexUnmergedPaths(at: root)
+            if !unmergedPaths.isEmpty {
+                result.removeAll { unmergedPaths.contains($0.path) }
+                result += unmergedPaths.map {
+                    ReviewFile(path: $0, layer: .turn, status: .unmerged)
+                }
+            }
+        }
         guard result.count <= maxFiles else { throw ReviewError.tooLarge }
         // Unmerged paths may occur as both U and M, and in both layers. Keyed
         // by id alone, the same conflicted path was listed twice — once staged,
@@ -247,9 +347,14 @@ enum ReviewGit {
     /// guessed number there would be worse than none.
     static func stats(at root: URL, scope: ReviewScope = .uncommitted) async throws -> [String: ReviewFileStat] {
         var result: [String: ReviewFileStat] = [:]
+        let environment = try await turnEnvironment(for: scope, root: root)
         for layer in scope.layers {
             guard let selector = try await selector(for: layer, in: scope, root: root) else { continue }
-            let data = try await command(["diff"] + selector + ["--numstat", "-z", "-M"], root: root)
+            let data = try await command(
+                ["diff"] + selector + ["--numstat", "-z", "-M"],
+                root: root,
+                environment: environment
+            )
             for (path, stat) in try parseNumstat(data) {
                 result[layer.rawValue + ":" + path] = stat
             }
@@ -364,10 +469,20 @@ enum ReviewGit {
     /// long. Byte-identical to the fingerprint `diff` returns, because both
     /// hash the same selected patch: the two disagreeing would leave the banner
     /// either permanently lit or permanently silent.
-    static func fingerprint(_ file: ReviewFile, root: URL, base: String? = nil) async throws -> String {
+    static func fingerprint(
+        _ file: ReviewFile,
+        root: URL,
+        scope: ReviewScope = .uncommitted
+    ) async throws -> String {
         try Task.checkCancellation()
         guard file.status != .unmerged else { return "" }
-        return try await patchFingerprint(file, root: root, base: base).fingerprint
+        return try await patchFingerprint(file, root: root, scope: scope).fingerprint
+    }
+
+    /// Compatibility for focused branch scenarios that name the comparison
+    /// branch directly. Production callers carry the complete scope instead.
+    static func fingerprint(_ file: ReviewFile, root: URL, base: String?) async throws -> String {
+        try await fingerprint(file, root: root, scope: base.map(ReviewScope.branch) ?? .uncommitted)
     }
 
     /// One file's diff, read the way its own layer says to read it.
@@ -377,7 +492,11 @@ enum ReviewGit {
     /// worktree, which is what keeps switching views from quietly aging out
     /// everything written in the other one. `base` is required for a
     /// `.branch` file and ignored for the rest.
-    static func diff(_ file: ReviewFile, root: URL, base: String? = nil) async throws -> ReviewDiff {
+    static func diff(
+        _ file: ReviewFile,
+        root: URL,
+        scope: ReviewScope = .uncommitted
+    ) async throws -> ReviewDiff {
         try Task.checkCancellation()
         if file.status == .unmerged {
             return ReviewDiff(
@@ -387,7 +506,13 @@ enum ReviewGit {
                 notice: String(localized: "Resolve merge conflicts before reviewing this file.")
             )
         }
-        return try await patchFingerprint(file, root: root, base: base).diff()
+        return try await patchFingerprint(file, root: root, scope: scope).diff()
+    }
+
+    /// Compatibility for focused branch scenarios that name the comparison
+    /// branch directly. Production callers carry the complete scope instead.
+    static func diff(_ file: ReviewFile, root: URL, base: String?) async throws -> ReviewDiff {
+        try await diff(file, root: root, scope: base.map(ReviewScope.branch) ?? .uncommitted)
     }
 
     /// The bytes a file's diff hashes to, and how to turn them into rows.
@@ -407,12 +532,17 @@ enum ReviewGit {
     private static func patchFingerprint(
         _ file: ReviewFile,
         root: URL,
-        base: String?
+        scope: ReviewScope,
+        environment suppliedEnvironment: [String: String]? = nil
     ) async throws -> PatchSnapshot {
-        let head = try await command(["rev-parse", "--revs-only", "HEAD"], root: root)
+        let head = file.layer == .turn
+            ? nil
+            : try await command(["rev-parse", "--revs-only", "HEAD"], root: root)
         if file.layer == .untracked {
             let snapshot = try await Task.detached(priority: .userInitiated) { try untrackedDiff(file, root: root) }.value
-            guard try await head == command(["rev-parse", "--revs-only", "HEAD"], root: root) else { throw ReviewError.checkInterrupted }
+            guard try await head == command(["rev-parse", "--revs-only", "HEAD"], root: root) else {
+                throw ReviewError.checkInterrupted
+            }
             // Without `HEAD`: an untracked file's content does not depend on
             // it, and folding it in meant an unrelated commit aged out every
             // comment in the review. `HEAD` is still read either side of the
@@ -428,22 +558,22 @@ enum ReviewGit {
             }
         }
         let paths = file.oldPath.map { [$0, file.path] } ?? [file.path]
-        let selector: [String]
-        switch file.layer {
-        case .staged:
-            selector = ["--cached"]
-        case .branch:
-            // Defensive: the mode cannot be entered without a base, so this
-            // only fires if a draft outlives the branch it was written on.
-            guard let base else { throw ReviewError.gitFailed }
-            selector = try await [mergeBase(base, root: root)]
-        case .unstaged, .untracked:
-            selector = []
+        guard let selector = try await selector(for: file.layer, in: scope, root: root) else {
+            throw ReviewError.gitFailed
         }
+        let environment = try await readEnvironment(
+            for: scope,
+            root: root,
+            supplied: suppliedEnvironment
+        )
         let args = ["diff"] + selector + diffOptions + ["-M", "--unified=3", "--"] + paths
-        let data = try await command(args, root: root)
+        let data = try await command(args, root: root, environment: environment)
         guard !data.contains(0), let patch = String(data: data, encoding: .utf8) else { throw ReviewError.unsupported }
-        guard try await head == command(["rev-parse", "--revs-only", "HEAD"], root: root) else { throw ReviewError.checkInterrupted }
+        if let head {
+            guard try await head == command(["rev-parse", "--revs-only", "HEAD"], root: root) else {
+                throw ReviewError.checkInterrupted
+            }
+        }
         let selectedPatch = try filePatch(patch, file: file)
         let selectedData = Data(selectedPatch.utf8)
         // The patch bytes alone, on every layer. A staged patch is `HEAD`
@@ -555,18 +685,25 @@ enum ReviewGit {
     /// The new side of a file, whole, for unfolding the context a unified diff
     /// leaves out.
     ///
-    /// The new side is the working copy for every layer but the staged one,
-    /// where it is the index — a staged diff is `HEAD` against the index, so
-    /// the file on disk can hold work the reader is not looking at. Answers
-    /// with nothing rather than throwing: this is an offer of more context,
-    /// and a file that cannot be read simply does not make it.
-    static func source(_ file: ReviewFile, root: URL) async -> [String] {
-        let data: Data? = if file.layer == .staged {
+    /// The new side is the working copy except for index-backed layers. Both
+    /// staged and turn diffs read an index, so their unfolded context must use
+    /// that same index rather than a worktree that may have moved since the
+    /// snapshot was selected.
+    static func source(
+        _ file: ReviewFile,
+        root: URL,
+        scope: ReviewScope = .uncommitted
+    ) async -> [String] {
+        let data: Data?
+        if file.layer == .staged || file.layer == .turn {
             // `:./path` rather than `:path`: Git reads a leading digit and
             // colon as a stage number, so a repository file named `0:notes.txt`
             // asked the index for stage 0 of `notes.txt`. The command runs with
             // the worktree root as its directory, so `./` names the same file.
-            try? await command(["show", ":./" + file.path], root: root)
+            guard let environment = await sourceEnvironment(for: file, scope: scope, root: root) else {
+                return []
+            }
+            data = try? await command(["show", ":./" + file.path], root: root, environment: environment)
         } else {
             // Read rather than mapped: an agent working in the same worktree
             // rewrites these files while this surface is open, and a mapping
@@ -576,7 +713,7 @@ enum ReviewGit {
             // read: without it, a path whose parent is a symlink showed a file
             // from outside the worktree under the reviewed file's own line
             // numbers, and a small diff on a large file read the whole thing.
-            try? worktreeFile(at: root.appendingPathComponent(file.path), root: root)
+            data = try? worktreeFile(at: root.appendingPathComponent(file.path), root: root)
         }
         guard let data, data.count <= maxDiffBytes, !data.contains(0),
               let text = String(data: data, encoding: .utf8)
@@ -636,7 +773,116 @@ enum ReviewGit {
         )
     }
 
-    private static func command(_ args: [String], root: URL) async throws -> Data {
-        try await ReviewGitCommand.execute(args, root: root, limit: maxDiffBytes)
+    /// The displayed private index is refreshed only by an explicit `files`
+    /// read. Polling builds an unpublished index so it can detect changes
+    /// without changing the snapshot used by later file loads.
+    private static func turnEnvironment(
+        for scope: ReviewScope,
+        root: URL,
+        refresh: Bool = false
+    ) async throws -> [String: String] {
+        guard scope.isTurn else { return [:] }
+        let locations = try await turnIndexLocations(for: scope, root: root)
+        if refresh {
+            let publication = ReviewTurnIndexPublisher.shared.begin(for: locations.readIndex.path)
+            let stagingIndex = try await captureTurnIndex(at: locations, root: root)
+            defer { try? FileManager.default.removeItem(at: stagingIndex) }
+            // Git readers keep the inode they opened, so they see either the
+            // complete old snapshot or the complete new one. Publishing only
+            // after `add -A` finishes prevents readers from sharing a
+            // partially rewritten index.
+            try ReviewTurnIndexPublisher.shared.publish(
+                stagingPath: stagingIndex.path,
+                to: locations.readIndex.path,
+                token: publication
+            )
+        }
+        return ["GIT_INDEX_FILE": locations.readIndex.path]
+    }
+
+    private struct TurnIndexLocations {
+        let limpidURL: URL
+        let realIndex: URL
+        let readIndex: URL
+    }
+
+    private static func turnIndexLocations(for scope: ReviewScope, root: URL) async throws -> TurnIndexLocations {
+        guard case let .turn(baseTree, paneID) = scope else { throw ReviewError.gitFailed }
+        do {
+            _ = try await command(["cat-file", "-e", baseTree + "^{tree}"], root: root)
+        } catch {
+            throw ReviewError.turnBaseMissing
+        }
+        let data = try await command(["rev-parse", "--git-dir"], root: root)
+        guard var gitDirectory = String(data: data, encoding: .utf8), gitDirectory.hasSuffix("\n") else {
+            throw ReviewError.gitFailed
+        }
+        gitDirectory.removeLast()
+        let gitURL = URL(fileURLWithPath: gitDirectory, relativeTo: root).standardizedFileURL
+        let limpidURL = gitURL.appendingPathComponent("limpid", isDirectory: true)
+        let paneKey = paneID.uuidString.lowercased()
+        let readIndex = limpidURL.appendingPathComponent("turn-\(paneKey).read.index")
+        return TurnIndexLocations(
+            limpidURL: limpidURL,
+            realIndex: gitURL.appendingPathComponent("index"),
+            readIndex: readIndex
+        )
+    }
+
+    private static func captureTurnIndex(at locations: TurnIndexLocations, root: URL) async throws -> URL {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: locations.limpidURL, withIntermediateDirectories: true)
+        let stagingIndex = locations.limpidURL.appendingPathComponent(
+            "turn-read-\(UUID().uuidString.lowercased()).index"
+        )
+        try? fileManager.copyItem(at: locations.realIndex, to: stagingIndex)
+        do {
+            _ = try await command(
+                ["add", "-A"],
+                root: root,
+                environment: ["GIT_INDEX_FILE": stagingIndex.path]
+            )
+            return stagingIndex
+        } catch {
+            try? fileManager.removeItem(at: stagingIndex)
+            try? fileManager.removeItem(atPath: stagingIndex.path + ".lock")
+            throw error
+        }
+    }
+
+    private static func realIndexUnmergedPaths(at root: URL) async throws -> Set<String> {
+        let data = try await command(["diff", "--name-only", "--diff-filter=U", "-z"], root: root)
+        let paths = try splitPaths(data)
+        return Set(paths)
+    }
+
+    private static func readEnvironment(
+        for scope: ReviewScope,
+        root: URL,
+        supplied: [String: String]?
+    ) async throws -> [String: String] {
+        if let supplied {
+            return supplied
+        }
+        return try await turnEnvironment(for: scope, root: root)
+    }
+
+    private static func sourceEnvironment(
+        for file: ReviewFile,
+        scope: ReviewScope,
+        root: URL
+    ) async -> [String: String]? {
+        guard file.layer == .turn else { return [:] }
+        // Falling back to the real index would splice unrelated content into
+        // a turn diff. No optional context is safer than the wrong snapshot.
+        return try? await turnEnvironment(for: scope, root: root)
+    }
+
+    private static func command(
+        _ args: [String],
+        root: URL,
+        environment: [String: String] = [:]
+    ) async throws -> Data {
+        try await ReviewGitCommand.execute(args, root: root, limit: maxDiffBytes, environment: environment)
     }
 }

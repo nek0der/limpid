@@ -45,6 +45,17 @@ struct PaneAreaView: View {
         return reviewOriginPaneID
     }
 
+    /// A stable task identity for validating only transient turn review. An
+    /// empty value means Project / Worktree review or an owner that has not
+    /// reported OSC 7 yet, neither of which should run Git discovery here.
+    private var transientReviewLocationID: String {
+        guard !reviewPresentation.isTransientOwnerTmuxHosted,
+              let owner = reviewPresentation.transientOwnerPaneID,
+              let path = session.workingDirectory(paneID: owner)
+        else { return "" }
+        return "\(owner.uuidString):\(path)"
+    }
+
     var body: some View {
         Group {
             if let directory = reviewPresentation.directory {
@@ -240,14 +251,35 @@ struct PaneAreaView: View {
             guard reviewPresentation.isPresented else { return }
             registry.updateOcclusion(visibleIDs: visiblePaneIDs)
         }
+        .task(id: transientReviewLocationID) {
+            guard !reviewPresentation.isTransientOwnerTmuxHosted,
+                  let owner = reviewPresentation.transientOwnerPaneID,
+                  let opening = reviewPresentation.opening,
+                  let path = session.workingDirectory(paneID: owner)
+            else { return }
+            let root = try? await ReviewGit.root(at: URL(fileURLWithPath: path))
+            guard !Task.isCancelled,
+                  reviewPresentation.opening == opening,
+                  reviewPresentation.transientOwnerPaneID == owner,
+                  session.workingDirectory(paneID: owner) == path
+            else { return }
+            reviewPresentation.transientOwnerRepositoryChanged(to: root)
+        }
         // Switching project or worktree means reviewing that one. Closing
         // instead would be defensible, but it throws away the surface for a
         // move the user makes constantly.
         .onChange(of: session.activeContainerID) { _, _ in
             guard reviewPresentation.isPresented else { return }
             let paneID = renderableTab?.splitTree.effectiveFocusedLeafID
+            if reviewPresentation.transientOwnerPaneID != nil {
+                reviewPresentation.focusedPaneChanged(to: paneID)
+                return
+            }
             if let directory = ReviewAgents.directory(session: session) {
-                reviewPresentation.retarget(directory, originPaneID: paneID)
+                let current = reviewPresentation.directory?.resolvingSymlinksInPath()
+                if current != directory.resolvingSymlinksInPath() {
+                    reviewPresentation.retarget(directory, originPaneID: paneID)
+                }
             } else {
                 reviewPresentation.close()
             }

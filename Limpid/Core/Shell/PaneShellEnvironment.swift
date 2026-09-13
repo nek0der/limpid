@@ -90,7 +90,7 @@ enum PaneShellEnvironment {
     /// have started under a plainer name, where our global options
     /// would land on their sessions.
     static func defaultAgentSocketName() -> String {
-        "limpid-" + (Bundle.main.bundleIdentifier ?? "unknown")
+        "limpid-" + LimpidPaths.bundleID
     }
 
     /// Used when the app was launched without inheriting a `PATH` at all,

@@ -228,6 +228,26 @@ enum TmuxClientProbe {
         return parsePaneTTY(output)
     }
 
+    /// The working directory of the active pane receiving a client's input.
+    ///
+    /// The surface-side OSC 7 value belongs to the outer shell that launched
+    /// the tmux client. Asking the server is the only way to validate the
+    /// repository that an insertion will actually reach after reattachment.
+    static func activePanePath(
+        tmuxPath: String,
+        socketPath: String,
+        sessionID: String,
+        timeout: TimeInterval = 0.5
+    ) -> String? {
+        guard let output = runTmux(
+            tmuxPath: tmuxPath,
+            socketPath: socketPath,
+            arguments: ["display-message", "-p", "-t", sessionID, "#{pane_current_path}"],
+            timeout: timeout
+        ) else { return nil }
+        return parsePanePath(output)
+    }
+
     /// `nil` unless tmux answered with one device path. A server that cannot
     /// resolve the target prints an error to stderr and an empty line here.
     static func parsePaneTTY(_ output: String) -> String? {
@@ -235,6 +255,15 @@ enum TmuxClientProbe {
         let tty = String(line)
         guard tty.hasPrefix("/dev/"), !tty.contains(" ") else { return nil }
         return tty
+    }
+
+    /// `nil` unless tmux answered with one absolute path. Spaces are valid in
+    /// a working directory, so only the line boundary is structural.
+    static func parsePanePath(_ output: String) -> String? {
+        guard let line = output.split(separator: "\n", omittingEmptySubsequences: true).first else { return nil }
+        let path = String(line)
+        guard path.hasPrefix("/") else { return nil }
+        return path
     }
 
     /// `nil` on any failure — a dead socket, a wedged server, a tmux

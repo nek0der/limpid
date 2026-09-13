@@ -121,6 +121,15 @@ extract() {
   printf '%s' "$payload" | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' | head -n1
 }
 
+cwd="$(extract cwd)"
+turn_base_tree=""
+turn_root=""
+if [ "$(extract hook_event_name)" = "UserPromptSubmit" ] && command -v limpid_snapshot_turn_base >/dev/null 2>&1; then
+  limpid_snapshot_turn_base "${cwd:-$(pwd)}" "$pane_id"
+  turn_base_tree="$LIMPID_TURN_BASE_TREE"
+  turn_root="$LIMPID_TURN_ROOT"
+fi
+
 # Escape a string for safe embedding as a JSON string value: fold tabs
 # / CR to a space, escape backslash + double-quote, fold real newlines
 # to `\n`. Replaces the old sanitize() that blanked any value with `"`
@@ -252,6 +261,8 @@ if [ -n "$new_state" ]; then
   prev_session_started=""
   prev_state=""
   prev_state_episode=""
+  prev_turn_base_tree=""
+  prev_turn_root=""
   if [ -f "$state_final" ]; then
     prev_run_started="$(plutil -extract runStartedAt raw -o - "$state_final" 2>/dev/null)"
     prev_last_prompt="$(plutil -extract lastPrompt raw -o - "$state_final" 2>/dev/null)"
@@ -259,6 +270,8 @@ if [ -n "$new_state" ]; then
     prev_session_started="$(plutil -extract sessionStartedAt raw -o - "$state_final" 2>/dev/null)"
     prev_state="$(plutil -extract state raw -o - "$state_final" 2>/dev/null)"
     prev_state_episode="$(plutil -extract stateEpisodeToken raw -o - "$state_final" 2>/dev/null)"
+    prev_turn_base_tree="$(plutil -extract turnBaseTree raw -o - "$state_final" 2>/dev/null)"
+    prev_turn_root="$(plutil -extract turnRoot raw -o - "$state_final" 2>/dev/null)"
   fi
   case "$hook_event" in
     UserPromptSubmit)
@@ -306,6 +319,20 @@ if [ -n "$new_state" ]; then
       session_started="$prev_session_started"
       ;;
   esac
+  case "$hook_event" in
+    UserPromptSubmit) ;;
+    SessionEnd)
+      if command -v limpid_remove_turn_snapshot >/dev/null 2>&1; then
+        limpid_remove_turn_snapshot "${prev_turn_root:-${cwd:-$(pwd)}}" "$pane_id"
+      fi
+      turn_base_tree=""
+      turn_root=""
+      ;;
+    *)
+      turn_base_tree="$prev_turn_base_tree"
+      turn_root="$prev_turn_root"
+      ;;
+  esac
   tokens_field=""
   if [ -n "$current_token_count" ]; then
     tokens_field=",\"contextTokens\":$current_token_count"
@@ -336,6 +363,10 @@ if [ -n "$new_state" ]; then
   if [ -n "$session_started" ]; then
     session_started_field=",\"sessionStartedAt\":\"$session_started\""
   fi
+  turn_snapshot_field=""
+  if [ -n "$turn_base_tree" ] && [ -n "$turn_root" ]; then
+    turn_snapshot_field=",\"turnBaseTree\":\"$turn_base_tree\",\"turnRoot\":\"$(json_escape "$turn_root")\""
+  fi
   revision=1
   if command -v limpid_next_revision >/dev/null 2>&1; then
     revision="$(limpid_next_revision "$state_final")"
@@ -351,7 +382,7 @@ if [ -n "$new_state" ]; then
     runtime_field="$runtime_field,\"tmuxSocketPath\":\"$(json_escape "$tmux_socket")\",\"tmuxPaneId\":\"$tmux_pane\",\"tmuxServerPID\":\"$LIMPID_RUNTIME_TMUX_SERVER_PID\",\"tmuxServerStartedAt\":\"$LIMPID_RUNTIME_TMUX_SERVER_START\""
   fi
   {
-    printf '{"schemaVersion":2,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s%s%s%s}\n' \
+    printf '{"schemaVersion":2,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s%s%s%s%s}\n' \
       "$pane_id" \
       "$new_state" \
       "$detail_safe" \
@@ -364,6 +395,7 @@ if [ -n "$new_state" ]; then
       "$prompt_field" \
       "$first_prompt_field" \
       "$session_started_field" \
+      "$turn_snapshot_field" \
       "$episode_field" \
       "$runtime_field"
   } > "$state_tmp" 2>/dev/null && mv -f "$state_tmp" "$state_final" 2>/dev/null || rm -f "$state_tmp" 2>/dev/null

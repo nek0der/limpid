@@ -36,6 +36,10 @@ struct CodexAgentStateRecord: AgentLifecycleRecord, Equatable {
     var pid: String?
     /// The most recent user prompt observed via UserPromptSubmit.
     var lastPrompt: String?
+    /// Base for showing what changed since the prompt was sent. Missing for
+    /// older records and non-Git working directories.
+    var turnBaseTree: String?
+    var turnRoot: String?
     /// The session's opening user prompt, captured once and never
     /// overwritten. Codex has no auto-generated conversation title, so
     /// this is the only candidate `CodexAgentStateTracker` sends through the
