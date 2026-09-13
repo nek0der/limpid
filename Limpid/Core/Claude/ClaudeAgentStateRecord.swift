@@ -47,10 +47,16 @@ struct ClaudeAgentStateRecord: AgentLifecycleRecord, Equatable {
     /// multi-line input).
     var lastPrompt: String?
     /// First user prompt of the session, captured once at the first
-    /// `UserPromptSubmit` and never overwritten. Used by the hook's
-    /// tab-title fallback (OSC 2) when Claude hasn't generated an
-    /// `ai-title` yet.
+    /// `UserPromptSubmit` and never overwritten. Used by the Rust title
+    /// reducer when Claude has not supplied a better title.
     var firstPrompt: String?
+    /// Provider conversation ID copied from the hook's `session_id`.
+    var sessionId: String?
+    /// Claude's documented session title or a later explicit rename observed
+    /// through the transcript compatibility adapter.
+    var providerSessionTitle: String?
+    /// Claude-generated transcript title retained as a compatibility fallback.
+    var providerGeneratedTitle: String?
     /// ISO-8601 instant the `SessionStart` hook fired for this pane.
     /// The title selector picks which pane owns the tab label when
     /// more than one Claude / Codex session is alive — most recent

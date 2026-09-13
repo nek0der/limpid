@@ -28,10 +28,9 @@ import Foundation
 /// the matching tracker (`Claude*`/`Codex*AgentStateTracker`)
 /// rewrites this struct to match on every hook event.
 ///
-/// Codex populates `firstPrompt` (its only meaningful tab title since
-/// Codex emits no auto-title and Limpid suppresses its OSC 2 pwd
-/// title); Claude leaves it nil and lets `ai-title` / OSC 2 drive the
-/// label. All other fields apply to both.
+/// Codex populates `firstPrompt`; Claude also supplies its provider title
+/// observations so the Rust reducer can select the automatic tab label.
+/// All other fields apply to both.
 struct AgentBadge: Codable, Equatable, AgentNotificationBadge {
     /// Strict lifecycle. The icon shape + tint come from
     /// `state.iconName` / `state.iconColor`.
@@ -72,11 +71,22 @@ struct AgentBadge: Codable, Equatable, AgentNotificationBadge {
     /// or when shell extraction missed the field.
     var lastPrompt: String?
 
-    /// Codex-only: the session's opening prompt, captured once at the
-    /// first `UserPromptSubmit` and held for the session. Drives the
-    /// Codex tab title. Always `nil` for Claude — Claude uses
-    /// `ai-title` / OSC 2 instead.
+    /// Session opening prompt, captured once and held as the lowest-priority
+    /// agent title. Codex applies it directly; Claude passes it through Rust.
     var firstPrompt: String?
+
+    /// Provider conversation ID associated with the title observations.
+    /// Missing for records created before formal title integration.
+    var conversationID: String?
+
+    /// Latest explicit provider title. For Claude this is the documented
+    /// `SessionStart.session_title` or a later transcript compatibility
+    /// observation of `customTitle`.
+    var providerSessionTitle: String?
+
+    /// Latest provider-generated title. Claude transcript parsing supplies
+    /// this only as a compatibility fallback.
+    var providerGeneratedTitle: String?
 
     /// Wall-clock instant the agent session began (`SessionStart`).
     /// `Tab.latestAgentSessionPaneID` compares this across Claude /

@@ -38,8 +38,7 @@ enum ClaudeAgent: AgentSpec {
         let detail = (record.detail?.isEmpty == false) ? record.detail : nil
         let updatedAt = AgentDateParsing.parseISO8601(record.updatedAt) ?? Date()
         let lastPrompt = (record.lastPrompt?.isEmpty == false) ? record.lastPrompt : nil
-        // Claude leaves `firstPrompt` nil — its tab title comes from
-        // `ai-title` / OSC 2 instead.
+        let firstPrompt = (record.firstPrompt?.isEmpty == false) ? record.firstPrompt : nil
         return AgentBadge(
             state: state,
             detail: detail,
@@ -48,7 +47,10 @@ enum ClaudeAgent: AgentSpec {
             isTmuxHosted: record.isTmuxHosted,
             updatedAt: updatedAt,
             lastPrompt: lastPrompt,
-            firstPrompt: nil,
+            firstPrompt: firstPrompt,
+            conversationID: record.sessionId,
+            providerSessionTitle: record.providerSessionTitle,
+            providerGeneratedTitle: record.providerGeneratedTitle,
             sessionStartedAt: AgentDateParsing.parseOptional(record.sessionStartedAt)
         )
     }
@@ -73,5 +75,21 @@ enum ClaudeAgent: AgentSpec {
             : "claude"
         guard let cwd, !cwd.isEmpty else { return base }
         return "cd \(ShellQuote.single(cwd)) && \(base)"
+    }
+
+    /// Rust owns automatic title precedence. Swift only selects the pane whose
+    /// conversation currently owns the tab and applies the returned projection.
+    static func applyTabTitle(_ tab: inout Tab, badges: [UUID: AgentBadge]) {
+        guard let owner = tab.latestAgentSessionPaneID,
+              let badge = badges[owner],
+              badge.conversationID?.isEmpty == false,
+              let title = LimpidRustTitleResolver.resolve(
+                  providerSessionTitle: badge.providerSessionTitle,
+                  providerGeneratedTitle: badge.providerGeneratedTitle,
+                  firstPrompt: badge.firstPrompt
+              ),
+              tab.title != title
+        else { return }
+        tab.title = title
     }
 }
