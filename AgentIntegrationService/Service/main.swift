@@ -7,9 +7,15 @@ private final class AgentIntegrationConnection: NSObject, AgentIntegrationXPCPro
     private let role: AgentIntegrationRole
     private let runID: UUID?
     private let session: RustApprovalSession
+    private let serviceArtifact: AgentIntegrationServiceArtifact
 
-    init(role: AgentIntegrationRole, service: RustApprovalService) throws {
+    init(
+        role: AgentIntegrationRole,
+        service: RustApprovalService,
+        serviceArtifact: AgentIntegrationServiceArtifact
+    ) throws {
         self.role = role
+        self.serviceArtifact = serviceArtifact
         switch role {
         case .requester:
             let runID = UUID()
@@ -26,7 +32,8 @@ private final class AgentIntegrationConnection: NSObject, AgentIntegrationXPCPro
             let response = AgentIntegrationSessionBootstrap(
                 role: role,
                 runID: runID,
-                serviceProcessID: ProcessInfo.processInfo.processIdentifier
+                serviceProcessID: ProcessInfo.processInfo.processIdentifier,
+                serviceArtifact: serviceArtifact
             )
             try reply(JSONEncoder().encode(response), nil)
         } catch {
@@ -52,15 +59,25 @@ private final class AgentIntegrationConnection: NSObject, AgentIntegrationXPCPro
 private final class AgentIntegrationListenerDelegate: NSObject, NSXPCListenerDelegate {
     private let role: AgentIntegrationRole
     private let service: RustApprovalService
+    private let serviceArtifact: AgentIntegrationServiceArtifact
 
-    init(role: AgentIntegrationRole, service: RustApprovalService) {
+    init(
+        role: AgentIntegrationRole,
+        service: RustApprovalService,
+        serviceArtifact: AgentIntegrationServiceArtifact
+    ) {
         self.role = role
         self.service = service
+        self.serviceArtifact = serviceArtifact
     }
 
     func listener(_: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
         do {
-            let exportedObject = try AgentIntegrationConnection(role: role, service: service)
+            let exportedObject = try AgentIntegrationConnection(
+                role: role,
+                service: service,
+                serviceArtifact: serviceArtifact
+            )
             connection.exportedInterface = NSXPCInterface(with: (any AgentIntegrationXPCProtocol).self)
             connection.exportedObject = exportedObject
             connection.activate()
@@ -79,14 +96,23 @@ private final class AgentIntegrationServiceRuntime {
 
     init() throws {
         let service = try RustApprovalService(maximumRecords: AgentIntegrationConfiguration.maximumRecords)
+        let serviceArtifact = try AgentIntegrationServiceArtifact.bundled(in: Bundle.main.bundleURL)
         requesterListener = NSXPCListener(
             machServiceName: AgentIntegrationConfiguration.requesterMachService
         )
         controllerListener = NSXPCListener(
             machServiceName: AgentIntegrationConfiguration.controllerMachService
         )
-        requesterDelegate = AgentIntegrationListenerDelegate(role: .requester, service: service)
-        controllerDelegate = AgentIntegrationListenerDelegate(role: .controller, service: service)
+        requesterDelegate = AgentIntegrationListenerDelegate(
+            role: .requester,
+            service: service,
+            serviceArtifact: serviceArtifact
+        )
+        controllerDelegate = AgentIntegrationListenerDelegate(
+            role: .controller,
+            service: service,
+            serviceArtifact: serviceArtifact
+        )
 
         // Foundation rejects mismatched peers before invoking either delegate,
         // so untrusted bytes never reach an exported object or the Rust decoder.

@@ -43,6 +43,10 @@ struct AgentIntegrationSessionBootstrap: Codable, Sendable {
     let role: AgentIntegrationRole
     let runID: UUID?
     let serviceProcessID: Int32
+    /// Authenticated content identity of the process serving this connection.
+    /// Optional so an app can fail closed while an older additive-v1 service
+    /// is still running during the first post-update reconciliation.
+    let serviceArtifact: AgentIntegrationServiceArtifact?
 }
 
 enum AgentIntegrationSigning {
@@ -58,6 +62,33 @@ enum AgentIntegrationSigning {
             .joined(separator: " or ")
         return "anchor apple generic and certificate leaf[subject.OU] = \"\(teamIdentifier)\" "
             + "and (\(identifiers))"
+    }
+
+    static func validateStaticCode(at url: URL, identifier: String) throws {
+        let requirementText = try requirement(peerIdentifiers: [identifier])
+        var requirement: SecRequirement?
+        let requirementStatus = SecRequirementCreateWithString(
+            requirementText as CFString,
+            [],
+            &requirement
+        )
+        guard requirementStatus == errSecSuccess, let requirement else {
+            throw AgentIntegrationError.securityStatus(requirementStatus)
+        }
+
+        var staticCode: SecStaticCode?
+        let createStatus = SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode)
+        guard createStatus == errSecSuccess, let staticCode else {
+            throw AgentIntegrationError.securityStatus(createStatus)
+        }
+        let validationStatus = SecStaticCodeCheckValidity(
+            staticCode,
+            SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckAllArchitectures),
+            requirement
+        )
+        guard validationStatus == errSecSuccess else {
+            throw AgentIntegrationError.securityStatus(validationStatus)
+        }
     }
 
     private static func currentTeamIdentifier() throws -> String? {

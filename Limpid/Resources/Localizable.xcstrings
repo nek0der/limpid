@@ -31,6 +31,194 @@
         }
       }
     },
+    "Allow once": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow once"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今回のみ許可"
+          }
+        }
+      }
+    },
+    "Approval request": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approval request"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "承認リクエスト"
+          }
+        }
+      }
+    },
+    "Close approval": {
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Close approval" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "承認を閉じる" }
+        }
+      }
+    },
+    "Sending approval": {
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Sending approval" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "承認を送信中" }
+        }
+      }
+    },
+    "Sending denial": {
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Sending denial" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "拒否を送信中" }
+        }
+      }
+    },
+    "Sending…": {
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Sending…" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "送信中…" }
+        }
+      }
+    },
+    "Tool input": {
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Tool input" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "ツール入力" }
+        }
+      }
+    },
+    "Enable Limpid in System Settings → General → Login Items & Extensions, then return to Limpid.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable Limpid in System Settings → General → Login Items & Extensions, then return to Limpid."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム設定 → 一般 → ログイン項目と機能拡張で Limpid を有効にしてから、Limpid に戻ってください。"
+          }
+        }
+      }
+    },
+    "Limpid could not start its approval service. Claude and Codex will use their native permission prompts.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid could not start its approval service. Claude and Codex will use their native permission prompts."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid の承認サービスを起動できませんでした。Claude と Codex はそれぞれの標準の許可確認を使用します。"
+          }
+        }
+      }
+    },
+    "Native approvals are unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native approvals are unavailable"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネイティブ承認を利用できません"
+          }
+        }
+      }
+    },
+    "Not Now": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not Now"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今はしない"
+          }
+        }
+      }
+    },
+    "Open Login Items": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Login Items"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログイン項目を開く"
+          }
+        }
+      }
+    },
+    "Open approval for %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Open approval for %@" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "%@ の承認を開く" }
+        }
+      }
+    },
+    "The bundled approval service could not be found. Reinstall Limpid and try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The bundled approval service could not be found. Reinstall Limpid and try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同梱された承認サービスが見つかりません。Limpid を再インストールしてから、もう一度お試しください。"
+          }
+        }
+      }
+    },
     "Claude hit an error": {
       "localizations": {
         "ja": {

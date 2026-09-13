@@ -13,63 +13,87 @@ import SwiftUI
 /// session has not yet been associated with a pane.
 struct ApprovalAttentionRow: View {
     let approval: ApprovalPresentation
-    let isResolving: Bool
-    let onAllow: () -> Void
-    let onDeny: () -> Void
+    let timestamp: Date
+    let now: Date
+    let onPresent: () -> Void
+    let onPreviewEnd: () -> Void
     let onTap: () -> Void
-    @State private var showsDetails = false
+    let onAnchorChange: (CGRect) -> Void
+    @State private var isHovering = false
+    @FocusState private var isFocused: Bool
+
+    private var accessibilityTarget: String {
+        "\(approval.provider.rawValue.capitalized) — \(approval.toolName)"
+    }
+
+    private var waitLabel: String {
+        let elapsed = max(0, now.timeIntervalSince(timestamp))
+        if elapsed < 60 {
+            return String(localized: "just now")
+        }
+        return Duration.seconds(elapsed).formatted(
+            .units(allowed: [.days, .hours, .minutes], width: .narrow, maximumUnitCount: 1)
+        )
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        Button(action: onTap) {
             HStack(spacing: 6) {
                 Image(systemName: "questionmark.circle.fill")
                     .font(.system(size: 13))
                     .foregroundStyle(.orange)
                     .accessibilityHidden(true)
-                Text(verbatim: "\(approval.provider.rawValue.capitalized) — \(approval.toolName)")
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-            }
-            if let summary = approval.summary, !summary.isEmpty {
-                Text(verbatim: summary)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.primary.opacity(0.7))
-                    .lineLimit(2)
-            }
-            Button(showsDetails ? "Hide details" : "Show details") {
-                showsDetails.toggle()
-            }
-            .buttonStyle(.link)
-            .controlSize(.small)
-            .accessibilityLabel(Text(showsDetails ? "Hide details" : "Show details"))
-            if showsDetails {
-                ScrollView([.horizontal, .vertical]) {
-                    Text(verbatim: approval.inputDescription)
-                        .font(.system(size: 10, design: .monospaced))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: true, vertical: true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: "\(approval.provider.rawValue.capitalized) — \(approval.toolName)")
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                    if let summary = approval.summary, !summary.isEmpty {
+                        Text(verbatim: summary)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-                .frame(maxHeight: 160)
+                Spacer(minLength: 4)
+                Text(verbatim: waitLabel)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
-            HStack(spacing: 6) {
-                Button("Deny", action: onDeny)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .accessibilityLabel(Text("Deny"))
-                Button("Allow", action: onAllow)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .accessibilityLabel(Text("Allow"))
-            }
-            .disabled(isResolving)
         }
+        .buttonStyle(.plain)
+        .focused($isFocused)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, LimpidLayout.containerColumnIndentTop)
-        .padding(.vertical, 6)
+        .frame(height: 40)
+        .selectablePillBackground(isActive: isFocused, isHovering: isHovering)
         .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
-        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Open approval for \(accessibilityTarget)"))
+        .accessibilityValue(Text(verbatim: approval.summary ?? ""))
+        .onGeometryChange(for: CGRect.self) { geometry in
+            geometry.frame(in: .global)
+        } action: { frame in
+            onAnchorChange(frame)
+        }
+        .onHover { hovering in
+            isHovering = hovering
+            if hovering || isFocused {
+                onPresent()
+            } else {
+                onPreviewEnd()
+            }
+        }
+        .onChange(of: isFocused) { _, focused in
+            if focused || isHovering {
+                onPresent()
+            } else {
+                onPreviewEnd()
+            }
+        }
+        .onDisappear(perform: onPreviewEnd)
     }
 }
 

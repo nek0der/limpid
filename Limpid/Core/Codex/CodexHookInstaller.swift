@@ -38,6 +38,11 @@ final class CodexHookInstaller {
     /// `PreToolUse` handler goes away.
     let worktreeHookScriptURL: URL?
 
+    /// Bundled signed requester. It authenticates the running service and
+    /// verifies its artifact identity on every request; when unavailable it
+    /// publishes the lifecycle fallback and emits no approval decision.
+    let approvalHelperURL: URL?
+
     /// One hook event we ask Codex to call us on.
     struct SubscribedEvent {
         /// Our own name for the event. Doubles as the group segment of the
@@ -85,13 +90,16 @@ final class CodexHookInstaller {
     init(
         userCodexHome: URL? = nil,
         hookScriptURL: URL? = nil,
-        worktreeHookScriptURL: URL? = nil
+        worktreeHookScriptURL: URL? = nil,
+        approvalHelperURL: URL? = nil
     ) {
         let userCodexHome = userCodexHome ?? CodexHookInstaller.defaultUserCodexHome()
         self.userCodexHome = userCodexHome
         self.hookScriptURL = hookScriptURL ?? CodexHookInstaller.bundledHookScript()
         self.worktreeHookScriptURL = worktreeHookScriptURL
             ?? CodexHookInstaller.bundledWorktreeHookScript()
+        self.approvalHelperURL = approvalHelperURL
+            ?? CodexHookInstaller.bundledApprovalHelper()
     }
 
     /// `~/.codex/` in a normal run. Under the Xcode test host it is a
@@ -199,17 +207,9 @@ final class CodexHookInstaller {
     }
 
     private var approvalCommand: String? {
-        #if !DEBUG
-            // Release keeps the lifecycle receiver until installed-update
-            // registration and the native approval UI are enabled together.
-            return nil
-        #else
-            guard let executable = Bundle.main.executableURL else { return nil }
-            let helper = executable.deletingLastPathComponent()
-                .appendingPathComponent("AgentIntegrationHookHelper")
-            guard FileManager.default.isExecutableFile(atPath: helper.path) else { return nil }
-            return Self.executableCommand(for: helper) + " permission-request codex"
-        #endif
+        guard let helper = approvalHelperURL else { return nil }
+        guard FileManager.default.isExecutableFile(atPath: helper.path) else { return nil }
+        return Self.executableCommand(for: helper) + " permission-request codex"
     }
 
     private static func shellCommand(for url: URL) -> String {
@@ -227,6 +227,13 @@ final class CodexHookInstaller {
 
     static func bundledWorktreeHookScript() -> URL? {
         bundledScript(named: "limpid-pretool-worktree-hook")
+    }
+
+    private static func bundledApprovalHelper() -> URL? {
+        guard let executable = Bundle.main.executableURL else { return nil }
+        let helper = executable.deletingLastPathComponent()
+            .appendingPathComponent("AgentIntegrationHookHelper")
+        return FileManager.default.isExecutableFile(atPath: helper.path) ? helper : nil
     }
 
     private static func bundledScript(named name: String) -> URL? {

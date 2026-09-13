@@ -20,6 +20,7 @@ struct PaneContainerView: View {
     @Environment(\.surfaceRegistry) private var registry
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settingsStore
+    @Environment(ApprovalPresentationStore.self) private var approvalPresentation
 
     /// `1.0` when this leaf is focused, sits in a single-pane tab, or
     /// is the zoomed leaf; otherwise the user-picked
@@ -129,6 +130,22 @@ struct PaneContainerView: View {
                 .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
                 .pointerStyle(.default)
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+            if let approval = approvalPresentation.approval(forPaneID: paneID, in: session) {
+                Button {
+                    approvalPresentation.present(approval)
+                } label: {
+                    Image(systemName: "questionmark.circle.fill")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.orange)
+                        .frame(width: 24, height: 24)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(8)
+                .padding(.top, session.paneSearchStates[paneID] == nil ? 0 : 52)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .accessibilityLabel(Text("Open approval for \(approval.toolName)"))
             }
         }
         .animation(.easeOut(duration: 0.18), value: exitCode)

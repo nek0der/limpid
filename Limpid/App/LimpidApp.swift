@@ -38,6 +38,8 @@ final class AppState {
     let attention: AttentionState
     /// Transient approval projection, intentionally excluded from persistence.
     let approvalPresentation = ApprovalPresentationStore()
+    /// Keeps the bundled LaunchAgent aligned with the signed app artifact.
+    let agentIntegrationServiceRegistrar = AgentIntegrationServiceRegistrar()
     let store: SessionStore
     // Dependency graph — owned here so the rest of the app can read
     // these via explicit constructor injection instead of `.shared`.
@@ -161,9 +163,6 @@ final class AppState {
         // Limpid owns its tab model, so disable AppKit's parallel window
         // tabbing and its automatically injected menus before window creation.
         NSWindow.allowsAutomaticWindowTabbing = false
-
-        // Debug builds register the signed approval service on first launch.
-        AgentIntegrationServiceRegistrar.applyDevelopmentCommandIfPresent()
 
         let version = GhosttyFFI.version()
         let mode = GhosttyFFI.buildMode()
@@ -543,9 +542,7 @@ final class AppState {
                 self.syncGhosttyColorScheme()
             }
         }
-        #if DEBUG
-            approvalPresentation.start()
-        #endif
+        startAgentIntegration()
     }
 
     /// Pin `NSApp.appearance` to the user's Appearance preference.
@@ -892,6 +889,7 @@ struct ContentView: View {
         }
         .overlay { PRHoverCardHost() }
         .overlay { NotificationHistoryOverlay(state: state) }
+        .overlay { ApprovalCardHost() }
         .overlay {
             if let paletteState = state.session.commandPaletteState,
                state.session.paletteFieldFrame.width > 0
@@ -996,5 +994,6 @@ struct ContentView: View {
         } message: { issue in
             Text(issue.detail)
         }
+        .agentIntegrationServiceAlert(state.agentIntegrationServiceRegistrar)
     }
 }

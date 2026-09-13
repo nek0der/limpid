@@ -47,4 +47,55 @@ struct CodexHookInstallerTests {
             #expect(written.contains("[hooks.state."))
         }
     }
+
+    @Test("keeps PermissionRequest routing stable across repeated refreshes")
+    func approvalRouting_isStableAcrossRefreshes() throws {
+        try withTempDir { dir in
+            let home = dir.appendingPathComponent(".codex", isDirectory: true)
+            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            try "".write(
+                to: home.appendingPathComponent("config.toml"),
+                atomically: true,
+                encoding: .utf8
+            )
+            let lifecycle = dir.appendingPathComponent("limpid-hook")
+            let helper = dir.appendingPathComponent("AgentIntegrationHookHelper")
+            #expect(FileManager.default.createFile(atPath: lifecycle.path, contents: Data()))
+            #expect(FileManager.default.createFile(
+                atPath: helper.path,
+                contents: Data(),
+                attributes: [.posixPermissions: 0o700]
+            ))
+            let installer = CodexHookInstaller(
+                userCodexHome: home,
+                hookScriptURL: lifecycle,
+                worktreeHookScriptURL: nil,
+                approvalHelperURL: helper
+            )
+            installer.refresh()
+
+            let initial = installer.environment()["LIMPID_CODEX_HOOK_ARGS"] ?? ""
+            #expect(initial.contains("permission-request codex"))
+
+            installer.refresh()
+            let firstRefresh = installer.environment()["LIMPID_CODEX_HOOK_ARGS"] ?? ""
+            #expect(firstRefresh == initial)
+
+            installer.refresh()
+            let secondRefresh = installer.environment()["LIMPID_CODEX_HOOK_ARGS"] ?? ""
+            #expect(secondRefresh == initial)
+
+            let trust = try String(
+                contentsOf: home.appendingPathComponent("config.toml"),
+                encoding: .utf8
+            )
+            let expectedHash = CodexTrustHash.compute(
+                eventLabel: "permission_request",
+                command: CodexHookInstaller.executableCommand(for: helper)
+                    + " permission-request codex",
+                timeoutSec: 600
+            )
+            #expect(trust.contains(expectedHash))
+        }
+    }
 }

@@ -88,6 +88,27 @@ struct AgentIntegrationApprovalBridgeTests {
         #expect(didThrow)
     }
 
+    @Test func previousServiceEpochCannotResolveAfterRestart() throws {
+        let previousService = try RustApprovalService(maximumRecords: 8)
+        let previousController = try previousService.controllerSession()
+        let previousEpoch = try completeHello(on: previousController)
+
+        let currentService = try RustApprovalService(maximumRecords: 8)
+        let currentController = try currentService.controllerSession()
+        _ = try completeHello(on: currentController)
+        let response = try AgentIntegrationProbeWire.response(currentController.exchange(
+            AgentIntegrationProbeWire.resolve(
+                epoch: previousEpoch,
+                runID: UUID(),
+                requestID: UUID()
+            )
+        ))
+
+        #expect(response["type"] as? String == "error")
+        let body = try #require(response["body"] as? [String: Any])
+        #expect(body["code"] as? String == "epoch_mismatch")
+    }
+
     private func completeHello(on session: RustApprovalSession) throws -> UUID {
         let (hello, _) = try AgentIntegrationProbeWire.hello()
         return try AgentIntegrationProbeWire.epoch(

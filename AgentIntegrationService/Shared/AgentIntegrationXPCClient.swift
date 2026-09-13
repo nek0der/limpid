@@ -36,11 +36,15 @@ final class AgentIntegrationXPCClient {
         return try JSONDecoder().decode(AgentIntegrationSessionBootstrap.self, from: response)
     }
 
-    func exchange(_ request: Data) throws -> Data {
+    func exchange(_ request: Data, timeoutSeconds: Int? = nil) throws -> Data {
         guard request.count <= AgentIntegrationConfiguration.maximumXPCRequestBytes else {
             throw AgentIntegrationError.invalidArguments("The request exceeds the XPC size limit.")
         }
-        let response = try call { proxy, reply in
+        let timeoutSeconds = timeoutSeconds ?? self.timeoutSeconds
+        guard timeoutSeconds > 0 else {
+            throw AgentIntegrationError.invalidArguments("The XPC timeout must be positive.")
+        }
+        let response = try call(timeoutSeconds: timeoutSeconds) { proxy, reply in
             proxy.exchange(request, withReply: reply)
         }
         guard response.count <= AgentIntegrationConfiguration.maximumXPCResponseBytes else {
@@ -50,6 +54,7 @@ final class AgentIntegrationXPCClient {
     }
 
     private func call(
+        timeoutSeconds: Int? = nil,
         _ body: (any AgentIntegrationXPCProtocol, @escaping (Data?, NSError?) -> Void) -> Void
     ) throws -> Data {
         let result = AgentIntegrationResultBox<Data>()
@@ -70,6 +75,7 @@ final class AgentIntegrationXPCClient {
             }
             semaphore.signal()
         }
+        let timeoutSeconds = timeoutSeconds ?? self.timeoutSeconds
         guard semaphore.wait(timeout: .now() + .seconds(timeoutSeconds)) == .success else {
             throw AgentIntegrationError.timeout
         }

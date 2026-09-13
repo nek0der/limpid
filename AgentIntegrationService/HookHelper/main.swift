@@ -28,9 +28,14 @@ func run(input: Data) throws -> Data? {
         )
     }
     let request = try AgentApprovalHookRequest.decode(provider: CommandLine.arguments[2], data: input)
-    let client = try AgentIntegrationXPCClient(role: .requester, timeoutSeconds: 580)
+    let client = try AgentIntegrationXPCClient(role: .requester)
     let bootstrap = try client.openSession()
-    guard let runID = bootstrap.runID else { throw AgentIntegrationError.invalidResponse }
+    guard let runID = bootstrap.runID,
+          try AgentIntegrationServiceArtifact.matchesBundle(
+              bootstrap.serviceArtifact,
+              containing: URL(fileURLWithPath: CommandLine.arguments[0])
+          )
+    else { throw AgentIntegrationError.invalidResponse }
 
     let hello = try AgentIntegrationApprovalWire.object(from: client.exchange(
         AgentIntegrationApprovalWire.hello(clientVersion: "limpid-hook-helper-v1")
@@ -62,7 +67,8 @@ func run(input: Data) throws -> Data? {
             runID: runID,
             requestID: requestID,
             maximumWaitMilliseconds: approvalTimeoutMilliseconds
-        )
+        ),
+        timeoutSeconds: 580
     ))
     guard response["type"] as? String == "approval.result",
           let body = response["body"] as? [String: Any],
