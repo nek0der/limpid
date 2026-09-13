@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.5](https://github.com/nek0der/limpid/compare/v0.1.4...v0.1.5) (2026-09-13)
+
+
+### Features
+
+* **approval:** add native agent approvals ([#61](https://github.com/nek0der/limpid/issues/61)) ([58d3aae](https://github.com/nek0der/limpid/commit/58d3aaeaba0bfc26f57ced1593d6b84a16c41505))
+* **claude:** use session titles for tabs ([#54](https://github.com/nek0der/limpid/issues/54)) ([e68ffae](https://github.com/nek0der/limpid/commit/e68ffae23be41971bb071f7ff77ec9f5eb7cdfe9))
+* **review:** add turn-scoped review ([#59](https://github.com/nek0der/limpid/issues/59)) ([5221a7f](https://github.com/nek0der/limpid/commit/5221a7f3744da45117e94881cc81dd9d68630fc7))
+
+
+### Refactors
+
+* **codex:** route tab titles through Rust ([#56](https://github.com/nek0der/limpid/issues/56)) ([fdca8ca](https://github.com/nek0der/limpid/commit/fdca8cab21a10d56e656a81fa676cce8c915daab))
+
 ## [0.1.4](https://github.com/nek0der/limpid/compare/v0.1.3...v0.1.4) (2026-09-12)
 
 
