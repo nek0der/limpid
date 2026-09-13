@@ -267,6 +267,68 @@ struct WindowSessionWorktreeTests {
         }
     }
 
+    @Test("deleteGitWorktree: initialized submodule stderr throws submodulesNeedForce")
+    func deleteGitWorktree_submoduleStderr_throwsSubmodulesNeedForce() async throws {
+        let (session, project) = makeSessionWithProject()
+        let git = FakeGit()
+        let wt = try await session.createGitWorktree(
+            projectID: project.id,
+            path: freshPath(),
+            baseBranch: "main",
+            newBranchName: "feature",
+            openTab: false,
+            git: git
+        )
+        git.nextRemoveResult = .failure(
+            "fatal: working trees containing submodules cannot be moved or removed"
+        )
+
+        let error: DeleteWorktreeError? = await {
+            do {
+                _ = try await session.deleteGitWorktree(
+                    projectID: project.id,
+                    worktreeID: wt.id,
+                    force: false,
+                    git: git
+                )
+                return nil
+            } catch let err as DeleteWorktreeError {
+                return err
+            } catch {
+                return nil
+            }
+        }()
+
+        guard case .submodulesNeedForce = try #require(error) else {
+            Issue.record("expected .submodulesNeedForce, got \(String(describing: error))")
+            return
+        }
+    }
+
+    @Test("deleteGitWorktree: force retry is forwarded to git")
+    func deleteGitWorktree_withForce_forwardsForceToGit() async throws {
+        let (session, project) = makeSessionWithProject()
+        let git = FakeGit()
+        let wt = try await session.createGitWorktree(
+            projectID: project.id,
+            path: freshPath(),
+            baseBranch: "main",
+            newBranchName: "feature",
+            openTab: false,
+            git: git
+        )
+
+        _ = try await session.deleteGitWorktree(
+            projectID: project.id,
+            worktreeID: wt.id,
+            force: true,
+            git: git
+        )
+
+        let call = try #require(git.removeCalls.first)
+        #expect(call.force)
+    }
+
     @Test("deleteGitWorktree: 'not a working tree' stderr resolves as success (orphan row cleanup)")
     func deleteGitWorktree_whenGitSaysNotAWorkingTree_dropsRowAnyway() async throws {
         let (session, project) = makeSessionWithProject()

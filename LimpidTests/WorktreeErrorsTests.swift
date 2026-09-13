@@ -68,6 +68,13 @@ struct WorktreeErrorsTests {
         #expect(description.contains("Force") || description.contains("強制"))
     }
 
+    @Test("delete: submodulesNeedForce mentions the Force option to the user")
+    func delete_submodulesNeedForce_mentionsForce() throws {
+        let err: DeleteWorktreeError = .submodulesNeedForce
+        let description = try #require(err.errorDescription)
+        #expect(description.contains("Force") || description.contains("強制"))
+    }
+
     @Test("delete: gitFailed with stderr surfaces the stderr text")
     func delete_gitFailed_withStderr_returnsStderr() {
         let err: DeleteWorktreeError = .gitFailed(stderr: "fatal: locked")

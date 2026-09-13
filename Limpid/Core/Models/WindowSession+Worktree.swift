@@ -519,7 +519,7 @@ extension WindowSession {
     /// remove`, then drops the row + closes its tabs. Returns the
     /// pane ids the caller should free from the registry. Throws on
     /// git failures so the caller can offer "Retry with Force" when
-    /// the tree is dirty / locked.
+    /// the tree is dirty, locked, or contains initialized submodules.
     @discardableResult
     func deleteGitWorktree(
         projectID: UUID,
@@ -559,12 +559,20 @@ extension WindowSession {
                 requestSyncRefetch(projectID: projectID)
                 return ids
             }
-            // git prints something like "fatal: '<path>' contains
-            // modified or untracked files, use --force to delete it"
-            // when the tree is dirty. Surface that as a typed error so
-            // the UI can offer a one-click Force retry.
-            if !force, stderr.contains("modified") || stderr.contains("--force") || stderr.contains("locked") {
-                throw DeleteWorktreeError.dirtyNeedsForce
+            if !force {
+                // Git protects initialized submodules even when the worktree
+                // is otherwise clean. Keep that reason distinct so the Force
+                // confirmation accurately describes what will be removed.
+                if lower.contains("working trees containing submodules") {
+                    throw DeleteWorktreeError.submodulesNeedForce
+                }
+                // Git prints something like "fatal: '<path>' contains
+                // modified or untracked files, use --force to delete it"
+                // when the tree is dirty. Surface that as a typed error so
+                // the UI can offer a one-click Force retry.
+                if lower.contains("modified") || lower.contains("--force") || lower.contains("locked") {
+                    throw DeleteWorktreeError.dirtyNeedsForce
+                }
             }
             log.error("git worktree remove failed: \(stderr, privacy: .public)")
             throw DeleteWorktreeError.gitFailed(stderr: stderr)

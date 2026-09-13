@@ -174,9 +174,11 @@ enum GitProcess {
     }
 
     /// Remove a worktree on disk. Wraps `git worktree remove`.
-    /// `force` adds `--force` so dirty / locked worktrees can be
-    /// removed too — callers should confirm with the user first since
-    /// uncommitted changes are lost.
+    /// `force` adds `--force` so unclean worktrees or worktrees with
+    /// submodules can be removed too — callers should confirm with the
+    /// user first because local work may be lost. Git requires two
+    /// `--force` flags for locked worktrees, which this Boolean API does
+    /// not request.
     @discardableResult
     static func removeWorktree(
         repoRoot: URL,
