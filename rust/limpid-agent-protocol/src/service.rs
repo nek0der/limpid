@@ -10,7 +10,7 @@ use crate::{
 use limpid_agent_core::{ApprovalBroker, ApprovalState, BrokerError, Principal, ServiceEpoch};
 use std::fmt;
 use std::io::{Read, Write};
-use std::sync::{Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -45,6 +45,40 @@ pub struct ApprovalService {
     changed: Condvar,
 }
 
+/// A platform-authenticated, stateful connection to an [`ApprovalService`].
+///
+/// The platform adapter supplies the principal when it creates this value. The
+/// JSON payload never chooses its authorization level, and each connection
+/// tracks its own completed hello exchange.
+pub struct ApprovalSession {
+    service: Arc<ApprovalService>,
+    principal: Principal,
+    has_completed_hello: bool,
+}
+
+#[derive(Debug)]
+pub enum ExchangeError {
+    InputTooLarge,
+    InvalidUtf8,
+    InvalidJson,
+    ResponseTooLarge,
+    Service(ServeError),
+}
+
+impl fmt::Display for ExchangeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InputTooLarge => formatter.write_str("request exceeds the protocol limit"),
+            Self::InvalidUtf8 => formatter.write_str("request is not valid UTF-8"),
+            Self::InvalidJson => formatter.write_str("request is not valid JSON"),
+            Self::ResponseTooLarge => formatter.write_str("response exceeds the protocol limit"),
+            Self::Service(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for ExchangeError {}
+
 impl ApprovalService {
     #[must_use]
     pub fn new(maximum_records: usize) -> Self {
@@ -55,6 +89,16 @@ impl ApprovalService {
                 maximum_records.min(MAXIMUM_RECORDS),
             )),
             changed: Condvar::new(),
+        }
+    }
+
+    /// Creates one authenticated discrete-message session.
+    #[must_use]
+    pub fn session(self: &Arc<Self>, principal: Principal) -> ApprovalSession {
+        ApprovalSession {
+            service: Arc::clone(self),
+            principal,
+            has_completed_hello: false,
         }
     }
 
@@ -283,6 +327,33 @@ impl ApprovalService {
             }
             Err(error) => Err(ServeError::Frame(error)),
         }
+    }
+}
+
+impl ApprovalSession {
+    /// Handles exactly one complete JSON request and returns exactly one JSON
+    /// response. This intentionally does not use stream framing: XPC carries
+    /// one `Data` value for each request and response.
+    ///
+    /// # Errors
+    ///
+    /// Returns malformed-input, size, serialization, or service errors. The
+    /// caller must treat every error as a rejected operation.
+    pub fn exchange_json(&mut self, input: &[u8]) -> Result<Vec<u8>, ExchangeError> {
+        if input.len() > MAXIMUM_REQUEST_BYTES {
+            return Err(ExchangeError::InputTooLarge);
+        }
+        let input = std::str::from_utf8(input).map_err(|_| ExchangeError::InvalidUtf8)?;
+        let request = serde_json::from_str(input).map_err(|_| ExchangeError::InvalidJson)?;
+        let response = self
+            .service
+            .handle(&self.principal, &mut self.has_completed_hello, request)
+            .map_err(ExchangeError::Service)?;
+        let encoded = serde_json::to_vec(&response).map_err(|_| ExchangeError::ResponseTooLarge)?;
+        if encoded.len() > MAXIMUM_RESPONSE_BYTES {
+            return Err(ExchangeError::ResponseTooLarge);
+        }
+        Ok(encoded)
     }
 }
 

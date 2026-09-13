@@ -61,10 +61,13 @@ compatibility tests. The tradeoff is that the correctness-sensitive state
 machine is shared by all supported operating systems while native security and
 UI remain idiomatic for each platform.
 
-The first implementation supplies the Rust broker, protocol messages, framing,
-and stream session. It validates a real bidirectional stream using a Unix
-socket pair on Unix CI. The stream host is deliberately transport-neutral;
-production XPC hosting and the cross-language ABI remain later work.
+The implementation supplies the Rust broker, protocol messages, framing, and
+stream session, with Unix socket-pair coverage on Unix CI. The macOS host also
+uses a versioned C ABI with opaque service and session handles. Its XPC adapter
+passes one bounded JSON message per call because XPC already preserves message
+boundaries; the length-prefixed stream framing remains available to transports
+that need it. Swift selects the authenticated role and injects the requester
+run ID before Rust decodes sensitive request content.
 
 ## Acceptance criteria
 

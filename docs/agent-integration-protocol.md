@@ -16,8 +16,9 @@ Protocol major version 1 currently implements:
 - Typed errors and bounded length-prefixed JSON frames.
 
 Push subscriptions, attachment bootstrap capabilities, lifecycle events,
-provider adapters, persistence, and native service hosting are planned but are
-not part of the current implementation.
+provider adapters, persistence, and native approval UI are planned but are not
+part of the current implementation. The macOS service host exists behind
+explicit development-only registration.
 
 ## Transport and framing
 
@@ -34,8 +35,10 @@ inside the response limit. An approval lifetime and one blocking wait are each
 limited to ten minutes. A decision is limited to 8 KiB. One service epoch holds
 at most 128 request records.
 
-The platform host owns transport creation and peer authentication. macOS will
-carry encoded messages over role-specific XPC endpoints. Other operating
+The platform host owns transport creation and peer authentication. macOS
+carries each encoded request and response as one bounded XPC `Data` value over
+role-specific Mach service endpoints; it does not add stream framing inside
+XPC. Other operating
 systems may use different local transports while preserving message
 boundaries, trusted principals, limits, ordering, and failure behavior.
 
@@ -50,8 +53,9 @@ The host injects exactly one principal when it accepts a connection:
 
 The principal is not decoded from JSON. The public hook endpoint cannot select
 `Controller` in `hello` or any later message. On macOS, separate Mach service
-names and code-signing requirements will enforce this split before Rust sees a
-message.
+names and Team ID plus signing-identifier requirements enforce this split
+before Rust sees a message. The host generates the requester `RunID` while
+opening the authenticated requester session.
 
 ## IDs and service epoch
 
@@ -207,7 +211,14 @@ behavior in non-interactive sessions remains provider-owned.
 
 `limpid-agent-core` contains the portable approval broker.
 `limpid-agent-protocol` contains wire types, framing, the authenticated stream
-session, and a blocking wait primitive. Unix tests connect independent
-requester and controller streams through a real socket pair. The portable code
-does not create sockets, select peer roles, start services, install hooks, or
-display UI.
+session, a discrete-message session for XPC, and a blocking wait primitive.
+Unix tests connect independent requester and controller streams through a real
+socket pair. The versioned Rust C ABI exposes opaque broker and session handles
+to the macOS service without exposing Rust-owned layouts or panic behavior.
+
+The bundled macOS LaunchAgent owns separate requester and controller Mach
+services and applies code-signing requirements before accepting connections.
+Debug and Release use different labels, service names, bundle identifiers, and
+property lists. Only an explicit environment command in a Debug app registers
+or unregisters the development service. Provider Hook Helper integration,
+normal-user registration, and the native controller UI remain disabled.

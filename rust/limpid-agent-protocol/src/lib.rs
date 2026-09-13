@@ -5,7 +5,7 @@ mod service;
 mod wire;
 
 pub use frame::{FrameError, read_frame, write_frame};
-pub use service::{ApprovalService, ServeError};
+pub use service::{ApprovalService, ApprovalSession, ExchangeError, ServeError};
 pub use wire::{
     AgentProviderWire, ApprovalDecisionWire, ApprovalIndexWire, ApprovalKeyWire,
     ApprovalRequestWire, ApprovalSnapshotWire, ApprovalStateWire, ApprovalStatusWire, ErrorCode,

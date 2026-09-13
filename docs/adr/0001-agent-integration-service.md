@@ -50,9 +50,13 @@ Migration is selected per run. A run uses either the legacy state-file backend
 or the service backend for its entire lifetime. Both backends must not publish
 the same run into the application.
 
-The current foundation does not enable either provider hook and does not
-replace the JSON observer. Production activation requires the macOS service
-host, signed client validation, provider adapters, and application UI.
+The macOS service host and signed client boundary now exist, but neither
+provider hook is enabled and the JSON observer is unchanged. A Debug build can
+register, refresh, inspect, or unregister the development LaunchAgent only
+when `LIMPID_AGENT_SERVICE_CONTROL` explicitly requests that operation.
+Release builds do not register the service. Production activation still
+requires the signed Hook Helper, provider adapters, update validation, and
+application UI.
 
 ## Consequences
 
@@ -63,6 +67,12 @@ agent outlives the application.
 
 The portable ownership boundary is defined by
 [ADR 0002](0002-portable-agent-integration-core.md).
+
+The service executable and LaunchAgent property list are versioned inside the
+application bundle. Updating either one requires unregistering the old service
+before registering the replacement. Registration must remain disabled for
+normal users until the Sparkle replacement and re-registration sequence has
+been validated with an installed release.
 
 ## References
 

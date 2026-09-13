@@ -99,6 +99,16 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             test | xcbeautify --renderer github-actions
 
+      - name: Validate development service bundle
+        run: |
+          APP_PATH="build/DerivedData/Build/Products/Debug/Limpid Dev.app"
+          SERVICE_PATH="$APP_PATH/Contents/MacOS/AgentIntegrationService"
+          SERVICE_PLIST="$APP_PATH/Contents/Library/LaunchAgents/dev.limpid.agent-integration-service.dev.plist"
+          test -x "$SERVICE_PATH"
+          test -f "$SERVICE_PLIST"
+          test ! -e "$APP_PATH/Contents/Library/LaunchAgents/dev.limpid.agent-integration-service.plist"
+          plutil -lint "$SERVICE_PLIST"
+
       - name: Upload xcresult bundle
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -8,5 +8,13 @@ rust-version.workspace = true
 [lib]
 crate-type = ["staticlib"]
 
+[dependencies]
+limpid-agent-core = { path = "../limpid-agent-core" }
+limpid-agent-protocol = { path = "../limpid-agent-protocol" }
+uuid.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true
