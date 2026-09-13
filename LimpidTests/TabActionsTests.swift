@@ -66,7 +66,7 @@ struct TabActionsTests {
         PaneActions.split(session, direction: .vertical)
         // Snapshot the original split-tree structure before close.
         let originalLeafCount = try #require(session.tab(tab.id)?.splitTree.allLeafIDs().count)
-        let originalIsSplit = try #require(session.tab(tab.id)?.splitTree.isSplit)
+        let originalIsSplit = try #require(session.tab(tab.id)).splitTree.isSplit
         let originalLeafIDs = try #require(session.tab(tab.id)?.splitTree.allLeafIDs())
 
         TabActions.closeTab(session, registry: registry, tabID: tab.id)

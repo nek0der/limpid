@@ -310,9 +310,9 @@ struct ContainerSettingsSheet: View {
         // The setters land via SwiftUI `Binding`, which expects an
         // `@isolated(any) @Sendable` closure. Annotating these properties
         // with `@MainActor` (or `@MainActor @Sendable`) currently trips a
-        // Swift 6 IRGen crash on this file; the warning is runtime-safe
-        // because the surrounding view is `@MainActor` and the bindings
-        // can only fire on main. Re-evaluate when the toolchain catches up.
+        // Swift 6 IRGen crash on this file, so `body` wraps them in closure
+        // literals instead: those inherit the view's main-actor isolation,
+        // which is what makes handing them to `Binding` race-free.
         let onClaudeChange: (Bool) -> Void
         let onCodexChange: (Bool) -> Void
 
@@ -320,11 +320,11 @@ struct ContainerSettingsSheet: View {
             Section {
                 Toggle(
                     "Claude Code CLI",
-                    isOn: Binding(get: { claudeEnabled }, set: onClaudeChange)
+                    isOn: Binding(get: { claudeEnabled }, set: { onClaudeChange($0) })
                 )
                 Toggle(
                     "Codex CLI",
-                    isOn: Binding(get: { codexEnabled }, set: onCodexChange)
+                    isOn: Binding(get: { codexEnabled }, set: { onCodexChange($0) })
                 )
             } header: {
                 Text("Apply to agents")
@@ -457,7 +457,7 @@ struct ContainerSettingsSheet: View {
     /// case where the value flowed in from outside the editor and
     /// still carries curly quotes / em-dashes that would later break
     /// `sh -c`.
-    static func sanitiseSmartPunctuation(_ line: String) -> String {
+    nonisolated static func sanitiseSmartPunctuation(_ line: String) -> String {
         line
             .replacingOccurrences(of: "\u{201C}", with: "\"") // "
             .replacingOccurrences(of: "\u{201D}", with: "\"") // "

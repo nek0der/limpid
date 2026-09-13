@@ -28,10 +28,10 @@ struct AgentStateTests {
     }
 
     @Test("iconName uses the .circle.fill family for every visible state")
-    func iconName_consistentFamily() {
+    func iconName_consistentFamily() throws {
         for state in [AgentState.running, .compacting, .needsInput, .error] {
-            let name = try? #require(state.iconName)
-            #expect(name?.hasSuffix(".circle.fill") == true)
+            let name = try #require(state.iconName)
+            #expect(name.hasSuffix(".circle.fill"))
         }
     }
 

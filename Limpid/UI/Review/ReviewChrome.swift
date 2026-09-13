@@ -349,7 +349,7 @@ struct ReviewScopeSwitch: View {
         .accessibilityLabel(Text("Review scope"))
     }
 
-    static func animatesSelection(
+    nonisolated static func animatesSelection(
         to selection: ReviewScope,
         selectionWithoutAnimation: ReviewScope?
     ) -> Bool {

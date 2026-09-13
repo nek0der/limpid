@@ -157,7 +157,7 @@ struct WindowSessionContainersTests {
     @Test("setGroupPaletteIndex on an unknown id leaves state unchanged")
     func setGroupPaletteIndex_unknownID_isNoOp() {
         let session = WindowSession()
-        let g = session.addGroup()
+        _ = session.addGroup()
         let before = session.groups.first?.paletteIndex
         session.setGroupPaletteIndex(UUID(), to: 7)
         #expect(session.groups.first?.paletteIndex == before)
@@ -177,7 +177,7 @@ struct WindowSessionContainersTests {
     @Test("toggleProjectExpanded flips the expanded flag")
     func toggleProjectExpanded_flipsFlag() throws {
         let (session, project) = WindowSessionFixture.withProject()
-        let initial = try #require(session.projects.first?.isExpanded)
+        let initial = try #require(session.projects.first).isExpanded
         session.toggleProjectExpanded(project.id)
         #expect(session.projects.first?.isExpanded == !initial)
         session.toggleProjectExpanded(project.id)
