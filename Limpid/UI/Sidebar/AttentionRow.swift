@@ -95,6 +95,9 @@ struct AttentionRow: View {
     /// True when this row's pane is the one currently focused, so the
     /// row is highlighted ("you are here").
     let isCurrent: Bool
+    /// Finished rows change from a green filled check to a gray outline after
+    /// the user has viewed that exact turn. Other states never set this.
+    let isViewed: Bool
     /// Manual dismiss ("conversation's done"); nil hides the × affordance
     /// (needsInput / error rows clear only when the state resolves).
     let onDismiss: (() -> Void)?
@@ -124,7 +127,7 @@ struct AttentionRow: View {
     }
 
     private var stateTint: Color {
-        state.iconColor ?? .secondary
+        state.iconColor(isViewedFinished: isViewed) ?? .secondary
     }
 
     /// One stable detail line. Prompt and tab title used to occupy
@@ -148,14 +151,14 @@ struct AttentionRow: View {
         HStack(alignment: .top, spacing: 6) {
             // Fixed-width glyph well so every row's text starts at the
             // same x no matter which state symbol is shown.
-            Image(systemName: state.iconName ?? "circle.fill")
+            Image(systemName: state.iconName(isViewedFinished: isViewed) ?? "circle.fill")
                 .font(.system(size: 13))
                 .foregroundStyle(stateTint)
                 .frame(width: 16)
                 // The visible state label is redundant with this glyph,
                 // but VoiceOver still needs the semantic state rather
                 // than the SF Symbol's mechanical name.
-                .accessibilityLabel(Text(state.localizedLabel))
+                .accessibilityLabel(Text(state.accessibilityLabel(isViewedFinished: isViewed)))
             VStack(alignment: .leading, spacing: 2) {
                 // Line 1: which container, and how long it has waited.
                 // The right slot shows the wait time, or — on hover, for
@@ -221,6 +224,7 @@ struct AttentionRow: View {
 private struct AttentionStateCount: Identifiable {
     let state: AgentState
     let count: Int
+    let isViewedFinished: Bool
 
     var id: AgentState {
         state
@@ -311,9 +315,13 @@ extension ContainerSlabView {
         let counts = [AgentState.error, .needsInput, .finished]
             .map { state in
                 let nativeApprovals = state == .needsInput ? approvalCount : 0
+                let matchingEntries = entries.filter { $0.state == state }
                 return AttentionStateCount(
                     state: state,
-                    count: entries.count(where: { $0.state == state }) + nativeApprovals
+                    count: matchingEntries.count + nativeApprovals,
+                    isViewedFinished: state == .finished
+                        && !matchingEntries.isEmpty
+                        && matchingEntries.allSatisfy(\.isViewed)
                 )
             }
             .filter { $0.count > 0 }
@@ -367,17 +375,24 @@ extension ContainerSlabView {
             if showsStateBreakdown, !counts.isEmpty {
                 HStack(spacing: 4) {
                     ForEach(counts) { pill in
+                        let accessibilityLabel = pill.state.accessibilityLabel(
+                            isViewedFinished: pill.isViewedFinished
+                        )
                         HStack(spacing: 2) {
-                            Image(systemName: pill.state.iconName ?? "circle.fill")
+                            Image(systemName: pill.state.iconName(
+                                isViewedFinished: pill.isViewedFinished
+                            ) ?? "circle.fill")
                                 .font(.system(size: 9))
-                                .foregroundStyle(pill.state.iconColor ?? .secondary)
+                                .foregroundStyle(pill.state.iconColor(
+                                    isViewedFinished: pill.isViewedFinished
+                                ) ?? .secondary)
                             Text(verbatim: "\(pill.count)")
                                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                                 .monospacedDigit()
                                 .foregroundStyle(Color.primary.opacity(0.55))
                         }
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(Text(verbatim: "\(pill.state.localizedLabel) \(pill.count)"))
+                        .accessibilityLabel(Text(verbatim: "\(accessibilityLabel) \(pill.count)"))
                     }
                 }
             } else {

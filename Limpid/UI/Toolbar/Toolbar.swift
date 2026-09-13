@@ -205,8 +205,11 @@ struct ToolbarTerminalColumnSegment: View {
                 Divider()
             }
             Button {
-                session.clearAllUnread()
-                historyStore.markAllRead()
+                NotificationReadSync.markAllRead(
+                    historyStore: historyStore,
+                    attention: attention,
+                    session: session
+                )
             } label: {
                 Label("Mark All as Read", systemImage: "checkmark.circle")
             }

@@ -234,4 +234,160 @@ struct NotificationReadSyncTests {
             #expect(store.unreadCount == 2)
         }
     }
+
+    // MARK: - Explicit history acknowledgement
+
+    @Test func markAllRead_acknowledgesMatchingFinishedRuntimeOnly() throws {
+        try withTempDir { dir in
+            let store = NotificationHistoryStore(directory: dir)
+            let attention = AttentionState()
+            let (session, _, paneID) = WindowSessionFixture.withLooseTab()
+            let finishedRunID = UUID().uuidString
+            let waitingRunID = UUID().uuidString
+            let finishedID = AgentRuntimePresentation.id(kind: .codex, runID: finishedRunID)
+            let waitingID = AgentRuntimePresentation.id(kind: .codex, runID: waitingRunID)
+            let finished = runtime(
+                .finished,
+                runID: finishedRunID,
+                revision: 2,
+                stateEpisodeToken: "finished-episode"
+            )
+
+            store.record(entry(
+                .agentFinished,
+                runtimeID: finishedID,
+                eventToken: "finished-episode"
+            ))
+            store.record(entry(.agentNeedsInput, runtimeID: waitingID))
+            attention.replaceRuntimes([
+                finished,
+                runtime(.needsInput, runID: waitingRunID)
+            ], kind: .codex)
+            session.markUnread(paneID: paneID)
+
+            var changeCount = 0
+            attention.onRuntimeAttentionChanged = { changeCount += 1 }
+            NotificationReadSync.markAllRead(
+                historyStore: store,
+                attention: attention,
+                session: session
+            )
+
+            #expect(store.unreadCount == 0)
+            #expect(session.windowUnreadCount == 0)
+            #expect(attention.isViewed(finished))
+            #expect(attention.liveStatus(for: entry(.agentNeedsInput, runtimeID: waitingID)) == .stillWaiting)
+            #expect(changeCount == 1)
+        }
+    }
+
+    @Test func markAllRead_doesNotAcknowledgeNewerFinishedEpisode() throws {
+        try withTempDir { dir in
+            let store = NotificationHistoryStore(directory: dir)
+            let attention = AttentionState()
+            let session = WindowSession()
+            let runID = UUID().uuidString
+            let runtimeID = AgentRuntimePresentation.id(kind: .codex, runID: runID)
+            let current = runtime(.finished, runID: runID, revision: 2)
+
+            store.record(entry(.agentFinished, runtimeID: runtimeID, eventToken: "1"))
+            store.record(entry(.agentFinished, runtimeID: runtimeID, eventToken: nil))
+            attention.replaceRuntimes([current], kind: .codex)
+
+            NotificationReadSync.markAllRead(
+                historyStore: store,
+                attention: attention,
+                session: session
+            )
+
+            #expect(store.unreadCount == 0)
+            #expect(!attention.isViewed(current))
+        }
+    }
+
+    @Test func reconcile_restoresViewedFinishedFromPersistedReadHistory() throws {
+        try withTempDir { dir in
+            let store = NotificationHistoryStore(directory: dir)
+            let runID = UUID().uuidString
+            let runtimeID = AgentRuntimePresentation.id(kind: .codex, runID: runID)
+            let current = runtime(
+                .finished,
+                runID: runID,
+                revision: 2,
+                stateEpisodeToken: "finished-episode"
+            )
+
+            store.record(entry(
+                .agentFinished,
+                runtimeID: runtimeID,
+                eventToken: "finished-episode",
+                isRead: false
+            ))
+            store.markAllRead()
+            store.flushSynchronously()
+
+            let reloadedStore = NotificationHistoryStore(directory: dir)
+            let attention = AttentionState()
+            attention.replaceRuntimes([current], kind: .codex)
+
+            NotificationReadSync(historyStore: reloadedStore, attention: attention).reconcile()
+
+            #expect(reloadedStore.entries.first?.isRead == true)
+            #expect(attention.isViewed(current))
+        }
+    }
+
+    @Test func observer_restoresViewedFinishedWhenRuntimeArrivesLater() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NotificationReadSyncTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = NotificationHistoryStore(directory: dir)
+        let attention = AttentionState()
+        let runID = UUID().uuidString
+        let runtimeID = AgentRuntimePresentation.id(kind: .codex, runID: runID)
+        let current = runtime(
+            .finished,
+            runID: runID,
+            revision: 2,
+            stateEpisodeToken: "finished-episode"
+        )
+        store.record(entry(
+            .agentFinished,
+            runtimeID: runtimeID,
+            eventToken: "finished-episode",
+            isRead: true
+        ))
+
+        let sync = NotificationReadSync(historyStore: store, attention: attention)
+        attention.replaceRuntimes([current], kind: .codex)
+
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(1)
+        while !attention.isViewed(current), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(attention.isViewed(current))
+        _ = sync
+    }
+
+    @Test func reconcile_restoresOnlyReadExactFinishedEpisode() throws {
+        try withTempDir { dir in
+            let store = NotificationHistoryStore(directory: dir)
+            let attention = AttentionState()
+            let runID = UUID().uuidString
+            let runtimeID = AgentRuntimePresentation.id(kind: .codex, runID: runID)
+            let current = runtime(.finished, runID: runID, revision: 2)
+
+            store.record(entry(.agentFinished, runtimeID: runtimeID, eventToken: "2"))
+            store.record(entry(.agentFinished, runtimeID: runtimeID, eventToken: "1", isRead: true))
+            store.record(entry(.agentFinished, runtimeID: runtimeID, eventToken: nil, isRead: true))
+            attention.replaceRuntimes([current], kind: .codex)
+
+            NotificationReadSync(historyStore: store, attention: attention).reconcile()
+
+            #expect(!attention.isViewed(current))
+        }
+    }
 }

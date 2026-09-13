@@ -299,6 +299,7 @@ struct ContainerSlabView: View {
                                     tabTitle: tab.displayTitle,
                                     prompt: attentionPreview(entry),
                                     isCurrent: entry.tabID == focusedTab && entry.paneID == focusedPane,
+                                    isViewed: entry.isViewed,
                                     onDismiss: entry.state == .finished
                                         ? {
                                             if let id = entry.runtimeID {
@@ -343,7 +344,7 @@ struct ContainerSlabView: View {
                     isActive: isActiveContainer(.loose),
                     hasUnread: hasUnread(in: .loose),
                     isRinging: isRinging(in: .loose),
-                    agentState: agentState(in: .loose),
+                    agentStateSummary: agentStateSummary(in: .loose),
                     agentBreakdown: agentBreakdown(in: .loose),
                     onActivate: { session.setActiveContainer(.loose) },
                     onToggleExpand: nil,
@@ -400,7 +401,7 @@ struct ContainerSlabView: View {
                                 isActive: isActiveContainer(.group(group.id)),
                                 hasUnread: hasUnread(in: .group(group.id)),
                                 isRinging: isRinging(in: .group(group.id)),
-                                agentState: agentState(in: .group(group.id)),
+                                agentStateSummary: agentStateSummary(in: .group(group.id)),
                                 agentBreakdown: agentBreakdown(in: .group(group.id)),
                                 onActivate: { session.setActiveContainer(.group(group.id)) },
                                 onToggleExpand: nil,
@@ -686,8 +687,8 @@ struct ContainerSlabView: View {
         session.isRingingInProject(projectID)
     }
 
-    fileprivate func agentState(in container: ContainerID) -> AgentState? {
-        attention.aggregateAgentState(in: container, session: session)
+    fileprivate func agentStateSummary(in container: ContainerID) -> AgentStateSummary? {
+        attention.aggregateAgentStateSummary(in: container, session: session)
     }
 
     fileprivate func agentBreakdown(in container: ContainerID) -> [AgentState: Int] {

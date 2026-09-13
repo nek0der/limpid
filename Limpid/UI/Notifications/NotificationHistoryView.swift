@@ -91,6 +91,7 @@ struct NotificationHistoryView: View {
     @Environment(NotificationHistoryStore.self) private var store
     @Environment(NotificationHistoryPresentation.self) private var presentation
     @Environment(AttentionState.self) private var attention
+    @Environment(WindowSession.self) private var session
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Resolved by the overlay from the space below the toolbar bell.
     /// The populated panel is scrollable, so shrinking it is preferable
@@ -178,11 +179,17 @@ struct NotificationHistoryView: View {
             }
             Spacer()
             if !store.entries.isEmpty, !isConfirmingClear {
-                Button("Mark All as Read") { store.markAllRead() }
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .disabled(store.unreadCount == 0)
+                Button("Mark All as Read") {
+                    NotificationReadSync.markAllRead(
+                        historyStore: store,
+                        attention: attention,
+                        session: session
+                    )
+                }
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(store.unreadCount == 0)
                 Button {
                     isConfirmingClear = true
                 } label: {
@@ -513,10 +520,9 @@ private struct NotificationHistoryEscapeMonitor: NSViewRepresentable {
 /// One history row.
 ///
 /// The history is a log, but an agent row points at a runtime that is
-/// still alive, so we say whether the wait it announced is still open:
-/// The glyph carries state visually; repeating it as a word would crowd
-/// the body on the narrow panel. Its color always means the same state
-/// here and in Waiting; read and navigation state use separate signals.
+/// still alive, so we say whether the wait it announced is still open.
+/// The glyph carries lifecycle and acknowledgement visually; repeating
+/// them as words would crowd the body on the narrow panel.
 private struct NotificationHistoryRow: View {
     let entry: NotificationEntry
     /// False when neither the originating pane nor the tracked runtime
@@ -620,9 +626,9 @@ private struct NotificationHistoryRow: View {
     }
 
     /// Leading kind glyph. Agent rows borrow `AgentState`'s symbol and
-    /// tint verbatim so an entry reads as the same object the Waiting
-    /// list shows; command and script rows reuse the same
-    /// `.circle.fill` family in a neutral tint. General shell alerts use
+    /// tint so an entry reads as the same object the Waiting list shows,
+    /// including its acknowledged completion style. Command and script rows
+    /// reuse the filled-circle family in a neutral tint. General shell alerts use
     /// a terminal glyph: another bell inside notification history only
     /// repeats the surrounding UI and does not identify their source.
     /// VoiceOver still receives the semantic state after its visible
@@ -641,11 +647,10 @@ private struct NotificationHistoryRow: View {
     }
 
     private var glyph: (name: String, color: Color) {
-        baseGlyph
-    }
-
-    private var baseGlyph: (name: String, color: Color) {
-        if let state = entry.kind.agentState, let name = state.iconName, let color = state.iconColor {
+        if let state = entry.kind.agentState,
+           let name = state.iconName(isViewedFinished: isViewedFinished),
+           let color = state.iconColor(isViewedFinished: isViewedFinished)
+        {
             return (name, color)
         }
         switch entry.kind {
@@ -667,9 +672,15 @@ private struct NotificationHistoryRow: View {
         (entry.exitCode ?? 0) != 0
     }
 
+    private var isViewedFinished: Bool {
+        entry.kind == .agentFinished && entry.isRead
+    }
+
     private var kindAccessibilityLabel: String? {
         if let state = entry.kind.agentState {
-            return state.localizedLabel
+            return state.accessibilityLabel(
+                isViewedFinished: isViewedFinished
+            )
         }
         switch entry.kind {
         case .commandFinished:

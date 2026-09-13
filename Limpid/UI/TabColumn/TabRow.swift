@@ -48,14 +48,15 @@ struct TabRow: View {
     /// Aggregate agent state across every split leaf in the tab and
     /// pick the most-urgent state for the tab column icon. Pulls from both
     /// `claudeAgentBadges` and `codexAgentBadges` via the shared
-    /// session helper so a Codex pane lights up the badge too.
-    private var aggregateAgentState: AgentState? {
-        attention.aggregateAgentState(in: tab)
+    /// attention state so a Codex pane lights up the badge too and a viewed
+    /// completion retains its acknowledgement style.
+    private var aggregateAgentStateSummary: AgentStateSummary? {
+        attention.aggregateAgentStateSummary(in: tab)
     }
 
     /// Leading identity icon: does an AI agent (Claude or Codex) have
     /// a live session in any of this tab's panes — whether actively
-    /// working or sitting idle? Distinct from `aggregateAgentState`,
+    /// working or sitting idle? Distinct from `aggregateAgentStateSummary`,
     /// which drives the trailing *activity* badge: a tab where the
     /// agent sits idle waiting for the next prompt is still an agent
     /// tab (`.idle` counts) even though it shows no activity badge.
@@ -265,10 +266,11 @@ struct TabRow: View {
             // status mark and the close sit closer to each other than
             // either does to the title, because they are one thing.
             HStack(spacing: LimpidLayout.containerColumnTrailingSpacing) {
-                if let state = aggregateAgentState,
-                   let iconName = state.iconName,
-                   let iconColor = state.iconColor
+                if let summary = aggregateAgentStateSummary,
+                   let iconName = summary.state.iconName(isViewedFinished: summary.isViewedFinished),
+                   let iconColor = summary.state.iconColor(isViewedFinished: summary.isViewedFinished)
                 {
+                    let state = summary.state
                     // Agent rows show the lifecycle badge as their single
                     // status mark. The bell is suppressed here so we don't
                     // stack two indicators for the same event — the agent's
@@ -287,7 +289,9 @@ struct TabRow: View {
                         // Match `ContainerRow`'s sister fix: SF Symbol names
                         // alone don't carry meaning, especially when the
                         // color is the only sighted differentiator.
-                        .accessibilityLabel(Text(tooltip))
+                        .accessibilityLabel(Text(summary.isViewedFinished
+                                ? "\(tooltip), \(String(localized: "Viewed"))"
+                                : tooltip))
                 } else {
                     NotificationBell(
                         isUnread: hasUnread,

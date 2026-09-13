@@ -1,7 +1,6 @@
 // NotificationReadSync.swift
-// Limpid — retires agent notification rows once their runtime has moved
-// on, so the unread count the bell / Dock / panel show is "what still
-// needs you" rather than "what was ever announced".
+// Limpid — keeps persisted notification reads, live agent acknowledgement,
+// and the explicit mark-all action aligned.
 //
 // Same observe-and-push shape as `DockBadgeSync`: watch the attention
 // facts (`runtimesByKind`, viewed / dismissed tokens) and the history
@@ -48,11 +47,46 @@ final class NotificationReadSync {
     /// `markRead(where:)` only saves when something flipped, so the
     /// observation this triggers on `entries` settles after one pass.
     func reconcile() {
+        // History is persisted while live attention is rebuilt on launch.
+        // Restore acknowledgement before retiring newly resolved rows so the
+        // same finished episode cannot be gray in history but green in Waiting.
+        attention.markFinishedRuntimesViewed(
+            matching: Self.finishedEventTokens(in: historyStore.entries.filter(\.isRead))
+        )
         historyStore.markRead { [attention] entry in
             if attention.liveStatus(for: entry) == .resolved {
                 return true
             }
             return attention.isFinishedRowHandled(entry) == true
         }
+    }
+
+    /// Keep every inbox-wide acknowledgement surface aligned. Pane counts and
+    /// history are cleared together, while only matching live finished episodes
+    /// gain the viewed state used by agent status indicators.
+    static func markAllRead(
+        historyStore: NotificationHistoryStore,
+        attention: AttentionState,
+        session: WindowSession
+    ) {
+        session.clearAllUnread()
+        attention.markFinishedRuntimesViewed(matching: finishedEventTokens(in: historyStore.entries))
+        historyStore.markAllRead()
+    }
+
+    /// Build an exact episode lookup once so reconciliation stays linear in
+    /// the bounded history and live runtime counts.
+    private static func finishedEventTokens(
+        in entries: [NotificationEntry]
+    ) -> [String: Set<String>] {
+        var result: [String: Set<String>] = [:]
+        for entry in entries {
+            guard entry.kind == .agentFinished,
+                  let runtimeID = entry.runtimeID,
+                  let eventToken = entry.eventToken
+            else { continue }
+            result[runtimeID, default: []].insert(eventToken)
+        }
+        return result
     }
 }

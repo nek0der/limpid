@@ -202,10 +202,10 @@ struct ContainerRow: View {
     /// True while a bell is actively flashing inside this container.
     /// Drives the `symbolEffect(.bounce)` animation on the bell.
     var isRinging: Bool = false
-    /// Aggregated Claude agent state across the container's panes.
-    /// `nil` means no claude is running / all idle — the row stays
-    /// quiet. The caller computes it from `WindowSession.aggregateAgentState`.
-    var agentState: AgentState?
+    /// Aggregated agent state across the container's panes. `nil` means no
+    /// agent is running or all are idle, so the row stays quiet. The summary
+    /// preserves whether a displayed completion has already been viewed.
+    var agentStateSummary: AgentStateSummary?
     /// Per-state pane counts used for the agent icon's hover tooltip.
     /// Empty dict when no claude is running.
     var agentBreakdown: [AgentState: Int] = [:]
@@ -841,10 +841,11 @@ struct ContainerRow: View {
             {
                 prStatusMark(style)
             }
-            if let state = agentState,
-               let iconName = state.iconName,
-               let iconColor = state.iconColor
+            if let summary = agentStateSummary,
+               let iconName = summary.state.iconName(isViewedFinished: summary.isViewedFinished),
+               let iconColor = summary.state.iconColor(isViewedFinished: summary.isViewedFinished)
             {
+                let state = summary.state
                 let tooltip = agentTooltip(for: state)
                 Image(systemName: iconName)
                     .font(.system(size: 12, weight: .semibold))
@@ -857,7 +858,9 @@ struct ContainerRow: View {
                     // tooltip text into the AX label as well — the
                     // CODING-GUIDELINES rule about color carrying
                     // meaning applies here twice over.
-                    .accessibilityLabel(Text(tooltip))
+                    .accessibilityLabel(Text(summary.isViewedFinished
+                            ? "\(tooltip), \(String(localized: "Viewed"))"
+                            : tooltip))
             }
             NotificationBell(
                 isUnread: hasUnread,

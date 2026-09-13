@@ -1,5 +1,6 @@
 // AttentionStateTests.swift
-// Limpid — unit tests for `AttentionState`: WAITING list membership, severity-then-age order, viewed fade, and dismissed drop.
+// Limpid — unit tests for `AttentionState`: Waiting membership,
+// severity-then-age order, viewed acknowledgement, and dismissed drop.
 
 import Foundation
 import Testing
@@ -197,7 +198,7 @@ struct AttentionStateTests {
         attention.focusMoved(to: pane, in: session)
 
         // Viewing is not completing: the row stays listed, but flagged
-        // viewed so the UI can fade it.
+        // viewed so the UI can show its acknowledged style.
         let entry = attention.attentionEntries(in: session).first { $0.paneID == pane }
         #expect(entry != nil)
         #expect(entry?.isViewed == true)
@@ -328,7 +329,8 @@ struct AttentionStateTests {
         _ = paneWithBadge(session, .running, at: 200)
         attention.focusMoved(to: done, in: session)
 
-        #expect(attention.aggregateAgentState(in: .loose, session: session) == .running)
+        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        #expect(summary == AgentStateSummary(state: .running, isViewedFinished: false))
     }
 
     @Test func aggregateAgentState_runningStaysBelowUnviewedFinished() {
@@ -339,7 +341,8 @@ struct AttentionStateTests {
         _ = paneWithBadge(session, .finished, at: 100)
         _ = paneWithBadge(session, .running, at: 200)
 
-        #expect(attention.aggregateAgentState(in: .loose, session: session) == .finished)
+        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        #expect(summary == AgentStateSummary(state: .finished, isViewedFinished: false))
     }
 
     @Test func aggregateAgentState_onlyViewedFinished_stillShowsCheck() {
@@ -349,7 +352,8 @@ struct AttentionStateTests {
         let done = paneWithBadge(session, .finished, at: 100)
         attention.focusMoved(to: done, in: session)
 
-        #expect(attention.aggregateAgentState(in: .loose, session: session) == .finished)
+        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        #expect(summary == AgentStateSummary(state: .finished, isViewedFinished: true))
     }
 
     @Test func aggregateAgentState_errorBeatsViewedFinishedAndRunning() {
@@ -363,7 +367,14 @@ struct AttentionStateTests {
         _ = paneWithBadge(session, .error, at: 300)
         attention.focusMoved(to: done, in: session)
 
-        #expect(attention.aggregateAgentState(in: .loose, session: session) == .error)
+        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        #expect(summary == AgentStateSummary(state: .error, isViewedFinished: false))
+    }
+
+    @Test func viewedFinishedPresentation_usesAcknowledgedCheck() {
+        #expect(AgentState.finished.iconName(isViewedFinished: false) == "checkmark.circle.fill")
+        #expect(AgentState.finished.iconName(isViewedFinished: true) == "checkmark.circle")
+        #expect(AgentState.error.iconName(isViewedFinished: true) == "exclamationmark.circle.fill")
     }
 
     // MARK: - ⌘J cursor honours the includeViewed filter
@@ -538,17 +549,17 @@ struct AttentionStateTests {
         attention.focusMoved(to: pane, in: session)
         let tab = try #require(session.tab(containing: pane))
 
-        // Just inside the ceiling: still listed (faded) and still a gray
+        // Just inside the ceiling: still listed with an acknowledged
         // check on the tab.
         attention.now = { Date(timeIntervalSince1970: 100 + AttentionState.viewedFinishedRetention - 60) }
         #expect(attention.attentionEntries(in: session).map(\.paneID) == [pane])
-        #expect(attention.aggregateAgentState(in: tab) == .finished)
+        #expect(attention.aggregateAgentStateSummary(in: tab)?.state == .finished)
 
         // Past the ceiling: gone from the list, the ⌘J cursor, and the
         // tab / container aggregate — same as pressing ×.
         attention.now = { Date(timeIntervalSince1970: 100 + AttentionState.viewedFinishedRetention + 60) }
         #expect(attention.attentionEntries(in: session).isEmpty)
-        #expect(attention.aggregateAgentState(in: tab) == nil)
+        #expect(attention.aggregateAgentStateSummary(in: tab) == nil)
         #expect(attention.hiddenViewedCount(in: session) == 0)
     }
 
