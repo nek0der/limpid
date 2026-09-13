@@ -50,6 +50,9 @@ enum CodexAgent: AgentSpec {
             updatedAt: updatedAt,
             lastPrompt: lastPrompt,
             firstPrompt: firstPrompt,
+            conversationID: nil,
+            providerSessionTitle: nil,
+            providerGeneratedTitle: nil,
             sessionStartedAt: AgentDateParsing.parseOptional(record.sessionStartedAt)
         )
     }

@@ -119,6 +119,37 @@ struct ClaudeShimScriptTests {
         #expect(flags.first.map { argv[$0 + 1] } == "{bad")
     }
 
+    @Test("keeps Rust as the sole automatic title writer")
+    func terminalTitleOverride_isForcedOff() throws {
+        try withTempDir { dir in
+            let root = try #require(RepoFixture.limpidRoot)
+            let shim = root.appendingPathComponent("Limpid/Resources/claude-shim/claude")
+            let stub = dir.appendingPathComponent("fake-claude")
+            try """
+            #!/bin/sh
+            [ "$CLAUDE_CODE_DISABLE_TERMINAL_TITLE" = "1" ]
+            """.write(to: stub, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: stub.path
+            )
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = [shim.path]
+            process.environment = [
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "HOME": dir.path,
+                "TMPDIR": dir.path,
+                "LIMPID_REAL_CLAUDE": stub.path,
+                "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "0"
+            ]
+            try process.run()
+            process.waitUntilExit()
+
+            #expect(process.terminationStatus == 0)
+        }
+    }
+
     /// Runs the shim under a pty with tmux hosting switched on, and
     /// returns the argv tmux was handed. The hosting decision asks
     /// whether stdin and stdout are terminals, and a `Process` pipe is

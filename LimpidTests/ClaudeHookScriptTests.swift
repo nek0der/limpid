@@ -4,8 +4,7 @@
 // its own until layer 2 forced the pid handling open; this suite starts
 // from the harness `CodexHookScriptTests` uses and covers the pid
 // resolution plus the event mapping. The rest of the receiver — prompt
-// carry-over, the OSC 2 title fallback, the cwd events — is still
-// uncovered.
+// carry-over and cwd events — is only partially covered.
 
 import Foundation
 import Testing
@@ -214,6 +213,73 @@ struct ClaudeHookScriptTests {
         #expect(record?["runId"] as? String == runID)
         #expect(record?["revision"] as? Int == 2)
         #expect(record?["stateEpisodeToken"] as? String == "2")
+    }
+
+    @Test("records Claude's documented SessionStart title and conversation identity")
+    func sessionStart_formalTitle_isRecorded() throws {
+        let record = try runHooks([
+            payload(
+                "SessionStart",
+                extra: [
+                    "source": "startup",
+                    "session_title": "Formal \"session\" title"
+                ]
+            )
+        ])
+
+        #expect(record?["sessionId"] as? String == "6f1d6a1e-0e34-4a1a-9a8e-2f2b6c1d7f10")
+        #expect(record?["providerSessionTitle"] as? String == "Formal \"session\" title")
+        #expect(record?["providerGeneratedTitle"] == nil)
+    }
+
+    @Test("preserves the formal title when later hooks omit SessionStart fields")
+    func formalTitle_laterTurn_preservesObservation() throws {
+        let record = try runHooks([
+            payload(
+                "SessionStart",
+                extra: ["source": "startup", "session_title": "Formal title"]
+            ),
+            payload("UserPromptSubmit", extra: ["prompt": "Opening prompt"])
+        ])
+
+        #expect(record?["providerSessionTitle"] as? String == "Formal title")
+        #expect(record?["firstPrompt"] as? String == "Opening prompt")
+    }
+
+    @Test("uses transcript titles as compatibility observations")
+    func transcriptTitle_laterTurn_updatesCandidates() throws {
+        try withTempDir { dir in
+            let transcript = dir.appendingPathComponent("transcript.jsonl")
+            try """
+            {"type": "ai-title", "aiTitle": "Generated title", "customTitle": "Renamed title"}
+            """.write(to: transcript, atomically: true, encoding: .utf8)
+
+            let record = try runHooks([
+                payload("SessionStart", extra: ["source": "startup"]),
+                payload(
+                    "UserPromptSubmit",
+                    extra: ["prompt": "Opening prompt", "transcript_path": transcript.path]
+                )
+            ])
+
+            #expect(record?["providerSessionTitle"] as? String == "Renamed title")
+            #expect(record?["providerGeneratedTitle"] as? String == "Generated title")
+        }
+    }
+
+    @Test("preserves title candidates and the opening prompt across compaction")
+    func compactSessionStart_preservesTitleInputs() throws {
+        let record = try runHooks([
+            payload(
+                "SessionStart",
+                extra: ["source": "startup", "session_title": "Formal title"]
+            ),
+            payload("UserPromptSubmit", extra: ["prompt": "Opening prompt"]),
+            payload("SessionStart", extra: ["source": "compact"])
+        ])
+
+        #expect(record?["providerSessionTitle"] as? String == "Formal title")
+        #expect(record?["firstPrompt"] as? String == "Opening prompt")
     }
 
     @Test("keeps one episode token across repeated waiting writes")

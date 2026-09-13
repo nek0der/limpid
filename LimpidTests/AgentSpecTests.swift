@@ -93,8 +93,8 @@ struct AgentSpecTests {
         #expect(tab.title == "kept")
     }
 
-    @Test("ClaudeAgent.applyTabTitle is a no-op (default protocol conformance)")
-    func claude_applyTabTitle_isNoop() {
+    @Test("ClaudeAgent.applyTabTitle uses the formal title of the latest session owner")
+    func claude_applyTabTitle_usesFormalTitle() {
         var (tab, pane) = Tab.newWithSinglePane(title: "kept", container: .loose)
         let badge = AgentBadge(
             state: .running,
@@ -103,7 +103,31 @@ struct AgentSpecTests {
             contextTokens: nil,
             updatedAt: Date(timeIntervalSince1970: 100),
             lastPrompt: nil,
-            firstPrompt: "would-be-title",
+            firstPrompt: "Opening prompt",
+            conversationID: "session-1",
+            providerSessionTitle: "Formal title",
+            providerGeneratedTitle: "Generated title",
+            sessionStartedAt: Date(timeIntervalSince1970: 100)
+        )
+        tab.claudeAgentBadges[pane] = badge
+
+        ClaudeAgent.applyTabTitle(&tab, badges: tab.claudeAgentBadges)
+
+        #expect(tab.title == "Formal title")
+    }
+
+    @Test("ClaudeAgent.applyTabTitle does not use a title without conversation identity")
+    func claude_applyTabTitle_requiresConversationIdentity() {
+        var (tab, pane) = Tab.newWithSinglePane(title: "kept", container: .loose)
+        let badge = AgentBadge(
+            state: .running,
+            detail: nil,
+            runStartedAt: nil,
+            contextTokens: nil,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            lastPrompt: nil,
+            firstPrompt: "Opening prompt",
+            providerSessionTitle: "Formal title",
             sessionStartedAt: Date(timeIntervalSince1970: 100)
         )
         tab.claudeAgentBadges[pane] = badge

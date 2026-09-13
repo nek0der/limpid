@@ -133,6 +133,8 @@ json_escape() {
 }
 
 session_id="$(extract session_id)"
+session_title="$(extract session_title)"
+session_source="$(extract source)"
 cwd="$(extract cwd)"
 hook_event="$(extract hook_event_name)"
 reason="$(extract reason)"
@@ -177,9 +179,8 @@ error_safe="$(json_escape "$error_type")"
 message_safe="$(json_escape "$notification_message")"
 question_safe="$(json_escape "$ask_question")"
 detail_safe=""
-# Carried into the OSC 2 tab-title fallback below. Initialised here so
-# the title block can reference it even on events that skip the state
-# write (defensive under `set -u`).
+# Captured once on UserPromptSubmit as the lowest-priority title candidate.
+# Initialize it for events that skip the state write under `set -u`.
 first_prompt=""
 
 # Compute the lifecycle state for the container/tab column status icons. Order
@@ -289,6 +290,8 @@ if [ -n "$new_state" ]; then
   prev_run_started=""
   prev_last_prompt=""
   prev_first_prompt=""
+  prev_provider_session_title=""
+  prev_provider_generated_title=""
   prev_session_started=""
   prev_state=""
   prev_state_episode=""
@@ -296,10 +299,32 @@ if [ -n "$new_state" ]; then
     prev_run_started="$(plutil -extract runStartedAt raw -o - "$state_final" 2>/dev/null)"
     prev_last_prompt="$(plutil -extract lastPrompt raw -o - "$state_final" 2>/dev/null)"
     prev_first_prompt="$(plutil -extract firstPrompt raw -o - "$state_final" 2>/dev/null)"
+    prev_provider_session_title="$(plutil -extract providerSessionTitle raw -o - "$state_final" 2>/dev/null)"
+    prev_provider_generated_title="$(plutil -extract providerGeneratedTitle raw -o - "$state_final" 2>/dev/null)"
     prev_session_started="$(plutil -extract sessionStartedAt raw -o - "$state_final" 2>/dev/null)"
     prev_state="$(plutil -extract state raw -o - "$state_final" 2>/dev/null)"
     prev_state_episode="$(plutil -extract stateEpisodeToken raw -o - "$state_final" 2>/dev/null)"
   fi
+
+  # Claude only exposes the current formal title directly on SessionStart.
+  # Until a live title-change input exists, read its transcript title record as
+  # an adapter-local compatibility source. The transcript may lag, so absence
+  # never clears a title already observed for this run.
+  observed_custom_title=""
+  observed_generated_title=""
+  case "$hook_event" in
+    UserPromptSubmit|Stop)
+      transcript_path="$(extract transcript_path)"
+      if [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
+        title_line="$(grep '"type"[[:space:]]*:[[:space:]]*"ai-title"' "$transcript_path" 2>/dev/null | tail -n1)"
+        if [ -n "$title_line" ]; then
+          observed_custom_title="$(printf '%s' "$title_line" | plutil -extract customTitle raw -o - - 2>/dev/null)"
+          observed_generated_title="$(printf '%s' "$title_line" | plutil -extract aiTitle raw -o - - 2>/dev/null)"
+        fi
+      fi
+      ;;
+  esac
+
   case "$hook_event" in
     UserPromptSubmit)
       run_started="$ts"
@@ -317,12 +342,22 @@ if [ -n "$new_state" ]; then
       else
         first_prompt="$last_prompt"
       fi
+      provider_session_title="${observed_custom_title:-$prev_provider_session_title}"
+      provider_generated_title="${observed_generated_title:-$prev_provider_generated_title}"
       session_started="$prev_session_started"
       ;;
     SessionStart)
       run_started=""
       last_prompt=""
-      first_prompt=""
+      if [ "$session_source" = "compact" ]; then
+        first_prompt="$prev_first_prompt"
+        provider_session_title="${session_title:-$prev_provider_session_title}"
+        provider_generated_title="$prev_provider_generated_title"
+      else
+        first_prompt=""
+        provider_session_title="$session_title"
+        provider_generated_title=""
+      fi
       # `sessionStartedAt` is captured here and held for every event of
       # this session. The Swift side uses it to decide which pane "owns"
       # the tab title when more than one Claude/Codex session is alive:
@@ -330,31 +365,31 @@ if [ -n "$new_state" ]; then
       # doesn't get clobbered when pane 1's older session emits a turn.
       session_started="$ts"
       ;;
-    Stop|SessionEnd|StopFailure)
+    Stop)
       run_started=""
       # Stop keeps `lastPrompt` so the Tracker's diff (running→idle)
       # can read it once before the next UserPromptSubmit overwrites.
       # SessionEnd resets; StopFailure is fatal so also reset.
-      if [ "$hook_event" = "Stop" ]; then
-        last_prompt="$prev_last_prompt"
-      else
-        last_prompt=""
-      fi
-      # Keep the captured opening prompt across Stop so the title block
-      # can fall back to it; SessionEnd / StopFailure reset it
-      # alongside the rest of the per-run state.
-      if [ "$hook_event" = "Stop" ]; then
-        first_prompt="$prev_first_prompt"
-        session_started="$prev_session_started"
-      else
-        first_prompt=""
-        session_started=""
-      fi
+      last_prompt="$prev_last_prompt"
+      first_prompt="$prev_first_prompt"
+      provider_session_title="${observed_custom_title:-$prev_provider_session_title}"
+      provider_generated_title="${observed_generated_title:-$prev_provider_generated_title}"
+      session_started="$prev_session_started"
+      ;;
+    SessionEnd|StopFailure)
+      run_started=""
+      last_prompt=""
+      first_prompt=""
+      provider_session_title=""
+      provider_generated_title=""
+      session_started=""
       ;;
     *)
       run_started="$prev_run_started"
       last_prompt="$prev_last_prompt"
       first_prompt="$prev_first_prompt"
+      provider_session_title="$prev_provider_session_title"
+      provider_generated_title="$prev_provider_generated_title"
       session_started="$prev_session_started"
       ;;
   esac
@@ -385,6 +420,18 @@ if [ -n "$new_state" ]; then
     # state record is parseable.
     first_prompt_field=",\"firstPrompt\":\"$(json_escape "$first_prompt")\""
   fi
+  conversation_field=""
+  if [ -n "$session_id" ]; then
+    conversation_field=",\"sessionId\":\"$(json_escape "$session_id")\""
+  fi
+  provider_session_title_field=""
+  if [ -n "$provider_session_title" ]; then
+    provider_session_title_field=",\"providerSessionTitle\":\"$(json_escape "$provider_session_title")\""
+  fi
+  provider_generated_title_field=""
+  if [ -n "$provider_generated_title" ]; then
+    provider_generated_title_field=",\"providerGeneratedTitle\":\"$(json_escape "$provider_generated_title")\""
+  fi
   session_started_field=""
   if [ -n "$session_started" ]; then
     session_started_field=",\"sessionStartedAt\":\"$session_started\""
@@ -404,7 +451,7 @@ if [ -n "$new_state" ]; then
     runtime_field="$runtime_field,\"tmuxSocketPath\":\"$(json_escape "$tmux_socket")\",\"tmuxPaneId\":\"$tmux_pane\",\"tmuxServerPID\":\"$LIMPID_RUNTIME_TMUX_SERVER_PID\",\"tmuxServerStartedAt\":\"$LIMPID_RUNTIME_TMUX_SERVER_START\""
   fi
   {
-    printf '{"schemaVersion":2,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s%s%s%s}\n' \
+    printf '{"schemaVersion":2,"paneId":"%s","state":"%s","detail":"%s","runStartedAt":"%s","updatedAt":"%s","lastHookEvent":"%s"%s%s%s%s%s%s%s%s%s%s%s}\n' \
       "$pane_id" \
       "$new_state" \
       "$detail_safe" \
@@ -416,6 +463,9 @@ if [ -n "$new_state" ]; then
       "$tmux_field" \
       "$prompt_field" \
       "$first_prompt_field" \
+      "$conversation_field" \
+      "$provider_session_title_field" \
+      "$provider_generated_title_field" \
       "$session_started_field" \
       "$episode_field" \
       "$runtime_field"
@@ -453,47 +503,6 @@ if [ "$hook_event" = "CwdChanged" ]; then
   } > "$cwd_tmp" 2>/dev/null && mv -f "$cwd_tmp" "$cwd_final" 2>/dev/null || rm -f "$cwd_tmp" 2>/dev/null
   exit 0
 fi
-
-# ----- Tab title (Claude's title / opening prompt -> OSC 2) -----
-# Drive the tab label off whatever best names this conversation, in
-# the same precedence Claude's own resume picker uses:
-#   customTitle (explicit /rename)  >  aiTitle (Haiku auto-name)
-#   >  firstPrompt (the session's opening line, captured above)
-# Claude writes `customTitle` / `aiTitle` into an `ai-title` line in
-# the transcript jsonl, but only generates `aiTitle` sporadically and
-# late — so without the firstPrompt fallback a fresh pane would keep
-# showing the launch command for the whole session. We hand the
-# resolved title to Claude as an OSC 2 escape via the hook's
-# `terminalSequence` output; Claude emits it on our behalf through its
-# own terminal write path (race-free, tmux/screen-safe), and
-# libghostty turns it into a GHOSTTY_ACTION_SET_TITLE that Limpid
-# already routes to the tab label.
-#
-# We force `LC_ALL=C` so sed treats each line as bytes — a Japanese
-# title would otherwise crash BSD sed with "illegal byte sequence".
-# `null` / empty values don't match the quoted-capture regex, so they
-# fall through to the next candidate.
-case "$hook_event" in
-  UserPromptSubmit | Stop)
-    ai_title=""
-    custom_title=""
-    transcript_path="$(extract transcript_path)"
-    if [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
-      title_line="$(grep '"type":"ai-title"' "$transcript_path" 2>/dev/null | tail -n1)"
-      if [ -n "$title_line" ]; then
-        ai_title="$(printf '%s' "$title_line" | LC_ALL=C sed -n 's/.*"aiTitle"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-        custom_title="$(printf '%s' "$title_line" | LC_ALL=C sed -n 's/.*"customTitle"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-      fi
-    fi
-    tab_title="${custom_title:-${ai_title:-$first_prompt}}"
-    if [ -n "$tab_title" ]; then
-      # JSON-escape backslash + double-quote and drop any control
-      # bytes before splicing into the terminalSequence string.
-      esc_title="$(printf '%s' "$tab_title" | LC_ALL=C sed 's/\\/\\\\/g; s/"/\\"/g' | LC_ALL=C tr -d '\000-\037')"
-      printf '{"terminalSequence":"\\u001b]2;%s\\u0007"}\n' "$esc_title"
-    fi
-    ;;
-esac
 
 # ----- Session record (claude --resume) -----
 # Independent of the lifecycle state file above; SessionStart writes
