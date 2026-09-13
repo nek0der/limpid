@@ -20,6 +20,9 @@
     "Notification": [
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ],
+    "PermissionRequest": [
+      { "hooks": [{ "type": "command", "command": "@@APPROVAL_HELPER@@ permission-request claude", "timeout": 600 }] }
+    ],
     "PreCompact": [
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ],

@@ -447,7 +447,9 @@ struct ClaudeHookScriptTests {
     /// cwd event rather than a lifecycle state; it is asserted below.
     @Test("every subscribed event maps to a lifecycle state")
     func subscribedEvents_allReachABranch() throws {
-        for event in try Self.subscribedEvents() where event != "CwdChanged" {
+        for event in try Self.subscribedEvents()
+            where event != "CwdChanged" && event != "PermissionRequest"
+        {
             let record = try runHooks(midTurn() + [payload(event, extra: Self.extras(for: event))])
             #expect(
                 record?["lastHookEvent"] as? String == event,
@@ -466,6 +468,7 @@ struct ClaudeHookScriptTests {
         let filled = try String(contentsOf: template, encoding: .utf8)
             .replacingOccurrences(of: "@@HOOK@@", with: "/hook")
             .replacingOccurrences(of: "@@WORKTREE_PRETOOL_HOOK@@", with: "/pretool")
+            .replacingOccurrences(of: "@@APPROVAL_HELPER@@", with: "/approval-helper")
         let json = try JSONSerialization.jsonObject(with: Data(filled.utf8))
         let hooks = try #require((json as? [String: Any])?["hooks"] as? [String: Any])
         #expect(!hooks.isEmpty)

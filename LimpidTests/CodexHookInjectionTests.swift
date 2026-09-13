@@ -13,6 +13,23 @@ import Testing
 struct CodexHookInjectionTests {
     private let lifecycle = "/bin/sh '/x/limpid-hook'"
     private let worktree = "/bin/sh '/x/limpid-pretool-worktree-hook'"
+    private let approval = "'/x/AgentIntegrationHookHelper' permission-request codex"
+
+    @Test("routes only PermissionRequest through the signed helper")
+    func arguments_permissionRequestUsesApprovalHelper() throws {
+        let args = CodexHookInjection.arguments(
+            lifecycleCommand: lifecycle,
+            worktreeCommand: worktree,
+            approvalCommand: approval
+        )
+
+        let permission = try #require(args.first { $0.hasPrefix("hooks.PermissionRequest=") })
+        let preToolUse = try #require(args.first { $0.hasPrefix("hooks.PreToolUse=") })
+        #expect(permission.contains(approval))
+        #expect(!permission.contains(lifecycle))
+        #expect(preToolUse.contains(lifecycle))
+        #expect(!preToolUse.contains(approval))
+    }
 
     @Test("emits one -c flag per subscribed event, plus the title suppression")
     func arguments_coverEverySubscribedEvent() {
@@ -55,12 +72,14 @@ struct CodexHookInjectionTests {
     @Test("every trust entry matches the command the flags supply")
     func trustBlock_hashesMatchTheArguments() {
         let block = CodexHookInjection.trustBlock(
-            lifecycleCommand: lifecycle, worktreeCommand: worktree
+            lifecycleCommand: lifecycle,
+            worktreeCommand: worktree,
+            approvalCommand: approval
         )
         for event in CodexHookInstaller.subscribedEvents {
             let expected = CodexTrustHash.compute(
                 eventLabel: event.label,
-                command: lifecycle,
+                command: event.jsonKey == "PermissionRequest" ? approval : lifecycle,
                 timeoutSec: event.timeoutSec
             )
             #expect(block.contains(expected), "no hash for \(event.label)")

@@ -21,6 +21,7 @@ struct ContainerSlabView: View {
     @Binding var creatingWorktreeFor: UUID?
     @Environment(WindowSession.self) private var session
     @Environment(AttentionState.self) private var attention
+    @Environment(ApprovalPresentationStore.self) private var approvalPresentation
     @Environment(LimpidDragState.self) private var dragState
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.surfaceRegistry) private var registry
@@ -206,14 +207,28 @@ struct ContainerSlabView: View {
             // reads the wall clock. Evaluated above the TimelineView,
             // an aged-out row would stay listed until some unrelated
             // state change happened to re-render the slab.
-            let entries = attention.attentionEntries(in: session)
+            let approvals = approvalPresentation.pending
+            // Claude may emit its legacy permission notification alongside a
+            // PermissionRequest. Once the authenticated request maps to that
+            // pane, show only the broker-owned row so one prompt never has two
+            // visible owners.
+            let nativeApprovalPaneIDs = Set(approvals.compactMap {
+                approvalPresentation.paneLocation(for: $0, in: session)?.1
+            })
+            let entries = attention.attentionEntries(in: session).filter {
+                $0.state != .needsInput || !nativeApprovalPaneIDs.contains($0.paneID)
+            }
             // The header carries the per-state counts, so it belongs
             // inside the tick as well.
             VStack(alignment: .leading, spacing: 0) {
-                attentionHeader(entries: entries, attention: attention)
+                attentionHeader(
+                    entries: entries,
+                    approvalCount: approvals.count,
+                    attention: attention
+                )
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        if entries.isEmpty {
+                        if entries.isEmpty, approvals.isEmpty {
                             // Two empty-state messages so the region is
                             // never a silent blank rectangle:
                             //   - filter on + things hidden → "N hidden"
@@ -239,6 +254,24 @@ struct ContainerSlabView: View {
                             .foregroundStyle(Color.primary.opacity(0.4))
                             .padding(.horizontal, 18)
                             .padding(.vertical, 4)
+                        }
+                        ForEach(approvals) { approval in
+                            let location = approvalPresentation.paneLocation(for: approval, in: session)
+                            ApprovalAttentionRow(
+                                approval: approval,
+                                isResolving: approvalPresentation.resolvingIDs.contains(approval.id),
+                                onAllow: { approvalPresentation.resolve(approval, decision: "allow_once") },
+                                onDeny: { approvalPresentation.resolve(approval, decision: "deny") },
+                                onTap: {
+                                    guard let location else { return }
+                                    attention.focusAttention(
+                                        in: session,
+                                        registry: registry,
+                                        tabID: location.0,
+                                        paneID: location.1
+                                    )
+                                }
+                            )
                         }
                         ForEach(entries) { entry in
                             if let tab = session.tab(entry.tabID) {
@@ -515,6 +548,7 @@ struct ContainerSlabView: View {
         content
             .environment(session)
             .environment(attention)
+            .environment(approvalPresentation)
             .environment(dragState)
             .environment(toastCenter)
             .environment(prStatusStore)

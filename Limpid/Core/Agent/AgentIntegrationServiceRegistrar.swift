@@ -1,5 +1,5 @@
 // AgentIntegrationServiceRegistrar.swift
-// Limpid — explicit development-only lifecycle control for the bundled agent.
+// Limpid — development lifecycle control for the bundled approval service.
 
 import Foundation
 import OSLog
@@ -11,9 +11,8 @@ enum AgentIntegrationServiceRegistrar {
 
     static func applyDevelopmentCommandIfPresent() {
         #if DEBUG
-            guard let command = ProcessInfo.processInfo.environment[controlEnvironmentKey] else {
-                return
-            }
+            guard !LimpidPaths.isRunningInTests else { return }
+            let command = ProcessInfo.processInfo.environment[controlEnvironmentKey] ?? "register"
             do {
                 let service = SMAppService.agent(plistName: AgentIntegrationConfiguration.plistName)
                 switch command {

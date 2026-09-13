@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum AgentKind: String, Codable, CaseIterable, Equatable {
+enum AgentKind: String, Codable, CaseIterable, Equatable, Sendable {
     case claude
     case codex
 }

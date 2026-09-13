@@ -15,7 +15,10 @@ enum AgentIntegrationConfiguration {
         static let requesterMachService = "dev.limpid.agent-integration-service.dev.requester"
         static let controllerMachService = "dev.limpid.agent-integration-service.dev.controller"
         static let serviceIdentifier = "dev.limpid.AgentIntegrationService.dev"
-        static let requesterIdentifiers = ["dev.limpid.AgentIntegrationRequesterProbe.dev"]
+        static let requesterIdentifiers = [
+            "dev.limpid.AgentIntegrationHookHelper.dev",
+            "dev.limpid.AgentIntegrationRequesterProbe.dev"
+        ]
         static let controllerIdentifiers = [
             "dev.limpid.Limpid.dev",
             "dev.limpid.AgentIntegrationControllerProbe.dev"
@@ -26,8 +29,7 @@ enum AgentIntegrationConfiguration {
         static let requesterMachService = "dev.limpid.agent-integration-service.requester"
         static let controllerMachService = "dev.limpid.agent-integration-service.controller"
         static let serviceIdentifier = "dev.limpid.AgentIntegrationService"
-        // Registration remains disabled until this signed Hook Helper lands.
-        static let requesterIdentifiers = ["dev.limpid.Agent"]
+        static let requesterIdentifiers = ["dev.limpid.AgentIntegrationHookHelper"]
         static let controllerIdentifiers = ["dev.limpid.Limpid"]
     #endif
 }

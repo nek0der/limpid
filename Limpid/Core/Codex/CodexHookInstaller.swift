@@ -151,7 +151,8 @@ final class CodexHookInstaller {
         let updated = CodexUserConfig.applying(
             block: CodexHookInjection.trustBlock(
                 lifecycleCommand: lifecycleCommand,
-                worktreeCommand: worktreeCommand
+                worktreeCommand: worktreeCommand,
+                approvalCommand: approvalCommand
             ),
             to: existing
         )
@@ -178,7 +179,8 @@ final class CodexHookInstaller {
             "LIMPID_CODEX_AGENT_STATES_DIR": CodexHookInstaller.agentStatesDirectoryURL.path,
             "LIMPID_CODEX_HOOK_ARGS": CodexHookInjection.arguments(
                 lifecycleCommand: lifecycleCommand,
-                worktreeCommand: worktreeCommand
+                worktreeCommand: worktreeCommand,
+                approvalCommand: approvalCommand
             ).joined(separator: CodexHookInstaller.argumentSeparator)
         ]
     }
@@ -196,9 +198,27 @@ final class CodexHookInstaller {
         worktreeHookScriptURL.map { Self.shellCommand(for: $0) }
     }
 
+    private var approvalCommand: String? {
+        #if !DEBUG
+            // Release keeps the lifecycle receiver until installed-update
+            // registration and the native approval UI are enabled together.
+            return nil
+        #else
+            guard let executable = Bundle.main.executableURL else { return nil }
+            let helper = executable.deletingLastPathComponent()
+                .appendingPathComponent("AgentIntegrationHookHelper")
+            guard FileManager.default.isExecutableFile(atPath: helper.path) else { return nil }
+            return Self.executableCommand(for: helper) + " permission-request codex"
+        #endif
+    }
+
     private static func shellCommand(for url: URL) -> String {
+        "/bin/sh " + executableCommand(for: url)
+    }
+
+    static func executableCommand(for url: URL) -> String {
         let path = url.resolvingSymlinksInPath().path
-        return "/bin/sh '" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     static func bundledHookScript() -> URL? {

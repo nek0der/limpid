@@ -129,6 +129,63 @@ fn requester_waits_for_controller_decision_over_real_streams() {
 }
 
 #[test]
+fn controller_subscription_wakes_when_requester_submits() {
+    let service = Arc::new(ApprovalService::new(8));
+    let run_id = Uuid::new_v4();
+    let request_id = Uuid::new_v4();
+    let (mut requester, requester_task) = start_connection(
+        Arc::clone(&service),
+        Principal::Requester {
+            run_id: RunId::new(run_id),
+        },
+    );
+    let (mut controller, controller_task) =
+        start_connection(Arc::clone(&service), Principal::Controller);
+    let requester_epoch = hello(&mut requester);
+    let controller_epoch = hello(&mut controller);
+    assert_eq!(requester_epoch, controller_epoch);
+
+    let subscriber = thread::spawn(move || {
+        let response = exchange(
+            &mut controller,
+            &WireRequest {
+                version: PROTOCOL_VERSION,
+                message_id: Uuid::new_v4(),
+                service_epoch: Some(controller_epoch),
+                body: RequestBody::ApprovalSubscribe {
+                    after_sequence: 0,
+                    maximum_wait_ms: 5_000,
+                },
+            },
+        );
+        let ResponseBody::ApprovalSnapshotResult { sequence, requests } = response.body else {
+            panic!("expected approval snapshot result");
+        };
+        assert_eq!(sequence, 1);
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].request_id, request_id);
+        drop(controller);
+    });
+
+    thread::sleep(Duration::from_millis(20));
+    let submit = exchange(
+        &mut requester,
+        &WireRequest {
+            version: PROTOCOL_VERSION,
+            message_id: Uuid::new_v4(),
+            service_epoch: Some(requester_epoch),
+            body: RequestBody::ApprovalSubmit(approval(run_id, request_id)),
+        },
+    );
+    assert!(matches!(submit.body, ResponseBody::ApprovalResult(_)));
+
+    drop(requester);
+    subscriber.join().unwrap();
+    requester_task.join().unwrap();
+    controller_task.join().unwrap();
+}
+
+#[test]
 fn stream_session_rejects_self_approval_and_stale_epoch() {
     let service = Arc::new(ApprovalService::new(8));
     let run_id = Uuid::new_v4();

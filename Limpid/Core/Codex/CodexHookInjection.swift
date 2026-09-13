@@ -29,13 +29,16 @@ enum CodexHookInjection {
     /// Flags for `codex`, already split into `-c` / value pairs.
     static func arguments(
         lifecycleCommand: String,
-        worktreeCommand: String?
+        worktreeCommand: String?,
+        approvalCommand: String? = nil
     ) -> [String] {
         var out: [String] = []
         for event in CodexHookInstaller.subscribedEvents {
             var groups = [
                 group(
-                    command: lifecycleCommand,
+                    command: event.jsonKey == "PermissionRequest"
+                        ? approvalCommand ?? lifecycleCommand
+                        : lifecycleCommand,
                     matcher: nil,
                     timeoutSec: event.timeoutSec
                 )
@@ -60,13 +63,19 @@ enum CodexHookInjection {
 
     /// The `[hooks.state."…"]` entries covering exactly what `arguments`
     /// supplies, ready to splice into the user's config.
-    static func trustBlock(lifecycleCommand: String, worktreeCommand: String?) -> String {
+    static func trustBlock(
+        lifecycleCommand: String,
+        worktreeCommand: String?,
+        approvalCommand: String? = nil
+    ) -> String {
         var lines: [String] = []
         for event in CodexHookInstaller.subscribedEvents {
             lines += entry(
                 eventLabel: event.label,
                 group: 0,
-                command: lifecycleCommand,
+                command: event.jsonKey == "PermissionRequest"
+                    ? approvalCommand ?? lifecycleCommand
+                    : lifecycleCommand,
                 matcher: nil,
                 timeoutSec: event.timeoutSec
             )

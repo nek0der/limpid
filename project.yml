@@ -140,6 +140,27 @@ targets:
     dependencies:
       - sdk: Security.framework
 
+  AgentIntegrationHookHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: AgentIntegrationService/HookHelper
+      - path: AgentIntegrationService/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationHookHelper
+        PRODUCT_NAME: AgentIntegrationHookHelper
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_DEBUG_DYLIB: NO
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationHookHelper.dev
+          OTHER_CODE_SIGN_FLAGS: "--identifier dev.limpid.AgentIntegrationHookHelper.dev"
+        Release:
+          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier dev.limpid.AgentIntegrationHookHelper"
+    dependencies:
+      - sdk: Security.framework
+
   AgentIntegrationControllerProbe:
     type: tool
     platform: macOS
@@ -337,6 +358,11 @@ targets:
           EXCLUDED_SOURCE_FILE_NAMES: dev.limpid.agent-integration-service.dev.plist
     dependencies:
       - target: AgentIntegrationService
+        embed: true
+        link: false
+        copy:
+          destination: executables
+      - target: AgentIntegrationHookHelper
         embed: true
         link: false
         copy:
