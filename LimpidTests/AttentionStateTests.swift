@@ -8,14 +8,21 @@ import Testing
 @MainActor
 struct AttentionStateTests {
     /// Build a Claude badge in a given state stamped at `epoch` seconds.
-    private func badge(_ state: AgentState, at epoch: TimeInterval) -> ClaudeAgentBadge {
+    private func badge(
+        _ state: AgentState,
+        at epoch: TimeInterval,
+        turnBaseTree: String? = nil,
+        turnRoot: String? = nil
+    ) -> ClaudeAgentBadge {
         ClaudeAgentBadge(
             state: state,
             detail: nil,
             runStartedAt: nil,
             contextTokens: nil,
             updatedAt: Date(timeIntervalSince1970: epoch),
-            lastPrompt: nil
+            lastPrompt: nil,
+            turnBaseTree: turnBaseTree,
+            turnRoot: turnRoot
         )
     }
 
@@ -360,6 +367,98 @@ struct AttentionStateTests {
     }
 
     // MARK: - ⌘J cursor honours the includeViewed filter
+
+    @Test func focusingFinishedTurnWithBaseOpensReviewWhenEnabled() throws {
+        let session = WindowSession()
+        let attention = makeAttention()
+        let presentation = ReviewPresentation()
+        let registry = NoopSurfaceRegistry()
+        let tab = session.openTab(container: .loose)
+        let paneID = try #require(tab.splitTree.allLeafIDs().first)
+        let tree = String(repeating: "a", count: 40)
+        let root = "/tmp/turn-review"
+        session.update(tab.id) {
+            $0.claudeAgentBadges[paneID] = badge(
+                .finished,
+                at: 100,
+                turnBaseTree: tree,
+                turnRoot: root
+            )
+        }
+        attention.isTurnReviewEnabled = { true }
+        attention.onFinishedTurnFocused = { paneID, tree, root in
+            presentation.open(
+                URL(fileURLWithPath: root),
+                originPaneID: paneID,
+                initialScope: .turn(baseTree: tree, paneID: paneID),
+                transientOwnerPaneID: paneID
+            )
+        }
+
+        attention.focusAttention(in: session, registry: registry, tabID: tab.id, paneID: paneID)
+
+        #expect(presentation.directory == URL(fileURLWithPath: root))
+        #expect(presentation.requestedScope == .turn(baseTree: tree, paneID: paneID))
+        #expect(presentation.transientOwnerPaneID == paneID)
+    }
+
+    @Test func focusingFinishedTurnLeavesReviewAloneWhenDisabled() throws {
+        let session = WindowSession()
+        let attention = makeAttention()
+        let presentation = ReviewPresentation()
+        let registry = NoopSurfaceRegistry()
+        let tab = session.openTab(container: .loose)
+        let paneID = try #require(tab.splitTree.allLeafIDs().first)
+        session.update(tab.id) {
+            $0.claudeAgentBadges[paneID] = badge(
+                .finished,
+                at: 100,
+                turnBaseTree: String(repeating: "a", count: 40),
+                turnRoot: "/tmp/turn-review"
+            )
+        }
+        attention.isTurnReviewEnabled = { false }
+        attention.onFinishedTurnFocused = { paneID, tree, root in
+            presentation.open(
+                URL(fileURLWithPath: root),
+                originPaneID: paneID,
+                initialScope: .turn(baseTree: tree, paneID: paneID)
+            )
+        }
+
+        attention.focusAttention(in: session, registry: registry, tabID: tab.id, paneID: paneID)
+
+        #expect(!presentation.isPresented)
+    }
+
+    @Test func focusingNeedsInputNeverOpensTurnReview() throws {
+        let session = WindowSession()
+        let attention = makeAttention()
+        let presentation = ReviewPresentation()
+        let registry = NoopSurfaceRegistry()
+        let tab = session.openTab(container: .loose)
+        let paneID = try #require(tab.splitTree.allLeafIDs().first)
+        session.update(tab.id) {
+            $0.claudeAgentBadges[paneID] = badge(
+                .needsInput,
+                at: 100,
+                turnBaseTree: String(repeating: "a", count: 40),
+                turnRoot: "/tmp/turn-review"
+            )
+        }
+        attention.isTurnReviewEnabled = { true }
+        attention.onFinishedTurnFocused = { paneID, tree, root in
+            presentation.open(
+                URL(fileURLWithPath: root),
+                originPaneID: paneID,
+                initialScope: .turn(baseTree: tree, paneID: paneID)
+            )
+        }
+
+        attention.focusAttention(in: session, registry: registry, tabID: tab.id, paneID: paneID)
+
+        #expect(!presentation.isPresented)
+    }
 
     @Test func jumpToAttention_includeViewedFalse_skipsViewedFinished() throws {
         let session = WindowSession()

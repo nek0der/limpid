@@ -46,6 +46,7 @@ Set by Limpid before spawning the pty:
 | `LIMPID_AGENT_RUN_ID` | UUID of this Claude invocation; lifecycle-state filename key |
 | `LIMPID_AGENT_TMUX_HOST_MODE` | `limpidHosted` for automatic hosting, `manual` inside user tmux |
 | `LIMPID_SHIM_DIR` | This directory, so `zdotdir/.zshrc` can re-prepend it |
+| `LIMPID_CLAUDE_HOOK_NAMESPACE` | Bundle identity used to keep the no-space hook link separate between Dev and Release builds |
 | `LIMPID_SESSIONS_DIR` | Directory to write session records into |
 | `LIMPID_AGENT_STATES_DIR` | Directory to write agent-state records into |
 | `LIMPID_CWD_EVENTS_DIR` | Directory to write cwd-change records into |

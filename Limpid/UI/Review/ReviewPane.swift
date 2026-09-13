@@ -143,6 +143,7 @@ struct ReviewWorkspaceView: View {
 
     @Environment(WindowSession.self) var session
     @Environment(ReviewPresentation.self) var reviewPresentation
+    @Environment(AttentionState.self) var attention
     @Environment(\.surfaceRegistry) var registry
     @Environment(ToastCenter.self) var toastCenter
     @Environment(SettingsStore.self) var settingsStore
@@ -196,6 +197,10 @@ struct ReviewWorkspaceView: View {
     /// this repository was open. Keep it behind the loading surface until Git
     /// has confirmed what belongs to this opening.
     @State var hasPreparedInitialSnapshot = false
+    /// A navigation command names its destination before Git finishes loading
+    /// it. Keep that target so the scope pill can arrive there without
+    /// replaying a picker gesture the reader did not make.
+    @State var scopeSelectionWithoutAnimation: ReviewScope?
 
     /// The comments that still stand. Resolved ones stay in the draft as the
     /// record of what was asked, and leave everything that acts on a comment:
@@ -560,8 +565,21 @@ struct ReviewWorkspaceView: View {
         .task {
             // Before the first list, so the choice is on screen with it rather
             // than appearing a moment later.
+            store.offerTurnScope(availableTurnScope)
             await store.loadBase()
-            await refresh()
+            if let requestedScope = reviewPresentation.requestedScope {
+                _ = await changeScope(requestedScope, animatesSelection: false)
+                hasPreparedInitialSnapshot = true
+            } else {
+                await refresh()
+            }
+        }
+        .onChange(of: reviewPresentation.scopeRequestID) { _, _ in
+            guard let requestedScope = reviewPresentation.requestedScope else { return }
+            Task { await changeScope(requestedScope, animatesSelection: false) }
+        }
+        .onChange(of: availableTurnScope) { _, scope in
+            store.offerTurnScope(scope)
         }
         // The pane below can change under review — the user switches tab, an
         // agent starts or exits — and what is in front of its terminal changes
@@ -667,12 +685,13 @@ struct ReviewWorkspaceView: View {
             isResolvingDestination: isResolvingDestination,
             isInserting: isInserting,
             isSnapshotReady: hasPreparedInitialSnapshot,
+            scopeSelectionWithoutAnimation: scopeSelectionWithoutAnimation,
             canInsert: canInsert,
+            offeredTurnScope: availableTurnScope,
             prompt: prompt,
             isShowingPrompt: $isShowingPrompt,
-            onSelectScope: { isBranch in
-                guard let base = store.base else { return }
-                Task { await changeScope(isBranch ? .branch(base: base) : .uncommitted) }
+            onSelectScope: { scope in
+                Task { await changeScope(scope) }
             },
             onRefresh: { Task { await refresh() } },
             onInsert: insert,
@@ -723,10 +742,10 @@ struct ReviewWorkspaceView: View {
         // does. Without a base there is no branch view to move to, and a
         // branch comment cannot be reached at all.
         if !store.scope.layers.contains(comment.file.layer) {
-            guard let base = store.base else { return }
+            let targetScope = store.scopeForFile(comment.file)
+            guard targetScope.layers.contains(comment.file.layer) else { return }
             Task {
-                guard await changeScope(comment.file.layer == .branch ? .branch(base: base) : .uncommitted)
-                else { return }
+                guard await changeScope(targetScope), store.scope.layers.contains(comment.file.layer) else { return }
                 jump(to: comment)
             }
             return
@@ -751,6 +770,18 @@ struct ReviewWorkspaceView: View {
         } else {
             select(comment.file.id)
         }
+    }
+
+    private var availableTurnScope: ReviewScope? {
+        ReviewAgents.turnScope(
+            session: session,
+            attention: attention,
+            // The presentation owns the destination identity. The resolved
+            // destination is briefly nil during every probe and can still
+            // describe the previous pane while focus is changing.
+            paneID: reviewPresentation.originPaneID,
+            root: store.root
+        )
     }
 
     // MARK: - Content

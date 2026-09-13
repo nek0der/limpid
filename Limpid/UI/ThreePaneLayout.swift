@@ -171,8 +171,17 @@ struct ThreePaneLayout: View {
             guard let owner = notification.object as? WindowSession, owner === state.session else { return }
             ReviewPresentationCommand.toggle(
                 session: state.session,
+                attention: state.attention,
                 presentation: state.reviewPresentation,
                 registry: state.registry
+            )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .limpidReviewTurn)) { notification in
+            guard let owner = notification.object as? WindowSession, owner === state.session else { return }
+            ReviewPresentationCommand.openTurn(
+                session: state.session,
+                attention: state.attention,
+                presentation: state.reviewPresentation
             )
         }
         // A paste the user refused at the confirmation sheet delivered nothing.

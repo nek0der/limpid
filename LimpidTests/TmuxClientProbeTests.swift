@@ -127,6 +127,13 @@ struct TmuxClientProbeParsingTests {
     func parseClients_emptyOutput_isEmpty() {
         #expect(TmuxClientProbe.parseClients("", socketPath: "/tmp/s").isEmpty)
     }
+
+    @Test("keeps spaces in an absolute pane path")
+    func parsePanePath_absolutePathWithSpaces_isPreserved() {
+        #expect(TmuxClientProbe.parsePanePath("/tmp/a project\n") == "/tmp/a project")
+        #expect(TmuxClientProbe.parsePanePath("relative/path\n") == nil)
+        #expect(TmuxClientProbe.parsePanePath("\n") == nil)
+    }
 }
 
 @Suite("TmuxClientProbe server directory")
@@ -272,6 +279,13 @@ struct TmuxClientProbeSmokeTests {
         let snapshot = TmuxClientProbe.topology(tmuxPath: tmux, socketPaths: [URL(fileURLWithPath: discovered)])
         #expect(snapshot.locations(for: endpoint).count == 1)
         #expect(TmuxClientProbe.normalizeSocketPath(discovered) == discovered)
+        #expect(
+            TmuxClientProbe.activePanePath(
+                tmuxPath: tmux,
+                socketPath: socket,
+                sessionID: "runtime"
+            ) == FileManager.default.currentDirectoryPath
+        )
     }
 
     /// The format string is the whole contract with tmux, and a typo in
@@ -315,6 +329,15 @@ struct TmuxClientProbeSmokeTests {
         #expect(bindings.values.first?.sessionName == "probe")
         #expect(bindings.values.first?.sessionID.hasPrefix("$") == true)
         #expect(bindings.keys.first?.hasPrefix("/dev/") == true)
+        let surfaceTTY = try #require(bindings.keys.first)
+        let binding = try #require(bindings.values.first)
+        #expect(
+            ReviewTerminalProbe.hostedWorkingDirectory(
+                surfaceTTY: surfaceTTY,
+                surfaceForeground: TmuxClientProbe.clientProcessName,
+                knownBinding: binding
+            ) == FileManager.default.currentDirectoryPath
+        )
     }
 
     /// The end-to-end read: discover the socket, ask the server, and

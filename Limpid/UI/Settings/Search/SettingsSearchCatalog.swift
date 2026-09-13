@@ -130,12 +130,20 @@ enum SettingsSearchCatalog {
             ),
 
             makeEntry(
+                "review.jump-opens-turn-review",
+                .review,
+                "Finished Agents",
+                "Open the turn's changes when jumping to a finished agent",
+                keywords: ["Waiting", "This turn"],
+                order: 0
+            ),
+            makeEntry(
                 "review.choose-application",
                 .review,
                 "Review Files",
                 "Choose App…",
                 keywords: ["Review application", "Reset review application"],
-                order: 0
+                order: 1
             ),
             makeEntry(
                 "review.instructions",
@@ -143,7 +151,7 @@ enum SettingsSearchCatalog {
                 "Review Instructions",
                 "Review instructions",
                 keywords: ["Agent instructions", "Reset review instructions"],
-                order: 1
+                order: 2
             ),
 
             makeEntry(
@@ -292,6 +300,10 @@ enum SettingsSearchCatalog {
 
     static var hostsAgentsInTmux: SettingsSearchEntry {
         requiredEntry("integrations.tmux")
+    }
+
+    static var jumpOpensTurnReview: SettingsSearchEntry {
+        requiredEntry("review.jump-opens-turn-review")
     }
 
     static var reviewFileApplication: SettingsSearchEntry {

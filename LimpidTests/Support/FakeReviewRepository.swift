@@ -16,6 +16,7 @@ final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
     var stats: [String: ReviewFileStat] = [:]
     var diffs: [String: ReviewDiff] = [:]
     var fingerprints: [String: String] = [:]
+    var hasChangesOverride: Bool?
     var unsupportedDiffs: Set<String> = []
     var sources: [String: [String]] = [:]
     var base: String?
@@ -23,9 +24,20 @@ final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
     var failingDiffs: Set<String> = []
     private(set) var diffCalls: [String] = []
     private(set) var fileCalls = 0
+    private(set) var fileScopes: [ReviewScope] = []
+    private(set) var diffScopes: [ReviewScope] = []
+    var isTurnBaseMissing = false
+    var isFileListFailing = false
 
-    func files(at _: URL, scope _: ReviewScope) async throws -> [ReviewFile] {
+    func files(at _: URL, scope: ReviewScope) async throws -> [ReviewFile] {
         fileCalls += 1
+        fileScopes.append(scope)
+        if scope.isTurn, isTurnBaseMissing {
+            throw ReviewError.turnBaseMissing
+        }
+        if isFileListFailing {
+            throw ReviewError.gitFailed
+        }
         if let gate = nextFilesGate {
             nextFilesGate = nil
             return await gate.answer()
@@ -37,8 +49,9 @@ final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
         stats
     }
 
-    func diff(_ file: ReviewFile, root _: URL, base _: String?) async throws -> ReviewDiff {
+    func diff(_ file: ReviewFile, root _: URL, scope: ReviewScope) async throws -> ReviewDiff {
         diffCalls.append(file.id)
+        diffScopes.append(scope)
         if let gate = nextDiffFailureGate {
             nextDiffFailureGate = nil
             await gate.answer()
@@ -54,14 +67,29 @@ final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
         return diff
     }
 
-    func fingerprint(_ file: ReviewFile, root: URL, base: String?) async throws -> String {
+    func fingerprint(_ file: ReviewFile, root: URL, scope: ReviewScope) async throws -> String {
         if let fingerprint = fingerprints[file.id] {
             return fingerprint
         }
-        return try await diff(file, root: root, base: base).fingerprint
+        return try await diff(file, root: root, scope: scope).fingerprint
     }
 
-    func source(_ file: ReviewFile, root _: URL) async -> [String] {
+    func hasChanges(
+        at root: URL,
+        scope: ReviewScope,
+        comparedTo displayedFiles: [ReviewFile],
+        currentDiff: ReviewDiff?
+    ) async throws -> Bool {
+        if let hasChangesOverride {
+            return hasChangesOverride
+        }
+        guard try await files(at: root, scope: scope) == displayedFiles else { return true }
+        guard let currentDiff else { return false }
+        return try await fingerprint(currentDiff.file, root: root, scope: scope)
+            != currentDiff.fingerprint
+    }
+
+    func source(_ file: ReviewFile, root _: URL, scope _: ReviewScope) async -> [String] {
         sources[file.id] ?? []
     }
 

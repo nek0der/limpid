@@ -122,13 +122,15 @@ struct ReviewFileRail: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(sections) { section in
-                    header(section)
-                        .onGeometryChange(for: CGFloat.self) { proxy in
-                            proxy.frame(in: .named(Self.space)).minY.rounded()
-                        } action: { minY in
-                            headerOffsets[section.id] = minY
-                        }
-                    if !collapsed.contains(section.id) {
+                    if showsSectionHeaders {
+                        header(section)
+                            .onGeometryChange(for: CGFloat.self) { proxy in
+                                proxy.frame(in: .named(Self.space)).minY.rounded()
+                            } action: { minY in
+                                headerOffsets[section.id] = minY
+                            }
+                    }
+                    if !showsSectionHeaders || !collapsed.contains(section.id) {
                         ForEach(section.files) { file in
                             row(
                                 file,
@@ -151,9 +153,9 @@ struct ReviewFileRail: View {
         // over the top of the scroller too — which read as a scroller with its
         // end cut off. Starting the indicator below the heading gives it the
         // whole lane it is allowed to use.
-        .contentMargins(.top, Self.headerHeight, for: .scrollIndicators)
+        .contentMargins(.top, showsSectionHeaders ? Self.headerHeight : 0, for: .scrollIndicators)
         .overlay(alignment: .top) {
-            if let stuck = sections.first(where: { $0.id == stuckID }) {
+            if showsSectionHeaders, let stuck = sections.first(where: { $0.id == stuckID }) {
                 // Clipped to one heading's height. The offset that lets the
                 // next heading push this one away moves it above the list, and
                 // an overlay is not clipped by the view it sits on: it rode up
@@ -299,6 +301,13 @@ struct ReviewFileRail: View {
                 files: group.files
             )
         }
+    }
+
+    /// A turn scope has only one layer, so repeating its scope name above the
+    /// files adds no grouping information. Directory headings remain because
+    /// they still explain the tree layout.
+    private var showsSectionHeaders: Bool {
+        isTree || sections.count != 1 || sections.first?.id != "layer:" + ReviewLayer.turn.rawValue
     }
 
     /// The heading the reader is under: the last one to have crossed the top.

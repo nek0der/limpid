@@ -6792,6 +6792,38 @@
         }
       }
     },
+    "Finished Agents": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finished Agents"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了したエージェント"
+          }
+        }
+      }
+    },
+    "Open the turn's changes when jumping to a finished agent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the turn's changes when jumping to a finished agent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了したエージェントへ移動するときに、プロンプト送信後の変更を開く"
+          }
+        }
+      }
+    },
     "Review Changes": {
       "localizations": {
         "en": {
@@ -6804,6 +6836,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "変更をレビュー"
+          }
+        }
+      }
+    },
+    "Review This Turn": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review This Turn"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロンプト送信後の変更をレビュー"
           }
         }
       }
@@ -7291,6 +7339,22 @@
         }
       }
     },
+    "Save or cancel the comment before changing review scope.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save or cancel the comment before changing review scope."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レビュースコープを変更する前に、コメントを保存またはキャンセルしてください。"
+          }
+        }
+      }
+    },
     "Staged": {
       "localizations": {
         "en": {
@@ -7447,6 +7511,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "未追跡"
+          }
+        }
+      }
+    },
+    "The snapshot for this turn is gone. Showing uncommitted changes instead.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The snapshot for this turn is gone. Showing uncommitted changes instead."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロンプト送信時のスナップショットは失われました。代わりに未コミットの変更を表示します。"
+          }
+        }
+      }
+    },
+    "This turn": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This turn"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロンプト送信後"
+          }
+        }
+      }
+    },
+    "What changed since the prompt was sent, whoever changed it: the snapshot taken at the prompt against the working tree.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What changed since the prompt was sent, whoever changed it: the snapshot taken at the prompt against the working tree."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロンプト送信時の作業ツリーと、現在の作業ツリーを比較します。送信後に行われたすべての変更が含まれます。"
           }
         }
       }

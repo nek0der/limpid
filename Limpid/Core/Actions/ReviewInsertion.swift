@@ -58,6 +58,14 @@ enum ReviewInsertion {
         /// Checked after the repository answers, because the reader can close
         /// it — and open it again — inside that wait.
         let isSameReview: () -> Bool
+        /// Transient Quick Tab and Group reviews belong to the repository the
+        /// owner pane was in when they opened. Project and worktree reviews do
+        /// not: their container remains authoritative when a shell runs a
+        /// command elsewhere.
+        var requiresMatchingRepository = false
+        /// Whether repository validation must ask the tmux server for the
+        /// hosted pane's path instead of trusting the outer surface's OSC 7.
+        var isTmuxHosted = false
     }
 
     /// Resolves, builds, delivers and records — in that order.
@@ -84,12 +92,32 @@ enum ReviewInsertion {
         // that still match go into the prompt; the rest stay in the draft and
         // are called out on screen.
         let sending = try await store.insertable(comments)
+        if target.requiresMatchingRepository {
+            guard let paneID = target.originPaneID() else { throw ReviewError.targetUnavailable }
+            let path = await ReviewAgents.insertionWorkingDirectory(
+                session: session,
+                paneID: paneID,
+                registry: registry,
+                isTmuxHosted: target.isTmuxHosted
+            )
+            guard let path else { throw ReviewError.targetUnavailable }
+            let paneRoot = try? await ReviewGit.root(at: URL(fileURLWithPath: path))
+            let currentPath = await ReviewAgents.insertionWorkingDirectory(
+                session: session,
+                paneID: paneID,
+                registry: registry,
+                isTmuxHosted: target.isTmuxHosted
+            )
+            guard currentPath == path,
+                  paneRoot?.resolvingSymlinksInPath() == root.resolvingSymlinksInPath()
+            else { throw ReviewError.targetUnavailable }
+        }
         // Resolved again after the await. The check runs Git once per
         // commented file, and in that time the reader can switch pane or close
-        // the one we were about to write to. Retargeting review at another
-        // worktree is not checked and does not need to be: the prompt names
-        // the worktree it was built from, and it still goes to the pane the
-        // reader pressed Insert in.
+        // the one we were about to write to. Project and worktree review may
+        // still deliver while their shell is elsewhere because the container
+        // owns their repository; transient review has already revalidated its
+        // owner repository above.
         // Asked again, and asked of the surface rather than of a value taken
         // before the wait: the reader can switch pane inside it, and writing a
         // review into the pane they left is worse than refusing.
@@ -100,8 +128,8 @@ enum ReviewInsertion {
                   registry: registry
               ), destination.paneID == pressed.paneID
         else { throw ReviewError.targetUnavailable }
-        // The prompt names the worktree it was written against, so the pane
-        // does not have to be sitting in it.
+        // The prompt names the worktree it was written against. A container-
+        // owned review therefore does not require its pane to be sitting in it.
         let prompt = try ReviewPromptBuilder.build(root: root, comments: sending, instructions: target.instructions)
         try ReviewAgents.insert(
             prompt,

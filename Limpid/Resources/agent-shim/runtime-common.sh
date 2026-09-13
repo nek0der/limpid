@@ -72,3 +72,62 @@ limpid_acquire_record_lock() {
 limpid_release_record_lock() {
   exec 9>&-
 }
+
+limpid_snapshot_turn_base() {
+  # Keep the real index untouched: a seeded private index takes about 20 ms in
+  # both 530-file and 5,880-file repositories, while an unseeded cold snapshot
+  # took about 650 ms in the 5,880-file repository.
+  LIMPID_TURN_BASE_TREE=""
+  LIMPID_TURN_ROOT=""
+  lstd_cwd="${1:-$(pwd)}"
+  lstd_pane_id="${2:-}"
+
+  [ "${LIMPID_TURN_SNAPSHOT:-1}" != "0" ] || return 0
+  [ -n "$lstd_pane_id" ] || return 0
+  lstd_pane_key=$(printf '%s' "$lstd_pane_id" | tr '[:upper:]' '[:lower:]')
+  command -v git >/dev/null 2>&1 || return 0
+
+  lstd_inside=$(GIT_OPTIONAL_LOCKS=0 git -C "$lstd_cwd" rev-parse --is-inside-work-tree 2>/dev/null) || return 0
+  [ "$lstd_inside" = "true" ] || return 0
+  lstd_bare=$(GIT_OPTIONAL_LOCKS=0 git -C "$lstd_cwd" rev-parse --is-bare-repository 2>/dev/null) || return 0
+  [ "$lstd_bare" = "false" ] || return 0
+  lstd_git_dir=$(GIT_OPTIONAL_LOCKS=0 git -C "$lstd_cwd" rev-parse --absolute-git-dir 2>/dev/null) || return 0
+  lstd_root=$(GIT_OPTIONAL_LOCKS=0 git -C "$lstd_cwd" rev-parse --show-toplevel 2>/dev/null) || return 0
+  [ -n "$lstd_git_dir" ] && [ -n "$lstd_root" ] || return 0
+
+  lstd_directory="$lstd_git_dir/limpid"
+  lstd_index="$lstd_directory/turn-$lstd_pane_key.index"
+  mkdir -p "$lstd_directory" 2>/dev/null || return 0
+  cp "$lstd_git_dir/index" "$lstd_index" 2>/dev/null || :
+
+  GIT_OPTIONAL_LOCKS=0 GIT_INDEX_FILE="$lstd_index" git -C "$lstd_root" add -A 2>/dev/null || return 0
+  lstd_tree=$(GIT_OPTIONAL_LOCKS=0 GIT_INDEX_FILE="$lstd_index" git -C "$lstd_root" write-tree 2>/dev/null) || return 0
+  case "$lstd_tree" in
+    ????????????????????????????????????????) ;;
+    *) return 0 ;;
+  esac
+  case "$lstd_tree" in
+    *[!0-9A-Fa-f]*) return 0 ;;
+  esac
+  GIT_OPTIONAL_LOCKS=0 git -C "$lstd_root" update-ref "refs/limpid/turn/$lstd_pane_key" "$lstd_tree" 2>/dev/null || return 0
+
+  LIMPID_TURN_BASE_TREE="$lstd_tree"
+  LIMPID_TURN_ROOT="$lstd_root"
+}
+
+limpid_remove_turn_snapshot() {
+  lrt_cwd="${1:-}"
+  lrt_pane_id="${2:-}"
+  [ -n "$lrt_cwd" ] && [ -n "$lrt_pane_id" ] || return 0
+  lrt_pane_key=$(printf '%s' "$lrt_pane_id" | tr '[:upper:]' '[:lower:]')
+  command -v git >/dev/null 2>&1 || return 0
+  lrt_git_dir=$(GIT_OPTIONAL_LOCKS=0 git -C "$lrt_cwd" rev-parse --absolute-git-dir 2>/dev/null) || return 0
+  GIT_OPTIONAL_LOCKS=0 git -C "$lrt_cwd" update-ref -d "refs/limpid/turn/$lrt_pane_key" 2>/dev/null || :
+  rm -f "$lrt_git_dir/limpid/turn-$lrt_pane_key.index" 2>/dev/null || :
+  rm -f "$lrt_git_dir/limpid/turn-$lrt_pane_key.read.index" 2>/dev/null || :
+  # Remove paths from builds before pane UUIDs were normalized as well.
+  if [ "$lrt_pane_key" != "$lrt_pane_id" ]; then
+    GIT_OPTIONAL_LOCKS=0 git -C "$lrt_cwd" update-ref -d "refs/limpid/turn/$lrt_pane_id" 2>/dev/null || :
+    rm -f "$lrt_git_dir/limpid/turn-$lrt_pane_id.index" 2>/dev/null || :
+  fi
+}

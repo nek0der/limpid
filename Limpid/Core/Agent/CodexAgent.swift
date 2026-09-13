@@ -49,6 +49,8 @@ enum CodexAgent: AgentSpec {
             isTmuxHosted: record.isTmuxHosted,
             updatedAt: updatedAt,
             lastPrompt: lastPrompt,
+            turnBaseTree: record.turnBaseTree,
+            turnRoot: record.turnRoot,
             firstPrompt: firstPrompt,
             conversationID: nil,
             providerSessionTitle: nil,

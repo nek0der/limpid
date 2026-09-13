@@ -179,6 +179,7 @@ extension WindowSession {
         }
         for leafID in leafIDs {
             paneSearchStates.removeValue(forKey: leafID)
+            paneTransients.removeValue(forKey: leafID)
         }
         return leafIDs
     }
@@ -197,6 +198,7 @@ extension WindowSession {
         }
         for leafID in leafIDs {
             paneSearchStates.removeValue(forKey: leafID)
+            paneTransients.removeValue(forKey: leafID)
         }
         return leafIDs
     }

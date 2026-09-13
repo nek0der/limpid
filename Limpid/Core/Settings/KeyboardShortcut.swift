@@ -83,6 +83,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     case toggleTabLayout
     case notificationHistory
     case reviewChanges
+    case reviewTurn
 
     // Navigation (container + tab cycling)
     case nextSection
@@ -139,7 +140,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
              .closeSurface, .closeTab: .file
-        case .toggleSidebar, .toggleTabLayout, .notificationHistory, .reviewChanges: .view
+        case .toggleSidebar, .toggleTabLayout, .notificationHistory, .reviewChanges, .reviewTurn: .view
         case .nextSection, .previousSection, .nextTab, .previousTab,
              .nextAttention, .previousAttention: .navigation
         case .splitRight, .splitDown, .equalizeSplits, .toggleSplitZoom,
@@ -174,7 +175,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         // notification fires `TabActions.…` directly.
         case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
              .closeSurface, .closeTab, .toggleSidebar, .toggleTabLayout,
-             .notificationHistory, .reviewChanges,
+             .notificationHistory, .reviewChanges, .reviewTurn,
              .nextSection, .previousSection, .nextTab, .previousTab,
              .nextAttention, .previousAttention,
              .splitRight, .splitDown,
@@ -201,6 +202,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .toggleTabLayout: "Toggle Tab Layout"
         case .notificationHistory: "Notification History"
         case .reviewChanges: "Review Changes"
+        case .reviewTurn: "Review This Turn"
         case .nextSection: "Next Section"
         case .previousSection: "Previous Section"
         case .nextTab: "Next Tab"
@@ -245,6 +247,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .toggleTabLayout: "rectangle.topthird.inset.filled"
         case .notificationHistory: "bell"
         case .reviewChanges: ReviewPresentation.symbol
+        case .reviewTurn: ReviewPresentation.symbol
         case .nextSection: "chevron.left.chevron.right"
         case .previousSection: "chevron.left.chevron.right"
         case .nextTab: "arrow.left.arrow.right"
@@ -296,6 +299,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .toggleTabLayout: .init(key: "t", modifiers: [.command, .option])
         case .notificationHistory: .init(key: "n", modifiers: [.command, .shift])
         case .reviewChanges: .init(key: "r", modifiers: [.command, .option])
+        case .reviewTurn: .init(key: "j", modifiers: [.command, .option])
         case .nextSection: .init(key: "]", modifiers: [.command])
         case .previousSection: .init(key: "[", modifiers: [.command])
         case .nextTab: .init(key: "]", modifiers: [.command, .shift])

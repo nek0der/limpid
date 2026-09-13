@@ -11,6 +11,14 @@ import Testing
 @testable import Limpid
 
 struct ReviewContinuityTests {
+    @Test func commandRequestedScopeDoesNotReplayPickerAnimation() {
+        let turn = ReviewScope.turn(baseTree: String(repeating: "a", count: 40), paneID: UUID())
+
+        #expect(!ReviewScopeSwitch.animatesSelection(to: turn, selectionWithoutAnimation: turn))
+        #expect(ReviewScopeSwitch.animatesSelection(to: turn, selectionWithoutAnimation: nil))
+        #expect(ReviewScopeSwitch.animatesSelection(to: .uncommitted, selectionWithoutAnimation: turn))
+    }
+
     /// The destination follows the focused pane until the reader names one.
     /// Several agents in one worktree is the shape this app is for, and there
     /// a glance at another tab used to move the review's destination onto an
@@ -125,10 +133,274 @@ struct ReviewContinuityTests {
         let reopened = ReviewStore(root: store.root, git: repository, drafts: drafts)
         #expect(reopened.lastFileID == nil)
     }
+
+    @MainActor
+    @Test func transientTurnReviewClosesWhenItsOwnerContextChanges() {
+        let presentation = ReviewPresentation()
+        let root = URL(fileURLWithPath: "/tmp/review")
+        let owner = UUID()
+
+        presentation.open(
+            root,
+            originPaneID: owner,
+            initialScope: .turn(baseTree: String(repeating: "a", count: 40), paneID: owner),
+            transientOwnerPaneID: owner
+        )
+        presentation.focusedPaneChanged(to: owner)
+        presentation.transientOwnerRepositoryChanged(to: root)
+        #expect(presentation.isPresented)
+
+        presentation.focusedPaneChanged(to: UUID())
+        #expect(!presentation.isPresented)
+        #expect(presentation.transientOwnerPaneID == nil)
+
+        presentation.open(
+            root,
+            originPaneID: owner,
+            initialScope: .turn(baseTree: String(repeating: "b", count: 40), paneID: owner),
+            transientOwnerPaneID: owner
+        )
+        presentation.transientOwnerRepositoryChanged(to: nil)
+        #expect(!presentation.isPresented)
+
+        presentation.open(
+            root,
+            originPaneID: owner,
+            initialScope: .turn(baseTree: String(repeating: "c", count: 40), paneID: owner),
+            transientOwnerPaneID: owner
+        )
+        presentation.transientOwnerRepositoryChanged(to: URL(fileURLWithPath: "/tmp/other"))
+        #expect(!presentation.isPresented)
+    }
+
+    @MainActor
+    @Test func looseTurnMakesEveryReviewEntryPointAvailable() throws {
+        let (session, _, paneID) = WindowSessionFixture.withLooseTab()
+        let attention = AttentionState()
+        let presentation = ReviewPresentation()
+        let tree = String(repeating: "a", count: 40)
+        let root = "/tmp/turn-review"
+        let tabID = try #require(session.activeTabID)
+        session.update(tabID) {
+            $0.claudeAgentBadges[paneID] = AgentBadge(
+                state: .finished,
+                updatedAt: Date(),
+                turnBaseTree: tree,
+                turnRoot: root
+            )
+        }
+
+        #expect(ReviewAgents.canReview(
+            session: session,
+            attention: attention,
+            presentation: presentation
+        ))
+        ReviewPresentationCommand.toggle(
+            session: session,
+            attention: attention,
+            presentation: presentation
+        )
+        #expect(presentation.directory == URL(fileURLWithPath: root))
+        #expect(presentation.requestedScope == .turn(baseTree: tree, paneID: paneID))
+        #expect(presentation.transientOwnerPaneID == paneID)
+
+        ReviewPresentationCommand.toggle(
+            session: session,
+            attention: attention,
+            presentation: presentation
+        )
+        #expect(!presentation.isPresented)
+
+        session.setWorkingDirectory(paneID: paneID, path: "/tmp")
+        #expect(!ReviewAgents.canReview(
+            session: session,
+            attention: attention,
+            presentation: presentation
+        ))
+        ReviewPresentationCommand.toggle(
+            session: session,
+            attention: attention,
+            presentation: presentation
+        )
+        #expect(!presentation.isPresented)
+
+        session.update(tabID) {
+            $0.claudeAgentBadges[paneID]?.isTmuxHosted = true
+        }
+        #expect(ReviewAgents.canReview(
+            session: session,
+            attention: attention,
+            presentation: presentation
+        ))
+        ReviewPresentationCommand.toggle(
+            session: session,
+            attention: attention,
+            presentation: presentation
+        )
+        #expect(presentation.directory == URL(fileURLWithPath: root))
+        #expect(presentation.requestedScope == .turn(baseTree: tree, paneID: paneID))
+        #expect(presentation.isTransientOwnerTmuxHosted)
+    }
+
+    @MainActor
+    @Test func projectTurnCannotEscapeItsContainerRepository() throws {
+        let projectRoot = URL(fileURLWithPath: "/tmp/project-review")
+        let otherRoot = URL(fileURLWithPath: "/tmp/other-review")
+        let (session, project) = WindowSessionFixture.withProject(rootURL: projectRoot)
+        let tab = session.openTab(container: .project(project.id))
+        let paneID = try #require(tab.splitTree.allLeafIDs().first)
+        let attention = AttentionState()
+        let tree = String(repeating: "a", count: 40)
+
+        session.update(tab.id) {
+            $0.claudeAgentBadges[paneID] = AgentBadge(
+                state: .finished,
+                updatedAt: Date(),
+                turnBaseTree: tree,
+                turnRoot: otherRoot.path
+            )
+        }
+
+        #expect(ReviewAgents.turnTarget(
+            session: session,
+            attention: attention,
+            paneID: paneID
+        ) == nil)
+        #expect(!ReviewAgents.canOpenTurn(session: session, paneID: paneID, root: otherRoot))
+
+        session.update(tab.id) {
+            $0.claudeAgentBadges[paneID] = AgentBadge(
+                state: .finished,
+                updatedAt: Date(),
+                turnBaseTree: tree,
+                turnRoot: projectRoot.path
+            )
+        }
+
+        let target = try #require(ReviewAgents.turnTarget(
+            session: session,
+            attention: attention,
+            paneID: paneID
+        ))
+        #expect(target.root == projectRoot)
+        #expect(ReviewAgents.canOpenTurn(session: session, paneID: paneID, root: projectRoot))
+    }
+
+    @Test func composerDistinguishesAuthoredTextFromAnEmptyDraft() {
+        var composer = ReviewComposerState()
+        composer.compose(start: 1, end: 1, side: .new)
+        #expect(!composer.hasUnsavedText)
+
+        composer.text = "  Keep this feedback.  "
+        #expect(composer.hasUnsavedText)
+
+        composer.text = " \n\t "
+        #expect(!composer.hasUnsavedText)
+    }
+
+    @MainActor
+    @Test func transientInsertRefusesAPaneThatMovedToAnotherRepository() async throws {
+        let reviewRepository = try await TempGitRepo.make()
+        let otherRepository = try await TempGitRepo.make()
+        defer {
+            reviewRepository.cleanup()
+            otherRepository.cleanup()
+        }
+        let fixture = WindowSessionFixture.withLooseTab()
+        fixture.session.setWorkingDirectory(paneID: fixture.paneID, path: otherRepository.url.path)
+        let registry = RecordingSurfaceRegistry()
+        let deliverer = RecordingReviewDeliverer()
+        registry.deliverers[fixture.paneID] = deliverer
+        let repository = FakeReviewRepository()
+        let file = ReviewFile(path: "a.swift", layer: .turn, status: .modified)
+        repository.files = [file]
+        repository.diffs[file.id] = try ReviewDiff(
+            file: file,
+            fingerprint: "f1",
+            lines: ReviewDiffParser.parse("@@ -1,1 +1,1 @@\n-old\n+new")
+        )
+        let store = ReviewStore(
+            root: reviewRepository.url,
+            git: repository,
+            drafts: EphemeralReviewDraftStore()
+        )
+        await store.refresh()
+        await store.load(file)
+        let line = try #require(store.diff?.lines.first { $0.isCommentable })
+        #expect(store.add(line: line, body: "Keep this review in its repository."))
+
+        await #expect(throws: ReviewError.self) {
+            try await ReviewInsertion.run(
+                store: store,
+                to: ReviewInsertion.Target(
+                    session: fixture.session,
+                    registry: registry,
+                    originPaneID: { fixture.paneID },
+                    instructions: "",
+                    isSameReview: { true },
+                    requiresMatchingRepository: true
+                )
+            )
+        }
+        #expect(deliverer.delivered.isEmpty)
+        #expect(store.comments.first?.insertedAt == nil)
+    }
 }
 
 @MainActor
 struct ReviewStoreRegressionTests {
+    @Test func scopePickerKeepsTheSnapshotBeingReadAcrossDestinationChanges() {
+        let firstTurn = ReviewScope.turn(baseTree: String(repeating: "a", count: 40), paneID: UUID())
+        let nextTurn = ReviewScope.turn(baseTree: String(repeating: "b", count: 40), paneID: UUID())
+
+        #expect(ReviewScope.pickerOptions(
+            current: firstTurn,
+            offeredTurn: nil,
+            branchBase: "main"
+        ) == [.uncommitted, firstTurn, .branch(base: "main")])
+        #expect(ReviewScope.pickerOptions(
+            current: firstTurn,
+            offeredTurn: nextTurn,
+            branchBase: "main"
+        ) == [.uncommitted, firstTurn, .branch(base: "main")])
+    }
+
+    @Test func scopePickerOffersTheDestinationTurnOnlyAfterLeavingThePreviousTurn() {
+        let offeredTurn = ReviewScope.turn(baseTree: String(repeating: "b", count: 40), paneID: UUID())
+
+        #expect(ReviewScope.pickerOptions(
+            current: .uncommitted,
+            offeredTurn: offeredTurn,
+            branchBase: "main"
+        ) == [.uncommitted, offeredTurn, .branch(base: "main")])
+    }
+
+    @Test func scopePickerKeepsAnAlreadyLoadedBranchWithoutRediscovery() {
+        let branch = ReviewScope.branch(base: "main")
+
+        #expect(ReviewScope.pickerOptions(
+            current: branch,
+            offeredTurn: nil,
+            branchBase: nil
+        ) == [.uncommitted, branch])
+    }
+
+    @Test func turnRequestOnSameRootChangesScopeWithoutReopening() {
+        let presentation = ReviewPresentation()
+        let directory = URL(fileURLWithPath: "/tmp/review")
+        let firstPane = UUID()
+        let turnPane = UUID()
+        let scope = ReviewScope.turn(baseTree: String(repeating: "a", count: 40), paneID: turnPane)
+        presentation.open(directory, originPaneID: firstPane)
+        let opening = presentation.opening
+
+        presentation.open(directory, originPaneID: turnPane, initialScope: scope)
+
+        #expect(presentation.opening == opening)
+        #expect(presentation.originPaneID == turnPane)
+        #expect(presentation.requestedScope == scope)
+    }
+
     private struct Fixture {
         let repository: FakeReviewRepository
         let store: ReviewStore
@@ -161,6 +433,113 @@ struct ReviewStoreRegressionTests {
         let saved = try #require(savedDraft)
         #expect(saved.comments.count == 1)
         #expect(saved.lastFileID == fixture.file.id)
+    }
+
+    @Test func turnCommentSurvivesSwitchingToUncommittedAndBack() async throws {
+        let repository = FakeReviewRepository()
+        let paneID = UUID()
+        let turnScope = ReviewScope.turn(baseTree: String(repeating: "a", count: 40), paneID: paneID)
+        let file = ReviewFile(path: "turn.swift", layer: .turn, status: .modified)
+        repository.files = [file]
+        repository.diffs[file.id] = try ReviewDiff(
+            file: file,
+            fingerprint: "turn-fingerprint",
+            lines: ReviewDiffParser.parse("@@ -1,1 +1,1 @@\n-old\n+new\n")
+        )
+        let store = withTempStore(git: repository)
+
+        #expect(await store.reload(scope: turnScope, selectedFileID: nil) != .failed)
+        let diff = try #require(store.diff)
+        let firstLine = diff.lines.first { $0.isCommentable }
+        let line = try #require(firstLine)
+        #expect(store.add(line: line, body: "Keep this turn comment."))
+        let comment = try #require(store.comments.first)
+
+        repository.files = []
+        #expect(await store.reload(scope: .uncommitted, selectedFileID: nil) != .failed)
+        #expect(store.comments == [comment])
+
+        repository.files = [file]
+        #expect(await store.reload(scope: turnScope, selectedFileID: nil) != .failed)
+        #expect(store.comments == [comment])
+        #expect(repository.diffScopes.last == turnScope)
+    }
+
+    @Test func offeredTurnScopeRestoresSelectorForPersistedCommentLayer() {
+        let store = withTempStore(git: FakeReviewRepository())
+        let file = ReviewFile(path: "turn.swift", layer: .turn, status: .modified)
+        let turnScope = ReviewScope.turn(baseTree: String(repeating: "a", count: 40), paneID: UUID())
+
+        #expect(store.scopeForFile(file) == .uncommitted)
+        store.offerTurnScope(turnScope)
+
+        #expect(store.scopeForFile(file) == turnScope)
+    }
+
+    @Test func offeredTurnScopeDoesNotReplaceTheSnapshotBeingReviewed() async {
+        let repository = FakeReviewRepository()
+        let store = withTempStore(git: repository)
+        let file = ReviewFile(path: "turn.swift", layer: .turn, status: .modified)
+        let firstScope = ReviewScope.turn(baseTree: String(repeating: "a", count: 40), paneID: UUID())
+        let nextScope = ReviewScope.turn(baseTree: String(repeating: "b", count: 40), paneID: UUID())
+        repository.files = [file]
+
+        #expect(await store.reload(scope: firstScope, selectedFileID: nil) != .failed)
+        store.offerTurnScope(nextScope)
+
+        #expect(store.scopeForFile(file) == firstScope)
+    }
+
+    @Test func failedTurnReloadDoesNotReplaceTheVisibleSnapshotSelector() async {
+        let repository = FakeReviewRepository()
+        let store = withTempStore(git: repository)
+        let file = ReviewFile(path: "turn.swift", layer: .turn, status: .modified)
+        let firstScope = ReviewScope.turn(baseTree: String(repeating: "a", count: 40), paneID: UUID())
+        let nextScope = ReviewScope.turn(baseTree: String(repeating: "b", count: 40), paneID: UUID())
+        repository.files = [file]
+
+        #expect(await store.reload(scope: firstScope, selectedFileID: nil) != .failed)
+        repository.isFileListFailing = true
+        #expect(await store.reload(scope: nextScope, selectedFileID: nil) == .failed)
+
+        #expect(store.scope == firstScope)
+        #expect(store.scopeForFile(file) == firstScope)
+    }
+
+    @Test func olderTurnIndexRefreshCannotOverwriteANewerPublication() throws {
+        try withTempDir { directory in
+            let target = directory.appendingPathComponent("turn.read.index")
+            let older = directory.appendingPathComponent("older.index")
+            let newer = directory.appendingPathComponent("newer.index")
+            try Data("older".utf8).write(to: older)
+            try Data("newer".utf8).write(to: newer)
+            let publisher = ReviewTurnIndexPublisher.shared
+            let olderToken = publisher.begin(for: target.path)
+            let newerToken = publisher.begin(for: target.path)
+
+            try publisher.publish(stagingPath: newer.path, to: target.path, token: newerToken)
+            #expect(throws: CancellationError.self) {
+                try publisher.publish(stagingPath: older.path, to: target.path, token: olderToken)
+            }
+
+            #expect(try Data(contentsOf: target) == Data("newer".utf8))
+        }
+    }
+
+    @Test func missingTurnBaseFallsBackToUncommittedWithBanner() async {
+        let repository = FakeReviewRepository()
+        let store = withTempStore(git: repository)
+        repository.isTurnBaseMissing = true
+
+        let result = await store.reload(
+            scope: .turn(baseTree: String(repeating: "0", count: 40), paneID: UUID()),
+            selectedFileID: nil
+        )
+
+        #expect(result != .failed)
+        #expect(store.scope == .uncommitted)
+        #expect(store.errorMessage == ReviewError.turnBaseMissing.localizedDescription)
+        #expect(repository.fileScopes.last == .uncommitted)
     }
 
     @Test func navigationQueuedAfterAnEditCannotOverwriteIt() async throws {

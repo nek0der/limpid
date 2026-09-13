@@ -71,6 +71,12 @@ struct AgentBadge: Codable, Equatable, AgentNotificationBadge {
     /// or when shell extraction missed the field.
     var lastPrompt: String?
 
+    /// Base for showing what changed since the prompt was sent. Both values
+    /// are optional because older lifecycle records and prompts outside Git
+    /// repositories have no turn comparison to offer.
+    var turnBaseTree: String?
+    var turnRoot: String?
+
     /// Session opening prompt, captured once and held as the lowest-priority
     /// agent title. Both providers pass it through Rust.
     var firstPrompt: String?
@@ -144,6 +150,8 @@ protocol AgentLifecycleRecord: Codable {
     var isTmuxHosted: Bool? { get }
     var pid: String? { get }
     var updatedAt: String { get }
+    var turnBaseTree: String? { get }
+    var turnRoot: String? { get }
 }
 
 extension AgentLifecycleRecord {

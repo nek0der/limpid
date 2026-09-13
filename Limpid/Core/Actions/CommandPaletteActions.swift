@@ -7,6 +7,7 @@ import Foundation
 
 extension Notification.Name {
     static let limpidReviewChanges = Notification.Name("dev.limpid.reviewChanges")
+    static let limpidReviewTurn = Notification.Name("dev.limpid.reviewTurn")
     static let limpidReviewFind = Notification.Name("dev.limpid.reviewFind")
     /// Posted when a review paste is refused at the confirmation sheet. The
     /// comments were already recorded as sent by then — the paste action

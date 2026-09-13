@@ -15,11 +15,19 @@ import Foundation
 protocol ReviewRepositoryReading: Sendable {
     func files(at root: URL, scope: ReviewScope) async throws -> [ReviewFile]
     func stats(at root: URL, scope: ReviewScope) async throws -> [String: ReviewFileStat]
-    func diff(_ file: ReviewFile, root: URL, base: String?) async throws -> ReviewDiff
-    func fingerprint(_ file: ReviewFile, root: URL, base: String?) async throws -> String
+    func diff(_ file: ReviewFile, root: URL, scope: ReviewScope) async throws -> ReviewDiff
+    func fingerprint(_ file: ReviewFile, root: URL, scope: ReviewScope) async throws -> String
+    /// Whether the repository has moved since this exact displayed snapshot.
+    /// The implementation must not replace that snapshot while answering.
+    func hasChanges(
+        at root: URL,
+        scope: ReviewScope,
+        comparedTo files: [ReviewFile],
+        currentDiff: ReviewDiff?
+    ) async throws -> Bool
     /// The new side of a file, whole, for unfolding context. Answers with
     /// nothing rather than throwing: it is an offer, not a requirement.
-    func source(_ file: ReviewFile, root: URL) async -> [String]
+    func source(_ file: ReviewFile, root: URL, scope: ReviewScope) async -> [String]
     func defaultBase(at root: URL) async throws -> String?
 }
 
@@ -33,16 +41,25 @@ struct LiveReviewRepository: ReviewRepositoryReading {
         try await ReviewGit.stats(at: root, scope: scope)
     }
 
-    func diff(_ file: ReviewFile, root: URL, base: String?) async throws -> ReviewDiff {
-        try await ReviewGit.diff(file, root: root, base: base)
+    func diff(_ file: ReviewFile, root: URL, scope: ReviewScope) async throws -> ReviewDiff {
+        try await ReviewGit.diff(file, root: root, scope: scope)
     }
 
-    func fingerprint(_ file: ReviewFile, root: URL, base: String?) async throws -> String {
-        try await ReviewGit.fingerprint(file, root: root, base: base)
+    func fingerprint(_ file: ReviewFile, root: URL, scope: ReviewScope) async throws -> String {
+        try await ReviewGit.fingerprint(file, root: root, scope: scope)
     }
 
-    func source(_ file: ReviewFile, root: URL) async -> [String] {
-        await ReviewGit.source(file, root: root)
+    func hasChanges(
+        at root: URL,
+        scope: ReviewScope,
+        comparedTo files: [ReviewFile],
+        currentDiff: ReviewDiff?
+    ) async throws -> Bool {
+        try await ReviewGit.hasChanges(at: root, scope: scope, comparedTo: files, currentDiff: currentDiff)
+    }
+
+    func source(_ file: ReviewFile, root: URL, scope: ReviewScope) async -> [String] {
+        await ReviewGit.source(file, root: root, scope: scope)
     }
 
     func defaultBase(at root: URL) async throws -> String? {

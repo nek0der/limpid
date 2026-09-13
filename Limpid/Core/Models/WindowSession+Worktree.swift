@@ -133,6 +133,7 @@ extension WindowSession {
         // that just vanished. Without this the entries leak.
         for leafID in leafIDs {
             paneSearchStates.removeValue(forKey: leafID)
+            paneTransients.removeValue(forKey: leafID)
         }
         return leafIDs
     }

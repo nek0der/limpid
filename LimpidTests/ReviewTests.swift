@@ -235,6 +235,10 @@ struct ReviewTests {
         try await withTempDir { @Sendable directory in try await ReviewValidationScenarios.branchScope(at: directory) }
     }
 
+    @Test func turnViewComparesWorkingTreeSnapshots() async throws {
+        try await withTempDir { @Sendable directory in try await ReviewValidationScenarios.turnScope(at: directory) }
+    }
+
     @MainActor
     @Test func sendingAndResolvingAreSeparateStates() async throws {
         try await withTempDir { @Sendable directory in try await ReviewValidationScenarios.lifecycle(at: directory) }
