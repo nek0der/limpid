@@ -72,7 +72,7 @@ struct AgentBadge: Codable, Equatable, AgentNotificationBadge {
     var lastPrompt: String?
 
     /// Session opening prompt, captured once and held as the lowest-priority
-    /// agent title. Codex applies it directly; Claude passes it through Rust.
+    /// agent title. Both providers pass it through Rust.
     var firstPrompt: String?
 
     /// Provider conversation ID associated with the title observations.
@@ -224,10 +224,9 @@ protocol AgentSpec {
 
     /// Per-flavor tab-title hook called once per
     /// `applyAllRecordsToSession` pass after the badges dictionary
-    /// has been reconciled. Codex uses this to push the focused
-    /// pane's `firstPrompt` into `tab.title` (its only tab-title
-    /// source). Claude leaves it alone — Claude's hook drives OSC 2
-    /// directly. Default conformance is a no-op.
+    /// has been reconciled. Each provider resolves its available title
+    /// candidates through Rust before updating `tab.title`. Default
+    /// conformance is a no-op.
     static func applyTabTitle(_ tab: inout Tab, badges: [UUID: AgentBadge])
 }
 
