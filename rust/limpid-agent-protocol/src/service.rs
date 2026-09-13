@@ -146,6 +146,7 @@ impl ApprovalService {
                         "approval.allow_once".into(),
                         "approval.deny".into(),
                         "approval.delegate".into(),
+                        "approval.subscribe".into(),
                         "approval.wait".into(),
                     ],
                 }
@@ -175,6 +176,12 @@ impl ApprovalService {
         principal: &Principal,
         body: RequestBody,
     ) -> Result<ResponseBody, ServeError> {
+        if requested_wait_ms(&body).is_some_and(|wait_ms| wait_ms > MAXIMUM_WAIT_MS) {
+            return Ok(error(
+                ErrorCode::InvalidTimeout,
+                "wait is outside the supported range",
+            ));
+        }
         let result = match body {
             RequestBody::Hello { .. } => {
                 return Ok(error(
@@ -183,7 +190,7 @@ impl ApprovalService {
                 ));
             }
             RequestBody::ApprovalSubmit(request) => {
-                if request.timeout_ms == 0 || request.timeout_ms > MAXIMUM_WAIT_MS {
+                if request.timeout_ms == 0 {
                     return Ok(error(
                         ErrorCode::InvalidTimeout,
                         "timeout is outside the supported range",
@@ -201,8 +208,13 @@ impl ApprovalService {
                 let Ok(request) = request.into_domain() else {
                     return Ok(error(ErrorCode::InvalidRequest, "input is not valid JSON"));
                 };
-                self.lock_broker()?
-                    .submit(principal, request, self.now_ms())
+                let result = self
+                    .lock_broker()?
+                    .submit(principal, request, self.now_ms());
+                if result.is_ok() {
+                    self.changed.notify_all();
+                }
+                result
             }
             RequestBody::ApprovalGet(key) => {
                 self.lock_broker()?
@@ -212,12 +224,6 @@ impl ApprovalService {
                 key,
                 maximum_wait_ms,
             } => {
-                if maximum_wait_ms > MAXIMUM_WAIT_MS {
-                    return Ok(error(
-                        ErrorCode::InvalidTimeout,
-                        "wait is outside the supported range",
-                    ));
-                }
                 return self.wait(principal, key.into_domain(), maximum_wait_ms);
             }
             RequestBody::ApprovalCancel(key) => {
@@ -251,14 +257,13 @@ impl ApprovalService {
                 result
             }
             RequestBody::ApprovalSnapshot => {
-                let mut broker = self.lock_broker()?;
-                let snapshots = match broker.snapshot(principal, self.now_ms()) {
-                    Ok(snapshots) => snapshots,
-                    Err(error) => return Ok(broker_error(&error)),
-                };
-                let sequence = broker.sequence();
-                let requests = snapshots.into_iter().map(ApprovalIndexWire::from).collect();
-                return Ok(ResponseBody::ApprovalSnapshotResult { sequence, requests });
+                return self.snapshot(principal);
+            }
+            RequestBody::ApprovalSubscribe {
+                after_sequence,
+                maximum_wait_ms,
+            } => {
+                return self.subscribe(principal, after_sequence, maximum_wait_ms);
             }
         };
         match result {
@@ -293,6 +298,63 @@ impl ApprovalService {
             }
             let request_remaining_ms = snapshot.deadline_ms.saturating_sub(now_ms);
             let remaining_ms = request_remaining_ms.min(caller_remaining_ms);
+            if remaining_ms == 0 {
+                continue;
+            }
+            let waited = self
+                .changed
+                .wait_timeout(broker, Duration::from_millis(remaining_ms))
+                .map_err(|_| ServeError::Synchronization)?;
+            broker = waited.0;
+        }
+    }
+
+    fn snapshot(&self, principal: &Principal) -> Result<ResponseBody, ServeError> {
+        let mut broker = self.lock_broker()?;
+        let snapshots = match broker.snapshot(principal, self.now_ms()) {
+            Ok(snapshots) => snapshots,
+            Err(error) => return Ok(broker_error(&error)),
+        };
+        let sequence = broker.sequence();
+        let requests = snapshots.into_iter().map(ApprovalIndexWire::from).collect();
+        Ok(ResponseBody::ApprovalSnapshotResult { sequence, requests })
+    }
+
+    /// Holds a controller request until the projection changes or its bounded
+    /// wait ends. Reissuing this cursor-based call is an event subscription,
+    /// so the app never needs a timer that polls the broker.
+    fn subscribe(
+        &self,
+        principal: &Principal,
+        after_sequence: u64,
+        maximum_wait_ms: u64,
+    ) -> Result<ResponseBody, ServeError> {
+        if !matches!(principal, Principal::Controller) {
+            return Ok(broker_error(&BrokerError::Unauthorized));
+        }
+        let wait_started = Instant::now();
+        let mut broker = self.lock_broker()?;
+        loop {
+            let now_ms = self.now_ms();
+            let snapshots = match broker.snapshot(principal, now_ms) {
+                Ok(snapshots) => snapshots,
+                Err(error) => return Ok(broker_error(&error)),
+            };
+            let sequence = broker.sequence();
+            let caller_remaining_ms = maximum_wait_ms.saturating_sub(
+                u64::try_from(wait_started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            );
+            if sequence != after_sequence || caller_remaining_ms == 0 {
+                let requests = snapshots.into_iter().map(ApprovalIndexWire::from).collect();
+                return Ok(ResponseBody::ApprovalSnapshotResult { sequence, requests });
+            }
+            let deadline_remaining_ms = snapshots
+                .iter()
+                .filter(|snapshot| snapshot.state == ApprovalState::Pending)
+                .map(|snapshot| snapshot.deadline_ms.saturating_sub(now_ms))
+                .min()
+                .unwrap_or(caller_remaining_ms);
+            let remaining_ms = caller_remaining_ms.min(deadline_remaining_ms);
             if remaining_ms == 0 {
                 continue;
             }
@@ -361,6 +423,19 @@ fn error(code: ErrorCode, message: &str) -> ResponseBody {
     ResponseBody::Error {
         code,
         message: message.into(),
+    }
+}
+
+fn requested_wait_ms(body: &RequestBody) -> Option<u64> {
+    match body {
+        RequestBody::ApprovalSubmit(request) => Some(request.timeout_ms),
+        RequestBody::ApprovalWait {
+            maximum_wait_ms, ..
+        }
+        | RequestBody::ApprovalSubscribe {
+            maximum_wait_ms, ..
+        } => Some(*maximum_wait_ms),
+        _ => None,
     }
 }
 

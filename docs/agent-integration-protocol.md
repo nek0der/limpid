@@ -13,12 +13,11 @@ Protocol major version 1 currently implements:
 - `approval.submit`, `approval.get`, `approval.wait`,
   `approval.cancel`, and `approval.resolve`.
 - `approval.snapshot` for an authenticated controller.
+- Cursor-based `approval.subscribe` for controller change delivery.
 - Typed errors and bounded length-prefixed JSON frames.
 
-Push subscriptions, attachment bootstrap capabilities, lifecycle events,
-provider adapters, persistence, and native approval UI are planned but are not
-part of the current implementation. The macOS service host exists behind
-explicit development-only registration.
+Attachment bootstrap capabilities, lifecycle events, persistence, and Release
+service registration are not part of the current implementation.
 
 ## Transport and framing
 
@@ -59,7 +58,8 @@ opening the authenticated requester session.
 
 ## IDs and service epoch
 
-- `RunID` identifies one agent CLI process launch.
+- `RunID` identifies one authenticated Hook Helper requester session in the
+  current macOS adapter.
 - `RequestID` identifies one immutable approval request.
 - `message_id` correlates one protocol request with its response.
 - `ServiceEpoch` is generated on every service start.
@@ -69,6 +69,11 @@ The approval key is `(ServiceEpoch, RunID, RequestID)`. Claude Code and current
 Codex `PermissionRequest` inputs do not provide a stable tool-call ID, so the
 Limpid provider adapter must generate `RequestID`. A pane ID, session ID, PID,
 or title is never part of authorization.
+
+Each current PermissionRequest starts a short-lived signed Helper and therefore
+receives a fresh host-generated `RunID`. Reusing one run across a complete agent
+CLI launch requires a separate unforgeable resume capability; a provider
+environment variable is not accepted as authority.
 
 Every message after `hello` must echo the accepted `service_epoch`. A mismatch
 returns `epoch_mismatch`. A client must delegate an unresolved provider request
@@ -171,7 +176,7 @@ The supported decisions are:
 Persistent provider permission changes and tool-input rewriting are outside
 version 1.
 
-## Waiting and snapshots
+## Waiting, snapshots, and subscriptions
 
 `approval.wait` holds one requester connection until the request becomes
 terminal, its approval deadline passes, or `maximum_wait_ms` elapses. A caller
@@ -185,9 +190,13 @@ contains IDs, provider, terminal status, deadline, and record sequence, but not
 tool input, summary, or deny reason. The controller retrieves selected details
 with `approval.get`, which keeps a snapshot response within its fixed bound.
 
-A later protocol revision will add ordered push updates. Until that exists, the
-native UI integration is not complete and must not use polling as an approval
-response path.
+`approval.subscribe` takes the last observed sequence and holds the controller
+connection until the sequence changes, the next pending deadline expires, or
+its bounded wait ends. It returns the same consistent lightweight projection as
+`approval.snapshot`. The application immediately reissues the subscription with
+the returned cursor; it does not use a timer or an on-disk polling path to make
+approval decisions. A service epoch change invalidates the cursor and every
+stale UI action.
 
 ## Provider mapping and failure behavior
 
@@ -219,6 +228,9 @@ to the macOS service without exposing Rust-owned layouts or panic behavior.
 The bundled macOS LaunchAgent owns separate requester and controller Mach
 services and applies code-signing requirements before accepting connections.
 Debug and Release use different labels, service names, bundle identifiers, and
-property lists. Only an explicit environment command in a Debug app registers
-or unregisters the development service. Provider Hook Helper integration,
-normal-user registration, and the native controller UI remain disabled.
+property lists. A signed Debug app registers its development service on launch;
+the environment command can refresh, inspect, or unregister it. The signed Hook
+Helper translates Claude and Codex `PermissionRequest` JSON and delegates on
+every integration failure. The app consumes the controller subscription and
+surfaces pending requests in Waiting. Release registration and update recovery
+remain disabled.

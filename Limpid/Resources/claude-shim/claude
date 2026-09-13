@@ -194,6 +194,7 @@ fi
 # Code logs a "command not found" for that hook but the rest of the
 # session keeps working.
 wt_pretool_hook="$self_dir/limpid-pretool-worktree-hook"
+approval_helper="$self_dir/../../MacOS/AgentIntegrationHookHelper"
 
 # Claude Code passes each `command` field to `sh -c` and any space in
 # the path turns into argv tokens — even JSON quoting / single-quote
@@ -225,6 +226,16 @@ else
   wt_pretool_hook_link="$wt_pretool_hook"
 fi
 
+approval_helper_link="$link_dir/AgentIntegrationHookHelper"
+if [ -x "$approval_helper" ]; then
+  ln -sf "$approval_helper" "$approval_helper_link" 2>/dev/null
+  [ -L "$approval_helper_link" ] || approval_helper_link="$approval_helper"
+else
+  # An unavailable helper must leave Claude's native permission prompt in
+  # charge, so point the optional hook at a command that produces no output.
+  approval_helper_link="/usr/bin/true"
+fi
+
 # Load hook definitions from the bundled JSON template and substitute
 # the placeholders with the symlinked hook paths. Keeping the JSON in
 # its own file means adding a new hook event is a plain JSON edit, not
@@ -241,6 +252,7 @@ fi
 settings_json=$(sed \
   -e "s|@@HOOK@@|$hook_link|g" \
   -e "s|@@WORKTREE_PRETOOL_HOOK@@|$wt_pretool_hook_link|g" \
+  -e "s|@@APPROVAL_HELPER@@|$approval_helper_link|g" \
   "$template")
 
 # Expose our own pid as `LIMPID_CLAUDE_PID` so the hook can stamp the

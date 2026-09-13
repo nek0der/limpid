@@ -42,6 +42,11 @@ pub enum RequestBody {
     },
     #[serde(rename = "approval.snapshot")]
     ApprovalSnapshot,
+    #[serde(rename = "approval.subscribe")]
+    ApprovalSubscribe {
+        after_sequence: u64,
+        maximum_wait_ms: u64,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
