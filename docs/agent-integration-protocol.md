@@ -16,8 +16,9 @@ Protocol major version 1 currently implements:
 - Cursor-based `approval.subscribe` for controller change delivery.
 - Typed errors and bounded length-prefixed JSON frames.
 
-Attachment bootstrap capabilities, lifecycle events, persistence, and Release
-service registration are not part of the current implementation.
+Attachment bootstrap capabilities, lifecycle events, and approval persistence
+are not part of the current implementation. Release service registration is a
+macOS host responsibility outside this provider-neutral protocol.
 
 ## Transport and framing
 
@@ -228,9 +229,15 @@ to the macOS service without exposing Rust-owned layouts or panic behavior.
 The bundled macOS LaunchAgent owns separate requester and controller Mach
 services and applies code-signing requirements before accepting connections.
 Debug and Release use different labels, service names, bundle identifiers, and
-property lists. A signed Debug app registers its development service on launch;
-the environment command can refresh, inspect, or unregister it. The signed Hook
-Helper translates Claude and Codex `PermissionRequest` JSON and delegates on
-every integration failure. The app consumes the controller subscription and
-surfaces pending requests in Waiting. Release registration and update recovery
-remain disabled.
+property lists. Signed Debug and Release apps reconcile their isolated services
+on launch; the Debug environment command can refresh, inspect, or unregister its
+development service. The signed Hook Helper translates Claude and Codex
+`PermissionRequest` JSON and delegates on every integration failure. Codex uses
+that stable helper command in every pane; the helper verifies the authenticated
+service artifact against its own app bundle and publishes the lifecycle fallback
+when it delegates. The app
+consumes the controller subscription and surfaces pending requests in Waiting
+only after it authenticates the running service as the currently bundled and
+registered artifact. The XPC session bootstrap includes that artifact identity
+as an additive optional field so the first update from an older service fails
+closed and replaces it.

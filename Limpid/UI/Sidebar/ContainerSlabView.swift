@@ -275,10 +275,16 @@ struct ContainerSlabView: View {
                             let location = approvalPresentation.paneLocation(for: approval, in: session)
                             ApprovalAttentionRow(
                                 approval: approval,
-                                isResolving: approvalPresentation.resolvingIDs.contains(approval.id),
-                                onAllow: { approvalPresentation.resolve(approval, decision: "allow_once") },
-                                onDeny: { approvalPresentation.resolve(approval, decision: "deny") },
+                                timestamp: approvalPresentation.firstSeenAt(for: approval),
+                                now: context.date,
+                                onPresent: {
+                                    approvalPresentation.previewBegan(approval)
+                                },
+                                onPreviewEnd: {
+                                    approvalPresentation.previewEnded(approval)
+                                },
                                 onTap: {
+                                    approvalPresentation.present(approval)
                                     guard let location else { return }
                                     attention.focusAttention(
                                         in: session,
@@ -286,7 +292,8 @@ struct ContainerSlabView: View {
                                         tabID: location.0,
                                         paneID: location.1
                                     )
-                                }
+                                },
+                                onAnchorChange: { approvalPresentation.updateRowAnchor($0, for: approval) }
                             )
                         }
                         ForEach(entries) { entry in

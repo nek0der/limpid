@@ -79,6 +79,7 @@ docs/*
 docs/adr/*
 !docs/adr/0001-agent-integration-service.md
 !docs/adr/0002-portable-agent-integration-core.md
+!docs/adr/0003-agent-integration-service-reconciliation.md
 
 # Distribution artifacts (dmg, zip, etc.)
 dist/

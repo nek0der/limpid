@@ -50,13 +50,13 @@ Migration is selected per run. A run uses either the legacy state-file backend
 or the service backend for its entire lifetime. Both backends must not publish
 the same run into the application.
 
-The macOS service host and signed client boundary now exist, but neither
-provider hook is enabled and the JSON observer is unchanged. A Debug build can
-register, refresh, inspect, or unregister the development LaunchAgent only
-when `LIMPID_AGENT_SERVICE_CONTROL` explicitly requests that operation.
-Release builds do not register the service. Production activation still
-requires the signed Hook Helper, provider adapters, update validation, and
-application UI.
+The macOS service host, signed Hook Helper, provider adapters, and Waiting UI are
+active in signed Debug and Release apps. Startup reconciles the service before
+controller observation becomes ready. Codex uses one stable Helper command; the
+Helper authenticates the service, verifies its artifact against its own bundle,
+and publishes the lifecycle fallback whenever native approval is unavailable.
+Debug retains `LIMPID_AGENT_SERVICE_CONTROL` for isolated registration testing.
+Lifecycle JSON observation remains available throughout reconciliation.
 
 ## Consequences
 
@@ -69,14 +69,17 @@ The portable ownership boundary is defined by
 [ADR 0002](0002-portable-agent-integration-core.md).
 
 The service executable and LaunchAgent property list are versioned inside the
-application bundle. Updating either one requires unregistering the old service
-before registering the replacement. Registration must remain disabled for
-normal users until the Sparkle replacement and re-registration sequence has
-been validated with an installed release.
+application bundle. When either changes, Limpid deliberately waits for the
+asynchronous unregister completion before registering the replacement. This is
+the project's stale-process exclusion rule; Apple recommends unregistering an
+updated executable before re-registration and guarantees that the asynchronous
+completion follows successful process termination. The reconciliation design is
+defined by [ADR 0003](0003-agent-integration-service-reconciliation.md).
 
 ## References
 
 - [Apple XPC](https://developer.apple.com/documentation/xpc).
 - [Apple `SMAppService`](https://developer.apple.com/documentation/servicemanagement/smappservice).
+- [Apple `SMAppService.unregister(completionHandler:)`](https://developer.apple.com/documentation/servicemanagement/smappservice/unregister(completionhandler:)).
 - [Claude Code hooks](https://code.claude.com/docs/en/hooks).
 - [OpenAI Codex hook schemas](https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated).
