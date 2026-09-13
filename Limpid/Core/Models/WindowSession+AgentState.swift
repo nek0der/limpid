@@ -16,10 +16,9 @@ extension WindowSession {
     /// confirmation. A pane the user has dismissed from attention still
     /// counts as live (closing the tab would tear down the session and
     /// force a `--resume` later), so we read raw badges here without
-    /// going through `AttentionState`. We deliberately don't reuse
-    /// `aggregateAgentState(in:)`: that path feeds the sidebar icon
-    /// reducer which hides `.idle` (Claude open at the prompt — no
-    /// badge needed), but for confirm-on-close, idle still counts.
+    /// going through `AttentionState`. We deliberately don't reuse its
+    /// sidebar summary: that reducer hides `.idle` (Claude open at the
+    /// prompt — no badge needed), but for confirm-on-close, idle still counts.
     /// `.unknown` is genuinely no-state (no SessionStart observed) and
     /// stays excluded so a fresh shell-only pane doesn't fire the dialog.
     func hasLiveAgent(in tab: Tab) -> Bool {

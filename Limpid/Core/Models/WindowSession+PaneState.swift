@@ -81,9 +81,9 @@ extension WindowSession {
         cachedWindowUnreadCount = max(0, cachedWindowUnreadCount - dropped)
     }
 
-    /// Wipe unread counts across every pane in every tab. Pairs with
-    /// `NotificationHistoryStore.markAllRead()` for the toolbar
-    /// ellipsis menu's "Mark All as Read".
+    /// Wipe unread counts across every pane in every tab. Called by the
+    /// shared notification acknowledgement action so every "Mark All as
+    /// Read" entry point clears the same window state.
     func clearAllUnread() {
         for tabIdx in tabs.indices {
             for (pid, state) in tabs[tabIdx].paneStates where state.unreadCount != 0 {

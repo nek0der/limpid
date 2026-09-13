@@ -1,7 +1,7 @@
 // AttentionState.swift
 // Limpid — cross-pane attention state ("the ring"): drives the
 // container column's Waiting list, the ⌘J cursor, and the
-// finished-turn viewed → fade → dismissed lifecycle. Owns
+// finished-turn viewed → acknowledged indicator → dismissed lifecycle. Owns
 // `viewed` / `dismissed` plus the derivations and actions that read
 // them. Held alongside `WindowSession` (not inside it) so the raw
 // agent-lifecycle facts stay separate from the UI's "what's still
@@ -9,6 +9,13 @@
 // `@Environment(AttentionState.self)` from `AppState`.
 
 import Foundation
+
+/// The dominant lifecycle state for a scope plus the acknowledgement
+/// state that only a finished indicator can carry.
+struct AgentStateSummary: Equatable {
+    let state: AgentState
+    let isViewedFinished: Bool
+}
 
 @MainActor
 @Observable
@@ -33,8 +40,8 @@ final class AttentionState {
     /// underlying state actually resolves.
     private(set) var dismissedAt: [UUID: Date] = [:]
 
-    /// Per-pane "focus has visited this finished turn" — the row fades
-    /// but stays listed (viewing is not completing). Keyed to badge
+    /// Per-pane "focus has visited this finished turn" — the row changes to
+    /// its acknowledged style but stays listed. Keyed to badge
     /// `updatedAt` for the same resurfacing semantics.
     private(set) var viewedAt: [UUID: Date] = [:]
 
@@ -74,8 +81,8 @@ final class AttentionState {
     }
 
     /// Mark a pane's *finished* turn as viewed — focus has visited it.
-    /// The row fades but stays. Cleared automatically when the next turn
-    /// starts (badge `updatedAt` advances).
+    /// The row switches to its acknowledged style but stays. Cleared
+    /// automatically when the next turn starts (badge `updatedAt` advances).
     func markViewed(paneID: UUID, in session: WindowSession) {
         markVisibleRuntimesViewed(paneID: paneID)
         guard let stamp = currentFinishedStamp(paneID: paneID, in: session) else { return }
@@ -215,33 +222,32 @@ extension AttentionState {
     /// doing work outranks a check the user has already glanced at.
     /// Without this, `.finished` (priority 3) silently dominates
     /// `.running` (priority 2) even when the finished badge is
-    /// already grayed out.
-    private static func aggregateDemotingViewed(_ states: [PaneAgentState]) -> AgentState? {
+    /// already shown as an acknowledged outline.
+    private static func aggregateDemotingViewed(_ states: [PaneAgentState]) -> AgentStateSummary? {
         let nonViewedFinished = states
             .filter { !($0.state == .finished && $0.isViewed) }
             .map(\.state)
         if let primary = nonViewedFinished.aggregateAgentState() {
-            return primary
+            return AgentStateSummary(state: primary, isViewedFinished: false)
         }
         return states.contains(where: { $0.state == .finished && $0.isViewed })
-            ? .finished
+            ? AgentStateSummary(state: .finished, isViewedFinished: true)
             : nil
     }
 
-    /// Aggregate state for a single tab — drives the tab column row badge.
-    func aggregateAgentState(in tab: Tab) -> AgentState? {
+    /// Aggregate summary for a single tab, retaining whether its displayed
+    /// finished result has already been viewed.
+    func aggregateAgentStateSummary(in tab: Tab) -> AgentStateSummary? {
         Self.aggregateDemotingViewed(allAgentStates(in: tab))
     }
 
-    /// Aggregate across every tab in the given container — container column group /
-    /// project / worktree row badge.
-    func aggregateAgentState(in container: ContainerID, session: WindowSession) -> AgentState? {
+    /// Aggregate summary across every tab in the given container.
+    func aggregateAgentStateSummary(in container: ContainerID, session: WindowSession) -> AgentStateSummary? {
         Self.aggregateDemotingViewed(scopeAgentStates(across: session.tabs(in: container)))
     }
 
-    /// Aggregate across project-direct + every worktree inside the
-    /// project. Used by Project headers in container column.
-    func aggregateAgentStateInProject(_ projectID: UUID, session: WindowSession) -> AgentState? {
+    /// Aggregate summary across project-direct + every worktree inside the project.
+    func aggregateAgentStateSummaryInProject(_ projectID: UUID, session: WindowSession) -> AgentStateSummary? {
         Self.aggregateDemotingViewed(
             scopeAgentStates(across: session.tabs.filter { $0.container.projectID == projectID })
         )
@@ -288,8 +294,8 @@ extension AttentionState {
         let detail: String?
         let turnBaseTree: String?
         let turnRoot: String?
-        /// Focus has visited this finished turn — render the row faded
-        /// ("seen, not yet replied"). Always false for needsInput / error.
+        /// Focus has visited this finished turn — render its acknowledged
+        /// indicator. Always false for needsInput / error.
         let isViewed: Bool
         var runtimeID: String?
         var id: String {
@@ -411,7 +417,7 @@ extension AttentionState {
                       info.state == .needsInput || info.state == .error || info.state == .finished
                 else { continue }
                 // A finished turn the user has explicitly dismissed drops
-                // off the list. Viewing (focus visit) only fades the row.
+                // off the list. Viewing (focus visit) only acknowledges the row.
                 // needsInput / error are never dismissed this way.
                 if info.state == .finished,
                    isDismissed(paneID: paneID, badgeUpdatedAt: info.updatedAt)

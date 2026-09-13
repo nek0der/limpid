@@ -73,4 +73,21 @@ extension AttentionState {
             onRuntimeAttentionChanged?()
         }
     }
+
+    /// Acknowledge finished runtime episodes recorded as read in notification
+    /// history. Matching both identifiers prevents an old notification from
+    /// acknowledging a later turn in the same invocation.
+    func markFinishedRuntimesViewed(matching eventTokensByRuntimeID: [String: Set<String>]) {
+        var changed = false
+        for runtime in allRuntimes where runtime.badge.state == .finished {
+            guard eventTokensByRuntimeID[runtime.id]?.contains(runtime.attentionEventToken) == true,
+                  !isViewed(runtime)
+            else { continue }
+            viewedRuntimeTokens[runtime.id] = runtime.attentionEventToken
+            changed = true
+        }
+        if changed {
+            onRuntimeAttentionChanged?()
+        }
+    }
 }
