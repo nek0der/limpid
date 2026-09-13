@@ -178,6 +178,13 @@ jobs:
           APP_PATH=build/export/Limpid.app
           ls "$APP_PATH" >/dev/null
           echo "path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          SERVICE_PATH="$APP_PATH/Contents/MacOS/AgentIntegrationService"
+          SERVICE_PLIST="$APP_PATH/Contents/Library/LaunchAgents/dev.limpid.agent-integration-service.plist"
+          test -x "$SERVICE_PATH"
+          test -f "$SERVICE_PLIST"
+          test ! -e "$APP_PATH/Contents/Library/LaunchAgents/dev.limpid.agent-integration-service.dev.plist"
+          plutil -lint "$SERVICE_PLIST"
+          codesign --verify --strict --verbose=2 "$SERVICE_PATH"
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
       - name: Notarize and staple the app

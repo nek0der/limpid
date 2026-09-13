@@ -92,6 +92,12 @@ dependencies = [
 [[package]]
 name = "limpid-rust-bridge"
 version = "0.1.0"
+dependencies = [
+ "limpid-agent-core",
+ "limpid-agent-protocol",
+ "serde_json",
+ "uuid",
+]
 
 [[package]]
 name = "memchr"

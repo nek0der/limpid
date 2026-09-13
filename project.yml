@@ -71,6 +71,96 @@ settings:
       CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
 
 targets:
+  AgentIntegrationService:
+    type: tool
+    platform: macOS
+    sources:
+      - path: AgentIntegrationService/Service
+      - path: AgentIntegrationService/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationService
+        PRODUCT_NAME: AgentIntegrationService
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_DEBUG_DYLIB: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - $(DERIVED_FILE_DIR)/limpid-rust
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -llimpid_rust_bridge
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationService.dev
+          OTHER_CODE_SIGN_FLAGS: "--identifier dev.limpid.AgentIntegrationService.dev"
+        Release:
+          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier dev.limpid.AgentIntegrationService"
+    dependencies:
+      - sdk: Security.framework
+    preBuildScripts:
+      - name: Build Rust bridge
+        script: '"$SRCROOT/scripts/build-rust-bridge.sh"'
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/Cargo.toml
+          - $(SRCROOT)/Cargo.lock
+          - $(SRCROOT)/rust-toolchain.toml
+          - $(SRCROOT)/scripts/build-rust-bridge.sh
+          - $(SRCROOT)/rust/limpid-agent-core/Cargo.toml
+          - $(SRCROOT)/rust/limpid-agent-core/src/lib.rs
+          - $(SRCROOT)/rust/limpid-agent-core/src/approval.rs
+          - $(SRCROOT)/rust/limpid-agent-protocol/Cargo.toml
+          - $(SRCROOT)/rust/limpid-agent-protocol/src/lib.rs
+          - $(SRCROOT)/rust/limpid-agent-protocol/src/service.rs
+          - $(SRCROOT)/rust/limpid-agent-protocol/src/wire.rs
+          - $(SRCROOT)/rust/limpid-rust-bridge/Cargo.toml
+          - $(SRCROOT)/rust/limpid-rust-bridge/src/lib.rs
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/limpid-rust/liblimpid_rust_bridge.a
+
+  AgentIntegrationRequesterProbe:
+    type: tool
+    platform: macOS
+    sources:
+      - path: AgentIntegrationService/RequesterProbe
+      - path: AgentIntegrationService/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationRequesterProbe
+        PRODUCT_NAME: AgentIntegrationRequesterProbe
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_DEBUG_DYLIB: NO
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationRequesterProbe.dev
+          OTHER_CODE_SIGN_FLAGS: "--identifier dev.limpid.AgentIntegrationRequesterProbe.dev"
+        Release:
+          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier dev.limpid.AgentIntegrationRequesterProbe"
+    dependencies:
+      - sdk: Security.framework
+
+  AgentIntegrationControllerProbe:
+    type: tool
+    platform: macOS
+    sources:
+      - path: AgentIntegrationService/ControllerProbe
+      - path: AgentIntegrationService/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationControllerProbe
+        PRODUCT_NAME: AgentIntegrationControllerProbe
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_DEBUG_DYLIB: NO
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationControllerProbe.dev
+          OTHER_CODE_SIGN_FLAGS: "--identifier dev.limpid.AgentIntegrationControllerProbe.dev"
+        Release:
+          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier dev.limpid.AgentIntegrationControllerProbe"
+    dependencies:
+      - sdk: Security.framework
+
   Limpid:
     type: application
     platform: macOS
@@ -82,6 +172,18 @@ targets:
           - "Resources/claude-shim"
           - "Resources/codex-shim"
           - "Resources/agent-shim"
+      - path: AgentIntegrationService/Shared
+      - path: AgentIntegrationService/Service/RustApprovalHost.swift
+      - path: AgentIntegrationService/Resources/dev.limpid.agent-integration-service.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
+      - path: AgentIntegrationService/Resources/dev.limpid.agent-integration-service.dev.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
       # Bundle libghostty's shell-integration scripts + the themes
       # we ship as Limpid's defaults (Apple System Colors Light/Dark).
       # `type: folder` keeps the directory structure intact under
@@ -230,10 +332,20 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.Limpid.dev
           PRODUCT_NAME: "Limpid Dev"
           ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon-Dev
+          EXCLUDED_SOURCE_FILE_NAMES: dev.limpid.agent-integration-service.plist
+        Release:
+          EXCLUDED_SOURCE_FILE_NAMES: dev.limpid.agent-integration-service.dev.plist
     dependencies:
+      - target: AgentIntegrationService
+        embed: true
+        link: false
+        copy:
+          destination: executables
       - framework: vendor/ghostty/macos/GhosttyKit.xcframework
         embed: false
       - package: Sparkle
+      - sdk: Security.framework
+      - sdk: ServiceManagement.framework
     preBuildScripts:
       - name: Build Rust bridge
         script: '"$SRCROOT/scripts/build-rust-bridge.sh"'
@@ -293,3 +405,10 @@ schemes:
       config: Debug
     archive:
       config: Release
+  AgentIntegrationProbes:
+    build:
+      targets:
+        AgentIntegrationRequesterProbe: all
+        AgentIntegrationControllerProbe: all
+    run:
+      config: Debug

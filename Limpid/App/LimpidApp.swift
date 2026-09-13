@@ -164,6 +164,11 @@ final class AppState {
         // disable window tabbing app-wide before any window comes up.
         NSWindow.allowsAutomaticWindowTabbing = false
 
+        // Service registration is opt-in while the provider adapter and UI are
+        // unfinished. A development build only acts when the launch environment
+        // carries LIMPID_AGENT_SERVICE_CONTROL.
+        AgentIntegrationServiceRegistrar.applyDevelopmentCommandIfPresent()
+
         let version = GhosttyFFI.version()
         let mode = GhosttyFFI.buildMode()
         log.notice("libghostty \(version, privacy: .public) (\(mode, privacy: .public))")
