@@ -844,6 +844,11 @@ struct ReviewWorkspaceView: View {
                 )
             }
         }
-        .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+        // The diff column's floor is the one the rail math is built on: with
+        // the list inline, the two add up to `ReviewRail.inlineMinimumWidth`,
+        // which is what the window layout keeps clear for the surface. Any
+        // other number here makes the column wider than that sum and the
+        // surface wider than the window.
+        .frame(minWidth: ReviewRail.diffMinimum, maxWidth: .infinity, maxHeight: .infinity)
     }
 }
