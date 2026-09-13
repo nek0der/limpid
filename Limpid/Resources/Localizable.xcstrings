@@ -5598,6 +5598,38 @@
         }
       }
     },
+    "Worktree contains initialized submodules. Force delete anyway? Any uncommitted work will be lost. Local commits or stashes that exist only in its submodules may also be lost.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worktree contains initialized submodules. Force delete anyway? Any uncommitted work will be lost. Local commits or stashes that exist only in its submodules may also be lost."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーに初期化済みのサブモジュールがあります。強制削除しますか? 未コミットの変更は失われます。サブモジュール内にのみ存在するローカルコミットや stash も失われる可能性があります。"
+          }
+        }
+      }
+    },
+    "Worktree contains initialized submodules. Retry with Force to delete anyway.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worktree contains initialized submodules. Retry with Force to delete anyway."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーに初期化済みのサブモジュールがあります。それでも削除する場合は Force を選択してください。"
+          }
+        }
+      }
+    },
     "Worktree not found on disk": {
       "localizations": {
         "en": {

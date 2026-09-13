@@ -12,6 +12,11 @@
 import AppKit
 import SwiftUI
 
+enum ForceDeleteWorktreeReason: Equatable {
+    case uncommittedChanges
+    case initializedSubmodules
+}
+
 struct ContainerSlabView: View {
     /// The slab remains mounted while the sidebar is offscreen, but hidden
     /// content must not respond to commands or retain modal presentation.
@@ -39,9 +44,9 @@ struct ContainerSlabView: View {
     /// Pending "Delete Worktree" target. Presents a confirmation alert
     /// before invoking git. Force-retry state lives separately so the
     /// alert can offer a one-click escalation when git rejects the
-    /// initial attempt for dirty trees.
+    /// initial attempt under one of its deletion safeguards.
     @State private var deletingWorktree: DeleteWorktreeTarget?
-    @State private var forceDeleteWorktree: DeleteWorktreeTarget?
+    @State private var forceDeleteWorktree: ForceDeleteWorktreeTarget?
     /// Pending "Close Project" / "Close Group" targets. Both surface a
     /// confirmation alert because the action closes every tab nested
     /// under the entity — non-trivial loss if invoked by mistake.
@@ -118,6 +123,17 @@ struct ContainerSlabView: View {
         let worktreeID: UUID
         let label: String
         let path: URL
+    }
+
+    /// A failed clean removal promoted to the destructive Force
+    /// confirmation, preserving why Git requires the escalation.
+    struct ForceDeleteWorktreeTarget: Identifiable, Equatable {
+        var id: UUID {
+            target.id
+        }
+
+        let target: DeleteWorktreeTarget
+        let reason: ForceDeleteWorktreeReason
     }
 
     /// Target of a "Close Project" gesture.

@@ -18,7 +18,7 @@ struct WorktreeOperationAlerts: ViewModifier {
     @Environment(\.surfaceRegistry) private var registry
 
     @Binding var deletingWorktree: ContainerSlabView.DeleteWorktreeTarget?
-    @Binding var forceDeleteWorktree: ContainerSlabView.DeleteWorktreeTarget?
+    @Binding var forceDeleteWorktree: ContainerSlabView.ForceDeleteWorktreeTarget?
     @Binding var removingProject: ContainerSlabView.RemoveProjectTarget?
     @Binding var removingGroup: ContainerSlabView.RemoveGroupTarget?
     @Binding var worktreeOperationError: String?
@@ -58,13 +58,24 @@ struct WorktreeOperationAlerts: ViewModifier {
                     }
                 ),
                 presenting: forceDeleteWorktree
-            ) { target in
+            ) { pending in
                 Button("Force Delete", role: .destructive) {
-                    Task { await performDelete(target, force: true) }
+                    Task { await performDelete(pending.target, force: true) }
                 }
                 Button("Cancel", role: .cancel) { forceDeleteWorktree = nil }
-            } message: { _ in
-                Text("Worktree has uncommitted changes. Force delete anyway? Uncommitted work will be lost.")
+            } message: { pending in
+                switch pending.reason {
+                case .uncommittedChanges:
+                    Text("Worktree has uncommitted changes. Force delete anyway? Uncommitted work will be lost.")
+                case .initializedSubmodules:
+                    Text(
+                        """
+                        Worktree contains initialized submodules. Force delete anyway? \
+                        Any uncommitted work will be lost. Local commits or stashes that exist only \
+                        in its submodules may also be lost.
+                        """
+                    )
+                }
             }
             .alert(
                 "Close project?",
@@ -128,10 +139,10 @@ struct WorktreeOperationAlerts: ViewModifier {
             }
     }
 
-    /// Two-stage delete: try clean first; on `dirtyNeedsForce` flip to
-    /// the force-confirm alert so the user can decide whether to lose
-    /// uncommitted work. Other errors bubble into the shared error
-    /// surface.
+    /// Two-stage delete: try clean first; when Git requires Force, flip
+    /// to a reason-specific confirmation so the user can assess what
+    /// local work may be lost. Other errors bubble into the shared
+    /// error surface.
     private func performDelete(
         _ target: ContainerSlabView.DeleteWorktreeTarget,
         force: Bool
@@ -145,7 +156,9 @@ struct WorktreeOperationAlerts: ViewModifier {
                 force: force
             )
         } catch DeleteWorktreeError.dirtyNeedsForce {
-            forceDeleteWorktree = target
+            forceDeleteWorktree = .init(target: target, reason: .uncommittedChanges)
+        } catch DeleteWorktreeError.submodulesNeedForce {
+            forceDeleteWorktree = .init(target: target, reason: .initializedSubmodules)
         } catch {
             worktreeOperationError = error.localizedDescription
         }
@@ -155,7 +168,7 @@ struct WorktreeOperationAlerts: ViewModifier {
 extension View {
     func worktreeOperationAlerts(
         deletingWorktree: Binding<ContainerSlabView.DeleteWorktreeTarget?>,
-        forceDeleteWorktree: Binding<ContainerSlabView.DeleteWorktreeTarget?>,
+        forceDeleteWorktree: Binding<ContainerSlabView.ForceDeleteWorktreeTarget?>,
         removingProject: Binding<ContainerSlabView.RemoveProjectTarget?>,
         removingGroup: Binding<ContainerSlabView.RemoveGroupTarget?>,
         worktreeOperationError: Binding<String?>

@@ -33,6 +33,7 @@ enum DeleteWorktreeError: Error, LocalizedError {
     case projectNotFound
     case worktreeNotFound
     case dirtyNeedsForce
+    case submodulesNeedForce
     case gitFailed(stderr: String)
 
     var errorDescription: String? {
@@ -43,6 +44,8 @@ enum DeleteWorktreeError: Error, LocalizedError {
             String(localized: "Worktree not found.")
         case .dirtyNeedsForce:
             String(localized: "Worktree has uncommitted changes. Retry with Force to delete anyway.")
+        case .submodulesNeedForce:
+            String(localized: "Worktree contains initialized submodules. Retry with Force to delete anyway.")
         case let .gitFailed(stderr):
             stderr.isEmpty
                 ? String(localized: "git worktree remove failed.")
