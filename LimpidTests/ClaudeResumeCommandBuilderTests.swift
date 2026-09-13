@@ -70,7 +70,6 @@ struct ClaudeResumeCommandBuilderTests {
         // entry resumes, the other gets a plain shell.
         let (session, _, firstPaneID) = WindowSessionFixture.withLooseTab()
         let tabID = session.tabs[0].id
-        let secondPaneID = UUID()
         session.update(tabID) {
             // Add a second split leaf alongside the first.
             let result = $0.splitTree.insert(at: firstPaneID, direction: .horizontal)

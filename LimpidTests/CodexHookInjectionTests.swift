@@ -31,13 +31,13 @@ struct CodexHookInjectionTests {
     }
 
     @Test("gives PreToolUse a second, matched group when the worktree hook exists")
-    func arguments_worktreeHook_addsMatchedGroup() {
+    func arguments_worktreeHook_addsMatchedGroup() throws {
         let args = CodexHookInjection.arguments(
             lifecycleCommand: lifecycle, worktreeCommand: worktree
         )
-        let preToolUse = try? #require(args.first { $0.hasPrefix("hooks.PreToolUse=") })
-        #expect(preToolUse?.contains(CodexHookInstaller.worktreeMatcher) == true)
-        #expect(preToolUse?.contains(worktree) == true)
+        let preToolUse = try #require(args.first { $0.hasPrefix("hooks.PreToolUse=") })
+        #expect(preToolUse.contains(CodexHookInstaller.worktreeMatcher))
+        #expect(preToolUse.contains(worktree))
     }
 
     @Test("omits the second group when there is no worktree hook")
