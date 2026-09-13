@@ -38,8 +38,8 @@ struct CodexAgentStateRecord: AgentLifecycleRecord, Equatable {
     var lastPrompt: String?
     /// The session's opening user prompt, captured once and never
     /// overwritten. Codex has no auto-generated conversation title, so
-    /// this is the tab-title source `CodexAgentStateTracker` reflects
-    /// into `Tab.title` (`lastPrompt` would drift off-topic each turn).
+    /// this is the only candidate `CodexAgentStateTracker` sends through the
+    /// Rust title resolver (`lastPrompt` would drift off-topic each turn).
     var firstPrompt: String?
     /// ISO-8601 instant the `SessionStart` hook fired for this pane.
     /// Captured once and held verbatim across every later event in the

@@ -177,17 +177,14 @@ struct CodexAgentStateTrackerTests {
         }
     }
 
-    // MARK: - Title selector (applyCodexTitle via bootstrap)
+    // MARK: - Title projection via bootstrap
 
     /// Bootstrap a tracker with a Codex state record and verify the
-    /// tab title ends up matching the record's `firstPrompt`. The
-    /// `applyCodexTitle` path is private; `bootstrap` is the public
-    /// seam that drives it via `applyAllRecordsToSession`. We rely on
-    /// `Tab.latestAgentSessionPaneID` tests to cover the cross-pane
-    /// ordering — here we just need a single happy-path check that the
-    /// disk → tab.title pipe is wired correctly.
-    @Test("bootstrap copies the codex pane's firstPrompt into tab.title")
-    func bootstrap_firstPrompt_setsTabTitle() throws {
+    /// tab title passes through Rust normalization. `bootstrap` is the public
+    /// seam that drives the private reconciliation path. Cross-pane ordering
+    /// remains covered by `Tab.latestAgentSessionPaneID` tests.
+    @Test("bootstrap resolves the codex pane's firstPrompt through Rust")
+    func bootstrap_firstPrompt_resolvesTabTitleThroughRust() throws {
         try withTempDir { stateDir in
             try withTempDir { sessionDir in
                 let s = makeTracker(stateDir: stateDir, sessionDir: sessionDir)
@@ -195,7 +192,7 @@ struct CodexAgentStateTrackerTests {
                 try s.state.save(stateRecord(
                     paneID: fixture.paneID,
                     pid: String(getpid()),
-                    firstPrompt: "investigate ringer",
+                    firstPrompt: "  investigate\u{202E}\n\t ringer\u{200B}  ",
                     sessionStartedAt: Self.iso.string(from: Date())
                 ))
 

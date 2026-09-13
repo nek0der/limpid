@@ -82,20 +82,23 @@ enum CodexAgent: AgentSpec {
         return claude.sessionId.isEmpty
     }
 
-    /// Name the tab after the Codex conversation's opening prompt.
-    /// Codex emits no auto-title and Limpid suppresses its OSC 2 pwd
-    /// title, so the pane's `firstPrompt` is the only meaningful
-    /// label this pane produces. Only the pane whose Codex/Claude
-    /// session started most recently (`Tab.latestAgentSessionPaneID`)
-    /// is allowed to push a title — without this guard, an older
-    /// session typing another turn would re-emit its own
+    /// Name the tab after the Codex conversation's normalized opening prompt.
+    /// Codex emits no auto-title and Limpid suppresses its OSC 2 pwd title, so
+    /// `firstPrompt` is its only title candidate. Rust applies the same input
+    /// policy used for Claude before Swift updates the projection. Only the
+    /// pane whose Codex/Claude session started most recently
+    /// (`Tab.latestAgentSessionPaneID`) is allowed to push a title — without
+    /// this guard, an older session typing another turn would re-emit its own
     /// `firstPrompt` and clobber a newer pane's label.
     static func applyTabTitle(_ tab: inout Tab, badges: [UUID: AgentBadge]) {
         guard let owner = tab.latestAgentSessionPaneID,
-              let prompt = badges[owner]?.firstPrompt,
-              !prompt.isEmpty,
-              tab.title != prompt
+              let title = LimpidRustTitleResolver.resolve(
+                  providerSessionTitle: nil,
+                  providerGeneratedTitle: nil,
+                  firstPrompt: badges[owner]?.firstPrompt
+              ),
+              tab.title != title
         else { return }
-        tab.title = prompt
+        tab.title = title
     }
 }

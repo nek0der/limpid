@@ -73,8 +73,8 @@ struct AgentSpecTests {
         #expect(tab.title == "What's the dance behind quicksort?")
     }
 
-    @Test("CodexAgent.applyTabTitle is a no-op when the firstPrompt is empty")
-    func codex_applyTabTitle_skipsEmptyPrompt() {
+    @Test("CodexAgent.applyTabTitle is a no-op when the firstPrompt is blank")
+    func codex_applyTabTitle_skipsBlankPrompt() {
         var (tab, pane) = Tab.newWithSinglePane(title: "kept", container: .loose)
         let badge = AgentBadge(
             state: .running,
@@ -83,7 +83,7 @@ struct AgentSpecTests {
             contextTokens: nil,
             updatedAt: Date(timeIntervalSince1970: 100),
             lastPrompt: nil,
-            firstPrompt: "",
+            firstPrompt: " \n\t ",
             sessionStartedAt: Date(timeIntervalSince1970: 100)
         )
         tab.codexAgentBadges[pane] = badge
@@ -91,6 +91,46 @@ struct AgentSpecTests {
         CodexAgent.applyTabTitle(&tab, badges: tab.codexAgentBadges)
 
         #expect(tab.title == "kept")
+    }
+
+    @Test("CodexAgent.applyTabTitle normalizes unsafe and multiline input through Rust")
+    func codex_applyTabTitle_normalizesThroughRust() {
+        var (tab, pane) = Tab.newWithSinglePane(title: "old", container: .loose)
+        let badge = AgentBadge(
+            state: .running,
+            detail: nil,
+            runStartedAt: nil,
+            contextTokens: nil,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            lastPrompt: nil,
+            firstPrompt: "  Safe\u{202E}\n\t title\u{200B}  ",
+            sessionStartedAt: Date(timeIntervalSince1970: 100)
+        )
+        tab.codexAgentBadges[pane] = badge
+
+        CodexAgent.applyTabTitle(&tab, badges: tab.codexAgentBadges)
+
+        #expect(tab.title == "Safe title")
+    }
+
+    @Test("CodexAgent.applyTabTitle bounds a long opening prompt through Rust")
+    func codex_applyTabTitle_boundsLongPromptThroughRust() {
+        var (tab, pane) = Tab.newWithSinglePane(title: "old", container: .loose)
+        let badge = AgentBadge(
+            state: .running,
+            detail: nil,
+            runStartedAt: nil,
+            contextTokens: nil,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            lastPrompt: nil,
+            firstPrompt: String(repeating: "あ", count: 1400),
+            sessionStartedAt: Date(timeIntervalSince1970: 100)
+        )
+        tab.codexAgentBadges[pane] = badge
+
+        CodexAgent.applyTabTitle(&tab, badges: tab.codexAgentBadges)
+
+        #expect(tab.title == String(repeating: "あ", count: 1365))
     }
 
     @Test("ClaudeAgent.applyTabTitle uses the formal title of the latest session owner")

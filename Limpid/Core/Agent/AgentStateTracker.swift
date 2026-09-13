@@ -343,8 +343,8 @@ final class AgentStateTracker<S: AgentSpec> {
     }
 
     /// Refresh one tab's per-pane badges from the on-disk records and
-    /// call into `S.applyTabTitle` so flavour-specific titling (Codex
-    /// firstPrompt → tab.title) lands in the same atomic update.
+    /// call into `S.applyTabTitle` so provider-specific title candidates are
+    /// resolved and applied in the same atomic update.
     private func reconcile(
         _ tab: inout Tab,
         recordsByPaneID: [UUID: [S.StateRecord]]
