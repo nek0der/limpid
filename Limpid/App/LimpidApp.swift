@@ -36,6 +36,8 @@ final class AppState {
     /// cursor. See `AttentionState` for the responsibility split
     /// with `WindowSession`.
     let attention: AttentionState
+    /// Transient approval projection, intentionally excluded from persistence.
+    let approvalPresentation = ApprovalPresentationStore()
     let store: SessionStore
     // Dependency graph — owned here so the rest of the app can read
     // these via explicit constructor injection instead of `.shared`.
@@ -156,17 +158,11 @@ final class AppState {
     }
 
     init() {
-        // AppKit auto-injects "Show Tab Bar / Show All Tabs / Move
-        // Tab to New Window / Merge All Windows" into the View menu
-        // for every `NSWindow` that opts into window tabbing. Limpid's
-        // model owns its own tab list inside the window — the system
-        // tab bar would be a parallel, confusing affordance — so we
-        // disable window tabbing app-wide before any window comes up.
+        // Limpid owns its tab model, so disable AppKit's parallel window
+        // tabbing and its automatically injected menus before window creation.
         NSWindow.allowsAutomaticWindowTabbing = false
 
-        // Service registration is opt-in while the provider adapter and UI are
-        // unfinished. A development build only acts when the launch environment
-        // carries LIMPID_AGENT_SERVICE_CONTROL.
+        // Debug builds register the signed approval service on first launch.
         AgentIntegrationServiceRegistrar.applyDevelopmentCommandIfPresent()
 
         let version = GhosttyFFI.version()
@@ -547,6 +543,9 @@ final class AppState {
                 self.syncGhosttyColorScheme()
             }
         }
+        #if DEBUG
+            approvalPresentation.start()
+        #endif
     }
 
     /// Pin `NSApp.appearance` to the user's Appearance preference.
@@ -643,6 +642,7 @@ struct LimpidApp: App {
                 .background(LimpidMainWindowMarker())
                 .environment(state.session)
                 .environment(state.attention)
+                .environment(state.approvalPresentation)
                 .environment(state.tmuxPresence)
                 .environment(state.historyStore)
                 .environment(state.historyPresentation)

@@ -8,6 +8,71 @@
 import AppKit
 import SwiftUI
 
+/// One broker-owned permission request. Decisions go directly to the
+/// controller endpoint; focusing the row is optional when the provider
+/// session has not yet been associated with a pane.
+struct ApprovalAttentionRow: View {
+    let approval: ApprovalPresentation
+    let isResolving: Bool
+    let onAllow: () -> Void
+    let onDeny: () -> Void
+    let onTap: () -> Void
+    @State private var showsDetails = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Image(systemName: "questionmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text(verbatim: "\(approval.provider.rawValue.capitalized) — \(approval.toolName)")
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+            }
+            if let summary = approval.summary, !summary.isEmpty {
+                Text(verbatim: summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.primary.opacity(0.7))
+                    .lineLimit(2)
+            }
+            Button(showsDetails ? "Hide details" : "Show details") {
+                showsDetails.toggle()
+            }
+            .buttonStyle(.link)
+            .controlSize(.small)
+            .accessibilityLabel(Text(showsDetails ? "Hide details" : "Show details"))
+            if showsDetails {
+                ScrollView([.horizontal, .vertical]) {
+                    Text(verbatim: approval.inputDescription)
+                        .font(.system(size: 10, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: true, vertical: true)
+                }
+                .frame(maxHeight: 160)
+            }
+            HStack(spacing: 6) {
+                Button("Deny", action: onDeny)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityLabel(Text("Deny"))
+                Button("Allow", action: onAllow)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .accessibilityLabel(Text("Allow"))
+            }
+            .disabled(isResolving)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, LimpidLayout.containerColumnIndentTop)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
+        .accessibilityElement(children: .contain)
+    }
+}
+
 /// One row in the container column Waiting list — in the same order the
 /// ⌘J cursor walks. The leading glyph is the agent's state
 /// (`questionmark` / `checkmark` / `exclamationmark`) rather than the
@@ -238,25 +303,30 @@ extension ContainerSlabView {
     /// storage is private to its own file.
     func attentionHeader(
         entries: [AttentionState.AttentionEntry],
+        approvalCount: Int = 0,
         attention: AttentionState
     ) -> some View {
         // Severity order, so the state that should pull the eye first is
         // also the leftmost pill.
         let counts = [AgentState.error, .needsInput, .finished]
             .map { state in
-                AttentionStateCount(state: state, count: entries.count(where: { $0.state == state }))
+                let nativeApprovals = state == .needsInput ? approvalCount : 0
+                return AttentionStateCount(
+                    state: state,
+                    count: entries.count(where: { $0.state == state }) + nativeApprovals
+                )
             }
             .filter { $0.count > 0 }
         return ViewThatFits(in: .horizontal) {
             attentionHeaderLine(
                 counts: counts,
-                totalCount: entries.count,
+                totalCount: entries.count + approvalCount,
                 attention: attention,
                 showsStateBreakdown: true
             )
             attentionHeaderLine(
                 counts: counts,
-                totalCount: entries.count,
+                totalCount: entries.count + approvalCount,
                 attention: attention,
                 showsStateBreakdown: false
             )

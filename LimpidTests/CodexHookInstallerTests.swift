@@ -10,6 +10,16 @@ import Testing
 @Suite("CodexHookInstaller")
 @MainActor
 struct CodexHookInstallerTests {
+    @Test("executes the signed approval helper directly")
+    func approvalHelperCommand_doesNotInvokeShellAsTheExecutable() {
+        let command = CodexHookInstaller.executableCommand(
+            for: URL(fileURLWithPath: "/Applications/Limpid Dev.app/Contents/MacOS/AgentIntegrationHookHelper")
+        )
+
+        #expect(command == "'/Applications/Limpid Dev.app/Contents/MacOS/AgentIntegrationHookHelper'")
+        #expect(!command.contains("/bin/sh"))
+    }
+
     /// The installer is the one component that edits a file outside our
     /// own container, and `LimpidApp` refreshes it during bootstrap —
     /// which the Xcode test host also runs. Without this the suite
