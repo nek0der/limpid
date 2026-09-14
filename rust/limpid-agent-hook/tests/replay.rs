@@ -25,6 +25,21 @@ impl Scratch {
     }
 
     fn env(&self, provider: &str) -> HookEnv {
+        HookEnv::from_pairs(self.pairs(provider))
+    }
+
+    /// The environment of a pane hosted in tmux, on top of `env`.
+    fn tmux_env(&self, provider: &str) -> HookEnv {
+        let mut pairs = self.pairs(provider);
+        pairs.push((
+            "TMUX".to_owned(),
+            "/tmp/limpid-test-socket,4242,0".to_owned(),
+        ));
+        pairs.push(("TMUX_PANE".to_owned(), "%3".to_owned()));
+        HookEnv::from_pairs(pairs)
+    }
+
+    fn pairs(&self, provider: &str) -> Vec<(String, String)> {
         let mut pairs = vec![
             ("LIMPID_PANE_ID".to_owned(), PANE.to_owned()),
             ("LIMPID_AGENT_RUN_ID".to_owned(), RUN.to_owned()),
@@ -51,9 +66,15 @@ impl Scratch {
                 "LIMPID_CWD_EVENTS_DIR".to_owned(),
                 self.root.join("cwd").display().to_string(),
             ));
-            pairs.push(("LIMPID_CLAUDE_PID".to_owned(), "4242".to_owned()));
         }
-        HookEnv::from_pairs(pairs)
+        // The shim exports the agent pid; without it the runtime walks the
+        // process tree, which would make the result depend on what ran the
+        // tests.
+        pairs.push((
+            format!("LIMPID_{}_PID", provider.to_uppercase()),
+            "4242".to_owned(),
+        ));
+        pairs
     }
 
     fn record(&self) -> Option<RunRecord> {
@@ -138,12 +159,14 @@ fn claude_session_basic_writes_a_version_three_record_and_drops_the_hint() {
     let hint = scratch.hint().expect("hint");
     assert_eq!(hint["runId"], RUN);
     assert_eq!(hint["sessionId"], "00000000-0000-4000-8000-000000000001");
-    assert!(
+    // The lock sidecar only exists where the runtime takes file locks.
+    assert_eq!(
         scratch
             .root
             .join("states")
             .join(format!("{RUN}.state.json.flock"))
-            .exists()
+            .exists(),
+        cfg!(unix)
     );
 
     replay(&scratch, "claude", &payloads[2..]);
@@ -195,12 +218,40 @@ fn codex_session_keeps_its_hint_and_finishes_tools() {
     let record = scratch.record().expect("record");
     assert_eq!(record.state, RunState::Unknown);
     assert_eq!(record.revision, Some(6));
-    assert_eq!(record.pid, None, "no exported pid outside the shim");
+    assert_eq!(record.pid.as_deref(), Some("4242"));
     assert!(
         scratch.hint().is_some(),
         "Codex never drops the hint on /quit"
     );
     assert!(!scratch.root.join("cwd").exists());
+}
+
+#[test]
+fn a_tmux_hosted_pane_records_the_endpoint_and_withholds_the_hint() {
+    let scratch = Scratch::new("tmux");
+    let payloads = fixture_case("claude", "tmux-hosted");
+    let env = scratch.tmux_env("claude");
+    let runtime = HookRuntime::new(&env, &NoSnapshots);
+    for payload in &payloads[..2] {
+        assert_eq!(run_hook("claude", payload, &runtime), HookOutcome::Applied);
+    }
+    let record = scratch.record().expect("record");
+    assert_eq!(record.is_tmux_hosted, Some(true));
+    assert_eq!(
+        record.tmux_socket_path.as_deref(),
+        Some("/tmp/limpid-test-socket")
+    );
+    assert_eq!(record.tmux_pane_id.as_deref(), Some("%3"));
+    assert_eq!(record.tmux_server_pid.as_deref(), Some("4242"));
+    // The start time depends on whether pid 4242 exists on this machine;
+    // the field is always written so the host can tell "unknown" apart from
+    // "not in tmux".
+    assert!(record.tmux_server_started_at.is_some());
+    assert_eq!(
+        record.pid, None,
+        "inside tmux the exported pid names the client"
+    );
+    assert_eq!(scratch.hint(), None, "resume hints are native-only");
 }
 
 #[test]

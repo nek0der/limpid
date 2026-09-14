@@ -20,9 +20,15 @@ struct Repo {
 
 impl Repo {
     fn new(name: &str) -> Self {
+        Self::at(name, "repo")
+    }
+
+    /// A repository at `root/<directory>`, so a test can pick a directory
+    /// name with characters a file URL has to escape.
+    fn at(name: &str, directory: &str) -> Self {
         let root =
             std::env::temp_dir().join(format!("limpid-hook-git-{name}-{}", uuid::Uuid::new_v4()));
-        let path = root.join("repo");
+        let path = root.join(directory);
         fs::create_dir_all(&path).expect("repo dir");
         git(&path, &["init", "-q", "-b", "main"]);
         fs::write(path.join("README.md"), "fixture\n").expect("readme");
@@ -54,8 +60,12 @@ impl Drop for Repo {
     }
 }
 
+/// Runs git without the developer's own configuration, so a global
+/// `commit.gpgsign` or `core.hooksPath` cannot stall the fixture setup.
 fn git(cwd: &Path, args: &[&str]) -> Option<String> {
     let output = Command::new("git")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .arg("-C")
         .arg(cwd)
         .args(args)
@@ -148,18 +158,44 @@ fn capture_outside_a_repository_yields_nothing() {
     let _ = fs::remove_dir_all(&outside);
 }
 
+/// The state file as the app writes it: projects sit inside the sidebar's
+/// containers next to groups.
 fn state_json(repo: &Repo, extra: &str) -> PathBuf {
     let states = repo.root.join("support").join("agent-states");
     fs::create_dir_all(&states).expect("states");
     fs::write(
         repo.root.join("support").join("state.json"),
         format!(
-            r#"{{"projects":[{{"rootURL":"file://{}/","worktreePlacement":{{"siblingPrefixed":{{}}}},"bootstrap":["touch bootstrapped.txt",{{"cmd":"touch nested.txt","cwd":"../escape"}}]{extra}}}]}}"#,
+            r#"{{"version":5,"containers":[{{"kind":"group","group":{{"name":"g"}}}},{{"kind":"project","project":{{"name":"repo","rootURL":"file://{}/","worktreePlacement":{{"siblingPrefixed":{{}}}},"bootstrap":["mkdir sub",{{"cmd":"touch nested.txt","cwd":"sub"}},{{"cmd":"touch escaped.txt","cwd":".."}}]{extra}}}}}]}}"#,
             repo.path.display()
         ),
     )
     .expect("state.json");
     states
+}
+
+#[test]
+fn intercept_also_reads_the_pre_container_projects_array() {
+    let repo = Repo::new("legacy-state");
+    let states = repo.root.join("support").join("agent-states");
+    fs::create_dir_all(&states).expect("states");
+    fs::write(
+        repo.root.join("support").join("state.json"),
+        format!(
+            r#"{{"projects":[{{"rootURL":"file://{}/","worktreePlacement":{{"insideHidden":{{}}}}}}]}}"#,
+            repo.path.display()
+        ),
+    )
+    .expect("state.json");
+    let intent = WorktreeIntent::parse(
+        "git worktree add -b demo ../demo",
+        Some(repo.path.to_str().expect("path")),
+    )
+    .expect("intent");
+    let result = limpid_agent_hook::run_worktree_intercept(&intent, "claude", &states);
+    let expected = repo.path.join(".worktrees").join("demo");
+    assert!(matches!(result, InterceptResult::Created { path, .. } if path == expected));
+    assert!(expected.join("README.md").exists());
 }
 
 #[test]
@@ -188,11 +224,13 @@ fn intercept_creates_the_worktree_where_the_project_says_and_notifies() {
         Some("feature/demo")
     );
     assert!(
-        expected.join("bootstrapped.txt").exists(),
-        "string steps run in the worktree"
+        expected.join("sub").join("nested.txt").exists(),
+        "string steps run in the worktree and a relative cwd resolves inside it"
     );
+    // `..` of the worktree is a directory that exists, so this proves the
+    // guard and not a failed `chdir`.
     assert!(
-        !repo.root.join("escape").exists(),
+        !repo.root.join("escaped.txt").exists(),
         "an escaping cwd is skipped"
     );
     let events: Vec<PathBuf> = fs::read_dir(states.join("worktree-events"))
@@ -206,6 +244,35 @@ fn intercept_creates_the_worktree_where_the_project_says_and_notifies() {
     assert_eq!(event["event"], "WorktreeCreate");
     assert_eq!(event["branch"], "feature/demo");
     assert_eq!(event["worktreePath"], expected.to_string_lossy().as_ref());
+}
+
+#[test]
+fn intercept_decodes_file_urls_and_honors_a_custom_placement() {
+    let repo = Repo::at("custom", "My 開発");
+    let states = repo.root.join("support").join("agent-states");
+    fs::create_dir_all(&states).expect("states");
+    let parent = repo.root.join("wt dir");
+    // The URLs are written as Swift's `URL` encodes them.
+    fs::write(
+        repo.root.join("support").join("state.json"),
+        format!(
+            r#"{{"version":5,"containers":[{{"kind":"project","project":{{"name":"repo","rootURL":"file://{root}/My%20%E9%96%8B%E7%99%BA/","worktreePlacement":{{"custom":{{"_0":"file://{root}/wt%20dir/"}}}}}}}}]}}"#,
+            root = repo.root.display()
+        ),
+    )
+    .expect("state.json");
+    let intent = WorktreeIntent::parse(
+        "git worktree add -b demo ../demo",
+        Some(repo.path.to_str().expect("path")),
+    )
+    .expect("intent");
+    let result = limpid_agent_hook::run_worktree_intercept(&intent, "claude", &states);
+    let expected = parent.join("demo");
+    assert!(
+        matches!(&result, InterceptResult::Created { path, .. } if *path == expected),
+        "{result:?}"
+    );
+    assert!(expected.join("README.md").exists());
 }
 
 #[test]

@@ -39,6 +39,12 @@ struct ClaudeHookScriptTests {
                 process.environment = [
                     "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                     "HOME": dir.path,
+                    // This suite pins the legacy shell receiver's behavior
+                    // until it is removed, so we ask the wrapper for it by
+                    // name instead of relying on the helper being absent
+                    // from the source tree. The cases that exercise the Rust
+                    // backend override this through `extraEnvironment`.
+                    "LIMPID_AGENT_HOOK_BACKEND": "shell",
                     "LIMPID_PANE_ID": paneID,
                     "LIMPID_AGENT_STATES_DIR": states.path,
                     "LIMPID_SESSIONS_DIR": dir.appendingPathComponent("sessions").path,
@@ -310,6 +316,9 @@ struct ClaudeHookScriptTests {
             process.environment = [
                 "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                 "HOME": dir.path,
+                // The pid walk belongs to the legacy receiver, so we name
+                // the backend here for the same reason the harness does.
+                "LIMPID_AGENT_HOOK_BACKEND": "shell",
                 "LIMPID_PANE_ID": paneID,
                 "LIMPID_AGENT_STATES_DIR": states.path,
                 "LIMPID_SESSIONS_DIR": dir.appendingPathComponent("sessions").path,
@@ -398,11 +407,42 @@ struct ClaudeHookScriptTests {
         }
     }
 
-    /// The bundled helper beside the test host; the Rust backend exec's it.
+    /// The bundled helper beside the test host; the Rust backend execs it.
     private static var helperPath: String? {
         guard let executable = Bundle.main.executableURL else { return nil }
         let helper = executable.deletingLastPathComponent().appendingPathComponent("AgentIntegrationHookHelper").path
         return FileManager.default.isExecutableFile(atPath: helper) ? helper : nil
+    }
+
+    /// Captures each record rather than only the final file so one payload
+    /// sequence can compare the two receivers' transitions event by event.
+    private func replayRecords(
+        _ payloads: [[String: Any]],
+        backend: String
+    ) throws -> [[String: Any]] {
+        var environment = [
+            "LIMPID_AGENT_HOOK_BACKEND": backend,
+            "LIMPID_TURN_SNAPSHOT": "0"
+        ]
+        if backend == "rust" {
+            let helper = try #require(Self.helperPath)
+            environment["LIMPID_HOOK_HELPER"] = helper
+        }
+        var records = [[String: Any]]()
+        _ = try runHooks(payloads, extraEnvironment: environment) { _, states, paneID, _ in
+            let url = states.appendingPathComponent("\(paneID).state.json")
+            let data = try Data(contentsOf: url)
+            let record = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            records.append(record)
+        }
+        return records
+    }
+
+    /// Version 2 writes empty strings for absent text while version 3 writes
+    /// null. The Swift reader gives those forms the same meaning.
+    private func optionalText(_ record: [String: Any], _ key: String) -> String? {
+        guard let text = record[key] as? String, !text.isEmpty else { return nil }
+        return text
     }
 
     /// The wrapper's only job is to pick the receiver; with the Rust
@@ -442,6 +482,73 @@ struct ClaudeHookScriptTests {
         ]))
         #expect(record["schemaVersion"] as? Int == 2)
         #expect(record["lastHookEvent"] as? String == "UserPromptSubmit")
+    }
+
+    @Test("keeps shell and Rust lifecycle transitions semantically equivalent")
+    func shellAndRustBackends_replayTheSameLifecycleSemantics() throws {
+        let payloads = [
+            payload("SessionStart", extra: ["source": "startup", "session_title": "Parity title"]),
+            payload("UserPromptSubmit", extra: ["prompt": "Opening prompt"]),
+            payload("PreToolUse", extra: [
+                "tool_name": "AskUserQuestion",
+                "tool_input": ["questions": [["question": "Choose a branch"]]]
+            ]),
+            payload("PreCompact", extra: ["current_token_count": 42]),
+            payload("Stop"),
+            payload("StopFailure", extra: ["error": "overloaded"]),
+            payload("SessionEnd", extra: ["reason": "other"]),
+            payload("SessionStart", extra: ["source": "startup", "session_title": "Replacement title"]),
+            payload("UserPromptSubmit", extra: ["prompt": "Second prompt"]),
+            payload("SessionStart", extra: ["source": "compact"])
+        ]
+        let shell = try replayRecords(payloads, backend: "shell")
+        let rust = try replayRecords(payloads, backend: "rust")
+        let states = [
+            "idle", "running", "needsInput", "compacting", "finished",
+            "error", "unknown", "idle", "running", "idle"
+        ]
+        let shellEvents = [
+            "SessionStart", "UserPromptSubmit", "PreToolUse", "PreCompact", "Stop",
+            "StopFailure", "SessionEnd", "SessionStart", "UserPromptSubmit", "SessionStart"
+        ]
+        let rustEvents = [
+            "session_started", "prompt_submitted", "waiting_for_input", "compacting", "turn_finished",
+            "failed", "session_ended", "session_started", "prompt_submitted", "session_started"
+        ]
+
+        #expect(shell.count == payloads.count)
+        #expect(rust.count == payloads.count)
+        for index in payloads.indices {
+            #expect(shell[index]["schemaVersion"] as? Int == 2)
+            #expect(rust[index]["schemaVersion"] as? Int == 3)
+            #expect(shell[index]["state"] as? String == states[index])
+            #expect(rust[index]["state"] as? String == states[index])
+            #expect(shell[index]["revision"] as? Int == index + 1)
+            #expect(rust[index]["revision"] as? Int == index + 1)
+            #expect(shell[index]["stateEpisodeToken"] as? String == String(index + 1))
+            #expect(rust[index]["stateEpisodeToken"] as? String == String(index + 1))
+            #expect(shell[index]["lastHookEvent"] as? String == shellEvents[index])
+            #expect(rust[index]["lastHookEvent"] as? String == rustEvents[index])
+        }
+
+        for index in [0, 1, 2, 3, 4, 7, 8, 9] {
+            #expect(optionalText(shell[index], "detail") == optionalText(rust[index], "detail"))
+            #expect(optionalText(shell[index], "lastPrompt") == optionalText(rust[index], "lastPrompt"))
+            #expect(optionalText(shell[index], "firstPrompt") == optionalText(rust[index], "firstPrompt"))
+            #expect(optionalText(shell[index], "providerSessionTitle") == optionalText(rust[index], "providerSessionTitle"))
+        }
+        #expect(shell[3]["contextTokens"] as? Int == 42)
+        #expect(rust[3]["contextTokens"] as? Int == 42)
+        #expect(optionalText(rust[4], "runStartedAt") == nil)
+        #expect(optionalText(rust[5], "runStartedAt") == nil)
+        #expect(optionalText(rust[6], "runStartedAt") == nil)
+        #expect(optionalText(rust[5], "detail") == "overloaded")
+        #expect(optionalText(rust[7], "firstPrompt") == nil)
+        #expect(optionalText(rust[7], "providerGeneratedTitle") == nil)
+        #expect(optionalText(rust[7], "providerSessionTitle") == "Replacement title")
+        #expect(optionalText(rust[9], "firstPrompt") == "Second prompt")
+        #expect(optionalText(rust[9], "providerSessionTitle") == "Replacement title")
+        #expect(rust[9]["sessionStartedAt"] as? String == rust[8]["sessionStartedAt"] as? String)
     }
 
     @Test("keys one invocation by run id and increments its revision")

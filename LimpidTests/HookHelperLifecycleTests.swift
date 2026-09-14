@@ -6,7 +6,22 @@ import Foundation
 import Testing
 @testable import Limpid
 
-@Suite("Hook Helper lifecycle", .tags(.smoke), .disabled(if: !RepoFixture.hasLocalRepo, "no local git"))
+/// Lives outside the suite because a `@Suite` trait that reads a static
+/// member of the type it is attached to makes the macro expansion circular.
+private func hookHelperURL() -> URL? {
+    guard let executable = Bundle.main.executableURL else { return nil }
+    let helper = executable.deletingLastPathComponent().appendingPathComponent("AgentIntegrationHookHelper")
+    return FileManager.default.isExecutableFile(atPath: helper.path) ? helper : nil
+}
+
+@Suite(
+    "Hook Helper lifecycle",
+    .tags(.smoke),
+    .disabled(if: !RepoFixture.hasLocalRepo, "no local git"),
+    // Running the test bundle without its app host leaves no helper to
+    // exec, which is a missing precondition rather than a failure.
+    .disabled(if: hookHelperURL() == nil, "no hook helper beside the test host")
+)
 struct HookHelperLifecycleTests {
     private static let paneID = "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10"
     private static let runID = "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11"
@@ -14,9 +29,7 @@ struct HookHelperLifecycleTests {
     /// The helper beside the test host's executable; `nil` when the test
     /// bundle has no app host.
     private static var helperURL: URL? {
-        guard let executable = Bundle.main.executableURL else { return nil }
-        let helper = executable.deletingLastPathComponent().appendingPathComponent("AgentIntegrationHookHelper")
-        return FileManager.default.isExecutableFile(atPath: helper.path) ? helper : nil
+        hookHelperURL()
     }
 
     private func fixturePayload(_ provider: String, _ name: String) throws -> Data {
@@ -73,7 +86,20 @@ struct HookHelperLifecycleTests {
         return try JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
-    @Test("writes a version 3 Claude record without opening the approval service", arguments: ["claude", "codex"])
+    /// Decode a file the Rust runtime wrote through the very decoder the
+    /// Swift stores use. The dictionary assertions above only prove the
+    /// JSON says what we expect; running it through the reader is what
+    /// catches a field whose Rust shape no longer satisfies the Swift
+    /// model, which otherwise surfaces as a badge that silently stops
+    /// updating.
+    private func decoded<Record: Decodable>(
+        _: Record.Type,
+        at url: URL
+    ) throws -> Record {
+        try PersistenceCoders.makeDecoder().decode(Record.self, from: Data(contentsOf: url))
+    }
+
+    @Test("writes a version 3 record without opening the approval service", arguments: ["claude", "codex"])
     func lifecycleHook_writesTheRecord(provider: String) throws {
         try withTempDir { directory in
             let env = environment(provider: provider, in: directory)
@@ -91,6 +117,38 @@ struct HookHelperLifecycleTests {
             #expect(record["firstPrompt"] != nil)
             let hint = directory.appendingPathComponent("sessions/\(Self.paneID).json")
             #expect(FileManager.default.fileExists(atPath: hint.path))
+            let recordURL = directory.appendingPathComponent("states/\(Self.runID).state.json")
+            // The two providers have separate models, so each one has to be
+            // decoded as itself rather than through a shared protocol.
+            if provider == "claude" {
+                let typed = try decoded(ClaudeAgentStateRecord.self, at: recordURL)
+                #expect(typed.schemaVersion == 3)
+                #expect(typed.state == "running")
+                #expect(typed.runId == Self.runID)
+                #expect(typed.paneId == Self.paneID)
+                #expect(typed.revision == 2)
+                #expect(typed.firstPrompt?.isEmpty == false)
+                // The pid comes from an ancestor walk that finds nothing
+                // under the test host, so we only pin its encoding.
+                #expect(typed.pid.map { $0.allSatisfy(\.isNumber) } != false)
+                let session = try decoded(ClaudeSessionRecord.self, at: hint)
+                #expect(session.paneId == Self.paneID)
+                #expect(session.sessionId.isEmpty == false)
+                #expect(session.runId == Self.runID)
+            } else {
+                let typed = try decoded(CodexAgentStateRecord.self, at: recordURL)
+                #expect(typed.schemaVersion == 3)
+                #expect(typed.state == "running")
+                #expect(typed.runId == Self.runID)
+                #expect(typed.paneId == Self.paneID)
+                #expect(typed.revision == 2)
+                #expect(typed.firstPrompt?.isEmpty == false)
+                #expect(typed.pid.map { $0.allSatisfy(\.isNumber) } != false)
+                let session = try decoded(CodexSessionRecord.self, at: hint)
+                #expect(session.paneId == Self.paneID)
+                #expect(session.sessionId.isEmpty == false)
+                #expect(session.runId == Self.runID)
+            }
             #expect((try? String(contentsOf: directory.appendingPathComponent("hook.log"), encoding: .utf8)) == nil)
         }
     }
