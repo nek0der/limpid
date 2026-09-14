@@ -36,7 +36,7 @@ struct ClaudeHookScriptTests {
                 // `HOME` is redirected too: the receiver falls back to
                 // `$HOME/Library/...` when the state dir is unset, and a typo
                 // in the env below must not send writes at the real one.
-                process.environment = HookHelperFixture.isolatedEnvironment([
+                process.environment = IsolatedProcessEnvironment.make([
                     "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                     "HOME": dir.path,
                     // This suite pins the legacy shell receiver's behavior
