@@ -20,7 +20,6 @@ enum AgentIntegrationRegistrationAction: Equatable, Sendable {
     case replace
     case retry
     case awaitApproval
-    case failNotFound
     case failUnknown
 }
 
@@ -38,7 +37,14 @@ enum AgentIntegrationRegistrationDecision {
         marker: AgentIntegrationRegistrationMarker?
     ) -> AgentIntegrationRegistrationAction {
         switch status {
-        case .notRegistered:
+        case .notRegistered, .notFound:
+            // Background Task Management reports `.notFound` for a label it has
+            // no record of, which is the state of every machine before the
+            // first registration; `.notRegistered` only appears once a record
+            // exists, such as after an unregister. The caller has already
+            // validated the bundled service and property list, so a missing
+            // record is a reason to register, and `register()` reports any
+            // real failure itself.
             return .register
         case .enabled:
             guard marker?.artifact == bundledArtifact,
@@ -50,8 +56,6 @@ enum AgentIntegrationRegistrationDecision {
             return runningArtifact == bundledArtifact ? .keep : .replace
         case .requiresApproval:
             return .awaitApproval
-        case .notFound:
-            return .failNotFound
         case .unknown:
             return .failUnknown
         }
@@ -304,8 +308,6 @@ final class AgentIntegrationServiceRegistrar {
             scheduleRetry()
         case .awaitApproval:
             setUnavailable(.requiresApproval)
-        case .failNotFound:
-            setUnavailable(.serviceNotFound)
         case .failUnknown:
             throw AgentIntegrationError.invalidResponse
         }

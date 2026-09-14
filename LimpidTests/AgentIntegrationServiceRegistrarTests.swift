@@ -69,8 +69,26 @@ struct AgentIntegrationServiceRegistrarTests {
             marker: previousMarker
         ) == .replace)
         #expect(action(.requiresApproval, running: nil) == .awaitApproval)
-        #expect(action(.notFound, running: nil) == .failNotFound)
+        #expect(action(.notFound, running: nil) == .register)
         #expect(action(.unknown, running: nil) == .failUnknown)
+    }
+
+    @Test("registers when Background Task Management has no record yet")
+    func decision_notFoundBeforeFirstRegistrationRegisters() {
+        // macOS reports `.notFound` for an agent that has never been registered
+        // on this machine, not `.notRegistered`. A stale marker from an earlier
+        // install must not turn that first registration into a failure either.
+        let staleMarker = AgentIntegrationRegistrationMarker(
+            phase: .ready,
+            artifact: previous,
+            appVersion: "1"
+        )
+        #expect(AgentIntegrationRegistrationDecision.action(
+            status: .notFound,
+            bundledArtifact: current,
+            runningArtifact: .notApplicable,
+            marker: staleMarker
+        ) == .register)
     }
 
     @Test("fingerprints both executable and launch agent property list")
