@@ -121,6 +121,28 @@ struct CommandPaletteTests {
         }
     }
 
+    @Test("entries unused for a month are dropped on load")
+    func frecency_load_evictsStaleEntries() throws {
+        try withTempDir { dir in
+            // Keys are per-object identities that nothing removes when the
+            // object goes away, so the store's own age bound is what keeps
+            // frecency.json from growing for the life of the install.
+            let stale = Date().addingTimeInterval(-40 * 24 * 60 * 60)
+            let fresh = Date().addingTimeInterval(-24 * 60 * 60)
+            let onDisk: [String: FrecencyStore.Entry] = [
+                "tab.gone": FrecencyStore.Entry(count: 9, lastUsed: stale),
+                "tab.live": FrecencyStore.Entry(count: 1, lastUsed: fresh)
+            ]
+            let data = try PersistenceCoders.makeEncoder().encode(onDisk)
+            try data.write(to: dir.appendingPathComponent("frecency.json"))
+
+            let store = FrecencyStore(directory: dir)
+
+            #expect(store.entries["tab.gone"] == nil)
+            #expect(store.entries["tab.live"]?.count == 1)
+        }
+    }
+
     // MARK: - Catalog
 
     @Test("catalog includes all shortcut actions")
