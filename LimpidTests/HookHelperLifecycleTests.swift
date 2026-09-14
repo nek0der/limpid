@@ -6,31 +6,17 @@ import Foundation
 import Testing
 @testable import Limpid
 
-/// Lives outside the suite because a `@Suite` trait that reads a static
-/// member of the type it is attached to makes the macro expansion circular.
-private func hookHelperURL() -> URL? {
-    guard let executable = Bundle.main.executableURL else { return nil }
-    let helper = executable.deletingLastPathComponent().appendingPathComponent("AgentIntegrationHookHelper")
-    return FileManager.default.isExecutableFile(atPath: helper.path) ? helper : nil
-}
-
 @Suite(
     "Hook Helper lifecycle",
     .tags(.smoke),
     .disabled(if: !RepoFixture.hasLocalRepo, "no local git"),
     // Running the test bundle without its app host leaves no helper to
     // exec, which is a missing precondition rather than a failure.
-    .disabled(if: hookHelperURL() == nil, "no hook helper beside the test host")
+    .disabled(if: HookHelperFixture.helperURL == nil, "no hook helper beside the test host")
 )
 struct HookHelperLifecycleTests {
     private static let paneID = "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10"
     private static let runID = "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11"
-
-    /// The helper beside the test host's executable; `nil` when the test
-    /// bundle has no app host.
-    private static var helperURL: URL? {
-        hookHelperURL()
-    }
 
     private func fixturePayload(_ provider: String, _ name: String) throws -> Data {
         let root = try #require(RepoFixture.limpidRoot)
@@ -40,7 +26,7 @@ struct HookHelperLifecycleTests {
 
     private func environment(provider: String, in directory: URL) -> [String: String] {
         let prefix = provider == "claude" ? "LIMPID" : "LIMPID_CODEX"
-        var env = [
+        var env = HookHelperFixture.isolatedEnvironment([
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": directory.path,
             "LIMPID_PANE_ID": Self.paneID,
@@ -49,7 +35,7 @@ struct HookHelperLifecycleTests {
             "LIMPID_HOOK_LOG": directory.appendingPathComponent("hook.log").path,
             "\(prefix)_AGENT_STATES_DIR": directory.appendingPathComponent("states").path,
             "\(prefix)_SESSIONS_DIR": directory.appendingPathComponent("sessions").path
-        ]
+        ])
         if provider == "claude" {
             env["LIMPID_CWD_EVENTS_DIR"] = directory.appendingPathComponent("cwd").path
         }
@@ -62,7 +48,7 @@ struct HookHelperLifecycleTests {
         payload: Data,
         environment: [String: String]
     ) throws -> (status: Int32, stderr: String) {
-        let helper = try #require(Self.helperURL)
+        let helper = try #require(HookHelperFixture.helperURL)
         let process = Process()
         process.executableURL = helper
         process.arguments = arguments
@@ -192,7 +178,7 @@ struct HookHelperLifecycleTests {
     @Test("writes nothing outside a Limpid pane")
     func lifecycleHook_writesNothingWithoutTheShimEnvironment() throws {
         try withTempDir { directory in
-            let env = ["PATH": "/usr/bin:/bin", "HOME": directory.path]
+            let env = HookHelperFixture.isolatedEnvironment(["PATH": "/usr/bin:/bin", "HOME": directory.path])
             let result = try runHelper(["hook", "codex"], payload: fixturePayload("codex", "0000-SessionStart.json"), environment: env)
             #expect(result.status == 0)
             #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)

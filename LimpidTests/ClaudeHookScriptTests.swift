@@ -36,7 +36,7 @@ struct ClaudeHookScriptTests {
                 // `HOME` is redirected too: the receiver falls back to
                 // `$HOME/Library/...` when the state dir is unset, and a typo
                 // in the env below must not send writes at the real one.
-                process.environment = [
+                process.environment = HookHelperFixture.isolatedEnvironment([
                     "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                     "HOME": dir.path,
                     // This suite pins the legacy shell receiver's behavior
@@ -49,7 +49,7 @@ struct ClaudeHookScriptTests {
                     "LIMPID_AGENT_STATES_DIR": states.path,
                     "LIMPID_SESSIONS_DIR": dir.appendingPathComponent("sessions").path,
                     "LIMPID_CWD_EVENTS_DIR": dir.appendingPathComponent("cwd").path
-                ]
+                ])
                 process.environment?.merge(extraEnvironment) { _, new in new }
                 let stdin = Pipe()
                 process.standardInput = stdin
@@ -409,9 +409,7 @@ struct ClaudeHookScriptTests {
 
     /// The bundled helper beside the test host; the Rust backend execs it.
     private static var helperPath: String? {
-        guard let executable = Bundle.main.executableURL else { return nil }
-        let helper = executable.deletingLastPathComponent().appendingPathComponent("AgentIntegrationHookHelper").path
-        return FileManager.default.isExecutableFile(atPath: helper) ? helper : nil
+        HookHelperFixture.helperURL?.path
     }
 
     /// Captures each record rather than only the final file so one payload
