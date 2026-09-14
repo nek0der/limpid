@@ -68,7 +68,9 @@ if [ -n "${LIMPID_HOOK_RECORD_DIR:-}" ] && [ -d "$LIMPID_HOOK_RECORD_DIR" ]; the
     rec_count=$((rec_count + 1))
   done
   rec_base="$LIMPID_HOOK_RECORD_DIR/$(printf '%04d' "$rec_count")-$rec_event"
-  printf '%s' "$payload" > "$rec_base.json" 2>/dev/null || :
+  # Payloads carry prompts and tool output, so they get the same user-only
+  # mode as the records.
+  (umask 077 && printf '%s' "$payload" > "$rec_base.json") 2>/dev/null || :
   # Claude's transcript is read later for titles, and it keeps changing
   # after the hook returns, so copy it now next to the payload.
   rec_transcript="$(printf '%s' "$payload" | plutil -extract transcript_path raw -o - - 2>/dev/null || true)"
@@ -78,7 +80,7 @@ if [ -n "${LIMPID_HOOK_RECORD_DIR:-}" ] && [ -d "$LIMPID_HOOK_RECORD_DIR" ]; the
     *) rec_transcript="" ;;
   esac
   if [ -n "$rec_transcript" ] && [ -f "$rec_transcript" ]; then
-    cp "$rec_transcript" "$rec_base.transcript.jsonl" 2>/dev/null || :
+    (umask 077 && cp "$rec_transcript" "$rec_base.transcript.jsonl") 2>/dev/null || :
   fi
 fi
 

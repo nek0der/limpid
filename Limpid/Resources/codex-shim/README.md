@@ -43,7 +43,7 @@ is the source of truth for the values.
 | `LIMPID_PANE_ID` | UUID of the launching split-tree leaf; not current ownership inside tmux |
 | `LIMPID_AGENT_RUN_ID` | UUID of this Codex invocation; lifecycle-state filename key |
 | `LIMPID_AGENT_TMUX_HOST_MODE` | `limpidHosted` for automatic hosting, `manual` inside user tmux |
-| `LIMPID_AGENT_HOOK_BACKEND` | `rust` to run hooks through the Hook Helper's Rust runtime, `shell` for the previous receivers (`*.legacy`); set by `AgentHookBackend` |
+| `LIMPID_AGENT_HOOK_BACKEND` | `rust` (default) runs hooks through the Hook Helper's Rust runtime; `shell` selects the previous receivers (`*.legacy`) for one release; set by `AgentHookBackend` |
 | `LIMPID_CODEX_HOOK_ARGS` | Newline-separated arguments the `codex` shim splices in |
 | `LIMPID_CODEX_SESSIONS_DIR` | Directory to write session records into |
 | `LIMPID_CODEX_AGENT_STATES_DIR` | Directory to write agent-state records into |

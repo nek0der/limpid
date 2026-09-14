@@ -19,8 +19,10 @@ while [ -L "$hook_path" ]; do
 done
 hook_dir="$(CDPATH='' cd -- "$(dirname -- "$hook_path")" 2>/dev/null && pwd -P)"
 
+# LIMPID_HOOK_HELPER exists for the test suites, which run this script
+# from the source tree where no bundle surrounds it.
 helper="${LIMPID_HOOK_HELPER:-$hook_dir/../../MacOS/AgentIntegrationHookHelper}"
-if [ "${LIMPID_AGENT_HOOK_BACKEND:-shell}" = "rust" ] && [ -x "$helper" ]; then
+if [ "${LIMPID_AGENT_HOOK_BACKEND:-rust}" != "shell" ] && [ -x "$helper" ]; then
   exec "$helper" hook claude worktree
 fi
 exec /bin/bash "$hook_dir/limpid-pretool-worktree-hook.legacy"

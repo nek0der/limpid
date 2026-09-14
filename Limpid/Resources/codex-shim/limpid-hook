@@ -2,19 +2,21 @@
 # Limpid codex lifecycle hook — the entry point the provider calls on every
 # subscribed hook event. It only chooses a backend and exec's it, so the
 # provider's hook command never changes when the receiver does:
-#   - `rust` (the default once the Rust hook runtime shipped): the signed
+#   - `rust` (the default): the signed
 #     Hook Helper runs the runtime in-process without opening XPC.
 #   - `shell`: the previous receiver, kept as `limpid-hook.legacy` for one
 #     release as the rollback path.
 # The backend is chosen by LIMPID_AGENT_HOOK_BACKEND, which the pane
-# environment sets. A missing or broken helper falls back to the shell
-# receiver rather than dropping the event.
+# environment sets. A missing helper falls back to the shell receiver rather
+# than dropping the event; once we exec the helper there is no return, so a
+# helper that fails at runtime is not covered.
 
 set -u
 
 hook_path="$0"
-# Resolve the file symlink as well as its parent: Claude reaches this script
-# through a no-space link in TMPDIR, and the helper lives beside the bundle.
+# Resolve the file symlink as well as its parent: Codex is handed the resolved
+# path, but the bundle itself can be reached through a link (`/var` is one), and
+# we locate the helper relative to this script.
 hook_links=0
 while [ -L "$hook_path" ]; do
   hook_links=$((hook_links + 1))
@@ -27,8 +29,10 @@ while [ -L "$hook_path" ]; do
 done
 hook_dir="$(CDPATH='' cd -- "$(dirname -- "$hook_path")" 2>/dev/null && pwd -P)"
 
+# LIMPID_HOOK_HELPER exists for the test suites, which run this script
+# from the source tree where no bundle surrounds it.
 helper="${LIMPID_HOOK_HELPER:-$hook_dir/../../MacOS/AgentIntegrationHookHelper}"
-if [ "${LIMPID_AGENT_HOOK_BACKEND:-shell}" = "rust" ] && [ -x "$helper" ]; then
+if [ "${LIMPID_AGENT_HOOK_BACKEND:-rust}" != "shell" ] && [ -x "$helper" ]; then
   exec "$helper" hook codex
 fi
 exec /bin/sh "$hook_dir/limpid-hook.legacy"

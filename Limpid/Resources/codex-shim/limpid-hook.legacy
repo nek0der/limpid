@@ -119,7 +119,9 @@ if [ -n "${LIMPID_HOOK_RECORD_DIR:-}" ] && [ -d "$LIMPID_HOOK_RECORD_DIR" ]; the
     rec_count=$((rec_count + 1))
   done
   rec_base="$LIMPID_HOOK_RECORD_DIR/$(printf '%04d' "$rec_count")-$rec_event"
-  printf '%s' "$payload" > "$rec_base.json" 2>/dev/null || :
+  # Payloads carry prompts and tool output, so they get the same user-only
+  # mode as the records.
+  (umask 077 && printf '%s' "$payload" > "$rec_base.json") 2>/dev/null || :
 fi
 
 pane_id="${LIMPID_PANE_ID:-}"

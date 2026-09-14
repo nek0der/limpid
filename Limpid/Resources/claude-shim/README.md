@@ -52,7 +52,7 @@ Set by Limpid before spawning the pty:
 | `LIMPID_AGENT_TMUX_HOST_MODE` | `limpidHosted` for automatic hosting, `manual` inside user tmux |
 | `LIMPID_SHIM_DIR` | This directory, so `zdotdir/.zshrc` can re-prepend it |
 | `LIMPID_CLAUDE_HOOK_NAMESPACE` | Bundle identity used to keep the no-space hook link separate between Dev and Release builds |
-| `LIMPID_AGENT_HOOK_BACKEND` | `rust` to run hooks through the Hook Helper's Rust runtime, `shell` for the previous receivers (`*.legacy`); set by `AgentHookBackend` |
+| `LIMPID_AGENT_HOOK_BACKEND` | `rust` (default) runs hooks through the Hook Helper's Rust runtime; `shell` selects the previous receivers (`*.legacy`) for one release; set by `AgentHookBackend` |
 | `LIMPID_SESSIONS_DIR` | Directory to write session records into |
 | `LIMPID_AGENT_STATES_DIR` | Directory to write agent-state records into |
 | `LIMPID_CWD_EVENTS_DIR` | Directory to write cwd-change records into |

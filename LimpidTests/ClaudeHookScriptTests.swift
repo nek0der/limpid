@@ -433,6 +433,17 @@ struct ClaudeHookScriptTests {
         #expect(record["state"] as? String == "running")
     }
 
+    @Test("keeps the shell receiver reachable as the rollback path")
+    func shellBackend_writesAVersionTwoRecord() throws {
+        let helper = try #require(Self.helperPath)
+        let record = try #require(try runHooks(midTurn(), extraEnvironment: [
+            "LIMPID_AGENT_HOOK_BACKEND": "shell",
+            "LIMPID_HOOK_HELPER": helper
+        ]))
+        #expect(record["schemaVersion"] as? Int == 2)
+        #expect(record["lastHookEvent"] as? String == "UserPromptSubmit")
+    }
+
     @Test("keys one invocation by run id and increments its revision")
     func runIdentity_multipleEvents_shareOneOrderedRecord() throws {
         let runID = UUID().uuidString

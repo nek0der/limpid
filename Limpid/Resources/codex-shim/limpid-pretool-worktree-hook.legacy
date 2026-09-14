@@ -67,8 +67,11 @@ CWD="${CWD:-$PWD}"
 # strip both before comparing. The guard against
 # `/Users/x/repo` matching `/Users/x/repo-other` is the `/`-bounded
 # subpath check.
+# Projects live inside the sidebar containers since the container redesign;
+# the top-level array is the shape before it.
 PROJECT_DATA=$(jq --arg cwd "$CWD" '
-    [.projects[]?
+    [(.projects[]?), (.containers[]? | select(.kind == "project") | .project)]
+    | [.[]
      | (.rootURL | sub("^file://"; "") | sub("/$"; "")) as $root
      | select($cwd == $root or ($cwd | startswith($root + "/")))]
     | first // null
