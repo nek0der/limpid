@@ -1,0 +1,33 @@
+{
+  "description": "PreCompact holds the run in compacting without ending the elapsed turn.",
+  "runs": [
+    {
+      "provider": "claude",
+      "pane": "11111111-1111-4111-8111-111111111111",
+      "run": "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+      "pid": "4242",
+      "replay": [
+        {
+          "case": "compact",
+          "payload": "0000-SessionStart.json",
+          "now": "2026-09-14T12:00:00Z"
+        },
+        {
+          "case": "compact",
+          "payload": "0001-UserPromptSubmit.json",
+          "now": "2026-09-14T12:01:00Z"
+        },
+        {
+          "case": "compact",
+          "payload": "0002-Stop.json",
+          "now": "2026-09-14T12:02:00Z"
+        },
+        {
+          "case": "compact",
+          "payload": "0003-PreCompact.json",
+          "now": "2026-09-14T12:03:00Z"
+        }
+      ]
+    }
+  ]
+}

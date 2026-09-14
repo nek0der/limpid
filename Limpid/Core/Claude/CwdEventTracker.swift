@@ -109,7 +109,10 @@ final class CwdEventTracker {
         dirSource = source
     }
 
-    private func scanAndDispatch() {
+    /// Internal rather than private so the characterization tests can drive a
+    /// scan without waiting on an fsevent burst. The production caller is the
+    /// directory source's event handler above.
+    func scanAndDispatch() {
         let records = store.allRecords()
         // Build alive set so cleanup can drop records for panes that
         // closed across a launch. Same cleanup contract as the agent

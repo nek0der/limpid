@@ -1,0 +1,28 @@
+{
+  "description": "A StopFailure leaves the run in error with the prompt still readable for the notification body.",
+  "runs": [
+    {
+      "provider": "claude",
+      "pane": "11111111-1111-4111-8111-111111111111",
+      "run": "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+      "pid": "4242",
+      "replay": [
+        {
+          "case": "stop-failure",
+          "payload": "0000-SessionStart.json",
+          "now": "2026-09-14T12:00:00Z"
+        },
+        {
+          "case": "stop-failure",
+          "payload": "0001-UserPromptSubmit.json",
+          "now": "2026-09-14T12:01:00Z"
+        },
+        {
+          "case": "stop-failure",
+          "payload": "0002-StopFailure.json",
+          "now": "2026-09-14T12:02:00Z"
+        }
+      ]
+    }
+  ]
+}

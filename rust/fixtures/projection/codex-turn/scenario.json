@@ -1,0 +1,38 @@
+{
+  "description": "A Codex run finishes a turn; it has no session title, so the tab title falls back to the first prompt.",
+  "runs": [
+    {
+      "provider": "codex",
+      "pane": "11111111-1111-4111-8111-111111111111",
+      "run": "BBBBBBBB-2222-4222-8222-BBBBBBBBBBB2",
+      "pid": "4242",
+      "replay": [
+        {
+          "case": "session-basic",
+          "payload": "0000-SessionStart.json",
+          "now": "2026-09-14T12:00:00Z"
+        },
+        {
+          "case": "session-basic",
+          "payload": "0001-UserPromptSubmit.json",
+          "now": "2026-09-14T12:01:00Z"
+        },
+        {
+          "case": "session-basic",
+          "payload": "0002-PreToolUse.json",
+          "now": "2026-09-14T12:02:00Z"
+        },
+        {
+          "case": "session-basic",
+          "payload": "0003-PostToolUse.json",
+          "now": "2026-09-14T12:03:00Z"
+        },
+        {
+          "case": "session-basic",
+          "payload": "0004-Stop.json",
+          "now": "2026-09-14T12:04:00Z"
+        }
+      ]
+    }
+  ]
+}
