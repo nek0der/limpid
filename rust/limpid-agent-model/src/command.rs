@@ -116,8 +116,6 @@ pub enum Target {
     SessionHint { provider: ProviderId, pane: Uuid },
     /// A resume intent, named by the run that owns it.
     ResumeIntent { run_id: String },
-    /// A pane's cwd event file.
-    CwdEvent { pane: Uuid },
     /// One file in a provider's worktree event directory.
     WorktreeEvent {
         provider: ProviderId,
