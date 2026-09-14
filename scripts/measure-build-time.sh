@@ -10,7 +10,6 @@
 #
 # The cargo figure is measured directly instead of instrumenting
 # scripts/build-rust-bridge.sh so the script under test is not modified.
-# Baselines are recorded in docs/adr/0004-provider-adapter-contract.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

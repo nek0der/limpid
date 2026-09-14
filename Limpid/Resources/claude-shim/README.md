@@ -11,18 +11,18 @@ across app restarts, badge agent state, and re-route
   `Limpid.app/Contents/Resources/claude-shim/claude`. Limpid prepends
   this directory to `PATH` for every pty it spawns, so when the user
   types `claude` inside a Limpid terminal this script runs first.
-  It locates the real `claude` binary, then exec's it with
+  It locates the real `claude` binary, then execs it with
   `--settings '<inline JSON>'` so our hooks fire into `limpid-hook`.
   Claude Code takes the last `--settings` and ignores the rest, so
   when the user passes one of their own the shim merges the two
   first: their keys win, and the per-event hook arrays concatenate so
   both sets run.
 - `limpid-hook` — the hook command Claude Code calls. A wrapper that reads
-  `LIMPID_AGENT_HOOK_BACKEND` and exec's either the Hook Helper's
-  `hook claude` subcommand (the Rust hook runtime, see ADR 0004) or
-  `limpid-hook.legacy`, the previous shell receiver kept for one release
-  as the rollback path. The legacy receiver reads `LIMPID_PANE_ID` (= the
-  owning split-leaf UUID, one per pane) and writes
+  `LIMPID_AGENT_HOOK_BACKEND` and execs either the Hook Helper's
+  `hook claude` subcommand, which runs the Rust receiver in-process, or
+  `limpid-hook.legacy`, the previous shell receiver kept for one release as
+  the rollback path. The legacy receiver reads `LIMPID_PANE_ID` (= the owning
+  split-leaf UUID, one per pane) and writes
   `{paneId, sessionId, cwd, updatedAt, lastHookEvent}` to
   `$LIMPID_SESSIONS_DIR/<pane_id>.json` so Limpid can replay the
   session on next launch. It also writes the agent-state and
@@ -76,13 +76,18 @@ to the inherited launch pane. Existing pre-upgrade runs may need a new hook
 event before their attachment becomes visible. Manual tmux requires this shim
 on the inner shell's PATH; no global agent hooks are installed.
 
-## Why shell scripts and not a Swift binary
+## Why the shim is a shell script and the hook receiver is not
 
-- Zero startup cost compared to a Swift binary that would have to
-  re-exec the real claude over a pipe.
-- macOS code signing applies to Mach-O executables, not shell
-  scripts, so notarization is unaffected.
-- A reviewer can read the whole pipeline in one screenful.
+- The `claude` shim prepares the environment and hook settings, then replaces
+  itself with the real CLI. Keeping this launch setup in a script avoids
+  adding another compiled launcher to the bundle.
+- The hook receiver moved into the signed Hook Helper: `limpid-hook` is a
+  wrapper that execs `AgentIntegrationHookHelper hook claude`, which runs
+  the Rust hook runtime in-process. The shell receiver is kept as
+  `limpid-hook.legacy` for one release and is selected with
+  `LIMPID_AGENT_HOOK_BACKEND=shell`.
+- macOS code signing applies to Mach-O executables, not shell scripts,
+  so the wrappers do not affect notarization.
 
 ## Failure policy
 

@@ -19,12 +19,12 @@ marked block, and nothing else, is written into the user's
   directory to `PATH` for every pty it spawns, so a `codex` typed inside
   a Limpid terminal runs this first. It locates the real binary,
   splices in the `-c` overrides from `LIMPID_CODEX_HOOK_ARGS`, exports
-  its own pid, and exec's over itself.
+  its own PID, and execs over itself.
 - `limpid-hook` — the hook command Codex calls. A wrapper that reads
-  `LIMPID_AGENT_HOOK_BACKEND` and exec's either the Hook Helper's
-  `hook codex` subcommand (the Rust hook runtime, see ADR 0004) or
-  `limpid-hook.legacy`, the previous shell receiver kept for one release
-  as the rollback path. The records both write are read back by
+  `LIMPID_AGENT_HOOK_BACKEND` and execs either the Hook Helper's
+  `hook codex` subcommand, which runs the Rust receiver in-process, or
+  `limpid-hook.legacy`, the previous shell receiver kept for one release as
+  the rollback path. The records both write are read back by
   `CodexSessionTracker` and `CodexAgentStateTracker`.
 - `limpid-pretool-worktree-hook` — the second `PreToolUse` hook for the
   Bash tool. The same wrapper shape: `hook codex worktree` in the helper,
@@ -68,8 +68,8 @@ to the inherited launch pane. Existing pre-upgrade runs may need a new hook
 event before their attachment becomes visible. Manual tmux requires this shim
 on the inner shell's PATH; no global agent hooks are installed.
 
-The reasoning for shell scripts over a Swift binary is in
-`claude-shim/README.md` and applies here unchanged.
+The split between the shell shim and the Hook Helper's Rust receiver is
+explained in `claude-shim/README.md` and applies here unchanged.
 
 ## Failure policy
 

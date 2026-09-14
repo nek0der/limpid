@@ -10,15 +10,20 @@
 
 ## Context
 
-Limpid observes Claude Code and Codex through provider hooks. The hook side is
-two shell scripts (`limpid-hook` per provider) that map hook events to a
-per-run state record, write resume hints and cwd events, capture turn
-snapshots, and intercept `git worktree add`. The application side is four Swift
-trackers plus attention, notification, and cleanup rules. The Swift twin files
-under `Core/Claude` and `Core/Codex` are already generic over `AgentSpec`; the
-real duplication is the event-to-state rule set that exists once per shell
-script, and the provider-specific approval translation in
-`AgentApprovalHookAdapter.swift`.
+Before this migration, Limpid observed Claude Code and Codex through provider
+hooks whose receivers were two shell scripts (`limpid-hook` per provider). They
+mapped hook events to a per-run state record, wrote resume hints and cwd events,
+captured turn snapshots, and intercepted `git worktree add`. The application
+side consists of four Swift trackers plus attention, notification, and cleanup
+rules. The Swift twin files under `Core/Claude` and `Core/Codex` are already
+generic over `AgentSpec`; the real duplication is the event-to-state rule set
+that exists once per shell script, and the provider-specific approval
+translation in `AgentApprovalHookAdapter.swift`.
+
+This change implements the crate layout, provider adapters, approval
+translation, `apply`, and the hook runtime. The application-side `project`,
+`on_launch`, and `on_terminate` rules remain part of the accepted architecture,
+but they and the replacement of the Swift trackers are not yet implemented.
 
 ADR 0002 assigns provider input normalization, output models, and
 provider-neutral event and projection rules to the portable Rust core, but it
@@ -53,9 +58,10 @@ rust/
 `limpid-agent-model` and `limpid-agent-core` do not depend on any provider
 crate and hold no registry; `ProviderId` validates only its string form
 (lowercase ASCII letters, digits, and `-`, 1 to 32 bytes). A provider crate
-depends only on the model crate. Only the hook runtime and the bridge depend on
-every provider and hold the registry. No crate links a transport or a terminal
-engine. New dependencies are limited to MIT, Apache-2.0, and MPL-2.0 licenses.
+depends only on the model crate. Only the hook runtime depends on every
+provider and holds the registry; the bridge resolves an id through it. No
+crate links a transport or a terminal engine. New dependencies are limited to
+MIT, Apache-2.0, and MPL-2.0 licenses.
 
 The executables stay Swift. The Hook Helper and the Agent Integration Service
 link the bridge as a static library and call it through the versioned C ABI
@@ -75,6 +81,12 @@ pub trait ProviderAdapter: Send + Sync {
     fn approval_request(&self, input: RawHookInput<'_>)
         -> Result<Option<ApprovalRequest>, NormalizeError>;
     fn approval_output(&self, decision: &ApprovalDecision) -> ProviderOutput;
+
+    // Optional; both have a default implementation returning `Ok(None)`.
+    fn transcript_path(&self, input: RawHookInput<'_>)
+        -> Result<Option<String>, NormalizeError>;
+    fn worktree_intent(&self, input: RawHookInput<'_>)
+        -> Result<Option<WorktreeIntent>, NormalizeError>;
 }
 ```
 
@@ -85,9 +97,9 @@ pub trait ProviderAdapter: Send + Sync {
   `<provider_id>-cwd-events`; Claude alone declares the legacy names
   `agent-states`, `sessions`, and `cwd-events` so no data moves.
 - `normalize` turns one raw hook payload into neutral events. Unknown event
-  names and unknown fields are data, not errors: they are carried as
-  `AgentEvent::Extension { name, payload }` so a provider's new feature is
-  visible before the core understands it.
+  names become `AgentEvent::Extension { name, payload }` with the original
+  payload, so a provider's new event is visible before the core understands
+  it. Unrecognized fields on known events are ignored.
 - `approval_request` and `approval_output` replace the Swift approval
   translation. The decision vocabulary stays `allow_once`, `deny`, and
   `delegate`; `ask` is added to the protocol, the `hello` capabilities, and the
@@ -95,10 +107,17 @@ pub trait ProviderAdapter: Send + Sync {
 - `install_recipe` declares the settings fragments, environment variables, and
   PATH shims the platform must place. The adapter never touches the file
   system.
+- `transcript_path` names the transcript the runtime should read alongside a
+  payload, so a provider that keeps one pays the extra file read only on the
+  events whose normalization uses it.
+- `worktree_intent` reports a `git worktree add` the agent is about to run, so
+  the runtime can intercept it before the tool runs; it is separate from the
+  neutral events because it is a request to act, not an observation.
 
 Input limits: a hook payload is at most 1 MiB, the same bound the protocol
 places on a client request, and record prompt, title, and detail fields are
-truncated to 4096 bytes, matching the title resolver's candidate limit.
+cleaned and truncated to 4096 bytes, including values carried from a v2 record.
+A transcript tail is at most 4 MiB and is read only from a regular file.
 
 ### Capabilities
 
@@ -132,48 +151,57 @@ it closes the existing `Compacting` event rather than introducing a concept.
 
 | | `apply` | `project` | `on_launch` / `on_terminate` |
 | --- | --- | --- | --- |
+| Status | Implemented | Planned | Planned |
 | Runs in | the hook process (Rust inside the Hook Helper) | the application, on every watcher event | the application, before session bootstrap and in `applicationWillTerminate` |
 | Input | previous record bytes (v2 or v3, or none), one `AgentEvent`, `HookContext`, the provider's capabilities, `now` | all record bytes, attention marks, tmux presence, live pane and PID sets, focus, resume intents, the previous `ProjectionState`, wall and monotonic clocks | record, resume intent, and resume hint bytes, live PID set, `now` |
 | Output | `RecordWrites`: the run record (`schemaVersion: 3`) plus side writes for the resume hint, cwd event, and turn snapshot operations | `ProjectionState`, `Projection` (runtimes per pane, dominant badge and title per tab, notification transitions), `Vec<Command>` | `Vec<Command>` |
 | Replaces | both `limpid-hook` event maps, hint and cwd writes, both worktree scripts | `AgentStateTracker` merge, dominance, notifications, and GC; `AgentSessionTracker`; `CwdEventTracker`; `WorktreeEventTracker`; `AgentLifecyclePolicy`; `AgentNotificationOutbox`; `applyTabTitle` and `limpid_resolve_title_v1` | Codex's launch cleanup and terminate preservation, applied to every provider with `resume` |
 
-None of these functions owns a file, a timer, or a provider branch. Every side
-effect is a `Command` executed by the host. Two clocks are passed because record
-comparison and retention use wall time while the notification outbox's pending
-lifetime uses monotonic uptime. Notification delivery stays in Swift: `project`
-returns the transition, the target pane, and the focus suppression condition,
-and the host decides whether the pane is focused and applies rate limits.
+None of these rule functions owns a file, a timer, or a provider branch. They
+describe side effects without performing them: the hook runtime executes the
+`RecordWrites` returned by `apply`, while the planned application-side rules
+return `Command` values for the Swift host. Two clocks are passed because
+record comparison and retention use wall time while the notification outbox's
+pending lifetime uses monotonic uptime. Notification delivery stays in Swift:
+`project` returns the transition, the target pane, and the focus suppression
+condition, and the host decides whether the pane is focused and applies rate
+limits.
 
 ### Command semantics
 
-A command is `{ op, target, expect, on_mismatch, then }`. `expect` is one of
-"exists", "storageID, revision, pid, and updatedAt match", "pid and revision
-match", or "hint owner matches". `on_mismatch` is `Continue` or `Abort` and
-says whether the chained commands still run when the precondition fails. A lock
-conflict always aborts. The Swift executor checks the precondition inside the
-file lock and reports each outcome to the next `project` call. This expresses
-Codex's "update only when pid and revision match, delete the resume intent only
-on success" and "retire a dead record even when the hint belongs to another
-run" as data rather than as tracker code.
+The planned application-side commands use
+`{ op, target, expect, on_mismatch, then }`. `expect` is one of "exists",
+"storageID, revision, pid, and updatedAt match", "pid and revision match", or
+"hint owner matches". `on_mismatch` is `Continue` or `Abort` and says whether
+the chained commands still run when the precondition fails. A lock conflict
+always aborts. The Swift executor checks the precondition inside the file lock
+and reports each outcome to the next `project` call. This expresses Codex's
+"update only when pid and revision match, delete the resume intent only on
+success" and "retire a dead record even when the hint belongs to another run"
+as data rather than as tracker code.
 
 ### Records and the hook backend
 
 State files continue to carry reduced records, not event logs, so the Swift
-watchers and the directory layout stay. Rust is the only decoder: Swift
-enumerates directories and passes bytes; the record `Codable` types are deleted
-when the readers move. `apply` accepts a v2 record and writes v3, and revision
-monotonicity makes a writer change in the middle of a run safe. The shim reads
+watchers and the directory layout stay. The current hook implementation decodes
+and writes records in Rust, while the existing Swift `Codable` readers also
+accept v3. Moving application-side decoding and projection to Rust will make
+the Swift record types removable. `apply` accepts a v2 record and writes v3,
+and revision monotonicity makes a writer change in the middle of a run safe.
+The shim reads
 `LIMPID_AGENT_HOOK_BACKEND` (`rust` or `shell`), which the pane environment sets
 and the tmux `hosted_env_names` allow list forwards. The shell backend remains
 for one release as the rollback path and is then deleted with the scripts.
 
-### Design decisions recorded from the domain table
+### Lifecycle and storage decisions
 
-1. Reset rules are unified: only a non-compact `SessionStarted` clears prompts,
-   titles, and the session start time. `runStartedAt` alone is cleared by
-   `TurnFinished`, `Failed`, `Interrupted`, and `SessionEnded`. Claude's
-   `StopFailure` previously erased the last prompt that the error notification
-   body is built from.
+1. Every `SessionStarted` clears `lastPrompt` and `runStartedAt` and refreshes
+   `sessionStartedAt`. A non-compact start also clears `firstPrompt` and
+   replaces both title fields; a compact start retains those fields unless it
+   supplies a session title. `runStartedAt` is also cleared by `TurnFinished`,
+   `Failed`, `Interrupted`, and `SessionEnded`. Claude's `StopFailure`
+   previously erased the last prompt that the error notification body is built
+   from.
 2. Kill markers on terminate and restore on launch apply to every provider
    with `resume`; the Codex-only scope was an accident of the generic
    extension it lived in.
@@ -196,14 +224,15 @@ for one release as the rollback path and is then deleted with the scripts.
 
 ### FFI
 
-Message-shaped calls (approval exchange, approval translation, `normalize`,
-`apply`, `project`) keep the hand-written C ABI with JSON envelopes. The header
-is generated by cbindgen from the bridge crate and the committed file is
-diffed in CI, so the header can no longer drift from the exported symbols. The
-bridge ABI version stays 2; new symbols carry a `_v1` suffix and existing
-contracts do not change. Panics never cross the boundary. Typed records crossing
-the boundary would trigger an evaluation of a binding generator, recorded in
-its own ADR.
+Message-shaped calls keep the hand-written C ABI with JSON envelopes. The
+current bridge exposes approval exchange, approval translation, and a combined
+hook entry point. Future application-side rule calls will use the same
+convention. The header is generated by cbindgen from the bridge crate and the
+committed file is diffed in CI, so the header can no longer drift from the
+exported symbols. The bridge ABI version stays 2; new symbols carry a `_v1`
+suffix and existing contracts do not change. Panics never cross the boundary.
+Typed records crossing the boundary would trigger an evaluation of a binding
+generator, recorded in its own ADR.
 
 ### Conformance harness
 
@@ -212,8 +241,8 @@ Real payloads are recorded under
 and session ids, and paired with `expected.json` holding the neutral events per
 payload. One driver in the model crate runs every provider crate against its
 fixtures and against a shared negative set (truncated JSON, oversized payload,
-non-object root, control characters in titles, unknown event names). A provider
-schema change adds a dated directory and keeps the old one passing.
+non-object root, unknown event names). A provider schema change adds a dated
+directory and keeps the old one passing.
 
 ## Consequences
 
@@ -249,10 +278,11 @@ notification delivery, XPC, signing, `SMAppService`, and all UI.
 
 - The committed bridge header matches the cbindgen output in CI on all three
   operating systems.
-- Adding a provider changes no file in `limpid-agent-model` or
-  `limpid-agent-core` other than fixture registration.
-- Every row of the hook and tracker domain table corresponds to one Rust test
-  or one fixture case.
+- Adding a provider changes no source file in `limpid-agent-model` or
+  `limpid-agent-core`; the adapter crate owns its fixtures and conformance
+  tests.
+- Each lifecycle and storage rule defined above has a corresponding Rust test
+  or fixture case.
 - The conformance harness passes for both providers with `normalize`
   implemented, and every negative fixture yields an error or one `Extension`.
 - The hook latency budget above is met, and the build-time difference against
