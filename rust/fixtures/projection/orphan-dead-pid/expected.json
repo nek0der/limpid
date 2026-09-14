@@ -43,7 +43,7 @@
       },
       "expect": {
         "expect": "hintOwner",
-        "run_id": "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3"
+        "runId": "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3"
       },
       "onMismatch": "continue",
       "then": [
@@ -54,14 +54,14 @@
           "target": {
             "target": "record",
             "provider": "claude",
-            "storage_id": "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3"
+            "storageId": "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3"
           },
           "expect": {
             "expect": "recordUnchanged",
-            "storage_id": "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3",
+            "storageId": "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3",
             "revision": 4,
             "pid": "9999",
-            "updated_at": "2026-09-14T12:03:00Z"
+            "updatedAt": "2026-09-14T12:03:00Z"
           },
           "onMismatch": "abort"
         }
@@ -71,7 +71,7 @@
       "op": {
         "op": "pruneRetired",
         "max": 200,
-        "lifetime_secs": 604800
+        "lifetimeSecs": 604800
       },
       "target": {
         "target": "retiredRecords",
@@ -122,7 +122,7 @@
       "op": {
         "op": "pruneRetired",
         "max": 200,
-        "lifetime_secs": 604800
+        "lifetimeSecs": 604800
       },
       "target": {
         "target": "retiredRecords",

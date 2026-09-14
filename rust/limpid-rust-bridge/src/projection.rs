@@ -56,6 +56,34 @@ struct ProjectOutput {
     commands: Vec<Command>,
 }
 
+/// Reports the providers this build has, as `{ "<id>": <descriptor>, ... }`.
+///
+/// # Safety
+///
+/// The output pointers must be writable. On `LIMPID_PROJECTION_OK` the caller
+/// owns the body and frees it with `limpid_approval_bytes_free_v1`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn limpid_projection_providers_v1(
+    out: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    let outcome = projection_boundary(|| {
+        if out.is_null() || out_len.is_null() {
+            return Err(PROJECTION_NULL_POINTER);
+        }
+        let registry: std::collections::BTreeMap<_, _> = limpid_agent_hook::installed_providers()
+            .into_iter()
+            .map(|descriptor| (descriptor.id.clone(), descriptor))
+            .collect();
+        let body = serde_json::to_vec(&registry).map_err(|_| PROJECTION_INTERNAL)?;
+        unsafe { transfer(body, out, out_len) };
+        Ok(PROJECTION_OK)
+    });
+    match outcome {
+        Ok(code) | Err(code) => code,
+    }
+}
+
 /// Reduces the records the host found into what to show and what to change.
 ///
 /// `state` is the body a previous call returned, or empty on the first call.

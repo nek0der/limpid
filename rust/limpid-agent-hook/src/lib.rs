@@ -29,7 +29,8 @@ use limpid_agent_core::{
     ApplyContext, RecordWrites, SideWrite, TurnSnapshotOp, apply, turn_snapshot_cwd,
 };
 use limpid_agent_model::{
-    Capability, HookContext, ProviderAdapter, RawHookInput, RunRecord, TmuxEndpoint,
+    Capability, HookContext, ProviderAdapter, ProviderDescriptor, RawHookInput, RunRecord,
+    TmuxEndpoint,
 };
 use limpid_provider_claude::ClaudeAdapter;
 use limpid_provider_codex::CodexAdapter;
@@ -81,6 +82,22 @@ pub fn adapter_for(id: &str) -> Option<&'static dyn ProviderAdapter> {
         limpid_provider_codex::PROVIDER_ID => Some(&CODEX),
         _ => None,
     }
+}
+
+/// Every provider this build has, in id order.
+///
+/// The rules branch on capabilities rather than names, so the host has to be
+/// able to ask what the installed providers are instead of holding a list of
+/// its own that could disagree with this one.
+#[must_use]
+pub fn installed_providers() -> Vec<&'static ProviderDescriptor> {
+    [
+        limpid_provider_claude::PROVIDER_ID,
+        limpid_provider_codex::PROVIDER_ID,
+    ]
+    .into_iter()
+    .filter_map(|id| adapter_for(id).map(ProviderAdapter::descriptor))
+    .collect()
 }
 
 /// Everything one hook call needs besides the payload.

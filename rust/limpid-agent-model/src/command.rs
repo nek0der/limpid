@@ -70,7 +70,7 @@ impl Command {
 
 /// What the host does to the target.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "camelCase")]
+#[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum CommandOp {
     /// Move a run record into the retired directory. Not a delete: a record
     /// that turns out to have been live is still recoverable by hand.
@@ -105,7 +105,11 @@ pub enum CommandOp {
 /// What the command addresses. The host needs this separately from the verb
 /// because it decides which file to lock before it can check anything.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "target", rename_all = "camelCase")]
+#[serde(
+    tag = "target",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Target {
     /// A run record inside a provider's state directory.
     Record {
@@ -143,7 +147,11 @@ pub enum PaneStoreKind {
 
 /// What must still be true when the host takes the lock.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "expect", rename_all = "camelCase")]
+#[serde(
+    tag = "expect",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Precondition {
     /// Nothing to check, because the target is not a file.
     None,
@@ -227,10 +235,10 @@ impl<T> Patch<T> {
 /// The intent written at terminate so the next launch can tell a run Limpid
 /// killed from one that died on its own.
 ///
-/// The field names and types match what the store already writes, so moving
-/// the rule into Rust needs no migration: identifiers keep their `ID` suffix,
-/// the pid stays the string the record carries rather than a parsed number,
-/// and the timestamp is ISO-8601 because the encoder writes dates that way.
+/// The field names and types match what `AgentResumeIntentStore` reads and
+/// writes: identifiers keep their `ID` suffix, the pid stays the string the
+/// record carries rather than a parsed number, and the timestamp is ISO-8601
+/// because the Swift encoder writes dates that way.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResumeIntent {
@@ -293,7 +301,11 @@ pub struct NotifyCommand {
 
 /// What became of a command, fed back into the next projection pass.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "outcome", rename_all = "camelCase")]
+#[serde(
+    tag = "outcome",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum CommandOutcome {
     /// The host delivered a notification for this runtime at this state.
     Notified {
@@ -319,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn a_chain_declares_its_own_mismatch_behaviour() {
+    fn a_chain_declares_its_own_mismatch_behavior() {
         let retire = Command::new(
             CommandOp::Retire,
             Target::Record {

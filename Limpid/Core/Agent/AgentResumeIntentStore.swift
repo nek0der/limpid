@@ -33,6 +33,24 @@ final class AgentResumeIntentStore {
         return try? PersistenceCoders.makeDecoder().decode(AgentResumeIntent.self, from: data)
     }
 
+    /// Every intent currently on disk.
+    ///
+    /// The rules need the whole set, not one lookup: an intent is what says a
+    /// run was killed by Limpid rather than lost, and a run whose intent is
+    /// not in the input is retired as an orphan.
+    func allIntents() -> [AgentResumeIntent] {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
+            return []
+        }
+        return names.sorted().compactMap { name in
+            guard name.hasSuffix(".json"), !name.hasPrefix(".") else { return nil }
+            guard let data = try? Data(contentsOf: directory.appendingPathComponent(name)) else {
+                return nil
+            }
+            return try? PersistenceCoders.makeDecoder().decode(AgentResumeIntent.self, from: data)
+        }
+    }
+
     func remove(runID: String) throws {
         guard UUID(uuidString: runID) != nil else { return }
         let target = url(runID)

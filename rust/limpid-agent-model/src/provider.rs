@@ -108,7 +108,12 @@ pub enum Capability {
 
 /// What the platform needs to know about a provider without linking its
 /// crate: identity, capabilities, timing, and where its records live.
+///
+/// Serialized in the camel case the rest of this boundary uses, so the host
+/// reads one convention rather than two. The capability names keep their own
+/// spelling: they are the vocabulary, not field names.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderDescriptor {
     pub id: ProviderId,
     pub display_name: String,

@@ -86,7 +86,7 @@
       "op": {
         "op": "pruneRetired",
         "max": 200,
-        "lifetime_secs": 604800
+        "lifetimeSecs": 604800
       },
       "target": {
         "target": "retiredRecords",
@@ -137,7 +137,7 @@
       "op": {
         "op": "pruneRetired",
         "max": 200,
-        "lifetime_secs": 604800
+        "lifetimeSecs": 604800
       },
       "target": {
         "target": "retiredRecords",

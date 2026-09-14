@@ -5,7 +5,7 @@ mod providers;
 
 pub use projection::{
     limpid_projection_on_launch_v1, limpid_projection_on_terminate_v1,
-    limpid_projection_project_v1, limpid_projection_result,
+    limpid_projection_project_v1, limpid_projection_providers_v1, limpid_projection_result,
 };
 pub use providers::{
     LIMPID_HOOK_KIND_LIFECYCLE, LIMPID_HOOK_KIND_WORKTREE, limpid_hook_run_v1,

@@ -207,6 +207,14 @@ int32_t limpid_resolve_title_v1(const uint8_t *provider_session_ptr,
                                 size_t output_capacity,
                                 size_t *output_length);
 
+// Reports the providers this build has, as `{ "<id>": <descriptor>, ... }`.
+//
+// # Safety
+//
+// The output pointers must be writable. On `LIMPID_PROJECTION_OK` the caller
+// owns the body and frees it with `limpid_approval_bytes_free_v1`.
+int32_t limpid_projection_providers_v1(uint8_t **out, size_t *out_len);
+
 // Reduces the records the host found into what to show and what to change.
 //
 // `state` is the body a previous call returned, or empty on the first call.
