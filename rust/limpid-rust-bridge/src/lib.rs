@@ -1,7 +1,12 @@
 //! Stable C ABI boundary between Limpid's Swift application and Rust core.
 
+mod projection;
 mod providers;
 
+pub use projection::{
+    limpid_projection_on_launch_v1, limpid_projection_on_terminate_v1,
+    limpid_projection_project_v1, limpid_projection_result,
+};
 pub use providers::{
     LIMPID_HOOK_KIND_LIFECYCLE, LIMPID_HOOK_KIND_WORKTREE, limpid_hook_run_v1,
     limpid_provider_approval_output_v1, limpid_provider_approval_request_v1,

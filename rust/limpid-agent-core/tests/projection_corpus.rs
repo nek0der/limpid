@@ -261,3 +261,30 @@ fn a_projection_pass_is_idempotent() {
     let (_, second, _) = project(&state, &input, &now);
     assert_eq!(first, second);
 }
+
+#[test]
+fn a_pass_is_fast_enough_to_run_on_every_file_change() {
+    // The projection runs on every watcher burst, so its cost is paid
+    // constantly rather than once. The ceiling is two orders of magnitude
+    // above what it actually takes, which makes this a guard against a rule
+    // that starts doing real work per pass rather than a benchmark.
+    let case = corpus().join("dominance");
+    let (input, now) = build_input(&case);
+    let mut state = ProjectionState::default();
+
+    let started = std::time::Instant::now();
+    let rounds = 200;
+    for _ in 0..rounds {
+        let (next, _, _) = project(&state, &input, &now);
+        state = next;
+    }
+    let each = started.elapsed() / rounds;
+    assert!(
+        each < std::time::Duration::from_millis(10),
+        "one pass took {each:?}"
+    );
+    println!(
+        "projection: {each:?} per pass over {} records",
+        input.records.len()
+    );
+}
