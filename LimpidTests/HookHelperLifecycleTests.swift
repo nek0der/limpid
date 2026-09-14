@@ -26,7 +26,7 @@ struct HookHelperLifecycleTests {
 
     private func environment(provider: String, in directory: URL) -> [String: String] {
         let prefix = provider == "claude" ? "LIMPID" : "LIMPID_CODEX"
-        var env = HookHelperFixture.isolatedEnvironment([
+        var env = IsolatedProcessEnvironment.make([
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": directory.path,
             "LIMPID_PANE_ID": Self.paneID,
@@ -178,7 +178,7 @@ struct HookHelperLifecycleTests {
     @Test("writes nothing outside a Limpid pane")
     func lifecycleHook_writesNothingWithoutTheShimEnvironment() throws {
         try withTempDir { directory in
-            let env = HookHelperFixture.isolatedEnvironment(["PATH": "/usr/bin:/bin", "HOME": directory.path])
+            let env = IsolatedProcessEnvironment.make(["PATH": "/usr/bin:/bin", "HOME": directory.path])
             let result = try runHelper(["hook", "codex"], payload: fixturePayload("codex", "0000-SessionStart.json"), environment: env)
             #expect(result.status == 0)
             #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
