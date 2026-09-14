@@ -164,6 +164,55 @@ struct AgentProjectionParityTests {
         return (old, snapshot(harness, attention: newAttention))
     }
 
+    @Test("a record landing on disk triggers a pass on its own")
+    func watching_refreshesWhenTheDirectoryChanges() async throws {
+        // Its own directory rather than the scoped helper: that helper hands
+        // the body to a non-isolated context, which this actor-bound test
+        // cannot cross.
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("limpid-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        do {
+            let harness = try harness(root: root)
+            let adapter = AgentProjectionAdapter(
+                directories: ["claude": AgentDirectories(
+                    state: harness.state,
+                    sessions: harness.sessions,
+                    cwdEvents: nil
+                )],
+                descriptors: AgentProviderRegistry.descriptors.filter { $0.key == "claude" },
+                resumeIntents: AgentResumeIntentStore(
+                    directory: harness.state.appendingPathComponent("resume-intents")
+                ),
+                processStatus: status(harness)
+            )
+            let attention = AttentionState()
+            adapter.bootstrap(into: harness.session, attention: attention)
+            adapter.startWatching()
+            defer { adapter.stopWatching() }
+
+            try write(
+                harness,
+                run: "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+                state: "running",
+                revision: 2,
+                updatedAt: "2026-09-14T12:01:00Z"
+            )
+
+            // The hook writes and the interface catches up on its own; nothing
+            // asks it to. Polling rather than waiting a fixed time because the
+            // file system decides when the event arrives.
+            var badges: [UUID: AgentBadge] = [:]
+            for _ in 0..<100 where badges.isEmpty {
+                try await Task.sleep(for: .milliseconds(20))
+                badges = harness.session.tabs.first { $0.id == harness.tab.id }?
+                    .claudeAgentBadges ?? [:]
+            }
+            #expect(badges[harness.pane] != nil)
+        }
+    }
+
     @Test("a running turn reads the same through both")
     func runningTurn_agrees() throws {
         try withTempDir { root in

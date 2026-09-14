@@ -14,10 +14,10 @@ private let log = Logger.limpid("agent.projection.adapter")
 /// shows, which change is worth announcing, and which record is safe to retire
 /// are all decided on the other side of the boundary.
 ///
-/// A pass is explicit rather than self-triggering. The directory watches and
-/// the liveness timer that call it land when this replaces the trackers; until
-/// then the tests drive it, which is also how it is compared against the path
-/// it replaces.
+/// Passes are triggered by the directories changing and by a timer that asks
+/// whether the agent processes are still alive. Until this replaces the
+/// trackers the application starts neither, and the tests drive `refresh()`
+/// directly — which is also how it is compared against the path it replaces.
 @MainActor
 final class AgentProjectionAdapter {
     private let directories: [String: AgentDirectories]
@@ -40,6 +40,12 @@ final class AgentProjectionAdapter {
     /// dropped so an outcome cannot be replayed.
     private var pending: [AgentCommandOutcome] = []
     private var hasBootstrapped = false
+
+    /// `nonisolated(unsafe)` so `deinit`, which is nonisolated under Swift 6,
+    /// can cancel them. Each source owns the descriptor it was opened with;
+    /// see `startWatching`.
+    private nonisolated(unsafe) var sources: [any DispatchSourceFileSystemObject] = []
+    private nonisolated(unsafe) var sweep: Timer?
     /// Why the last pass could not run, if it could not. Kept because a pass
     /// that fails changes nothing visible, so without this the only evidence
     /// is a log line nobody is watching.
@@ -58,6 +64,14 @@ final class AgentProjectionAdapter {
         executor = AgentCommandExecutor(directories: directories, resumeIntents: resumeIntents)
     }
 
+    deinit {
+        // The descriptors belong to the sources, not to this object: each
+        // cancel handler closes the one it captured. Touching them here too
+        // would race that handler and close one twice.
+        sources.forEach { $0.cancel() }
+        sweep?.invalidate()
+    }
+
     func bootstrap(
         into session: WindowSession,
         attention: AttentionState? = nil,
@@ -67,6 +81,77 @@ final class AgentProjectionAdapter {
         self.attention = attention
         self.tmuxPresence = tmuxPresence
         refresh()
+    }
+
+    /// Starts watching the directories the hooks write into and asking, on a
+    /// timer, whether the processes those records name are still running.
+    ///
+    /// A pass re-reads everything rather than following individual events. One
+    /// hook write fires several of them, the directories hold fewer records
+    /// than a machine has panes, and a rule that depended on seeing every
+    /// event in order would be wrong the first time one was missed.
+    func startWatching() {
+        stopWatching()
+        for directory in watchedDirectories() {
+            guard let source = watch(directory) else { continue }
+            sources.append(source)
+        }
+
+        // Providers disagree about how quickly a dead process matters: one
+        // reports its own exit, another does not, so its records would sit
+        // there until something asked. The shortest declared interval wins,
+        // because a sweep costs one pass and asking too rarely shows a badge
+        // for a session that has gone.
+        let seconds = descriptors.values
+            .map { Double($0.pidSweepIntervalMs) / 1000 }
+            .min() ?? 30
+        let timer = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
+        // Best effort, so let the system coalesce it with other work.
+        timer.tolerance = seconds / 3
+        RunLoop.main.add(timer, forMode: .common)
+        sweep = timer
+    }
+
+    func stopWatching() {
+        sources.forEach { $0.cancel() }
+        sources.removeAll()
+        sweep?.invalidate()
+        sweep = nil
+    }
+
+    private func watchedDirectories() -> [URL] {
+        directories.values.flatMap { directory -> [URL] in
+            [
+                directory.state,
+                directory.sessions,
+                directory.state.appendingPathComponent("worktree-events", isDirectory: true)
+            ] + (directory.cwdEvents.map { [$0] } ?? [])
+        }
+    }
+
+    private func watch(_ directory: URL) -> (any DispatchSourceFileSystemObject)? {
+        let descriptor = open(directory.path, O_EVTONLY)
+        guard descriptor >= 0 else {
+            // A directory the hooks have not created yet is not an error; the
+            // next launch watches it once something has written there.
+            log.debug("cannot watch \(directory.path, privacy: .public): errno=\(errno)")
+            return nil
+        }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            eventMask: [.write, .extend, .attrib, .rename, .delete],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            Task { @MainActor in self?.refresh() }
+        }
+        // Captured by value so the close belongs to this source's lifetime
+        // rather than the adapter's.
+        source.setCancelHandler { [descriptor] in close(descriptor) }
+        source.resume()
+        return source
     }
 
     /// Runs one pass: read the directories, ask the rules, apply the answer.
