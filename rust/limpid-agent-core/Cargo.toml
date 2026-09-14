@@ -6,6 +6,9 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+limpid-agent-model = { path = "../limpid-agent-model" }
+serde.workspace = true
+serde_json.workspace = true
 uuid.workspace = true
 
 [lints]

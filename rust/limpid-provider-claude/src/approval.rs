@@ -1,5 +1,5 @@
-//! `PermissionRequest` translation, byte-compatible with the Swift adapter it
-//! replaces.
+//! `PermissionRequest` translation, producing the same JSON the Swift adapter
+//! it replaces emitted (serde does not escape `/`, which JSON treats alike).
 
 use limpid_agent_model::{
     ApprovalDecision, ApprovalRequest, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderId,
@@ -31,10 +31,12 @@ pub(crate) fn approval_request(bytes: &[u8]) -> Result<Option<ApprovalRequest>, 
     else {
         return Ok(None);
     };
+    // The Swift adapter fell back to `description` when `command` was
+    // present but not a string, so each key is checked as a string in turn.
     let summary = input
         .get("command")
-        .or_else(|| input.get("description"))
         .and_then(Value::as_str)
+        .or_else(|| input.get("description").and_then(Value::as_str))
         .map(str::to_owned);
     Ok(Some(ApprovalRequest {
         provider: ProviderId::new(crate::PROVIDER_ID).expect("static id is valid"),
@@ -62,7 +64,7 @@ pub(crate) fn approval_output(decision: &ApprovalDecision) -> ProviderOutput {
         ApprovalDecision::Delegate => return ProviderOutput { stdout: None },
     };
     // serde_json's default map keeps keys sorted, which is what the Swift
-    // adapter emitted with `.sortedKeys`; the bytes must stay identical.
+    // adapter emitted with `.sortedKeys`, so the documents stay identical.
     let output = json!({
         "hookSpecificOutput": {
             "hookEventName": "PermissionRequest",
@@ -94,6 +96,9 @@ mod tests {
     #[test]
     fn description_is_the_fallback_summary_and_arrays_are_accepted() {
         let payload = br#"{"hook_event_name":"PermissionRequest","tool_name":"Edit","tool_input":{"description":"Inspect status"}}"#;
+        let request = approval_request(payload).expect("ok").expect("approval");
+        assert_eq!(request.summary.as_deref(), Some("Inspect status"));
+        let payload = br#"{"hook_event_name":"PermissionRequest","tool_name":"Edit","tool_input":{"command":null,"description":"Inspect status"}}"#;
         let request = approval_request(payload).expect("ok").expect("approval");
         assert_eq!(request.summary.as_deref(), Some("Inspect status"));
         let payload =

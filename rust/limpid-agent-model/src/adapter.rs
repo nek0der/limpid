@@ -1,6 +1,9 @@
 //! The contract a provider crate implements.
 
-use crate::{AgentEvent, ApprovalDecision, ApprovalRequest, InstallRecipe, ProviderDescriptor};
+use crate::{
+    AgentEvent, ApprovalDecision, ApprovalRequest, InstallRecipe, ProviderDescriptor,
+    WorktreeIntent,
+};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
@@ -60,8 +63,8 @@ pub trait ProviderAdapter: Send + Sync {
     /// What the platform must place so the provider's hooks reach Limpid.
     fn install_recipe(&self) -> InstallRecipe;
 
-    /// Maps one hook payload to neutral events. Unknown event names and
-    /// fields become `AgentEvent::Extension`, never errors.
+    /// Maps one hook payload to neutral events. Unknown event names become
+    /// `AgentEvent::Extension`; unrecognized fields on known events are ignored.
     ///
     /// # Errors
     ///
@@ -87,6 +90,39 @@ pub trait ProviderAdapter: Send + Sync {
 
     /// Renders a decision as the provider's hook output.
     fn approval_output(&self, decision: &ApprovalDecision) -> crate::ProviderOutput;
+
+    /// Names the transcript the runtime should read alongside this payload,
+    /// when the provider keeps one and this event's normalization uses it.
+    /// Reading the transcript costs a file read per hook, so adapters answer
+    /// only for the events that need it. The path comes from the payload and
+    /// is opened by the runtime under its own limits.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NormalizeError` only for input that is too large or is not a
+    /// JSON object.
+    fn transcript_path(&self, input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {
+        let _ = input;
+        Ok(None)
+    }
+
+    /// Reads a `git worktree add` the agent is about to run out of a tool
+    /// payload, so the hook runtime can intercept it. Reported alongside the
+    /// neutral events rather than as one of them because it is a request to
+    /// act before the tool runs, not an observation. Providers without a
+    /// shell tool keep the default.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NormalizeError` only for input that is too large or is not a
+    /// JSON object.
+    fn worktree_intent(
+        &self,
+        input: RawHookInput<'_>,
+    ) -> Result<Option<WorktreeIntent>, NormalizeError> {
+        let _ = input;
+        Ok(None)
+    }
 }
 
 /// Parses a payload as a JSON object under the shared size limit.

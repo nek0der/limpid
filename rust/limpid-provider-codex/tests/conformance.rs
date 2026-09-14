@@ -25,17 +25,13 @@ fn approval_requests_match_the_recorded_expectations() {
     assert!(failures.is_empty(), "{}", report(&failures));
 }
 
-// Normalization is implemented in the hook runtime phase; these stay ignored
-// until then so the fixtures keep their expected shape on record.
 #[test]
-#[ignore = "normalize is implemented in the hook runtime phase"]
 fn payloads_normalize_as_recorded() {
     let failures = run_normalize(&CodexAdapter, &fixtures("codex"));
     assert!(failures.is_empty(), "{}", report(&failures));
 }
 
 #[test]
-#[ignore = "normalize is implemented in the hook runtime phase"]
 fn negative_inputs_are_rejected_or_passed_through() {
     let failures = run_negative(&CodexAdapter, &fixtures("negative"));
     assert!(failures.is_empty(), "{}", report(&failures));

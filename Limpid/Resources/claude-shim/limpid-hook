@@ -51,9 +51,9 @@ payload="$(cat 2>/dev/null || true)"
 
 # ----- Raw payload recording (fixture capture) -----
 # When `LIMPID_HOOK_RECORD_DIR` names an existing directory, keep the
-# payload byte for byte before anything below reads it, so the recorded
-# fixture is exactly what the agent sent and not what this script made
-# of it. The file name is a zero-padded counter plus the event name;
+# payload as read from stdin before anything below reads it, so the
+# recorded fixture is what the agent sent and not what this script made
+# of it (`$(cat)` drops a trailing newline, which JSON does not need). The file name is a zero-padded counter plus the event name;
 # only payload files are counted so a transcript copy (Claude) cannot
 # shift the sequence. Recording never changes the exit path: a failure
 # here is ignored and the hook continues.
@@ -72,6 +72,11 @@ if [ -n "${LIMPID_HOOK_RECORD_DIR:-}" ] && [ -d "$LIMPID_HOOK_RECORD_DIR" ]; the
   # Claude's transcript is read later for titles, and it keeps changing
   # after the hook returns, so copy it now next to the payload.
   rec_transcript="$(printf '%s' "$payload" | plutil -extract transcript_path raw -o - - 2>/dev/null || true)"
+  # The path comes from the payload; only a transcript file is copied.
+  case "$rec_transcript" in
+    *.jsonl) ;;
+    *) rec_transcript="" ;;
+  esac
   if [ -n "$rec_transcript" ] && [ -f "$rec_transcript" ]; then
     cp "$rec_transcript" "$rec_base.transcript.jsonl" 2>/dev/null || :
   fi

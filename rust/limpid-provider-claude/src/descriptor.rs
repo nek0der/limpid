@@ -32,8 +32,8 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
         // The Claude receiver historically ran a slow sweep; Codex needs a
         // faster one because it emits no Stop when killed mid-turn.
         pid_sweep_interval_ms: 30_000,
-        // Legacy names from before providers were distinguished; kept so no
-        // data moves (ADR 0004).
+        // Keep the names used before providers were distinguished so existing
+        // on-disk records remain readable without a migration.
         state_directory: "agent-states".to_owned(),
         session_directory: "sessions".to_owned(),
         cwd_events_directory: Some("cwd-events".to_owned()),

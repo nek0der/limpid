@@ -1,15 +1,15 @@
 //! Codex CLI adapter: descriptor, install recipe, and approval translation.
 //!
-//! Hook payload normalization is declared here and implemented in the hook
-//! runtime phase; until then `normalize` reports `NotImplemented` so the
-//! shell receiver stays the only writer of run records.
+//! `normalize` maps hook payloads to neutral events; the hook runtime applies
+//! them to run records.
 
 mod approval;
 mod descriptor;
+mod normalize;
 
 use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe, NormalizeError,
-    ProviderAdapter, ProviderDescriptor, ProviderOutput, RawHookInput,
+    ProviderAdapter, ProviderDescriptor, ProviderOutput, RawHookInput, WorktreeIntent,
 };
 
 /// The Codex CLI provider.
@@ -30,10 +30,10 @@ impl ProviderAdapter for CodexAdapter {
 
     fn normalize(
         &self,
-        _input: RawHookInput<'_>,
+        input: RawHookInput<'_>,
         _context: &HookContext,
     ) -> Result<Vec<AgentEvent>, NormalizeError> {
-        Err(NormalizeError::NotImplemented)
+        normalize::normalize(input)
     }
 
     fn approval_request(
@@ -45,5 +45,12 @@ impl ProviderAdapter for CodexAdapter {
 
     fn approval_output(&self, decision: &ApprovalDecision) -> ProviderOutput {
         approval::approval_output(decision)
+    }
+
+    fn worktree_intent(
+        &self,
+        input: RawHookInput<'_>,
+    ) -> Result<Option<WorktreeIntent>, NormalizeError> {
+        WorktreeIntent::from_hook_payload(input.bytes, "Bash")
     }
 }

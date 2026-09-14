@@ -1,5 +1,5 @@
-//! `PermissionRequest` translation, byte-compatible with the Swift adapter it
-//! replaces. Codex uses Claude's hook output shape and adds a `turn_id`,
+//! `PermissionRequest` translation, producing the same JSON the Swift adapter
+//! it replaces emitted (serde does not escape `/`, which JSON treats alike). Codex uses Claude's hook output shape and adds a `turn_id`,
 //! which becomes the neutral operation id.
 
 use limpid_agent_model::{
@@ -30,10 +30,12 @@ pub(crate) fn approval_request(bytes: &[u8]) -> Result<Option<ApprovalRequest>, 
     else {
         return Ok(None);
     };
+    // The Swift adapter fell back to `description` when `command` was
+    // present but not a string, so each key is checked as a string in turn.
     let summary = input
         .get("command")
-        .or_else(|| input.get("description"))
         .and_then(Value::as_str)
+        .or_else(|| input.get("description").and_then(Value::as_str))
         .map(str::to_owned);
     Ok(Some(ApprovalRequest {
         provider: ProviderId::new(crate::PROVIDER_ID).expect("static id is valid"),
@@ -64,7 +66,7 @@ pub(crate) fn approval_output(decision: &ApprovalDecision) -> ProviderOutput {
         ApprovalDecision::Delegate => return ProviderOutput { stdout: None },
     };
     // serde_json's default map keeps keys sorted, which is what the Swift
-    // adapter emitted with `.sortedKeys`; the bytes must stay identical.
+    // adapter emitted with `.sortedKeys`, so the documents stay identical.
     let output = json!({
         "hookSpecificOutput": {
             "hookEventName": "PermissionRequest",
