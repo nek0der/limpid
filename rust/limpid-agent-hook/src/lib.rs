@@ -226,7 +226,7 @@ fn write_events(
                 previous.as_ref(),
                 event,
                 apply_context,
-                &descriptor.capabilities,
+                descriptor,
                 &runtime.now,
             );
             attach_snapshot(&mut writes, captured.as_ref());
@@ -273,7 +273,7 @@ fn capture_before_lock(
     pane_id: &str,
     snapshots: &dyn SnapshotRunner,
 ) -> Option<TurnSnapshot> {
-    let cwd = turn_snapshot_cwd(event, &descriptor.capabilities)?;
+    let cwd = turn_snapshot_cwd(event, descriptor)?;
     let cwd = cwd.map_or_else(current_directory, PathBuf::from);
     snapshots.capture(&cwd, pane_id)
 }

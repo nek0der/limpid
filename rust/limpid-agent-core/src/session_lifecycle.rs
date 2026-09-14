@@ -341,6 +341,7 @@ mod tests {
             session_directory: "sessions".to_owned(),
             cwd_events_directory: None,
             process_names: Vec::new(),
+            session_end_drop_reasons: Vec::new(),
             id,
         }
     }

@@ -38,6 +38,13 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
         session_directory: "sessions".to_owned(),
         cwd_events_directory: Some("cwd-events".to_owned()),
         process_names: vec!["claude".to_owned(), "claude.exe".to_owned()],
+        // The reasons Claude reports when the user ended the session rather
+        // than the process going away under it. A signal, or a reason this
+        // build does not know, keeps the hint so the next launch can resume.
+        session_end_drop_reasons: ["clear", "logout", "exit", "prompt_input_exit", "quit"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
     })
 }
 

@@ -65,6 +65,11 @@ opening the authenticated requester session.
 - `message_id` correlates one protocol request with its response.
 - `ServiceEpoch` is generated on every service start.
 - `operation_id` is an optional provider tool-call correlation value.
+- `provider` is an open identifier, not a fixed set: one to thirty-two
+  characters of lowercase letters, digits, and hyphens. A service accepts one
+  it does not recognize, because the value is correlation and display data
+  rather than an authorization credential, and adding a provider must not
+  require a protocol change.
 
 The approval key is `(ServiceEpoch, RunID, RequestID)`. Claude Code and current
 Codex `PermissionRequest` inputs do not provide a stable tool-call ID, so the

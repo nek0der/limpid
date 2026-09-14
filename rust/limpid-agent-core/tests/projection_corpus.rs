@@ -84,6 +84,7 @@ fn descriptors() -> BTreeMap<ProviderId, ProviderDescriptor> {
             session_directory: "sessions".to_owned(),
             cwd_events_directory: Some("cwd-events".to_owned()),
             process_names: vec!["claude".to_owned()],
+            session_end_drop_reasons: Vec::new(),
             id: claude,
         },
     );
@@ -106,6 +107,7 @@ fn descriptors() -> BTreeMap<ProviderId, ProviderDescriptor> {
             session_directory: "codex-sessions".to_owned(),
             cwd_events_directory: None,
             process_names: vec!["codex".to_owned()],
+            session_end_drop_reasons: Vec::new(),
             id: codex,
         },
     );

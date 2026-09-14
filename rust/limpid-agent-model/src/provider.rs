@@ -123,6 +123,13 @@ pub struct ProviderDescriptor {
     pub cwd_events_directory: Option<String>,
     /// `comm` names the parent-process walk accepts as the agent.
     pub process_names: Vec<String>,
+    /// The `SessionEnd` reasons that mean the user ended the session rather
+    /// than the process going away under it, so the resume hint should go too.
+    /// Only read when the provider has `SessionEndDropsSession`; the values are
+    /// the provider's own vocabulary, which is why they live with it rather
+    /// than in the rules.
+    #[serde(default)]
+    pub session_end_drop_reasons: Vec<String>,
 }
 
 impl ProviderDescriptor {

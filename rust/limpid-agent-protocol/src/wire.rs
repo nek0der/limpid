@@ -1,5 +1,5 @@
 use limpid_agent_core::{
-    AgentProvider, ApprovalDecision, ApprovalKey, ApprovalRequest, ApprovalSnapshot, ApprovalState,
+    ApprovalDecision, ApprovalKey, ApprovalRequest, ApprovalSnapshot, ApprovalState, ProviderId,
     RequestId, RunId,
 };
 use serde::{Deserialize, Serialize};
@@ -65,8 +65,11 @@ pub struct WireResponse {
 pub enum ResponseBody {
     #[serde(rename = "hello.result")]
     HelloResult { capabilities: Vec<String> },
+    /// Boxed because a snapshot carries the whole request, which is an order
+    /// of magnitude larger than any other response and would otherwise set the
+    /// size of every one of them.
     #[serde(rename = "approval.result")]
-    ApprovalResult(ApprovalSnapshotWire),
+    ApprovalResult(Box<ApprovalSnapshotWire>),
     #[serde(rename = "approval.snapshot.result")]
     ApprovalSnapshotResult {
         sequence: u64,
@@ -105,7 +108,7 @@ pub struct ApprovalKeyWire {
 pub struct ApprovalRequestWire {
     pub run_id: Uuid,
     pub request_id: Uuid,
-    pub provider: AgentProviderWire,
+    pub provider: ProviderId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -115,13 +118,6 @@ pub struct ApprovalRequestWire {
     pub summary: Option<String>,
     pub input: Value,
     pub timeout_ms: u64,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentProviderWire {
-    Claude,
-    Codex,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -159,7 +155,7 @@ pub enum ApprovalStateWire {
 pub struct ApprovalIndexWire {
     pub run_id: Uuid,
     pub request_id: Uuid,
-    pub provider: AgentProviderWire,
+    pub provider: ProviderId,
     pub status: ApprovalStatusWire,
     pub deadline_ms: u64,
     pub sequence: u64,
@@ -196,10 +192,7 @@ impl ApprovalRequestWire {
                 run_id: RunId::new(self.run_id),
                 request_id: RequestId::new(self.request_id),
             },
-            provider: match self.provider {
-                AgentProviderWire::Claude => AgentProvider::Claude,
-                AgentProviderWire::Codex => AgentProvider::Codex,
-            },
+            provider: self.provider,
             session_id: self.session_id,
             operation_id: self.operation_id,
             tool_name: self.tool_name,
@@ -227,10 +220,7 @@ impl ApprovalSnapshotWire {
             request: ApprovalRequestWire {
                 run_id: value.request.key.run_id.value(),
                 request_id: value.request.key.request_id.value(),
-                provider: match value.request.provider {
-                    AgentProvider::Claude => AgentProviderWire::Claude,
-                    AgentProvider::Codex => AgentProviderWire::Codex,
-                },
+                provider: value.request.provider.clone(),
                 session_id: value.request.session_id,
                 operation_id: value.request.operation_id,
                 tool_name: value.request.tool_name,
@@ -264,10 +254,7 @@ impl From<ApprovalSnapshot> for ApprovalIndexWire {
         Self {
             run_id: value.request.key.run_id.value(),
             request_id: value.request.key.request_id.value(),
-            provider: match value.request.provider {
-                AgentProvider::Claude => AgentProviderWire::Claude,
-                AgentProvider::Codex => AgentProviderWire::Codex,
-            },
+            provider: value.request.provider.clone(),
             status: match value.state {
                 ApprovalState::Pending => ApprovalStatusWire::Pending,
                 ApprovalState::Resolved(_) => ApprovalStatusWire::Resolved,

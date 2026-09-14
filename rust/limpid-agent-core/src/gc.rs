@@ -329,6 +329,7 @@ mod tests {
             session_directory: "sessions".to_owned(),
             cwd_events_directory: Some("cwd-events".to_owned()),
             process_names: Vec::new(),
+            session_end_drop_reasons: Vec::new(),
         };
         input.providers.insert(claude(), descriptor.clone());
         let commands = sweep(&BTreeMap::new(), &input, &BTreeSet::new());

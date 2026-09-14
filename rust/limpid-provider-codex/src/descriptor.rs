@@ -50,6 +50,10 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
             session_directory: ProviderDescriptor::default_session_directory(&id),
             cwd_events_directory: None,
             process_names: vec!["codex".to_owned(), "codex-darwin-arm64".to_owned()],
+            // Empty, and unread: Codex reports `other` even for `/quit`, so it
+            // has no `SessionEndDropsSession` capability and its hint always
+            // survives for the next launch to resume from.
+            session_end_drop_reasons: Vec::new(),
             id,
         }
     })
