@@ -1,6 +1,6 @@
 // ClaudeSessionStore.swift
 // Limpid — per-pane Claude session records (`sessions/<uuid>.json`),
-// written by `claude-shim/limpid-hook`. Storage logic lives on
+// written by the selected Claude hook receiver. Storage logic lives on
 // `PaneStore<Record>`; this file just pins the production directory,
 // max retention, file suffix, and log category for the Claude session
 // flavour. Tests bypass `init()` and inject their own directory via

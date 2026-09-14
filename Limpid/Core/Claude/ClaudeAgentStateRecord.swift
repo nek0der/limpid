@@ -1,6 +1,6 @@
 // ClaudeAgentStateRecord.swift
-// Limpid — on-disk shape of an agent lifecycle record written by
-// `Limpid/Resources/claude-shim/limpid-hook` after every relevant
+// Limpid — on-disk shape of a Claude lifecycle record written by the
+// receiver selected by `claude-shim/limpid-hook` after every relevant
 // hook event. `ClaudeAgentStateStore` reads / writes; the live
 // `Tab.claudeAgentBadges[paneID]` mirror is rebuilt from this struct
 // via `ClaudeAgentStateTracker`.
@@ -19,20 +19,19 @@ struct ClaudeAgentStateRecord: AgentLifecycleRecord, Equatable {
     /// UUID of the launching split-tree leaf. Runtime records use `runId`
     /// as their filename; schema-v1 records use this value.
     var paneId: String
-    /// Lifecycle state encoded by the hook script; decoded back into
+    /// Lifecycle state encoded by the selected receiver; decoded back into
     /// `ClaudeAgentState` by callers.
     var state: String
     /// Free-form tooltip tag (`tool_name`, `error_type`, `"permission"`).
     var detail: String?
-    /// ISO-8601 instant `UserPromptSubmit` was observed. Stored as
-    /// `String` so the shell hook can write `date -u +"%Y-…%Z"` without
-    /// going through `JSONEncoder`'s Date strategies.
+    /// ISO-8601 instant `UserPromptSubmit` was observed. Stored as `String`
+    /// so the Rust and legacy receivers share one on-disk representation.
     var runStartedAt: String?
     /// ISO-8601 instant of this record's write. The tracker drops any
     /// incoming record whose `updatedAt` precedes the in-memory one
     /// (out-of-order async hook).
     var updatedAt: String
-    /// Diagnostic — which hook event produced this record.
+    /// Diagnostic event name: neutral in v3 and provider-native in legacy v2.
     var lastHookEvent: String?
     /// `current_token_count` from the most recent `PreCompact`.
     var contextTokens: Int?

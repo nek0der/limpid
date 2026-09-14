@@ -1,7 +1,7 @@
 // CwdEventStore.swift
 // Limpid — per-pane `CwdChanged` records
-// (`cwd-events/<uuid>.cwd.json`), written by
-// `claude-shim/limpid-hook` on every cwd transition. See `PaneStore`
+// (`cwd-events/<uuid>.cwd.json`), written by the selected Claude hook
+// receiver on every cwd transition. See `PaneStore`
 // for the shared storage logic.
 
 import Foundation

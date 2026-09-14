@@ -1,0 +1,7 @@
+{
+  "cwd": "/tmp/example",
+  "hook_event_name": "SessionEnd",
+  "reason": "other",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/Users/example/.codex/sessions/2026/09/14/rollout-2026-09-14T01-52-28-00000000-0000-4000-8000-0000000000ff.jsonl"
+}

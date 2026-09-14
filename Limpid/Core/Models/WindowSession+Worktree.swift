@@ -51,7 +51,7 @@ extension WindowSession {
     }
 
     /// Flip the per-project "route Claude's `git worktree add`" toggle.
-    /// The hook script reads the saved value from `state.json`; flipping
+    /// The hook receiver reads the saved value from `state.json`; flipping
     /// to false makes future Claude `git worktree add` invocations
     /// passthrough (Claude lands worktrees at its own default path
     /// instead of our placement-derived one).
@@ -448,7 +448,7 @@ extension WindowSession {
             // `chdir(2)` would happily follow them, so a malicious
             // (or careless) `cwd: "../../"` could land the step in
             // the project root. Cheap belt-and-braces today; the
-            // shell hook applies the same guard.
+            // Rust and legacy hook receivers apply the same guard.
             if let cwd = item.cwd, isUnsafeRelativePath(cwd) {
                 log.warning("""
                 bootstrap step skipped — unsafe cwd '\(cwd, privacy: .public)' \
@@ -478,8 +478,8 @@ extension WindowSession {
         // NOTE: `item.timeout` is currently ignored — the schema reserves
         // the field but v1 has no enforcement. A hung command keeps the
         // Process alive until something else reaps it. Adding
-        // `Task.sleep(for:) + process.terminate()` here is the follow-up
-        // PR; the shell hook needs the same treatment in parallel.
+        // Timeout enforcement must land here and in both hook backends
+        // together so backend selection cannot change behavior.
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             // Single-shot guard against double-resume. `Process.run()`
             // throwing should mean `terminationHandler` won't fire, but

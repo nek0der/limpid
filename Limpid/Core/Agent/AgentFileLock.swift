@@ -1,5 +1,5 @@
 // AgentFileLock.swift
-// Limpid — the same persistent-inode advisory lock used by shell hooks.
+// Limpid — the persistent-inode advisory lock shared by Swift and hook receivers.
 
 import Foundation
 

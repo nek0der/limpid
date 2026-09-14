@@ -19,14 +19,18 @@ marked block, and nothing else, is written into the user's
   directory to `PATH` for every pty it spawns, so a `codex` typed inside
   a Limpid terminal runs this first. It locates the real binary,
   splices in the `-c` overrides from `LIMPID_CODEX_HOOK_ARGS`, exports
-  its own pid, and exec's over itself.
-- `limpid-hook` — receives hook payloads on stdin and writes the
-  per-pane session and agent-state records that `CodexSessionTracker`
-  and `CodexAgentStateTracker` read back.
-- `limpid-pretool-worktree-hook` — intercepts a `PreToolUse` Bash call
-  that would create a git worktree and re-runs it under the active
-  Project's placement rules. Symmetric with the `claude-shim` file of
-  the same name.
+  its own PID, and execs over itself.
+- `limpid-hook` — the hook command Codex calls. A wrapper that reads
+  `LIMPID_AGENT_HOOK_BACKEND` and execs either the Hook Helper's
+  `hook codex` subcommand, which runs the Rust receiver in-process, or
+  `limpid-hook.legacy`, the previous shell receiver kept for one release as
+  the rollback path. The records both write are read back by
+  `CodexSessionTracker` and `CodexAgentStateTracker`.
+- `limpid-pretool-worktree-hook` — the second `PreToolUse` hook for the
+  Bash tool. The same wrapper shape: `hook codex worktree` in the helper,
+  or `limpid-pretool-worktree-hook.legacy`, which intercepts a `git
+  worktree add` and re-runs it under the active Project's placement
+  rules. Symmetric with the `claude-shim` file of the same name.
 
 ## Environment contract
 
@@ -39,6 +43,7 @@ is the source of truth for the values.
 | `LIMPID_PANE_ID` | UUID of the launching split-tree leaf; not current ownership inside tmux |
 | `LIMPID_AGENT_RUN_ID` | UUID of this Codex invocation; lifecycle-state filename key |
 | `LIMPID_AGENT_TMUX_HOST_MODE` | `limpidHosted` for automatic hosting, `manual` inside user tmux |
+| `LIMPID_AGENT_HOOK_BACKEND` | `rust` (default) runs hooks through the Hook Helper's Rust runtime; `shell` selects the previous receivers (`*.legacy`) for one release; set by `AgentHookBackend` |
 | `LIMPID_CODEX_HOOK_ARGS` | Newline-separated arguments the `codex` shim splices in |
 | `LIMPID_CODEX_SESSIONS_DIR` | Directory to write session records into |
 | `LIMPID_CODEX_AGENT_STATES_DIR` | Directory to write agent-state records into |
@@ -63,8 +68,8 @@ to the inherited launch pane. Existing pre-upgrade runs may need a new hook
 event before their attachment becomes visible. Manual tmux requires this shim
 on the inner shell's PATH; no global agent hooks are installed.
 
-The reasoning for shell scripts over a Swift binary is in
-`claude-shim/README.md` and applies here unchanged.
+The split between the shell shim and the Hook Helper's Rust receiver is
+explained in `claude-shim/README.md` and applies here unchanged.
 
 ## Failure policy
 

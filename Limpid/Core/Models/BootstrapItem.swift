@@ -69,17 +69,15 @@ struct BootstrapDetail: Codable, Equatable {
     /// Aligns with Claude Code's 600s PreToolUse hook ceiling — the
     /// number `timeout`-aware code paths should clamp to once they exist.
     ///
-    /// NOT enforced yet. v1 ships the schema slot so users can hand-edit
-    /// `state.json` for the future, but neither
-    /// `WindowSession.runBootstrapStep` nor the shell hook honor the
+    /// Not enforced yet. v1 reserves the schema slot, but neither
+    /// `WindowSession.runBootstrapStep` nor either hook backend honors the
     /// value — a step that never exits stays alive until the process
-    /// goes away. A follow-up PR will wire `Task.sleep` +
-    /// `Process.terminate()` on the Swift side and `gtimeout` (or
-    /// equivalent) on the shell side.
+    /// goes away. Timeout enforcement must be added to the Swift path and both
+    /// hook backends together so backend selection cannot change behavior.
     static let defaultTimeoutSeconds = 600
 
     var cmd: String
-    /// Seconds. Reserved for v2 — see `defaultTimeoutSeconds` above.
+    /// Seconds. Reserved until every execution path enforces the same bound.
     var timeout: Int?
     var cwd: String?
 

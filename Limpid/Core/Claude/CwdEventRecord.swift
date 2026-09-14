@@ -1,6 +1,6 @@
 // CwdEventRecord.swift
-// Limpid — on-disk shape of a `CwdChanged` hook event written by
-// `Limpid/Resources/claude-shim/limpid-hook`. Each Claude pane keeps
+// Limpid — on-disk shape of a `CwdChanged` hook event written by the
+// selected Claude hook receiver. Each Claude pane keeps
 // a single `<pane>.cwd.json` that is overwritten on every cwd
 // transition; `CwdEventTracker` watches the directory and routes
 // fresh records to `WorktreeMoveSuggester`.

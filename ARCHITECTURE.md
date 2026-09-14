@@ -24,7 +24,11 @@ AgentIntegrationService/
   Shared/       role-specific XPC contracts, identifiers, and signing policy
   Resources/    Debug and Release LaunchAgent property lists
 rust/
-  limpid-agent-core/      provider-neutral approval state machine
+  limpid-agent-model/     portable provider-neutral events and records
+  limpid-agent-core/      provider-neutral lifecycle and approval rules
+  limpid-agent-hook/      hook runtime, file writes, and provider registry
+  limpid-provider-claude/ Claude adapter and approval translation
+  limpid-provider-codex/  Codex adapter and approval translation
   limpid-agent-protocol/  versioned wire messages and authenticated sessions
   limpid-rust-bridge/     Rust entry points exposed through a stable C ABI
 ```
@@ -210,13 +214,19 @@ membership (including linked windows), and `TmuxPanePresence` joins clients to
 surface ttys. Unresolved tmux records never fall back to a launch pane or saved
 restore binding. `AgentRuntimePresentation` retains each invocation through
 notification and Attention processing; badges are only the final reduction.
-Native resume hints remain pane-scoped but carry the owning run ID; hooks and
-cleanup coordinate through `AgentFileLock` / macOS `lockf`. tmux hooks do not
-overwrite native resume hints. Cwd event stores still remain pane-scoped. All keep
-their own tighter config — they write tiny records on the hot path and the shim
-writes them in parallel from shell.
+Native resume hints remain pane-scoped but carry the owning run ID. tmux hooks
+do not overwrite native resume hints. Cwd event stores still remain pane-scoped.
+All keep their own tighter config — they write tiny records on the hot path, and
+several hooks can be in flight at once. Records are written by the Rust hook
+runtime inside the signed Hook Helper (`hook <provider> [worktree]`), which the
+bundled `limpid-hook` wrappers exec; `LIMPID_AGENT_HOOK_BACKEND` selects the
+backend and defaults to `rust` (`AgentHookBackend.current`), with the shell
+receivers kept as `*.legacy` for one release as the rollback path. Writers
+coordinate on each record's `.flock` sidecar: the Rust runtime takes it with
+`File::try_lock` and the app with `AgentFileLock`, and since both are `flock(2)`
+on the same sidecar inode they exclude each other.
 
-Forward-compat shape (Phase 4-15 of relaunch):
+Forward-compatible persistence:
 
 - Defensive `init(from:)` for every `Codable` enum with an
   `unknownFallback` case (`Tab.Kind`, `ConfirmPolicy`, `ContainerID`)
@@ -259,10 +269,15 @@ reading a newer file degrades cleanly.
   `category`, `iconName`, `ghosttyAction`), menu bar `Button` in
   `LimpidApp.commands`, case in
   `TabActions.dispatch<Category>Action`.
-- **New agent CLI** — record + store typealias under `Core/<Agent>/`,
-  `AgentSpec` conformer in `Core/Agent/<Agent>Agent.swift`, tab fields
-  on `Tab.swift`, tracker typealiases, shim under `Resources/<agent>-shim/`,
-  trackers instantiated in `AppState.init`. ~200-300 LOC.
+- **New agent CLI** — add a provider crate at
+  `rust/limpid-provider-<agent>/`, recorded fixtures under
+  `rust/fixtures/<agent>/`, and an adapter entry in the hook registry. The
+  application projection still runs in Swift, so also add a record and store
+  typealias under `Core/<Agent>/`, an `AgentSpec` conformer in
+  `Core/Agent/<Agent>Agent.swift`, tab fields in `Tab.swift`, tracker
+  typealiases, a shim under `Resources/<agent>-shim/`, and tracker instances in
+  `AppState.init`. When projection moves to Rust, the per-provider Swift
+  registration points can be removed.
 
 ---
 

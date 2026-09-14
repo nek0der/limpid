@@ -108,21 +108,17 @@ targets:
     preBuildScripts:
       - name: Build Rust bridge
         script: '"$SRCROOT/scripts/build-rust-bridge.sh"'
+        # Cargo owns the complete Rust dependency graph. Invoke it on every
+        # Xcode build so adding a module cannot leave a stale static library;
+        # Cargo's incremental check keeps unchanged builds fast. Because the
+        # phase never skips, listing Rust sources here would not change when
+        # it runs; the inputs below only describe what the script itself reads.
         basedOnDependencyAnalysis: false
         inputFiles:
           - $(SRCROOT)/Cargo.toml
           - $(SRCROOT)/Cargo.lock
           - $(SRCROOT)/rust-toolchain.toml
           - $(SRCROOT)/scripts/build-rust-bridge.sh
-          - $(SRCROOT)/rust/limpid-agent-core/Cargo.toml
-          - $(SRCROOT)/rust/limpid-agent-core/src/lib.rs
-          - $(SRCROOT)/rust/limpid-agent-core/src/approval.rs
-          - $(SRCROOT)/rust/limpid-agent-protocol/Cargo.toml
-          - $(SRCROOT)/rust/limpid-agent-protocol/src/lib.rs
-          - $(SRCROOT)/rust/limpid-agent-protocol/src/service.rs
-          - $(SRCROOT)/rust/limpid-agent-protocol/src/wire.rs
-          - $(SRCROOT)/rust/limpid-rust-bridge/Cargo.toml
-          - $(SRCROOT)/rust/limpid-rust-bridge/src/lib.rs
         outputFiles:
           - $(DERIVED_FILE_DIR)/limpid-rust/liblimpid_rust_bridge.a
 
@@ -155,6 +151,7 @@ targets:
     sources:
       - path: AgentIntegrationService/HookHelper
       - path: AgentIntegrationService/Shared
+      - path: AgentIntegrationService/ProviderBridge
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationHookHelper
@@ -163,6 +160,15 @@ targets:
         ENABLE_DEBUG_DYLIB: NO
         # See AgentIntegrationService: keep the archive free of standalone tools.
         SKIP_INSTALL: YES
+        # The helper links the Rust bridge for provider translation, so it
+        # carries the same Cargo phase and sandbox exception as the service.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - $(DERIVED_FILE_DIR)/limpid-rust
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -llimpid_rust_bridge
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationHookHelper.dev
@@ -171,6 +177,18 @@ targets:
           OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier dev.limpid.AgentIntegrationHookHelper"
     dependencies:
       - sdk: Security.framework
+    preBuildScripts:
+      - name: Build Rust bridge
+        script: '"$SRCROOT/scripts/build-rust-bridge.sh"'
+        # Same phase as the service target; see the comment there.
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/Cargo.toml
+          - $(SRCROOT)/Cargo.lock
+          - $(SRCROOT)/rust-toolchain.toml
+          - $(SRCROOT)/scripts/build-rust-bridge.sh
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/limpid-rust/liblimpid_rust_bridge.a
 
   AgentIntegrationControllerProbe:
     type: tool
@@ -207,6 +225,7 @@ targets:
           - "Resources/codex-shim"
           - "Resources/agent-shim"
       - path: AgentIntegrationService/Shared
+      - path: AgentIntegrationService/ProviderBridge
       - path: AgentIntegrationService/Service/RustApprovalHost.swift
       - path: AgentIntegrationService/Resources/dev.limpid.agent-integration-service.plist
         buildPhase:
@@ -390,15 +409,15 @@ targets:
         script: '"$SRCROOT/scripts/build-rust-bridge.sh"'
         # Cargo owns the complete Rust dependency graph. Invoke it on every
         # Xcode build so adding a module cannot leave a stale static library;
-        # Cargo's incremental check keeps unchanged builds fast.
+        # Cargo's incremental check keeps unchanged builds fast. Because the
+        # phase never skips, listing Rust sources here would not change when
+        # it runs; the inputs below only describe what the script itself reads.
         basedOnDependencyAnalysis: false
         inputFiles:
           - $(SRCROOT)/Cargo.toml
           - $(SRCROOT)/Cargo.lock
           - $(SRCROOT)/rust-toolchain.toml
           - $(SRCROOT)/scripts/build-rust-bridge.sh
-          - $(SRCROOT)/rust/limpid-rust-bridge/Cargo.toml
-          - $(SRCROOT)/rust/limpid-rust-bridge/src/lib.rs
         outputFiles:
           - $(DERIVED_FILE_DIR)/limpid-rust/liblimpid_rust_bridge.a
 

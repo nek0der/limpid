@@ -1,8 +1,8 @@
 // ClaudeSessionRecord.swift
 // Limpid — on-disk model for one persisted Claude Code session,
-// written by `Limpid/Resources/claude-shim/limpid-hook` and consumed
-// by `ClaudeSessionStore`. One record per split-tree leaf
-// (= `LIMPID_PANE_ID`); the hook overwrites the file on
+// written by the receiver selected by `claude-shim/limpid-hook` and
+// consumed by `ClaudeSessionStore`. One record per split-tree leaf
+// (= `LIMPID_PANE_ID`); the receiver overwrites the file on
 // SessionStart so the stored sessionId is captured up front, and
 // drops it on SessionEnd when the user gracefully exited Claude.
 

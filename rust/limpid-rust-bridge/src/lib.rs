@@ -1,6 +1,13 @@
 //! Stable C ABI boundary between Limpid's Swift application and Rust core.
 
+mod providers;
 mod title;
+
+pub use providers::{
+    LIMPID_HOOK_KIND_LIFECYCLE, LIMPID_HOOK_KIND_WORKTREE, limpid_hook_run_v1,
+    limpid_provider_approval_output_v1, limpid_provider_approval_request_v1,
+    limpid_provider_result,
+};
 
 use limpid_agent_core::{Principal, RunId};
 use limpid_agent_protocol::{ApprovalService, ApprovalSession, ExchangeError};
@@ -23,26 +30,47 @@ enum TitleCandidateKind {
 ///
 /// Additive symbols keep the current version. We increment it only when an
 /// existing exported contract must change incompatibly.
-pub const ABI_VERSION: u32 = 2;
+pub(crate) const ABI_VERSION: u32 = 2;
 
-/// The discrete approval exchange completed and returned one JSON response.
-pub const APPROVAL_OK: i32 = 0;
-/// A required pointer was null.
-pub const APPROVAL_NULL_POINTER: i32 = 1;
-/// A UUID argument did not have its required 16-byte representation.
-pub const APPROVAL_INVALID_UUID: i32 = 2;
-/// The input exceeded the protocol's bounded request size.
-pub const APPROVAL_INPUT_TOO_LARGE: i32 = 3;
-/// The input was not UTF-8.
-pub const APPROVAL_INVALID_UTF8: i32 = 4;
-/// The input was not one valid `WireRequest` JSON document.
-pub const APPROVAL_INVALID_JSON: i32 = 5;
-/// The response could not remain within the protocol's bounded size.
-pub const APPROVAL_RESPONSE_TOO_LARGE: i32 = 6;
-/// The service could not safely process the operation.
-pub const APPROVAL_INTERNAL: i32 = 7;
-/// Rust caught a panic at the FFI boundary.
-pub const APPROVAL_PANIC: i32 = 8;
+/// Status codes returned by the approval ABI functions.
+///
+/// Every approval function reports its status as a plain `int32_t` so the C
+/// signature never depends on the enum's storage size; the enum exists so the
+/// generated header names each code for Swift.
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub enum limpid_approval_result {
+    /// The discrete approval exchange completed and returned one JSON response.
+    LIMPID_APPROVAL_OK = 0,
+    /// A required pointer was null.
+    LIMPID_APPROVAL_NULL_POINTER = 1,
+    /// A UUID argument did not have its required 16-byte representation.
+    LIMPID_APPROVAL_INVALID_UUID = 2,
+    /// The input exceeded the protocol's bounded request size.
+    LIMPID_APPROVAL_INPUT_TOO_LARGE = 3,
+    /// The input was not UTF-8.
+    LIMPID_APPROVAL_INVALID_UTF8 = 4,
+    /// The input was not one valid `WireRequest` JSON document.
+    LIMPID_APPROVAL_INVALID_JSON = 5,
+    /// The response could not remain within the protocol's bounded size.
+    LIMPID_APPROVAL_RESPONSE_TOO_LARGE = 6,
+    /// The service could not safely process the operation.
+    LIMPID_APPROVAL_INTERNAL = 7,
+    /// Rust caught a panic at the FFI boundary.
+    LIMPID_APPROVAL_PANIC = 8,
+}
+
+const APPROVAL_OK: i32 = limpid_approval_result::LIMPID_APPROVAL_OK as i32;
+const APPROVAL_NULL_POINTER: i32 = limpid_approval_result::LIMPID_APPROVAL_NULL_POINTER as i32;
+const APPROVAL_INVALID_UUID: i32 = limpid_approval_result::LIMPID_APPROVAL_INVALID_UUID as i32;
+const APPROVAL_INPUT_TOO_LARGE: i32 =
+    limpid_approval_result::LIMPID_APPROVAL_INPUT_TOO_LARGE as i32;
+const APPROVAL_INVALID_UTF8: i32 = limpid_approval_result::LIMPID_APPROVAL_INVALID_UTF8 as i32;
+const APPROVAL_INVALID_JSON: i32 = limpid_approval_result::LIMPID_APPROVAL_INVALID_JSON as i32;
+const APPROVAL_RESPONSE_TOO_LARGE: i32 =
+    limpid_approval_result::LIMPID_APPROVAL_RESPONSE_TOO_LARGE as i32;
+const APPROVAL_INTERNAL: i32 = limpid_approval_result::LIMPID_APPROVAL_INTERNAL as i32;
+const APPROVAL_PANIC: i32 = limpid_approval_result::LIMPID_APPROVAL_PANIC as i32;
 
 /// Opaque service handle. Multiple sessions share its approval state.
 #[allow(non_camel_case_types)]
@@ -64,23 +92,40 @@ pub struct limpid_approval_bytes_v1 {
     pub len: usize,
 }
 
-/// The title was written to the caller-owned output buffer.
-pub const TITLE_RESOLVE_OK: i32 = 0;
-/// Every candidate was absent or blank.
-pub const TITLE_RESOLVE_EMPTY: i32 = 1;
-/// At least one candidate was not valid UTF-8.
-pub const TITLE_RESOLVE_INVALID_UTF8: i32 = 2;
-/// At least one candidate exceeded the protocol limit.
-pub const TITLE_RESOLVE_TOO_LONG: i32 = 3;
-/// The output buffer was smaller than the selected title.
-pub const TITLE_RESOLVE_BUFFER_TOO_SMALL: i32 = 4;
-/// A non-empty input or output used a null pointer.
-pub const TITLE_RESOLVE_NULL_POINTER: i32 = 5;
+/// Status codes returned by `limpid_resolve_title_v1`, reported as `int32_t`
+/// for the same reason as `limpid_approval_result`.
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub enum limpid_title_resolve_result {
+    /// The title was written to the caller-owned output buffer.
+    LIMPID_TITLE_RESOLVE_OK = 0,
+    /// Every candidate was absent or blank.
+    LIMPID_TITLE_RESOLVE_EMPTY = 1,
+    /// At least one candidate was not valid UTF-8.
+    LIMPID_TITLE_RESOLVE_INVALID_UTF8 = 2,
+    /// At least one candidate exceeded the protocol limit.
+    LIMPID_TITLE_RESOLVE_TOO_LONG = 3,
+    /// The output buffer was smaller than the selected title.
+    LIMPID_TITLE_RESOLVE_BUFFER_TOO_SMALL = 4,
+    /// A non-empty input or output used a null pointer.
+    LIMPID_TITLE_RESOLVE_NULL_POINTER = 5,
+}
 
-/// Returns the ABI version understood by this library.
-///
-/// `no_mangle` is required so Swift can link this symbol through the C header.
-/// The function accepts no pointers and performs no unsafe operations.
+const TITLE_RESOLVE_OK: i32 = limpid_title_resolve_result::LIMPID_TITLE_RESOLVE_OK as i32;
+const TITLE_RESOLVE_EMPTY: i32 = limpid_title_resolve_result::LIMPID_TITLE_RESOLVE_EMPTY as i32;
+const TITLE_RESOLVE_INVALID_UTF8: i32 =
+    limpid_title_resolve_result::LIMPID_TITLE_RESOLVE_INVALID_UTF8 as i32;
+const TITLE_RESOLVE_TOO_LONG: i32 =
+    limpid_title_resolve_result::LIMPID_TITLE_RESOLVE_TOO_LONG as i32;
+const TITLE_RESOLVE_BUFFER_TOO_SMALL: i32 =
+    limpid_title_resolve_result::LIMPID_TITLE_RESOLVE_BUFFER_TOO_SMALL as i32;
+const TITLE_RESOLVE_NULL_POINTER: i32 =
+    limpid_title_resolve_result::LIMPID_TITLE_RESOLVE_NULL_POINTER as i32;
+
+/// Returns the bridge-wide compatibility version. Adding a new symbol does not
+/// increment it; only an incompatible change to an existing contract does.
+// `no_mangle` is required so Swift can link this symbol through the C header.
+// The function accepts no pointers and performs no unsafe operations.
 #[unsafe(no_mangle)]
 pub extern "C" fn limpid_rust_abi_version() -> u32 {
     ABI_VERSION
@@ -88,6 +133,10 @@ pub extern "C" fn limpid_rust_abi_version() -> u32 {
 
 /// Creates an approval service that can be shared by independently
 /// authenticated XPC connections.
+///
+/// A service shares state among independent host-authenticated sessions. The
+/// caller must free every session before freeing its service. Calls on
+/// separate sessions may run concurrently; each session serializes its own use.
 #[unsafe(no_mangle)]
 pub extern "C" fn limpid_approval_service_create_v1(
     maximum_records: usize,
@@ -117,7 +166,7 @@ pub unsafe extern "C" fn limpid_approval_service_free_v1(service: *mut limpid_ap
 }
 
 /// Creates a requester session whose run ID is bound by the authenticated
-/// host, never taken from JSON.
+/// host, never taken from JSON. `run_id` is exactly 16 raw UUID bytes.
 ///
 /// # Safety
 ///
@@ -174,7 +223,11 @@ pub unsafe extern "C" fn limpid_approval_session_free_v1(session: *mut limpid_ap
 }
 
 /// Exchanges exactly one complete `WireRequest` JSON document for exactly one
-/// `WireResponse` JSON document. It deliberately does not add stream framing.
+/// `WireResponse` JSON document. It deliberately does not add stream framing:
+/// one XPC `Data` request maps to one request document and one response `Data`
+/// maps to one response document. On success, ownership of `output->data`
+/// transfers to the caller, which must release it with
+/// `limpid_approval_bytes_free_v1`.
 ///
 /// # Safety
 ///
@@ -218,13 +271,15 @@ pub unsafe extern "C" fn limpid_approval_session_exchange_v1(
     .unwrap_or_else(|status| status)
 }
 
-/// Releases response bytes returned by `limpid_approval_session_exchange_v1`.
-/// Passing null with a zero length is a no-op.
+/// Releases bytes this library handed out through an `out`/`out_len` pair:
+/// `limpid_approval_session_exchange_v1`, the `limpid_provider_*_v1`
+/// translations, and `limpid_hook_run_v1`. Passing null with a zero length
+/// is a no-op.
 ///
 /// # Safety
 ///
-/// The pair must be null/zero or exactly the pair returned by a successful
-/// exchange and not previously freed.
+/// The pair must be null/zero or exactly the pair returned by one successful
+/// call and not previously freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn limpid_approval_bytes_free_v1(data: *mut u8, len: usize) {
     if !data.is_null() {

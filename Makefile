@@ -1,9 +1,10 @@
-.PHONY: build build-release run dev test rust-test review-core fmt rust-fmt lint rust-lint dmg xcodegen ghostty screenshot clean help
+.PHONY: build build-release run dev test rust-test review-core fmt rust-fmt lint rust-lint rust-header dmg xcodegen ghostty screenshot clean help
 
 SCHEME  := Limpid
 PROJECT := Limpid.xcodeproj
 PBXPROJ := $(PROJECT)/project.pbxproj
 CONFIG  := Debug
+BUILD_DESTINATION ?= generic/platform=macOS
 
 # Resolve the built .app path from xcodebuild itself so we don't guess the
 # DerivedData hash or the Dev/Release product name.
@@ -12,19 +13,20 @@ APP_PATH = $(shell xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configurati
 
 help:
 	@echo "Limpid — common targets"
-	@echo "  make build     Build Debug"
-	@echo "  make run       Launch the built app"
-	@echo "  make dev       build + run"
-	@echo "  make test      Run XCTest / Swift Testing suites"
-	@echo "  make rust-test Run Rust workspace tests"
-	@echo "  make review-core  Run the review scenarios without building the app"
-	@echo "  make fmt       Auto-format with SwiftFormat"
-	@echo "  make lint      Lint Swift and Rust sources, mirrors CI"
-	@echo "  make dmg       Package a release DMG"
-	@echo "  make xcodegen  Regenerate Limpid.xcodeproj from project.yml"
-	@echo "  make ghostty   Build vendored libghostty"
-	@echo "  make screenshot Regenerate .github/assets/hero.png (demo mode)"
-	@echo "  make clean     Remove DerivedData for this project"
+	@echo "  make build       Build Debug"
+	@echo "  make run         Launch the built app"
+	@echo "  make dev         build + run"
+	@echo "  make test        Run XCTest / Swift Testing suites"
+	@echo "  make rust-test   Run Rust workspace tests"
+	@echo "  make review-core Run the review scenarios without building the app"
+	@echo "  make fmt         Auto-format with SwiftFormat"
+	@echo "  make lint        Lint Swift and Rust sources, mirrors CI"
+	@echo "  make rust-header Regenerate the bridge C header and fail if it drifted"
+	@echo "  make dmg         Package a release DMG"
+	@echo "  make xcodegen    Regenerate Limpid.xcodeproj from project.yml"
+	@echo "  make ghostty     Build vendored libghostty"
+	@echo "  make screenshot  Regenerate .github/assets/hero.png (demo mode)"
+	@echo "  make clean       Remove DerivedData for this project"
 
 # Regenerate the Xcode project when project.yml is newer (or .pbxproj
 # is missing entirely). Anything that depends on `$(PBXPROJ)` picks up
@@ -36,10 +38,12 @@ $(PBXPROJ): project.yml
 	xcodegen
 
 build: $(PBXPROJ)
-	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) build
+	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) \
+		-destination '$(BUILD_DESTINATION)' build
 
 build-release: $(PBXPROJ)
-	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release build
+	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
+		-destination '$(BUILD_DESTINATION)' build
 
 run:
 	@app="$(APP_PATH)"; \
@@ -72,7 +76,14 @@ lint: rust-lint
 	mint run swiftformat --lint .
 	swiftlint lint --strict
 
-rust-lint: rust-fmt
+# The bridge's build script writes the header from the exported Rust items, so
+# a drifted commit shows up as a diff rather than as a Swift link failure.
+rust-header:
+	cargo build --locked --package limpid-rust-bridge
+	@git diff --exit-code -- rust/limpid-rust-bridge/include/limpid_rust_bridge.h \
+		|| { echo "error: the generated header differs from the index; review the diff above and stage the header" >&2; exit 1; }
+
+rust-lint: rust-fmt rust-header
 	cargo clippy --locked --workspace --all-targets -- -D warnings
 
 dmg:

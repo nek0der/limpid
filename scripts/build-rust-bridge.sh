@@ -58,7 +58,11 @@ cargo_bin="$(find_cargo)"
 # name when it queries the compiler or builds the crate.
 cargo_bin_directory="$(dirname "$cargo_bin")"
 export PATH="$cargo_bin_directory:$PATH"
-cargo_target_directory="$DERIVED_FILE_DIR/cargo-target"
+# One Cargo target directory for every Xcode target that links the bridge
+# (app, approval service, hook helper), so a clean build compiles the
+# workspace once; Cargo's own lock serializes the phases when Xcode runs
+# them in parallel. DERIVED_FILE_DIR would give each target its own copy.
+cargo_target_directory="${OBJROOT:-$DERIVED_FILE_DIR}/cargo-target"
 library_output_directory="$DERIVED_FILE_DIR/limpid-rust"
 library_name="liblimpid_rust_bridge.a"
 

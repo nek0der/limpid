@@ -83,6 +83,7 @@ enum ClaudeShimLocator {
         env["LIMPID_SESSIONS_DIR"] = sessionsDirectoryURL.path
         env["LIMPID_AGENT_STATES_DIR"] = agentStatesDirectoryURL.path
         env["LIMPID_CWD_EVENTS_DIR"] = cwdEventsDirectoryURL.path
+        env.merge(AgentHookBackend.environment) { _, backend in backend }
         return env
     }
 }

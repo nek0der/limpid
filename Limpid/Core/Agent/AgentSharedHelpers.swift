@@ -7,9 +7,8 @@
 import Foundation
 
 /// ISO-8601 parsing used by both `ClaudeAgent.makeBadge` and
-/// `CodexAgent.makeBadge`. The hook scripts write `date -u
-/// +"%Y-…%Z"` which round-trips cleanly through the same
-/// `ISO8601DateFormatter` instance.
+/// `CodexAgent.makeBadge`. Both hook backends write UTC instants that
+/// round-trip through the same `ISO8601DateFormatter` instance.
 enum AgentDateParsing {
     static func parseISO8601(_ string: String) -> Date? {
         formatter.date(from: string)

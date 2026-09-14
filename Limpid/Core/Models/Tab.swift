@@ -79,7 +79,7 @@ struct Tab: Codable, Equatable, Identifiable {
     /// membership.
     var container: ContainerID
 
-    /// Per-pane Claude Code session info captured by
+    /// Per-pane Claude Code session info captured by the receiver selected by
     /// `claude-shim/limpid-hook`. Keyed by split-tree leaf UUID
     /// (= `LIMPID_PANE_ID`) so two splits running `claude`
     /// concurrently each remember their own conversation.
@@ -89,7 +89,7 @@ struct Tab: Codable, Equatable, Identifiable {
     var claudeSessions: [UUID: ClaudeSessionInfo] = [:]
 
     /// Per-pane Claude agent lifecycle badges. Mirrors the on-disk
-    /// state records written by `claude-shim/limpid-hook` on every event we
+    /// state records written by the selected Claude receiver on every event we
     /// subscribe to (SessionStart / UserPromptSubmit / PreToolUse /
     /// Notification / PreCompact / Stop / StopFailure / SessionEnd).
     /// `ClaudeAgentStateTracker` keeps this in sync with disk via
@@ -97,7 +97,7 @@ struct Tab: Codable, Equatable, Identifiable {
     /// status icons. Optional default = `[:]` for backward compat.
     var claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:]
 
-    /// Per-pane Codex session info captured by
+    /// Per-pane Codex session info captured by the receiver selected by
     /// `codex-shim/limpid-hook`. Mirror of `claudeSessions` for
     /// the Codex CLI. `CodexSessionTracker` reconciles this map with
     /// the on-disk records at launch.
@@ -105,8 +105,8 @@ struct Tab: Codable, Equatable, Identifiable {
 
     /// Per-pane Codex agent lifecycle badges. Mirror of
     /// `claudeAgentBadges` for the Codex CLI. Populated by
-    /// `CodexAgentStateTracker` from on-disk state records written by
-    /// `codex-shim/limpid-hook` on every subscribed hook event.
+    /// `CodexAgentStateTracker` from on-disk state records written by the
+    /// selected Codex receiver on every subscribed hook event.
     var codexAgentBadges: [UUID: CodexAgentBadge] = [:]
 
     /// Which tmux session each pane was showing when Limpid last quit,

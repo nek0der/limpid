@@ -36,14 +36,20 @@ struct ClaudeHookScriptTests {
                 // `HOME` is redirected too: the receiver falls back to
                 // `$HOME/Library/...` when the state dir is unset, and a typo
                 // in the env below must not send writes at the real one.
-                process.environment = [
+                process.environment = HookHelperFixture.isolatedEnvironment([
                     "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                     "HOME": dir.path,
+                    // This suite pins the legacy shell receiver's behavior
+                    // until it is removed, so we ask the wrapper for it by
+                    // name instead of relying on the helper being absent
+                    // from the source tree. The cases that exercise the Rust
+                    // backend override this through `extraEnvironment`.
+                    "LIMPID_AGENT_HOOK_BACKEND": "shell",
                     "LIMPID_PANE_ID": paneID,
                     "LIMPID_AGENT_STATES_DIR": states.path,
                     "LIMPID_SESSIONS_DIR": dir.appendingPathComponent("sessions").path,
                     "LIMPID_CWD_EVENTS_DIR": dir.appendingPathComponent("cwd").path
-                ]
+                ])
                 process.environment?.merge(extraEnvironment) { _, new in new }
                 let stdin = Pipe()
                 process.standardInput = stdin
@@ -310,6 +316,9 @@ struct ClaudeHookScriptTests {
             process.environment = [
                 "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                 "HOME": dir.path,
+                // The pid walk belongs to the legacy receiver, so we name
+                // the backend here for the same reason the harness does.
+                "LIMPID_AGENT_HOOK_BACKEND": "shell",
                 "LIMPID_PANE_ID": paneID,
                 "LIMPID_AGENT_STATES_DIR": states.path,
                 "LIMPID_SESSIONS_DIR": dir.appendingPathComponent("sessions").path,
@@ -347,6 +356,197 @@ struct ClaudeHookScriptTests {
     @Test("leaves the hosted flag off outside tmux")
     func outsideTmux_omitsTheHostedFlag() throws {
         #expect(try runHooks(midTurn())?["isTmuxHosted"] == nil)
+    }
+
+    /// Fixture recording has to keep the bytes the agent sent, not the
+    /// receiver's reading of them, so this compares the file against the
+    /// stdin bytes rather than against the parsed record. The transcript
+    /// copy is what the title rules are later replayed from.
+    @Test("records raw payloads and the transcript when LIMPID_HOOK_RECORD_DIR is set")
+    func recordDirectory_keepsRawPayloadsInOrder() throws {
+        try withTempDir { recordRoot in
+            let recordDir = recordRoot.appendingPathComponent("record")
+            try FileManager.default.createDirectory(at: recordDir, withIntermediateDirectories: true)
+            let transcript = recordRoot.appendingPathComponent("transcript.jsonl")
+            let transcriptBytes = Data("{\"type\":\"ai-title\",\"aiTitle\":\"Fixture\"}\n".utf8)
+            try transcriptBytes.write(to: transcript)
+            let payloads = [
+                payload("SessionStart", extra: ["transcript_path": transcript.path]),
+                payload("UserPromptSubmit", extra: ["prompt": "count \"quoted\" \\ things"])
+            ]
+
+            _ = try runHooks(payloads, extraEnvironment: ["LIMPID_HOOK_RECORD_DIR": recordDir.path])
+
+            let recorded = try FileManager.default.contentsOfDirectory(atPath: recordDir.path).sorted()
+            #expect(recorded == [
+                "0000-SessionStart.json",
+                "0000-SessionStart.transcript.jsonl",
+                "0001-UserPromptSubmit.json"
+            ])
+            for (index, name) in ["0000-SessionStart.json", "0001-UserPromptSubmit.json"].enumerated() {
+                let bytes = try Data(contentsOf: recordDir.appendingPathComponent(name))
+                let sent = try JSONSerialization.data(withJSONObject: payloads[index])
+                #expect(bytes.count == sent.count, "\(name) was rewritten rather than copied")
+                let parsed = try JSONSerialization.jsonObject(with: bytes) as? NSDictionary
+                #expect(parsed == payloads[index] as NSDictionary)
+            }
+            let copiedTranscript = try Data(
+                contentsOf: recordDir.appendingPathComponent("0000-SessionStart.transcript.jsonl")
+            )
+            #expect(copiedTranscript == transcriptBytes)
+        }
+    }
+
+    @Test("leaves no recording behind when the directory does not exist")
+    func recordDirectory_missing_isIgnored() throws {
+        try withTempDir { recordRoot in
+            let missing = recordRoot.appendingPathComponent("absent")
+            let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_HOOK_RECORD_DIR": missing.path])
+            #expect(record?["state"] as? String == "running")
+            #expect(!FileManager.default.fileExists(atPath: missing.path))
+        }
+    }
+
+    /// The bundled helper beside the test host; the Rust backend execs it.
+    private static var helperPath: String? {
+        HookHelperFixture.helperURL?.path
+    }
+
+    /// Captures each record rather than only the final file so one payload
+    /// sequence can compare the two receivers' transitions event by event.
+    private func replayRecords(
+        _ payloads: [[String: Any]],
+        backend: String
+    ) throws -> [[String: Any]] {
+        var environment = [
+            "LIMPID_AGENT_HOOK_BACKEND": backend,
+            "LIMPID_TURN_SNAPSHOT": "0"
+        ]
+        if backend == "rust" {
+            let helper = try #require(Self.helperPath)
+            environment["LIMPID_HOOK_HELPER"] = helper
+        }
+        var records = [[String: Any]]()
+        _ = try runHooks(payloads, extraEnvironment: environment) { _, states, paneID, _ in
+            let url = states.appendingPathComponent("\(paneID).state.json")
+            let data = try Data(contentsOf: url)
+            let record = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            records.append(record)
+        }
+        return records
+    }
+
+    /// Version 2 writes empty strings for absent text while version 3 writes
+    /// null. The Swift reader gives those forms the same meaning.
+    private func optionalText(_ record: [String: Any], _ key: String) -> String? {
+        guard let text = record[key] as? String, !text.isEmpty else { return nil }
+        return text
+    }
+
+    /// The wrapper's only job is to pick the receiver; with the Rust
+    /// backend the same payloads must land in a version 3 record written by
+    /// the helper, keyed the same way the shell receiver keyed it.
+    @Test("runs the Rust backend through the helper when the flag says so")
+    func rustBackend_writesAVersionThreeRecord() throws {
+        let helper = try #require(Self.helperPath)
+        let record = try #require(try runHooks(midTurn(), extraEnvironment: [
+            "LIMPID_AGENT_HOOK_BACKEND": "rust",
+            "LIMPID_HOOK_HELPER": helper,
+            "LIMPID_TURN_SNAPSHOT": "0"
+        ]))
+        #expect(record["schemaVersion"] as? Int == 3)
+        #expect(record["state"] as? String == "running")
+        #expect(record["revision"] as? Int == 2)
+        #expect(record["firstPrompt"] as? String == "count to 200")
+        #expect(record["lastHookEvent"] as? String == "prompt_submitted")
+    }
+
+    @Test("falls back to the shell receiver when the helper is missing")
+    func rustBackend_withoutHelper_fallsBackToShell() throws {
+        let record = try #require(try runHooks(midTurn(), extraEnvironment: [
+            "LIMPID_AGENT_HOOK_BACKEND": "rust",
+            "LIMPID_HOOK_HELPER": "/nonexistent/AgentIntegrationHookHelper"
+        ]))
+        #expect(record["schemaVersion"] as? Int == 2)
+        #expect(record["state"] as? String == "running")
+    }
+
+    @Test("keeps the shell receiver reachable as the rollback path")
+    func shellBackend_writesAVersionTwoRecord() throws {
+        let helper = try #require(Self.helperPath)
+        let record = try #require(try runHooks(midTurn(), extraEnvironment: [
+            "LIMPID_AGENT_HOOK_BACKEND": "shell",
+            "LIMPID_HOOK_HELPER": helper
+        ]))
+        #expect(record["schemaVersion"] as? Int == 2)
+        #expect(record["lastHookEvent"] as? String == "UserPromptSubmit")
+    }
+
+    @Test("keeps shell and Rust lifecycle transitions semantically equivalent")
+    func shellAndRustBackends_replayTheSameLifecycleSemantics() throws {
+        let payloads = [
+            payload("SessionStart", extra: ["source": "startup", "session_title": "Parity title"]),
+            payload("UserPromptSubmit", extra: ["prompt": "Opening prompt"]),
+            payload("PreToolUse", extra: [
+                "tool_name": "AskUserQuestion",
+                "tool_input": ["questions": [["question": "Choose a branch"]]]
+            ]),
+            payload("PreCompact", extra: ["current_token_count": 42]),
+            payload("Stop"),
+            payload("StopFailure", extra: ["error": "overloaded"]),
+            payload("SessionEnd", extra: ["reason": "other"]),
+            payload("SessionStart", extra: ["source": "startup", "session_title": "Replacement title"]),
+            payload("UserPromptSubmit", extra: ["prompt": "Second prompt"]),
+            payload("SessionStart", extra: ["source": "compact"])
+        ]
+        let shell = try replayRecords(payloads, backend: "shell")
+        let rust = try replayRecords(payloads, backend: "rust")
+        let states = [
+            "idle", "running", "needsInput", "compacting", "finished",
+            "error", "unknown", "idle", "running", "idle"
+        ]
+        let shellEvents = [
+            "SessionStart", "UserPromptSubmit", "PreToolUse", "PreCompact", "Stop",
+            "StopFailure", "SessionEnd", "SessionStart", "UserPromptSubmit", "SessionStart"
+        ]
+        let rustEvents = [
+            "session_started", "prompt_submitted", "waiting_for_input", "compacting", "turn_finished",
+            "failed", "session_ended", "session_started", "prompt_submitted", "session_started"
+        ]
+
+        #expect(shell.count == payloads.count)
+        #expect(rust.count == payloads.count)
+        for index in payloads.indices {
+            #expect(shell[index]["schemaVersion"] as? Int == 2)
+            #expect(rust[index]["schemaVersion"] as? Int == 3)
+            #expect(shell[index]["state"] as? String == states[index])
+            #expect(rust[index]["state"] as? String == states[index])
+            #expect(shell[index]["revision"] as? Int == index + 1)
+            #expect(rust[index]["revision"] as? Int == index + 1)
+            #expect(shell[index]["stateEpisodeToken"] as? String == String(index + 1))
+            #expect(rust[index]["stateEpisodeToken"] as? String == String(index + 1))
+            #expect(shell[index]["lastHookEvent"] as? String == shellEvents[index])
+            #expect(rust[index]["lastHookEvent"] as? String == rustEvents[index])
+        }
+
+        for index in [0, 1, 2, 3, 4, 7, 8, 9] {
+            #expect(optionalText(shell[index], "detail") == optionalText(rust[index], "detail"))
+            #expect(optionalText(shell[index], "lastPrompt") == optionalText(rust[index], "lastPrompt"))
+            #expect(optionalText(shell[index], "firstPrompt") == optionalText(rust[index], "firstPrompt"))
+            #expect(optionalText(shell[index], "providerSessionTitle") == optionalText(rust[index], "providerSessionTitle"))
+        }
+        #expect(shell[3]["contextTokens"] as? Int == 42)
+        #expect(rust[3]["contextTokens"] as? Int == 42)
+        #expect(optionalText(rust[4], "runStartedAt") == nil)
+        #expect(optionalText(rust[5], "runStartedAt") == nil)
+        #expect(optionalText(rust[6], "runStartedAt") == nil)
+        #expect(optionalText(rust[5], "detail") == "overloaded")
+        #expect(optionalText(rust[7], "firstPrompt") == nil)
+        #expect(optionalText(rust[7], "providerGeneratedTitle") == nil)
+        #expect(optionalText(rust[7], "providerSessionTitle") == "Replacement title")
+        #expect(optionalText(rust[9], "firstPrompt") == "Second prompt")
+        #expect(optionalText(rust[9], "providerSessionTitle") == "Replacement title")
+        #expect(rust[9]["sessionStartedAt"] as? String == rust[8]["sessionStartedAt"] as? String)
     }
 
     @Test("keys one invocation by run id and increments its revision")

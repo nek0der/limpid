@@ -1,6 +1,6 @@
 // PaneStore.swift
 // Limpid — generic read / write / scan / cleanup for the per-pane
-// directory stores written by the Claude and Codex shim hooks. Five
+// directory stores written by the Claude and Codex hook receivers. Five
 // stores used to carry near-identical copies of `record(forPaneID:)`
 // / `allRecords()` / `save(_:)` / `delete(paneID:)` /
 // `cleanup(keeping:)` plus a shared `Entry` struct for the mtime cap;
@@ -18,10 +18,10 @@
 import Foundation
 import OSLog
 
-/// On-disk record that knows which pane it belongs to. The hook
-/// scripts write the `paneId` as a String (shell-friendly UUID round
-/// trip) and `PaneStore.allRecords()` cross-checks it against the
-/// filename so a tampered or partial write doesn't slip through.
+/// On-disk record that knows which pane it belongs to. Hook receivers write
+/// the `paneId` as a String (stable across the Rust and legacy backends) and
+/// `PaneStore.allRecords()` cross-checks it against the filename so a
+/// tampered or partial write doesn't slip through.
 protocol PaneScopedRecord: Codable {
     var paneId: String { get }
 }
@@ -99,7 +99,7 @@ final class PaneStore<Record: PaneScopedRecord> {
     // MARK: - Write / delete
 
     /// Persist `record` for its `paneId`. Used by Swift-side callers
-    /// (the hook script writes the same file shape on its own path).
+    /// (hook receivers write the same file shape on their own path).
     /// Atomic via `SecureFileWrite.writeAtomic`.
     func save(_ record: Record) throws {
         guard UUID(uuidString: record.paneId) != nil else {

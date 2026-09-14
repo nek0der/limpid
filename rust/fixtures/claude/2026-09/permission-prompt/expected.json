@@ -1,0 +1,120 @@
+[
+  [
+    {
+      "reason": "other",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ],
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for permission-prompt>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: touch created.txt",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "name": "Notification",
+      "payload": {
+        "cwd": "/tmp/example",
+        "hook_event_name": "Notification",
+        "message": "Claude is waiting for your input",
+        "notification_type": "idle_prompt",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "scratchpad_dir": "/tmp/example",
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+      },
+      "type": "extension"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for permission-prompt>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: printenv HOME",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "name": "PermissionRequest",
+      "payload": {
+        "cwd": "/tmp/example",
+        "effort": {
+          "level": "high"
+        },
+        "hook_event_name": "PermissionRequest",
+        "permission_mode": "default",
+        "permission_suggestions": [
+          {
+            "behavior": "allow",
+            "destination": "localSettings",
+            "rules": [
+              {
+                "ruleContent": "printenv HOME",
+                "toolName": "Bash"
+              }
+            ],
+            "type": "addRules"
+          }
+        ],
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "scratchpad_dir": "/tmp/example",
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "tool_input": {
+          "command": "printenv HOME",
+          "description": "Print the HOME environment variable"
+        },
+        "tool_name": "Bash",
+        "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+      },
+      "type": "extension"
+    }
+  ],
+  [
+    {
+      "detail": "Claude needs your permission",
+      "type": "approval_requested"
+    }
+  ],
+  [
+    {
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "reason": "prompt_input_exit",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ]
+]

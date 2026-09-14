@@ -1,0 +1,13 @@
+{
+  "cwd": "/tmp/example",
+  "effort": {
+    "level": "high"
+  },
+  "error": "server_error",
+  "hook_event_name": "StopFailure",
+  "last_assistant_message": "<last_assistant_message for stop-failure>",
+  "prompt_id": "00000000-0000-4000-8000-000000000002",
+  "scratchpad_dir": "/tmp/example",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+}
