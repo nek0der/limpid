@@ -59,6 +59,63 @@ struct TabTests {
     }
 }
 
+@MainActor
+@Suite("Tab agent maps")
+struct TabAgentMapDecodingTests {
+    private static let pane = "11111111-1111-4111-8111-111111111111"
+
+    /// A tab as a build before the two maps wrote it: one field per provider.
+    private func legacyTab() -> [String: Any] {
+        [
+            "id": UUID().uuidString,
+            "title": "tab",
+            "container": ["kind": "loose"],
+            "splitTree": ["root": ["leaf": ["id": Self.pane]]],
+            "claudeSessions": [Self.pane, ["sessionId": "claude-S", "cwd": "/repo"]],
+            "codexSessions": [Self.pane, ["sessionId": "codex-S", "cwd": "/repo"]],
+            "claudeAgentBadges": [
+                Self.pane,
+                ["state": "running", "updatedAt": 780_000_000.0]
+            ]
+        ]
+    }
+
+    @Test("an older file's per-provider fields are read into the maps")
+    func decode_foldsTheLegacyFields() throws {
+        let data = try JSONSerialization.data(withJSONObject: legacyTab())
+        let tab = try JSONDecoder().decode(Tab.self, from: data)
+        let pane = try #require(UUID(uuidString: Self.pane))
+
+        // Upgrading must not blank the hints the interface is about to draw,
+        // and must not offer one provider's session to another.
+        #expect(tab.agentSessions[.claude]?[pane]?.sessionId == "claude-S")
+        #expect(tab.agentSessions[.codex]?[pane]?.sessionId == "codex-S")
+        #expect(tab.agentBadges[.claude]?[pane]?.state == .running)
+        // A provider the file said nothing about gets no entry, so an empty
+        // reading is never mistaken for one that was taken.
+        #expect(tab.agentBadges[.codex] == nil)
+    }
+
+    @Test("only the current shape is written back")
+    func encode_writesTheMapsOnly() throws {
+        var tab = try JSONDecoder().decode(
+            Tab.self,
+            from: JSONSerialization.data(withJSONObject: legacyTab())
+        )
+        tab.agentBadges[.claude] = [:]
+
+        let encoded = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(tab)
+        ) as? [String: Any]
+        let keys = Set(encoded?.keys ?? [:].keys)
+
+        #expect(keys.contains("agentSessions"))
+        #expect(keys.contains("agentBadges"))
+        #expect(!keys.contains("claudeSessions"))
+        #expect(!keys.contains("codexAgentBadges"))
+    }
+}
+
 @Suite("PaneState")
 struct PaneStateTests {
 

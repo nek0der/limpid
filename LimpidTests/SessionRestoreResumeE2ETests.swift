@@ -35,7 +35,7 @@ struct SessionRestoreResumeE2ETests {
         // swiftlint:disable:next force_try
         let paneID = try! #require(tab.splitTree.allLeafIDs().first)
         session.update(tab.id) {
-            $0.claudeSessions[paneID] = AgentSessionInfo(
+            $0.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(
                 sessionId: sessionId,
                 cwd: cwd
             )
@@ -52,7 +52,7 @@ struct SessionRestoreResumeE2ETests {
         // swiftlint:disable:next force_try
         let paneID = try! #require(tab.splitTree.allLeafIDs().first)
         session.update(tab.id) {
-            $0.codexSessions[paneID] = AgentSessionInfo(
+            $0.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(
                 sessionId: sessionId,
                 cwd: cwd
             )
@@ -147,8 +147,8 @@ struct SessionRestoreResumeE2ETests {
         let tab = session.openTabInActiveScope()
         let paneID = try #require(tab.splitTree.allLeafIDs().first)
         session.update(tab.id) {
-            $0.claudeSessions[paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
-            $0.codexSessions[paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
+            $0.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
+            $0.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
         }
         let snapshot = session.makeSnapshot()
 

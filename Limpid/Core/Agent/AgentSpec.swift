@@ -23,7 +23,7 @@ import Foundation
 // MARK: - Unified Badge
 
 /// In-memory mirror of one pane's agent lifecycle. Lives on
-/// `Tab.claudeAgentBadges` / `Tab.codexAgentBadges` keyed by
+/// `Tab.agentBadges` keyed by provider and then by
 /// split-leaf UUID; the per-pane disk record is the authority and
 /// the projection
 /// rewrites this struct to match on every hook event.
@@ -103,7 +103,7 @@ struct AgentBadge: Codable, Equatable {
 // MARK: - Unified SessionInfo
 
 /// In-memory mirror of one pane's resumable agent session. Lives on
-/// `Tab.claudeSessions` / `Tab.codexSessions` keyed by split-leaf
+/// `Tab.agentSessions` keyed by provider and then by split-leaf
 /// UUID; the per-pane disk record is the authority and bootstrap
 /// rewrites this struct to match.
 ///
@@ -192,11 +192,6 @@ protocol AgentSpec {
     /// Short identifier used in log categories and diagnostic
     /// strings — `"claude"` / `"codex"`.
     static var label: String { get }
-
-    /// Tab → `[UUID: AgentSessionInfo]` the resume command builder reads.
-    /// Each provider points at its own dictionary so the on-disk Tab schema
-    /// stays unchanged.
-    static var sessionsKeyPath: WritableKeyPath<Tab, [UUID: AgentSessionInfo]> { get }
 
     /// Build a unified `AgentBadge` from an on-disk state record.
     /// Each flavor fills in the fields its hook actually populates;

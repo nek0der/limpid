@@ -43,10 +43,8 @@ extension TabActions {
         // id, not nested under Tab), so they follow the leaf id
         // automatically and need no copy / clear step.
         let paneState = sourceTab.paneStates[paneID]
-        let claudeSession = sourceTab.claudeSessions[paneID]
-        let codexSession = sourceTab.codexSessions[paneID]
-        let claudeBadge = sourceTab.claudeAgentBadges[paneID]
-        let codexBadge = sourceTab.codexAgentBadges[paneID]
+        let sessions = sourceTab.agentSessions.compactMapValues { $0[paneID] }
+        let badges = sourceTab.agentBadges.compactMapValues { $0[paneID] }
         let scrollbackPath = sourceTab.scrollbackPaths[paneID]
         let initialCommand = sourceTab.initialCommands[paneID]
         let tmuxBinding = sourceTab.tmuxBindings[paneID]
@@ -62,20 +60,14 @@ extension TabActions {
             if let s = paneState {
                 t.paneStates[paneID] = s
             }
-            if let s = claudeSession {
-                t.claudeSessions[paneID] = s
-            }
-            if let s = codexSession {
-                t.codexSessions[paneID] = s
+            for (provider, hint) in sessions {
+                t.agentSessions[provider, default: [:]][paneID] = hint
             }
             if let s = tmuxBinding {
                 t.tmuxBindings[paneID] = s
             }
-            if let s = claudeBadge {
-                t.claudeAgentBadges[paneID] = s
-            }
-            if let s = codexBadge {
-                t.codexAgentBadges[paneID] = s
+            for (provider, badge) in badges {
+                t.agentBadges[provider, default: [:]][paneID] = badge
             }
             if let s = scrollbackPath {
                 t.scrollbackPaths[paneID] = s
@@ -94,10 +86,10 @@ extension TabActions {
                 t.zoomedLeafID = nil
             }
             t.paneStates.removeValue(forKey: paneID)
-            t.claudeSessions.removeValue(forKey: paneID)
-            t.codexSessions.removeValue(forKey: paneID)
-            t.claudeAgentBadges.removeValue(forKey: paneID)
-            t.codexAgentBadges.removeValue(forKey: paneID)
+            for provider in AgentKind.allCases {
+                t.agentSessions[provider]?.removeValue(forKey: paneID)
+                t.agentBadges[provider]?.removeValue(forKey: paneID)
+            }
             t.scrollbackPaths.removeValue(forKey: paneID)
             t.initialCommands.removeValue(forKey: paneID)
             t.tmuxBindings.removeValue(forKey: paneID)

@@ -413,7 +413,7 @@ final class GhosttyEventCoordinator {
         // (a user-run script, `make test`, etc.) and should reach
         // the user. The freshness window (60s) keeps stale badges
         // from gating unrelated notifications indefinitely.
-        if let badge = owningTab?.claudeAgentBadges[paneID],
+        if let badge = owningTab?.agentBadges[.claude]?[paneID],
            badge.state == .needsInput,
            Date().timeIntervalSince(badge.updatedAt) < 60
         {

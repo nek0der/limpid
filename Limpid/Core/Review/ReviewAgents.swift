@@ -28,9 +28,9 @@ enum ReviewAgents {
     ) -> ReviewDestination? {
         guard let paneID, let tab = session.tab(containing: paneID),
               registry.deliverer(for: paneID) != nil else { return nil }
-        let agent: String? = if tab.claudeSessions[paneID] != nil {
+        let agent: String? = if tab.agentSessions[.claude]?[paneID] != nil {
             "Claude Code"
-        } else if tab.codexSessions[paneID] != nil {
+        } else if tab.agentSessions[.codex]?[paneID] != nil {
             "Codex"
         } else {
             nil
@@ -101,11 +101,12 @@ enum ReviewAgents {
         var badges = attention.allRuntimes
             .filter { $0.paneIDs.contains(paneID) }
             .map(\.badge)
-        if attention.runtimesByKind[.claude] == nil, let badge = tab.claudeAgentBadges[paneID] {
-            badges.append(badge)
-        }
-        if attention.runtimesByKind[.codex] == nil, let badge = tab.codexAgentBadges[paneID] {
-            badges.append(badge)
+        // A provider with no live runtime still has whatever its last record
+        // said, which is what the review matches a turn against.
+        for (provider, byPane) in tab.agentBadges where attention.runtimesByKind[provider] == nil {
+            if let badge = byPane[paneID] {
+                badges.append(badge)
+            }
         }
         let match = badges
             .filter { badge in

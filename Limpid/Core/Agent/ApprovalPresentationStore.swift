@@ -183,8 +183,8 @@ final class ApprovalPresentationStore {
         guard let sessionID = approval.sessionID else { return nil }
         for tab in session.tabs {
             let sessions = switch approval.provider {
-            case .claude: tab.claudeSessions
-            case .codex: tab.codexSessions
+            case .claude: tab.agentSessions[.claude] ?? [:]
+            case .codex: tab.agentSessions[.codex] ?? [:]
             }
             if let paneID = sessions.first(where: { $0.value.sessionId == sessionID })?.key {
                 return (tab.id, paneID)

@@ -182,7 +182,7 @@ struct ReviewContinuityTests {
         let root = "/tmp/turn-review"
         let tabID = try #require(session.activeTabID)
         session.update(tabID) {
-            $0.claudeAgentBadges[paneID] = AgentBadge(
+            $0.agentBadges[.claude, default: [:]][paneID] = AgentBadge(
                 state: .finished,
                 updatedAt: Date(),
                 turnBaseTree: tree,
@@ -225,7 +225,7 @@ struct ReviewContinuityTests {
         #expect(!presentation.isPresented)
 
         session.update(tabID) {
-            $0.claudeAgentBadges[paneID]?.isTmuxHosted = true
+            $0.agentBadges[.claude]?[paneID]?.isTmuxHosted = true
         }
         #expect(ReviewAgents.canReview(
             session: session,
@@ -253,7 +253,7 @@ struct ReviewContinuityTests {
         let tree = String(repeating: "a", count: 40)
 
         session.update(tab.id) {
-            $0.claudeAgentBadges[paneID] = AgentBadge(
+            $0.agentBadges[.claude, default: [:]][paneID] = AgentBadge(
                 state: .finished,
                 updatedAt: Date(),
                 turnBaseTree: tree,
@@ -269,7 +269,7 @@ struct ReviewContinuityTests {
         #expect(!ReviewAgents.canOpenTurn(session: session, paneID: paneID, root: otherRoot))
 
         session.update(tab.id) {
-            $0.claudeAgentBadges[paneID] = AgentBadge(
+            $0.agentBadges[.claude, default: [:]][paneID] = AgentBadge(
                 state: .finished,
                 updatedAt: Date(),
                 turnBaseTree: tree,

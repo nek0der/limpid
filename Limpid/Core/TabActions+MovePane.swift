@@ -34,20 +34,18 @@ extension TabActions {
         if let s = sourceTab.paneStates[paneID] {
             newTab.paneStates[paneID] = s
         }
-        if let s = sourceTab.claudeSessions[paneID] {
-            newTab.claudeSessions[paneID] = s
-        }
-        if let s = sourceTab.codexSessions[paneID] {
-            newTab.codexSessions[paneID] = s
+        for (provider, sessions) in sourceTab.agentSessions {
+            if let hint = sessions[paneID] {
+                newTab.agentSessions[provider, default: [:]][paneID] = hint
+            }
         }
         if let s = sourceTab.tmuxBindings[paneID] {
             newTab.tmuxBindings[paneID] = s
         }
-        if let s = sourceTab.claudeAgentBadges[paneID] {
-            newTab.claudeAgentBadges[paneID] = s
-        }
-        if let s = sourceTab.codexAgentBadges[paneID] {
-            newTab.codexAgentBadges[paneID] = s
+        for (provider, badges) in sourceTab.agentBadges {
+            if let badge = badges[paneID] {
+                newTab.agentBadges[provider, default: [:]][paneID] = badge
+            }
         }
         if let s = sourceTab.scrollbackPaths[paneID] {
             newTab.scrollbackPaths[paneID] = s
@@ -63,10 +61,10 @@ extension TabActions {
                 t.zoomedLeafID = nil
             }
             t.paneStates.removeValue(forKey: paneID)
-            t.claudeSessions.removeValue(forKey: paneID)
-            t.codexSessions.removeValue(forKey: paneID)
-            t.claudeAgentBadges.removeValue(forKey: paneID)
-            t.codexAgentBadges.removeValue(forKey: paneID)
+            for provider in AgentKind.allCases {
+                t.agentSessions[provider]?.removeValue(forKey: paneID)
+                t.agentBadges[provider]?.removeValue(forKey: paneID)
+            }
             t.scrollbackPaths.removeValue(forKey: paneID)
             t.initialCommands.removeValue(forKey: paneID)
             t.tmuxBindings.removeValue(forKey: paneID)

@@ -2,7 +2,7 @@
 // Limpid — on-disk shape of a Codex lifecycle record written by the
 // receiver selected by `codex-shim/limpid-hook` after every relevant
 // hook event. `CodexAgentStateStore` reads / writes; the live
-// `Tab.codexAgentBadges[paneID]` mirror is rebuilt from this struct
+// `Tab.agentBadges[.codex][paneID]` mirror is rebuilt from this struct
 // via the projection.
 
 import Foundation

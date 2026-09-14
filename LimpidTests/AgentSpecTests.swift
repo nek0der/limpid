@@ -14,8 +14,8 @@ struct AgentSpecTests {
     func codex_shouldResume_defersToClaude() {
         let paneID = UUID()
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
-        tab.claudeSessions[paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
-        tab.codexSessions[paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
+        tab.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
+        tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
 
         #expect(CodexAgent.shouldResume(in: tab, paneID: paneID) == false)
     }
@@ -24,7 +24,7 @@ struct AgentSpecTests {
     func codex_shouldResume_noClaude_returnsTrue() {
         let paneID = UUID()
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
-        tab.codexSessions[paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
+        tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
 
         #expect(CodexAgent.shouldResume(in: tab, paneID: paneID) == true)
     }
@@ -33,8 +33,8 @@ struct AgentSpecTests {
     func codex_shouldResume_emptyClaudeId_returnsTrue() {
         let paneID = UUID()
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
-        tab.claudeSessions[paneID] = AgentSessionInfo(sessionId: "", cwd: nil)
-        tab.codexSessions[paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
+        tab.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(sessionId: "", cwd: nil)
+        tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
 
         #expect(CodexAgent.shouldResume(in: tab, paneID: paneID) == true)
     }
@@ -44,8 +44,8 @@ struct AgentSpecTests {
         let paneID = UUID()
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
         // Even with a competing Codex session, Claude wins.
-        tab.codexSessions[paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
-        tab.claudeSessions[paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
+        tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
+        tab.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
 
         #expect(ClaudeAgent.shouldResume(in: tab, paneID: paneID) == true)
     }
@@ -66,9 +66,9 @@ struct AgentSpecTests {
             firstPrompt: "What's the dance behind quicksort?",
             sessionStartedAt: sessionStart
         )
-        tab.codexAgentBadges[pane] = badge
+        tab.agentBadges[.codex, default: [:]][pane] = badge
 
-        CodexAgent.applyTabTitle(&tab, badges: tab.codexAgentBadges)
+        CodexAgent.applyTabTitle(&tab, badges: tab.agentBadges[.codex] ?? [:])
 
         #expect(tab.title == "What's the dance behind quicksort?")
     }
@@ -86,9 +86,9 @@ struct AgentSpecTests {
             firstPrompt: " \n\t ",
             sessionStartedAt: Date(timeIntervalSince1970: 100)
         )
-        tab.codexAgentBadges[pane] = badge
+        tab.agentBadges[.codex, default: [:]][pane] = badge
 
-        CodexAgent.applyTabTitle(&tab, badges: tab.codexAgentBadges)
+        CodexAgent.applyTabTitle(&tab, badges: tab.agentBadges[.codex] ?? [:])
 
         #expect(tab.title == "kept")
     }
@@ -106,9 +106,9 @@ struct AgentSpecTests {
             firstPrompt: "  Safe\u{202E}\n\t title\u{200B}  ",
             sessionStartedAt: Date(timeIntervalSince1970: 100)
         )
-        tab.codexAgentBadges[pane] = badge
+        tab.agentBadges[.codex, default: [:]][pane] = badge
 
-        CodexAgent.applyTabTitle(&tab, badges: tab.codexAgentBadges)
+        CodexAgent.applyTabTitle(&tab, badges: tab.agentBadges[.codex] ?? [:])
 
         #expect(tab.title == "Safe title")
     }
@@ -126,9 +126,9 @@ struct AgentSpecTests {
             firstPrompt: String(repeating: "あ", count: 1400),
             sessionStartedAt: Date(timeIntervalSince1970: 100)
         )
-        tab.codexAgentBadges[pane] = badge
+        tab.agentBadges[.codex, default: [:]][pane] = badge
 
-        CodexAgent.applyTabTitle(&tab, badges: tab.codexAgentBadges)
+        CodexAgent.applyTabTitle(&tab, badges: tab.agentBadges[.codex] ?? [:])
 
         #expect(tab.title == String(repeating: "あ", count: 1365))
     }
@@ -149,9 +149,9 @@ struct AgentSpecTests {
             providerGeneratedTitle: "Generated title",
             sessionStartedAt: Date(timeIntervalSince1970: 100)
         )
-        tab.claudeAgentBadges[pane] = badge
+        tab.agentBadges[.claude, default: [:]][pane] = badge
 
-        ClaudeAgent.applyTabTitle(&tab, badges: tab.claudeAgentBadges)
+        ClaudeAgent.applyTabTitle(&tab, badges: tab.agentBadges[.claude] ?? [:])
 
         #expect(tab.title == "Formal title")
     }
@@ -170,9 +170,9 @@ struct AgentSpecTests {
             providerSessionTitle: "Formal title",
             sessionStartedAt: Date(timeIntervalSince1970: 100)
         )
-        tab.claudeAgentBadges[pane] = badge
+        tab.agentBadges[.claude, default: [:]][pane] = badge
 
-        ClaudeAgent.applyTabTitle(&tab, badges: tab.claudeAgentBadges)
+        ClaudeAgent.applyTabTitle(&tab, badges: tab.agentBadges[.claude] ?? [:])
 
         #expect(tab.title == "kept")
     }
@@ -183,8 +183,8 @@ struct AgentSpecTests {
     func codexResume_initialCommand_defersToClaude() {
         let paneID = UUID()
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
-        tab.claudeSessions[paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
-        tab.codexSessions[paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
+        tab.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
+        tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
 
         let command = AgentResumeCommandBuilder<CodexAgent>.initialCommand(
             for: tab,
@@ -197,7 +197,7 @@ struct AgentSpecTests {
     func codexResume_initialCommand_emitsWhenSolo() {
         let paneID = UUID()
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
-        tab.codexSessions[paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
+        tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
 
         let command = AgentResumeCommandBuilder<CodexAgent>.initialCommand(
             for: tab,
@@ -210,8 +210,8 @@ struct AgentSpecTests {
     func claudeResume_initialCommand_ignoresCodex() {
         let paneID = UUID()
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
-        tab.codexSessions[paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
-        tab.claudeSessions[paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
+        tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
+        tab.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
 
         let command = AgentResumeCommandBuilder<ClaudeAgent>.initialCommand(
             for: tab,

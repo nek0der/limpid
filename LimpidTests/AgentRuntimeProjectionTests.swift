@@ -71,8 +71,8 @@ struct AgentRuntimeProjectionTests {
 
             projection.bootstrap(into: session, tmuxPresence: presence)
 
-            #expect(session.tab(tab.id)?.codexAgentBadges[displayPaneID]?.state == .running)
-            #expect(session.tab(tab.id)?.codexAgentBadges[launchPaneID] == nil)
+            #expect(session.tab(tab.id)?.agentBadges[.codex]?[displayPaneID]?.state == .running)
+            #expect(session.tab(tab.id)?.agentBadges[.codex, default: [:]][launchPaneID] == nil)
         }
     }
 
@@ -113,7 +113,7 @@ struct AgentRuntimeProjectionTests {
 
             projection.bootstrap(into: session, tmuxPresence: presence)
 
-            #expect(session.tab(tab.id)?.codexAgentBadges[displayPaneID]?.state == .needsInput)
+            #expect(session.tab(tab.id)?.agentBadges[.codex]?[displayPaneID]?.state == .needsInput)
         }
     }
 
@@ -140,7 +140,7 @@ struct AgentRuntimeProjectionTests {
                 sessions: directory.appendingPathComponent("sessions")
             )
             projection.bootstrap(into: session, tmuxPresence: TmuxPanePresence())
-            #expect(session.tab(tab.id)?.codexAgentBadges[paneID] == nil)
+            #expect(session.tab(tab.id)?.agentBadges[.codex, default: [:]][paneID] == nil)
             #expect(store.allRecords().count == 1)
         }
     }
@@ -272,7 +272,7 @@ struct AgentRuntimeProjectionTests {
             )
             projection.bootstrap(into: session, attention: attention, tmuxPresence: presence)
             #expect(attention.attentionEntries(in: session).count == 2)
-            #expect(session.tab(tab.id)?.codexAgentBadges[paneID]?.updatedAt == AgentDateParsing.parseISO8601(second.updatedAt))
+            #expect(session.tab(tab.id)?.agentBadges[.codex]?[paneID]?.updatedAt == AgentDateParsing.parseISO8601(second.updatedAt))
             attention.dismissRuntime(AgentRuntimePresentation.id(kind: .codex, runID: first.storageID))
             #expect(attention.attentionEntries(in: session).map(\.runtimeID) == [AgentRuntimePresentation.id(
                 kind: .codex,
@@ -282,12 +282,12 @@ struct AgentRuntimeProjectionTests {
             second.revision = 2
             try store.save(second)
             projection.refresh()
-            #expect(session.tab(tab.id)?.codexAgentBadges[paneID]?.state == .running)
+            #expect(session.tab(tab.id)?.agentBadges[.codex]?[paneID]?.state == .running)
             second.state = "error"
             second.revision = 1
             try store.save(second)
             projection.refresh()
-            #expect(session.tab(tab.id)?.codexAgentBadges[paneID]?.state == .running)
+            #expect(session.tab(tab.id)?.agentBadges[.codex]?[paneID]?.state == .running)
         }
     }
 }

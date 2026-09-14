@@ -60,7 +60,7 @@ struct TmuxSnapshotTests {
         provisional.isProvisional = true
         session.update(tab.id) {
             $0.tmuxBindings[pane] = provisional
-            $0.codexSessions[pane] = AgentSessionInfo(sessionId: UUID().uuidString, cwd: "/tmp")
+            $0.agentSessions[.codex, default: [:]][pane] = AgentSessionInfo(sessionId: UUID().uuidString, cwd: "/tmp")
         }
         let updated = try #require(session.tab(tab.id))
         #expect(CodexResumeCommandBuilder.initialCommand(for: updated, paneID: pane) == nil)

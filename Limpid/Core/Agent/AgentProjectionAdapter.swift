@@ -465,26 +465,28 @@ final class AgentProjectionAdapter {
         let titlesByTab = projection.titlesByTab
         session.applyAcrossTabs { tab in
             let leaves = tab.splitTree.allLeafIDs()
-            for (provider, keyPath) in Self.badgeKeyPaths {
+            // Every provider the interface can key by, not only the ones the
+            // registry answered for. A provider with no descriptor this run —
+            // the registry could not be read, or a test supplied one — still
+            // has to have its map cleared, or a badge restored from the last
+            // session would sit there claiming a run that is not there.
+            for kind in AgentKind.allCases {
+                let id = kind.rawValue
                 var badges: [UUID: AgentBadge] = [:]
-                for leaf in leaves {
-                    if let badge = badgesByPane[leaf]?[provider] {
-                        badges[leaf] = badge.asAgentBadge
-                    }
-                }
-                if tab[keyPath: keyPath] != badges {
-                    tab[keyPath: keyPath] = badges
-                }
-            }
-            for (provider, keyPath) in Self.sessionKeyPaths {
                 var sessions: [UUID: AgentSessionInfo] = [:]
                 for leaf in leaves {
-                    if let info = sessionsByPane[leaf]?[provider] {
+                    if let badge = badgesByPane[leaf]?[id] {
+                        badges[leaf] = badge.asAgentBadge
+                    }
+                    if let info = sessionsByPane[leaf]?[id] {
                         sessions[leaf] = AgentSessionInfo(sessionId: info.sessionID, cwd: info.cwd)
                     }
                 }
-                if tab[keyPath: keyPath] != sessions {
-                    tab[keyPath: keyPath] = sessions
+                if tab.agentBadges[kind] ?? [:] != badges {
+                    tab.agentBadges[kind] = badges
+                }
+                if tab.agentSessions[kind] ?? [:] != sessions {
+                    tab.agentSessions[kind] = sessions
                 }
             }
             if let title = titlesByTab[tab.id], tab.title != title {
@@ -561,15 +563,6 @@ final class AgentProjectionAdapter {
         return onNotify(payload, tab)
     }
 
-    private static let badgeKeyPaths: [(String, WritableKeyPath<Tab, [UUID: AgentBadge]>)] = [
-        ("claude", \Tab.claudeAgentBadges),
-        ("codex", \Tab.codexAgentBadges)
-    ]
-
-    private static let sessionKeyPaths: [(String, WritableKeyPath<Tab, [UUID: AgentSessionInfo]>)] = [
-        ("claude", \Tab.claudeSessions),
-        ("codex", \Tab.codexSessions)
-    ]
 }
 
 /// One value of the two-clock envelope. A tiny type rather than a dictionary

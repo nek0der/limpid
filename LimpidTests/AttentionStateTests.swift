@@ -47,7 +47,7 @@ struct AttentionStateTests {
     ) -> UUID {
         let tab = session.openTab(container: .loose)
         let paneID = tab.splitTree.allLeafIDs().first!
-        session.update(tab.id) { $0.claudeAgentBadges[paneID] = badge(state, at: epoch) }
+        session.update(tab.id) { $0.agentBadges[.claude, default: [:]][paneID] = badge(state, at: epoch) }
         return paneID
     }
 
@@ -110,11 +110,11 @@ struct AttentionStateTests {
         let claudeStamp = Date(timeIntervalSince1970: 100)
         let codexStamp = Date(timeIntervalSince1970: 200)
         session.update(tab.id) {
-            $0.claudeAgentBadges[pane] = AgentBadge(
+            $0.agentBadges[.claude, default: [:]][pane] = AgentBadge(
                 state: .finished, detail: nil, runStartedAt: nil,
                 contextTokens: nil, updatedAt: claudeStamp, lastPrompt: nil
             )
-            $0.codexAgentBadges[pane] = AgentBadge(
+            $0.agentBadges[.codex, default: [:]][pane] = AgentBadge(
                 state: .finished, detail: nil, runStartedAt: nil,
                 contextTokens: nil, updatedAt: codexStamp, lastPrompt: nil
             )
@@ -180,13 +180,13 @@ struct AttentionStateTests {
         let tab = session.openTab(container: .loose)
         let paneID = try #require(tab.splitTree.allLeafIDs().first)
 
-        session.update(tab.id) { $0.claudeAgentBadges[paneID] = badge(.finished, at: 100) }
+        session.update(tab.id) { $0.agentBadges[.claude, default: [:]][paneID] = badge(.finished, at: 100) }
         attention.dismiss(paneID: paneID, in: session)
         #expect(!attention.attentionEntries(in: session).contains { $0.paneID == paneID })
 
         // A later finished turn (greater updatedAt) is a new event and
         // must reappear despite the earlier dismiss.
-        session.update(tab.id) { $0.claudeAgentBadges[paneID] = badge(.finished, at: 200) }
+        session.update(tab.id) { $0.agentBadges[.claude, default: [:]][paneID] = badge(.finished, at: 200) }
         #expect(attention.attentionEntries(in: session).contains { $0.paneID == paneID })
     }
 
@@ -389,7 +389,7 @@ struct AttentionStateTests {
         let tree = String(repeating: "a", count: 40)
         let root = "/tmp/turn-review"
         session.update(tab.id) {
-            $0.claudeAgentBadges[paneID] = badge(
+            $0.agentBadges[.claude, default: [:]][paneID] = badge(
                 .finished,
                 at: 100,
                 turnBaseTree: tree,
@@ -421,7 +421,7 @@ struct AttentionStateTests {
         let tab = session.openTab(container: .loose)
         let paneID = try #require(tab.splitTree.allLeafIDs().first)
         session.update(tab.id) {
-            $0.claudeAgentBadges[paneID] = badge(
+            $0.agentBadges[.claude, default: [:]][paneID] = badge(
                 .finished,
                 at: 100,
                 turnBaseTree: String(repeating: "a", count: 40),
@@ -450,7 +450,7 @@ struct AttentionStateTests {
         let tab = session.openTab(container: .loose)
         let paneID = try #require(tab.splitTree.allLeafIDs().first)
         session.update(tab.id) {
-            $0.claudeAgentBadges[paneID] = badge(
+            $0.agentBadges[.claude, default: [:]][paneID] = badge(
                 .needsInput,
                 at: 100,
                 turnBaseTree: String(repeating: "a", count: 40),
@@ -594,7 +594,7 @@ struct AttentionStateTests {
         // A new finished turn carries a newer stamp, so the retention
         // rule (keyed to the viewed stamp) no longer applies.
         let tab = try #require(session.tab(containing: pane))
-        session.update(tab.id) { $0.claudeAgentBadges[pane] = badge(.finished, at: farFuture - 30) }
+        session.update(tab.id) { $0.agentBadges[.claude, default: [:]][pane] = badge(.finished, at: farFuture - 30) }
         let entries = attention.attentionEntries(in: session)
         #expect(entries.map(\.paneID) == [pane])
         #expect(entries.first?.isViewed == false)

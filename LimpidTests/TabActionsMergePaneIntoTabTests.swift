@@ -107,7 +107,7 @@ struct TabActionsMergePaneIntoTabTests {
         // Plant a distinct value in every per-pane state dictionary on
         // the source side so we can verify each one lands on the target
         // — a typo like
-        // `if let s = sourceTab.codexBadges[paneID] { newTab.claudeAgentBadges[paneID] = s }`
+        // `if let s = sourceTab.codexBadges[paneID] { newTab.agentBadges[.claude, default: [:]][paneID] = s }`
         // would survive type-checking, so the only safeguard is an
         // explicit assertion per field.
         let paneState = PaneState(unreadCount: 7)
@@ -141,10 +141,10 @@ struct TabActionsMergePaneIntoTabTests {
             t.paneStates[paneID] = paneState
             t.scrollbackPaths[paneID] = scrollback
             t.initialCommands[paneID] = initial
-            t.claudeSessions[paneID] = claudeSession
-            t.codexSessions[paneID] = codexSession
-            t.claudeAgentBadges[paneID] = claudeBadge
-            t.codexAgentBadges[paneID] = codexBadge
+            t.agentSessions[.claude, default: [:]][paneID] = claudeSession
+            t.agentSessions[.codex, default: [:]][paneID] = codexSession
+            t.agentBadges[.claude, default: [:]][paneID] = claudeBadge
+            t.agentBadges[.codex, default: [:]][paneID] = codexBadge
             t.tmuxBindings[paneID] = tmuxBinding
         }
         #expect(updated, "Setting per-pane state should mutate the tab")
@@ -159,20 +159,20 @@ struct TabActionsMergePaneIntoTabTests {
         #expect(targetAfter.paneStates[paneID] == paneState)
         #expect(targetAfter.scrollbackPaths[paneID] == scrollback)
         #expect(targetAfter.initialCommands[paneID] == initial)
-        #expect(targetAfter.claudeSessions[paneID] == claudeSession)
-        #expect(targetAfter.codexSessions[paneID] == codexSession)
-        #expect(targetAfter.claudeAgentBadges[paneID] == claudeBadge)
-        #expect(targetAfter.codexAgentBadges[paneID] == codexBadge)
+        #expect(targetAfter.agentSessions[.claude, default: [:]][paneID] == claudeSession)
+        #expect(targetAfter.agentSessions[.codex, default: [:]][paneID] == codexSession)
+        #expect(targetAfter.agentBadges[.claude, default: [:]][paneID] == claudeBadge)
+        #expect(targetAfter.agentBadges[.codex, default: [:]][paneID] == codexBadge)
         #expect(targetAfter.tmuxBindings[paneID] == tmuxBinding)
         // And the source side has been swept (or the whole tab closed
         // when it was a lone-pane source).
         #expect(sourceAfter?.paneStates[paneID] == nil)
         #expect(sourceAfter?.scrollbackPaths[paneID] == nil)
         #expect(sourceAfter?.initialCommands[paneID] == nil)
-        #expect(sourceAfter?.claudeSessions[paneID] == nil)
-        #expect(sourceAfter?.codexSessions[paneID] == nil)
-        #expect(sourceAfter?.claudeAgentBadges[paneID] == nil)
-        #expect(sourceAfter?.codexAgentBadges[paneID] == nil)
+        #expect(sourceAfter?.agentSessions[.claude, default: [:]][paneID] == nil)
+        #expect(sourceAfter?.agentSessions[.codex, default: [:]][paneID] == nil)
+        #expect(sourceAfter?.agentBadges[.claude, default: [:]][paneID] == nil)
+        #expect(sourceAfter?.agentBadges[.codex, default: [:]][paneID] == nil)
         #expect(sourceAfter?.tmuxBindings[paneID] == nil)
     }
 

@@ -134,21 +134,23 @@ enum PaneActions {
                 t.zoomedLeafID = nil
             }
             // Drop every per-pane dictionary entry for the closed
-            // leaf. `claudeSessions` / `codexSessions` were already
-            // swept here; the other five (paneStates, scrollbackPaths,
-            // initialCommands, claudeAgentBadges, codexAgentBadges)
-            // are persisted through `SessionSnapshot` and used to
+            // leaf. The resume hints were already swept here; the
+            // others (paneStates, scrollbackPaths, initialCommands,
+            // and the badges) are persisted through `SessionSnapshot`
+            // and used to
             // accumulate on disk on every ⌘W against a multi-pane
             // tab. `mergePaneIntoTab` already sweeps the same set on
             // its leaf-out path — keep the two close-leaf paths
             // structurally identical.
-            t.claudeSessions[leafID] = nil
-            t.codexSessions[leafID] = nil
+            for provider in AgentKind.allCases {
+                t.agentSessions[provider]?.removeValue(forKey: leafID)
+            }
             t.paneStates.removeValue(forKey: leafID)
             t.scrollbackPaths.removeValue(forKey: leafID)
             t.initialCommands.removeValue(forKey: leafID)
-            t.claudeAgentBadges.removeValue(forKey: leafID)
-            t.codexAgentBadges.removeValue(forKey: leafID)
+            for provider in AgentKind.allCases {
+                t.agentBadges[provider]?.removeValue(forKey: leafID)
+            }
         }
         session.paneSearchStates.removeValue(forKey: leafID)
         session.paneTransients.removeValue(forKey: leafID)

@@ -140,10 +140,10 @@ final class AttentionState {
     /// or nil if the pane isn't sitting on a finished turn right now.
     func currentFinishedStamp(paneID: UUID, in session: WindowSession) -> Date? {
         guard let tab = session.tab(containing: paneID) else { return nil }
-        if let b = tab.claudeAgentBadges[paneID], b.state == .finished {
+        if let b = tab.agentBadges[.claude]?[paneID], b.state == .finished {
             return b.updatedAt
         }
-        if let b = tab.codexAgentBadges[paneID], b.state == .finished {
+        if let b = tab.agentBadges[.codex]?[paneID], b.state == .finished {
             return b.updatedAt
         }
         return nil
@@ -188,14 +188,14 @@ extension AttentionState {
             !$0.paneIDs.isDisjoint(with: leaves) && !($0.badge.state == .finished && isDismissed($0))
         }.map { PaneAgentState(id: $0.id, state: $0.badge.state, isViewed: isViewed($0)) }
         for paneID in tab.splitTree.allLeafIDs() {
-            if runtimesByKind[.claude] == nil, let b = tab.claudeAgentBadges[paneID],
+            if runtimesByKind[.claude] == nil, let b = tab.agentBadges[.claude]?[paneID],
                !isFinishedAndDismissed(paneID: paneID, state: b.state, updatedAt: b.updatedAt)
             {
                 let viewed = b.state == .finished
                     && isViewed(paneID: paneID, badgeUpdatedAt: b.updatedAt)
                 states.append(PaneAgentState(id: "claude:\(paneID.uuidString)", state: b.state, isViewed: viewed))
             }
-            if runtimesByKind[.codex] == nil, let b = tab.codexAgentBadges[paneID],
+            if runtimesByKind[.codex] == nil, let b = tab.agentBadges[.codex]?[paneID],
                !isFinishedAndDismissed(paneID: paneID, state: b.state, updatedAt: b.updatedAt)
             {
                 let viewed = b.state == .finished
@@ -333,7 +333,7 @@ extension AttentionState {
     }
 
     private func attentionInfo(in tab: Tab, paneID: UUID) -> AttentionInfo? {
-        let claude = (runtimesByKind[.claude] == nil ? tab.claudeAgentBadges[paneID] : nil).map {
+        let claude = (runtimesByKind[.claude] == nil ? tab.agentBadges[.claude]?[paneID] : nil).map {
             AttentionInfo(
                 state: $0.state,
                 updatedAt: $0.updatedAt,
@@ -343,7 +343,7 @@ extension AttentionState {
                 turnRoot: $0.turnRoot
             )
         }
-        let codex = (runtimesByKind[.codex] == nil ? tab.codexAgentBadges[paneID] : nil).map {
+        let codex = (runtimesByKind[.codex] == nil ? tab.agentBadges[.codex]?[paneID] : nil).map {
             AttentionInfo(
                 state: $0.state,
                 updatedAt: $0.updatedAt,

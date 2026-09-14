@@ -2,7 +2,7 @@
 // Limpid — on-disk shape of a Claude lifecycle record written by the
 // receiver selected by `claude-shim/limpid-hook` after every relevant
 // hook event. `ClaudeAgentStateStore` reads / writes; the live
-// `Tab.claudeAgentBadges[paneID]` mirror is rebuilt from this struct
+// `Tab.agentBadges[.claude][paneID]` mirror is rebuilt from this struct
 // via the projection.
 
 import Foundation

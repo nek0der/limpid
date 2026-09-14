@@ -19,10 +19,6 @@ enum CodexAgent: AgentSpec {
         "codex"
     }
 
-    static var sessionsKeyPath: WritableKeyPath<Tab, [UUID: AgentSessionInfo]> {
-        \Tab.codexSessions
-    }
-
     static func makeBadge(from record: CodexAgentStateRecord) -> AgentBadge? {
         guard let state = AgentState(rawValue: record.state) else { return nil }
         let detail = (record.detail?.isEmpty == false) ? record.detail : nil
@@ -68,7 +64,7 @@ enum CodexAgent: AgentSpec {
     /// first historically. If both somehow exist, the Claude resume
     /// wins and Codex stays dormant.
     static func shouldResume(in tab: Tab, paneID: UUID) -> Bool {
-        guard let claude = tab.claudeSessions[paneID] else { return true }
+        guard let claude = tab.agentSessions[.claude]?[paneID] else { return true }
         return claude.sessionId.isEmpty
     }
 

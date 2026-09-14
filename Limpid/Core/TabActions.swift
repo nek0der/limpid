@@ -101,7 +101,7 @@ enum TabActions {
         for leafID in leafIDs {
             registry.unregister(leafID)
             // Drop each leaf's on-disk Claude session record. The
-            // snapshot above still carries `claudeSessions` for an
+            // snapshot above still carries the resume hints for an
             // in-session `reopenClosedTab` to honor; once the user
             // quits, the closed-tab stack is gone anyway and stale
             // records would sit there until the next bootstrap
@@ -145,12 +145,11 @@ enum TabActions {
             paneStates: remapKeys(closed.tab.paneStates, using: idMap),
             zoomedLeafID: closed.tab.zoomedLeafID.flatMap { idMap[$0] },
             container: closed.tab.container,
-            // Carry the per-pane Claude session map across the
-            // pane id remap so an in-session ⌘⇧T can still try a
+            // Carry every provider's per-pane resume hints across
+            // the pane id remap so an in-session ⌘⇧T can still try a
             // resume on the revived leaf (best-effort — the disk
             // record was already dropped at close time).
-            claudeSessions: remapKeys(closed.tab.claudeSessions, using: idMap),
-            codexSessions: remapKeys(closed.tab.codexSessions, using: idMap),
+            agentSessions: closed.tab.agentSessions.mapValues { remapKeys($0, using: idMap) },
             tmuxBindings: remapKeys(closed.tab.tmuxBindings, using: idMap)
         )
         // `scrollbackPaths` / `initialCommands` aren't in the Tab init

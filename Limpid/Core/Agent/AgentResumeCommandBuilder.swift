@@ -10,7 +10,7 @@ enum AgentResumeCommandBuilder<S: AgentSpec> {
     /// no auto-resume should fire.
     ///
     /// Conditions for a non-nil return:
-    /// 1. `tab[keyPath: S.sessionsKeyPath][paneID]` is set with a
+    /// 1. `tab.agentSessions[S.kind][paneID]` is set with a
     ///    non-empty `sessionId`. Each split-leaf carries its own
     ///    session so two panes running the same agent concurrently
     ///    each resume independently.
@@ -24,7 +24,7 @@ enum AgentResumeCommandBuilder<S: AgentSpec> {
         // An unresolved tmux restore hint is not permission to create a
         // duplicate native invocation while its original runtime survives.
         guard tab.tmuxBindings[paneID] == nil else { return nil }
-        guard let info = tab[keyPath: S.sessionsKeyPath][paneID],
+        guard let info = tab.agentSessions[S.kind]?[paneID],
               !info.sessionId.isEmpty
         else {
             return nil

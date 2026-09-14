@@ -79,33 +79,21 @@ struct Tab: Codable, Equatable, Identifiable {
     /// membership.
     var container: ContainerID
 
-    /// Per-pane Claude Code session info captured by the receiver selected by
-    /// `claude-shim/limpid-hook`. Keyed by split-tree leaf UUID
-    /// (= `LIMPID_PANE_ID`) so two splits running `claude`
-    /// concurrently each remember their own conversation.
-    /// The projection reconciles this map with the on-disk records on every
-    /// pass. Optional default = `[:]` so an existing `state.json` decodes
-    /// without a snapshot version bump.
-    var claudeSessions: [UUID: ClaudeSessionInfo] = [:]
+    /// Per-pane resume hints, by provider. Keyed by split-tree leaf UUID
+    /// (= `LIMPID_PANE_ID`) so two splits running the same agent each
+    /// remember their own conversation.
+    ///
+    /// One dictionary per provider rather than a field per provider: adding a
+    /// provider is a Rust crate, and nothing about this type should have to
+    /// change for it. The projection reconciles both maps with the on-disk
+    /// records on every pass, so a key this build does not recognize is
+    /// simply not read.
+    var agentSessions: [AgentKind: [UUID: AgentSessionInfo]] = [:]
 
-    /// Per-pane Claude agent lifecycle badges. Mirrors the on-disk
-    /// state records written by the selected Claude receiver on every event we
-    /// subscribe to (SessionStart / UserPromptSubmit / PreToolUse /
-    /// Notification / PreCompact / Stop / StopFailure / SessionEnd).
-    /// The projection keeps this in sync with disk; `TabRow` / `ContainerRow`
-    /// aggregate it for tab column / container column status icons. Optional
-    /// default = `[:]` for backward compat.
-    var claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:]
-
-    /// Per-pane Codex session info captured by the receiver selected by
-    /// `codex-shim/limpid-hook`. Mirror of `claudeSessions` for
-    /// the Codex CLI, reconciled from the same records by the same pass.
-    var codexSessions: [UUID: CodexSessionInfo] = [:]
-
-    /// Per-pane Codex agent lifecycle badges. Mirror of
-    /// `claudeAgentBadges` for the Codex CLI. Filled from the on-disk state
-    /// records the selected Codex receiver writes on every subscribed event.
-    var codexAgentBadges: [UUID: CodexAgentBadge] = [:]
+    /// Per-pane lifecycle badges, by provider, on the same terms. Mirrors the
+    /// state records the selected receiver writes on every subscribed event;
+    /// `TabRow` / `ContainerRow` aggregate them for the status icons.
+    var agentBadges: [AgentKind: [UUID: AgentBadge]] = [:]
 
     /// Which tmux session each pane was showing when Limpid last quit,
     /// read off the pane's tty rather than reported by the shell. A pane
@@ -127,10 +115,8 @@ struct Tab: Codable, Equatable, Identifiable {
         paneStates: [UUID: PaneState] = [:],
         zoomedLeafID: UUID? = nil,
         container: ContainerID,
-        claudeSessions: [UUID: ClaudeSessionInfo] = [:],
-        claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:],
-        codexSessions: [UUID: CodexSessionInfo] = [:],
-        codexAgentBadges: [UUID: CodexAgentBadge] = [:],
+        agentSessions: [AgentKind: [UUID: AgentSessionInfo]] = [:],
+        agentBadges: [AgentKind: [UUID: AgentBadge]] = [:],
         tmuxBindings: [UUID: TmuxBinding] = [:]
     ) {
         self.id = id
@@ -143,18 +129,41 @@ struct Tab: Codable, Equatable, Identifiable {
         self.paneStates = paneStates
         self.zoomedLeafID = zoomedLeafID
         self.container = container
-        self.claudeSessions = claudeSessions
-        self.claudeAgentBadges = claudeAgentBadges
-        self.codexSessions = codexSessions
-        self.codexAgentBadges = codexAgentBadges
+        self.agentSessions = agentSessions
+        self.agentBadges = agentBadges
         self.tmuxBindings = tmuxBindings
     }
 
-    /// Custom decoding so a `state.json` written before
-    /// `claudeSessions` existed (or by a build that pre-dates the
-    /// pane-keyed refactor) keeps decoding instead of throwing
-    /// `keyNotFound`. We only need to special-case the brand-new key
-    /// — every other field has always been present.
+    /// Written and read explicitly because the decoder accepts a shape this
+    /// build no longer writes: the four per-provider fields an older file
+    /// carries. Auto-synthesis would not know those names.
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, title, titleOverride, workingDirectory, pwd, splitTree
+        case zoomedLeafID, paneStates, scrollbackPaths, initialCommands, container
+        case agentSessions, agentBadges, tmuxBindings
+        case claudeSessions, claudeAgentBadges, codexSessions, codexAgentBadges
+    }
+
+    /// Folds an older file's two fields into one map, dropping a provider
+    /// that had nothing so an empty entry is never mistaken for a reading.
+    private static func legacyByProvider<Value>(
+        claude: [UUID: Value]?,
+        codex: [UUID: Value]?
+    ) -> [AgentKind: [UUID: Value]] {
+        var merged: [AgentKind: [UUID: Value]] = [:]
+        if let claude, !claude.isEmpty {
+            merged[.claude] = claude
+        }
+        if let codex, !codex.isEmpty {
+            merged[.codex] = codex
+        }
+        return merged
+    }
+
+    /// Custom decoding so a `state.json` written by an older build keeps
+    /// decoding instead of throwing `keyNotFound`: every field that has not
+    /// always been present is read with a default, and the two agent maps are
+    /// additionally read from the per-provider fields they replaced.
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try c.decode(UUID.self, forKey: .id)
@@ -172,22 +181,23 @@ struct Tab: Codable, Equatable, Identifiable {
         self.scrollbackPaths = try c.decodeIfPresent([UUID: String].self, forKey: .scrollbackPaths) ?? [:]
         self.initialCommands = try c.decodeIfPresent([UUID: String].self, forKey: .initialCommands) ?? [:]
         self.container = try c.decode(ContainerID.self, forKey: .container)
-        self.claudeSessions = try c.decodeIfPresent(
-            [UUID: ClaudeSessionInfo].self,
-            forKey: .claudeSessions
-        ) ?? [:]
-        self.claudeAgentBadges = try c.decodeIfPresent(
-            [UUID: ClaudeAgentBadge].self,
-            forKey: .claudeAgentBadges
-        ) ?? [:]
-        self.codexSessions = try c.decodeIfPresent(
-            [UUID: CodexSessionInfo].self,
-            forKey: .codexSessions
-        ) ?? [:]
-        self.codexAgentBadges = try c.decodeIfPresent(
-            [UUID: CodexAgentBadge].self,
-            forKey: .codexAgentBadges
-        ) ?? [:]
+        // A file written before the two maps existed keeps one field per
+        // provider. Both are read so an upgrade does not blank the badges and
+        // hints the interface is about to draw; only the new shape is written.
+        self.agentSessions = try c.decodeIfPresent(
+            [AgentKind: [UUID: AgentSessionInfo]].self,
+            forKey: .agentSessions
+        ) ?? Self.legacyByProvider(
+            claude: c.decodeIfPresent([UUID: AgentSessionInfo].self, forKey: .claudeSessions),
+            codex: c.decodeIfPresent([UUID: AgentSessionInfo].self, forKey: .codexSessions)
+        )
+        self.agentBadges = try c.decodeIfPresent(
+            [AgentKind: [UUID: AgentBadge]].self,
+            forKey: .agentBadges
+        ) ?? Self.legacyByProvider(
+            claude: c.decodeIfPresent([UUID: AgentBadge].self, forKey: .claudeAgentBadges),
+            codex: c.decodeIfPresent([UUID: AgentBadge].self, forKey: .codexAgentBadges)
+        )
         self.tmuxBindings = try c.decodeIfPresent(
             [UUID: TmuxBinding].self,
             forKey: .tmuxBindings
@@ -203,26 +213,41 @@ struct Tab: Codable, Equatable, Identifiable {
         return title
     }
 
-    /// Pane whose Claude or Codex session started most recently — the
-    /// "owner" of `title` while at least one agent is alive. Compared
-    /// across both agent kinds because a tab can host a mixed set
-    /// (e.g. pane 1 claude, pane 2 codex). Returns `nil` when no pane
-    /// currently has a captured `sessionStartedAt`, in which case the
-    /// caller falls back to whichever pane the OSC source happens to
-    /// be focused on.
+    /// Only the current shape is written. An older build reading it finds no
+    /// badges or hints and rebuilds both from the records on its next pass,
+    /// which is what it does at every launch anyway.
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(title, forKey: .title)
+        try c.encodeIfPresent(titleOverride, forKey: .titleOverride)
+        try c.encodeIfPresent(workingDirectory, forKey: .workingDirectory)
+        try c.encodeIfPresent(pwd, forKey: .pwd)
+        try c.encode(splitTree, forKey: .splitTree)
+        try c.encodeIfPresent(zoomedLeafID, forKey: .zoomedLeafID)
+        try c.encode(paneStates, forKey: .paneStates)
+        try c.encode(scrollbackPaths, forKey: .scrollbackPaths)
+        try c.encode(initialCommands, forKey: .initialCommands)
+        try c.encode(container, forKey: .container)
+        try c.encode(agentSessions, forKey: .agentSessions)
+        try c.encode(agentBadges, forKey: .agentBadges)
+        try c.encode(tmuxBindings, forKey: .tmuxBindings)
+    }
+
+    /// Pane whose agent session started most recently — the "owner" of
+    /// `title` while at least one agent is alive. Compared across every
+    /// provider because a tab can host a mixed set (e.g. pane 1 claude,
+    /// pane 2 codex). Returns `nil` when no pane currently has a captured
+    /// `sessionStartedAt`, in which case the caller falls back to whichever
+    /// pane the OSC source happens to be focused on.
     ///
     /// The rule prevents an older session from clobbering a newer one:
     /// without it, pane 1 (older) typing a fresh turn would re-emit its
     /// own `firstPrompt` and overwrite pane 2's (newer) tab label.
     var latestAgentSessionPaneID: UUID? {
         var best: (paneID: UUID, started: Date)?
-        for (paneID, badge) in claudeAgentBadges {
-            guard let started = badge.sessionStartedAt else { continue }
-            if best.map({ started > $0.started }) ?? true {
-                best = (paneID, started)
-            }
-        }
-        for (paneID, badge) in codexAgentBadges {
+        for (paneID, badge) in agentBadges.values.flatMap(\.self) {
             guard let started = badge.sessionStartedAt else { continue }
             if best.map({ started > $0.started }) ?? true {
                 best = (paneID, started)

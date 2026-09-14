@@ -151,7 +151,7 @@ struct CommandPaletteTests {
 
             let tabID = try #require(session.activeTabID)
             session.update(tabID) {
-                $0.claudeAgentBadges[paneID] = AgentBadge(
+                $0.agentBadges[.claude, default: [:]][paneID] = AgentBadge(
                     state: .finished,
                     updatedAt: Date(),
                     turnBaseTree: String(repeating: "a", count: 40),

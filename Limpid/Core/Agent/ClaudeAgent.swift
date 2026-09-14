@@ -18,10 +18,6 @@ enum ClaudeAgent: AgentSpec {
         "claude"
     }
 
-    static var sessionsKeyPath: WritableKeyPath<Tab, [UUID: AgentSessionInfo]> {
-        \Tab.claudeSessions
-    }
-
     static func makeBadge(from record: ClaudeAgentStateRecord) -> AgentBadge? {
         guard let state = AgentState(rawValue: record.state) else { return nil }
         let detail = (record.detail?.isEmpty == false) ? record.detail : nil
