@@ -54,10 +54,14 @@ uses asynchronous unregister completion before registering and authenticating
 the replacement.
 
 `.requiresApproval` leaves the registration intact and directs the user to Login
-Items. `.notFound`, signing failures, and other reconciliation failures disable
-controller observation. A transient controller failure with a current marker
-leaves the registered service and its pending requests intact and schedules
-another observation. A slow
+Items. Before the first registration on a machine, `SMAppService` reports
+`.notFound` rather than `.notRegistered` because Background Task Management has
+no record for the label yet; the app has already validated the bundled service
+at that point, so it registers instead of reporting a missing service.
+`.notFound` after a registration call, signing failures, and other
+reconciliation failures disable controller observation. A transient controller
+failure with a current marker leaves the registered service and its pending
+requests intact and schedules another observation. A slow
 unregister reports an error but remains in flight until its completion callback;
 registration never races that callback. Returning to the app or choosing Retry
 attempts recovery. A rollback uses the same fingerprint mismatch path. Moving an
