@@ -57,6 +57,8 @@ pub fn project(
     let sessions = session_infos(input, &alive);
     let tab_titles = tab_titles(input, &badges);
     let marks_to_keep = surviving_marks(&input.marks, &runtimes);
+    let commands =
+        crate::notifications::observe(&mut state.outbox, &runtimes, input, &pane_to_tab, now);
     let resume_candidates = resume_candidates(input, &sessions);
 
     state.episodes = runtimes
@@ -80,7 +82,7 @@ pub fn project(
         marks_to_keep,
         resume_candidates,
     };
-    (state, projection, Vec::new())
+    (state, projection, commands)
 }
 
 /// Decides which records are current.
@@ -179,6 +181,7 @@ fn build_runtimes(
                 run.record.run_id.as_deref().unwrap_or(&run.record.pane_id),
             );
             let (panes, attachment) = panes_for(&run.record, input);
+            let event_token = event_token(&run.record);
             let episode_token = episode_token(state, &id, &run.record);
             RuntimePresentation {
                 badge: badge_from(&run.record, capabilities),
@@ -187,6 +190,7 @@ fn build_runtimes(
                 revision: run.record.revision,
                 panes,
                 attachment,
+                event_token,
                 episode_token,
                 id,
             }
@@ -236,6 +240,15 @@ fn endpoint_key(record: &RunRecord) -> Option<String> {
         return None;
     }
     Some(format!("{socket}|{pane}"))
+}
+
+/// Identifies one record write. The revision when the writer numbered it, and
+/// the timestamp otherwise, which is all a version 2 record offers.
+fn event_token(record: &RunRecord) -> String {
+    record.revision.map_or_else(
+        || record.updated_at.clone(),
+        |revision| revision.to_string(),
+    )
 }
 
 /// The token a viewed or dismissed mark is taken against.

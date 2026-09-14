@@ -283,10 +283,12 @@ pub struct NotifyCommand {
     /// The host marks the history row read instead of banner-ing when the
     /// target pane already has focus.
     pub suppress_when_pane_focused: bool,
-    /// Echoed back in the outcome so a delivery for a state the run has since
-    /// left does not clear a newer pending entry.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub revision: Option<u64>,
+    /// Identifies the attention episode, which is what the history uses to
+    /// tell a repeated ask from a new one.
+    pub episode_token: String,
+    /// Echoed back in the outcome so a delivery for a write the run has since
+    /// moved past does not clear a newer pending entry.
+    pub event_token: String,
     pub state: RunState,
 }
 
@@ -297,8 +299,7 @@ pub enum CommandOutcome {
     /// The host delivered a notification for this runtime at this state.
     Notified {
         runtime_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision: Option<u64>,
+        event_token: String,
         state: RunState,
     },
     /// The precondition held and the command ran.

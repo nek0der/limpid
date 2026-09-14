@@ -241,8 +241,10 @@ pub struct OutboxState {
 #[serde(rename_all = "camelCase")]
 pub struct ObservedRuntime {
     pub state: RunState,
+    /// The episode the run was in, which is what decides whether asking for
+    /// input again is a new thing to say or a repeat of the same one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub event_token: Option<String>,
+    pub episode_token: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -250,6 +252,8 @@ pub struct ObservedRuntime {
 pub struct PendingNotification {
     pub runtime_id: String,
     pub state: RunState,
+    /// The record write this entry was raised for.
+    pub event_token: String,
     /// Monotonic uptime when it was queued.
     pub created_at_ms: u64,
 }
@@ -269,6 +273,11 @@ pub struct RuntimePresentation {
     pub badge: Badge,
     pub panes: Vec<Uuid>,
     pub attachment: AttachmentResolution,
+    /// Identifies one record write. What the host echoes back after delivering
+    /// a notification, so a stale delivery cannot retire a newer entry.
+    pub event_token: String,
+    /// Identifies a stretch of the same state. What viewed and dismissed marks
+    /// are taken against, and what decides a repeat from a new episode.
     pub episode_token: String,
 }
 
@@ -363,6 +372,7 @@ mod tests {
             PendingNotification {
                 runtime_id: "claude:RUN".to_owned(),
                 state: RunState::Finished,
+                event_token: "4".to_owned(),
                 created_at_ms: 1_000,
             },
         );

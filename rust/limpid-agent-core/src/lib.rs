@@ -2,6 +2,7 @@
 
 mod approval;
 mod lifecycle;
+mod notifications;
 mod projection;
 mod title;
 

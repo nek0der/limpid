@@ -20,6 +20,7 @@
           "11111111-1111-4111-8111-111111111111"
         ],
         "attachment": "attached",
+        "eventToken": "4",
         "episodeToken": "3"
       }
     ],
@@ -58,5 +59,29 @@
       ]
     }
   },
-  "commands": []
+  "commands": [
+    {
+      "op": {
+        "op": "notify",
+        "provider": "claude",
+        "kind": "needsInput",
+        "tab": "9f9f9f9f-0000-4000-8000-9f9f9f9f9f9f",
+        "pane": "11111111-1111-4111-8111-111111111111",
+        "runtimeId": "claude:AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+        "body": "どの色が好みですか？",
+        "presentsBanner": true,
+        "suppressWhenPaneFocused": true,
+        "episodeToken": "3",
+        "eventToken": "4",
+        "state": "needsInput"
+      },
+      "target": {
+        "target": "host"
+      },
+      "expect": {
+        "expect": "none"
+      },
+      "onMismatch": "abort"
+    }
+  ]
 }
