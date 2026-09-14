@@ -34,6 +34,56 @@ enum RustProviderBridge {
         }
     }
 
+    /// Which hook entry point `runHook` invokes.
+    enum HookKind {
+        case lifecycle
+        case worktree
+
+        /// The `LIMPID_HOOK_KIND_*` constant the C ABI expects.
+        var abiValue: UInt32 {
+            switch self {
+            case .lifecycle: UInt32(LIMPID_HOOK_KIND_LIFECYCLE)
+            case .worktree: UInt32(LIMPID_HOOK_KIND_WORKTREE)
+            }
+        }
+    }
+
+    /// The outcome the hook runtime reports for one call.
+    struct HookOutcome: Equatable {
+        let outcome: String
+        let exitCode: Int32
+        let message: String?
+    }
+
+    /// Runs one lifecycle or worktree hook call in-process. `environment` is
+    /// what the hook runtime reads the shim's variables from, so a test can
+    /// point it at a scratch directory. Never opens the approval service.
+    static func runHook(
+        provider: String,
+        kind: HookKind,
+        payload: Data,
+        environment: [String: String]
+    ) throws -> HookOutcome {
+        let environmentJSON = try JSONSerialization.data(withJSONObject: environment)
+        let body = try environmentJSON.withUnsafeBytes { environmentBuffer in
+            try call(provider: provider, input: payload, notApproval: false) { pointers in
+                limpid_hook_run_v1(
+                    pointers.provider, pointers.providerCount,
+                    kind.abiValue,
+                    pointers.input, pointers.inputCount,
+                    environmentBuffer.bindMemory(to: UInt8.self).baseAddress, environmentBuffer.count,
+                    pointers.out, pointers.outCount
+                )
+            }
+        }
+        guard let body,
+              let object = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let outcome = object["outcome"] as? String,
+              let exitCode = object["exit_code"] as? Int
+        else { throw AgentIntegrationError.invalidResponse }
+        return HookOutcome(outcome: outcome, exitCode: Int32(exitCode), message: object["message"] as? String)
+    }
+
     /// The input pointer-length pairs one ABI call receives, plus the output
     /// slots it fills.
     private struct Pointers {
@@ -79,7 +129,7 @@ enum RustProviderBridge {
             // The bytes belong to us until the matching free, whatever the
             // status turned out to be.
             defer { limpid_approval_bytes_free_v1(out, outCount) }
-            guard status == LIMPID_PROVIDER_OK.rawValue else {
+            guard status == Int32(LIMPID_PROVIDER_OK.rawValue) else {
                 throw AgentIntegrationError.rustFailure(status)
             }
             return Data(bytes: out, count: outCount)

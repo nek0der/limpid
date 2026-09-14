@@ -265,6 +265,41 @@ struct CodexHookScriptTests {
         }
     }
 
+    /// The bundled helper beside the test host; the Rust backend exec's it.
+    private static var helperPath: String? {
+        guard let executable = Bundle.main.executableURL else { return nil }
+        let helper = executable.deletingLastPathComponent().appendingPathComponent("AgentIntegrationHookHelper").path
+        return FileManager.default.isExecutableFile(atPath: helper) ? helper : nil
+    }
+
+    /// The wrapper's only job is to pick the receiver; with the Rust
+    /// backend the same payloads must land in a version 3 record written by
+    /// the helper, keyed the same way the shell receiver keyed it.
+    @Test("runs the Rust backend through the helper when the flag says so")
+    func rustBackend_writesAVersionThreeRecord() throws {
+        let helper = try #require(Self.helperPath)
+        let record = try #require(try runHooks(midTurn(), extraEnvironment: [
+            "LIMPID_AGENT_HOOK_BACKEND": "rust",
+            "LIMPID_HOOK_HELPER": helper,
+            "LIMPID_TURN_SNAPSHOT": "0"
+        ]))
+        #expect(record["schemaVersion"] as? Int == 3)
+        #expect(record["state"] as? String == "running")
+        #expect(record["revision"] as? Int == 2)
+        #expect(record["firstPrompt"] != nil)
+        #expect(record["lastHookEvent"] as? String == "prompt_submitted")
+    }
+
+    @Test("falls back to the shell receiver when the helper is missing")
+    func rustBackend_withoutHelper_fallsBackToShell() throws {
+        let record = try #require(try runHooks(midTurn(), extraEnvironment: [
+            "LIMPID_AGENT_HOOK_BACKEND": "rust",
+            "LIMPID_HOOK_HELPER": "/nonexistent/AgentIntegrationHookHelper"
+        ]))
+        #expect(record["schemaVersion"] as? Int == 2)
+        #expect(record["state"] as? String == "running")
+    }
+
     @Test("every subscribed event maps to a lifecycle state")
     func subscribedEvents_allReachABranch() throws {
         for event in CodexHookInstaller.subscribedEvents {

@@ -182,7 +182,7 @@ final class CodexHookInstaller {
         if ProcessInfo.processInfo.environment["LIMPID_DEMO"] == "1" {
             return [:]
         }
-        return [
+        var env = [
             "LIMPID_CODEX_SESSIONS_DIR": CodexHookInstaller.sessionsDirectoryURL.path,
             "LIMPID_CODEX_AGENT_STATES_DIR": CodexHookInstaller.agentStatesDirectoryURL.path,
             "LIMPID_CODEX_HOOK_ARGS": CodexHookInjection.arguments(
@@ -191,6 +191,8 @@ final class CodexHookInstaller {
                 approvalCommand: approvalCommand
             ).joined(separator: CodexHookInstaller.argumentSeparator)
         ]
+        env.merge(AgentHookBackend.environment) { _, backend in backend }
+        return env
     }
 
     // MARK: - Commands

@@ -1,6 +1,6 @@
 // WorktreeEventTracker.swift
-// Limpid — Watches the `worktree-events` directory the
-// `limpid-pretool-worktree-hook` shim script writes into and fires a
+// Limpid — Watches the `worktree-events` directory the selected
+// worktree hook receiver writes into and fires a
 // handler for each fresh record. Mirrors `CwdEventTracker`'s shape:
 // bootstrap-then-watch with a directory-level
 // `DispatchSource.makeFileSystemObjectSource`.
@@ -21,7 +21,7 @@ import OSLog
 
 private let log = Logger.limpid("claude.worktree.event.tracker")
 
-/// On-disk payload written by `limpid-pretool-worktree-hook`. Fields
+/// On-disk payload written by the selected worktree hook receiver. Fields
 /// beyond `event` and `worktreePath` are optional so the schema can
 /// grow without breaking older trackers.
 struct WorktreeEventRecord: Codable, Equatable {
@@ -33,8 +33,8 @@ struct WorktreeEventRecord: Codable, Equatable {
 
 @MainActor
 final class WorktreeEventTracker {
-    /// Sub-directory under `$LIMPID_AGENT_STATES_DIR` that the hook
-    /// scripts write to. Kept as a static so the shim and the app
+    /// Sub-directory under `$LIMPID_AGENT_STATES_DIR` that hook receivers
+    /// write to. Kept as a static so the shim and the app
     /// can't drift apart.
     static let directoryName = "worktree-events"
 

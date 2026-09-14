@@ -1,5 +1,5 @@
 // ClaudeAgentStateStore.swift
-// Limpid — per-pane Claude agent lifecycle records written by `claude-shim/limpid-hook`.
+// Limpid — per-pane Claude lifecycle records written by the selected hook receiver.
 
 import Foundation
 

@@ -10,10 +10,9 @@ crate-type = ["staticlib"]
 
 [dependencies]
 limpid-agent-core = { path = "../limpid-agent-core" }
+limpid-agent-hook = { path = "../limpid-agent-hook" }
 limpid-agent-model = { path = "../limpid-agent-model" }
 limpid-agent-protocol = { path = "../limpid-agent-protocol" }
-limpid-provider-claude = { path = "../limpid-provider-claude" }
-limpid-provider-codex = { path = "../limpid-provider-codex" }
 serde_json.workspace = true
 uuid.workspace = true
 

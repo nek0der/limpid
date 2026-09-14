@@ -17,14 +17,19 @@ across app restarts, badge agent state, and re-route
   when the user passes one of their own the shim merges the two
   first: their keys win, and the per-event hook arrays concatenate so
   both sets run.
-- `limpid-hook` — receives hook payloads on stdin from Claude Code.
-  Reads `LIMPID_PANE_ID` (= the owning split-leaf UUID, one per
-  pane) and writes
+- `limpid-hook` — the hook command Claude Code calls. A wrapper that reads
+  `LIMPID_AGENT_HOOK_BACKEND` and exec's either the Hook Helper's
+  `hook claude` subcommand (the Rust hook runtime, see ADR 0004) or
+  `limpid-hook.legacy`, the previous shell receiver kept for one release
+  as the rollback path. The legacy receiver reads `LIMPID_PANE_ID` (= the
+  owning split-leaf UUID, one per pane) and writes
   `{paneId, sessionId, cwd, updatedAt, lastHookEvent}` to
   `$LIMPID_SESSIONS_DIR/<pane_id>.json` so Limpid can replay the
   session on next launch. It also writes the agent-state and
   cwd-change records the sidebar badges read.
-- `limpid-pretool-worktree-hook` — intercepts a `PreToolUse` Bash call
+- `limpid-pretool-worktree-hook` — the same wrapper shape as `limpid-hook`
+  (`hook claude worktree` in the helper, or the `.legacy` receiver). The
+  legacy receiver intercepts a `PreToolUse` Bash call
   that would create a git worktree and re-runs it under the active
   Project's placement rules.
 - `settings.template.json` — the hook block the `claude` shim fills in
@@ -47,6 +52,7 @@ Set by Limpid before spawning the pty:
 | `LIMPID_AGENT_TMUX_HOST_MODE` | `limpidHosted` for automatic hosting, `manual` inside user tmux |
 | `LIMPID_SHIM_DIR` | This directory, so `zdotdir/.zshrc` can re-prepend it |
 | `LIMPID_CLAUDE_HOOK_NAMESPACE` | Bundle identity used to keep the no-space hook link separate between Dev and Release builds |
+| `LIMPID_AGENT_HOOK_BACKEND` | `rust` to run hooks through the Hook Helper's Rust runtime, `shell` for the previous receivers (`*.legacy`); set by `AgentHookBackend` |
 | `LIMPID_SESSIONS_DIR` | Directory to write session records into |
 | `LIMPID_AGENT_STATES_DIR` | Directory to write agent-state records into |
 | `LIMPID_CWD_EVENTS_DIR` | Directory to write cwd-change records into |

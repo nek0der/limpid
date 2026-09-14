@@ -20,13 +20,17 @@ marked block, and nothing else, is written into the user's
   a Limpid terminal runs this first. It locates the real binary,
   splices in the `-c` overrides from `LIMPID_CODEX_HOOK_ARGS`, exports
   its own pid, and exec's over itself.
-- `limpid-hook` — receives hook payloads on stdin and writes the
-  per-pane session and agent-state records that `CodexSessionTracker`
-  and `CodexAgentStateTracker` read back.
-- `limpid-pretool-worktree-hook` — intercepts a `PreToolUse` Bash call
-  that would create a git worktree and re-runs it under the active
-  Project's placement rules. Symmetric with the `claude-shim` file of
-  the same name.
+- `limpid-hook` — the hook command Codex calls. A wrapper that reads
+  `LIMPID_AGENT_HOOK_BACKEND` and exec's either the Hook Helper's
+  `hook codex` subcommand (the Rust hook runtime, see ADR 0004) or
+  `limpid-hook.legacy`, the previous shell receiver kept for one release
+  as the rollback path. The records both write are read back by
+  `CodexSessionTracker` and `CodexAgentStateTracker`.
+- `limpid-pretool-worktree-hook` — the second `PreToolUse` hook for the
+  Bash tool. The same wrapper shape: `hook codex worktree` in the helper,
+  or `limpid-pretool-worktree-hook.legacy`, which intercepts a `git
+  worktree add` and re-runs it under the active Project's placement
+  rules. Symmetric with the `claude-shim` file of the same name.
 
 ## Environment contract
 
@@ -39,6 +43,7 @@ is the source of truth for the values.
 | `LIMPID_PANE_ID` | UUID of the launching split-tree leaf; not current ownership inside tmux |
 | `LIMPID_AGENT_RUN_ID` | UUID of this Codex invocation; lifecycle-state filename key |
 | `LIMPID_AGENT_TMUX_HOST_MODE` | `limpidHosted` for automatic hosting, `manual` inside user tmux |
+| `LIMPID_AGENT_HOOK_BACKEND` | `rust` to run hooks through the Hook Helper's Rust runtime, `shell` for the previous receivers (`*.legacy`); set by `AgentHookBackend` |
 | `LIMPID_CODEX_HOOK_ARGS` | Newline-separated arguments the `codex` shim splices in |
 | `LIMPID_CODEX_SESSIONS_DIR` | Directory to write session records into |
 | `LIMPID_CODEX_AGENT_STATES_DIR` | Directory to write agent-state records into |

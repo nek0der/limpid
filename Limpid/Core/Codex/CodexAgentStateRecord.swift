@@ -1,6 +1,6 @@
 // CodexAgentStateRecord.swift
-// Limpid — on-disk shape of a Codex agent lifecycle record written by
-// `Limpid/Resources/codex-shim/limpid-hook` after every relevant
+// Limpid — on-disk shape of a Codex lifecycle record written by the
+// receiver selected by `codex-shim/limpid-hook` after every relevant
 // hook event. `CodexAgentStateStore` reads / writes; the live
 // `Tab.codexAgentBadges[paneID]` mirror is rebuilt from this struct
 // via `CodexAgentStateTracker`.
@@ -18,7 +18,7 @@ struct CodexAgentStateRecord: AgentLifecycleRecord, Equatable {
     var stateEpisodeToken: String?
     /// UUID of the split-tree leaf that launched this runtime.
     var paneId: String
-    /// The lifecycle state encoded by the hook script.
+    /// The lifecycle state encoded by the selected receiver.
     var state: String
     /// Free-form tag for the tooltip.
     var detail: String?
@@ -26,7 +26,7 @@ struct CodexAgentStateRecord: AgentLifecycleRecord, Equatable {
     var runStartedAt: String?
     /// ISO-8601 instant of this record's write.
     var updatedAt: String
-    /// Diagnostic — which hook event produced this record.
+    /// Diagnostic event name: neutral in v3 and provider-native in legacy v2.
     var lastHookEvent: String?
     /// `current_token_count` from the most recent `PreCompact`.
     var contextTokens: Int?

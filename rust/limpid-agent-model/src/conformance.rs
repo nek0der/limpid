@@ -194,7 +194,6 @@ pub fn run_negative(
         let accepted = match &actual {
             Err(NormalizeError::TooLarge { .. } | NormalizeError::NotAnObject) => true,
             Ok(events) => matches!(events.as_slice(), [AgentEvent::Extension { .. }]),
-            Err(NormalizeError::NotImplemented) => false,
         };
         if !accepted {
             failures.push(ConformanceFailure {

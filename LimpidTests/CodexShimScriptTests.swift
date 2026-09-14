@@ -156,7 +156,8 @@ struct CodexShimScriptTests {
                 "LIMPID_AGENT_TMUX_SOCKET": "limpid-test.socket",
                 // Spaces on purpose: these reach tmux as `-e` values.
                 "LIMPID_CODEX_SESSIONS_DIR": "/App Support/codex-sessions",
-                "LIMPID_CODEX_AGENT_STATES_DIR": "/App Support/codex-agent-states"
+                "LIMPID_CODEX_AGENT_STATES_DIR": "/App Support/codex-agent-states",
+                "LIMPID_AGENT_HOOK_BACKEND": "rust"
             ]
             if let paneID {
                 process.environment?["LIMPID_PANE_ID"] = paneID
@@ -208,6 +209,7 @@ struct CodexShimScriptTests {
         #expect(argv.contains("LIMPID_PANE_ID=547D688D-39DF-4A06-BD6F-316C3385532C"))
         #expect(argv.contains { $0.hasPrefix("LIMPID_AGENT_RUN_ID=") })
         #expect(argv.contains("LIMPID_AGENT_TMUX_HOST_MODE=limpidHosted"))
+        #expect(argv.contains("LIMPID_AGENT_HOOK_BACKEND=rust"))
         // `-A` would attach to an existing session of the same name and
         // silently drop the command, handing back the running agent.
         #expect(!argv.contains("-A"))

@@ -1,15 +1,15 @@
-//! The provider registry and the C ABI for approval translation.
+//! The C ABI for provider translation and hook execution.
 //!
-//! The bridge is one of only two crates that know every provider (the other
-//! is the hook runtime). Everything else resolves a provider by its string id
-//! through this module, so adding a provider means adding one crate and one
-//! line here.
+//! Provider lookup is delegated to the hook runtime so all callers share one
+//! registry.
 
+use limpid_agent_hook::{
+    GitSnapshots, HookEnv, HookOutcome, HookRuntime, NoSnapshots, SnapshotRunner, adapter_for,
+    run_hook, run_worktree_hook,
+};
 use limpid_agent_model::{
     ApprovalDecision, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, RawHookInput,
 };
-use limpid_provider_claude::ClaudeAdapter;
-use limpid_provider_codex::CodexAdapter;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 use std::slice;
@@ -49,15 +49,92 @@ const PROVIDER_INVALID_INPUT: i32 = limpid_provider_result::LIMPID_PROVIDER_INVA
 const PROVIDER_INTERNAL: i32 = limpid_provider_result::LIMPID_PROVIDER_INTERNAL as i32;
 const PROVIDER_PANIC: i32 = limpid_provider_result::LIMPID_PROVIDER_PANIC as i32;
 
-/// Resolves a provider adapter by id.
-pub(crate) fn adapter_for(id: &str) -> Option<&'static dyn ProviderAdapter> {
-    static CLAUDE: ClaudeAdapter = ClaudeAdapter;
-    static CODEX: CodexAdapter = CodexAdapter;
-    match id {
-        limpid_provider_claude::PROVIDER_ID => Some(&CLAUDE),
-        limpid_provider_codex::PROVIDER_ID => Some(&CODEX),
-        _ => None,
+/// Which hook entry point `limpid_hook_run_v1` runs.
+pub const LIMPID_HOOK_KIND_LIFECYCLE: u32 = 0;
+/// The worktree intercept the providers call on their shell tool.
+pub const LIMPID_HOOK_KIND_WORKTREE: u32 = 1;
+
+/// Runs one lifecycle or worktree hook call and reports the outcome as JSON:
+/// `{"outcome":"applied","exit_code":0}` or, after a worktree intercept,
+/// `{"outcome":"intercepted","exit_code":2,"message":"..."}`. Every other
+/// outcome (`not_in_limpid`, `rejected`, `unknown_provider`) carries exit
+/// code zero so the agent is never blocked. `env_json` is a JSON object of
+/// the process environment; the runtime reads the shim's variables from it
+/// rather than from the process so the host controls what the hook sees.
+/// This call opens no approval service connection. On success, ownership
+/// of `*out` transfers to the caller, which must release it with
+/// `limpid_approval_bytes_free_v1`.
+///
+/// # Safety
+///
+/// Same contract as `limpid_provider_approval_request_v1`, with `env_json`
+/// readable for `env_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn limpid_hook_run_v1(
+    provider: *const u8,
+    provider_len: usize,
+    kind: u32,
+    input: *const u8,
+    input_len: usize,
+    env_json: *const u8,
+    env_len: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        return PROVIDER_NULL_POINTER;
     }
+    // SAFETY: The caller guarantees both output pointers are writable.
+    unsafe {
+        ptr::write(out, ptr::null_mut());
+        ptr::write(out_len, 0);
+    }
+    let status = provider_boundary(|| {
+        let provider = unsafe { input_bytes(provider, provider_len) }?;
+        let provider = std::str::from_utf8(provider).map_err(|_| PROVIDER_INVALID_INPUT)?;
+        let input = unsafe { input_bytes(input, input_len) }?;
+        let env_json = unsafe { input_bytes(env_json, env_len) }?;
+        let variables: std::collections::BTreeMap<String, String> =
+            serde_json::from_slice(env_json).map_err(|_| PROVIDER_INVALID_INPUT)?;
+        let env = HookEnv::from_pairs(variables);
+        let git = GitSnapshots;
+        let none = NoSnapshots;
+        let snapshots: &dyn SnapshotRunner = if env.turn_snapshots_disabled() {
+            &none
+        } else {
+            &git
+        };
+        let runtime = HookRuntime::new(&env, snapshots);
+        let outcome = match kind {
+            LIMPID_HOOK_KIND_LIFECYCLE => run_hook(provider, input, &runtime),
+            LIMPID_HOOK_KIND_WORKTREE => run_worktree_hook(provider, input, &runtime),
+            _ => return Err(PROVIDER_INVALID_INPUT),
+        };
+        let body = serde_json::to_vec(&outcome_json(&outcome)).map_err(|_| PROVIDER_INTERNAL)?;
+        // SAFETY: The caller guarantees both output pointers are writable, and
+        // the bytes are owned by the caller until it frees them.
+        unsafe { transfer(body, out, out_len) };
+        Ok(PROVIDER_OK)
+    });
+    status.unwrap_or_else(|code| code)
+}
+
+fn outcome_json(outcome: &HookOutcome) -> serde_json::Value {
+    let (name, message) = match outcome {
+        HookOutcome::Applied => ("applied", None),
+        HookOutcome::NotInLimpid => ("not_in_limpid", None),
+        HookOutcome::Rejected(reason) => ("rejected", Some(reason.clone())),
+        HookOutcome::UnknownProvider => ("unknown_provider", None),
+        HookOutcome::Intercepted { message, .. } => ("intercepted", Some(message.clone())),
+    };
+    let mut body = serde_json::json!({
+        "outcome": name,
+        "exit_code": outcome.exit_code(),
+    });
+    if let Some(message) = message {
+        body["message"] = serde_json::Value::String(message);
+    }
+    body
 }
 
 /// Translates a provider's `PermissionRequest` payload into the neutral
@@ -195,7 +272,6 @@ fn normalize_status(error: &NormalizeError) -> i32 {
     match error {
         NormalizeError::TooLarge { .. } => PROVIDER_INPUT_TOO_LARGE,
         NormalizeError::NotAnObject => PROVIDER_INVALID_INPUT,
-        NormalizeError::NotImplemented => PROVIDER_INTERNAL,
     }
 }
 
@@ -364,6 +440,79 @@ mod tests {
         assert_eq!((status, bytes), (PROVIDER_INVALID_INPUT, None));
         let (status, _) = output("nope", br#"{"decision":"delegate"}"#);
         assert_eq!(status, PROVIDER_UNKNOWN_PROVIDER);
+    }
+
+    fn hook(provider: &str, kind: u32, payload: &[u8], env: &[u8]) -> (i32, Option<Value>) {
+        let mut out: *mut u8 = ptr::dangling_mut();
+        let mut out_len: usize = 99;
+        // SAFETY: Every pointer is a live local of this test.
+        let status = unsafe {
+            limpid_hook_run_v1(
+                provider.as_ptr(),
+                provider.len(),
+                kind,
+                payload.as_ptr(),
+                payload.len(),
+                env.as_ptr(),
+                env.len(),
+                &raw mut out,
+                &raw mut out_len,
+            )
+        };
+        (status, take(out, out_len))
+    }
+
+    #[test]
+    fn hook_abi_reports_outcomes_and_writes_records() {
+        let scratch =
+            std::env::temp_dir().join(format!("limpid-bridge-hook-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&scratch).expect("scratch");
+        let env = serde_json::json!({
+            "LIMPID_PANE_ID": "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10",
+            "LIMPID_AGENT_RUN_ID": "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11",
+            "LIMPID_AGENT_STATES_DIR": scratch.join("states"),
+            "LIMPID_SESSIONS_DIR": scratch.join("sessions"),
+            "LIMPID_TURN_SNAPSHOT": "0",
+        })
+        .to_string();
+        let payload = br#"{"hook_event_name":"SessionStart","source":"startup","session_id":"s","cwd":"/tmp"}"#;
+        let (status, body) = hook(
+            "claude",
+            LIMPID_HOOK_KIND_LIFECYCLE,
+            payload,
+            env.as_bytes(),
+        );
+        assert_eq!(status, PROVIDER_OK);
+        let body = body.expect("body");
+        assert_eq!(body["outcome"], "applied");
+        assert_eq!(body["exit_code"], 0);
+        let record = std::fs::read(
+            scratch
+                .join("states")
+                .join("6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11.state.json"),
+        )
+        .expect("record written");
+        assert!(String::from_utf8_lossy(&record).contains("\"schemaVersion\":3"));
+
+        let (status, body) = hook("claude", LIMPID_HOOK_KIND_LIFECYCLE, payload, b"{}");
+        assert_eq!(status, PROVIDER_OK);
+        assert_eq!(body.expect("body")["outcome"], "not_in_limpid");
+        let (status, body) = hook(
+            "claude",
+            LIMPID_HOOK_KIND_WORKTREE,
+            br#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}"#,
+            env.as_bytes(),
+        );
+        assert_eq!(status, PROVIDER_OK);
+        assert_eq!(body.expect("body")["outcome"], "applied");
+        let (status, _) = hook("claude", 7, payload, env.as_bytes());
+        assert_eq!(status, PROVIDER_INVALID_INPUT);
+        let (status, _) = hook("claude", LIMPID_HOOK_KIND_LIFECYCLE, payload, b"[]");
+        assert_eq!(status, PROVIDER_INVALID_INPUT);
+        let (status, body) = hook("nope", LIMPID_HOOK_KIND_LIFECYCLE, payload, env.as_bytes());
+        assert_eq!(status, PROVIDER_OK);
+        assert_eq!(body.expect("body")["outcome"], "unknown_provider");
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     #[test]

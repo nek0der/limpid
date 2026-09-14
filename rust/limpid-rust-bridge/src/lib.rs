@@ -4,7 +4,9 @@ mod providers;
 mod title;
 
 pub use providers::{
-    limpid_provider_approval_output_v1, limpid_provider_approval_request_v1, limpid_provider_result,
+    LIMPID_HOOK_KIND_LIFECYCLE, LIMPID_HOOK_KIND_WORKTREE, limpid_hook_run_v1,
+    limpid_provider_approval_output_v1, limpid_provider_approval_request_v1,
+    limpid_provider_result,
 };
 
 use limpid_agent_core::{Principal, RunId};
@@ -269,13 +271,15 @@ pub unsafe extern "C" fn limpid_approval_session_exchange_v1(
     .unwrap_or_else(|status| status)
 }
 
-/// Releases response bytes returned by `limpid_approval_session_exchange_v1`.
-/// Passing null with a zero length is a no-op.
+/// Releases bytes this library handed out through an `out`/`out_len` pair:
+/// `limpid_approval_session_exchange_v1`, the `limpid_provider_*_v1`
+/// translations, and `limpid_hook_run_v1`. Passing null with a zero length
+/// is a no-op.
 ///
 /// # Safety
 ///
-/// The pair must be null/zero or exactly the pair returned by a successful
-/// exchange and not previously freed.
+/// The pair must be null/zero or exactly the pair returned by one successful
+/// call and not previously freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn limpid_approval_bytes_free_v1(data: *mut u8, len: usize) {
     if !data.is_null() {

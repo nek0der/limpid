@@ -6,6 +6,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Which hook entry point `limpid_hook_run_v1` runs.
+#define LIMPID_HOOK_KIND_LIFECYCLE 0
+
+// The worktree intercept the providers call on their shell tool.
+#define LIMPID_HOOK_KIND_WORKTREE 1
+
 // Status codes returned by the approval ABI functions.
 //
 // Every approval function reports its status as a plain `int32_t` so the C
@@ -151,13 +157,15 @@ int32_t limpid_approval_session_exchange_v1(struct limpid_approval_session_v1 *s
                                             size_t input_len,
                                             struct limpid_approval_bytes_v1 *output);
 
-// Releases response bytes returned by `limpid_approval_session_exchange_v1`.
-// Passing null with a zero length is a no-op.
+// Releases bytes this library handed out through an `out`/`out_len` pair:
+// `limpid_approval_session_exchange_v1`, the `limpid_provider_*_v1`
+// translations, and `limpid_hook_run_v1`. Passing null with a zero length
+// is a no-op.
 //
 // # Safety
 //
-// The pair must be null/zero or exactly the pair returned by a successful
-// exchange and not previously freed.
+// The pair must be null/zero or exactly the pair returned by one successful
+// call and not previously freed.
 void limpid_approval_bytes_free_v1(uint8_t *data, size_t len);
 
 // Resolves an automatic title into a caller-owned UTF-8 buffer.
@@ -181,6 +189,31 @@ int32_t limpid_resolve_title_v1(const uint8_t *provider_session_ptr,
                                 uint8_t *output_ptr,
                                 size_t output_capacity,
                                 size_t *output_length);
+
+// Runs one lifecycle or worktree hook call and reports the outcome as JSON:
+// `{"outcome":"applied","exit_code":0}` or, after a worktree intercept,
+// `{"outcome":"intercepted","exit_code":2,"message":"..."}`. Every other
+// outcome (`not_in_limpid`, `rejected`, `unknown_provider`) carries exit
+// code zero so the agent is never blocked. `env_json` is a JSON object of
+// the process environment; the runtime reads the shim's variables from it
+// rather than from the process so the host controls what the hook sees.
+// This call opens no approval service connection. On success, ownership
+// of `*out` transfers to the caller, which must release it with
+// `limpid_approval_bytes_free_v1`.
+//
+// # Safety
+//
+// Same contract as `limpid_provider_approval_request_v1`, with `env_json`
+// readable for `env_len` bytes.
+int32_t limpid_hook_run_v1(const uint8_t *provider,
+                           size_t provider_len,
+                           uint32_t kind,
+                           const uint8_t *input,
+                           size_t input_len,
+                           const uint8_t *env_json,
+                           size_t env_len,
+                           uint8_t **out,
+                           size_t *out_len);
 
 // Translates a provider's `PermissionRequest` payload into the neutral
 // approval request as JSON.

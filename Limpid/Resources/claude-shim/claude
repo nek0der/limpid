@@ -94,7 +94,7 @@ interactive_first_args="-r --resume -c --continue"
 one_shot_flags="--version -v -V --help -h -p --print --bg --background"
 # Passed through explicitly rather than left to inheritance, for the
 # reason above.
-hosted_env_names="LIMPID_PANE_ID LIMPID_SESSIONS_DIR LIMPID_AGENT_STATES_DIR LIMPID_CWD_EVENTS_DIR LIMPID_AGENT_RUN_ID LIMPID_AGENT_TMUX_HOST_MODE LIMPID_AGENT_TMUX"
+hosted_env_names="LIMPID_PANE_ID LIMPID_SESSIONS_DIR LIMPID_AGENT_STATES_DIR LIMPID_CWD_EVENTS_DIR LIMPID_AGENT_RUN_ID LIMPID_AGENT_TMUX_HOST_MODE LIMPID_AGENT_TMUX LIMPID_AGENT_HOOK_BACKEND"
 
 should_host_in_tmux() {
   [ -n "${LIMPID_AGENT_TMUX:-}" ] && [ -x "${LIMPID_AGENT_TMUX:-}" ] || return 1

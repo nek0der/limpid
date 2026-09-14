@@ -1,5 +1,12 @@
 // main.swift
-// Limpid — signed PermissionRequest bridge to the authenticated approval service.
+// Limpid — signed PermissionRequest bridge to the authenticated approval
+// service, and the process every lifecycle hook runs in.
+//
+// Two subcommands, deliberately separate: `permission-request <provider>`
+// opens the approval service and waits for a decision. `hook <provider>
+// [worktree]` runs the Rust hook runtime in-process without opening an XPC
+// connection, so lifecycle hooks remain independent of approval-service
+// availability.
 
 import Foundation
 
@@ -7,6 +14,31 @@ import Foundation
 /// from the provider crate and is shorter.
 private let approvalWaitSeconds = 580
 private let inputReadChunkBytes = 64 * 1024
+
+/// Diagnostics go where `LIMPID_HOOK_LOG` points, as the Rust runtime's own
+/// lines do, so one file collects both sides of a failed hook. The providers
+/// discard the stderr of a hook that exits 0, which is why stderr alone is
+/// not enough. The value `1` keeps the old meaning of "print to stderr".
+func logHookDiagnostic(_ message: String) {
+    guard let target = ProcessInfo.processInfo.environment["LIMPID_HOOK_LOG"], !target.isEmpty else {
+        return
+    }
+    let line = Data((message + "\n").utf8)
+    guard target != "1", let handle = FileHandle(forWritingAtPath: target) ?? createLog(at: target) else {
+        FileHandle.standardError.write(line)
+        return
+    }
+    defer { try? handle.close() }
+    _ = try? handle.seekToEnd()
+    handle.write(line)
+}
+
+private func createLog(at path: String) -> FileHandle? {
+    guard FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
+        return nil
+    }
+    return FileHandle(forWritingAtPath: path)
+}
 
 func readBoundedStandardInput() throws -> Data {
     var input = Data()
@@ -21,6 +53,35 @@ func readBoundedStandardInput() throws -> Data {
         input.append(chunk)
     }
     throw AgentIntegrationError.invalidArguments("The provider approval request is too large.")
+}
+
+/// Runs a lifecycle or worktree hook and exits the process with the
+/// runtime's status. Only a successful worktree intercept exits non-zero;
+/// every failure is logged by the runtime and exits zero so the agent is
+/// never blocked by Limpid.
+func runLifecycleHook(provider: String, kind: RustProviderBridge.HookKind) -> Never {
+    let input: Data
+    do {
+        input = try readBoundedStandardInput()
+    } catch {
+        logHookDiagnostic("Limpid hook helper: \(error)")
+        exit(0)
+    }
+    do {
+        let outcome = try RustProviderBridge.runHook(
+            provider: provider,
+            kind: kind,
+            payload: input,
+            environment: ProcessInfo.processInfo.environment
+        )
+        if let message = outcome.message, outcome.exitCode != 0 {
+            FileHandle.standardError.write(Data((message + "\n").utf8))
+        }
+        exit(outcome.exitCode)
+    } catch {
+        logHookDiagnostic("Limpid hook helper: \(error)")
+        exit(0)
+    }
 }
 
 func run(input: Data) throws -> Data? {
@@ -98,12 +159,24 @@ func run(input: Data) throws -> Data? {
 }
 
 func publishCodexLifecycleFallback(input: Data) {
-    guard CommandLine.arguments.last == "codex",
-          let script = AgentApprovalHookFallback.codexLifecycleScript(
-              forExecutableURL: URL(fileURLWithPath: CommandLine.arguments[0])
-                  .resolvingSymlinksInPath()
-          )
-    else { return }
+    guard CommandLine.arguments.last == "codex" else { return }
+    // With the Rust backend the lifecycle record is written in-process; the
+    // shell receiver is only re-run while the shell backend is selected. An
+    // unset variable means the default backend, as the wrappers read it.
+    let backend = ProcessInfo.processInfo.environment[AgentHookBackend.environmentKey]
+    if backend != AgentHookBackend.shell.rawValue {
+        _ = try? RustProviderBridge.runHook(
+            provider: "codex",
+            kind: .lifecycle,
+            payload: input,
+            environment: ProcessInfo.processInfo.environment
+        )
+        return
+    }
+    guard let script = AgentApprovalHookFallback.codexLifecycleScript(
+        forExecutableURL: URL(fileURLWithPath: CommandLine.arguments[0])
+            .resolvingSymlinksInPath()
+    ) else { return }
     let process = Process()
     let standardInput = Pipe()
     process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -121,6 +194,13 @@ func publishCodexLifecycleFallback(input: Data) {
     }
 }
 
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "hook" {
+    let kind: RustProviderBridge.HookKind = CommandLine.arguments.dropFirst(3).first == "worktree"
+        ? .worktree
+        : .lifecycle
+    runLifecycleHook(provider: CommandLine.arguments[2], kind: kind)
+}
+
 var input: Data?
 do {
     let boundedInput = try readBoundedStandardInput()
@@ -134,9 +214,7 @@ do {
 } catch {
     // No output delegates to the provider's native permission flow. Never
     // convert an integration or decoding failure into an approval decision.
-    if ProcessInfo.processInfo.environment["LIMPID_HOOK_LOG"] == "1" {
-        FileHandle.standardError.write(Data("Limpid approval helper: \(error)\n".utf8))
-    }
+    logHookDiagnostic("Limpid approval helper: \(error)")
     if let input {
         publishCodexLifecycleFallback(input: input)
     }

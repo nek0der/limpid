@@ -219,7 +219,8 @@ struct ClaudeShimScriptTests {
                 "LIMPID_REAL_CLAUDE": claudeStub.path,
                 "LIMPID_AGENT_TMUX": tmuxStub.path,
                 "LIMPID_AGENT_TMUX_SOCKET": "limpid-test.socket",
-                "LIMPID_PANE_ID": "547D688D-39DF-4A06-BD6F-316C3385532C"
+                "LIMPID_PANE_ID": "547D688D-39DF-4A06-BD6F-316C3385532C",
+                "LIMPID_AGENT_HOOK_BACKEND": "rust"
             ]
             try process.run()
             process.waitUntilExit()
@@ -243,6 +244,9 @@ struct ClaudeShimScriptTests {
         #expect(handover.tmux.prefix(4) == ["-L", "limpid-test.socket", "-f", "/dev/null"])
         #expect(handover.tmux.contains { $0.hasPrefix("LIMPID_AGENT_RUN_ID=") })
         #expect(handover.tmux.contains("LIMPID_AGENT_TMUX_HOST_MODE=limpidHosted"))
+        // The hook backend is fixed per pane and must reach the hooks that
+        // run inside the tmux session, not only the shell that chose it.
+        #expect(handover.tmux.contains("LIMPID_AGENT_HOOK_BACKEND=rust"))
         let settings = try #require(handover.tmux.firstIndex(of: "--settings"))
         // Directly after `/usr/bin/env` comes the agent, then our flag.
         #expect(handover.tmux[settings - 2] == "/usr/bin/env")

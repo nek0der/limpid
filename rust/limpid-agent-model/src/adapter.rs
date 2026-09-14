@@ -50,9 +50,6 @@ pub enum NormalizeError {
     TooLarge { limit: usize },
     #[error("input is not a JSON object")]
     NotAnObject,
-    /// The adapter does not implement normalization yet.
-    #[error("normalization is not implemented for this provider")]
-    NotImplemented,
 }
 
 /// A provider is one implementation of this trait plus recorded fixtures.
