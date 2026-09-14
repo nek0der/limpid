@@ -1,6 +1,7 @@
 //! Provider-neutral state machines for Limpid agent integrations.
 
 mod approval;
+mod events;
 mod gc;
 mod lifecycle;
 mod notifications;

@@ -58,6 +58,7 @@ pub fn project(
     let tab_titles = tab_titles(input, &badges);
     let marks_to_keep = surviving_marks(&input.marks, &runtimes);
     let mut commands = crate::gc::sweep(&state.accepted, input, &alive);
+    commands.extend(crate::events::route(&mut state, input, &alive));
     commands.extend(crate::notifications::observe(
         &mut state.outbox,
         &runtimes,
