@@ -182,15 +182,20 @@ final class CodexHookInstaller {
         if ProcessInfo.processInfo.environment["LIMPID_DEMO"] == "1" {
             return [:]
         }
-        var env = [
-            "LIMPID_CODEX_SESSIONS_DIR": CodexHookInstaller.sessionsDirectoryURL.path,
-            "LIMPID_CODEX_AGENT_STATES_DIR": CodexHookInstaller.agentStatesDirectoryURL.path,
-            "LIMPID_CODEX_HOOK_ARGS": CodexHookInjection.arguments(
-                lifecycleCommand: lifecycleCommand,
-                worktreeCommand: worktreeCommand,
-                approvalCommand: approvalCommand
-            ).joined(separator: CodexHookInstaller.argumentSeparator)
-        ]
+        // The directory variables are the provider's to name; only the hook
+        // arguments are assembled here, because only here is the installed
+        // hook's path known.
+        var env = AgentProviderRegistry.environment(
+            for: AgentKind.codex.rawValue,
+            state: CodexHookInstaller.agentStatesDirectoryURL,
+            sessions: CodexHookInstaller.sessionsDirectoryURL,
+            cwdEvents: nil
+        )
+        env["LIMPID_CODEX_HOOK_ARGS"] = CodexHookInjection.arguments(
+            lifecycleCommand: lifecycleCommand,
+            worktreeCommand: worktreeCommand,
+            approvalCommand: approvalCommand
+        ).joined(separator: CodexHookInstaller.argumentSeparator)
         env.merge(AgentHookBackend.environment) { _, backend in backend }
         return env
     }

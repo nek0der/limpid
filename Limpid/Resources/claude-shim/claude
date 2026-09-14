@@ -240,7 +240,10 @@ fi
 # the placeholders with the symlinked hook paths. Keeping the JSON in
 # its own file means adding a new hook event is a plain JSON edit, not
 # a shell-escape job inside this script.
-template="$self_dir/settings.template.json"
+# LIMPID_CLAUDE_SETTINGS_TEMPLATE exists for the test suites, which run this
+# script from the source tree where no bundle surrounds it. The template is
+# owned by the provider crate and copied in beside this script at build time.
+template="${LIMPID_CLAUDE_SETTINGS_TEMPLATE:-$self_dir/settings.template.json}"
 if [ ! -f "$template" ]; then
   # Same defensive fall-through as a missing hook script: better to
   # launch a usable claude than to refuse to start because our

@@ -663,7 +663,7 @@ struct ClaudeHookScriptTests {
     private static func subscribedEvents() throws -> [String] {
         let root = try #require(RepoFixture.limpidRoot)
         let template = root.appendingPathComponent(
-            "Limpid/Resources/claude-shim/settings.template.json"
+            "rust/limpid-provider-claude/resources/settings.template.json"
         )
         let filled = try String(contentsOf: template, encoding: .utf8)
             .replacingOccurrences(of: "@@HOOK@@", with: "/hook")

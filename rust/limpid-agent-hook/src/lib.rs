@@ -29,8 +29,8 @@ use limpid_agent_core::{
     ApplyContext, RecordWrites, SideWrite, TurnSnapshotOp, apply, turn_snapshot_cwd,
 };
 use limpid_agent_model::{
-    Capability, HookContext, ProviderAdapter, ProviderDescriptor, RawHookInput, RunRecord,
-    TmuxEndpoint,
+    Capability, HookContext, InstallRecipe, ProviderAdapter, ProviderDescriptor, ProviderId,
+    RawHookInput, RunRecord, TmuxEndpoint,
 };
 use limpid_provider_claude::ClaudeAdapter;
 use limpid_provider_codex::CodexAdapter;
@@ -97,6 +97,24 @@ pub fn installed_providers() -> Vec<&'static ProviderDescriptor> {
     ]
     .into_iter()
     .filter_map(|id| adapter_for(id).map(ProviderAdapter::descriptor))
+    .collect()
+}
+
+/// What each installed provider needs the platform to set up, by provider id.
+///
+/// Asked for rather than listed on the platform side, for the same reason as
+/// `installed_providers`: a second list there could disagree about a variable
+/// name, and a wrong name stops the agent reporting without an error anywhere.
+#[must_use]
+pub fn installed_recipes() -> Vec<(&'static ProviderId, InstallRecipe)> {
+    [
+        limpid_provider_claude::PROVIDER_ID,
+        limpid_provider_codex::PROVIDER_ID,
+    ]
+    .into_iter()
+    .filter_map(|id| {
+        adapter_for(id).map(|adapter| (&adapter.descriptor().id, adapter.install_recipe()))
+    })
     .collect()
 }
 

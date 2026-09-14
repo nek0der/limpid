@@ -50,3 +50,73 @@ enum AgentProviderRegistry {
         }
     }
 }
+
+/// What one provider needs the platform to set up for its hooks to reach
+/// Limpid. Declared by the provider crate so adding one is a crate and its
+/// fixtures, not a list on this side that could disagree about a name.
+struct AgentInstallRecipe: Decodable {
+    var environment: [Variable] = []
+
+    struct Variable: Decodable {
+        var name: String
+        var value: Placeholder
+    }
+
+    /// What the platform substitutes. A value this build does not know is
+    /// skipped rather than exported empty, because an empty directory path
+    /// would send the provider's records somewhere nobody reads.
+    enum Placeholder: String, Decodable {
+        case stateDirectory = "state_directory"
+        case sessionDirectory = "session_directory"
+        case cwdEventsDirectory = "cwd_events_directory"
+        case bundleID = "bundle_id"
+        case hookArguments = "hook_arguments"
+        case unknown
+
+        init(from decoder: any Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = Placeholder(rawValue: raw) ?? .unknown
+        }
+    }
+}
+
+extension AgentProviderRegistry {
+    /// Read once, like the descriptors: the recipes are compiled in.
+    static let recipes: [String: AgentInstallRecipe] = {
+        do {
+            return try JSONDecoder().decode(
+                [String: AgentInstallRecipe].self,
+                from: LimpidProjectionBridge.installRecipes()
+            )
+        } catch {
+            log.error("install recipes unavailable: \(String(describing: error), privacy: .public)")
+            return [:]
+        }
+    }()
+
+    /// The environment one provider's recipe asks for, with each placeholder
+    /// resolved against the directories this build actually uses.
+    static func environment(
+        for provider: String,
+        state: URL,
+        sessions: URL,
+        cwdEvents: URL?
+    ) -> [String: String] {
+        var environment: [String: String] = [:]
+        for variable in recipes[provider]?.environment ?? [] {
+            switch variable.value {
+            case .stateDirectory: environment[variable.name] = state.path
+            case .sessionDirectory: environment[variable.name] = sessions.path
+            case .cwdEventsDirectory:
+                if let cwdEvents {
+                    environment[variable.name] = cwdEvents.path
+                }
+            case .bundleID: environment[variable.name] = LimpidPaths.bundleID
+            // The hook's own arguments are assembled where the hook path is
+            // known, which is not here.
+            case .hookArguments, .unknown: continue
+            }
+        }
+        return environment
+    }
+}

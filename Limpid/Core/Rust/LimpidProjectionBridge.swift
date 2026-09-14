@@ -46,6 +46,13 @@ enum LimpidProjectionBridge {
         } input: { Data() }
     }
 
+    /// What each provider needs installed, as `{ "<id>": <recipe>, ... }`.
+    static func installRecipes() throws -> Data {
+        try call { pointers in
+            limpid_projection_install_recipes_v1(pointers.out, pointers.outCount)
+        } input: { Data() }
+    }
+
     /// Decides what to restore or retire before the interface is built.
     static func onLaunch(input: Data, now: String) throws -> Data {
         try lifecycle(input: input, now: now, limpid_projection_on_launch_v1)

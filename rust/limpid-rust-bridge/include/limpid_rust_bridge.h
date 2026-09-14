@@ -215,6 +215,16 @@ int32_t limpid_resolve_title_v1(const uint8_t *provider_session_ptr,
 // owns the body and frees it with `limpid_approval_bytes_free_v1`.
 int32_t limpid_projection_providers_v1(uint8_t **out, size_t *out_len);
 
+// Reports what each installed provider needs the platform to set up.
+//
+// The body is `{ "<provider id>": <install recipe>, ... }`.
+//
+// # Safety
+//
+// The output pointers must be writable. On `LIMPID_PROJECTION_OK` the caller
+// owns the body and frees it with `limpid_approval_bytes_free_v1`.
+int32_t limpid_projection_install_recipes_v1(uint8_t **out, size_t *out_len);
+
 // Reduces the records the host found into what to show and what to change.
 //
 // `state` is the body a previous call returned, or empty on the first call.

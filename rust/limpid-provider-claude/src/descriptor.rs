@@ -9,11 +9,13 @@ use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
 /// The settings document the shim hands to `claude --settings`, with the
-/// hook command placeholders the platform substitutes. Kept in the Swift
-/// resource tree because the shim reads it from the bundle; the recipe
-/// carries the same bytes so a provider is self-describing.
-const SETTINGS_TEMPLATE: &str =
-    include_str!("../../../Limpid/Resources/claude-shim/settings.template.json");
+/// hook command placeholders the platform substitutes.
+///
+/// Owned here rather than in the platform's resource tree: this crate knows
+/// the shape, and reaching across for it would point the dependency the wrong way.
+/// The shim reads it from beside itself at run time, so the application's
+/// build copies this file into the bundle.
+const SETTINGS_TEMPLATE: &str = include_str!("../resources/settings.template.json");
 
 pub(crate) fn descriptor() -> &'static ProviderDescriptor {
     static DESCRIPTOR: OnceLock<ProviderDescriptor> = OnceLock::new();
@@ -101,8 +103,8 @@ mod tests {
         let template: serde_json::Value =
             serde_json::from_str(&recipe.settings_fragments[0].body).expect("template is JSON");
         assert!(template["hooks"]["PermissionRequest"].is_array());
-        // Named by placeholder rather than by token text: a typo in the token
-        // used to compile, install, and leave the agent reporting to nothing.
+        // Named by placeholder rather than by token text: a typo in a token
+        // compiles, installs, and leaves the agent reporting to nothing.
         let state = recipe
             .environment
             .iter()

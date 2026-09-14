@@ -32,8 +32,10 @@ across app restarts, badge agent state, and re-route
   legacy receiver intercepts a `PreToolUse` Bash call
   that would create a git worktree and re-runs it under the active
   Project's placement rules.
-- `settings.template.json` — the hook block the `claude` shim fills in
-  and passes as `--settings`.
+- `settings.template.json` — the hook block the `claude` shim fills in and
+  passes as `--settings`. Not in this directory in the source tree: it
+  belongs to the provider crate that owns its shape, and the build copies it
+  in beside the shim.
 - `zdotdir/` — startup files that source the user's own first, then put
   the shim directories back at the front of `PATH`. Without this a
   user's `export PATH="/opt/homebrew/bin:$PATH"` buries the shim and

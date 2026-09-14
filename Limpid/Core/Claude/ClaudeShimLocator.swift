@@ -75,14 +75,17 @@ enum ClaudeShimLocator {
         } else {
             log.debug("claude-shim directory not found in bundle; skipping shim dir export")
         }
-        // Claude's settings command needs a path without spaces. The shim
-        // creates that indirection in TMPDIR, and the bundle id keeps a Dev
-        // build from redirecting a Release session's live hook path or vice
-        // versa while remaining stable across updates of the same build.
-        env["LIMPID_CLAUDE_HOOK_NAMESPACE"] = LimpidPaths.bundleID
-        env["LIMPID_SESSIONS_DIR"] = sessionsDirectoryURL.path
-        env["LIMPID_AGENT_STATES_DIR"] = agentStatesDirectoryURL.path
-        env["LIMPID_CWD_EVENTS_DIR"] = cwdEventsDirectoryURL.path
+        // The names and what each one carries are the provider's to declare;
+        // resolving them against this build's directories is ours. The bundle
+        // id among them keeps a Dev build from redirecting a Release session's
+        // live hook path or vice versa, while staying stable across updates of
+        // the same build.
+        env.merge(AgentProviderRegistry.environment(
+            for: AgentKind.claude.rawValue,
+            state: agentStatesDirectoryURL,
+            sessions: sessionsDirectoryURL,
+            cwdEvents: cwdEventsDirectoryURL
+        )) { _, recipe in recipe }
         env.merge(AgentHookBackend.environment) { _, backend in backend }
         return env
     }

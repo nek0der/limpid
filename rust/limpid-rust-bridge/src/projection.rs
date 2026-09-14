@@ -84,6 +84,36 @@ pub unsafe extern "C" fn limpid_projection_providers_v1(
     }
 }
 
+/// Reports what each installed provider needs the platform to set up.
+///
+/// The body is `{ "<provider id>": <install recipe>, ... }`.
+///
+/// # Safety
+///
+/// The output pointers must be writable. On `LIMPID_PROJECTION_OK` the caller
+/// owns the body and frees it with `limpid_approval_bytes_free_v1`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn limpid_projection_install_recipes_v1(
+    out: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    let outcome = projection_boundary(|| {
+        if out.is_null() || out_len.is_null() {
+            return Err(PROJECTION_NULL_POINTER);
+        }
+        let recipes: std::collections::BTreeMap<_, _> = limpid_agent_hook::installed_recipes()
+            .into_iter()
+            .map(|(id, recipe)| (id.clone(), recipe))
+            .collect();
+        let body = serde_json::to_vec(&recipes).map_err(|_| PROJECTION_INTERNAL)?;
+        unsafe { transfer(body, out, out_len) };
+        Ok(PROJECTION_OK)
+    });
+    match outcome {
+        Ok(code) | Err(code) => code,
+    }
+}
+
 /// Reduces the records the host found into what to show and what to change.
 ///
 /// `state` is the body a previous call returned, or empty on the first call.
