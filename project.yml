@@ -83,6 +83,13 @@ targets:
         PRODUCT_NAME: AgentIntegrationService
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_DEBUG_DYLIB: NO
+        # Command-line tools default to INSTALL_PATH=/usr/local/bin, so an
+        # archive of the Limpid scheme would also install this product under
+        # Products/usr/local/bin. Xcode then treats the archive as generic and
+        # exportArchive rejects every distribution method, including
+        # developer-id. The tool is only ever embedded into Limpid.app, so it
+        # must not be installed on its own.
+        SKIP_INSTALL: YES
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         LIBRARY_SEARCH_PATHS:
           - $(inherited)
@@ -131,6 +138,8 @@ targets:
         PRODUCT_NAME: AgentIntegrationRequesterProbe
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_DEBUG_DYLIB: NO
+        # See AgentIntegrationService: keep the archive free of standalone tools.
+        SKIP_INSTALL: YES
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationRequesterProbe.dev
@@ -152,6 +161,8 @@ targets:
         PRODUCT_NAME: AgentIntegrationHookHelper
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_DEBUG_DYLIB: NO
+        # See AgentIntegrationService: keep the archive free of standalone tools.
+        SKIP_INSTALL: YES
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationHookHelper.dev
@@ -173,6 +184,8 @@ targets:
         PRODUCT_NAME: AgentIntegrationControllerProbe
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_DEBUG_DYLIB: NO
+        # See AgentIntegrationService: keep the archive free of standalone tools.
+        SKIP_INSTALL: YES
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationControllerProbe.dev
