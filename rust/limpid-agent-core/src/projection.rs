@@ -57,8 +57,14 @@ pub fn project(
     let sessions = session_infos(input, &alive);
     let tab_titles = tab_titles(input, &badges);
     let marks_to_keep = surviving_marks(&input.marks, &runtimes);
-    let commands =
-        crate::notifications::observe(&mut state.outbox, &runtimes, input, &pane_to_tab, now);
+    let mut commands = crate::gc::sweep(&state.accepted, input, &alive);
+    commands.extend(crate::notifications::observe(
+        &mut state.outbox,
+        &runtimes,
+        input,
+        &pane_to_tab,
+        now,
+    ));
     let resume_candidates = resume_candidates(input, &sessions);
 
     state.episodes = runtimes

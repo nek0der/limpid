@@ -170,12 +170,13 @@ pub enum Precondition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         revision: Option<u64>,
     },
-    /// The resume hint still belongs to this run and session. A hint that has
-    /// moved on belongs to a newer run on the same pane.
+    /// The resume hint still names this run. A hint that has moved on belongs
+    /// to a newer run on the same pane and is not this one's to remove.
+    /// Absent matches a hint with no run id, which is what records from before
+    /// run ids existed produce.
     HintOwner {
-        run_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        session_id: Option<String>,
+        run_id: Option<String>,
     },
 }
 
@@ -341,8 +342,7 @@ mod tests {
                 pane: Uuid::nil(),
             },
             Precondition::HintOwner {
-                run_id: "RUN".to_owned(),
-                session_id: None,
+                run_id: Some("RUN".to_owned()),
             },
         )
         .continuing()
