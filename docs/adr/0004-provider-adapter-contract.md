@@ -114,6 +114,15 @@ pub trait ProviderAdapter: Send + Sync {
   the runtime can intercept it before the tool runs; it is separate from the
   neutral events because it is a request to act, not an observation.
 
+Where an intercepted worktree goes is read from `worktree-routing.json`, which
+the application writes beside its session file in the same operation. The hook
+read the session file itself until it stopped finding any projects after they
+moved into the sidebar's containers, and created worktrees in the wrong place
+until someone noticed. The routing file is narrow enough to be stable, is
+versioned, and is left alone by a hook that does not recognize the version:
+passing the command through puts the worktree where the agent asked, which is
+recoverable, where guessing at an unknown shape could put it anywhere.
+
 Input limits: a hook payload is at most 1 MiB, the same bound the protocol
 places on a client request, and record prompt, title, and detail fields are
 cleaned and truncated to 4096 bytes, including values carried from a v2 record.

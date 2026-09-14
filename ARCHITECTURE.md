@@ -224,7 +224,10 @@ backend and defaults to `rust` (`AgentHookBackend.current`), with the shell
 receivers kept as `*.legacy` for one release as the rollback path. Writers
 coordinate on each record's `.flock` sidecar: the Rust runtime takes it with
 `File::try_lock` and the app with `AgentFileLock`, and since both are `flock(2)`
-on the same sidecar inode they exclude each other.
+on the same sidecar inode they exclude each other. Where an intercepted
+`git worktree add` lands is read from `worktree-routing.json`, written beside
+`state.json` by the same save so the hook's view of the projects cannot lag the
+session's.
 
 Forward-compatible persistence:
 

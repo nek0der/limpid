@@ -158,50 +158,59 @@ fn capture_outside_a_repository_yields_nothing() {
     let _ = fs::remove_dir_all(&outside);
 }
 
-/// The state file as the app writes it: projects sit inside the sidebar's
-/// containers next to groups.
-fn state_json(repo: &Repo, extra: &str) -> PathBuf {
+/// The routing file as the application writes it beside the session: plain
+/// paths, a named placement, and a per-provider routing map.
+fn routing(repo: &Repo, routing_map: &str) -> PathBuf {
     let states = repo.root.join("support").join("agent-states");
     fs::create_dir_all(&states).expect("states");
     fs::write(
-        repo.root.join("support").join("state.json"),
+        repo.root.join("support").join("worktree-routing.json"),
         format!(
-            r#"{{"version":5,"containers":[{{"kind":"group","group":{{"name":"g"}}}},{{"kind":"project","project":{{"name":"repo","rootURL":"file://{}/","worktreePlacement":{{"siblingPrefixed":{{}}}},"bootstrap":["mkdir sub",{{"cmd":"touch nested.txt","cwd":"sub"}},{{"cmd":"touch escaped.txt","cwd":".."}}]{extra}}}}}]}}"#,
+            r#"{{"schemaVersion":1,"projects":[{{"root":"{}","placement":{{"kind":"siblingPrefixed"}},"bootstrap":[{{"command":"mkdir sub"}},{{"command":"touch nested.txt","cwd":"sub"}},{{"command":"touch escaped.txt","cwd":".."}}],"routing":{{{routing_map}}}}}]}}"#,
             repo.path.display()
         ),
     )
-    .expect("state.json");
+    .expect("worktree-routing.json");
     states
 }
 
 #[test]
-fn intercept_also_reads_the_pre_container_projects_array() {
-    let repo = Repo::new("legacy-state");
+fn intercept_passes_through_when_the_routing_file_cannot_be_read() {
+    let repo = Repo::new("unreadable-routing");
     let states = repo.root.join("support").join("agent-states");
     fs::create_dir_all(&states).expect("states");
-    fs::write(
-        repo.root.join("support").join("state.json"),
-        format!(
-            r#"{{"projects":[{{"rootURL":"file://{}/","worktreePlacement":{{"insideHidden":{{}}}}}}]}}"#,
-            repo.path.display()
-        ),
-    )
-    .expect("state.json");
     let intent = WorktreeIntent::parse(
         "git worktree add -b demo ../demo",
         Some(repo.path.to_str().expect("path")),
     )
     .expect("intent");
-    let result = limpid_agent_hook::run_worktree_intercept(&intent, "claude", &states);
-    let expected = repo.path.join(".worktrees").join("demo");
-    assert!(matches!(result, InterceptResult::Created { path, .. } if path == expected));
-    assert!(expected.join("README.md").exists());
+
+    // No file at all: the application has not written one yet.
+    assert_eq!(
+        limpid_agent_hook::run_worktree_intercept(&intent, "claude", &states),
+        InterceptResult::Passthrough
+    );
+
+    // A version this build does not know. Guessing at the shape could put a
+    // worktree anywhere; passing through only puts it where the agent asked.
+    fs::write(
+        repo.root.join("support").join("worktree-routing.json"),
+        format!(
+            r#"{{"schemaVersion":99,"projects":[{{"root":"{}","placement":{{"kind":"insideHidden"}},"bootstrap":[],"routing":{{}}}}]}}"#,
+            repo.path.display()
+        ),
+    )
+    .expect("routing");
+    assert_eq!(
+        limpid_agent_hook::run_worktree_intercept(&intent, "claude", &states),
+        InterceptResult::Passthrough
+    );
 }
 
 #[test]
 fn intercept_creates_the_worktree_where_the_project_says_and_notifies() {
     let repo = Repo::new("intercept");
-    let states = state_json(&repo, "");
+    let states = routing(&repo, "");
     let intent = WorktreeIntent::parse(
         "git worktree add -b feature/demo ../demo",
         Some(repo.path.to_str().expect("path")),
@@ -247,20 +256,21 @@ fn intercept_creates_the_worktree_where_the_project_says_and_notifies() {
 }
 
 #[test]
-fn intercept_decodes_file_urls_and_honors_a_custom_placement() {
+fn intercept_honors_a_custom_placement() {
     let repo = Repo::at("custom", "My 開発");
     let states = repo.root.join("support").join("agent-states");
     fs::create_dir_all(&states).expect("states");
     let parent = repo.root.join("wt dir");
-    // The URLs are written as Swift's `URL` encodes them.
+    // Plain paths: spaces and non-ASCII names need no decoding here, which is
+    // the point of the application normalizing them before writing.
     fs::write(
-        repo.root.join("support").join("state.json"),
+        repo.root.join("support").join("worktree-routing.json"),
         format!(
-            r#"{{"version":5,"containers":[{{"kind":"project","project":{{"name":"repo","rootURL":"file://{root}/My%20%E9%96%8B%E7%99%BA/","worktreePlacement":{{"custom":{{"_0":"file://{root}/wt%20dir/"}}}}}}}}]}}"#,
+            r#"{{"schemaVersion":1,"projects":[{{"root":"{root}/My 開発","placement":{{"kind":"custom","parent":"{root}/wt dir"}},"bootstrap":[],"routing":{{}}}}]}}"#,
             root = repo.root.display()
         ),
     )
-    .expect("state.json");
+    .expect("routing");
     let intent = WorktreeIntent::parse(
         "git worktree add -b demo ../demo",
         Some(repo.path.to_str().expect("path")),
@@ -283,7 +293,7 @@ fn intercept_passes_through_when_routing_is_off_or_the_project_is_unknown() {
         Some(repo.path.to_str().expect("path")),
     )
     .expect("intent");
-    let states = state_json(&repo, r#","routeClaudeWorktrees":false"#);
+    let states = routing(&repo, r#""claude":false"#);
     assert_eq!(
         limpid_agent_hook::run_worktree_intercept(&intent, "claude", &states),
         InterceptResult::Passthrough
@@ -308,7 +318,7 @@ fn intercept_passes_through_when_routing_is_off_or_the_project_is_unknown() {
 #[test]
 fn worktree_hook_exits_two_with_the_message_on_success() {
     let repo = Repo::new("hook");
-    let states = state_json(&repo, "");
+    let states = routing(&repo, "");
     let env = HookEnv::from_pairs([
         ("LIMPID_PANE_ID", PANE),
         ("LIMPID_AGENT_STATES_DIR", states.to_str().expect("path")),
@@ -333,4 +343,32 @@ fn worktree_hook_exits_two_with_the_message_on_success() {
         run_worktree_hook("claude", other.as_bytes(), &runtime),
         HookOutcome::Applied
     );
+}
+
+/// A routing file whose first entry this build cannot interpret, followed by
+/// the entry that owns `cwd`.
+#[test]
+fn intercept_skips_an_unreadable_entry_and_keeps_routing_the_rest() {
+    let repo = Repo::new("mixed-routing");
+    let states = repo.root.join("support").join("agent-states");
+    fs::create_dir_all(&states).expect("states");
+    fs::write(
+        repo.root.join("support").join("worktree-routing.json"),
+        format!(
+            r#"{{"schemaVersion":1,"projects":[{{"root":"{root}","placement":{{"kind":"fromTheFuture"}},"bootstrap":[],"routing":{{}}}},{{"placement":{{"kind":"siblingPrefixed"}},"bootstrap":[],"routing":{{}}}},{{"root":"{root}","placement":{{"kind":"siblingPrefixed"}},"bootstrap":[],"routing":{{}}}}]}}"#,
+            root = repo.path.display()
+        ),
+    )
+    .expect("worktree-routing.json");
+    let intent = WorktreeIntent::parse(
+        "git worktree add -b demo ../demo",
+        Some(repo.path.to_str().expect("path")),
+    )
+    .expect("intent");
+    // A placement a later version adds, or an entry missing its root, must not
+    // turn every other project's routing off.
+    assert!(matches!(
+        limpid_agent_hook::run_worktree_intercept(&intent, "claude", &states),
+        InterceptResult::Created { .. }
+    ));
 }

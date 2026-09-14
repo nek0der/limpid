@@ -12,6 +12,9 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+/// The routing file version this build reads.
+const ROUTING_SCHEMA_VERSION: u64 = 1;
+
 /// What the intercept decided.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InterceptResult {
@@ -27,7 +30,7 @@ pub enum InterceptResult {
     },
 }
 
-/// The project entry from `state.json` that owns `cwd`.
+/// The routing entry that owns `cwd`.
 struct ProjectRules {
     root: PathBuf,
     placement: Placement,
@@ -46,10 +49,10 @@ struct BootstrapStep {
 }
 
 /// Runs the intercept for `intent` on behalf of `provider_id`. `state_dir`
-/// is the provider's agent-state directory; `state.json` sits beside it.
+/// is the provider's agent-state directory; the routing file sits beside it.
 #[must_use]
 pub fn run(intent: &WorktreeIntent, provider_id: &str, state_dir: &Path) -> InterceptResult {
-    let Some(state_json) = state_dir.parent().map(|parent| parent.join("state.json")) else {
+    let Some(support) = state_dir.parent() else {
         return InterceptResult::Passthrough;
     };
     let cwd = intent
@@ -58,7 +61,7 @@ pub fn run(intent: &WorktreeIntent, provider_id: &str, state_dir: &Path) -> Inte
         .map(PathBuf::from)
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_default();
-    let Some(project) = project_for(&state_json, &cwd, provider_id) else {
+    let Some(project) = project_for(support, &cwd, provider_id) else {
         return InterceptResult::Passthrough;
     };
     let Some(worktree) = project.worktree_path(&intent.branch) else {
@@ -91,73 +94,66 @@ pub fn run(intent: &WorktreeIntent, provider_id: &str, state_dir: &Path) -> Inte
     }
 }
 
-/// Finds the project whose root contains `cwd` and whose routing toggle for
-/// this provider is on. The toggle defaults to on when absent; an explicit
-/// `false` is respected, which is why it is read as a boolean and not with
-/// an "or true" fallback.
-fn project_for(state_json: &Path, cwd: &Path, provider_id: &str) -> Option<ProjectRules> {
-    let state: Value = serde_json::from_slice(&std::fs::read(state_json).ok()?).ok()?;
+/// Finds the project whose root contains `cwd` and whose routing is on for
+/// this provider.
+///
+/// Read from `worktree-routing.json`, which the application writes in the same
+/// operation as the session itself so the two cannot drift. A version this
+/// build does not know is left alone rather than guessed at: passing the
+/// command through puts the worktree where the agent asked, which is
+/// recoverable, where guessing at a shape could put it anywhere.
+fn project_for(support: &Path, cwd: &Path, provider_id: &str) -> Option<ProjectRules> {
+    let routing: Value =
+        serde_json::from_slice(&std::fs::read(support.join("worktree-routing.json")).ok()?).ok()?;
+    if routing.get("schemaVersion").and_then(Value::as_u64) != Some(ROUTING_SCHEMA_VERSION) {
+        return None;
+    }
     let cwd = cwd.to_string_lossy();
-    let toggle = format!("route{}Worktrees", capitalize(provider_id));
-    for project in projects_in(&state) {
-        let Some(root) = project
-            .get("rootURL")
-            .and_then(Value::as_str)
-            .map(path_from_file_url)
-        else {
+    // An entry we cannot read is skipped rather than fatal: one project whose
+    // placement this build does not recognize must not stop every other
+    // project from routing, which is what returning here would do.
+    for project in routing.get("projects")?.as_array()? {
+        let Some(root) = project.get("root").and_then(Value::as_str) else {
             continue;
         };
-        let owns = *cwd == *root || cwd.starts_with(&format!("{root}/"));
-        if !owns {
+        if *cwd != *root && !cwd.starts_with(&format!("{root}/")) {
             continue;
         }
-        if project.get(&toggle).and_then(Value::as_bool) == Some(false) {
+        // Absent means routed; only an explicit opt-out turns it off, so a
+        // provider the application did not know about still gets the rules.
+        if project
+            .get("routing")
+            .and_then(|routing| routing.get(provider_id))
+            .and_then(Value::as_bool)
+            == Some(false)
+        {
             return None;
         }
-        let placement = match project.get("worktreePlacement").and_then(Value::as_object) {
-            Some(object) if object.contains_key("siblingPrefixed") => Placement::SiblingPrefixed,
-            Some(object) if object.contains_key("insideHidden") => Placement::InsideHidden,
-            Some(object) => {
-                let parent = object
-                    .get("custom")
-                    .and_then(|custom| custom.get("_0"))
-                    .and_then(Value::as_str)
-                    .map(path_from_file_url)?;
-                Placement::Custom(PathBuf::from(parent))
-            }
-            None => return None,
+        let Some(placement) = project.get("placement").and_then(placement) else {
+            continue;
         };
-        let bootstrap = project
-            .get("bootstrap")
-            .and_then(Value::as_array)
-            .map(|items| items.iter().filter_map(bootstrap_step).collect())
-            .unwrap_or_default();
         return Some(ProjectRules {
             root: PathBuf::from(root),
             placement,
-            bootstrap,
+            bootstrap: project
+                .get("bootstrap")
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(bootstrap_step).collect())
+                .unwrap_or_default(),
         });
     }
     None
 }
 
-/// Projects live inside the sidebar's `containers` (`{"kind":"project",
-/// "project":{…}}`) since the container redesign; a top-level `projects`
-/// array is the shape before it and is still accepted.
-fn projects_in(state: &Value) -> Vec<&Value> {
-    let mut projects: Vec<&Value> = state
-        .get("projects")
-        .and_then(Value::as_array)
-        .map(|items| items.iter().collect())
-        .unwrap_or_default();
-    if let Some(containers) = state.get("containers").and_then(Value::as_array) {
-        projects.extend(containers.iter().filter_map(|container| {
-            (container.get("kind").and_then(Value::as_str) == Some("project"))
-                .then(|| container.get("project"))
-                .flatten()
-        }));
+fn placement(value: &Value) -> Option<Placement> {
+    match value.get("kind")?.as_str()? {
+        "siblingPrefixed" => Some(Placement::SiblingPrefixed),
+        "insideHidden" => Some(Placement::InsideHidden),
+        "custom" => Some(Placement::Custom(PathBuf::from(
+            value.get("parent")?.as_str()?,
+        ))),
+        _ => None,
     }
-    projects
 }
 
 impl ProjectRules {
@@ -176,21 +172,14 @@ impl ProjectRules {
 }
 
 fn bootstrap_step(item: &Value) -> Option<BootstrapStep> {
-    match item {
-        Value::String(command) => Some(BootstrapStep {
-            command: command.clone(),
-            cwd: None,
-        }),
-        Value::Object(object) => Some(BootstrapStep {
-            command: object.get("cmd")?.as_str()?.to_owned(),
-            cwd: object
-                .get("cwd")
-                .and_then(Value::as_str)
-                .filter(|cwd| !cwd.is_empty())
-                .map(str::to_owned),
-        }),
-        _ => None,
-    }
+    Some(BootstrapStep {
+        command: item.get("command")?.as_str()?.to_owned(),
+        cwd: item
+            .get("cwd")
+            .and_then(Value::as_str)
+            .filter(|cwd| !cwd.is_empty())
+            .map(str::to_owned),
+    })
 }
 
 /// Runs each bootstrap step through `/bin/sh -c` in the worktree, as the
@@ -234,8 +223,9 @@ fn bootstrap_command(step: &BootstrapStep, directory: &Path) -> Command {
     command
 }
 
-/// A step `cwd` may only point inside the worktree; `state.json` is
-/// per-machine today, but the same shape may later be shared by a team.
+/// A step `cwd` may only point inside the worktree. The steps are
+/// per-machine today, but the same shape may later be shared by a team, so a
+/// step must not be able to name a path outside the tree it was created for.
 fn escapes_worktree(cwd: &str) -> bool {
     cwd.starts_with('/')
         || cwd == ".."
@@ -244,59 +234,9 @@ fn escapes_worktree(cwd: &str) -> bool {
         || cwd.ends_with("/..")
 }
 
-/// The path inside a `file://` URL as Swift's `URL` encodes it: percent
-/// escapes for spaces and non-ASCII characters, and a trailing slash for a
-/// directory. A plain path is returned unchanged so hand-written state files
-/// keep working.
-fn path_from_file_url(value: &str) -> String {
-    let path = value.strip_prefix("file://").unwrap_or(value);
-    let path = path.strip_suffix('/').unwrap_or(path);
-    String::from_utf8_lossy(&percent_decode(path.as_bytes())).into_owned()
-}
-
-/// Decodes `%XX` escapes; a malformed escape is kept literally.
-fn percent_decode(bytes: &[u8]) -> Vec<u8> {
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        let decoded_byte = (bytes[index] == b'%' && index + 3 <= bytes.len())
-            .then(|| bytes.get(index + 1..index + 3))
-            .flatten()
-            .and_then(|hex| std::str::from_utf8(hex).ok())
-            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
-        if let Some(byte) = decoded_byte {
-            decoded.push(byte);
-            index += 3;
-        } else {
-            decoded.push(bytes[index]);
-            index += 1;
-        }
-    }
-    decoded
-}
-
-fn capitalize(value: &str) -> String {
-    let mut characters = value.chars();
-    match characters.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + characters.as_str(),
-        None => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn file_urls_are_decoded_the_way_swift_encodes_them() {
-        assert_eq!(
-            path_from_file_url("file:///tmp/My%20Project/%E9%96%8B%E7%99%BA/"),
-            "/tmp/My Project/開発"
-        );
-        assert_eq!(path_from_file_url("file:///tmp/repo"), "/tmp/repo");
-        assert_eq!(path_from_file_url("/tmp/plain/"), "/tmp/plain");
-        assert_eq!(path_from_file_url("/tmp/100%25/x%2"), "/tmp/100%/x%2");
-    }
 
     #[test]
     fn a_step_cwd_may_not_leave_the_worktree() {

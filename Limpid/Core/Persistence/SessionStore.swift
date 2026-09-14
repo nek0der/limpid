@@ -73,6 +73,11 @@ final class SessionStore {
                     expected: SessionSnapshot.currentVersion
                 )
             }
+            // Refreshed on load as well as on save: an upgrade that adds this
+            // file would otherwise leave the worktree hook with nothing to
+            // read until the first save, and it would quietly pass every
+            // interception through in the meantime.
+            WorktreeRouting.write(projects: snapshot.projects, beside: fileURL)
             return .loaded(snapshot)
         } catch {
             log.error("failed to decode snapshot: \(String(describing: error), privacy: .public)")
@@ -144,5 +149,8 @@ final class SessionStore {
         } catch {
             log.error("write failed: \(String(describing: error), privacy: .public)")
         }
+        // Written here rather than anywhere else so the hook's view of the
+        // projects cannot lag the session's: one save, both files.
+        WorktreeRouting.write(projects: snapshot.projects, beside: url)
     }
 }
