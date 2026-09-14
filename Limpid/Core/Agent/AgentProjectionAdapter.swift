@@ -58,39 +58,6 @@ final class AgentProjectionAdapter {
         executor = AgentCommandExecutor(directories: directories, resumeIntents: resumeIntents)
     }
 
-    /// The registry as Rust reports it, or an empty map when the call fails.
-    /// An empty registry means no provider has any capability, so the rules
-    /// decide nothing rather than deciding wrongly.
-    static func installedProviders() -> [String: AgentProviderDescriptor] {
-        do {
-            return try JSONDecoder().decode(
-                [String: AgentProviderDescriptor].self,
-                from: LimpidProjectionBridge.providers()
-            )
-        } catch {
-            log.error("provider registry unavailable: \(String(describing: error), privacy: .public)")
-            return [:]
-        }
-    }
-
-    /// Directories each provider keeps its state in, under `root`, as the
-    /// descriptors declare them. Reading them from the registry is what stops
-    /// this side from holding a second list that could disagree.
-    static func directories(
-        under root: URL,
-        descriptors: [String: AgentProviderDescriptor]
-    ) -> [String: AgentDirectories] {
-        descriptors.mapValues { descriptor in
-            AgentDirectories(
-                state: root.appendingPathComponent(descriptor.stateDirectory, isDirectory: true),
-                sessions: root.appendingPathComponent(descriptor.sessionDirectory, isDirectory: true),
-                cwdEvents: descriptor.cwdEventsDirectory.map {
-                    root.appendingPathComponent($0, isDirectory: true)
-                }
-            )
-        }
-    }
-
     func bootstrap(
         into session: WindowSession,
         attention: AttentionState? = nil,

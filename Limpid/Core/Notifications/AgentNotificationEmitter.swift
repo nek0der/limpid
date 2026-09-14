@@ -224,31 +224,25 @@ struct AgentNotificationEmitter {
 
 extension AgentKind {
     /// macOS notification title used when a `(running|compacting) →
-    /// finished` transition fires for this agent kind. Each case must use a
-    /// string literal so the `Localizable.xcstrings` extractor can
-    /// pick up both keys at build time.
+    /// finished` transition fires. The provider names itself through the
+    /// registry, so adding one adds no string here; only the sentence around
+    /// the name is translated.
     var finishedTitle: String {
-        switch self {
-        case .claude: String(localized: "Claude finished")
-        case .codex: String(localized: "Codex finished")
-        }
+        let name = AgentProviderRegistry.displayName(for: self)
+        return String(localized: "\(name) finished", comment: "Notification title; the agent's name")
     }
 
     /// macOS notification title used when a pane transitions into
     /// `.needsInput` from any non-needsInput state.
     var needsInputTitle: String {
-        switch self {
-        case .claude: String(localized: "Claude needs input")
-        case .codex: String(localized: "Codex needs input")
-        }
+        let name = AgentProviderRegistry.displayName(for: self)
+        return String(localized: "\(name) needs input", comment: "Notification title; the agent's name")
     }
 
     /// History-row title used when a pane transitions into `.error`
     /// and there is no container label to anchor on.
     var errorTitle: String {
-        switch self {
-        case .claude: String(localized: "Claude hit an error")
-        case .codex: String(localized: "Codex hit an error")
-        }
+        let name = AgentProviderRegistry.displayName(for: self)
+        return String(localized: "\(name) hit an error", comment: "History row title; the agent's name")
     }
 }

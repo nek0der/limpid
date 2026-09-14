@@ -316,14 +316,21 @@ struct ContainerSettingsSheet: View {
         let onClaudeChange: (Bool) -> Void
         let onCodexChange: (Bool) -> Void
 
+        private static func label(for kind: AgentKind) -> String {
+            let name = AgentProviderRegistry.displayName(for: kind)
+            return String(localized: "\(name) CLI", comment: "Toggle label; the agent's name")
+        }
+
         var body: some View {
             Section {
+                // Each agent names itself through the registry, so the only
+                // translated part is the word around the name.
                 Toggle(
-                    "Claude Code CLI",
+                    Self.label(for: .claude),
                     isOn: Binding(get: { claudeEnabled }, set: { onClaudeChange($0) })
                 )
                 Toggle(
-                    "Codex CLI",
+                    Self.label(for: .codex),
                     isOn: Binding(get: { codexEnabled }, set: { onCodexChange($0) })
                 )
             } header: {

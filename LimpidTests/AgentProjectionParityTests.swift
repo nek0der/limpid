@@ -143,7 +143,7 @@ struct AgentProjectionParityTests {
         reset(harness, title: title)
 
         let newAttention = AttentionState()
-        let descriptors = AgentProjectionAdapter.installedProviders()
+        let descriptors = AgentProviderRegistry.descriptors
         let adapter = AgentProjectionAdapter(
             directories: ["claude": AgentDirectories(
                 state: harness.state,
