@@ -28,7 +28,23 @@ final class TmuxPanePresence {
     private(set) var surfaces: [TmuxSurfaceSnapshot] = []
     private(set) var detachedPaneIDs: Set<UUID> = []
     var onBindingsChanged: (() -> Void)?
+
+    /// Poll cadence, stepped by what the last probe found. A firing timer
+    /// is a CPU the system cannot leave idle, and Limpid sits open all
+    /// day: probing every two seconds is only worth its wakeups while
+    /// something is actually hosted in tmux.
+    ///
+    /// - `pollInterval` — a client is bound to a pane. Attachment moves
+    ///   need to land promptly, so this stays fast.
+    /// - `idlePollInterval` — tmux is installed but nothing is bound.
+    ///   The cost of noticing a new session a few seconds late is a badge
+    ///   that appears a few seconds late.
+    /// - `dormantPollInterval` — no tmux binary on the box. Nothing can
+    ///   appear until one is installed, which is not an event worth
+    ///   watching for at any real rate.
     nonisolated static let pollInterval: TimeInterval = 2
+    nonisolated static let idlePollInterval: TimeInterval = 10
+    nonisolated static let dormantPollInterval: TimeInterval = 60
 
     /// MainActor owns timer mutation; deinit only invalidates the resource.
     @ObservationIgnored private nonisolated(unsafe) var timer: Timer?
@@ -52,11 +68,26 @@ final class TmuxPanePresence {
         surfaceProvider = surfaces
         candidateProvider = candidates
         isActive = true
+        // Armed before the first refresh, which may already step the
+        // cadence down when tmux is absent or idle.
+        rearmTimer(interval: Self.pollInterval)
         refresh()
-        let timer = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
+    }
+
+    /// Re-arm the poll at `interval`, or leave it alone if it already runs
+    /// at that rate. Tolerance is a third of the interval so the system
+    /// can coalesce this wakeup with others — the coalescing is where the
+    /// power saving comes from, not the firing itself.
+    private func rearmTimer(interval: TimeInterval) {
+        guard isActive else { return }
+        if let timer, timer.isValid, timer.timeInterval == interval {
+            return
+        }
+        timer?.invalidate()
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
-        timer.tolerance = Self.pollInterval / 3
+        timer.tolerance = interval / 3
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
@@ -84,6 +115,13 @@ final class TmuxPanePresence {
             surfaces = next
         }
         paneIDs = Set(next.filter(\.isTmuxClient).map(\.paneID))
+        if !paneIDs.isEmpty {
+            // A pane is running tmux. Return to the fast cadence now
+            // rather than waiting for a probe to confirm a binding, so
+            // starting tmux costs one slow interval of latency and no
+            // more.
+            rearmTimer(interval: Self.pollInterval)
+        }
         let filtered = bindingsByPaneID.filter { paneIDs.contains($0.key) }
         if filtered != bindingsByPaneID {
             bindingsByPaneID = filtered
@@ -94,7 +132,11 @@ final class TmuxPanePresence {
     func refresh() {
         guard isActive else { return }
         refreshLocalSurfaces()
-        guard !isClientProbeRunning, let path = TmuxClientProbe.locateTmux() else { return }
+        guard !isClientProbeRunning else { return }
+        guard let path = TmuxClientProbe.locateTmux() else {
+            rearmTimer(interval: Self.dormantPollInterval)
+            return
+        }
         let frames = surfaces
         let requestRevision = revision
         let candidates = candidateProvider()
@@ -119,6 +161,15 @@ final class TmuxPanePresence {
                     now: ProcessInfo.processInfo.systemUptime
                 )
                 self.bindingsByPaneID = Self.resolveClients(frames: frames, clients: self.topology.clients)
+                // Step down to the idle cadence once no pane runs a tmux
+                // client any more. Stepping up is `refreshLocalSurfaces`'s
+                // job the moment one does, so the same criterion is used
+                // here: judging by resolved bindings instead would fight
+                // that re-arm every tick while a client's tty cannot be
+                // matched.
+                self.rearmTimer(
+                    interval: self.paneIDs.isEmpty ? Self.idlePollInterval : Self.pollInterval
+                )
                 // Observation can resolve a pending event without changing a binding.
                 self.onBindingsChanged?()
             }
