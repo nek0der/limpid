@@ -1,9 +1,9 @@
 //! Provider-neutral automatic title selection.
 
 /// Maximum number of UTF-8 bytes accepted for one title candidate.
-pub const MAX_TITLE_BYTES: usize = 4_096;
+pub(crate) const MAX_TITLE_BYTES: usize = 4_096;
 /// Maximum prompt bytes inspected while deriving the fallback title.
-pub const MAX_FIRST_PROMPT_BYTES: usize = 65_536;
+pub(crate) const MAX_FIRST_PROMPT_BYTES: usize = 65_536;
 
 /// Inputs ordered by semantic provenance rather than arrival time.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

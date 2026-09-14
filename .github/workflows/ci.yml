@@ -27,6 +27,13 @@ jobs:
         run: rustup show active-toolchain
       - name: Check formatting
         run: cargo fmt --all --check
+      # The bridge build script rewrites the committed header; any diff means
+      # the header in git no longer matches the exported Rust items. The
+      # Windows runner compares cleanly because .gitattributes pins LF endings.
+      - name: Check generated header
+        run: |
+          cargo build --locked --package limpid-rust-bridge
+          git diff --exit-code -- rust/limpid-rust-bridge/include/limpid_rust_bridge.h
       - name: Run Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Run tests
