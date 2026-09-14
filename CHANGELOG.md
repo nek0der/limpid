@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.6](https://github.com/nek0der/limpid/compare/v0.1.5...v0.1.6) (2026-09-14)
+
+
+### Features
+
+* **agent:** move hook lifecycle processing into Rust ([#67](https://github.com/nek0der/limpid/issues/67)) ([485250e](https://github.com/nek0der/limpid/commit/485250eb30e73e664207b1bfd41ffb093bca53fe))
+
+
+### Bug Fixes
+
+* **approval:** register the approval service on first install ([#70](https://github.com/nek0der/limpid/issues/70)) ([75ff985](https://github.com/nek0der/limpid/commit/75ff985f42da8cda9234e1b832ebd827c2038c65))
+
 ## [0.1.5](https://github.com/nek0der/limpid/compare/v0.1.4...v0.1.5) (2026-09-13)
 
 

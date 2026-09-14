@@ -33,8 +33,8 @@ settings:
     # at archive time via xcodebuild MARKETING_VERSION=... and
     # CURRENT_PROJECT_VERSION=... so the released app reports the
     # actual tag (release-please bumps these in lockstep with tags).
-    MARKETING_VERSION: "0.1.5" # x-release-please-version
-    CURRENT_PROJECT_VERSION: "0.1.5" # x-release-please-version
+    MARKETING_VERSION: "0.1.6" # x-release-please-version
+    CURRENT_PROJECT_VERSION: "0.1.6" # x-release-please-version
     # Debug uses ad-hoc signing for fast local iteration.
     # Release is signed with the Developer ID Application certificate
     # so the distributable .app can be notarized.
