@@ -2,7 +2,8 @@
 
 use crate::PROVIDER_ID;
 use limpid_agent_model::{
-    Capability, InstallRecipe, ProviderDescriptor, ProviderId, SettingsFragment,
+    Capability, InstallRecipe, ProviderDescriptor, ProviderId, RecipePlaceholder, RecipeVariable,
+    SettingsFragment,
 };
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
@@ -51,22 +52,22 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
 pub(crate) fn install_recipe() -> InstallRecipe {
     InstallRecipe {
         environment: vec![
-            (
-                "LIMPID_AGENT_STATES_DIR".to_owned(),
-                "@@STATE_DIRECTORY@@".to_owned(),
-            ),
-            (
-                "LIMPID_SESSIONS_DIR".to_owned(),
-                "@@SESSION_DIRECTORY@@".to_owned(),
-            ),
-            (
-                "LIMPID_CWD_EVENTS_DIR".to_owned(),
-                "@@CWD_EVENTS_DIRECTORY@@".to_owned(),
-            ),
-            (
-                "LIMPID_CLAUDE_HOOK_NAMESPACE".to_owned(),
-                "@@BUNDLE_ID@@".to_owned(),
-            ),
+            RecipeVariable {
+                name: "LIMPID_AGENT_STATES_DIR".to_owned(),
+                value: RecipePlaceholder::StateDirectory,
+            },
+            RecipeVariable {
+                name: "LIMPID_SESSIONS_DIR".to_owned(),
+                value: RecipePlaceholder::SessionDirectory,
+            },
+            RecipeVariable {
+                name: "LIMPID_CWD_EVENTS_DIR".to_owned(),
+                value: RecipePlaceholder::CwdEventsDirectory,
+            },
+            RecipeVariable {
+                name: "LIMPID_CLAUDE_HOOK_NAMESPACE".to_owned(),
+                value: RecipePlaceholder::BundleId,
+            },
         ],
         settings_fragments: vec![SettingsFragment {
             target: "claude.settings".to_owned(),
@@ -100,11 +101,13 @@ mod tests {
         let template: serde_json::Value =
             serde_json::from_str(&recipe.settings_fragments[0].body).expect("template is JSON");
         assert!(template["hooks"]["PermissionRequest"].is_array());
-        assert!(
-            recipe
-                .environment
-                .iter()
-                .any(|(name, _)| name == "LIMPID_AGENT_STATES_DIR")
-        );
+        // Named by placeholder rather than by token text: a typo in the token
+        // used to compile, install, and leave the agent reporting to nothing.
+        let state = recipe
+            .environment
+            .iter()
+            .find(|variable| variable.value == RecipePlaceholder::StateDirectory)
+            .expect("a state directory variable");
+        assert_eq!(state.name, "LIMPID_AGENT_STATES_DIR");
     }
 }

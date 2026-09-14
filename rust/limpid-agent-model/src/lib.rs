@@ -4,9 +4,9 @@
 //! rules consume: provider identity and capabilities, the neutral event
 //! vocabulary, the per-run record that state files carry, the approval
 //! request and decision shapes, and what the reader side projects records
-//! into. It depends on no provider and holds no
-//! registry; `ProviderId` validates only its string form so model types remain
-//! independent of the installed adapter set.
+//! into. It depends on no provider and holds no registry; `ProviderId`
+//! validates only its string form so model types remain independent of the
+//! installed adapter set.
 
 mod adapter;
 mod approval;
@@ -40,7 +40,8 @@ pub use projection::{
     SessionInfo, TabPanes, VIEWED_FINISHED_RETENTION_SECS, WorktreeEventFile,
 };
 pub use provider::{
-    Capability, InstallRecipe, ProviderDescriptor, ProviderId, ProviderIdError, SettingsFragment,
+    Capability, InstallRecipe, ProviderDescriptor, ProviderId, ProviderIdError, RecipePlaceholder,
+    RecipeVariable, SettingsFragment,
 };
 pub use record::{MAX_RECORD_TEXT_BYTES, RecordError, RunRecord, RunRecordV2, RunState};
 pub use timestamp::{

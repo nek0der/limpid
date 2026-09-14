@@ -107,6 +107,9 @@ pub trait ProviderAdapter: Send + Sync {
 - `install_recipe` declares the settings fragments, environment variables, and
   PATH shims the platform must place. The adapter never touches the file
   system.
+- A recipe names what the platform substitutes with a `RecipePlaceholder`
+  rather than a literal token. The tokens were strings on both sides, where a
+  typo compiles, installs, and then leaves the agent reporting to nothing.
 - `transcript_path` names the transcript the runtime should read alongside a
   payload, so a provider that keeps one pays the extra file read only on the
   events whose normalization uses it.

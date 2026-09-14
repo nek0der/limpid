@@ -163,6 +163,51 @@ impl ProviderDescriptor {
     }
 }
 
+/// A value the platform substitutes when it installs a recipe.
+///
+/// Typed rather than spelled out at each use: a literal token on both sides
+/// of the boundary is a typo that compiles, installs, and then leaves the
+/// agent reporting to nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecipePlaceholder {
+    /// Where this provider's run records go.
+    StateDirectory,
+    /// Where this provider's resume hints go.
+    SessionDirectory,
+    /// Where this provider's working-directory events go.
+    CwdEventsDirectory,
+    /// The running application's bundle identifier, which namespaces hooks so
+    /// a Debug and a Release install do not answer for each other.
+    BundleId,
+    /// The arguments the provider's hook command needs, as the platform builds
+    /// them.
+    HookArguments,
+}
+
+impl RecipePlaceholder {
+    /// The token a settings fragment carries, for providers whose
+    /// configuration is a document rather than an environment.
+    #[must_use]
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::StateDirectory => "@@STATE_DIRECTORY@@",
+            Self::SessionDirectory => "@@SESSION_DIRECTORY@@",
+            Self::CwdEventsDirectory => "@@CWD_EVENTS_DIRECTORY@@",
+            Self::BundleId => "@@BUNDLE_ID@@",
+            Self::HookArguments => "@@HOOK_ARGUMENTS@@",
+        }
+    }
+}
+
+/// One environment variable a pane needs, and what the platform puts in it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipeVariable {
+    pub name: String,
+    pub value: RecipePlaceholder,
+}
+
 /// A provider-specific configuration blob the platform places for the user.
 /// The adapter describes it; only the platform touches the file system.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,8 +215,9 @@ pub struct SettingsFragment {
     /// Where the fragment belongs, in the provider's own terms, for example
     /// `claude.settings` or `codex.config`.
     pub target: String,
-    /// The fragment body. Placeholders such as `@@HOOK@@` are substituted by
-    /// the platform with the paths of the installed hook executables.
+    /// The fragment body. `@@HOOK@@` is substituted by the platform with the
+    /// path of the installed hook executable; every other token in it is a
+    /// `RecipePlaceholder`.
     pub body: String,
 }
 
@@ -179,7 +225,7 @@ pub struct SettingsFragment {
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct InstallRecipe {
     /// Environment variables to export into the pane shell.
-    pub environment: Vec<(String, String)>,
+    pub environment: Vec<RecipeVariable>,
     /// Configuration fragments the platform must place.
     pub settings_fragments: Vec<SettingsFragment>,
 }
