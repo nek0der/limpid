@@ -23,8 +23,8 @@ struct AgentDirectories {
 /// The rules reasoned about a snapshot; by the time this runs a hook may have
 /// written again. So every command names the precondition to recheck, and this
 /// is the one place that takes the lock, rechecks it, and decides whether the
-/// rest of the chain still applies. Spreading that across call sites is what
-/// made the old trackers hard to reason about.
+/// rest of the chain still applies. Spreading that across call sites would
+/// leave the same compare-and-set logic in several places.
 ///
 /// Records are handled as the JSON they are rather than decoded into a type.
 /// The writer owns their shape; this side only applies named field changes and
@@ -196,8 +196,8 @@ struct AgentCommandExecutor {
         return .applied
     }
 
-    /// Only retired metadata is bounded. Live records are never evicted just
-    /// because the machine has run a lot of agents.
+    /// Only the retired directory is bounded here. Live state records are
+    /// never evicted just because the machine has run a lot of agents.
     private func pruneRetired(
         _ target: AgentCommandTarget,
         max: Int,
@@ -247,6 +247,9 @@ struct AgentCommandExecutor {
             return .applied
         }
         var survivors: [(URL, Date)] = []
+        // Files a writer is holding. Kept apart so the cap below cannot undo
+        // the wait, and counted so the deferral is visible in a log.
+        var busy: [URL] = []
         for url in urls where url.pathExtension == "json" {
             let stem = url.lastPathComponent.split(separator: ".").first.map(String.init) ?? ""
             if let pane = UUID(uuidString: stem), keep.contains(pane) {
@@ -255,12 +258,30 @@ struct AgentCommandExecutor {
                 survivors.append((url, modified))
                 continue
             }
-            try? FileManager.default.removeItem(at: url)
+            // A hook may be mid-write on this pane's file. The sweep is not
+            // urgent — the pane is gone either way — so a held lock defers it
+            // to the next pass rather than destroying a write in progress.
+            let removal = try? AgentFileLock.withLock(for: url) {
+                do {
+                    try FileManager.default.removeItem(at: url)
+                    return .applied
+                } catch {
+                    return .notFound
+                }
+            }
+            if removal == .busy {
+                busy.append(url)
+            }
         }
         // The cap is a backstop for a directory that has grown without a pane
-        // ever closing; the newest are the ones worth keeping.
+        // ever closing; the newest are the ones worth keeping. Files a writer
+        // is holding are left out of it entirely: dropping one here would undo
+        // the wait above for the sake of a bound that is not urgent.
         for (url, _) in survivors.sorted(by: { $0.1 > $1.1 }).dropFirst(max) {
             try? FileManager.default.removeItem(at: url)
+        }
+        if !busy.isEmpty {
+            log.debug("pane store sweep deferred \(busy.count, privacy: .public) locked files")
         }
         return .applied
     }
@@ -316,10 +337,9 @@ struct AgentCommandExecutor {
     /// Whether a name the rules sent is one we will build a path from.
     ///
     /// Everything the rules name came from a directory entry, so neither of
-    /// these can currently fail. They are here because the store this replaced
-    /// checked the same things, and the check is what keeps a future rule —
-    /// or a record whose own fields were tampered with — from addressing a
-    /// file outside the directory it was found in.
+    /// these can currently fail. They are here because the check is what keeps
+    /// a future rule — or a record whose own fields were tampered with — from
+    /// addressing a file outside the directory it was found in.
     private func isIdentifier(_ value: String) -> Bool {
         UUID(uuidString: value) != nil
     }

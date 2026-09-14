@@ -120,9 +120,7 @@ enum PaneActions {
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         attention: AttentionState? = nil,
-        claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil,
-        cwdEventTracker: CwdEventTracker? = nil
+        agentProjection: AgentProjectionAdapter? = nil
     ) {
         guard let tab = session.activeTab else { return }
         guard let leafID = tab.splitTree.effectiveFocusedLeafID
@@ -155,9 +153,7 @@ enum PaneActions {
         session.paneSearchStates.removeValue(forKey: leafID)
         session.paneTransients.removeValue(forKey: leafID)
         registry.unregister(leafID)
-        claudeSessionTracker?.didClosePane(leafID)
-        codexSessionTracker?.didClosePane(leafID)
-        cwdEventTracker?.didClosePane(leafID)
+        agentProjection?.didClosePane(leafID)
         // `AttentionState`'s dismiss/viewed dictionaries are pane-id
         // keyed and session-scoped. `TabActions.closeTab` already
         // forgets every leaf in the closing tab; the close-split
@@ -197,9 +193,7 @@ enum PaneActions {
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         attention: AttentionState? = nil,
-        claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil,
-        cwdEventTracker: CwdEventTracker? = nil
+        agentProjection: AgentProjectionAdapter? = nil
     ) {
         guard let tab = session.activeTab else { return }
         let leafCount = tab.splitTree.allLeafIDs().count
@@ -209,9 +203,7 @@ enum PaneActions {
                 registry: registry,
                 source: source,
                 attention: attention,
-                claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker,
-                cwdEventTracker: cwdEventTracker
+                agentProjection: agentProjection
             )
         } else {
             closeActivePane(
@@ -219,9 +211,7 @@ enum PaneActions {
                 registry: registry,
                 source: source,
                 attention: attention,
-                claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker,
-                cwdEventTracker: cwdEventTracker
+                agentProjection: agentProjection
             )
         }
     }

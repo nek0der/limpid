@@ -15,9 +15,8 @@ private let log = Logger.limpid("agent.projection.adapter")
 /// are all decided on the other side of the boundary.
 ///
 /// Passes are triggered by the directories changing and by a timer that asks
-/// whether the agent processes are still alive. Until this replaces the
-/// trackers the application starts neither, and the tests drive `refresh()`
-/// directly — which is also how it is compared against the path it replaces.
+/// whether the agent processes are still alive. Tests drive `refresh()`
+/// directly instead, so a case does not depend on a file event arriving.
 @MainActor
 final class AgentProjectionAdapter {
     private let directories: [String: AgentDirectories]
@@ -50,6 +49,25 @@ final class AgentProjectionAdapter {
     /// that fails changes nothing visible, so without this the only evidence
     /// is a log line nobody is watching.
     private(set) var lastFailure: String?
+
+    /// Every tmux socket a record has named. The topology probe needs somewhere
+    /// to look, and the records are the only place a socket this process never
+    /// spawned is written down.
+    private(set) var socketPaths: Set<String> = []
+
+    /// The one the application builds: every provider the registry declares,
+    /// rooted at this build's own support directory. Tests inject their
+    /// directories through the designated initializer instead.
+    convenience init() {
+        let root = LimpidPaths.applicationSupportDirectory()
+        self.init(
+            directories: AgentProviderRegistry.directories(under: root),
+            descriptors: AgentProviderRegistry.descriptors,
+            resumeIntents: AgentResumeIntentStore(
+                directory: root.appendingPathComponent("resume-intents", isDirectory: true)
+            )
+        )
+    }
 
     init(
         directories: [String: AgentDirectories],
@@ -112,6 +130,57 @@ final class AgentProjectionAdapter {
         timer.tolerance = seconds / 3
         RunLoop.main.add(timer, forMode: .common)
         sweep = timer
+    }
+
+    /// Decides what to restore and what to retire before the interface exists.
+    ///
+    /// Runs before the first pass, and before the session hints reach the tabs,
+    /// because a run this drops must not be offered for resume by the pass that
+    /// follows it.
+    func prepareForLaunch() {
+        runLifecycle("launch", LimpidProjectionBridge.onLaunch)
+    }
+
+    /// Records what Limpid is about to kill and what would bring it back.
+    ///
+    /// Synchronous by necessity: it runs inside `willTerminate`, and anything
+    /// it defers would not reach disk.
+    func prepareForTermination() {
+        runLifecycle("terminate", LimpidProjectionBridge.onTerminate)
+    }
+
+    /// Neither call needs the interface, and launch runs before there is one:
+    /// what they read is the records, the hints, the intents, and which
+    /// processes are alive. Everything a pass adds — which panes are open,
+    /// what the user has looked at — is a question about a window that does
+    /// not exist yet at launch and is beside the point at quit.
+    private func runLifecycle(
+        _ name: String,
+        _ call: (Data, String) throws -> Data
+    ) {
+        guard !DemoFixture.isDemoActive else { return }
+        do {
+            let body = try call(
+                JSONEncoder().encode(lifecycleInput()),
+                AgentDateParsing.formatISO8601(Date())
+            )
+            let commands = try JSONDecoder().decode([AgentProjectionCommand].self, from: body)
+            // File commands only: the rules raise no notification and touch no
+            // pane here, so the executor is the whole of it.
+            executor.run(commands)
+        } catch {
+            // The interface is unaffected either way: a launch that cannot
+            // decide leaves every record where it is, and a quit that cannot
+            // leaves the runs to be judged as orphans on the next launch.
+            lastFailure = String(describing: error)
+            log.error("\(name, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// A pane is gone. The rules decide what that means for the records it
+    /// held, so this only asks them again.
+    func didClosePane(_ paneID: UUID) {
+        refresh()
     }
 
     func stopWatching() {
@@ -184,6 +253,33 @@ final class AgentProjectionAdapter {
 
     // MARK: - Reading
 
+    /// What the launch and quit rules read: the files, the intents, and which
+    /// processes answer. No interface, because at launch there is none.
+    private func lifecycleInput() -> AgentProjectionInput {
+        var input = AgentProjectionInput()
+        input.providers = descriptors
+        for (provider, directory) in directories {
+            input.records += files(in: directory.state, suffix: ".state.json", provider: provider)
+            input.sessionRecords += files(in: directory.sessions, suffix: ".json", provider: provider)
+        }
+        input.resumeIntents = intents()
+        input.pidStatus = pidStatus(for: input.records)
+        return input
+    }
+
+    private func intents() -> [AgentProjectionIntent] {
+        resumeIntents.allIntents().map {
+            AgentProjectionIntent(
+                runID: $0.runID,
+                paneID: $0.paneID,
+                sessionID: $0.sessionID,
+                ownerRunID: $0.ownerRunID,
+                pid: $0.pid,
+                createdAt: AgentDateParsing.formatISO8601($0.createdAt)
+            )
+        }
+    }
+
     private func buildInput(session: WindowSession) -> AgentProjectionInput {
         var input = AgentProjectionInput()
         input.providers = descriptors
@@ -198,16 +294,7 @@ final class AgentProjectionAdapter {
             }
             input.worktreeEvents += worktreeFiles(in: directory.state, provider: provider)
         }
-        input.resumeIntents = resumeIntents.allIntents().map {
-            AgentProjectionIntent(
-                runID: $0.runID,
-                paneID: $0.paneID,
-                sessionID: $0.sessionID,
-                ownerRunID: $0.ownerRunID,
-                pid: $0.pid,
-                createdAt: AgentDateParsing.formatISO8601($0.createdAt)
-            )
-        }
+        input.resumeIntents = intents()
 
         input.tabs = session.tabs.map {
             AgentProjectionTabPanes(id: $0.id, panes: Array($0.splitTree.allLeafIDs()))
@@ -292,6 +379,10 @@ final class AgentProjectionAdapter {
     /// which is how the rules tell "nobody is attached" from "not known yet".
     private func presence(for records: [AgentProjectionFile]) -> AgentProjectionPresence {
         var presence = AgentProjectionPresence()
+        // Collected even when no probe is running, because the probe asks for
+        // its candidates before it starts and would otherwise have nowhere to
+        // look for a session this process did not spawn.
+        socketPaths = Set(records.compactMap { endpoint(in: $0)?.socketPath })
         guard let tmuxPresence else { return presence }
         for record in records {
             guard let endpoint = endpoint(in: record) else { continue }
@@ -328,7 +419,14 @@ final class AgentProjectionAdapter {
 
     private func focus(in session: WindowSession) -> AgentProjectionFocus? {
         guard let tab = session.activeTab, let pane = tab.splitTree.focusedLeafID else { return nil }
-        return AgentProjectionFocus(tab: tab.id, pane: pane)
+        return AgentProjectionFocus(
+            tab: tab.id,
+            pane: pane,
+            // The key window's own first responder is what the notification
+            // delegate asks about too, so a run that finishes behind another
+            // application is not treated as seen.
+            isActive: LimpidNotificationDelegate.isPaneFocused(paneIDString: pane.uuidString)
+        )
     }
 
     private func instants() -> [String: AnyEncodableInstant] {

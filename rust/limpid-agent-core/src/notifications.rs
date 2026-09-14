@@ -63,8 +63,8 @@ pub(crate) fn observe(
     commands
 }
 
-/// The run id a notification is keyed by. A run whose id is not a identifier
-/// the host can route back to is never announced, because an acknowledgement
+/// The run id a notification is keyed by. A run whose id is not an identifier
+/// the host can route back to is never announced, because an acknowledgment
 /// for it could not be matched.
 fn notifiable_run(runtime: &RuntimePresentation) -> Option<Uuid> {
     Uuid::parse_str(runtime.run_id.as_deref()?).ok()
@@ -551,6 +551,7 @@ mod tests {
         input.focus = Some(Focus {
             tab: tab(),
             pane: second,
+            is_active: true,
         });
         input.presence = PanePresence {
             locations: [(second, PaneLocation { is_active: false })]

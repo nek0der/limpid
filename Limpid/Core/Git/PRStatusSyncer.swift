@@ -129,7 +129,7 @@ final class PRStatusSyncer {
         // reaches a CLI. Letting the live path run would make the hero
         // screenshot depend on the contributor's checkouts and forge
         // credentials, which is the one thing that pipeline promises
-        // it does not. `AgentStateTracker` stops at the same door for
+        // it does not. The agent projection stops at the same door for
         // the same reason.
         guard !DemoFixture.isDemoActive else {
             for (container, info) in DemoFixture.prStatus {

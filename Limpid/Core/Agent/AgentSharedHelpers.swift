@@ -19,9 +19,8 @@ enum AgentDateParsing {
         return parseISO8601(raw)
     }
 
-    /// Inverse of `parseISO8601` — used by Codex's
-    /// `preserveLiveSessionsOnTerminate` to stamp the
-    /// `killedByLimpidAt` marker on app quit.
+    /// Inverse of `parseISO8601` — used when quitting to stamp the
+    /// `killedByLimpidAt` marker on a run Limpid is about to kill.
     static func formatISO8601(_ date: Date) -> String {
         formatter.string(from: date)
     }
@@ -59,5 +58,19 @@ enum AgentSessionIDValidator {
 enum ShellQuote {
     static func single(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+// MARK: - WindowSession helper
+
+@MainActor
+extension WindowSession {
+    /// Applies a mutating transform to every tab. The projection decides what
+    /// each tab should hold and applies the whole answer at once, so the shape
+    /// of the iteration does not belong at that call site.
+    func applyAcrossTabs(_ transform: (inout Tab) -> Void) {
+        for tab in tabs {
+            update(tab.id, transform: transform)
+        }
     }
 }

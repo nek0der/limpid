@@ -40,7 +40,7 @@ enum ClaudeShimLocator {
     }
 
     /// Where the hook receiver writes per-pane `CwdChanged` events.
-    /// Mirrors `CwdEventStore.directory` so the receiver and the
+    /// Mirrors the cwd-events directory the projection reads, so the receiver and the
     /// Swift watcher meet on the same files. Same Dev/Release path
     /// reasoning as `agentStatesDirectoryURL`.
     static var cwdEventsDirectoryURL: URL {

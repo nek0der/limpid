@@ -3,7 +3,7 @@
 // receiver selected by `claude-shim/limpid-hook` after every relevant
 // hook event. `ClaudeAgentStateStore` reads / writes; the live
 // `Tab.claudeAgentBadges[paneID]` mirror is rebuilt from this struct
-// via `ClaudeAgentStateTracker`.
+// via the projection.
 
 import Foundation
 

@@ -68,9 +68,7 @@ enum TabActions {
         source: CloseConfirmer.Source = .keyboard,
         confirm: Bool = true,
         attention: AttentionState? = nil,
-        claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil,
-        cwdEventTracker: CwdEventTracker? = nil
+        agentProjection: AgentProjectionAdapter? = nil
     ) {
         guard let tab = session.tab(tabID) else { return }
         let leafIDs = tab.splitTree.allLeafIDs()
@@ -108,9 +106,7 @@ enum TabActions {
             // quits, the closed-tab stack is gone anyway and stale
             // records would sit there until the next bootstrap
             // cleanup pass swept them.
-            claudeSessionTracker?.didClosePane(leafID)
-            codexSessionTracker?.didClosePane(leafID)
-            cwdEventTracker?.didClosePane(leafID)
+            agentProjection?.didClosePane(leafID)
             // Drop the attention bookkeeping for the closed pane so the
             // viewed / dismissed dictionaries don't accumulate dead
             // entries across long sessions. UUIDs aren't reused, so
@@ -187,9 +183,7 @@ enum TabActions {
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         attention: AttentionState? = nil,
-        claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil,
-        cwdEventTracker: CwdEventTracker? = nil
+        agentProjection: AgentProjectionAdapter? = nil
     ) {
         guard let id = session.activeTabID else { return }
         closeTab(
@@ -198,9 +192,7 @@ enum TabActions {
             tabID: id,
             source: source,
             attention: attention,
-            claudeSessionTracker: claudeSessionTracker,
-            codexSessionTracker: codexSessionTracker,
-            cwdEventTracker: cwdEventTracker
+            agentProjection: agentProjection
         )
     }
 
@@ -212,9 +204,7 @@ enum TabActions {
     static func closeAllTabsInActiveContainer(
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
-        claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil,
-        cwdEventTracker: CwdEventTracker? = nil
+        agentProjection: AgentProjectionAdapter? = nil
     ) {
         let tabs = session.tabs(in: session.activeContainerID)
         guard !tabs.isEmpty else { return }
@@ -226,9 +216,7 @@ enum TabActions {
                 registry: registry,
                 tabID: tab.id,
                 confirm: false,
-                claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker,
-                cwdEventTracker: cwdEventTracker
+                agentProjection: agentProjection
             )
         }
     }
@@ -277,9 +265,7 @@ enum TabActions {
     /// keeps the worktree-move suggester's seen-map in sync with the
     /// close path.
     struct SessionTrackers {
-        let claude: ClaudeSessionTracker?
-        let codex: CodexSessionTracker?
-        let cwdEvent: CwdEventTracker?
+        let projection: AgentProjectionAdapter?
     }
 
     // swiftlint:disable function_parameter_count
@@ -347,18 +333,14 @@ enum TabActions {
                 session,
                 registry: registry,
                 attention: attention,
-                claudeSessionTracker: trackers.claude,
-                codexSessionTracker: trackers.codex,
-                cwdEventTracker: trackers.cwdEvent
+                agentProjection: trackers.projection
             )
         case .closeTab:
             closeActiveTab(
                 session,
                 registry: registry,
                 attention: attention,
-                claudeSessionTracker: trackers.claude,
-                codexSessionTracker: trackers.codex,
-                cwdEventTracker: trackers.cwdEvent
+                agentProjection: trackers.projection
             )
         default:
             log.fault("dispatchFileAction missing handler for \(action.rawValue, privacy: .public) — add a case or fix action.category")

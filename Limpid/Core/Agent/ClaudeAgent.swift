@@ -18,19 +18,8 @@ enum ClaudeAgent: AgentSpec {
         "claude"
     }
 
-    static var badgesKeyPath: WritableKeyPath<Tab, [UUID: AgentBadge]> {
-        \Tab.claudeAgentBadges
-    }
-
     static var sessionsKeyPath: WritableKeyPath<Tab, [UUID: AgentSessionInfo]> {
         \Tab.claudeSessions
-    }
-
-    /// 30s — Claude's lifecycle is gentler; finished / error transitions
-    /// arrive via the shim, and the PID sweep is only a defence against
-    /// processes that died without firing `Stop`.
-    static var pidSweepInterval: TimeInterval {
-        30
     }
 
     static func makeBadge(from record: ClaudeAgentStateRecord) -> AgentBadge? {

@@ -14,10 +14,10 @@
 
 use crate::title::{TitleCandidates, resolve_title};
 use limpid_agent_model::{
-    AcceptedRun, AttachmentResolution, AttentionMarks, Badge, Capability, Command, EpisodeStamp,
-    Instants, Projection, ProjectionInput, ProjectionState, ProviderDescriptor, ProviderId,
-    RecordFile, RunRecord, RunState, RuntimePresentation, SessionInfo,
-    VIEWED_FINISHED_RETENTION_SECS, seconds_between,
+    AcceptedRun, AttachmentResolution, AttentionMarks, Badge, Capability, Command, CommandOp,
+    EpisodeStamp, Instants, Precondition, Projection, ProjectionInput, ProjectionState,
+    ProviderDescriptor, ProviderId, RecordFile, RunRecord, RunState, RuntimePresentation,
+    SessionInfo, Target, VIEWED_FINISHED_RETENTION_SECS, seconds_between,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -66,6 +66,7 @@ pub fn project(
         &pane_to_tab,
         now,
     ));
+    commands.extend(seen_where_the_user_is_looking(&runtimes, input));
     let resume_candidates = resume_candidates(input, &sessions);
 
     state.episodes = runtimes
@@ -222,6 +223,13 @@ fn capabilities_of<'a>(
 /// Everything else belongs to the single pane it was launched in.
 fn panes_for(record: &RunRecord, input: &ProjectionInput) -> (Vec<Uuid>, AttachmentResolution) {
     let Some(key) = endpoint_key(record) else {
+        // A run that says it is hosted in tmux but names no endpoint is
+        // somewhere we cannot work out. Falling back to the pane it was
+        // launched from would show it where it very likely is not: the
+        // point of tmux is that the run outlives that pane.
+        if record.is_tmux_hosted == Some(true) {
+            return (Vec::new(), AttachmentResolution::Unresolved);
+        }
         let Ok(pane) = Uuid::parse_str(&record.pane_id) else {
             return (Vec::new(), AttachmentResolution::Detached);
         };
@@ -388,6 +396,41 @@ fn display_priority(runtime: &RuntimePresentation, marks: &AttentionMarks, now: 
         return VIEWED_FINISHED_PRIORITY;
     }
     UNSEEN_FINISHED_PRIORITY
+}
+
+/// Marks a finished run viewed when the user is watching the pane it is in.
+///
+/// Attention otherwise only changes when focus moves, so a turn that finishes
+/// in the pane the user is already looking at would sit in the waiting list
+/// unread until they looked away and back. Being the focused pane is not
+/// enough on its own: a pane stays focused while the application is in the
+/// background, and nobody saw anything then.
+fn seen_where_the_user_is_looking(
+    runtimes: &[RuntimePresentation],
+    input: &ProjectionInput,
+) -> Vec<Command> {
+    let Some(focus) = input.focus else {
+        return Vec::new();
+    };
+    if !focus.is_active {
+        return Vec::new();
+    }
+    runtimes
+        .iter()
+        .filter(|runtime| runtime.badge.state == RunState::Finished)
+        .filter(|runtime| runtime.panes.contains(&focus.pane))
+        .filter(|runtime| !is_viewed(runtime, &input.marks))
+        .map(|runtime| {
+            Command::new(
+                CommandOp::MarkViewed {
+                    runtime_id: runtime.id.clone(),
+                    token: runtime.episode_token.clone(),
+                },
+                Target::Host,
+                Precondition::None,
+            )
+        })
+        .collect()
 }
 
 fn is_viewed(runtime: &RuntimePresentation, marks: &AttentionMarks) -> bool {
@@ -572,7 +615,7 @@ fn resume_candidates(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use limpid_agent_model::ProjectionState;
+    use limpid_agent_model::{Focus, ProjectionState, TabPanes};
 
     const PANE: &str = "11111111-1111-4111-8111-111111111111";
     const RUN: &str = "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1";
@@ -612,6 +655,78 @@ mod tests {
             accepted,
             ..ProjectionState::default()
         }
+    }
+
+    /// One finished run in one pane, with the panes the session holds.
+    fn finished_input(focus: Option<Focus>) -> ProjectionInput {
+        ProjectionInput {
+            providers: [(claude(), descriptor())].into_iter().collect(),
+            records: vec![file(Some(record(
+                Some(4),
+                "2026-09-14T12:03:00Z",
+                "finished",
+            )))],
+            tabs: vec![TabPanes {
+                id: Uuid::new_v4(),
+                panes: vec![PANE.parse().expect("pane")],
+            }],
+            focus,
+            ..ProjectionInput::default()
+        }
+    }
+
+    fn descriptor() -> ProviderDescriptor {
+        ProviderDescriptor {
+            id: claude(),
+            display_name: "Claude".to_owned(),
+            capabilities: std::collections::BTreeSet::default(),
+            pid_sweep_interval_ms: 30_000,
+            state_directory: "agent-states".to_owned(),
+            session_directory: "sessions".to_owned(),
+            cwd_events_directory: None,
+            process_names: Vec::new(),
+            session_end_drop_reasons: Vec::new(),
+        }
+    }
+
+    fn viewed_marks(commands: &[Command]) -> usize {
+        commands
+            .iter()
+            .filter(|command| matches!(command.op, CommandOp::MarkViewed { .. }))
+            .count()
+    }
+
+    #[test]
+    fn a_turn_that_finishes_where_the_user_is_looking_is_marked_seen() {
+        // Attention otherwise only changes when focus moves, so without this
+        // the run sits in the waiting list unread until the user looks away
+        // and back at the pane they were already watching.
+        let pane: Uuid = PANE.parse().expect("pane");
+        let now = Instants {
+            wall: "2026-09-14T12:04:00Z".to_owned(),
+            monotonic_ms: 0,
+        };
+        let input = finished_input(Some(Focus {
+            tab: Uuid::new_v4(),
+            pane,
+            is_active: true,
+        }));
+        let (_, _, commands) = project(&ProjectionState::default(), &input, &now);
+        assert_eq!(viewed_marks(&commands), 1);
+
+        // Behind another application nobody saw it, even though the pane is
+        // still the focused one.
+        let background = finished_input(Some(Focus {
+            tab: Uuid::new_v4(),
+            pane,
+            is_active: false,
+        }));
+        let (_, _, commands) = project(&ProjectionState::default(), &background, &now);
+        assert_eq!(viewed_marks(&commands), 0);
+
+        // And with no focused pane at all there is nothing to have seen.
+        let (_, _, commands) = project(&ProjectionState::default(), &finished_input(None), &now);
+        assert_eq!(viewed_marks(&commands), 0);
     }
 
     #[test]

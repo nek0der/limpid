@@ -442,13 +442,11 @@ struct TabRow: View {
 /// (Tabs / Log / Diff / Stash); after the mode switcher came out only
 /// the tabs list survived, so this view is now the entire tab column body.
 struct TabsListView: View {
+    @Environment(\.agentProjection) private var agentProjection
     @Environment(WindowSession.self) private var session
     @Environment(AttentionState.self) private var attention
     @Environment(LimpidDragState.self) private var dragState
     @Environment(\.surfaceRegistry) private var registry
-    @Environment(\.claudeSessionTracker) private var claudeSessionTracker
-    @Environment(\.cwdEventTracker) private var cwdEventTracker
-    @Environment(\.codexSessionTracker) private var codexSessionTracker
     @Namespace private var paneMergeHighlight
     let container: ContainerID
 
@@ -497,9 +495,7 @@ struct TabsListView: View {
                                     tabID: tab.id,
                                     source: .mouse,
                                     attention: attention,
-                                    claudeSessionTracker: claudeSessionTracker,
-                                    codexSessionTracker: codexSessionTracker,
-                                    cwdEventTracker: cwdEventTracker
+                                    agentProjection: agentProjection
                                 )
                             },
                             onRename: { newName in

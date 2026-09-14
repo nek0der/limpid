@@ -58,11 +58,9 @@ struct AgentRuntimeProjectionTests {
                     sessionName: "work"
                 )
             ], topology: topology())
-            let tracker = CodexAgentStateTracker(
-                store: store,
-                sessionStore: CodexSessionStore(
-                    directory: directory.appendingPathComponent("sessions")
-                )
+            let projection = ProjectionFixture.adapter(
+                state: store.directory,
+                sessions: directory.appendingPathComponent("sessions")
             )
 
             #expect(store.allRecords().count == 1)
@@ -71,7 +69,7 @@ struct AgentRuntimeProjectionTests {
                 sessionID: "$2"
             ) == [displayPaneID])
 
-            tracker.bootstrap(into: session, tmuxPresence: presence)
+            projection.bootstrap(into: session, tmuxPresence: presence)
 
             #expect(session.tab(tab.id)?.codexAgentBadges[displayPaneID]?.state == .running)
             #expect(session.tab(tab.id)?.codexAgentBadges[launchPaneID] == nil)
@@ -102,11 +100,9 @@ struct AgentRuntimeProjectionTests {
                     sessionName: "work"
                 )
             ], topology: topology())
-            let tracker = CodexAgentStateTracker(
-                store: store,
-                sessionStore: CodexSessionStore(
-                    directory: directory.appendingPathComponent("sessions")
-                )
+            let projection = ProjectionFixture.adapter(
+                state: store.directory,
+                sessions: directory.appendingPathComponent("sessions")
             )
 
             #expect(store.allRecords().count == 2)
@@ -115,7 +111,7 @@ struct AgentRuntimeProjectionTests {
                 sessionID: "$2"
             ) == [displayPaneID])
 
-            tracker.bootstrap(into: session, tmuxPresence: presence)
+            projection.bootstrap(into: session, tmuxPresence: presence)
 
             #expect(session.tab(tab.id)?.codexAgentBadges[displayPaneID]?.state == .needsInput)
         }
@@ -139,11 +135,11 @@ struct AgentRuntimeProjectionTests {
             session.update(tab.id) {
                 $0.tmuxBindings[paneID] = TmuxBinding(socketPath: "/tmp/tmux-501/default", sessionID: "$2", sessionName: "old")
             }
-            let tracker = CodexAgentStateTracker(
-                store: store,
-                sessionStore: CodexSessionStore(directory: directory.appendingPathComponent("sessions"))
+            let projection = ProjectionFixture.adapter(
+                state: store.directory,
+                sessions: directory.appendingPathComponent("sessions")
             )
-            tracker.bootstrap(into: session, tmuxPresence: TmuxPanePresence())
+            projection.bootstrap(into: session, tmuxPresence: TmuxPanePresence())
             #expect(session.tab(tab.id)?.codexAgentBadges[paneID] == nil)
             #expect(store.allRecords().count == 1)
         }
@@ -250,8 +246,8 @@ struct AgentRuntimeProjectionTests {
                 runId: current.runId
             )
             try sessions.save(hint)
-            let tracker = CodexAgentStateTracker(store: store, sessionStore: sessions)
-            tracker.cleanupDeadSessionsOnLaunch()
+            let projection = ProjectionFixture.adapter(state: store.directory, sessions: sessions.directory)
+            projection.prepareForLaunch()
             #expect(sessions.record(forPaneID: paneID) == hint)
             #expect(store.allRecords().map(\.storageID) == [current.storageID])
         }
@@ -270,11 +266,11 @@ struct AgentRuntimeProjectionTests {
             let presence = TmuxPanePresence(bindingsByPaneID: [paneID: TmuxBinding(
                 socketPath: "/tmp/tmux-501/default", sessionID: "$2", sessionName: "work"
             )], topology: topology())
-            let tracker = CodexAgentStateTracker(
-                store: store,
-                sessionStore: CodexSessionStore(directory: directory.appendingPathComponent("sessions"))
+            let projection = ProjectionFixture.adapter(
+                state: store.directory,
+                sessions: directory.appendingPathComponent("sessions")
             )
-            tracker.bootstrap(into: session, attention: attention, tmuxPresence: presence)
+            projection.bootstrap(into: session, attention: attention, tmuxPresence: presence)
             #expect(attention.attentionEntries(in: session).count == 2)
             #expect(session.tab(tab.id)?.codexAgentBadges[paneID]?.updatedAt == AgentDateParsing.parseISO8601(second.updatedAt))
             attention.dismissRuntime(AgentRuntimePresentation.id(kind: .codex, runID: first.storageID))
@@ -285,12 +281,12 @@ struct AgentRuntimeProjectionTests {
             second.state = "running"
             second.revision = 2
             try store.save(second)
-            tracker.refreshPresentation()
+            projection.refresh()
             #expect(session.tab(tab.id)?.codexAgentBadges[paneID]?.state == .running)
             second.state = "error"
             second.revision = 1
             try store.save(second)
-            tracker.refreshPresentation()
+            projection.refresh()
             #expect(session.tab(tab.id)?.codexAgentBadges[paneID]?.state == .running)
         }
     }

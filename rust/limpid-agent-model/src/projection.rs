@@ -24,9 +24,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 /// How long a resume intent stays usable, and equally how long a kill marker
-/// counts as evidence that Limpid ended the run. The two were separate
-/// literals with the same value; a restore reads both, so they are one
-/// constant.
+/// counts as evidence that Limpid ended the run. A restore reads both in the
+/// same pass, so they are one constant.
 pub const RESUME_WINDOW_SECS: u64 = 24 * 60 * 60;
 /// How long a finished run the user has already seen keeps its badge before it
 /// counts as dismissed.
@@ -143,6 +142,11 @@ pub struct TabPanes {
 pub struct Focus {
     pub tab: Uuid,
     pub pane: Uuid,
+    /// Whether the window holding that pane is the one the user is looking at.
+    /// A pane keeps being the focused one while the application is in the
+    /// background, and a run that finishes then has not been seen.
+    #[serde(default)]
+    pub is_active: bool,
 }
 
 /// Everything one projection pass reads.

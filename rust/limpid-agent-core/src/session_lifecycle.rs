@@ -36,6 +36,10 @@ struct Run {
     provider: ProviderId,
     storage_id: String,
     record: RunRecord,
+    /// Whether this provider reports the end of a session itself. It decides
+    /// what a dead process with a surviving hint means: a crash for a provider
+    /// that would have said so, and a quit for one that cannot.
+    reports_session_end: bool,
 }
 
 /// Decides what to restore or retire before the interface is built.
@@ -54,25 +58,33 @@ pub fn on_launch(input: &LifecycleInput, now: &str) -> Vec<Command> {
     runs(input)
         .into_iter()
         .filter(|run| shows_evidence_of_death(&run.record, input))
-        .map(|run| {
+        .filter_map(|run| {
             if let Some(intent) = intents.get(run.storage_id.as_str())
                 && claims(intent, &run, &hints, now)
             {
-                return restore(&run, now).then(Command::new(
+                return Some(restore(&run, now).then(Command::new(
                     CommandOp::Delete,
                     Target::ResumeIntent {
                         run_id: run.storage_id.clone(),
                     },
                     Precondition::Exists,
-                ));
+                )));
             }
             if was_killed_recently(&run.record, now) {
                 // Best effort. If the write fails the marker stays and the
                 // next launch retries exactly this, which is better than
                 // abandoning the rest of the sweep over one row.
-                return restore(&run, now).continuing();
+                return Some(restore(&run, now).continuing());
             }
-            retire(&run)
+            // Nothing says Limpid killed it. For a provider that reports the
+            // end of a session, the hint would already be gone if the user had
+            // closed it, so a hint that is still here means the process died
+            // without saying so — which is the case resuming exists for. Only
+            // a provider that cannot report it is read the other way.
+            if run.reports_session_end {
+                return None;
+            }
+            Some(retire(&run))
         })
         .collect()
 }
@@ -155,6 +167,10 @@ fn runs(input: &LifecycleInput) -> Vec<Run> {
         .filter_map(|file| {
             let record = RunRecord::decode(file.content.as_deref()?.as_bytes()).ok()?;
             Some(Run {
+                reports_session_end: input
+                    .providers
+                    .get(&file.provider)
+                    .is_some_and(|it| it.has(Capability::SessionEndDropsSession)),
                 provider: file.provider.clone(),
                 storage_id: file.name.clone(),
                 record,
@@ -397,6 +413,40 @@ mod tests {
                 _ => "other",
             })
             .collect()
+    }
+
+    /// The same input, for a provider that reports the end of a session
+    /// itself.
+    fn reporting(name: &str, record: String, status: PidStatus) -> LifecycleInput {
+        let mut input = base(name, true, record, status);
+        if let Some(descriptor) = input.providers.get_mut(&provider(name)) {
+            descriptor
+                .capabilities
+                .insert(Capability::SessionEndDropsSession);
+        }
+        input
+    }
+
+    #[test]
+    fn a_provider_that_reports_its_own_ends_keeps_the_hint_of_a_crashed_run() {
+        // No marker and no intent means Limpid did not kill it. This provider
+        // would have reported a session the user closed, and the hint is still
+        // here, so the process died without saying so — which is the case
+        // resuming exists for. Retiring would drop the hint that brings it back.
+        let input = reporting("claude", record_json(""), PidStatus::Dead);
+        assert!(on_launch(&input, NOW).is_empty());
+    }
+
+    #[test]
+    fn a_provider_that_cannot_report_them_retires_the_same_run() {
+        // Nothing else distinguishes "the user quit between launches" here, so
+        // a dead process is read as exactly that.
+        let input = base("codex", true, record_json(""), PidStatus::Dead);
+        assert_eq!(ops(&on_launch(&input, NOW)), vec!["delete"]);
+        assert!(matches!(
+            on_launch(&input, NOW)[0].then[0].op,
+            CommandOp::Retire
+        ));
     }
 
     #[test]

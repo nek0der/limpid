@@ -11,17 +11,13 @@ struct AgentRuntimePresentation {
     let paneIDs: Set<UUID>
     let tmuxLocations: [UUID: TmuxPaneLocation]
     /// Stable while the runtime remains in one state, even if hook
-    /// writes advance `revision`. Filled by `AgentStateTracker`.
+    /// writes advance `revision`. Filled by the projection.
     var stateEpisodeToken: String?
     /// Nil on compatibility fixtures; production always supplies evidence.
     var attachmentResolution: AgentAttachmentResolution?
 
     var resolution: AgentAttachmentResolution {
         attachmentResolution ?? (paneIDs.isEmpty ? .unresolved : .attached)
-    }
-
-    var key: AgentRunKey? {
-        UUID(uuidString: runID).map { AgentRunKey(kind: kind, invocation: $0) }
     }
 
     var id: String {
@@ -72,21 +68,4 @@ struct AgentStateEpisodeTracker {
             return stamped
         }
     }
-}
-
-struct AgentRuntimeTransition {
-    let runtime: AgentRuntimePresentation
-    let previous: AgentBadge?
-    /// The observed revision can precede the revision that resolves routing.
-    var eventRevision: String?
-
-    /// Which badge changes reach `AgentNotificationEmitter`. Error is
-    /// included so the failure lands in the history panel; the emitter
-    /// decides per state whether a banner accompanies the row.
-    static func isNotifiable(previous: AgentBadge?, current: AgentBadge) -> Bool {
-        (current.state == .needsInput && previous?.state != .needsInput)
-            || (current.state == .error && previous?.state != .error)
-            || (current.state == .finished && (previous?.state == .running || previous?.state == .compacting))
-    }
-
 }

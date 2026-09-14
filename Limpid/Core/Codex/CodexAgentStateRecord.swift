@@ -3,7 +3,7 @@
 // receiver selected by `codex-shim/limpid-hook` after every relevant
 // hook event. `CodexAgentStateStore` reads / writes; the live
 // `Tab.codexAgentBadges[paneID]` mirror is rebuilt from this struct
-// via `CodexAgentStateTracker`.
+// via the projection.
 
 import Foundation
 
@@ -42,7 +42,7 @@ struct CodexAgentStateRecord: AgentLifecycleRecord, Equatable {
     var turnRoot: String?
     /// The session's opening user prompt, captured once and never
     /// overwritten. Codex has no auto-generated conversation title, so
-    /// this is the only candidate `CodexAgentStateTracker` sends through the
+    /// this is the only candidate the launch rule sends through the
     /// Rust title resolver (`lastPrompt` would drift off-topic each turn).
     var firstPrompt: String?
     /// ISO-8601 instant the `SessionStart` hook fired for this pane.
@@ -51,9 +51,8 @@ struct CodexAgentStateRecord: AgentLifecycleRecord, Equatable {
     /// tab label when more than one Claude/Codex session is alive — the
     /// most recent SessionStart wins.
     var sessionStartedAt: String?
-    /// ISO-8601 instant set by `preserveLiveSessionsOnTerminate` when
-    /// Limpid quits while the codex process is still alive. The next
-    /// bootstrap's `cleanupDeadSessionsOnLaunch` reads this to give
+    /// ISO-8601 instant stamped when Limpid quits while the codex process
+    /// is still alive. The next launch reads this to give
     /// the session **one** resume attempt, then clears the field so
     /// the cycle can't loop forever — if SessionStart on resume fires
     /// late (Codex TUI quirk), the state is unrecoverable but we

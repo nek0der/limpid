@@ -34,22 +34,12 @@ extension EnvironmentValues {
     /// toggle + "Check Now" button without re-creating a controller.
     @Entry var sparkleUpdater: SPUUpdater?
 
-    /// Tracks per-tab Claude Code session ids written by the shim's
-    /// hook. `TabActions.closeTab` calls into it so the on-disk
-    /// record is dropped when the user closes a tab. `nil` in Previews
-    /// / tests is fine — the optional parameter on the close helpers
-    /// just skips the cleanup step.
-    @Entry var claudeSessionTracker: ClaudeSessionTracker?
-
-    /// Tracks per-tab Codex CLI session ids written by the codex hook.
-    /// Mirror of `claudeSessionTracker` for the Codex integration.
-    @Entry var codexSessionTracker: CodexSessionTracker?
-
-    /// Tracks per-tab `CwdChanged` records written by the shim's hook.
-    /// `TabActions.closeTab` / `closeActivePane` call into it so a
-    /// closed pane's `seen`-map entry and on-disk record are dropped
-    /// immediately rather than waiting for the next scan sweep.
-    @Entry var cwdEventTracker: CwdEventTracker?
+    /// Reduces the agent records into what each pane shows. `TabActions`
+    /// and `PaneActions` tell it when a pane closes so the records that
+    /// pane held are judged again immediately rather than at the next
+    /// sweep. `nil` in Previews / tests is fine — the optional parameter
+    /// on the close helpers just skips the step.
+    @Entry var agentProjection: AgentProjectionAdapter?
 
     /// Command palette frecency scoring store. `nil` in Previews /
     /// tests; LimpidApp installs the real instance at the scene root.

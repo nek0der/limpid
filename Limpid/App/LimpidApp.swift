@@ -51,32 +51,10 @@ final class AppState {
     /// (and future "undoable lite" actions) to surface a transient
     /// banner with an Undo button instead of a blocking confirm.
     let toastCenter: ToastCenter
-    /// Per-tab Claude Code session record. Bootstrapped after snapshot
-    /// restore so `Tab.claudeSessionId` is repopulated before any pane
-    /// mounts try to resume.
-    let claudeSessionTracker: ClaudeSessionTracker
-    /// Mirrors the on-disk agent lifecycle records into
-    /// `Tab.claudeAgentBadges` so status icons reflect each running
-    /// `claude` process.
-    let claudeAgentStateTracker: ClaudeAgentStateTracker
-    /// Owns the per-tab Codex CLI session record file. Mirror of
-    /// `claudeSessionTracker` for the `codex` binary.
-    let codexSessionTracker: CodexSessionTracker
-    /// Mirrors the on-disk Codex agent lifecycle records into
-    /// `Tab.codexAgentBadges`.
-    let codexAgentStateTracker: CodexAgentStateTracker
-    /// Watches the shim's `cwd-events` dir for fresh `CwdChanged`
-    /// records. Each fresh event lands on `worktreeMoveSuggester`.
-    let cwdEventTracker: CwdEventTracker
-    /// Watches the shim's `worktree-events` dir for `WorktreeCreate`
-    /// records (dropped by `claude-shim/limpid-pretool-worktree-hook`
-    /// after it re-routes a Claude `git worktree add`). Each event fires a
-    /// GitSync refetch so the new row appears without app-focus polling.
-    let worktreeEventTracker: WorktreeEventTracker
-    /// Codex parallel: own watcher on the Codex agent-states dir so
-    /// `codex-shim/limpid-pretool-worktree-hook` notifications flow into
-    /// the same GitSync refetch pipeline.
-    let codexWorktreeEventTracker: WorktreeEventTracker
+    /// Reduces every provider's on-disk records into what the panes show and
+    /// what has to happen to the files, for every provider the Rust registry
+    /// declares.
+    let agentProjection: AgentProjectionAdapter
     /// Drives the bottom-of-window banner that asks "Move to
     /// worktree X?" whenever Claude `cd`s into a worktree the
     /// current tab doesn't own.
@@ -224,40 +202,15 @@ final class AppState {
             session.openTabInActiveScope()
         }
 
-        // Re-attach Claude Code sessions captured by the shim's hook
-        // on the previous run. Must happen before we hand `session`
-        // to the rest of the graph so any pane that mounts can read
-        // `Tab.claudeSessionId` immediately.
-        let claudeSessionTracker = ClaudeSessionTracker()
-        claudeSessionTracker.bootstrap(into: session)
-        self.claudeSessionTracker = claudeSessionTracker
-
-        let claudeAgentStateTracker = ClaudeAgentStateTracker()
-        // notificationManager is constructed below; bootstrap is
-        // deferred until after it's available so "Claude finished"
-        // notifications can route through it.
-        self.claudeAgentStateTracker = claudeAgentStateTracker
-
-        // Codex CLI mirror trackers. The installer refreshes the trust
-        // block synchronously so the first pty we spawn already carries
-        // hooks Codex will agree to run.
+        // The installer refreshes the trust block synchronously so the
+        // first pty we spawn already carries hooks Codex will agree to
+        // run.
         let codexHookInstaller = CodexHookInstaller.shared
         codexHookInstaller.refresh()
         self.codexHookInstaller = codexHookInstaller
 
-        // Order matters: the agent state tracker's PID liveness sweep
-        // has to run *before* the session tracker reflects records into
-        // `Tab.codexSessions`, otherwise a Codex that the user `/quit`
-        // between Limpid sessions would auto-resume on next launch.
-        // Codex has no SessionEnd-equivalent hook, so the only signal
-        // for "user closed this session" is that the process is gone.
-        let codexAgentStateTracker = CodexAgentStateTracker()
-        codexAgentStateTracker.cleanupDeadSessionsOnLaunch()
-        self.codexAgentStateTracker = codexAgentStateTracker
-
-        let codexSessionTracker = CodexSessionTracker()
-        codexSessionTracker.bootstrap(into: session)
-        self.codexSessionTracker = codexSessionTracker
+        let agentProjection = AgentProjectionAdapter()
+        self.agentProjection = agentProjection
 
         self.session = session
         let attention = AttentionState()
@@ -269,43 +222,20 @@ final class AppState {
         self.frecencyStore = FrecencyStore()
         let notificationManager = LimpidNotificationManager(historyStore: historyStore)
         self.notificationManager = notificationManager
-        Self.bootstrapAgentTracking(
-            trackers: (claudeAgentStateTracker, codexAgentStateTracker),
-            session: session, attention: attention,
-            notifications: notificationManager, terminal: (tmuxPresence, registry)
-        )
-        // Cwd-change → worktree-move suggestion pipeline. The tracker
-        // watches the shim's `cwd-events` dir; every fresh record
-        // hands off to the suggester which decides whether the new
-        // path warrants a banner (case A/B in `WorktreeMoveSuggester`).
+        // Cwd-change → worktree-move suggestion pipeline. Every fresh
+        // record hands off to the suggester which decides whether the
+        // new path warrants a banner (case A/B in
+        // `WorktreeMoveSuggester`).
         let worktreeMoveSuggester = WorktreeMoveSuggester()
         worktreeMoveSuggester.bind(session: session)
         self.worktreeMoveSuggester = worktreeMoveSuggester
-        let cwdEventTracker = CwdEventTracker()
-        cwdEventTracker.bootstrap(into: session) { [weak worktreeMoveSuggester] record in
-            worktreeMoveSuggester?.handleEvent(record)
-        }
-        self.cwdEventTracker = cwdEventTracker
 
-        // Worktree-events: the PreToolUse hooks drop a JSON record
-        // after they re-route an agent's `git worktree add`. One
-        // tracker per agent-states dir; both share the same handler
-        // (defined on `WorktreeEventTracker` so this init stays under
-        // the file-length cap).
-        let worktreeEventHandler = WorktreeEventTracker.gitSyncRefetchHandler(for: session)
-        let worktreeEventTracker = WorktreeEventTracker(
-            agentStatesDirectory: LimpidPaths.applicationSupportDirectory()
-                .appendingPathComponent("agent-states", isDirectory: true)
+        Self.bootstrapAgentTracking(
+            projection: agentProjection,
+            session: session, attention: attention,
+            terminal: (tmuxPresence, registry),
+            handlers: (notificationManager, worktreeMoveSuggester)
         )
-        worktreeEventTracker.bootstrap(handler: worktreeEventHandler)
-        self.worktreeEventTracker = worktreeEventTracker
-
-        let codexWorktreeEventTracker = WorktreeEventTracker(
-            agentStatesDirectory: LimpidPaths.applicationSupportDirectory()
-                .appendingPathComponent("codex-agent-states", isDirectory: true)
-        )
-        codexWorktreeEventTracker.bootstrap(handler: worktreeEventHandler)
-        self.codexWorktreeEventTracker = codexWorktreeEventTracker
 
         self.historyPresentation = NotificationHistoryPresentation()
         self.dragState = LimpidDragState()
@@ -654,9 +584,7 @@ struct LimpidApp: App {
                 .environment(\.surfaceRegistry, state.registry)
                 .environment(\.reviewStores, state.reviewStores)
                 .environment(state.reviewPresentation)
-                .environment(\.claudeSessionTracker, state.claudeSessionTracker)
-                .environment(\.codexSessionTracker, state.codexSessionTracker)
-                .environment(\.cwdEventTracker, state.cwdEventTracker)
+                .environment(\.agentProjection, state.agentProjection)
                 .environment(\.frecencyStore, state.frecencyStore)
                 .environment(\.notificationManager, state.notificationManager)
                 .environment(\.sparkleUpdater, updaterStack.updater)
@@ -740,9 +668,7 @@ struct LimpidApp: App {
                     PaneActions.closeActivePaneOrTab(
                         state.session,
                         registry: state.registry,
-                        claudeSessionTracker: state.claudeSessionTracker,
-                        codexSessionTracker: state.codexSessionTracker,
-                        cwdEventTracker: state.cwdEventTracker
+                        agentProjection: state.agentProjection
                     )
                 } label: {
                     Label("Close Pane", systemImage: "xmark")
@@ -755,9 +681,7 @@ struct LimpidApp: App {
                     TabActions.closeActiveTab(
                         state.session,
                         registry: state.registry,
-                        claudeSessionTracker: state.claudeSessionTracker,
-                        codexSessionTracker: state.codexSessionTracker,
-                        cwdEventTracker: state.cwdEventTracker
+                        agentProjection: state.agentProjection
                     )
                 } label: {
                     Label("Close Tab", systemImage: "xmark.rectangle")
@@ -933,9 +857,7 @@ struct ContentView: View {
                 frecencyStore: state.frecencyStore,
                 toastCenter: state.toastCenter,
                 minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
-                claudeSessionTracker: state.claudeSessionTracker,
-                codexSessionTracker: state.codexSessionTracker,
-                cwdEventTracker: state.cwdEventTracker
+                agentProjection: state.agentProjection
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: .limpidToggleNotificationHistory)) { _ in

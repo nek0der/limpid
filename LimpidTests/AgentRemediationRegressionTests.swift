@@ -48,6 +48,7 @@ struct AgentRemediationRegressionTests {
 
     @Test func busyHintCleanup_retainsRetryRecordUntilReleased() throws {
         try withTempDir { directory in
+            let (session, _, _) = WindowSessionFixture.withLooseTab()
             let paneID = UUID(), runID = UUID().uuidString
             let store = CodexAgentStateStore(directory: directory.appendingPathComponent("states"))
             let hints = CodexSessionStore(directory: directory.appendingPathComponent("sessions"))
@@ -65,12 +66,12 @@ struct AgentRemediationRegressionTests {
             guard fd >= 0 else { return }
             defer { close(fd) }
             #expect(flock(fd, LOCK_EX | LOCK_NB) == 0)
-            let tracker = CodexAgentStateTracker(store: store, sessionStore: hints)
-            tracker.runPIDSweep()
+            let projection = ProjectionFixture.adapter(state: store.directory, sessions: hints.directory)
+            projection.bootstrap(into: session)
             #expect(store.allRecords().count == 1)
             #expect(hints.record(forPaneID: paneID) != nil)
             flock(fd, LOCK_UN)
-            tracker.runPIDSweep()
+            projection.refresh()
             #expect(store.allRecords().isEmpty)
             #expect(hints.record(forPaneID: paneID) == nil)
         }
@@ -78,7 +79,8 @@ struct AgentRemediationRegressionTests {
 
     @Test func shutdownIntent_protectsResumeDespiteRuntimeLock() throws {
         try withTempDir { directory in
-            let paneID = UUID(), runID = UUID().uuidString
+            let (session, _, paneID) = WindowSessionFixture.withLooseTab()
+            let runID = UUID().uuidString
             let store = CodexAgentStateStore(directory: directory.appendingPathComponent("states"))
             let hints = CodexSessionStore(directory: directory.appendingPathComponent("sessions"))
             try store.save(record(paneID: paneID, runID: runID, pid: "12345"))
@@ -91,21 +93,28 @@ struct AgentRemediationRegressionTests {
                 runId: runID
             ))
             var status = AgentProcessStatus.alive
-            let tracker = CodexAgentStateTracker(store: store, sessionStore: hints, processStatus: { _ in status })
+            let intents = AgentResumeIntentStore(
+                directory: store.directory.appendingPathComponent("resume-intents", isDirectory: true)
+            )
+            let projection = ProjectionFixture.adapter(
+                state: store.directory, sessions: hints.directory,
+                resumeIntents: intents, processStatus: { _ in status }
+            )
+            projection.bootstrap(into: session)
             let fd = open(store.directory.appendingPathComponent(runID + ".state.json.flock").path, O_CREAT | O_RDWR, 0o600)
             #expect(fd >= 0)
             guard fd >= 0 else { return }
             defer { close(fd) }
             #expect(flock(fd, LOCK_EX | LOCK_NB) == 0)
-            tracker.preserveLiveSessionsOnTerminate()
-            #expect(tracker.resumeIntents.record(runID: runID) != nil)
+            projection.prepareForTermination()
+            #expect(intents.record(runID: runID) != nil)
             #expect(store.allRecords().first?.killedByLimpidAt == nil)
             flock(fd, LOCK_UN)
             status = .dead
-            tracker.cleanupDeadSessionsOnLaunch()
+            projection.prepareForLaunch()
             #expect(hints.record(forPaneID: paneID) != nil)
             #expect(store.allRecords().first?.resumeAttemptedAt != nil)
-            #expect(tracker.resumeIntents.record(runID: runID) == nil)
+            #expect(intents.record(runID: runID) == nil)
         }
     }
 

@@ -25,13 +25,13 @@ import Foundation
 /// In-memory mirror of one pane's agent lifecycle. Lives on
 /// `Tab.claudeAgentBadges` / `Tab.codexAgentBadges` keyed by
 /// split-leaf UUID; the per-pane disk record is the authority and
-/// the matching tracker (`Claude*`/`Codex*AgentStateTracker`)
+/// the projection
 /// rewrites this struct to match on every hook event.
 ///
 /// Codex populates `firstPrompt`; Claude also supplies its provider title
 /// observations so the Rust reducer can select the automatic tab label.
 /// All other fields apply to both.
-struct AgentBadge: Codable, Equatable, AgentNotificationBadge {
+struct AgentBadge: Codable, Equatable {
     /// Strict lifecycle. The icon shape + tint come from
     /// `state.iconName` / `state.iconColor`.
     var state: AgentState
@@ -130,8 +130,8 @@ struct AgentSessionInfo: Codable, Equatable {
 /// tracker / builder implementations that consume it land in
 /// 2.2b–2.2d. Kept in this file with the unified data types so the
 /// next sub-phase is a one-spot reference.
-/// `PaneScopedRecord` refined with the lifecycle fields the generic
-/// `AgentStateTracker` reads: the agent's pid (so the PID sweep can
+/// `PaneScopedRecord` refined with the lifecycle fields the projection
+/// reads: the agent's pid (so the PID sweep can
 /// `kill(_, 0)` it) and the monotonic `updatedAt` stamp used to drop
 /// out-of-order async hook writes. Both Claude / Codex
 /// `*AgentStateRecord` types already expose these fields; this
@@ -193,22 +193,10 @@ protocol AgentSpec {
     /// strings — `"claude"` / `"codex"`.
     static var label: String { get }
 
-    /// Tab → `[UUID: AgentBadge]` mapping the generic state tracker
-    /// reads / writes. Each agent flavor points at its own dict
-    /// (`Tab.claudeAgentBadges` vs `Tab.codexAgentBadges`) so the
-    /// on-disk Tab schema stays unchanged.
-    static var badgesKeyPath: WritableKeyPath<Tab, [UUID: AgentBadge]> { get }
-
-    /// Tab → `[UUID: AgentSessionInfo]` mapping the generic session
-    /// tracker reads / writes. Same Tab-schema preservation rationale
-    /// as `badgesKeyPath`.
+    /// Tab → `[UUID: AgentSessionInfo]` the resume command builder reads.
+    /// Each provider points at its own dictionary so the on-disk Tab schema
+    /// stays unchanged.
     static var sessionsKeyPath: WritableKeyPath<Tab, [UUID: AgentSessionInfo]> { get }
-
-    /// Interval at which the generic state tracker sweeps for dead
-    /// agent PIDs. Claude polls every 30 s (foreground app, gentle
-    /// load); Codex polls every 3 s because its sessions can vanish
-    /// inside a single tick without firing `Stop`.
-    static var pidSweepInterval: TimeInterval { get }
 
     /// Build a unified `AgentBadge` from an on-disk state record.
     /// Each flavor fills in the fields its hook actually populates;

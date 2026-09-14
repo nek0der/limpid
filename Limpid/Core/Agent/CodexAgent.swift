@@ -19,20 +19,8 @@ enum CodexAgent: AgentSpec {
         "codex"
     }
 
-    static var badgesKeyPath: WritableKeyPath<Tab, [UUID: AgentBadge]> {
-        \Tab.codexAgentBadges
-    }
-
     static var sessionsKeyPath: WritableKeyPath<Tab, [UUID: AgentSessionInfo]> {
         \Tab.codexSessions
-    }
-
-    /// 3s — Codex sessions can vanish inside a single tick without
-    /// firing `Stop` (TUI quirk), so the PID sweep runs much hotter
-    /// than Claude's. The lower wakeup cost is acceptable because
-    /// only foreground panes carry the timer.
-    static var pidSweepInterval: TimeInterval {
-        3
     }
 
     static func makeBadge(from record: CodexAgentStateRecord) -> AgentBadge? {

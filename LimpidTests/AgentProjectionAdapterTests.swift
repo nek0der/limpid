@@ -100,6 +100,56 @@ struct AgentProjectionAdapterTests {
         }
     }
 
+    @Test("a restored pane keeps the resume hint of a run that crashed")
+    func launch_keepsTheHintOfAProviderThatReportsItsOwnEnds() throws {
+        try withTempDir { root in
+            let state = root.appendingPathComponent("agent-states", isDirectory: true)
+            let sessions = root.appendingPathComponent("sessions", isDirectory: true)
+            for directory in [state, sessions] {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+            let (session, _, pane) = WindowSessionFixture.withLooseTab()
+            let record: [String: Any] = [
+                "schemaVersion": 3,
+                "paneId": pane.uuidString,
+                "runId": Self.run,
+                "revision": 4,
+                "stateEpisodeToken": "4",
+                "state": "running",
+                "updatedAt": "2026-09-14T12:00:00Z",
+                "pid": "4242"
+            ]
+            try JSONSerialization.data(withJSONObject: record)
+                .write(to: state.appendingPathComponent("\(Self.run).state.json"))
+            let hint: [String: Any] = [
+                "schemaVersion": 1,
+                "paneId": pane.uuidString,
+                "sessionId": "S",
+                "cwd": "/tmp",
+                "updatedAt": "2026-09-14T12:00:00Z",
+                "runId": Self.run
+            ]
+            let hintURL = sessions.appendingPathComponent("\(pane.uuidString).json")
+            try JSONSerialization.data(withJSONObject: hint).write(to: hintURL)
+
+            let adapter = ProjectionFixture.adapter(
+                provider: "claude",
+                state: state,
+                sessions: sessions,
+                processStatus: { _ in .dead }
+            )
+            adapter.prepareForLaunch()
+            adapter.bootstrap(into: session, attention: AttentionState())
+
+            // Claude reports the end of a session itself, so a hint that is
+            // still here with a dead process means the process died without
+            // saying so. That is the case resuming exists for, and dropping
+            // the hint would take away what brings it back.
+            #expect(adapter.lastFailure == nil)
+            #expect(FileManager.default.fileExists(atPath: hintURL.path))
+        }
+    }
+
     @Test("a lock file beside the worktree events is not read as an event")
     func worktreeEvents_ignoreWhatIsNotAnEvent() throws {
         try withTempDir { root in

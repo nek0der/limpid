@@ -83,30 +83,28 @@ struct Tab: Codable, Equatable, Identifiable {
     /// `claude-shim/limpid-hook`. Keyed by split-tree leaf UUID
     /// (= `LIMPID_PANE_ID`) so two splits running `claude`
     /// concurrently each remember their own conversation.
-    /// `ClaudeSessionTracker` reconciles this map with the on-disk
-    /// records at launch. Optional default = `[:]` so an existing
-    /// `state.json` decodes without a snapshot version bump.
+    /// The projection reconciles this map with the on-disk records on every
+    /// pass. Optional default = `[:]` so an existing `state.json` decodes
+    /// without a snapshot version bump.
     var claudeSessions: [UUID: ClaudeSessionInfo] = [:]
 
     /// Per-pane Claude agent lifecycle badges. Mirrors the on-disk
     /// state records written by the selected Claude receiver on every event we
     /// subscribe to (SessionStart / UserPromptSubmit / PreToolUse /
     /// Notification / PreCompact / Stop / StopFailure / SessionEnd).
-    /// `ClaudeAgentStateTracker` keeps this in sync with disk via
-    /// FSEvents; `TabRow` / `ContainerRow` aggregate it for tab column / container column
-    /// status icons. Optional default = `[:]` for backward compat.
+    /// The projection keeps this in sync with disk; `TabRow` / `ContainerRow`
+    /// aggregate it for tab column / container column status icons. Optional
+    /// default = `[:]` for backward compat.
     var claudeAgentBadges: [UUID: ClaudeAgentBadge] = [:]
 
     /// Per-pane Codex session info captured by the receiver selected by
     /// `codex-shim/limpid-hook`. Mirror of `claudeSessions` for
-    /// the Codex CLI. `CodexSessionTracker` reconciles this map with
-    /// the on-disk records at launch.
+    /// the Codex CLI, reconciled from the same records by the same pass.
     var codexSessions: [UUID: CodexSessionInfo] = [:]
 
     /// Per-pane Codex agent lifecycle badges. Mirror of
-    /// `claudeAgentBadges` for the Codex CLI. Populated by
-    /// `CodexAgentStateTracker` from on-disk state records written by the
-    /// selected Codex receiver on every subscribed hook event.
+    /// `claudeAgentBadges` for the Codex CLI. Filled from the on-disk state
+    /// records the selected Codex receiver writes on every subscribed event.
     var codexAgentBadges: [UUID: CodexAgentBadge] = [:]
 
     /// Which tmux session each pane was showing when Limpid last quit,

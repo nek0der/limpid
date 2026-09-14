@@ -8,10 +8,8 @@
 // session must re-launch the same conversation today via the
 // `initialCommand` the surface mount reads.
 //
-// Tracker bootstrap is not exercised here — the trackers read disk
-// records via `PaneStore` and patch the live Tab, and that path is
-// covered by `ClaudeSessionTrackerTests` /
-// `CodexAgentStateTrackerTests`. What's missing across the suites
+// Reading the disk records is not exercised here — that path is covered by
+// the projection suites. What's missing across the suites
 // is the "we encoded the snapshot, decoded it, restored a session,
 // and the resume command for the active pane is what we expect"
 // flow — that's what these tests lock down.

@@ -96,6 +96,10 @@ struct AgentProjectionTabPanes: Encodable {
 struct AgentProjectionFocus: Encodable {
     var tab: UUID
     var pane: UUID
+    /// Whether the user is actually looking at this window. A pane stays the
+    /// focused one while the application is in the background, and the rules
+    /// treat "seen" differently from "would be seen if you looked".
+    var isActive: Bool
 }
 
 /// What a provider declares about itself, as the Rust registry reports it.

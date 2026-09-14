@@ -25,8 +25,7 @@ final class SettingsFileWatcher {
 
     /// `nonisolated(unsafe)` so deinit (nonisolated under Swift 6)
     /// can read these handles to clean up. Matches the sibling
-    /// DispatchSource watchers (`AgentStateTracker`, `CwdEventTracker`,
-    /// `WorktreeEventTracker`).
+    /// DispatchSource watcher in `AgentProjectionAdapter`.
     private nonisolated(unsafe) var dirSource: (any DispatchSourceFileSystemObject)?
     private nonisolated(unsafe) var dirFD: CInt = -1
 
