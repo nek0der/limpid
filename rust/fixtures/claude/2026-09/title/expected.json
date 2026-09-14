@@ -1,0 +1,100 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for title>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: cat \"/tmp/example\"",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for title>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: cd \"/tmp/example\" && printf 'hello\\n' >> README.md && cat -A README.md && git diff",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: cd \"/tmp/example\" && git diff",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for title>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: cd \"/tmp/example\" && git status",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "titles": {
+        "generated_title": "Fixture generated title"
+      },
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "name": "Notification",
+      "payload": {
+        "cwd": "/tmp/example",
+        "hook_event_name": "Notification",
+        "message": "Claude is waiting for your input",
+        "notification_type": "idle_prompt",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "scratchpad_dir": "/tmp/example",
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+      },
+      "type": "extension"
+    }
+  ],
+  [
+    {
+      "reason": "prompt_input_exit",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ]
+]

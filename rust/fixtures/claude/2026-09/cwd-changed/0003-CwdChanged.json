@@ -1,0 +1,10 @@
+{
+  "cwd": "/tmp/example",
+  "hook_event_name": "CwdChanged",
+  "new_cwd": "/tmp/example",
+  "old_cwd": "/tmp/example",
+  "prompt_id": "00000000-0000-4000-8000-000000000002",
+  "scratchpad_dir": "/tmp/example",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+}

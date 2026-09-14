@@ -349,6 +349,55 @@ struct ClaudeHookScriptTests {
         #expect(try runHooks(midTurn())?["isTmuxHosted"] == nil)
     }
 
+    /// Fixture recording has to keep the bytes the agent sent, not the
+    /// receiver's reading of them, so this compares the file against the
+    /// stdin bytes rather than against the parsed record. The transcript
+    /// copy is what the title rules are later replayed from.
+    @Test("records raw payloads and the transcript when LIMPID_HOOK_RECORD_DIR is set")
+    func recordDirectory_keepsRawPayloadsInOrder() throws {
+        try withTempDir { recordRoot in
+            let recordDir = recordRoot.appendingPathComponent("record")
+            try FileManager.default.createDirectory(at: recordDir, withIntermediateDirectories: true)
+            let transcript = recordRoot.appendingPathComponent("transcript.jsonl")
+            let transcriptBytes = Data("{\"type\":\"ai-title\",\"aiTitle\":\"Fixture\"}\n".utf8)
+            try transcriptBytes.write(to: transcript)
+            let payloads = [
+                payload("SessionStart", extra: ["transcript_path": transcript.path]),
+                payload("UserPromptSubmit", extra: ["prompt": "count \"quoted\" \\ things"])
+            ]
+
+            _ = try runHooks(payloads, extraEnvironment: ["LIMPID_HOOK_RECORD_DIR": recordDir.path])
+
+            let recorded = try FileManager.default.contentsOfDirectory(atPath: recordDir.path).sorted()
+            #expect(recorded == [
+                "0000-SessionStart.json",
+                "0000-SessionStart.transcript.jsonl",
+                "0001-UserPromptSubmit.json"
+            ])
+            for (index, name) in ["0000-SessionStart.json", "0001-UserPromptSubmit.json"].enumerated() {
+                let bytes = try Data(contentsOf: recordDir.appendingPathComponent(name))
+                let sent = try JSONSerialization.data(withJSONObject: payloads[index])
+                #expect(bytes.count == sent.count, "\(name) was rewritten rather than copied")
+                let parsed = try JSONSerialization.jsonObject(with: bytes) as? NSDictionary
+                #expect(parsed == payloads[index] as NSDictionary)
+            }
+            let copiedTranscript = try Data(
+                contentsOf: recordDir.appendingPathComponent("0000-SessionStart.transcript.jsonl")
+            )
+            #expect(copiedTranscript == transcriptBytes)
+        }
+    }
+
+    @Test("leaves no recording behind when the directory does not exist")
+    func recordDirectory_missing_isIgnored() throws {
+        try withTempDir { recordRoot in
+            let missing = recordRoot.appendingPathComponent("absent")
+            let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_HOOK_RECORD_DIR": missing.path])
+            #expect(record?["state"] as? String == "running")
+            #expect(!FileManager.default.fileExists(atPath: missing.path))
+        }
+    }
+
     @Test("keys one invocation by run id and increments its revision")
     func runIdentity_multipleEvents_shareOneOrderedRecord() throws {
         let runID = UUID().uuidString

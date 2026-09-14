@@ -1,0 +1,13 @@
+{
+  "0008-PermissionRequest.json": {
+    "input": {
+      "command": "printenv HOME",
+      "description": "Print the HOME environment variable"
+    },
+    "provider": "claude",
+    "session_id": "00000000-0000-4000-8000-000000000001",
+    "summary": "printenv HOME",
+    "timeout_ms": 570000,
+    "tool_name": "Bash"
+  }
+}

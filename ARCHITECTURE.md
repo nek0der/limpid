@@ -259,10 +259,14 @@ reading a newer file degrades cleanly.
   `category`, `iconName`, `ghosttyAction`), menu bar `Button` in
   `LimpidApp.commands`, case in
   `TabActions.dispatch<Category>Action`.
-- **New agent CLI** — record + store typealias under `Core/<Agent>/`,
-  `AgentSpec` conformer in `Core/Agent/<Agent>Agent.swift`, tab fields
-  on `Tab.swift`, tracker typealiases, shim under `Resources/<agent>-shim/`,
-  trackers instantiated in `AppState.init`. ~200-300 LOC.
+- **New agent CLI** — see [ADR 0004](docs/adr/0004-provider-adapter-contract.md).
+  A provider is a Rust crate (`rust/limpid-provider-<agent>/`) plus recorded
+  fixtures under `rust/fixtures/<agent>/`; the Swift side registers nothing
+  per provider once the `project` rules in that ADR replace the trackers.
+  Until then the Swift touch points still apply: record + store typealias under
+  `Core/<Agent>/`, `AgentSpec` conformer in `Core/Agent/<Agent>Agent.swift`,
+  tab fields on `Tab.swift`, tracker typealiases, shim under
+  `Resources/<agent>-shim/`, trackers instantiated in `AppState.init`.
 
 ---
 

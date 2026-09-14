@@ -1,0 +1,14 @@
+{
+  "0003-PermissionRequest.json": {
+    "input": {
+      "command": "touch /tmp/example",
+      "description": "指定された `/tmp/example を `touch` で作成してよいですか？"
+    },
+    "operation_id": "00000000-0000-4000-8000-000000000003",
+    "provider": "codex",
+    "session_id": "00000000-0000-4000-8000-000000000001",
+    "summary": "touch /tmp/example",
+    "timeout_ms": 570000,
+    "tool_name": "Bash"
+  }
+}

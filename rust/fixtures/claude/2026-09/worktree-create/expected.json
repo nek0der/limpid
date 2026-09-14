@@ -1,0 +1,59 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for worktree-create>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "Skill",
+      "tool": "Skill",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: git worktree add -b demo ../demo-worktree && git worktree list && git -C ../demo-worktree branch --show-current",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "name": "Notification",
+      "payload": {
+        "cwd": "/tmp/example",
+        "hook_event_name": "Notification",
+        "message": "Claude is waiting for your input",
+        "notification_type": "idle_prompt",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "scratchpad_dir": "/tmp/example",
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+      },
+      "type": "extension"
+    }
+  ],
+  [
+    {
+      "reason": "prompt_input_exit",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ]
+]

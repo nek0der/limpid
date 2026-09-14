@@ -100,6 +100,28 @@ esac
 
 payload="$(cat 2>/dev/null || true)"
 
+# ----- Raw payload recording (fixture capture) -----
+# When `LIMPID_HOOK_RECORD_DIR` names an existing directory, keep the
+# payload byte for byte before anything below reads it, so the recorded
+# fixture is exactly what the agent sent and not what this script made
+# of it. The file name is a zero-padded counter plus the event name;
+# only payload files are counted so a transcript copy (Claude) cannot
+# shift the sequence. Recording never changes the exit path: a failure
+# here is ignored and the hook continues.
+if [ -n "${LIMPID_HOOK_RECORD_DIR:-}" ] && [ -d "$LIMPID_HOOK_RECORD_DIR" ]; then
+  rec_event="$(printf '%s' "$payload" | plutil -extract hook_event_name raw -o - - 2>/dev/null || true)"
+  case "$rec_event" in
+    '' | *[!A-Za-z0-9_-]*) rec_event="unknown" ;;
+  esac
+  rec_count=0
+  for rec_existing in "$LIMPID_HOOK_RECORD_DIR"/[0-9][0-9][0-9][0-9]-*.json; do
+    [ -e "$rec_existing" ] || continue
+    rec_count=$((rec_count + 1))
+  done
+  rec_base="$LIMPID_HOOK_RECORD_DIR/$(printf '%04d' "$rec_count")-$rec_event"
+  printf '%s' "$payload" > "$rec_base.json" 2>/dev/null || :
+fi
+
 pane_id="${LIMPID_PANE_ID:-}"
 case "$pane_id" in
   '') exit 0 ;;

@@ -1,0 +1,18 @@
+{
+  "cwd": "/tmp/example",
+  "effort": {
+    "level": "high"
+  },
+  "hook_event_name": "PreToolUse",
+  "permission_mode": "auto",
+  "prompt_id": "00000000-0000-4000-8000-000000000002",
+  "scratchpad_dir": "/tmp/example",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "tool_input": {
+    "command": "cd \"/tmp/example\" && git status",
+    "description": "Show working tree status"
+  },
+  "tool_name": "Bash",
+  "tool_use_id": "toolu_00000000000000000000000",
+  "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+}

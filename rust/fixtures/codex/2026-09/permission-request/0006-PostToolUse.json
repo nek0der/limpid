@@ -1,0 +1,15 @@
+{
+  "cwd": "/tmp/example",
+  "hook_event_name": "PostToolUse",
+  "model": "gpt-5.6-sol",
+  "permission_mode": "default",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "tool_input": {
+    "command": "ls -l /tmp/example"
+  },
+  "tool_name": "Bash",
+  "tool_response": "-rw-r--r--@ 1 example  wheel  0 Sep 14 02:01 /tmp/example\n",
+  "tool_use_id": "toolu_00000000000000000000000",
+  "transcript_path": "/Users/example/.codex/sessions/2026/09/14/rollout-2026-09-14T02-00-34-00000000-0000-4000-8000-0000000000ff.jsonl",
+  "turn_id": "00000000-0000-4000-8000-000000000003"
+}

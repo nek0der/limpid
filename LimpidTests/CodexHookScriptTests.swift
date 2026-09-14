@@ -238,6 +238,33 @@ struct CodexHookScriptTests {
     /// this suite was written for from coming back in a new shape: a hook
     /// subscribed but never mapped leaves the pane frozen on its last state,
     /// and nothing else notices.
+    /// Fixture recording has to keep the bytes the agent sent, not the
+    /// receiver's reading of them, so this compares the file against the
+    /// stdin bytes rather than against the parsed record.
+    @Test("records raw payloads when LIMPID_HOOK_RECORD_DIR is set")
+    func recordDirectory_keepsRawPayloadsInOrder() throws {
+        try withTempDir { recordRoot in
+            let recordDir = recordRoot.appendingPathComponent("record")
+            try FileManager.default.createDirectory(at: recordDir, withIntermediateDirectories: true)
+            let payloads = [
+                payload("SessionStart"),
+                payload("UserPromptSubmit", extra: ["prompt": "count \"quoted\" \\ things"])
+            ]
+
+            _ = try runHooks(payloads, extraEnvironment: ["LIMPID_HOOK_RECORD_DIR": recordDir.path])
+
+            let recorded = try FileManager.default.contentsOfDirectory(atPath: recordDir.path).sorted()
+            #expect(recorded == ["0000-SessionStart.json", "0001-UserPromptSubmit.json"])
+            for (index, name) in recorded.enumerated() {
+                let bytes = try Data(contentsOf: recordDir.appendingPathComponent(name))
+                let sent = try JSONSerialization.data(withJSONObject: payloads[index])
+                #expect(bytes.count == sent.count, "\(name) was rewritten rather than copied")
+                let parsed = try JSONSerialization.jsonObject(with: bytes) as? NSDictionary
+                #expect(parsed == payloads[index] as NSDictionary)
+            }
+        }
+    }
+
     @Test("every subscribed event maps to a lifecycle state")
     func subscribedEvents_allReachABranch() throws {
         for event in CodexHookInstaller.subscribedEvents {

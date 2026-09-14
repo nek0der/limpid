@@ -1,0 +1,56 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for session-end-reasons>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "reason": "clear",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ],
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for session-end-reasons>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "reason": "other",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ]
+]
