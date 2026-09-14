@@ -1,0 +1,62 @@
+{
+  "projection": {
+    "runtimes": [
+      {
+        "id": "claude:AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+        "provider": "claude",
+        "runId": "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+        "revision": 4,
+        "badge": {
+          "state": "needsInput",
+          "detail": "どの色が好みですか？",
+          "runStartedAt": "2026-09-14T12:01:00Z",
+          "updatedAt": "2026-09-14T12:03:00Z",
+          "lastPrompt": "<prompt for ask-user-question>",
+          "firstPrompt": "<prompt for ask-user-question>",
+          "conversationId": "00000000-0000-4000-8000-000000000001",
+          "sessionStartedAt": "2026-09-14T12:00:00Z"
+        },
+        "panes": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "attachment": "attached",
+        "episodeToken": "3"
+      }
+    ],
+    "badges": {
+      "11111111-1111-4111-8111-111111111111": {
+        "claude": {
+          "state": "needsInput",
+          "detail": "どの色が好みですか？",
+          "runStartedAt": "2026-09-14T12:01:00Z",
+          "updatedAt": "2026-09-14T12:03:00Z",
+          "lastPrompt": "<prompt for ask-user-question>",
+          "firstPrompt": "<prompt for ask-user-question>",
+          "conversationId": "00000000-0000-4000-8000-000000000001",
+          "sessionStartedAt": "2026-09-14T12:00:00Z"
+        }
+      }
+    },
+    "sessions": {
+      "11111111-1111-4111-8111-111111111111": {
+        "claude": {
+          "sessionId": "00000000-0000-4000-8000-000000000001",
+          "cwd": "/tmp/example"
+        }
+      }
+    },
+    "tabTitles": {
+      "9f9f9f9f-0000-4000-8000-9f9f9f9f9f9f": "<prompt for ask-user-question>"
+    },
+    "marksToKeep": {
+      "viewed": {},
+      "dismissed": {}
+    },
+    "resumeCandidates": {
+      "11111111-1111-4111-8111-111111111111": [
+        "claude"
+      ]
+    }
+  },
+  "commands": []
+}

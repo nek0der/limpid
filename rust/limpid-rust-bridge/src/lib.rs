@@ -1,7 +1,6 @@
 //! Stable C ABI boundary between Limpid's Swift application and Rust core.
 
 mod providers;
-mod title;
 
 pub use providers::{
     LIMPID_HOOK_KIND_LIFECYCLE, LIMPID_HOOK_KIND_WORKTREE, limpid_hook_run_v1,
@@ -9,14 +8,16 @@ pub use providers::{
     limpid_provider_result,
 };
 
-use limpid_agent_core::{Principal, RunId};
+use limpid_agent_core::{
+    MAX_FIRST_PROMPT_BYTES, MAX_TITLE_BYTES, Principal, RunId, TitleCandidates, TitleError,
+    resolve_title,
+};
 use limpid_agent_protocol::{ApprovalService, ApprovalSession, ExchangeError};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 use std::slice;
 use std::str;
 use std::sync::{Arc, Mutex};
-use title::{MAX_FIRST_PROMPT_BYTES, MAX_TITLE_BYTES, TitleCandidates, TitleError, resolve_title};
 use uuid::Uuid;
 
 #[derive(Clone, Copy)]

@@ -2,6 +2,8 @@
 
 mod approval;
 mod lifecycle;
+mod projection;
+mod title;
 
 pub use approval::{
     AgentProvider, ApprovalBroker, ApprovalDecision, ApprovalKey, ApprovalRequest,
@@ -10,4 +12,8 @@ pub use approval::{
 pub use lifecycle::{
     ApplyContext, RecordWrites, SESSION_END_DROP_REASONS, SideWrite, TurnSnapshotOp, apply,
     sanitize_text, sanitize_title, turn_snapshot_cwd,
+};
+pub use projection::project;
+pub use title::{
+    MAX_FIRST_PROMPT_BYTES, MAX_TITLE_BYTES, TitleCandidates, TitleError, resolve_title,
 };

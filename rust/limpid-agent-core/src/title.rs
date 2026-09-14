@@ -1,9 +1,19 @@
 //! Provider-neutral automatic title selection.
+//!
+//! This lives beside the lifecycle rules rather than in the model crate
+//! because choosing a title is a rule, not vocabulary, and the projection
+//! needs it to name a tab.
+//!
+//! Its `sanitize_title` is deliberately not the lifecycle's. The record writer
+//! truncates oversized text, because a record must always be writable; the
+//! title resolver rejects it and falls through to the next candidate, because
+//! four kilobytes of text is a bug rather than a title and the next candidate
+//! is more likely to be one.
 
 /// Maximum number of UTF-8 bytes accepted for one title candidate.
-pub(crate) const MAX_TITLE_BYTES: usize = 4_096;
+pub const MAX_TITLE_BYTES: usize = 4_096;
 /// Maximum prompt bytes inspected while deriving the fallback title.
-pub(crate) const MAX_FIRST_PROMPT_BYTES: usize = 65_536;
+pub const MAX_FIRST_PROMPT_BYTES: usize = 65_536;
 
 /// Inputs ordered by semantic provenance rather than arrival time.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -25,6 +35,12 @@ pub enum TitleError {
 /// `SessionStart.session_title` and a later explicit provider rename. The
 /// caller collapses observations from the same conversation to their latest
 /// value before invoking this reducer.
+///
+/// # Errors
+///
+/// Returns `TitleError::TooLong` when a candidate exceeds the byte limit for
+/// its kind. Oversized input is rejected rather than truncated so the next
+/// candidate gets its turn; four kilobytes of text is a bug, not a title.
 pub fn resolve_title(candidates: TitleCandidates<'_>) -> Result<Option<String>, TitleError> {
     for candidate in [candidates.provider_session, candidates.provider_generated] {
         let Some(candidate) = candidate else { continue };
