@@ -151,6 +151,7 @@ targets:
     sources:
       - path: AgentIntegrationService/HookHelper
       - path: AgentIntegrationService/Shared
+      - path: AgentIntegrationService/ProviderBridge
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationHookHelper
@@ -159,6 +160,15 @@ targets:
         ENABLE_DEBUG_DYLIB: NO
         # See AgentIntegrationService: keep the archive free of standalone tools.
         SKIP_INSTALL: YES
+        # The helper links the Rust bridge for provider translation, so it
+        # carries the same Cargo phase and sandbox exception as the service.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - $(DERIVED_FILE_DIR)/limpid-rust
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -llimpid_rust_bridge
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationHookHelper.dev
@@ -167,6 +177,18 @@ targets:
           OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier dev.limpid.AgentIntegrationHookHelper"
     dependencies:
       - sdk: Security.framework
+    preBuildScripts:
+      - name: Build Rust bridge
+        script: '"$SRCROOT/scripts/build-rust-bridge.sh"'
+        # Same phase as the service target; see the comment there.
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/Cargo.toml
+          - $(SRCROOT)/Cargo.lock
+          - $(SRCROOT)/rust-toolchain.toml
+          - $(SRCROOT)/scripts/build-rust-bridge.sh
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/limpid-rust/liblimpid_rust_bridge.a
 
   AgentIntegrationControllerProbe:
     type: tool
@@ -203,6 +225,7 @@ targets:
           - "Resources/codex-shim"
           - "Resources/agent-shim"
       - path: AgentIntegrationService/Shared
+      - path: AgentIntegrationService/ProviderBridge
       - path: AgentIntegrationService/Service/RustApprovalHost.swift
       - path: AgentIntegrationService/Resources/dev.limpid.agent-integration-service.plist
         buildPhase:

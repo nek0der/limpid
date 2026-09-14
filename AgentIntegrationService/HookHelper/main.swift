@@ -3,7 +3,9 @@
 
 import Foundation
 
-private let approvalTimeoutMilliseconds = 570_000
+/// Upper bound on one wait for a decision; the request's own timeout comes
+/// from the provider crate and is shorter.
+private let approvalWaitSeconds = 580
 private let inputReadChunkBytes = 64 * 1024
 
 func readBoundedStandardInput() throws -> Data {
@@ -27,7 +29,15 @@ func run(input: Data) throws -> Data? {
             "Usage: AgentIntegrationHookHelper permission-request [claude|codex]"
         )
     }
-    let request = try AgentApprovalHookRequest.decode(provider: CommandLine.arguments[2], data: input)
+    let provider = CommandLine.arguments[2]
+    guard let translated = try RustProviderBridge.approvalRequest(provider: provider, payload: input),
+          let request = try JSONSerialization.jsonObject(with: translated) as? [String: Any],
+          let toolName = request["tool_name"] as? String,
+          let requestInput = request["input"],
+          let timeoutMilliseconds = request["timeout_ms"] as? Int
+    else {
+        throw AgentIntegrationError.invalidArguments("The provider approval request is invalid.")
+    }
     let client = try AgentIntegrationXPCClient(role: .requester)
     let bootstrap = try client.openSession()
     guard let runID = bootstrap.runID,
@@ -48,13 +58,13 @@ func run(input: Data) throws -> Data? {
             submission: AgentIntegrationApprovalSubmission(
                 runID: runID,
                 requestID: requestID,
-                provider: request.provider,
-                sessionID: request.sessionID,
-                operationID: request.operationID,
-                toolName: request.toolName,
-                summary: request.summary,
-                input: request.input,
-                timeoutMilliseconds: approvalTimeoutMilliseconds
+                provider: provider,
+                sessionID: request["session_id"] as? String,
+                operationID: request["operation_id"] as? String,
+                toolName: toolName,
+                summary: request["summary"] as? String,
+                input: requestInput,
+                timeoutMilliseconds: timeoutMilliseconds
             )
         )
     ))
@@ -66,9 +76,9 @@ func run(input: Data) throws -> Data? {
             epoch: epoch,
             runID: runID,
             requestID: requestID,
-            maximumWaitMilliseconds: approvalTimeoutMilliseconds
+            maximumWaitMilliseconds: timeoutMilliseconds
         ),
-        timeoutSeconds: 580
+        timeoutSeconds: approvalWaitSeconds
     ))
     guard response["type"] as? String == "approval.result",
           let body = response["body"] as? [String: Any],
@@ -79,15 +89,17 @@ func run(input: Data) throws -> Data? {
     else {
         return nil
     }
-    return try AgentApprovalHookRequest.providerOutput(
-        decision: decision,
-        message: result["message"] as? String
+    var neutralDecision: [String: Any] = ["decision": decision]
+    neutralDecision["message"] = result["message"] as? String
+    return try RustProviderBridge.approvalOutput(
+        provider: provider,
+        decisionJSON: JSONSerialization.data(withJSONObject: neutralDecision)
     )
 }
 
 func publishCodexLifecycleFallback(input: Data) {
     guard CommandLine.arguments.last == "codex",
-          let script = AgentApprovalHookRequest.codexLifecycleFallbackScript(
+          let script = AgentApprovalHookFallback.codexLifecycleScript(
               forExecutableURL: URL(fileURLWithPath: CommandLine.arguments[0])
                   .resolvingSymlinksInPath()
           )

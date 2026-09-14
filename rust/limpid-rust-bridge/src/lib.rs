@@ -1,6 +1,11 @@
 //! Stable C ABI boundary between Limpid's Swift application and Rust core.
 
+mod providers;
 mod title;
+
+pub use providers::{
+    limpid_provider_approval_output_v1, limpid_provider_approval_request_v1, limpid_provider_result,
+};
 
 use limpid_agent_core::{Principal, RunId};
 use limpid_agent_protocol::{ApprovalService, ApprovalSession, ExchangeError};

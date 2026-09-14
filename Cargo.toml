@@ -3,6 +3,8 @@ members = [
     "rust/limpid-agent-core",
     "rust/limpid-agent-model",
     "rust/limpid-agent-protocol",
+    "rust/limpid-provider-claude",
+    "rust/limpid-provider-codex",
     "rust/limpid-rust-bridge",
 ]
 resolver = "3"

@@ -16,7 +16,7 @@ prefix = ""
 # cbindgen only emits types reachable from exported functions. The status enums
 # are returned as plain int32_t, so they must be listed here to stay in the
 # header; add any future status enum to this list as well.
-include = ["limpid_approval_result", "limpid_title_resolve_result"]
+include = ["limpid_approval_result", "limpid_title_resolve_result", "limpid_provider_result"]
 
 [enum]
 prefix_with_name = false

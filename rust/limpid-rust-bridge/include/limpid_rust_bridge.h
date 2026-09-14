@@ -49,6 +49,28 @@ typedef enum limpid_title_resolve_result {
   LIMPID_TITLE_RESOLVE_NULL_POINTER = 5,
 } limpid_title_resolve_result;
 
+// Status codes returned by the provider translation ABI functions,
+// reported as `int32_t` for the same reason as `limpid_approval_result`.
+typedef enum limpid_provider_result {
+  // The call succeeded and the output buffer holds the result.
+  LIMPID_PROVIDER_OK = 0,
+  // The payload is valid but is not a permission request; the output
+  // buffer is empty.
+  LIMPID_PROVIDER_NOT_APPROVAL = 1,
+  // A required pointer was null.
+  LIMPID_PROVIDER_NULL_POINTER = 2,
+  // The provider id is not registered in this build.
+  LIMPID_PROVIDER_UNKNOWN_PROVIDER = 3,
+  // The input exceeded the hook payload limit.
+  LIMPID_PROVIDER_INPUT_TOO_LARGE = 4,
+  // The input was not UTF-8 or not the JSON shape the call expects.
+  LIMPID_PROVIDER_INVALID_INPUT = 5,
+  // The translation could not be serialized.
+  LIMPID_PROVIDER_INTERNAL = 6,
+  // Rust caught a panic at the FFI boundary.
+  LIMPID_PROVIDER_PANIC = 7,
+} limpid_provider_result;
+
 // Opaque service handle. Multiple sessions share its approval state.
 typedef struct limpid_approval_service_v1 limpid_approval_service_v1;
 
@@ -159,6 +181,45 @@ int32_t limpid_resolve_title_v1(const uint8_t *provider_session_ptr,
                                 uint8_t *output_ptr,
                                 size_t output_capacity,
                                 size_t *output_length);
+
+// Translates a provider's `PermissionRequest` payload into the neutral
+// approval request as JSON.
+//
+// Returns `LIMPID_PROVIDER_OK` with a JSON body, `LIMPID_PROVIDER_NOT_APPROVAL`
+// with an empty body when the payload is not a permission request, or an
+// error code with an empty body. On success, ownership of `*out` transfers to
+// the caller, which must release it with `limpid_approval_bytes_free_v1`.
+//
+// # Safety
+//
+// `out` and `out_len` must be writable. `provider` must be readable for
+// `provider_len` bytes and `input` for `input_len` bytes; either may be null
+// only when its length is zero.
+int32_t limpid_provider_approval_request_v1(const uint8_t *provider,
+                                            size_t provider_len,
+                                            const uint8_t *input,
+                                            size_t input_len,
+                                            uint8_t **out,
+                                            size_t *out_len);
+
+// Renders a neutral decision as the provider's hook output.
+//
+// `decision_json` is an `ApprovalDecision` document such as
+// `{"decision":"allow_once"}` or `{"decision":"deny","message":"..."}`.
+// Returns `LIMPID_PROVIDER_OK` with the bytes to write to the hook's standard
+// output; an empty body means the provider's native flow decides. On
+// success, ownership of `*out` transfers to the caller, which must release
+// it with `limpid_approval_bytes_free_v1`.
+//
+// # Safety
+//
+// Same contract as `limpid_provider_approval_request_v1`.
+int32_t limpid_provider_approval_output_v1(const uint8_t *provider,
+                                           size_t provider_len,
+                                           const uint8_t *decision_json,
+                                           size_t decision_len,
+                                           uint8_t **out,
+                                           size_t *out_len);
 
 #ifdef __cplusplus
 }  // extern "C"

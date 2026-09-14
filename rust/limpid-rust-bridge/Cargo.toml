@@ -10,11 +10,12 @@ crate-type = ["staticlib"]
 
 [dependencies]
 limpid-agent-core = { path = "../limpid-agent-core" }
+limpid-agent-model = { path = "../limpid-agent-model" }
 limpid-agent-protocol = { path = "../limpid-agent-protocol" }
-uuid.workspace = true
-
-[dev-dependencies]
+limpid-provider-claude = { path = "../limpid-provider-claude" }
+limpid-provider-codex = { path = "../limpid-provider-codex" }
 serde_json.workspace = true
+uuid.workspace = true
 
 # cbindgen (MPL-2.0) regenerates include/limpid_rust_bridge.h on every build so
 # the committed header can never drift from the exported symbols. The default
