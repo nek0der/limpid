@@ -16,14 +16,13 @@ mod env;
 mod git;
 mod process;
 mod records;
-mod timestamp;
 mod tmux;
 mod worktree;
 
 pub use env::{HookEnv, ResolvedDirectories};
 pub use git::{GitSnapshots, NoSnapshots, SnapshotRunner, TurnSnapshot};
+pub use limpid_agent_model::format_utc_seconds;
 pub use records::{HookLog, atomic_write, ensure_user_only_directory, with_record_lock};
-pub use timestamp::format_utc_seconds;
 pub use worktree::InterceptResult;
 
 use limpid_agent_core::{

@@ -1,5 +1,10 @@
 //! ISO-8601 UTC timestamps with second precision, the format every record
 //! field has always used, without a calendar dependency.
+//!
+//! Both the hook runtime and the projection need these: the hook runtime stamps records,
+//! and the projection compares them against retention windows. Keeping one
+//! implementation is what stops a record written in one format from being read
+//! as another.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -26,9 +31,7 @@ pub fn unix_seconds(time: SystemTime) -> u64 {
 }
 
 /// Days since 1970-01-01 for a proleptic Gregorian date (Howard Hinnant's
-/// `days_from_civil`). Only the Unix `ps` parser needs the forward
-/// conversion.
-#[cfg(any(unix, test))]
+/// `days_from_civil`).
 #[must_use]
 pub fn days_from_civil(year: i64, month: u32, day: u32) -> Option<i64> {
     if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
@@ -65,6 +68,47 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     })
     .unwrap_or(1);
     (if month <= 2 { year + 1 } else { year }, month, day)
+}
+
+/// Whole seconds since the Unix epoch for an ISO-8601 UTC timestamp with
+/// second precision, as records carry them. Returns `None` for anything else,
+/// including the empty string a version 2 record used for "not started".
+///
+/// Deliberately narrow: this reads back what `format_utc_seconds` wrote, not
+/// arbitrary ISO-8601. A record with an offset or a fractional second did not
+/// come from this code, and guessing at it would be worse than ignoring it.
+#[must_use]
+pub fn parse_utc_seconds(value: &str) -> Option<u64> {
+    let bytes = value.as_bytes();
+    if bytes.len() != 20 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return None;
+    }
+    if bytes[10] != b'T' || bytes[13] != b':' || bytes[16] != b':' || bytes[19] != b'Z' {
+        return None;
+    }
+    let number = |range: std::ops::Range<usize>| value.get(range)?.parse::<i64>().ok();
+    let year = number(0..4)?;
+    let month = u32::try_from(number(5..7)?).ok()?;
+    let day = u32::try_from(number(8..10)?).ok()?;
+    let hour = number(11..13)?;
+    let minute = number(14..16)?;
+    let second = number(17..19)?;
+    if !(0..24).contains(&hour) || !(0..60).contains(&minute) || !(0..60).contains(&second) {
+        return None;
+    }
+    let days = days_from_civil(year, month, day)?;
+    let total = days.checked_mul(86_400)? + hour * 3600 + minute * 60 + second;
+    u64::try_from(total).ok()
+}
+
+/// Seconds between two record timestamps, or `None` when either is unreadable.
+/// Negative differences clamp to zero: a record stamped in the future is a
+/// clock that moved, not an event that has not happened yet.
+#[must_use]
+pub fn seconds_between(earlier: &str, later: &str) -> Option<u64> {
+    let earlier = parse_utc_seconds(earlier)?;
+    let later = parse_utc_seconds(later)?;
+    Some(later.saturating_sub(earlier))
 }
 
 #[cfg(test)]

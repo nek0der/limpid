@@ -112,7 +112,7 @@ fn parse_lstart(value: &str) -> Option<u64> {
     let minute: u32 = clock.next()?.parse().ok()?;
     let second: u32 = clock.next()?.parse().ok()?;
     let year: i64 = parts.next()?.parse().ok()?;
-    let days = crate::timestamp::days_from_civil(year, month, day)?;
+    let days = limpid_agent_model::days_from_civil(year, month, day)?;
     let seconds = i64::from(hour) * 3600 + i64::from(minute) * 60 + i64::from(second);
     u64::try_from(days * 86_400 + seconds).ok()
 }
