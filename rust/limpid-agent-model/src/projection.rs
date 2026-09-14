@@ -188,6 +188,24 @@ pub struct ProjectionInput {
     pub is_bootstrap: bool,
 }
 
+/// What the launch and terminate rules read. They run when there is no
+/// interface yet or none left, so they see the state directories and the
+/// process table and nothing else.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LifecycleInput {
+    #[serde(default)]
+    pub providers: BTreeMap<ProviderId, ProviderDescriptor>,
+    #[serde(default)]
+    pub records: Vec<RecordFile>,
+    #[serde(default)]
+    pub session_records: Vec<RecordFile>,
+    #[serde(default)]
+    pub resume_intents: Vec<ResumeIntent>,
+    #[serde(default)]
+    pub pid_status: BTreeMap<String, PidStatus>,
+}
+
 /// What one pass remembers for the next. The host stores it without reading
 /// it; the shape is free to change as long as it round-trips.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

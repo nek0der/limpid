@@ -34,10 +34,10 @@ pub use command::{
 pub use event::{AgentEvent, Titles};
 pub use projection::{
     AcceptedRun, AttachmentResolution, AttentionMarks, Badge, EpisodeStamp, Focus, Instants,
-    NOTIFICATION_BODY_CHARS, NOTIFICATION_PENDING_LIFETIME_MS, ObservedRuntime, OutboxState,
-    PaneLocation, PanePresence, PendingNotification, PidStatus, Projection, ProjectionInput,
-    ProjectionState, RESUME_WINDOW_SECS, RecordFile, RuntimePresentation, SessionInfo, TabPanes,
-    VIEWED_FINISHED_RETENTION_SECS, WorktreeEventFile,
+    LifecycleInput, NOTIFICATION_BODY_CHARS, NOTIFICATION_PENDING_LIFETIME_MS, ObservedRuntime,
+    OutboxState, PaneLocation, PanePresence, PendingNotification, PidStatus, Projection,
+    ProjectionInput, ProjectionState, RESUME_WINDOW_SECS, RecordFile, RuntimePresentation,
+    SessionInfo, TabPanes, VIEWED_FINISHED_RETENTION_SECS, WorktreeEventFile,
 };
 pub use provider::{
     Capability, InstallRecipe, ProviderDescriptor, ProviderId, ProviderIdError, SettingsFragment,

@@ -6,6 +6,7 @@ mod gc;
 mod lifecycle;
 mod notifications;
 mod projection;
+mod session_lifecycle;
 mod title;
 
 pub use approval::{
@@ -17,6 +18,7 @@ pub use lifecycle::{
     sanitize_text, sanitize_title, turn_snapshot_cwd,
 };
 pub use projection::project;
+pub use session_lifecycle::{on_launch, on_terminate};
 pub use title::{
     MAX_FIRST_PROMPT_BYTES, MAX_TITLE_BYTES, TitleCandidates, TitleError, resolve_title,
 };
