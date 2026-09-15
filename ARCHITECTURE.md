@@ -58,7 +58,7 @@ in `Core/`, no `Settings` ↔ `Persistence` cycles.
 
 | File | Owns |
 |---|---|
-| `Limpid/App/LimpidApp.swift` | Scene tree, command menu, and `AppState` — the process-wide singleton holding registries + trackers |
+| `Limpid/App/LimpidApp.swift` | Scene tree, command menu, and `AppState` — the process-wide singleton holding registries and the agent projection adapter |
 | `Limpid/Core/Models/WindowSession.swift` | Tab / container / worktree state, the source of truth |
 | `Limpid/Core/Models/Tab.swift` + `SplitTree.swift` | Per-tab structure: kind, working dir, split tree, agent sessions |
 | `Limpid/Core/Persistence/SessionSnapshot.swift` | The on-disk shape of `state.json` (forward-compat sidecar) |
@@ -273,14 +273,16 @@ reading a newer file degrades cleanly.
   `LimpidApp.commands`, case in
   `TabActions.dispatch<Category>Action`.
 - **New agent CLI** — add a provider crate at
-  `rust/limpid-provider-<agent>/`, recorded fixtures under
-  `rust/fixtures/<agent>/`, and an adapter entry in the hook registry. The
-  application projection still runs in Swift, so also add a record and store
-  typealias under `Core/<Agent>/`, an `AgentSpec` conformer in
-  `Core/Agent/<Agent>Agent.swift`, tab fields in `Tab.swift`, tracker
-  typealiases, a shim under `Resources/<agent>-shim/`, and tracker instances in
-  `AppState.init`. When projection moves to Rust, the per-provider Swift
-  registration points can be removed.
+  `rust/limpid-provider-<agent>/` (descriptor, install recipe, `normalize`),
+  recorded fixtures under `rust/fixtures/<agent>/`, and an adapter entry in the
+  hook registry. The application projection (`project`, `on_launch`,
+  `on_terminate`) runs in Rust and branches on capabilities, so the rules need
+  no change. The Swift side still keys the interface by `AgentKind`: add a
+  case there, an `AgentSpec` conformer in `Core/Agent/<Agent>Agent.swift` for
+  the resume command, a shim under `Resources/<agent>-shim/` with its
+  installer, and the provider's display strings in `Localizable.xcstrings`.
+  Directory names and environment variable names come from the descriptor and
+  recipe through `AgentProviderRegistry`; nothing in Swift should spell them.
 
 ---
 
