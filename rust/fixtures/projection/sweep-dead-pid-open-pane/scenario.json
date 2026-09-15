@@ -1,0 +1,28 @@
+{
+  "description": "A running turn whose process died while its pane is still open is retired: the pid decides, the pane does not.",
+  "runs": [
+    {
+      "provider": "claude",
+      "pane": "33333333-3333-4333-8333-333333333333",
+      "run": "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3",
+      "pid": "9999",
+      "replay": [
+        {
+          "case": "session-basic",
+          "payload": "0000-SessionStart.json",
+          "now": "2026-09-14T12:00:00Z"
+        },
+        {
+          "case": "session-basic",
+          "payload": "0001-UserPromptSubmit.json",
+          "now": "2026-09-14T12:01:00Z"
+        },
+        {
+          "case": "session-basic",
+          "payload": "0002-PreToolUse.json",
+          "now": "2026-09-14T12:02:00Z"
+        }
+      ]
+    }
+  ]
+}

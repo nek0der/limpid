@@ -2,32 +2,47 @@
 //! growing without bound.
 //!
 //! Removing state is the one thing here that cannot be undone by the next
-//! pass, so the bar is high. A record is retired only when three independent
-//! facts agree: the pane it belonged to is no longer in any tab, its process
-//! is confirmed dead, and nothing has claimed it for a restore. A missing pid
-//! is not evidence of death, and neither is one the host could not ask
-//! about: silence is not an answer, so the record stays.
+//! pass, so the bar is high. A record is retired only when its process is
+//! confirmed dead and nothing has claimed it for a restore. A missing pid is
+//! not evidence of death, and neither is one the host could not ask about:
+//! silence is not an answer, so the record stays.
+//!
+//! Whether the pane is still open is deliberately not a condition. A run that
+//! crashed mid-turn leaves its pane open with a badge that says "running", and
+//! the pane stays open across a relaunch because the session restores it. The
+//! pid is what says the run is over; the pane says nothing either way.
 //!
 //! Retiring is a move, not a delete. A record that turns out to have been
 //! live is still there to be read.
 
 use limpid_agent_model::{
-    AcceptedRun, Capability, Command, CommandOp, MAX_PANE_RECORDS, MAX_RETIRED_RECORDS,
-    PaneStoreKind, PidStatus, Precondition, ProjectionInput, RETIRED_RECORD_LIFETIME_SECS,
-    RunRecord, Target,
+    AcceptedRun, Capability, Command, CommandOp, Instants, MAX_PANE_RECORDS, MAX_RETIRED_RECORDS,
+    PaneStoreKind, PidStatus, Precondition, ProjectionInput, RESUME_WINDOW_SECS,
+    RETIRED_RECORD_LIFETIME_SECS, RunRecord, Target, seconds_between,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 /// Returns the retirements and sweeps this pass calls for.
+///
+/// `alive` is the set of panes the interface still has. It decides which
+/// pane-scoped files the sweeps keep; it plays no part in retiring records.
 pub(crate) fn sweep(
     accepted: &BTreeMap<String, AcceptedRun>,
     input: &ProjectionInput,
     alive: &BTreeSet<Uuid>,
+    now: &Instants,
 ) -> Vec<Command> {
+    // An intent past its window is no longer a claim. The launch rules would
+    // not honor it either, so letting it hold a dead record would keep both
+    // on disk for good.
     let claimed: BTreeSet<&str> = input
         .resume_intents
         .iter()
+        .filter(|intent| {
+            seconds_between(&intent.created_at, &now.wall)
+                .is_some_and(|age| age < RESUME_WINDOW_SECS)
+        })
         .map(|intent| intent.run_id.as_str())
         .collect();
 
@@ -36,7 +51,7 @@ pub(crate) fn sweep(
         .filter(|(storage_id, run)| {
             // A restore has already claimed this run. Retiring it now would
             // take away the record the restore is about to rebuild from.
-            !claimed.contains(storage_id.as_str()) && is_removable(&run.record, input, alive)
+            !claimed.contains(storage_id.as_str()) && is_removable(&run.record, input)
         })
         .map(|(storage_id, run)| retire(storage_id, run, accepted))
         .collect();
@@ -61,16 +76,13 @@ pub(crate) fn sweep(
 }
 
 /// Whether a record describes a run that is definitely over.
-fn is_removable(record: &RunRecord, input: &ProjectionInput, alive: &BTreeSet<Uuid>) -> bool {
+fn is_removable(record: &RunRecord, input: &ProjectionInput) -> bool {
     // A run inside tmux outlives the window that was showing it, which is the
-    // point of hosting it there. Its pane going away says nothing about it.
+    // point of hosting it there. Its record names no pid of ours to ask about.
     if record.tmux_socket_path.is_some() {
         return false;
     }
-    let Ok(pane) = Uuid::parse_str(&record.pane_id) else {
-        return false;
-    };
-    if alive.contains(&pane) {
+    if Uuid::parse_str(&record.pane_id).is_err() {
         return false;
     }
     // Only a confirmed death counts. A record with no pid, or one the host
@@ -207,6 +219,13 @@ mod tests {
         }
     }
 
+    fn now() -> Instants {
+        Instants {
+            wall: "2026-09-14T12:10:00Z".to_owned(),
+            monotonic_ms: 0,
+        }
+    }
+
     fn retirements(commands: &[Command]) -> Vec<&Command> {
         commands
             .iter()
@@ -223,7 +242,7 @@ mod tests {
     #[test]
     fn a_dead_run_on_a_closed_pane_loses_its_hint_and_then_its_record() {
         let entries = records(vec![(RUN, run(Some(RUN), Some("4242")))]);
-        let commands = sweep(&entries, &input(PidStatus::Dead), &BTreeSet::new());
+        let commands = sweep(&entries, &input(PidStatus::Dead), &BTreeSet::new(), &now());
         let chain = retirements(&commands);
         assert_eq!(chain.len(), 1);
 
@@ -242,20 +261,30 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_retired_without_three_agreeing_facts() {
+    fn a_dead_run_is_retired_even_while_its_pane_is_open() {
+        // The pane outlives the process: a crash mid-turn leaves it open with a
+        // "running" badge, and a relaunch restores it. Waiting for the pane
+        // would leave that badge there until the user closed it by hand.
         let entries = records(vec![(RUN, run(Some(RUN), Some("4242")))]);
         let pane: Uuid = PANE.parse().expect("pane");
-
-        // The pane is still open.
         let alive = [pane].into_iter().collect();
-        assert!(retirements(&sweep(&entries, &input(PidStatus::Dead), &alive)).is_empty());
+        assert_eq!(
+            retirements(&sweep(&entries, &input(PidStatus::Dead), &alive, &now())).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn nothing_is_retired_without_a_confirmed_death() {
+        let entries = records(vec![(RUN, run(Some(RUN), Some("4242")))]);
 
         // The host could not tell whether the process is alive.
         assert!(
             retirements(&sweep(
                 &entries,
                 &input(PidStatus::Unknown),
-                &BTreeSet::new()
+                &BTreeSet::new(),
+                &now()
             ))
             .is_empty()
         );
@@ -266,7 +295,8 @@ mod tests {
             retirements(&sweep(
                 &anonymous,
                 &input(PidStatus::Dead),
-                &BTreeSet::new()
+                &BTreeSet::new(),
+                &now()
             ))
             .is_empty()
         );
@@ -281,23 +311,53 @@ mod tests {
         hosted.record.state = RunState::Running;
         let entries = records(vec![(RUN, hosted)]);
         assert!(
-            retirements(&sweep(&entries, &input(PidStatus::Dead), &BTreeSet::new())).is_empty()
+            retirements(&sweep(
+                &entries,
+                &input(PidStatus::Dead),
+                &BTreeSet::new(),
+                &now()
+            ))
+            .is_empty()
         );
+    }
+
+    fn intent(created_at: &str) -> ResumeIntent {
+        ResumeIntent {
+            run_id: RUN.to_owned(),
+            pane_id: PANE.parse().expect("pane"),
+            session_id: "S".to_owned(),
+            owner_run_id: Some(RUN.to_owned()),
+            pid: "4242".to_owned(),
+            created_at: created_at.to_owned(),
+        }
     }
 
     #[test]
     fn a_run_a_restore_has_claimed_is_left_alone() {
         let entries = records(vec![(RUN, run(Some(RUN), Some("4242")))]);
         let mut input = input(PidStatus::Dead);
-        input.resume_intents = vec![ResumeIntent {
-            run_id: RUN.to_owned(),
-            pane_id: PANE.parse().expect("pane"),
-            session_id: "S".to_owned(),
-            owner_run_id: Some(RUN.to_owned()),
-            pid: "4242".to_owned(),
-            created_at: "2026-09-14T12:00:00Z".to_owned(),
-        }];
-        assert!(retirements(&sweep(&entries, &input, &BTreeSet::new())).is_empty());
+        input.resume_intents = vec![intent("2026-09-14T12:00:00Z")];
+        assert!(retirements(&sweep(&entries, &input, &BTreeSet::new(), &now())).is_empty());
+    }
+
+    #[test]
+    fn an_intent_past_its_window_no_longer_holds_the_record() {
+        // The launch rules would not restore from it either, so honoring it
+        // here would keep the record and the intent on disk indefinitely.
+        let entries = records(vec![(RUN, run(Some(RUN), Some("4242")))]);
+        let mut input = input(PidStatus::Dead);
+        input.resume_intents = vec![intent("2026-09-13T12:00:00Z")];
+        assert_eq!(
+            retirements(&sweep(&entries, &input, &BTreeSet::new(), &now())).len(),
+            1
+        );
+
+        // An intent whose timestamp cannot be read makes no claim either.
+        input.resume_intents = vec![intent("not a time")];
+        assert_eq!(
+            retirements(&sweep(&entries, &input, &BTreeSet::new(), &now())).len(),
+            1
+        );
     }
 
     #[test]
@@ -308,7 +368,7 @@ mod tests {
             (PANE, run(None, Some("4242"))),
             (RUN, run(Some(RUN), Some("4242"))),
         ]);
-        let commands = sweep(&entries, &input(PidStatus::Dead), &BTreeSet::new());
+        let commands = sweep(&entries, &input(PidStatus::Dead), &BTreeSet::new(), &now());
         let legacy = retirements(&commands)
             .into_iter()
             .find(|command| matches!(&command.target, Target::Record { storage_id, .. } if storage_id == PANE))
@@ -332,13 +392,16 @@ mod tests {
             session_end_drop_reasons: Vec::new(),
         };
         input.providers.insert(claude(), descriptor.clone());
-        let commands = sweep(&BTreeMap::new(), &input, &BTreeSet::new());
+        let commands = sweep(&BTreeMap::new(), &input, &BTreeSet::new(), &now());
         assert_eq!(commands.len(), 3, "prune plus two pane stores");
 
         // A provider that reports no cwd changes has no such directory to
         // sweep, so it gets one fewer command rather than an empty one.
         descriptor.capabilities.clear();
         input.providers.insert(claude(), descriptor);
-        assert_eq!(sweep(&BTreeMap::new(), &input, &BTreeSet::new()).len(), 2);
+        assert_eq!(
+            sweep(&BTreeMap::new(), &input, &BTreeSet::new(), &now()).len(),
+            2
+        );
     }
 }

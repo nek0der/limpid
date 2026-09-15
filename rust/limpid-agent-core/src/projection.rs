@@ -57,7 +57,7 @@ pub fn project(
     let sessions = session_infos(input, &alive);
     let tab_titles = tab_titles(input, &badges);
     let marks_to_keep = surviving_marks(&input.marks, &runtimes);
-    let mut commands = crate::gc::sweep(&state.accepted, input, &alive);
+    let mut commands = crate::gc::sweep(&state.accepted, input, &alive, now);
     commands.extend(crate::events::route(&mut state, input, &alive));
     commands.extend(crate::notifications::observe(
         &mut state.outbox,
@@ -404,15 +404,30 @@ fn display_priority(runtime: &RuntimePresentation, marks: &AttentionMarks, now: 
 /// in the pane the user is already looking at would sit in the waiting list
 /// unread until they looked away and back. Being the focused pane is not
 /// enough on its own: a pane stays focused while the application is in the
-/// background, and nobody saw anything then.
+/// background, and nobody saw anything then. Nor is the first pass after
+/// launch: what it finds was finished before the window existed, and it is
+/// for the user to look at, not for the restore to mark as looked at. A tmux
+/// pane that is not its window's active one is likewise out of sight even
+/// when the surface showing that window has focus.
 fn seen_where_the_user_is_looking(
     runtimes: &[RuntimePresentation],
     input: &ProjectionInput,
 ) -> Vec<Command> {
+    if input.is_bootstrap {
+        return Vec::new();
+    }
     let Some(focus) = input.focus else {
         return Vec::new();
     };
     if !focus.is_active {
+        return Vec::new();
+    }
+    if input
+        .presence
+        .locations
+        .get(&focus.pane)
+        .is_some_and(|location| !location.is_active)
+    {
         return Vec::new();
     }
     runtimes
@@ -441,7 +456,7 @@ fn is_dismissed(runtime: &RuntimePresentation, marks: &AttentionMarks, now: &Ins
     if marks.dismissed.get(&runtime.id) == Some(&runtime.episode_token) {
         return true;
     }
-    // A finished run the user saw is not interesting forever. Ageing it out
+    // A finished run the user saw is not interesting forever. Aging it out
     // keeps a machine left running overnight from opening to a wall of badges.
     is_viewed(runtime, marks)
         && seconds_between(&runtime.badge.updated_at, &now.wall)
@@ -615,7 +630,7 @@ fn resume_candidates(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use limpid_agent_model::{Focus, ProjectionState, TabPanes};
+    use limpid_agent_model::{Focus, PaneLocation, ProjectionState, TabPanes};
 
     const PANE: &str = "11111111-1111-4111-8111-111111111111";
     const RUN: &str = "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1";
@@ -727,6 +742,60 @@ mod tests {
         // And with no focused pane at all there is nothing to have seen.
         let (_, _, commands) = project(&ProjectionState::default(), &finished_input(None), &now);
         assert_eq!(viewed_marks(&commands), 0);
+    }
+
+    #[test]
+    fn the_first_pass_after_launch_marks_nothing_seen() {
+        // What the restore finds was finished before the window existed. The
+        // user has not looked at it yet, whatever pane the session says is
+        // focused.
+        let pane: Uuid = PANE.parse().expect("pane");
+        let now = Instants {
+            wall: "2026-09-14T12:04:00Z".to_owned(),
+            monotonic_ms: 0,
+        };
+        let mut input = finished_input(Some(Focus {
+            tab: Uuid::new_v4(),
+            pane,
+            is_active: true,
+        }));
+        input.is_bootstrap = true;
+        let (state, _, commands) = project(&ProjectionState::default(), &input, &now);
+        assert_eq!(viewed_marks(&commands), 0);
+
+        // The pass after it behaves as usual.
+        input.is_bootstrap = false;
+        let (_, _, commands) = project(&state, &input, &now);
+        assert_eq!(viewed_marks(&commands), 1);
+    }
+
+    #[test]
+    fn a_tmux_pane_that_is_not_its_windows_active_one_is_out_of_sight() {
+        // Focusing the surface that shows a tmux window does not show every
+        // pane in that window; only the active one is on screen.
+        let pane: Uuid = PANE.parse().expect("pane");
+        let now = Instants {
+            wall: "2026-09-14T12:04:00Z".to_owned(),
+            monotonic_ms: 0,
+        };
+        let mut input = finished_input(Some(Focus {
+            tab: Uuid::new_v4(),
+            pane,
+            is_active: true,
+        }));
+        input
+            .presence
+            .locations
+            .insert(pane, PaneLocation { is_active: false });
+        let (_, _, commands) = project(&ProjectionState::default(), &input, &now);
+        assert_eq!(viewed_marks(&commands), 0);
+
+        input
+            .presence
+            .locations
+            .insert(pane, PaneLocation { is_active: true });
+        let (_, _, commands) = project(&ProjectionState::default(), &input, &now);
+        assert_eq!(viewed_marks(&commands), 1);
     }
 
     #[test]

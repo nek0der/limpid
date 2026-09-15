@@ -1,0 +1,26 @@
+{
+  "now": "2026-09-14T12:10:00Z",
+  "monotonicMs": 600000,
+  "isBootstrap": false,
+  "tabs": [
+    {
+      "id": "9F9F9F9F-0000-4000-8000-9F9F9F9F9F9F",
+      "panes": [
+        "33333333-3333-4333-8333-333333333333"
+      ]
+    }
+  ],
+  "pidStatus": {
+    "9999": "dead"
+  },
+  "focus": null,
+  "marks": {
+    "viewed": {},
+    "dismissed": {}
+  },
+  "presence": {
+    "attachments": {},
+    "locations": {}
+  },
+  "acknowledged": []
+}

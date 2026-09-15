@@ -141,12 +141,16 @@ struct AgentProjectionAdapterTests {
             adapter.prepareForLaunch()
             adapter.bootstrap(into: session, attention: AttentionState())
 
-            // Claude reports the end of a session itself, so a hint that is
-            // still here with a dead process means the process died without
-            // saying so. That is the case resuming exists for, and dropping
-            // the hint would take away what brings it back.
+            // No kill marker and no intent means Limpid did not stop this run,
+            // so nothing says it should come back: the record is retired and
+            // the hint it owned goes with it, for every provider alike. The
+            // pane being restored changes nothing; the pid is what decides.
             #expect(adapter.lastFailure == nil)
-            #expect(FileManager.default.fileExists(atPath: hintURL.path))
+            #expect(!FileManager.default.fileExists(atPath: hintURL.path))
+            #expect(!FileManager.default.fileExists(
+                atPath: state.appendingPathComponent("\(Self.run).state.json").path
+            ))
+            #expect(session.activeTab?.agentResumeCandidates[pane] == nil)
         }
     }
 
