@@ -1,14 +1,15 @@
 // AgentSharedHelpers.swift
-// Limpid — shared utilities lifted out of the per-flavor Claude /
-// Codex agent files so the generic tracker / builder implementations
-// don't have to thread them through. Each was previously duplicated
-// across the twins; this file is the single source.
+// Limpid — small utilities the agent slice shares: the one ISO-8601
+// formatter both sides of the projection boundary use, the session-id
+// shape check the resume commands interpolate through, POSIX quoting,
+// and the whole-session tab transform the projection applies its answer
+// through.
 
 import Foundation
 
-/// ISO-8601 parsing used by both `ClaudeAgent.makeBadge` and
-/// `CodexAgent.makeBadge`. Both hook backends write UTC instants that
-/// round-trip through the same `ISO8601DateFormatter` instance.
+/// ISO-8601 parsing for the instants that cross the projection boundary.
+/// The hook backends and the Rust rules both write UTC instants that
+/// round-trip through this one `ISO8601DateFormatter` instance.
 enum AgentDateParsing {
     static func parseISO8601(_ string: String) -> Date? {
         formatter.date(from: string)
@@ -19,8 +20,9 @@ enum AgentDateParsing {
         return parseISO8601(raw)
     }
 
-    /// Inverse of `parseISO8601` — used when quitting to stamp the
-    /// `killedByLimpidAt` marker on a run Limpid is about to kill.
+    /// Inverse of `parseISO8601` — used to stamp the instants the
+    /// projection input carries, such as the wall clock of one pass and
+    /// the marker on a run Limpid is about to kill at quit.
     static func formatISO8601(_ date: Date) -> String {
         formatter.string(from: date)
     }

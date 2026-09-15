@@ -13,8 +13,8 @@ struct AgentRuntimeProjectionTests {
         launchPaneID: UUID,
         state: String,
         revision: Int
-    ) -> CodexAgentStateRecord {
-        CodexAgentStateRecord(
+    ) -> AgentStateRecordFixture {
+        AgentStateRecordFixture(
             schemaVersion: 2,
             runId: runID.uuidString,
             revision: revision,
@@ -43,14 +43,14 @@ struct AgentRuntimeProjectionTests {
     func bootstrap_crossPaneAttach_usesLiveClientBinding() throws {
         try withTempDir { directory in
             let (session, tab, displayPaneID) = WindowSessionFixture.withLooseTab()
-            let store = CodexAgentStateStore(directory: directory)
+            let states = directory.appendingPathComponent("states")
             let launchPaneID = UUID()
-            try store.save(record(
+            try AgentRecordFixtures.write(record(
                 runID: UUID(),
                 launchPaneID: launchPaneID,
                 state: "running",
                 revision: 1
-            ))
+            ), to: states)
             let presence = TmuxPanePresence(bindingsByPaneID: [
                 displayPaneID: TmuxBinding(
                     socketPath: "/tmp/tmux-501/default",
@@ -59,11 +59,11 @@ struct AgentRuntimeProjectionTests {
                 )
             ], topology: topology())
             let projection = ProjectionFixture.adapter(
-                state: store.directory,
+                state: states,
                 sessions: directory.appendingPathComponent("sessions")
             )
 
-            #expect(store.allRecords().count == 1)
+            #expect(AgentRecordFixtures.records(in: states).count == 1)
             #expect(presence.paneIDs(
                 socketPath: "/private/tmp/tmux-501/default",
                 sessionID: "$2"
@@ -80,19 +80,19 @@ struct AgentRuntimeProjectionTests {
     func bootstrap_multipleAgents_usesDominantState() throws {
         try withTempDir { directory in
             let (session, tab, displayPaneID) = WindowSessionFixture.withLooseTab()
-            let store = CodexAgentStateStore(directory: directory)
-            try store.save(record(
+            let states = directory.appendingPathComponent("states")
+            try AgentRecordFixtures.write(record(
                 runID: UUID(),
                 launchPaneID: UUID(),
                 state: "running",
                 revision: 4
-            ))
-            try store.save(record(
+            ), to: states)
+            try AgentRecordFixtures.write(record(
                 runID: UUID(),
                 launchPaneID: UUID(),
                 state: "needsInput",
                 revision: 1
-            ))
+            ), to: states)
             let presence = TmuxPanePresence(bindingsByPaneID: [
                 displayPaneID: TmuxBinding(
                     socketPath: "/tmp/tmux-501/default",
@@ -101,11 +101,11 @@ struct AgentRuntimeProjectionTests {
                 )
             ], topology: topology())
             let projection = ProjectionFixture.adapter(
-                state: store.directory,
+                state: states,
                 sessions: directory.appendingPathComponent("sessions")
             )
 
-            #expect(store.allRecords().count == 2)
+            #expect(AgentRecordFixtures.records(in: states).count == 2)
             #expect(presence.paneIDs(
                 socketPath: "/private/tmp/tmux-501/default",
                 sessionID: "$2"
@@ -127,21 +127,21 @@ struct AgentRuntimeProjectionTests {
     @Test func unresolvedTmux_doesNotUseLaunchPaneOrSavedBinding() throws {
         try withTempDir { directory in
             let (session, tab, paneID) = WindowSessionFixture.withLooseTab()
-            let store = CodexAgentStateStore(directory: directory)
+            let states = directory.appendingPathComponent("states")
             var runtime = record(runID: UUID(), launchPaneID: paneID, state: "running", revision: 1)
             runtime.tmuxSocketPath = nil
             runtime.tmuxPaneId = nil
-            try store.save(runtime)
+            try AgentRecordFixtures.write(runtime, to: states)
             session.update(tab.id) {
                 $0.tmuxBindings[paneID] = TmuxBinding(socketPath: "/tmp/tmux-501/default", sessionID: "$2", sessionName: "old")
             }
             let projection = ProjectionFixture.adapter(
-                state: store.directory,
+                state: states,
                 sessions: directory.appendingPathComponent("sessions")
             )
             projection.bootstrap(into: session, tmuxPresence: TmuxPanePresence())
             #expect(session.tab(tab.id)?.agentBadges[.codex, default: [:]][paneID] == nil)
-            #expect(store.allRecords().count == 1)
+            #expect(AgentRecordFixtures.records(in: states).count == 1)
         }
     }
 
@@ -195,9 +195,9 @@ struct AgentRuntimeProjectionTests {
         #expect(restartedTracker.stamp([persisted])[0].attentionEventToken == "2")
     }
 
-    @Test func backgroundTmuxPane_isNotMarkedViewedByOuterFocus() throws {
+    @Test func backgroundTmuxPane_isNotMarkedViewedByOuterFocus() {
         let runtimeRecord = record(runID: UUID(), launchPaneID: UUID(), state: "finished", revision: 2)
-        let badge = try #require(CodexAgent.makeBadge(from: runtimeRecord))
+        let badge = AgentBadge(state: .finished, updatedAt: Date())
         let paneID = UUID()
         let location = TmuxPaneLocation(
             socketPath: "/tmp/s",
@@ -224,8 +224,8 @@ struct AgentRuntimeProjectionTests {
 
     @Test func cleanupOldRun_preservesNewRunsResumeHint() throws {
         try withTempDir { directory in
-            let store = CodexAgentStateStore(directory: directory.appendingPathComponent("states"))
-            let sessions = CodexSessionStore(directory: directory.appendingPathComponent("sessions"))
+            let states = directory.appendingPathComponent("states")
+            let sessions = directory.appendingPathComponent("sessions")
             let paneID = UUID()
             var old = record(runID: UUID(), launchPaneID: paneID, state: "idle", revision: 1)
             old.isTmuxHosted = false
@@ -235,39 +235,38 @@ struct AgentRuntimeProjectionTests {
             var current = old
             current.runId = UUID().uuidString
             current.pid = String(getpid())
-            try store.save(old)
-            try store.save(current)
-            let hint = CodexSessionRecord(
-                schemaVersion: 1,
+            try AgentRecordFixtures.write(old, to: states)
+            try AgentRecordFixtures.write(current, to: states)
+            let hint = AgentSessionHintFixture(
                 paneId: paneID.uuidString,
                 sessionId: UUID().uuidString,
                 cwd: directory.path,
                 updatedAt: current.updatedAt,
                 runId: current.runId
             )
-            try sessions.save(hint)
-            let projection = ProjectionFixture.adapter(state: store.directory, sessions: sessions.directory)
+            try AgentRecordFixtures.write(hint, to: sessions)
+            let projection = ProjectionFixture.adapter(state: states, sessions: sessions)
             projection.prepareForLaunch()
-            #expect(sessions.record(forPaneID: paneID) == hint)
-            #expect(store.allRecords().map(\.storageID) == [current.storageID])
+            #expect(AgentRecordFixtures.hint(forPaneID: paneID, in: sessions) == hint)
+            #expect(AgentRecordFixtures.records(in: states).map(\.storageID) == [current.storageID])
         }
     }
 
     @Test func multipleRuns_keepIndependentAttentionAndDoNotComparePeerRevisions() throws {
         try withTempDir { directory in
             let (session, tab, paneID) = WindowSessionFixture.withLooseTab()
-            let store = CodexAgentStateStore(directory: directory)
+            let states = directory.appendingPathComponent("states")
             let attention = AttentionState()
             let first = record(runID: UUID(), launchPaneID: paneID, state: "finished", revision: 99)
             var second = record(runID: UUID(), launchPaneID: paneID, state: "finished", revision: 1)
             second.updatedAt = "2026-09-09T00:01:00Z"
-            try store.save(first)
-            try store.save(second)
+            try AgentRecordFixtures.write(first, to: states)
+            try AgentRecordFixtures.write(second, to: states)
             let presence = TmuxPanePresence(bindingsByPaneID: [paneID: TmuxBinding(
                 socketPath: "/tmp/tmux-501/default", sessionID: "$2", sessionName: "work"
             )], topology: topology())
             let projection = ProjectionFixture.adapter(
-                state: store.directory,
+                state: states,
                 sessions: directory.appendingPathComponent("sessions")
             )
             projection.bootstrap(into: session, attention: attention, tmuxPresence: presence)
@@ -280,12 +279,12 @@ struct AgentRuntimeProjectionTests {
             )])
             second.state = "running"
             second.revision = 2
-            try store.save(second)
+            try AgentRecordFixtures.write(second, to: states)
             projection.refresh()
             #expect(session.tab(tab.id)?.agentBadges[.codex]?[paneID]?.state == .running)
             second.state = "error"
             second.revision = 1
-            try store.save(second)
+            try AgentRecordFixtures.write(second, to: states)
             projection.refresh()
             #expect(session.tab(tab.id)?.agentBadges[.codex]?[paneID]?.state == .running)
         }

@@ -90,8 +90,7 @@ struct AgentRuntimeHookRegressionTests {
                 "LIMPID_SESSIONS_DIR": directory.appendingPathComponent("sessions").path,
                 "LIMPID_CWD_EVENTS_DIR": directory.appendingPathComponent("cwd").path
             ])
-            let store = ClaudeAgentStateStore(directory: states)
-            let record = try #require(store.allRecords().first)
+            let record = try #require(AgentRecordFixtures.records(in: states).first)
             #expect(record.runId == runID)
             #expect(record.revision == 2)
         }

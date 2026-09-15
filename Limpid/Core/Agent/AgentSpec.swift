@@ -1,32 +1,30 @@
 // AgentSpec.swift
-// Limpid — protocol + unified data types shared by the Claude and
-// Codex agent slices. First sub-phase (2.2a) of Phase 2 #2 from the
-// architecture roadmap: this file introduces the type vocabulary so
-// the later sub-phases (2.2b–2.2d) can collapse the parallel
-// tracker / builder implementations into generics.
+// Limpid — the per-provider identity and resume command the Swift side
+// still needs, plus the badge / session structs the interface holds.
 //
-// Naming: `AgentKind` (in `Limpid/Core/Models/`) is the existing
-// runtime tag — a plain `enum { .claude, .codex }` used by
-// notifications and UI. `AgentSpec` (in this file) is the type-level
-// protocol describing how a generic tracker / builder talks to a
-// concrete flavor. The two compose — each `AgentSpec` conformer
-// exposes its matching `AgentKind` case via `kind`.
+// The lifecycle rules live in Rust behind `AgentProjectionAdapter`, so
+// nothing here reads or reasons about an on-disk record. What is left is
+// what only this side can answer: which `AgentKind` a provider is, what to
+// call it in a log line, and the shell command that resumes one of its
+// sessions in a freshly spawned pty.
 //
-// Today the file unifies `AgentBadge` and `AgentSessionInfo` (Claude
-// and Codex had structurally identical Codable structs) and declares
-// the protocol. `ClaudeAgentBadge` / `CodexAgentBadge` /
-// `ClaudeSessionInfo` / `CodexSessionInfo` stay as typealiases so the
-// rest of the codebase keeps compiling unchanged.
+// Naming: `AgentKind` (in `Limpid/Core/Models/`) is the runtime tag used by
+// notifications and the interface. `AgentSpec` is the type-level protocol
+// `AgentResumeCommandBuilder` is generic over; each conformer exposes its
+// matching `AgentKind` case via `kind`.
+//
+// `ClaudeAgentBadge` / `CodexAgentBadge` / `ClaudeSessionInfo` /
+// `CodexSessionInfo` stay as typealiases of the unified structs so the rest
+// of the codebase keeps compiling unchanged.
 
 import Foundation
 
 // MARK: - Unified Badge
 
 /// In-memory mirror of one pane's agent lifecycle. Lives on
-/// `Tab.agentBadges` keyed by provider and then by
-/// split-leaf UUID; the per-pane disk record is the authority and
-/// the projection
-/// rewrites this struct to match on every hook event.
+/// `Tab.agentBadges` keyed by provider and then by split-leaf UUID; the
+/// projection is the authority and rewrites this struct to match on every
+/// pass.
 ///
 /// Codex populates `firstPrompt`; Claude also supplies its provider title
 /// observations so the Rust reducer can select the automatic tab label.
@@ -52,28 +50,28 @@ struct AgentBadge: Codable, Equatable {
     /// for the compacting tooltip; not load-bearing for icon choice.
     var contextTokens: Int?
 
-    /// `true` while the agent runs inside a tmux session Limpid hosts
-    /// for it, so the tab column can mark the pane as one that outlives a
-    /// quit. Optional rather than defaulted because synthesized
-    /// `Codable` applies no defaults, and a badge persisted before this
-    /// field existed has to keep decoding.
+    /// `true` while the agent runs inside a tmux session Limpid hosts for
+    /// it, so the tab column can mark the pane as one that outlives a quit.
+    /// Optional rather than defaulted because synthesized `Codable` applies
+    /// no defaults, and a badge persisted before this field existed has to
+    /// keep decoding.
     var isTmuxHosted: Bool?
 
-    /// Monotonic stamp used to drop out-of-order async hook updates.
-    /// Tracker compares incoming `updatedAt` against the in-memory
-    /// value and discards anything older.
+    /// Wall-clock stamp of the record write this badge mirrors. The rules
+    /// order writes by `revision` and fall back to this stamp only for records
+    /// from before revisions existed; the interface uses it for retention and
+    /// Waiting-list order.
     var updatedAt: Date
 
-    /// User prompt captured at `UserPromptSubmit` and carried through
-    /// every subsequent hook event of the same turn. Used by the
-    /// "agent finished" notification body so the user can identify
-    /// *which* request just completed. May be `nil` for older records
-    /// or when shell extraction missed the field.
+    /// User prompt captured at `UserPromptSubmit` and carried through every
+    /// subsequent hook event of the same turn. Used by the "agent finished"
+    /// notification body so the user can identify *which* request just
+    /// completed. May be `nil` when the hook missed the field.
     var lastPrompt: String?
 
     /// Base for showing what changed since the prompt was sent. Both values
-    /// are optional because older lifecycle records and prompts outside Git
-    /// repositories have no turn comparison to offer.
+    /// are optional because older runs and prompts outside Git repositories
+    /// have no turn comparison to offer.
     var turnBaseTree: String?
     var turnRoot: String?
 
@@ -82,7 +80,7 @@ struct AgentBadge: Codable, Equatable {
     var firstPrompt: String?
 
     /// Provider conversation ID associated with the title observations.
-    /// Missing for records created before formal title integration.
+    /// Missing for runs that started before formal title integration.
     var conversationID: String?
 
     /// Latest explicit provider title. For Claude this is the documented
@@ -103,9 +101,8 @@ struct AgentBadge: Codable, Equatable {
 // MARK: - Unified SessionInfo
 
 /// In-memory mirror of one pane's resumable agent session. Lives on
-/// `Tab.agentSessions` keyed by provider and then by split-leaf
-/// UUID; the per-pane disk record is the authority and bootstrap
-/// rewrites this struct to match.
+/// `Tab.agentSessions` keyed by provider and then by split-leaf UUID; the
+/// projection is the authority and rewrites this struct to match.
 ///
 /// The resume builders consume both fields: `sessionId` plugs into
 /// the agent's own `resume`/`--resume` flag; `cwd` lets the builder
@@ -125,108 +122,21 @@ struct AgentSessionInfo: Codable, Equatable {
 
 // MARK: - AgentSpec protocol
 
-/// Type-level identity for an agent flavor (Claude, Codex, and
-/// future agents …). 2.2a only declares the protocol; the generic
-/// tracker / builder implementations that consume it land in
-/// 2.2b–2.2d. Kept in this file with the unified data types so the
-/// next sub-phase is a one-spot reference.
-/// `PaneScopedRecord` refined with the lifecycle fields the projection
-/// reads: the agent's pid (so the PID sweep can
-/// `kill(_, 0)` it) and the monotonic `updatedAt` stamp used to drop
-/// out-of-order async hook writes. Both Claude / Codex
-/// `*AgentStateRecord` types already expose these fields; this
-/// protocol just promotes them to the type system so the generic
-/// tracker can reach them without `Mirror`.
-protocol AgentLifecycleRecord: Codable {
-    var paneId: String { get }
-    var runId: String? { get }
-    var revision: Int? { get }
-    var stateEpisodeToken: String? { get }
-    var tmuxSocketPath: String? { get }
-    var tmuxSessionId: String? { get }
-    var tmuxPaneId: String? { get }
-    var tmuxServerPID: String? { get }
-    var tmuxServerStartedAt: String? { get }
-    var isTmuxHosted: Bool? { get }
-    var pid: String? { get }
-    var updatedAt: String { get }
-    var turnBaseTree: String? { get }
-    var turnRoot: String? { get }
-}
-
-extension AgentLifecycleRecord {
-    var tmuxEndpoint: TmuxRuntimeEndpoint? {
-        guard let socket = tmuxSocketPath, let pid = tmuxServerPID,
-              let start = tmuxServerStartedAt, !start.isEmpty, let pane = tmuxPaneId
-        else { return nil }
-        return TmuxRuntimeEndpoint(socketPath: socket, serverPID: pid, serverStartedAt: start, paneID: pane)
-    }
-
-    var isTmuxRuntime: Bool {
-        isTmuxHosted == true || tmuxSocketPath != nil || tmuxPaneId != nil
-    }
-
-    var storageID: String {
-        if let runId, UUID(uuidString: runId) != nil {
-            return runId.uppercased()
-        }
-        return paneId.uppercased()
-    }
-}
-
-protocol AgentResumeRecord: PaneScopedRecord {
-    var runId: String? { get }
-    var sessionId: String { get }
-}
-
+/// Type-level identity for an agent flavor (Claude, Codex, and future
+/// agents). `AgentResumeCommandBuilder` is generic over it so the resume
+/// path has one implementation rather than one per provider.
 protocol AgentSpec {
-    associatedtype StateRecord: AgentLifecycleRecord
-    associatedtype SessionRecord: AgentResumeRecord
-
     /// Runtime tag for this flavor, shared with the rest of the app.
-    /// Composes with the type-level `AgentSpec` so a generic that
-    /// only has the type can still emit notifications / log
-    /// statements keyed on the runtime `AgentKind` case.
+    /// Composes with the type-level `AgentSpec` so a generic that only has
+    /// the type can still index the per-provider maps on `Tab` by the runtime
+    /// `AgentKind` case.
     static var kind: AgentKind { get }
 
-    /// Short identifier used in log categories and diagnostic
-    /// strings — `"claude"` / `"codex"`.
-    static var label: String { get }
-
-    /// Build a unified `AgentBadge` from an on-disk state record.
-    /// Each flavor fills in the fields its hook actually populates;
-    /// the others stay `nil`. Returns `nil` when the record's state
-    /// string doesn't decode (a forward-compat tolerance: ignore
-    /// rather than crash on hook output from a newer Limpid).
-    static func makeBadge(from record: StateRecord) -> AgentBadge?
-
-    /// Shell command Limpid types into a freshly-spawned pty when a
-    /// pane is resumed at app launch. The Claude flavor emits
-    /// `claude --resume <id>`; Codex emits `codex resume <id>`. `cwd`
-    /// may be nil — callers handle the fallback at the
-    /// command-builder layer.
+    /// Shell command Limpid types into a freshly-spawned pty when a pane is
+    /// resumed at app launch. The Claude flavor emits `claude --resume <id>`;
+    /// Codex emits `codex resume <id>`. `cwd` may be nil — callers handle the
+    /// fallback at the command-builder layer.
     static func resumeCommand(sessionId: String, cwd: String?) -> String
-
-    /// Per-flavor priority gate for the auto-resume command builder.
-    /// Claude always returns `true`; Codex returns `false` when the
-    /// same pane already has a live Claude session so the two don't
-    /// race for the pty. Default conformance returns `true`.
-    static func shouldResume(in tab: Tab, paneID: UUID) -> Bool
-
-    /// Per-flavor tab-title hook called once per
-    /// `applyAllRecordsToSession` pass after the badges dictionary
-    /// has been reconciled. Each provider resolves its available title
-    /// candidates through Rust before updating `tab.title`. Default
-    /// conformance is a no-op.
-    static func applyTabTitle(_ tab: inout Tab, badges: [UUID: AgentBadge])
-}
-
-extension AgentSpec {
-    static func shouldResume(in _: Tab, paneID _: UUID) -> Bool {
-        true
-    }
-
-    static func applyTabTitle(_: inout Tab, badges _: [UUID: AgentBadge]) {}
 }
 
 // MARK: - Backward-compat typealiases

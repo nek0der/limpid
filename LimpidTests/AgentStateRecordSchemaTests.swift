@@ -1,5 +1,5 @@
 // AgentStateRecordSchemaTests.swift
-// Limpid — the Swift readers accept the version 3 records the Rust hook
+// Limpid — the projection accepts the version 3 records the Rust hook
 // runtime writes, alongside the version 2 records the shell receivers wrote.
 
 import Foundation
@@ -7,12 +7,17 @@ import Testing
 @testable import Limpid
 
 @Suite("Agent state record schema")
+@MainActor
 struct AgentStateRecordSchemaTests {
     /// A record as `limpid-agent-hook` writes it after a turn finished: no
     /// `runStartedAt` and no `detail` rather than empty strings, a neutral
     /// `lastHookEvent`, and a field this build does not know.
+    ///
+    /// Written as text rather than through the fixture type because the point
+    /// of these cases is what the reader does with the bytes a hook produced,
+    /// including the shapes no Swift model would emit.
     private static let versionThree = """
-    {"schemaVersion":3,"paneId":"6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10","runId":"6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11",\
+    {"schemaVersion":3,"paneId":"%PANE%","runId":"6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11",\
     "revision":4,"stateEpisodeToken":"4","state":"finished","updatedAt":"2026-09-14T00:00:05Z",\
     "lastHookEvent":"turn_finished","pid":"4242","lastPrompt":"first","firstPrompt":"first",\
     "sessionId":"00000000-0000-4000-8000-000000000001","providerSessionTitle":"Formal",\
@@ -20,49 +25,60 @@ struct AgentStateRecordSchemaTests {
     "turnRoot":"/tmp/example","futureField":{"nested":true}}
     """
 
-    @Test("decodes a version 3 Claude record with absent optionals")
-    func claudeRecord_versionThree_decodes() throws {
-        let record = try JSONDecoder().decode(ClaudeAgentStateRecord.self, from: Data(Self.versionThree.utf8))
-        #expect(record.schemaVersion == 3)
-        #expect(record.state == "finished")
-        #expect(record.runStartedAt == nil)
-        #expect(record.detail == nil)
-        #expect(record.revision == 4)
-        #expect(record.stateEpisodeToken == "4")
-        #expect(record.sessionId == "00000000-0000-4000-8000-000000000001")
-        #expect(record.providerSessionTitle == "Formal")
-        #expect(record.storageID == "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11")
-        #expect(record.isTmuxRuntime == false)
-
-        let badge = try #require(ClaudeAgent.makeBadge(from: record))
-        #expect(badge.state == .finished)
-        #expect(badge.runStartedAt == nil)
-        #expect(badge.firstPrompt == "first")
-        #expect(badge.providerSessionTitle == "Formal")
+    /// Runs one record through a projection pass and hands back the badge the
+    /// pane ends up showing. The process is reported alive so the pass has no
+    /// reason to retire the record before it is projected.
+    private func badge(from json: String, provider: String) throws -> AgentBadge {
+        try withTempDir { directory in
+            let (session, tab, paneID) = WindowSessionFixture.withLooseTab()
+            let states = directory.appendingPathComponent("states")
+            try FileManager.default.createDirectory(at: states, withIntermediateDirectories: true)
+            try Data(json.replacingOccurrences(of: "%PANE%", with: paneID.uuidString).utf8)
+                .write(to: states.appendingPathComponent(
+                    "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11.state.json"
+                ))
+            let projection = ProjectionFixture.adapter(
+                provider: provider,
+                state: states,
+                sessions: directory.appendingPathComponent("sessions"),
+                processStatus: { _ in .alive }
+            )
+            projection.bootstrap(into: session)
+            let kind: AgentKind = provider == "claude" ? .claude : .codex
+            return try #require(session.tab(tab.id)?.agentBadges[kind]?[paneID])
+        }
     }
 
-    @Test("decodes a version 3 Codex record with absent optionals")
-    func codexRecord_versionThree_decodes() throws {
-        let record = try JSONDecoder().decode(CodexAgentStateRecord.self, from: Data(Self.versionThree.utf8))
-        #expect(record.schemaVersion == 3)
-        #expect(record.runStartedAt == nil)
-        #expect(record.killedByLimpidAt == nil)
-        let badge = try #require(CodexAgent.makeBadge(from: record))
+    @Test("projects a version 3 record with absent optionals", arguments: ["claude", "codex"])
+    func record_versionThree_projects(provider: String) throws {
+        let badge = try badge(from: Self.versionThree, provider: provider)
         #expect(badge.state == .finished)
+        // Absent rather than empty: the turn is over, so there is no start.
         #expect(badge.runStartedAt == nil)
+        #expect(badge.detail == nil)
+        #expect(badge.firstPrompt == "first")
+        #expect(badge.turnRoot == "/tmp/example")
+    }
+
+    @Test("carries the Claude title observations through the projection")
+    func claudeRecord_versionThree_carriesTitles() throws {
+        let badge = try badge(from: Self.versionThree, provider: "claude")
+        #expect(badge.conversationID == "00000000-0000-4000-8000-000000000001")
+        #expect(badge.providerSessionTitle == "Formal")
     }
 
     @Test("treats a version 2 empty runStartedAt and a version 3 null alike")
     func runStartedAt_emptyAndAbsent_bothMeanNotRunning() throws {
         let versionTwo = Self.versionThree
             .replacingOccurrences(of: "\"schemaVersion\":3", with: "\"schemaVersion\":2")
-            .replacingOccurrences(of: "\"state\":\"finished\"", with: "\"state\":\"finished\",\"runStartedAt\":\"\",\"detail\":\"\"")
-        let two = try JSONDecoder().decode(ClaudeAgentStateRecord.self, from: Data(versionTwo.utf8))
-        let three = try JSONDecoder().decode(ClaudeAgentStateRecord.self, from: Data(Self.versionThree.utf8))
-        let badgeTwo = try #require(ClaudeAgent.makeBadge(from: two))
-        let badgeThree = try #require(ClaudeAgent.makeBadge(from: three))
-        #expect(badgeTwo.runStartedAt == nil)
-        #expect(badgeThree.runStartedAt == nil)
-        #expect(badgeTwo.state == badgeThree.state)
+            .replacingOccurrences(
+                of: "\"state\":\"finished\"",
+                with: "\"state\":\"finished\",\"runStartedAt\":\"\",\"detail\":\"\""
+            )
+        let two = try badge(from: versionTwo, provider: "claude")
+        let three = try badge(from: Self.versionThree, provider: "claude")
+        #expect(two.runStartedAt == nil)
+        #expect(three.runStartedAt == nil)
+        #expect(two.state == three.state)
     }
 }
