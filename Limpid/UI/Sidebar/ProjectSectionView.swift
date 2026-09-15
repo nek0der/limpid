@@ -157,7 +157,10 @@ struct ProjectSectionView: View {
     }
 
     private var projectHeader: some View {
-        ContainerRow(
+        let report = aggregatesWholeProject
+            ? attention.agentStateReportInProject(project.id, session: session)
+            : attention.agentStateReport(in: .project(project.id), session: session)
+        return ContainerRow(
             kind: .projectHeader(project, isExpanded: project.isExpanded),
             // Strict match: the header's strong "selected" pill only
             // fires when the project-direct container is active. When a
@@ -178,12 +181,8 @@ struct ProjectSectionView: View {
             isRinging: aggregatesWholeProject
                 ? session.isRingingInProject(project.id)
                 : session.isRinging(in: .project(project.id)),
-            agentStateSummary: aggregatesWholeProject
-                ? attention.aggregateAgentStateSummaryInProject(project.id, session: session)
-                : attention.aggregateAgentStateSummary(in: .project(project.id), session: session),
-            agentBreakdown: aggregatesWholeProject
-                ? attention.agentStateBreakdownInProject(project.id, session: session)
-                : attention.agentStateBreakdown(in: .project(project.id), session: session),
+            agentStateSummary: report.summary,
+            agentBreakdown: report.breakdown,
             // Header tap always activates `.project(id)` — the
             // project-direct ("Default") container. With worktrees,
             // expansion is a separate hit target on the leading
@@ -299,19 +298,16 @@ struct ProjectSectionView: View {
     // MARK: - Worktree row
 
     private func worktreeRow(_ wt: Worktree) -> some View {
-        ContainerRow(
+        let container = ContainerID.worktree(projectID: project.id, worktreeID: wt.id)
+        let report = attention.agentStateReport(in: container, session: session)
+        return ContainerRow(
             kind: .worktree(projectID: project.id, wt),
-            isActive: session.activeContainerID == .worktree(projectID: project.id, worktreeID: wt.id),
-            hasUnread: session.hasUnread(in: .worktree(projectID: project.id, worktreeID: wt.id)),
-            isRinging: session.isRinging(in: .worktree(projectID: project.id, worktreeID: wt.id)),
-            agentStateSummary: attention.aggregateAgentStateSummary(
-                in: .worktree(projectID: project.id, worktreeID: wt.id),
-                session: session
-            ),
-            agentBreakdown: attention.agentStateBreakdown(in: .worktree(projectID: project.id, worktreeID: wt.id), session: session),
-            onActivate: {
-                session.setActiveContainer(.worktree(projectID: project.id, worktreeID: wt.id))
-            },
+            isActive: session.activeContainerID == container,
+            hasUnread: session.hasUnread(in: container),
+            isRinging: session.isRinging(in: container),
+            agentStateSummary: report.summary,
+            agentBreakdown: report.breakdown,
+            onActivate: { session.setActiveContainer(container) },
             onToggleExpand: nil,
             // Worktree rename is intentionally not exposed. Branch /
             // folder rename is git's job — users drop into a tab and

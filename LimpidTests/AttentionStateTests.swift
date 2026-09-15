@@ -345,7 +345,7 @@ struct AttentionStateTests {
         _ = paneWithBadge(session, attention, .running, at: 200)
         attention.focusMoved(to: done, in: session)
 
-        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        let summary = attention.agentStateReport(in: .loose, session: session).summary
         #expect(summary == AgentStateSummary(state: .running, isViewedFinished: false))
     }
 
@@ -357,7 +357,7 @@ struct AttentionStateTests {
         _ = paneWithBadge(session, attention, .finished, at: 100)
         _ = paneWithBadge(session, attention, .running, at: 200)
 
-        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        let summary = attention.agentStateReport(in: .loose, session: session).summary
         #expect(summary == AgentStateSummary(state: .finished, isViewedFinished: false))
     }
 
@@ -368,7 +368,7 @@ struct AttentionStateTests {
         let done = paneWithBadge(session, attention, .finished, at: 100)
         attention.focusMoved(to: done, in: session)
 
-        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        let summary = attention.agentStateReport(in: .loose, session: session).summary
         #expect(summary == AgentStateSummary(state: .finished, isViewedFinished: true))
     }
 
@@ -383,7 +383,7 @@ struct AttentionStateTests {
         _ = paneWithBadge(session, attention, .error, at: 300)
         attention.focusMoved(to: done, in: session)
 
-        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        let summary = attention.agentStateReport(in: .loose, session: session).summary
         #expect(summary == AgentStateSummary(state: .error, isViewedFinished: false))
     }
 

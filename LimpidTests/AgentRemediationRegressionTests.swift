@@ -103,7 +103,7 @@ struct AgentRemediationRegressionTests {
             kind: .codex, runID: UUID().uuidString, revision: 1, badge: badge,
             paneIDs: [paneA, paneB], tmuxLocations: [:]
         )], kind: .codex)
-        #expect(attention.agentStateBreakdown(in: .loose, session: session)[.finished] == 1)
+        #expect(attention.agentStateReport(in: .loose, session: session).breakdown[.finished] == 1)
         #expect(attention.attentionEntries(in: session).count == 1)
     }
 }

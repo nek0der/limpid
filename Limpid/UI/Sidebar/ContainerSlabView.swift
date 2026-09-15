@@ -340,13 +340,14 @@ struct ContainerSlabView: View {
                 // since it'd just label a single row. Sections only kick
                 // in when there's an actual list to label (Groups,
                 // Projects).
+                let looseReport = agentStateReport(in: .loose)
                 ContainerRow(
                     kind: .loose,
                     isActive: isActiveContainer(.loose),
                     hasUnread: hasUnread(in: .loose),
                     isRinging: isRinging(in: .loose),
-                    agentStateSummary: agentStateSummary(in: .loose),
-                    agentBreakdown: agentBreakdown(in: .loose),
+                    agentStateSummary: looseReport.summary,
+                    agentBreakdown: looseReport.breakdown,
                     onActivate: { session.setActiveContainer(.loose) },
                     onToggleExpand: nil,
                     onRename: nil
@@ -397,13 +398,14 @@ struct ContainerSlabView: View {
                 } content: {
                     VStack(alignment: .leading, spacing: LimpidLayout.reorderRowSpacing) {
                         ForEach(session.groups) { group in
+                            let report = agentStateReport(in: .group(group.id))
                             ContainerRow(
                                 kind: .group(group, isExpanded: false),
                                 isActive: isActiveContainer(.group(group.id)),
                                 hasUnread: hasUnread(in: .group(group.id)),
                                 isRinging: isRinging(in: .group(group.id)),
-                                agentStateSummary: agentStateSummary(in: .group(group.id)),
-                                agentBreakdown: agentBreakdown(in: .group(group.id)),
+                                agentStateSummary: report.summary,
+                                agentBreakdown: report.breakdown,
                                 onActivate: { session.setActiveContainer(.group(group.id)) },
                                 onToggleExpand: nil,
                                 onRename: { session.renameGroup(group.id, to: $0) },
@@ -688,12 +690,8 @@ struct ContainerSlabView: View {
         session.isRingingInProject(projectID)
     }
 
-    fileprivate func agentStateSummary(in container: ContainerID) -> AgentStateSummary? {
-        attention.aggregateAgentStateSummary(in: container, session: session)
-    }
-
-    fileprivate func agentBreakdown(in container: ContainerID) -> [AgentState: Int] {
-        attention.agentStateBreakdown(in: container, session: session)
+    fileprivate func agentStateReport(in container: ContainerID) -> AgentStateReport {
+        attention.agentStateReport(in: container, session: session)
     }
 
 }
