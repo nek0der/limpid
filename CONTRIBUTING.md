@@ -116,7 +116,7 @@ make lint         # cargo fmt + Clippy + SwiftFormat + SwiftLint.
 
 `make help` lists every available target.
 
-If you are editing `vendor/ghostty/` content, you're probably on the wrong path — that's a pinned upstream submodule. Bump it by updating the submodule ref, never by editing in place.
+If you are editing `vendor/ghostty/` content, you're probably on the wrong path — that's a submodule of our libghostty fork, pinned to one commit. Bump it by updating the submodule ref, never by editing in place. `docs/libghostty-fork.md` covers what a fork patch has to carry and how we retire one.
 
 ### Opening the PR
 

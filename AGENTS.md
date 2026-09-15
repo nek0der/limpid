@@ -144,7 +144,9 @@ Short index of load-bearing files. Skim these before touching their domain.
 - `vendor/ghostty/` — our libghostty fork (`nek0der/ghostty`, branch `limpid`).
   C ABI patches land on the fork's `limpid` branch, then bump the submodule ref
   here. Don't edit the checkout in place from the Limpid repo — commit patches
-  on the fork.
+  on the fork. A patch stays additive and carries a class and a retirement
+  condition; `docs/libghostty-fork.md` holds the rules and the current
+  inventory.
 - `Limpid.xcodeproj/project.pbxproj` — generated. Edit `project.yml` and run
   `make xcodegen` instead.
 - `Limpid/Resources/Info.plist` Sparkle public key (`SUPublicEDKey`). Changing
