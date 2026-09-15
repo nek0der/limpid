@@ -45,6 +45,9 @@ final class AgentProjectionAdapter {
     /// descriptor it was opened with; see `watch(_:)`.
     private nonisolated(unsafe) var sources: [any DispatchSourceFileSystemObject] = []
     private nonisolated(unsafe) var sweep: Timer?
+    /// Between the file events and `refresh()`, so a hook write that fans out
+    /// into several events costs one pass now and at most one more later.
+    private lazy var watcherPasses = AgentPassCoalescer { [weak self] in self?.refresh() }
     /// Why the last pass could not run, if it could not. Kept because a pass
     /// that fails changes nothing visible, so without this the only evidence
     /// is a log line nobody is watching.
@@ -264,7 +267,7 @@ final class AgentProjectionAdapter {
             queue: .main
         )
         source.setEventHandler { [weak self] in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in self?.watcherPasses.request() }
         }
         // Captured by value so the close belongs to this source's lifetime
         // rather than the adapter's.
@@ -276,6 +279,9 @@ final class AgentProjectionAdapter {
     /// Runs one pass: read the directories, ask the rules, apply the answer.
     func refresh() {
         guard let session, !DemoFixture.isDemoActive else { return }
+        // Whatever asked for this pass, it reads the directories now, so a
+        // trailing pass the watcher was owed has nothing left to pick up.
+        watcherPasses.didRun()
         let input = buildInput(session: session)
         let response: AgentProjectionResponse
         let body: Data
