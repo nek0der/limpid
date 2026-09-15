@@ -44,7 +44,7 @@ struct ClaudeResumeCommandBuilderTests {
     @Test("initialCommand returns nil when the pane has no remembered session")
     func initialCommand_returnsNil_whenNoSessionForPane() {
         let (_, tab, paneID) = WindowSessionFixture.withLooseTab()
-        // Empty claudeSessions map → no resume.
+        // No hint for this provider → no resume.
         #expect(ClaudeResumeCommandBuilder.initialCommand(for: tab, paneID: paneID) == nil)
     }
 
@@ -53,10 +53,11 @@ struct ClaudeResumeCommandBuilderTests {
         let (session, _, paneID) = WindowSessionFixture.withLooseTab()
         let tabID = session.tabs[0].id
         session.update(tabID) {
-            $0.claudeSessions[paneID] = ClaudeSessionInfo(
+            $0.agentSessions[.claude, default: [:]][paneID] = ClaudeSessionInfo(
                 sessionId: "sess-1",
                 cwd: "/tmp/repo"
             )
+            $0.agentResumeCandidates[paneID] = [.claude]
         }
         let tab = try #require(session.tab(tabID))
 
@@ -79,7 +80,8 @@ struct ClaudeResumeCommandBuilderTests {
             // Force-pin the new leaf id so the test stays
             // deterministic regardless of insert ordering.
             let other = leaves.first { $0 != firstPaneID }!
-            $0.claudeSessions[firstPaneID] = ClaudeSessionInfo(sessionId: "first", cwd: nil)
+            $0.agentSessions[.claude, default: [:]][firstPaneID] = ClaudeSessionInfo(sessionId: "first", cwd: nil)
+            $0.agentResumeCandidates[firstPaneID] = [.claude]
             // Re-attach our local handle to whatever the tree actually used.
             _ = other
         }
@@ -97,7 +99,7 @@ struct ClaudeResumeCommandBuilderTests {
         let (session, _, paneID) = WindowSessionFixture.withLooseTab()
         let tabID = session.tabs[0].id
         session.update(tabID) {
-            $0.claudeSessions[paneID] = ClaudeSessionInfo(sessionId: "sess-1", cwd: nil)
+            $0.agentSessions[.claude, default: [:]][paneID] = ClaudeSessionInfo(sessionId: "sess-1", cwd: nil)
             $0.initialCommands[paneID] = "vim README.md"
         }
         let tab = try #require(session.tab(tabID))
@@ -110,7 +112,7 @@ struct ClaudeResumeCommandBuilderTests {
         let (session, _, paneID) = WindowSessionFixture.withLooseTab()
         let tabID = session.tabs[0].id
         session.update(tabID) {
-            $0.claudeSessions[paneID] = ClaudeSessionInfo(sessionId: "", cwd: nil)
+            $0.agentSessions[.claude, default: [:]][paneID] = ClaudeSessionInfo(sessionId: "", cwd: nil)
         }
         let tab = try #require(session.tab(tabID))
 

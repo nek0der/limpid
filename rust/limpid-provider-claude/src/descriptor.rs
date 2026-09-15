@@ -2,17 +2,20 @@
 
 use crate::PROVIDER_ID;
 use limpid_agent_model::{
-    Capability, InstallRecipe, ProviderDescriptor, ProviderId, SettingsFragment,
+    Capability, InstallRecipe, ProviderDescriptor, ProviderId, RecipePlaceholder, RecipeVariable,
+    SettingsFragment,
 };
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
 /// The settings document the shim hands to `claude --settings`, with the
-/// hook command placeholders the platform substitutes. Kept in the Swift
-/// resource tree because the shim reads it from the bundle; the recipe
-/// carries the same bytes so a provider is self-describing.
-const SETTINGS_TEMPLATE: &str =
-    include_str!("../../../Limpid/Resources/claude-shim/settings.template.json");
+/// hook command placeholders the platform substitutes.
+///
+/// Owned here rather than in the platform's resource tree: this crate knows
+/// the shape, and reaching across for it would point the dependency the wrong way.
+/// The shim reads it from beside itself at run time, so the application's
+/// build copies this file into the bundle.
+const SETTINGS_TEMPLATE: &str = include_str!("../resources/settings.template.json");
 
 pub(crate) fn descriptor() -> &'static ProviderDescriptor {
     static DESCRIPTOR: OnceLock<ProviderDescriptor> = OnceLock::new();
@@ -38,28 +41,35 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
         session_directory: "sessions".to_owned(),
         cwd_events_directory: Some("cwd-events".to_owned()),
         process_names: vec!["claude".to_owned(), "claude.exe".to_owned()],
+        // The reasons Claude reports when the user ended the session rather
+        // than the process going away under it. A signal, or a reason this
+        // build does not know, keeps the hint so the next launch can resume.
+        session_end_drop_reasons: ["clear", "logout", "exit", "prompt_input_exit", "quit"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
     })
 }
 
 pub(crate) fn install_recipe() -> InstallRecipe {
     InstallRecipe {
         environment: vec![
-            (
-                "LIMPID_AGENT_STATES_DIR".to_owned(),
-                "@@STATE_DIRECTORY@@".to_owned(),
-            ),
-            (
-                "LIMPID_SESSIONS_DIR".to_owned(),
-                "@@SESSION_DIRECTORY@@".to_owned(),
-            ),
-            (
-                "LIMPID_CWD_EVENTS_DIR".to_owned(),
-                "@@CWD_EVENTS_DIRECTORY@@".to_owned(),
-            ),
-            (
-                "LIMPID_CLAUDE_HOOK_NAMESPACE".to_owned(),
-                "@@BUNDLE_ID@@".to_owned(),
-            ),
+            RecipeVariable {
+                name: "LIMPID_AGENT_STATES_DIR".to_owned(),
+                value: RecipePlaceholder::StateDirectory,
+            },
+            RecipeVariable {
+                name: "LIMPID_SESSIONS_DIR".to_owned(),
+                value: RecipePlaceholder::SessionDirectory,
+            },
+            RecipeVariable {
+                name: "LIMPID_CWD_EVENTS_DIR".to_owned(),
+                value: RecipePlaceholder::CwdEventsDirectory,
+            },
+            RecipeVariable {
+                name: "LIMPID_CLAUDE_HOOK_NAMESPACE".to_owned(),
+                value: RecipePlaceholder::BundleId,
+            },
         ],
         settings_fragments: vec![SettingsFragment {
             target: "claude.settings".to_owned(),
@@ -93,11 +103,13 @@ mod tests {
         let template: serde_json::Value =
             serde_json::from_str(&recipe.settings_fragments[0].body).expect("template is JSON");
         assert!(template["hooks"]["PermissionRequest"].is_array());
-        assert!(
-            recipe
-                .environment
-                .iter()
-                .any(|(name, _)| name == "LIMPID_AGENT_STATES_DIR")
-        );
+        // Named by placeholder rather than by token text: a typo in a token
+        // compiles, installs, and leaves the agent reporting to nothing.
+        let state = recipe
+            .environment
+            .iter()
+            .find(|variable| variable.value == RecipePlaceholder::StateDirectory)
+            .expect("a state directory variable");
+        assert_eq!(state.name, "LIMPID_AGENT_STATES_DIR");
     }
 }

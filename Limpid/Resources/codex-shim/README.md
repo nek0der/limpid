@@ -25,7 +25,7 @@ marked block, and nothing else, is written into the user's
   `hook codex` subcommand, which runs the Rust receiver in-process, or
   `limpid-hook.legacy`, the previous shell receiver kept for one release as
   the rollback path. The records both write are read back by
-  `CodexSessionTracker` and `CodexAgentStateTracker`.
+  the agent projection.
 - `limpid-pretool-worktree-hook` — the second `PreToolUse` hook for the
   Bash tool. The same wrapper shape: `hook codex worktree` in the helper,
   or `limpid-pretool-worktree-hook.legacy`, which intercepts a `git

@@ -1,9 +1,8 @@
 // CodexResumeCommandBuilder.swift
 // Limpid — backward-compat redirect to the generic
-// `AgentResumeCommandBuilder<CodexAgent>`. See
-// `ClaudeResumeCommandBuilder.swift` for the sub-phase 2.2c
-// rationale. The Codex priority gate (skip when a Claude session is
-// live on the same pane) lives on `CodexAgent.shouldResume`.
+// `AgentResumeCommandBuilder<CodexAgent>`. Whether Codex yields to a Claude
+// session on the same pane is decided by the projection and read from
+// `Tab.agentResumeCandidates`.
 
 import Foundation
 

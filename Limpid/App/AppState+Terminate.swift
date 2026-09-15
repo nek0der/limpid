@@ -17,8 +17,8 @@ extension AppState {
     ///
     /// Ordering matters twice over. The two captures run before the
     /// snapshot because both write into `session`. And
-    /// `preserveLiveSessionsOnTerminate` runs before the save so the
-    /// records it edits are the ones that land.
+    /// `prepareForTermination` runs before the save so the records it
+    /// edits are the ones that land.
     ///
     /// Every collaborator is read into a local first. The observer is
     /// stored back on `self`, so a closure that reached through `self`
@@ -30,7 +30,7 @@ extension AppState {
         let frecencyStore = self.frecencyStore
         let settingsStore = self.settingsStore
         let registry = self.registry
-        let codexAgentStateTracker = self.codexAgentStateTracker
+        let agentProjection = self.agentProjection
         let tmuxPresence = self.tmuxPresence
         return NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
@@ -54,9 +54,9 @@ extension AppState {
                     detachedPaneIDs: tmuxPresence.detachedPaneIDs
                 )
                 tmuxPresence.stop()
-                // Independent intents protect direct Codex resume even if a
-                // concurrent hook owns the lifecycle record's advisory lock.
-                codexAgentStateTracker.preserveLiveSessionsOnTerminate()
+                // Independent intents protect a direct agent's resume even if
+                // a concurrent hook owns the lifecycle record's advisory lock.
+                agentProjection.prepareForTermination()
                 registry.secureInputManager.removeAll()
                 store.saveSynchronously(session.makeSnapshot())
                 historyStore.flushSynchronously()

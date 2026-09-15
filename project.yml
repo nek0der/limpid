@@ -420,6 +420,24 @@ targets:
           - $(SRCROOT)/scripts/build-rust-bridge.sh
         outputFiles:
           - $(DERIVED_FILE_DIR)/limpid-rust/liblimpid_rust_bridge.a
+    postBuildScripts:
+      # The settings template belongs to the provider crate, which owns its
+      # shape, but the shim reads it from beside itself at run time. Copied
+      # after the resource phases rather than by one of them: the shim folder
+      # is a folder resource, so a phase that writes into it races the copy
+      # that replaces the whole directory.
+      - name: Place the Claude settings template
+        script: |
+          set -euo pipefail
+          install -m 644 \
+            "$SRCROOT/rust/limpid-provider-claude/resources/settings.template.json" \
+            "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/claude-shim/settings.template.json"
+        # Never skipped: the folder resource copy above replaces the whole
+        # shim directory, so an "up to date" output from a previous build
+        # says nothing about whether the file is there now.
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/rust/limpid-provider-claude/resources/settings.template.json
 
   LimpidTests:
     type: bundle.unit-test

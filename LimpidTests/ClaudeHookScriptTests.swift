@@ -248,9 +248,8 @@ struct ClaudeHookScriptTests {
 
     /// The value reaches the record's JSON verbatim, and an inherited
     /// variable is not numeric by construction the way a value read out
-    /// of `ps` is. A malformed record is dropped whole by
-    /// `PaneStore.allRecords`, taking the pane's badge with it — the
-    /// failure #19 fixed on the Codex side and left standing here.
+    /// of `ps` is. A malformed record is dropped whole by the projection's
+    /// record scan, taking the pane's badge with it.
     @Test("refuses an exported pid that is not a number")
     func nonNumericExportedPid_isRefused() throws {
         let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_CLAUDE_PID": "\" ,\"x\":1"])
@@ -663,7 +662,7 @@ struct ClaudeHookScriptTests {
     private static func subscribedEvents() throws -> [String] {
         let root = try #require(RepoFixture.limpidRoot)
         let template = root.appendingPathComponent(
-            "Limpid/Resources/claude-shim/settings.template.json"
+            "rust/limpid-provider-claude/resources/settings.template.json"
         )
         let filled = try String(contentsOf: template, encoding: .utf8)
             .replacingOccurrences(of: "@@HOOK@@", with: "/hook")

@@ -47,7 +47,7 @@ struct TabRow: View {
 
     /// Aggregate agent state across every split leaf in the tab and
     /// pick the most-urgent state for the tab column icon. Pulls from both
-    /// `claudeAgentBadges` and `codexAgentBadges` via the shared
+    /// every provider's entry in `agentBadges` via the shared
     /// attention state so a Codex pane lights up the badge too and a viewed
     /// completion retains its acknowledgement style.
     private var aggregateAgentStateSummary: AgentStateSummary? {
@@ -65,10 +65,10 @@ struct TabRow: View {
     /// the badge is dropped.
     private var isAgentTab: Bool {
         tab.splitTree.allLeafIDs().contains { leaf in
-            if let s = tab.claudeAgentBadges[leaf]?.state, s != .unknown {
+            if let s = tab.agentBadges[.claude]?[leaf]?.state, s != .unknown {
                 return true
             }
-            if let s = tab.codexAgentBadges[leaf]?.state, s != .unknown {
+            if let s = tab.agentBadges[.codex]?[leaf]?.state, s != .unknown {
                 return true
             }
             return false
@@ -87,8 +87,8 @@ struct TabRow: View {
             // been opened this launch. The agent record survives exactly
             // that case, and clears itself when the session ends.
             tmuxPresence.paneIDs.contains(leaf)
-                || tab.claudeAgentBadges[leaf]?.isTmuxHosted == true
-                || tab.codexAgentBadges[leaf]?.isTmuxHosted == true
+                || tab.agentBadges[.claude]?[leaf]?.isTmuxHosted == true
+                || tab.agentBadges[.codex]?[leaf]?.isTmuxHosted == true
         }
     }
 
@@ -116,7 +116,7 @@ struct TabRow: View {
         let leaves = tab.splitTree.allLeafIDs()
         var badges: [UnifiedBadge] = []
         for leaf in leaves {
-            if let b = tab.claudeAgentBadges[leaf] {
+            if let b = tab.agentBadges[.claude]?[leaf] {
                 badges.append(UnifiedBadge(
                     state: b.state,
                     detail: b.detail,
@@ -124,7 +124,7 @@ struct TabRow: View {
                     updatedAt: b.updatedAt
                 ))
             }
-            if let b = tab.codexAgentBadges[leaf] {
+            if let b = tab.agentBadges[.codex]?[leaf] {
                 badges.append(UnifiedBadge(
                     state: b.state,
                     detail: b.detail,
@@ -442,13 +442,11 @@ struct TabRow: View {
 /// (Tabs / Log / Diff / Stash); after the mode switcher came out only
 /// the tabs list survived, so this view is now the entire tab column body.
 struct TabsListView: View {
+    @Environment(\.agentProjection) private var agentProjection
     @Environment(WindowSession.self) private var session
     @Environment(AttentionState.self) private var attention
     @Environment(LimpidDragState.self) private var dragState
     @Environment(\.surfaceRegistry) private var registry
-    @Environment(\.claudeSessionTracker) private var claudeSessionTracker
-    @Environment(\.cwdEventTracker) private var cwdEventTracker
-    @Environment(\.codexSessionTracker) private var codexSessionTracker
     @Namespace private var paneMergeHighlight
     let container: ContainerID
 
@@ -497,9 +495,7 @@ struct TabsListView: View {
                                     tabID: tab.id,
                                     source: .mouse,
                                     attention: attention,
-                                    claudeSessionTracker: claudeSessionTracker,
-                                    codexSessionTracker: codexSessionTracker,
-                                    cwdEventTracker: cwdEventTracker
+                                    agentProjection: agentProjection
                                 )
                             },
                             onRename: { newName in

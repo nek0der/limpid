@@ -52,7 +52,7 @@ struct TabLatestAgentSessionPaneIDTests {
     func twoCodex_newerWins() {
         var (tab, pane1) = Tab.newWithSinglePane(title: "scratch", container: .loose)
         let pane2 = UUID()
-        tab.codexAgentBadges = [
+        tab.agentBadges[.codex] = [
             pane1: codexBadge(startedAt: at(100)),
             pane2: codexBadge(startedAt: at(200))
         ]
@@ -63,8 +63,8 @@ struct TabLatestAgentSessionPaneIDTests {
     func mixedClaudeCodex_newerSessionWins() {
         var (tab, claudePane) = Tab.newWithSinglePane(title: "scratch", container: .loose)
         let codexPane = UUID()
-        tab.claudeAgentBadges = [claudePane: claudeBadge(startedAt: at(300))]
-        tab.codexAgentBadges = [codexPane: codexBadge(startedAt: at(200))]
+        tab.agentBadges[.claude] = [claudePane: claudeBadge(startedAt: at(300))]
+        tab.agentBadges[.codex] = [codexPane: codexBadge(startedAt: at(200))]
         #expect(tab.latestAgentSessionPaneID == claudePane)
     }
 
@@ -75,7 +75,7 @@ struct TabLatestAgentSessionPaneIDTests {
         // Pre-migration badge (Limpid before this feature shipped) has
         // no captured timestamp — it must not be picked as the owner
         // just because the other pane also lacks one.
-        tab.codexAgentBadges = [
+        tab.agentBadges[.codex] = [
             pane1: codexBadge(startedAt: nil),
             pane2: codexBadge(startedAt: at(50))
         ]
@@ -86,8 +86,8 @@ struct TabLatestAgentSessionPaneIDTests {
     func allBadgesWithoutTimestamp_returnsNil() {
         var (tab, pane1) = Tab.newWithSinglePane(title: "scratch", container: .loose)
         let pane2 = UUID()
-        tab.claudeAgentBadges = [pane1: claudeBadge(startedAt: nil)]
-        tab.codexAgentBadges = [pane2: codexBadge(startedAt: nil)]
+        tab.agentBadges[.claude] = [pane1: claudeBadge(startedAt: nil)]
+        tab.agentBadges[.codex] = [pane2: codexBadge(startedAt: nil)]
         #expect(tab.latestAgentSessionPaneID == nil)
     }
 }

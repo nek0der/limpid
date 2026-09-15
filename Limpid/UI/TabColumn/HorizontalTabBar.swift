@@ -10,11 +10,9 @@
 import SwiftUI
 
 struct HorizontalTabBar: View {
+    @Environment(\.agentProjection) private var agentProjection
     @Environment(WindowSession.self) private var session
     @Environment(\.surfaceRegistry) private var registry
-    @Environment(\.claudeSessionTracker) private var claudeSessionTracker
-    @Environment(\.cwdEventTracker) private var cwdEventTracker
-    @Environment(\.codexSessionTracker) private var codexSessionTracker
     @Environment(LimpidDragState.self) private var dragState
     @Namespace private var paneMergeHighlight
     let container: ContainerID
@@ -81,9 +79,7 @@ struct HorizontalTabBar: View {
                             registry: registry,
                             tabID: tab.id,
                             source: .mouse,
-                            claudeSessionTracker: claudeSessionTracker,
-                            codexSessionTracker: codexSessionTracker,
-                            cwdEventTracker: cwdEventTracker
+                            agentProjection: agentProjection
                         )
                     },
                     onRename: { newName in renameTab(tab.id, to: newName) },

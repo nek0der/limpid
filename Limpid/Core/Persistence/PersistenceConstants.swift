@@ -38,9 +38,9 @@ enum PersistenceTiming {
 /// All four top-level stores (`SessionStore`, `SettingsStore`,
 /// `NotificationHistoryStore`, `FrecencyStore`) hand encoding /
 /// decoding off here so a single change here lands uniformly across
-/// every on-disk file. Per-pane agent stores keep their own tighter
-/// config because they write tiny records on the hot path and the
-/// shim writes them in parallel from shell.
+/// every on-disk file. The per-pane agent records are not among them:
+/// the hooks write those from shell and Rust, so their shape is a
+/// cross-language contract rather than this factory's to set.
 enum PersistenceCoders {
     /// Encoder with sorted keys (clean `git diff` over copied state
     /// files), ISO 8601 dates (forward-compat with any timezone-aware

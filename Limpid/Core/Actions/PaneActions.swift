@@ -120,9 +120,7 @@ enum PaneActions {
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         attention: AttentionState? = nil,
-        claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil,
-        cwdEventTracker: CwdEventTracker? = nil
+        agentProjection: AgentProjectionAdapter? = nil
     ) {
         guard let tab = session.activeTab else { return }
         guard let leafID = tab.splitTree.effectiveFocusedLeafID
@@ -135,35 +133,25 @@ enum PaneActions {
             if let z = t.zoomedLeafID, !t.splitTree.contains(leafID: z) {
                 t.zoomedLeafID = nil
             }
-            // Drop every per-pane dictionary entry for the closed
-            // leaf. `claudeSessions` / `codexSessions` were already
-            // swept here; the other five (paneStates, scrollbackPaths,
-            // initialCommands, claudeAgentBadges, codexAgentBadges)
-            // are persisted through `SessionSnapshot` and used to
-            // accumulate on disk on every ⌘W against a multi-pane
-            // tab. `mergePaneIntoTab` already sweeps the same set on
-            // its leaf-out path — keep the two close-leaf paths
-            // structurally identical.
-            t.claudeSessions[leafID] = nil
-            t.codexSessions[leafID] = nil
+            // Drop every per-pane dictionary entry for the closed leaf. All
+            // of them are persisted through `SessionSnapshot`, so a missed
+            // one accumulates on disk on every ⌘W against a multi-pane tab.
+            // `mergePaneIntoTab` sweeps the same set on its leaf-out path;
+            // keep the two close-leaf paths structurally identical.
+            for provider in AgentKind.allCases {
+                t.agentSessions[provider]?.removeValue(forKey: leafID)
+            }
             t.paneStates.removeValue(forKey: leafID)
             t.scrollbackPaths.removeValue(forKey: leafID)
             t.initialCommands.removeValue(forKey: leafID)
-            t.claudeAgentBadges.removeValue(forKey: leafID)
-            t.codexAgentBadges.removeValue(forKey: leafID)
+            for provider in AgentKind.allCases {
+                t.agentBadges[provider]?.removeValue(forKey: leafID)
+            }
         }
         session.paneSearchStates.removeValue(forKey: leafID)
         session.paneTransients.removeValue(forKey: leafID)
         registry.unregister(leafID)
-        claudeSessionTracker?.didClosePane(leafID)
-        codexSessionTracker?.didClosePane(leafID)
-        cwdEventTracker?.didClosePane(leafID)
-        // `AttentionState`'s dismiss/viewed dictionaries are pane-id
-        // keyed and session-scoped. `TabActions.closeTab` already
-        // forgets every leaf in the closing tab; the close-split
-        // path must mirror that or the entries leak across the
-        // session for every ⌘W against a multi-pane tab.
-        attention?.forget(paneID: leafID)
+        agentProjection?.didClosePane(leafID)
         // If the tab is now empty, close it altogether.
         if let refreshed = session.activeTab, refreshed.splitTree.isEmpty {
             session.closeTab(refreshed.id)
@@ -197,9 +185,7 @@ enum PaneActions {
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         attention: AttentionState? = nil,
-        claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil,
-        cwdEventTracker: CwdEventTracker? = nil
+        agentProjection: AgentProjectionAdapter? = nil
     ) {
         guard let tab = session.activeTab else { return }
         let leafCount = tab.splitTree.allLeafIDs().count
@@ -209,9 +195,7 @@ enum PaneActions {
                 registry: registry,
                 source: source,
                 attention: attention,
-                claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker,
-                cwdEventTracker: cwdEventTracker
+                agentProjection: agentProjection
             )
         } else {
             closeActivePane(
@@ -219,9 +203,7 @@ enum PaneActions {
                 registry: registry,
                 source: source,
                 attention: attention,
-                claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker,
-                cwdEventTracker: cwdEventTracker
+                agentProjection: agentProjection
             )
         }
     }

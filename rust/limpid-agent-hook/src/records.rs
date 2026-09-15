@@ -271,7 +271,7 @@ pub fn write_worktree_event(
     ensure_user_only_directory(&directory);
     let name = format!(
         "{}-{}-{}-create.json",
-        crate::timestamp::unix_seconds(std::time::SystemTime::now()),
+        limpid_agent_model::unix_seconds(std::time::SystemTime::now()),
         std::process::id(),
         uuid::Uuid::new_v4().simple()
     );

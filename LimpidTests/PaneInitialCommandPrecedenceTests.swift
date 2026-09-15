@@ -27,7 +27,7 @@ struct PaneInitialCommandPrecedenceTests {
         var tab = tab()
         tab.initialCommands[pane] = "echo staged"
         tab.tmuxBindings[pane] = binding()
-        tab.claudeSessions[pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
+        tab.agentSessions[.claude, default: [:]][pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
         #expect(PaneHostRepresentable.resolveInitialCommand(tab: tab, paneID: pane) == "echo staged")
     }
 
@@ -37,8 +37,8 @@ struct PaneInitialCommandPrecedenceTests {
     func tmux_beatsAgentResume() throws {
         var tab = tab()
         tab.tmuxBindings[pane] = binding()
-        tab.claudeSessions[pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
-        tab.codexSessions[pane] = CodexSessionInfo(sessionId: "x1", cwd: nil)
+        tab.agentSessions[.claude, default: [:]][pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
+        tab.agentSessions[.codex, default: [:]][pane] = CodexSessionInfo(sessionId: "x1", cwd: nil)
         let command = try #require(PaneHostRepresentable.resolveInitialCommand(tab: tab, paneID: pane))
         #expect(command.hasPrefix("tmux -S "))
     }
@@ -51,8 +51,8 @@ struct PaneInitialCommandPrecedenceTests {
         provisional.serverStartedAt = "100"
         provisional.isProvisional = true
         tab.tmuxBindings[pane] = provisional
-        tab.claudeSessions[pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
-        tab.codexSessions[pane] = CodexSessionInfo(sessionId: "x1", cwd: nil)
+        tab.agentSessions[.claude, default: [:]][pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
+        tab.agentSessions[.codex, default: [:]][pane] = CodexSessionInfo(sessionId: "x1", cwd: nil)
 
         let command = try #require(PaneHostRepresentable.resolveInitialCommand(tab: tab, paneID: pane))
 
@@ -64,7 +64,8 @@ struct PaneInitialCommandPrecedenceTests {
     @Test("an agent resume still fires when the pane was not in tmux")
     func noBinding_fallsThroughToAgentResume() throws {
         var tab = tab()
-        tab.claudeSessions[pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
+        tab.agentSessions[.claude, default: [:]][pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
+        tab.agentResumeCandidates[pane] = [.claude]
         let command = try #require(PaneHostRepresentable.resolveInitialCommand(tab: tab, paneID: pane))
         #expect(!command.hasPrefix("tmux -S "))
     }

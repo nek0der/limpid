@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+use limpid_agent_model::ProviderId;
+
 macro_rules! identifier {
     ($name:ident) => {
         #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -24,12 +26,6 @@ identifier!(RunId);
 identifier!(RequestId);
 identifier!(ServiceEpoch);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AgentProvider {
-    Claude,
-    Codex,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Principal {
     Requester { run_id: RunId },
@@ -46,7 +42,7 @@ pub struct ApprovalKey {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ApprovalRequest {
     pub key: ApprovalKey,
-    pub provider: AgentProvider,
+    pub provider: ProviderId,
     pub session_id: Option<String>,
     pub operation_id: Option<String>,
     pub tool_name: String,
@@ -328,7 +324,7 @@ mod tests {
                 run_id: RunId::new(id(run)),
                 request_id: RequestId::new(id(request)),
             },
-            provider: AgentProvider::Claude,
+            provider: ProviderId::new("claude").expect("provider id"),
             session_id: Some("session".into()),
             operation_id: None,
             tool_name: "Bash".into(),

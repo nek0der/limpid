@@ -1,60 +1,12 @@
 // ClaudeAgent.swift
-// Limpid — concrete `AgentSpec` for the Claude flavour. Wires the
-// type-level associatedtypes, key-paths, and the small per-flavour
-// helpers (`makeBadge`, `resumeCommand`) that let the generic
-// tracker / builder implementations stay agent-agnostic.
+// Limpid — concrete `AgentSpec` for the Claude flavor: its `AgentKind`
+// case and the shell command that resumes one of its sessions.
 
 import Foundation
 
 enum ClaudeAgent: AgentSpec {
-    typealias StateRecord = ClaudeAgentStateRecord
-    typealias SessionRecord = ClaudeSessionRecord
-
     static var kind: AgentKind {
         .claude
-    }
-
-    static var label: String {
-        "claude"
-    }
-
-    static var badgesKeyPath: WritableKeyPath<Tab, [UUID: AgentBadge]> {
-        \Tab.claudeAgentBadges
-    }
-
-    static var sessionsKeyPath: WritableKeyPath<Tab, [UUID: AgentSessionInfo]> {
-        \Tab.claudeSessions
-    }
-
-    /// 30s — Claude's lifecycle is gentler; finished / error transitions
-    /// arrive via the shim, and the PID sweep is only a defence against
-    /// processes that died without firing `Stop`.
-    static var pidSweepInterval: TimeInterval {
-        30
-    }
-
-    static func makeBadge(from record: ClaudeAgentStateRecord) -> AgentBadge? {
-        guard let state = AgentState(rawValue: record.state) else { return nil }
-        let detail = (record.detail?.isEmpty == false) ? record.detail : nil
-        let updatedAt = AgentDateParsing.parseISO8601(record.updatedAt) ?? Date()
-        let lastPrompt = (record.lastPrompt?.isEmpty == false) ? record.lastPrompt : nil
-        let firstPrompt = (record.firstPrompt?.isEmpty == false) ? record.firstPrompt : nil
-        return AgentBadge(
-            state: state,
-            detail: detail,
-            runStartedAt: AgentDateParsing.parseOptional(record.runStartedAt),
-            contextTokens: record.contextTokens,
-            isTmuxHosted: record.isTmuxHosted,
-            updatedAt: updatedAt,
-            lastPrompt: lastPrompt,
-            turnBaseTree: record.turnBaseTree,
-            turnRoot: record.turnRoot,
-            firstPrompt: firstPrompt,
-            conversationID: record.sessionId,
-            providerSessionTitle: record.providerSessionTitle,
-            providerGeneratedTitle: record.providerGeneratedTitle,
-            sessionStartedAt: AgentDateParsing.parseOptional(record.sessionStartedAt)
-        )
     }
 
     /// Shell command that tries the persisted session first, then
@@ -77,21 +29,5 @@ enum ClaudeAgent: AgentSpec {
             : "claude"
         guard let cwd, !cwd.isEmpty else { return base }
         return "cd \(ShellQuote.single(cwd)) && \(base)"
-    }
-
-    /// Rust owns automatic title precedence. Swift only selects the pane whose
-    /// conversation currently owns the tab and applies the returned projection.
-    static func applyTabTitle(_ tab: inout Tab, badges: [UUID: AgentBadge]) {
-        guard let owner = tab.latestAgentSessionPaneID,
-              let badge = badges[owner],
-              badge.conversationID?.isEmpty == false,
-              let title = LimpidRustTitleResolver.resolve(
-                  providerSessionTitle: badge.providerSessionTitle,
-                  providerGeneratedTitle: badge.providerGeneratedTitle,
-                  firstPrompt: badge.firstPrompt
-              ),
-              tab.title != title
-        else { return }
-        tab.title = title
     }
 }

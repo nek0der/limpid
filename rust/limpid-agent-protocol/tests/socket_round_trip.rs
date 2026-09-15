@@ -1,9 +1,10 @@
 #![cfg(unix)]
 
+use limpid_agent_core::ProviderId;
 use limpid_agent_core::{Principal, RunId};
 use limpid_agent_protocol::{
-    AgentProviderWire, ApprovalDecisionWire, ApprovalKeyWire, ApprovalRequestWire, ApprovalService,
-    ApprovalStateWire, ErrorCode, MAXIMUM_DECISION_BYTES, MAXIMUM_RECORDS, MAXIMUM_REQUEST_BYTES,
+    ApprovalDecisionWire, ApprovalKeyWire, ApprovalRequestWire, ApprovalService, ApprovalStateWire,
+    ErrorCode, MAXIMUM_DECISION_BYTES, MAXIMUM_RECORDS, MAXIMUM_REQUEST_BYTES,
     MAXIMUM_RESPONSE_BYTES, PROTOCOL_VERSION, RequestBody, ResponseBody, WireRequest, WireResponse,
     read_frame, write_frame,
 };
@@ -50,7 +51,7 @@ fn approval(run_id: Uuid, request_id: Uuid) -> ApprovalRequestWire {
     ApprovalRequestWire {
         run_id,
         request_id,
-        provider: AgentProviderWire::Claude,
+        provider: ProviderId::new("claude").expect("provider id"),
         session_id: Some("session".into()),
         operation_id: None,
         tool_name: "Bash".into(),

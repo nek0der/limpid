@@ -12,6 +12,15 @@ import Testing
 
 @Suite("Claude shim", .tags(.smoke), .disabled(if: !RepoFixture.hasLocalRepo, "no local git"))
 struct ClaudeShimScriptTests {
+    /// The template lives in the provider crate and the build copies it into
+    /// the bundle beside the shim. A test runs the shim from the source tree,
+    /// where there is no bundle, so it points the shim at the source instead.
+    private static func templatePath(_ root: URL) -> String {
+        root.appendingPathComponent(
+            "rust/limpid-provider-claude/resources/settings.template.json"
+        ).path
+    }
+
     /// Run the shim with `args` and return the argv the real claude would
     /// have been exec'd with.
     private func runShim(
@@ -43,6 +52,7 @@ struct ClaudeShimScriptTests {
                 "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                 "HOME": dir.path,
                 "TMPDIR": dir.path,
+                "LIMPID_CLAUDE_SETTINGS_TEMPLATE": Self.templatePath(root),
                 "LIMPID_REAL_CLAUDE": stub.path
             ]
             environment["LIMPID_CLAUDE_HOOK_NAMESPACE"] = hookNamespace
@@ -173,6 +183,7 @@ struct ClaudeShimScriptTests {
                 "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                 "HOME": dir.path,
                 "TMPDIR": dir.path,
+                "LIMPID_CLAUDE_SETTINGS_TEMPLATE": Self.templatePath(root),
                 "LIMPID_REAL_CLAUDE": stub.path,
                 "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "0"
             ]
@@ -216,6 +227,7 @@ struct ClaudeShimScriptTests {
                 "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                 "HOME": dir.path,
                 "TMPDIR": dir.path,
+                "LIMPID_CLAUDE_SETTINGS_TEMPLATE": Self.templatePath(root),
                 "LIMPID_REAL_CLAUDE": claudeStub.path,
                 "LIMPID_AGENT_TMUX": tmuxStub.path,
                 "LIMPID_AGENT_TMUX_SOCKET": "limpid-test.socket",

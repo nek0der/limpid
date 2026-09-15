@@ -58,15 +58,16 @@ final class WorktreeMoveSuggester {
 
     // MARK: - Entry point
 
-    /// Called by `CwdEventTracker` for every fresh hook record. Runs
-    /// the cheap matchers on the MainActor, then hops off-actor for the
+    /// Called for every fresh cwd change the projection reports. Runs the
+    /// cheap matchers on the MainActor, then hops off-actor for the
     /// `git worktree list` shell-out before publishing the suggestion.
-    func handleEvent(_ record: CwdEventRecord) {
-        guard let session,
-              let paneID = UUID(uuidString: record.paneId),
-              !record.newCwd.isEmpty
-        else { return }
-        let newCwd = record.newCwd
+    ///
+    /// `oldCwd` is part of what the rules observed and is accepted so the
+    /// caller does not have to drop it, but the decision only depends on
+    /// where the agent is now.
+    func handleEvent(paneID: UUID, newCwd: String, oldCwd: String?) {
+        _ = oldCwd
+        guard let session, !newCwd.isEmpty else { return }
         let key = SuppressionKey(paneID: paneID, path: newCwd)
         guard !suppressed.contains(key), !inFlight.contains(key) else { return }
 

@@ -2,7 +2,8 @@
 
 use crate::PROVIDER_ID;
 use limpid_agent_model::{
-    Capability, InstallRecipe, ProviderDescriptor, ProviderId, SettingsFragment,
+    Capability, InstallRecipe, ProviderDescriptor, ProviderId, RecipePlaceholder, RecipeVariable,
+    SettingsFragment,
 };
 use serde_json::json;
 use std::collections::BTreeSet;
@@ -50,6 +51,10 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
             session_directory: ProviderDescriptor::default_session_directory(&id),
             cwd_events_directory: None,
             process_names: vec!["codex".to_owned(), "codex-darwin-arm64".to_owned()],
+            // Empty, and unread: Codex reports `other` even for `/quit`, so it
+            // has no `SessionEndDropsSession` capability and its hint always
+            // survives for the next launch to resume from.
+            session_end_drop_reasons: Vec::new(),
             id,
         }
     })
@@ -62,18 +67,18 @@ pub(crate) fn install_recipe() -> InstallRecipe {
         .collect();
     InstallRecipe {
         environment: vec![
-            (
-                "LIMPID_CODEX_AGENT_STATES_DIR".to_owned(),
-                "@@STATE_DIRECTORY@@".to_owned(),
-            ),
-            (
-                "LIMPID_CODEX_SESSIONS_DIR".to_owned(),
-                "@@SESSION_DIRECTORY@@".to_owned(),
-            ),
-            (
-                "LIMPID_CODEX_HOOK_ARGS".to_owned(),
-                "@@HOOK_ARGUMENTS@@".to_owned(),
-            ),
+            RecipeVariable {
+                name: "LIMPID_CODEX_AGENT_STATES_DIR".to_owned(),
+                value: RecipePlaceholder::StateDirectory,
+            },
+            RecipeVariable {
+                name: "LIMPID_CODEX_SESSIONS_DIR".to_owned(),
+                value: RecipePlaceholder::SessionDirectory,
+            },
+            RecipeVariable {
+                name: "LIMPID_CODEX_HOOK_ARGS".to_owned(),
+                value: RecipePlaceholder::HookArguments,
+            },
         ],
         settings_fragments: vec![SettingsFragment {
             target: "codex.hooks".to_owned(),

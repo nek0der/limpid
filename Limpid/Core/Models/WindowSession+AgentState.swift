@@ -30,10 +30,10 @@ extension WindowSession {
     /// torn down, so the question is whether *that* leaf carries a
     /// tracked agent, not the tab as a whole.
     func hasLiveAgent(pane paneID: UUID, in tab: Tab) -> Bool {
-        if let state = tab.claudeAgentBadges[paneID]?.state, state != .unknown {
+        if let state = tab.agentBadges[.claude]?[paneID]?.state, state != .unknown {
             return true
         }
-        if let state = tab.codexAgentBadges[paneID]?.state, state != .unknown {
+        if let state = tab.agentBadges[.codex]?[paneID]?.state, state != .unknown {
             return true
         }
         return false
@@ -50,7 +50,7 @@ extension WindowSession {
     /// `CloseConfirmer` so the same predicate works for a single-pane
     /// close (one id), a multi-pane tab close (every leaf), or a
     /// "close N tabs" prompt. Iterates the split tree (not the
-    /// `claudeAgentBadges` dict directly) so we stay symmetrical with
+    /// badges directly) so we stay symmetrical with
     /// `hasLiveAgent(in:)` / `hasLiveAgentAnywhere()` — a stale badge
     /// for a pane that no longer exists in any tree must not light
     /// the predicate up.

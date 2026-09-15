@@ -68,9 +68,7 @@ enum TabActions {
         source: CloseConfirmer.Source = .keyboard,
         confirm: Bool = true,
         attention: AttentionState? = nil,
-        claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil,
-        cwdEventTracker: CwdEventTracker? = nil
+        agentProjection: AgentProjectionAdapter? = nil
     ) {
         guard let tab = session.tab(tabID) else { return }
         let leafIDs = tab.splitTree.allLeafIDs()
@@ -102,20 +100,11 @@ enum TabActions {
         session.closeTab(tabID)
         for leafID in leafIDs {
             registry.unregister(leafID)
-            // Drop each leaf's on-disk Claude session record. The
-            // snapshot above still carries `claudeSessions` for an
-            // in-session `reopenClosedTab` to honor; once the user
-            // quits, the closed-tab stack is gone anyway and stale
-            // records would sit there until the next bootstrap
-            // cleanup pass swept them.
-            claudeSessionTracker?.didClosePane(leafID)
-            codexSessionTracker?.didClosePane(leafID)
-            cwdEventTracker?.didClosePane(leafID)
-            // Drop the attention bookkeeping for the closed pane so the
-            // viewed / dismissed dictionaries don't accumulate dead
-            // entries across long sessions. UUIDs aren't reused, so
-            // this is a pure cleanup — never affects live panes.
-            attention?.forget(paneID: leafID)
+            // Tell the projection the leaves are gone so their hints are
+            // judged now. The snapshot above still carries the resume hints
+            // for an in-session `reopenClosedTab` to honor; once the user
+            // quits, the closed-tab stack is gone anyway.
+            agentProjection?.didClosePane(leafID)
         }
     }
 
@@ -149,18 +138,23 @@ enum TabActions {
             paneStates: remapKeys(closed.tab.paneStates, using: idMap),
             zoomedLeafID: closed.tab.zoomedLeafID.flatMap { idMap[$0] },
             container: closed.tab.container,
-            // Carry the per-pane Claude session map across the
-            // pane id remap so an in-session ⌘⇧T can still try a
+            // Carry every provider's per-pane resume hints across
+            // the pane id remap so an in-session ⌘⇧T can still try a
             // resume on the revived leaf (best-effort — the disk
             // record was already dropped at close time).
-            claudeSessions: remapKeys(closed.tab.claudeSessions, using: idMap),
-            codexSessions: remapKeys(closed.tab.codexSessions, using: idMap),
+            agentSessions: closed.tab.agentSessions.mapValues { remapKeys($0, using: idMap) },
             tmuxBindings: remapKeys(closed.tab.tmuxBindings, using: idMap)
         )
         // `scrollbackPaths` / `initialCommands` aren't in the Tab init
         // signature, so assign them after construction.
         revived.scrollbackPaths = remapKeys(closed.tab.scrollbackPaths, using: idMap)
         revived.initialCommands = remapKeys(closed.tab.initialCommands, using: idMap)
+        // The projection answered which of those hints may resume while the
+        // pane was open. The hint file went with the pane, so the next pass
+        // cannot answer again; carrying the answer here gives the revived
+        // pane its chance to resume, on the same best-effort terms as the
+        // hints above (a pass that lands before the mount clears it).
+        revived.agentResumeCandidates = remapKeys(closed.tab.agentResumeCandidates, using: idMap)
 
         session.tabs.append(revived)
         session.setActiveTab(revived.id)
@@ -187,9 +181,7 @@ enum TabActions {
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         attention: AttentionState? = nil,
-        claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil,
-        cwdEventTracker: CwdEventTracker? = nil
+        agentProjection: AgentProjectionAdapter? = nil
     ) {
         guard let id = session.activeTabID else { return }
         closeTab(
@@ -198,9 +190,7 @@ enum TabActions {
             tabID: id,
             source: source,
             attention: attention,
-            claudeSessionTracker: claudeSessionTracker,
-            codexSessionTracker: codexSessionTracker,
-            cwdEventTracker: cwdEventTracker
+            agentProjection: agentProjection
         )
     }
 
@@ -212,9 +202,7 @@ enum TabActions {
     static func closeAllTabsInActiveContainer(
         _ session: WindowSession,
         registry: any SurfaceViewProviding,
-        claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil,
-        cwdEventTracker: CwdEventTracker? = nil
+        agentProjection: AgentProjectionAdapter? = nil
     ) {
         let tabs = session.tabs(in: session.activeContainerID)
         guard !tabs.isEmpty else { return }
@@ -226,9 +214,7 @@ enum TabActions {
                 registry: registry,
                 tabID: tab.id,
                 confirm: false,
-                claudeSessionTracker: claudeSessionTracker,
-                codexSessionTracker: codexSessionTracker,
-                cwdEventTracker: cwdEventTracker
+                agentProjection: agentProjection
             )
         }
     }
@@ -271,15 +257,12 @@ enum TabActions {
     // `executeCommandPaletteAction` moved to
     // `Limpid/Core/Actions/CommandPaletteActions.swift`.
 
-    /// Bundles the optional CLI-session and cwd-event trackers so the
-    /// dispatcher chain stays under the parameter-count budget. The
-    /// session trackers feed `--resume` plumbing; the cwd-event one
-    /// keeps the worktree-move suggester's seen-map in sync with the
-    /// close path.
+    /// Bundles the optional projection adapter so the dispatcher chain
+    /// stays under the parameter-count budget. The close path tells the
+    /// projection a pane is gone, which is what feeds the `--resume`
+    /// plumbing and lets the projection drop the closed pane's cwd history.
     struct SessionTrackers {
-        let claude: ClaudeSessionTracker?
-        let codex: CodexSessionTracker?
-        let cwdEvent: CwdEventTracker?
+        let projection: AgentProjectionAdapter?
     }
 
     // swiftlint:disable function_parameter_count
@@ -347,18 +330,14 @@ enum TabActions {
                 session,
                 registry: registry,
                 attention: attention,
-                claudeSessionTracker: trackers.claude,
-                codexSessionTracker: trackers.codex,
-                cwdEventTracker: trackers.cwdEvent
+                agentProjection: trackers.projection
             )
         case .closeTab:
             closeActiveTab(
                 session,
                 registry: registry,
                 attention: attention,
-                claudeSessionTracker: trackers.claude,
-                codexSessionTracker: trackers.codex,
-                cwdEventTracker: trackers.cwdEvent
+                agentProjection: trackers.projection
             )
         default:
             log.fault("dispatchFileAction missing handler for \(action.rawValue, privacy: .public) — add a case or fix action.category")

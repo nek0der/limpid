@@ -268,7 +268,7 @@ enum DemoFixture {
         // into "514d ago" as the README ages. The snapshot is no
         // longer bit-identical across runs, but the demo is captured
         // to a PNG before that matters — tests anchor on UUIDs.
-        agentTab.claudeAgentBadges[agentTabPaneID] = ClaudeAgentBadge(
+        agentTab.agentBadges[.claude, default: [:]][agentTabPaneID] = ClaudeAgentBadge(
             state: .finished,
             detail: nil,
             runStartedAt: nil,
@@ -291,7 +291,7 @@ enum DemoFixture {
             container: .group(agentsGroupID),
             paneID: agentsClaudePaneID
         )
-        agentsClaudeTab.claudeAgentBadges[agentsClaudePaneID] = ClaudeAgentBadge(
+        agentsClaudeTab.agentBadges[.claude, default: [:]][agentsClaudePaneID] = ClaudeAgentBadge(
             state: .running,
             detail: "Edit",
             runStartedAt: Date(timeIntervalSinceNow: -30),
@@ -312,7 +312,7 @@ enum DemoFixture {
             container: .group(agentsGroupID),
             paneID: agentsCodexPaneID
         )
-        agentsCodexTab.codexAgentBadges[agentsCodexPaneID] = CodexAgentBadge(
+        agentsCodexTab.agentBadges[.codex, default: [:]][agentsCodexPaneID] = CodexAgentBadge(
             state: .needsInput,
             detail: "Bash: git push origin feat/pricing-page",
             runStartedAt: Date(timeIntervalSinceNow: -400),

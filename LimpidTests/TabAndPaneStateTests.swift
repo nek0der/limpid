@@ -59,6 +59,120 @@ struct TabTests {
     }
 }
 
+@MainActor
+@Suite("Tab agent maps")
+struct TabAgentMapDecodingTests {
+    private static let pane = "11111111-1111-4111-8111-111111111111"
+
+    /// A tab as a build before the two maps wrote it: one field per provider.
+    private func legacyTab() -> [String: Any] {
+        [
+            "id": UUID().uuidString,
+            "title": "tab",
+            "container": ["kind": "loose"],
+            "splitTree": ["root": ["leaf": ["id": Self.pane]]],
+            "claudeSessions": [Self.pane, ["sessionId": "claude-S", "cwd": "/repo"]],
+            "codexSessions": [Self.pane, ["sessionId": "codex-S", "cwd": "/repo"]],
+            "claudeAgentBadges": [
+                Self.pane,
+                ["state": "running", "updatedAt": 780_000_000.0]
+            ]
+        ]
+    }
+
+    @Test("an older file's per-provider fields are read into the maps")
+    func decode_foldsTheLegacyFields() throws {
+        let data = try JSONSerialization.data(withJSONObject: legacyTab())
+        let tab = try JSONDecoder().decode(Tab.self, from: data)
+        let pane = try #require(UUID(uuidString: Self.pane))
+
+        // Upgrading must not blank the hints the interface is about to draw,
+        // and must not offer one provider's session to another.
+        #expect(tab.agentSessions[.claude]?[pane]?.sessionId == "claude-S")
+        #expect(tab.agentSessions[.codex]?[pane]?.sessionId == "codex-S")
+        #expect(tab.agentBadges[.claude]?[pane]?.state == .running)
+        // A provider the file said nothing about gets no entry, so an empty
+        // reading is never mistaken for one that was taken.
+        #expect(tab.agentBadges[.codex] == nil)
+    }
+
+    /// A tab as a newer build writes it: the maps are objects keyed by
+    /// provider id, and one of the ids is a provider this build does not have.
+    private func tabFromANewerBuild() -> [String: Any] {
+        [
+            "id": UUID().uuidString,
+            "title": "tab",
+            "container": ["kind": "loose"],
+            "splitTree": ["root": ["leaf": ["id": Self.pane]]],
+            "agentSessions": [
+                "claude": [Self.pane, ["sessionId": "claude-S", "cwd": "/repo"]],
+                "gemini": [Self.pane, ["sessionId": "gemini-S", "cwd": "/repo"]]
+            ],
+            "agentBadges": [
+                "gemini": [Self.pane, ["state": "running", "updatedAt": 780_000_000.0]]
+            ]
+        ]
+    }
+
+    @Test("a provider this build does not know is skipped, not fatal")
+    func decode_skipsAnUnknownProvider() throws {
+        let data = try JSONSerialization.data(withJSONObject: tabFromANewerBuild())
+        let tab = try JSONDecoder().decode(Tab.self, from: data)
+        let pane = try #require(UUID(uuidString: Self.pane))
+
+        // The tab restores with what this build can read; the projection
+        // fills the rest in from the records on its first pass.
+        #expect(tab.agentSessions[.claude]?[pane]?.sessionId == "claude-S")
+        #expect(tab.agentSessions.count == 1)
+        #expect(tab.agentBadges.isEmpty)
+    }
+
+    @Test("the maps round-trip as objects keyed by provider id")
+    func encode_keysTheMapsByProviderId() throws {
+        var (tab, pane) = Tab.newWithSinglePane(title: "tab", container: .loose)
+        tab.agentSessions[.codex, default: [:]][pane] = AgentSessionInfo(sessionId: "codex-S", cwd: nil)
+
+        let data = try JSONEncoder().encode(tab)
+        let encoded = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let sessions = encoded?["agentSessions"] as? [String: Any]
+        #expect(sessions?.keys.contains("codex") == true)
+
+        let decoded = try JSONDecoder().decode(Tab.self, from: data)
+        #expect(decoded.agentSessions[.codex]?[pane]?.sessionId == "codex-S")
+    }
+
+    @Test("the array shape an unreleased build wrote is still read")
+    func decode_acceptsTheArrayShape() throws {
+        var file = tabFromANewerBuild()
+        file["agentSessions"] = ["codex", [Self.pane, ["sessionId": "codex-S", "cwd": "/repo"]]]
+        file["agentBadges"] = nil
+        let data = try JSONSerialization.data(withJSONObject: file)
+        let tab = try JSONDecoder().decode(Tab.self, from: data)
+        let pane = try #require(UUID(uuidString: Self.pane))
+
+        #expect(tab.agentSessions[.codex]?[pane]?.sessionId == "codex-S")
+    }
+
+    @Test("only the current shape is written back")
+    func encode_writesTheMapsOnly() throws {
+        var tab = try JSONDecoder().decode(
+            Tab.self,
+            from: JSONSerialization.data(withJSONObject: legacyTab())
+        )
+        tab.agentBadges[.claude] = [:]
+
+        let encoded = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(tab)
+        ) as? [String: Any]
+        let keys = Set(encoded?.keys ?? [:].keys)
+
+        #expect(keys.contains("agentSessions"))
+        #expect(keys.contains("agentBadges"))
+        #expect(!keys.contains("claudeSessions"))
+        #expect(!keys.contains("codexAgentBadges"))
+    }
+}
+
 @Suite("PaneState")
 struct PaneStateTests {
 

@@ -16,21 +16,21 @@ mod env;
 mod git;
 mod process;
 mod records;
-mod timestamp;
 mod tmux;
 mod worktree;
 
 pub use env::{HookEnv, ResolvedDirectories};
 pub use git::{GitSnapshots, NoSnapshots, SnapshotRunner, TurnSnapshot};
+pub use limpid_agent_model::format_utc_seconds;
 pub use records::{HookLog, atomic_write, ensure_user_only_directory, with_record_lock};
-pub use timestamp::format_utc_seconds;
 pub use worktree::InterceptResult;
 
 use limpid_agent_core::{
     ApplyContext, RecordWrites, SideWrite, TurnSnapshotOp, apply, turn_snapshot_cwd,
 };
 use limpid_agent_model::{
-    Capability, HookContext, ProviderAdapter, RawHookInput, RunRecord, TmuxEndpoint,
+    Capability, HookContext, InstallRecipe, ProviderAdapter, ProviderDescriptor, ProviderId,
+    RawHookInput, RunRecord, TmuxEndpoint,
 };
 use limpid_provider_claude::ClaudeAdapter;
 use limpid_provider_codex::CodexAdapter;
@@ -82,6 +82,40 @@ pub fn adapter_for(id: &str) -> Option<&'static dyn ProviderAdapter> {
         limpid_provider_codex::PROVIDER_ID => Some(&CODEX),
         _ => None,
     }
+}
+
+/// Every provider this build has, in id order.
+///
+/// The rules branch on capabilities rather than names, so the host has to be
+/// able to ask what the installed providers are instead of holding a list of
+/// its own that could disagree with this one.
+#[must_use]
+pub fn installed_providers() -> Vec<&'static ProviderDescriptor> {
+    [
+        limpid_provider_claude::PROVIDER_ID,
+        limpid_provider_codex::PROVIDER_ID,
+    ]
+    .into_iter()
+    .filter_map(|id| adapter_for(id).map(ProviderAdapter::descriptor))
+    .collect()
+}
+
+/// What each installed provider needs the platform to set up, by provider id.
+///
+/// Asked for rather than listed on the platform side, for the same reason as
+/// `installed_providers`: a second list there could disagree about a variable
+/// name, and a wrong name stops the agent reporting without an error anywhere.
+#[must_use]
+pub fn installed_recipes() -> Vec<(&'static ProviderId, InstallRecipe)> {
+    [
+        limpid_provider_claude::PROVIDER_ID,
+        limpid_provider_codex::PROVIDER_ID,
+    ]
+    .into_iter()
+    .filter_map(|id| {
+        adapter_for(id).map(|adapter| (&adapter.descriptor().id, adapter.install_recipe()))
+    })
+    .collect()
 }
 
 /// Everything one hook call needs besides the payload.
@@ -227,7 +261,7 @@ fn write_events(
                 previous.as_ref(),
                 event,
                 apply_context,
-                &descriptor.capabilities,
+                descriptor,
                 &runtime.now,
             );
             attach_snapshot(&mut writes, captured.as_ref());
@@ -274,7 +308,7 @@ fn capture_before_lock(
     pane_id: &str,
     snapshots: &dyn SnapshotRunner,
 ) -> Option<TurnSnapshot> {
-    let cwd = turn_snapshot_cwd(event, &descriptor.capabilities)?;
+    let cwd = turn_snapshot_cwd(event, descriptor)?;
     let cwd = cwd.map_or_else(current_directory, PathBuf::from);
     snapshots.capture(&cwd, pane_id)
 }

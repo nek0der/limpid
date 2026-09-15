@@ -13,6 +13,7 @@ limpid-agent-core = { path = "../limpid-agent-core" }
 limpid-agent-hook = { path = "../limpid-agent-hook" }
 limpid-agent-model = { path = "../limpid-agent-model" }
 limpid-agent-protocol = { path = "../limpid-agent-protocol" }
+serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 

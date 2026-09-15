@@ -209,6 +209,7 @@ dependencies = [
  "limpid-agent-hook",
  "limpid-agent-model",
  "limpid-agent-protocol",
+ "serde",
  "serde_json",
  "uuid",
 ]

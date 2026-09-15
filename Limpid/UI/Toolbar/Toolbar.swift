@@ -58,9 +58,7 @@ struct ToolbarTerminalColumnSegment: View {
     @Environment(NotificationHistoryStore.self) private var historyStore
     @Environment(\.sparkleUpdater) private var updater
     @Environment(\.surfaceRegistry) private var registry
-    @Environment(\.claudeSessionTracker) private var claudeSessionTracker
-    @Environment(\.codexSessionTracker) private var codexSessionTracker
-    @Environment(\.cwdEventTracker) private var cwdEventTracker
+    @Environment(\.agentProjection) private var agentProjection
 
     var body: some View {
         ToolbarRow {
@@ -218,9 +216,7 @@ struct ToolbarTerminalColumnSegment: View {
                 TabActions.closeAllTabsInActiveContainer(
                     session,
                     registry: registry,
-                    claudeSessionTracker: claudeSessionTracker,
-                    codexSessionTracker: codexSessionTracker,
-                    cwdEventTracker: cwdEventTracker
+                    agentProjection: agentProjection
                 )
             } label: {
                 Label("Close All Tabs", systemImage: "xmark")

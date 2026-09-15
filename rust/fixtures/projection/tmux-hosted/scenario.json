@@ -1,0 +1,28 @@
+{
+  "description": "A tmux-hosted run carries an endpoint and no pid, so presence decides which panes show it.",
+  "runs": [
+    {
+      "provider": "claude",
+      "pane": "11111111-1111-4111-8111-111111111111",
+      "run": "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+      "tmux": true,
+      "replay": [
+        {
+          "case": "tmux-hosted",
+          "payload": "0000-SessionStart.json",
+          "now": "2026-09-14T12:00:00Z"
+        },
+        {
+          "case": "tmux-hosted",
+          "payload": "0001-UserPromptSubmit.json",
+          "now": "2026-09-14T12:01:00Z"
+        },
+        {
+          "case": "tmux-hosted",
+          "payload": "0002-Stop.json",
+          "now": "2026-09-14T12:02:00Z"
+        }
+      ]
+    }
+  ]
+}

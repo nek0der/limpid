@@ -1,14 +1,15 @@
 // AgentSharedHelpers.swift
-// Limpid — shared utilities lifted out of the per-flavor Claude /
-// Codex agent files so the generic tracker / builder implementations
-// don't have to thread them through. Each was previously duplicated
-// across the twins; this file is the single source.
+// Limpid — small utilities the agent slice shares: the one ISO-8601
+// formatter both sides of the projection boundary use, the session-id
+// shape check the resume commands interpolate through, POSIX quoting,
+// and the whole-session tab transform the projection applies its answer
+// through.
 
 import Foundation
 
-/// ISO-8601 parsing used by both `ClaudeAgent.makeBadge` and
-/// `CodexAgent.makeBadge`. Both hook backends write UTC instants that
-/// round-trip through the same `ISO8601DateFormatter` instance.
+/// ISO-8601 parsing for the instants that cross the projection boundary.
+/// The hook backends and the Rust rules both write UTC instants that
+/// round-trip through this one `ISO8601DateFormatter` instance.
 enum AgentDateParsing {
     static func parseISO8601(_ string: String) -> Date? {
         formatter.date(from: string)
@@ -19,9 +20,9 @@ enum AgentDateParsing {
         return parseISO8601(raw)
     }
 
-    /// Inverse of `parseISO8601` — used by Codex's
-    /// `preserveLiveSessionsOnTerminate` to stamp the
-    /// `killedByLimpidAt` marker on app quit.
+    /// Inverse of `parseISO8601` — used to stamp the instants the
+    /// projection input carries, such as the wall clock of one pass and
+    /// the marker on a run Limpid is about to kill at quit.
     static func formatISO8601(_ date: Date) -> String {
         formatter.string(from: date)
     }
@@ -59,5 +60,19 @@ enum AgentSessionIDValidator {
 enum ShellQuote {
     static func single(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+// MARK: - WindowSession helper
+
+@MainActor
+extension WindowSession {
+    /// Applies a mutating transform to every tab. The projection decides what
+    /// each tab should hold and applies the whole answer at once, so the shape
+    /// of the iteration does not belong at that call site.
+    func applyAcrossTabs(_ transform: (inout Tab) -> Void) {
+        for tab in tabs {
+            update(tab.id, transform: transform)
+        }
     }
 }

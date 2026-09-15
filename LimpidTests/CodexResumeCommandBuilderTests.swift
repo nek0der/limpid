@@ -46,12 +46,13 @@ struct CodexResumeCommandBuilderTests {
     @Test("initialCommand returns the resume chain when Codex session exists")
     func sessionPresent() {
         let paneID = UUID()
-        let tab = Tab(
+        var tab = Tab(
             title: "t",
             splitTree: SplitTree(leafID: paneID),
             container: .loose,
-            codexSessions: [paneID: CodexSessionInfo(sessionId: "S1", cwd: nil)]
+            agentSessions: [.codex: [paneID: AgentSessionInfo(sessionId: "S1", cwd: nil)]]
         )
+        tab.agentResumeCandidates[paneID] = [.codex]
         let cmd = CodexResumeCommandBuilder.initialCommand(for: tab, paneID: paneID)
         #expect(cmd == "codex resume S1 2>/dev/null || codex")
     }
@@ -63,7 +64,7 @@ struct CodexResumeCommandBuilderTests {
             title: "t",
             splitTree: SplitTree(leafID: paneID),
             container: .loose,
-            codexSessions: [paneID: CodexSessionInfo(sessionId: "S1", cwd: nil)]
+            agentSessions: [.codex: [paneID: AgentSessionInfo(sessionId: "S1", cwd: nil)]]
         )
         tab.initialCommands[paneID] = "echo staged"
         #expect(CodexResumeCommandBuilder.initialCommand(for: tab, paneID: paneID) == nil)
@@ -76,8 +77,10 @@ struct CodexResumeCommandBuilderTests {
             title: "t",
             splitTree: SplitTree(leafID: paneID),
             container: .loose,
-            claudeSessions: [paneID: ClaudeSessionInfo(sessionId: "claude-S", cwd: nil)],
-            codexSessions: [paneID: CodexSessionInfo(sessionId: "codex-S", cwd: nil)]
+            agentSessions: [
+                .claude: [paneID: AgentSessionInfo(sessionId: "claude-S", cwd: nil)],
+                .codex: [paneID: AgentSessionInfo(sessionId: "codex-S", cwd: nil)]
+            ]
         )
         // CodexResumeCommandBuilder yields to Claude — Claude's
         // builder is consulted first in PaneHostView.

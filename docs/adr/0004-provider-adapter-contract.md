@@ -22,8 +22,9 @@ translation in `AgentApprovalHookAdapter.swift`.
 
 This change implements the crate layout, provider adapters, approval
 translation, `apply`, and the hook runtime. The application-side `project`,
-`on_launch`, and `on_terminate` rules remain part of the accepted architecture,
-but they and the replacement of the Swift trackers are not yet implemented.
+`on_launch`, and `on_terminate` rules followed in a second change, which
+replaced the per-provider Swift trackers with one projection adapter that reads the
+directories, asks the rules, and applies the answer.
 
 ADR 0002 assigns provider input normalization, output models, and
 provider-neutral event and projection rules to the portable Rust core, but it
@@ -107,12 +108,24 @@ pub trait ProviderAdapter: Send + Sync {
 - `install_recipe` declares the settings fragments, environment variables, and
   PATH shims the platform must place. The adapter never touches the file
   system.
+- A recipe names what the platform substitutes with a `RecipePlaceholder`
+  rather than a literal token. The tokens were strings on both sides, where a
+  typo compiles, installs, and then leaves the agent reporting to nothing.
 - `transcript_path` names the transcript the runtime should read alongside a
   payload, so a provider that keeps one pays the extra file read only on the
   events whose normalization uses it.
 - `worktree_intent` reports a `git worktree add` the agent is about to run, so
   the runtime can intercept it before the tool runs; it is separate from the
   neutral events because it is a request to act, not an observation.
+
+Where an intercepted worktree goes is read from `worktree-routing.json`, which
+the application writes beside its session file in the same operation. The hook
+read the session file itself until it stopped finding any projects after they
+moved into the sidebar's containers, and created worktrees in the wrong place
+until someone noticed. The routing file is narrow enough to be stable, is
+versioned, and is left alone by a hook that does not recognize the version:
+passing the command through puts the worktree where the agent asked, which is
+recoverable, where guessing at an unknown shape could put it anywhere.
 
 Input limits: a hook payload is at most 1 MiB, the same bound the protocol
 places on a client request, and record prompt, title, and detail fields are
@@ -151,7 +164,7 @@ it closes the existing `Compacting` event rather than introducing a concept.
 
 | | `apply` | `project` | `on_launch` / `on_terminate` |
 | --- | --- | --- | --- |
-| Status | Implemented | Planned | Planned |
+| Status | Implemented | Implemented | Implemented |
 | Runs in | the hook process (Rust inside the Hook Helper) | the application, on every watcher event | the application, before session bootstrap and in `applicationWillTerminate` |
 | Input | previous record bytes (v2 or v3, or none), one `AgentEvent`, `HookContext`, the provider's capabilities, `now` | all record bytes, attention marks, tmux presence, live pane and PID sets, focus, resume intents, the previous `ProjectionState`, wall and monotonic clocks | record, resume intent, and resume hint bytes, live PID set, `now` |
 | Output | `RecordWrites`: the run record (`schemaVersion: 3`) plus side writes for the resume hint, cwd event, and turn snapshot operations | `ProjectionState`, `Projection` (runtimes per pane, dominant badge and title per tab, notification transitions), `Vec<Command>` | `Vec<Command>` |
@@ -159,8 +172,8 @@ it closes the existing `Compacting` event rather than introducing a concept.
 
 None of these rule functions owns a file, a timer, or a provider branch. They
 describe side effects without performing them: the hook runtime executes the
-`RecordWrites` returned by `apply`, while the planned application-side rules
-return `Command` values for the Swift host. Two clocks are passed because
+`RecordWrites` returned by `apply`, while the application-side rules return
+`Command` values that the Swift host executes under the record lock. Two clocks are passed because
 record comparison and retention use wall time while the notification outbox's
 pending lifetime uses monotonic uptime. Notification delivery stays in Swift:
 `project` returns the transition, the target pane, and the focus suppression
@@ -169,7 +182,7 @@ limits.
 
 ### Command semantics
 
-The planned application-side commands use
+The application-side commands use
 `{ op, target, expect, on_mismatch, then }`. `expect` is one of "exists",
 "storageID, revision, pid, and updatedAt match", "pid and revision match", or
 "hint owner matches". `on_mismatch` is `Continue` or `Abort` and says whether
@@ -183,11 +196,11 @@ as data rather than as tracker code.
 ### Records and the hook backend
 
 State files continue to carry reduced records, not event logs, so the Swift
-watchers and the directory layout stay. The current hook implementation decodes
-and writes records in Rust, while the existing Swift `Codable` readers also
-accept v3. Moving application-side decoding and projection to Rust will make
-the Swift record types removable. `apply` accepts a v2 record and writes v3,
-and revision monotonicity makes a writer change in the middle of a run safe.
+watcher and the directory layout stay. Records are decoded on both sides in
+Rust: the hook writes them and the projection reads them, so Swift never
+parses a record beyond the fields a command asks it to compare. `apply`
+accepts a v2 record and writes v3, and revision monotonicity makes a writer
+change in the middle of a run safe.
 The shim reads
 `LIMPID_AGENT_HOOK_BACKEND` (`rust` or `shell`), which the pane environment sets
 and the tmux `hosted_env_names` allow list forwards. The shell backend remains
@@ -221,6 +234,14 @@ for one release as the rollback path and is then deleted with the scripts.
    data.
 9. Pane-keyed legacy attention marks are removed; runtime-keyed marks are the
    only source and are rebuilt on the next scan.
+10. A record whose process is confirmed dead is retired on the next pass
+    whether or not its pane is still open, and a dead run with neither a kill
+    marker nor a resume intent is retired at launch together with the resume
+    hint it owns, for every provider. Resume therefore covers runs Limpid
+    stopped itself and runs hosted in tmux; a crash of the agent, or of
+    Limpid, is not resumed. The earlier Claude-only exemption read a surviving
+    hint as evidence of a crash, but a provider's session-end report is lost
+    the same way its process is, so the hint proves nothing.
 
 ### FFI
 

@@ -80,9 +80,7 @@ enum CommandPaletteActions {
         frecencyStore: FrecencyStore,
         toastCenter: ToastCenter,
         minPaneSize: Double,
-        claudeSessionTracker: ClaudeSessionTracker? = nil,
-        codexSessionTracker: CodexSessionTracker? = nil,
-        cwdEventTracker: CwdEventTracker? = nil
+        agentProjection: AgentProjectionAdapter? = nil
     ) {
         closeCommandPalette(session)
         frecencyStore.record(action.frecencyKey)
@@ -95,9 +93,7 @@ enum CommandPaletteActions {
                 attention: attention,
                 registry: registry,
                 trackers: TabActions.SessionTrackers(
-                    claude: claudeSessionTracker,
-                    codex: codexSessionTracker,
-                    cwdEvent: cwdEventTracker
+                    projection: agentProjection
                 ),
                 toastCenter: toastCenter,
                 minPaneSize: minPaneSize

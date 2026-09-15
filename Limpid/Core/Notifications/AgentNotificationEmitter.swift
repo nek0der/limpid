@@ -1,24 +1,11 @@
 // AgentNotificationEmitter.swift
-// Limpid — shared "finished / needs input / error" notification path
-// for both Claude Code and Codex CLI panes. Before this lived as two
-// near-identical 80-line emit methods on each tracker; the only
-// per-kind differences were the localized title string and which
-// badge dict drove the source data. Pulling the logic out behind
-// `AgentKind` keeps the trackers focused on disk-watching + state
-// reconciliation, and makes adding a third agent (Gemini, etc.) a
-// one-case-in-this-enum operation instead of a copy-paste of the
-// emit code.
+// Limpid — raises the notification the rules asked for.
+//
+// The rules choose the moment, the wording under the title, and whether it
+// interrupts. What is decided here is the part only this process knows: what
+// the container is called, and how the entry is filed.
 
 import Foundation
-
-/// Minimum surface a badge needs to expose for the emitter to drive a
-/// finished / needs-input notification. Both `ClaudeAgentBadge` and
-/// `CodexAgentBadge` conform — they already carry these fields.
-protocol AgentNotificationBadge {
-    var state: AgentState { get }
-    var detail: String? { get }
-    var lastPrompt: String? { get }
-}
 
 @MainActor
 struct AgentNotificationEmitter {
@@ -33,133 +20,33 @@ struct AgentNotificationEmitter {
     /// stable for an invocation, while this value advances for each turn.
     var eventToken: String?
 
-    /// Pane-level transition handler. Called once per leaf per
-    /// reconciliation pass with the prior + current badge for that
-    /// leaf; decides whether the change warrants a banner and, if so,
-    /// builds + sends it. Mirrors the per-tracker logic exactly:
-    ///
-    /// - `(running|compacting) → finished` → "X finished" with last prompt.
-    /// - `* → needsInput` (when previous wasn't already needsInput) →
-    ///   "X needs input" with the permission text / question.
-    /// - `* → error` (when previous wasn't already error) → a history
-    ///   row only, no banner. The red icon and the agent's own
-    ///   rate-limit / billing dialog already cover the moment; the row
-    ///   exists so the failure is still findable after the dialog is
-    ///   gone.
-    func handleTransition(
-        tab: Tab,
-        paneID: UUID,
-        previous: (any AgentNotificationBadge)?,
-        current: any AgentNotificationBadge,
-        session: WindowSession
-    ) {
-        if current.state == .needsInput, previous?.state != .needsInput {
-            emitNeedsInput(
-                tab: tab,
-                paneID: paneID,
-                badge: current,
-                session: session
-            )
-            return
+    /// Raises the notification the rules decided on. What is decided here is
+    /// the container label and the history kind. The container label beats
+    /// the generic title because both agents set a generic terminal title, so
+    /// the project or worktree path is the only thing that says which one
+    /// finished.
+    func deliver(_ payload: AgentNotifyPayload, tab: Tab, session: WindowSession) {
+        let fallback = switch payload.kind {
+        case .finished: kind.finishedTitle
+        case .needsInput: kind.needsInputTitle
+        case .failed: kind.errorTitle
         }
-        if current.state == .error, previous?.state != .error {
-            emitError(
-                tab: tab,
-                paneID: paneID,
-                badge: current,
-                session: session
-            )
-            return
+        let containerLabel = session.containerLabel(for: tab.container)
+        let entryKind: NotificationEntry.Kind = switch payload.kind {
+        case .finished: .agentFinished
+        case .needsInput: .agentNeedsInput
+        case .failed: .agentError
         }
-        guard current.state == .finished,
-              let previous,
-              previous.state == .running || previous.state == .compacting
-        else { return }
-        emitFinished(
-            tab: tab,
-            paneID: paneID,
-            previousBadge: previous,
-            session: session
-        )
-    }
-
-    // MARK: - Private
-
-    private func emitFinished(
-        tab: Tab,
-        paneID: UUID,
-        previousBadge: any AgentNotificationBadge,
-        session: WindowSession
-    ) {
-        let containerLabel = session.containerLabel(for: tab.container)
-        // Container label (project / worktree path) carries more signal
-        // than `tab.displayTitle` — Claude / Codex both set the OSC 0
-        // title to a generic "Claude Code" / "codex" string, so we fall
-        // back to the localized "{kind} finished" only when there's no
-        // container to anchor on.
-        let title = containerLabel.isEmpty ? kind.finishedTitle : containerLabel
-        let body: String = if let prompt = previousBadge.lastPrompt,
-                              let cleaned = Self.truncatedPrompt(prompt)
-        {
-            cleaned
-        } else {
-            kind.finishedTitle
-        }
-        send(Delivery(title: title, body: body, kind: .agentFinished), tab: tab, paneID: paneID, session: session)
-    }
-
-    private func emitNeedsInput(
-        tab: Tab,
-        paneID: UUID,
-        badge: any AgentNotificationBadge,
-        session: WindowSession
-    ) {
-        let containerLabel = session.containerLabel(for: tab.container)
-        let title = containerLabel.isEmpty ? kind.needsInputTitle : containerLabel
-        let body: String = {
-            if let detail = badge.detail,
-               let cleaned = Self.truncatedPrompt(detail)
-            {
-                return cleaned
-            }
-            if let prompt = badge.lastPrompt,
-               let cleaned = Self.truncatedPrompt(prompt)
-            {
-                return cleaned
-            }
-            return kind.needsInputTitle
-        }()
-        send(Delivery(title: title, body: body, kind: .agentNeedsInput), tab: tab, paneID: paneID, session: session)
-    }
-
-    private func emitError(
-        tab: Tab,
-        paneID: UUID,
-        badge: any AgentNotificationBadge,
-        session: WindowSession
-    ) {
-        let containerLabel = session.containerLabel(for: tab.container)
-        let title = containerLabel.isEmpty ? kind.errorTitle : containerLabel
-        // `detail` carries the hook's `error_type` (rate limit, billing,
-        // crash). The prompt is a poorer second choice here — the user
-        // wants to know *what broke*, not what they asked — but it still
-        // beats a bare "Claude hit an error" when the hook had nothing.
-        let body: String = {
-            if let detail = badge.detail,
-               let cleaned = Self.truncatedPrompt(detail)
-            {
-                return cleaned
-            }
-            if let prompt = badge.lastPrompt,
-               let cleaned = Self.truncatedPrompt(prompt)
-            {
-                return cleaned
-            }
-            return kind.errorTitle
-        }()
         send(
-            Delivery(title: title, body: body, kind: .agentError, presentsBanner: false),
-            tab: tab, paneID: paneID, session: session
+            Delivery(
+                title: containerLabel.isEmpty ? fallback : containerLabel,
+                body: payload.body ?? fallback,
+                kind: entryKind,
+                presentsBanner: payload.presentsBanner
+            ),
+            tab: tab,
+            paneID: payload.pane,
+            session: session
         )
     }
 
@@ -224,31 +111,25 @@ struct AgentNotificationEmitter {
 
 extension AgentKind {
     /// macOS notification title used when a `(running|compacting) →
-    /// finished` transition fires for this agent kind. Each case must use a
-    /// string literal so the `Localizable.xcstrings` extractor can
-    /// pick up both keys at build time.
+    /// finished` transition fires. The provider names itself through the
+    /// registry, so adding one adds no string here; only the sentence around
+    /// the name is translated.
     var finishedTitle: String {
-        switch self {
-        case .claude: String(localized: "Claude finished")
-        case .codex: String(localized: "Codex finished")
-        }
+        let name = AgentProviderRegistry.displayName(for: self)
+        return String(localized: "\(name) finished", comment: "Notification title; the agent's name")
     }
 
     /// macOS notification title used when a pane transitions into
     /// `.needsInput` from any non-needsInput state.
     var needsInputTitle: String {
-        switch self {
-        case .claude: String(localized: "Claude needs input")
-        case .codex: String(localized: "Codex needs input")
-        }
+        let name = AgentProviderRegistry.displayName(for: self)
+        return String(localized: "\(name) needs input", comment: "Notification title; the agent's name")
     }
 
     /// History-row title used when a pane transitions into `.error`
     /// and there is no container label to anchor on.
     var errorTitle: String {
-        switch self {
-        case .claude: String(localized: "Claude hit an error")
-        case .codex: String(localized: "Codex hit an error")
-        }
+        let name = AgentProviderRegistry.displayName(for: self)
+        return String(localized: "\(name) hit an error", comment: "History row title; the agent's name")
     }
 }

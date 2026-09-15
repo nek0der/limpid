@@ -1,6 +1,6 @@
 //! The environment the shim sets for a pane, read as data.
 
-use limpid_agent_model::{InstallRecipe, TmuxEndpoint};
+use limpid_agent_model::{InstallRecipe, RecipePlaceholder, TmuxEndpoint};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -89,20 +89,20 @@ impl HookEnv {
     /// means the agent was not launched through Limpid.
     #[must_use]
     pub fn directories(&self, recipe: &InstallRecipe) -> Option<ResolvedDirectories> {
-        let named = |placeholder: &str| {
+        let named = |placeholder: RecipePlaceholder| {
             recipe
                 .environment
                 .iter()
-                .find(|(_, value)| value == placeholder)
-                .and_then(|(name, _)| self.get(name))
+                .find(|variable| variable.value == placeholder)
+                .and_then(|variable| self.get(&variable.name))
                 .map(PathBuf::from)
         };
-        let state = named("@@STATE_DIRECTORY@@")?;
-        let session = named("@@SESSION_DIRECTORY@@")?;
+        let state = named(RecipePlaceholder::StateDirectory)?;
+        let session = named(RecipePlaceholder::SessionDirectory)?;
         Some(ResolvedDirectories {
             state,
             session,
-            cwd_events: named("@@CWD_EVENTS_DIRECTORY@@"),
+            cwd_events: named(RecipePlaceholder::CwdEventsDirectory),
         })
     }
 

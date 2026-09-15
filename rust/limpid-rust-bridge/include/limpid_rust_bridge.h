@@ -77,6 +77,23 @@ typedef enum limpid_provider_result {
   LIMPID_PROVIDER_PANIC = 7,
 } limpid_provider_result;
 
+// Status codes returned by the projection ABI functions, reported as
+// `int32_t` for the same reason as `limpid_provider_result`.
+typedef enum limpid_projection_result {
+  // The call succeeded and the output buffer holds the result.
+  LIMPID_PROJECTION_OK = 0,
+  // A required pointer was null.
+  LIMPID_PROJECTION_NULL_POINTER = 1,
+  // The input exceeded the projection input limit.
+  LIMPID_PROJECTION_INPUT_TOO_LARGE = 2,
+  // The input was not UTF-8 or not the JSON shape the call expects.
+  LIMPID_PROJECTION_INVALID_INPUT = 3,
+  // The result could not be serialized.
+  LIMPID_PROJECTION_INTERNAL = 4,
+  // Rust caught a panic at the FFI boundary.
+  LIMPID_PROJECTION_PANIC = 5,
+} limpid_projection_result;
+
 // Opaque service handle. Multiple sessions share its approval state.
 typedef struct limpid_approval_service_v1 limpid_approval_service_v1;
 
@@ -189,6 +206,68 @@ int32_t limpid_resolve_title_v1(const uint8_t *provider_session_ptr,
                                 uint8_t *output_ptr,
                                 size_t output_capacity,
                                 size_t *output_length);
+
+// Reports the providers this build has, as `{ "<id>": <descriptor>, ... }`.
+//
+// # Safety
+//
+// The output pointers must be writable. On `LIMPID_PROJECTION_OK` the caller
+// owns the body and frees it with `limpid_approval_bytes_free_v1`.
+int32_t limpid_projection_providers_v1(uint8_t **out, size_t *out_len);
+
+// Reports what each installed provider needs the platform to set up.
+//
+// The body is `{ "<provider id>": <install recipe>, ... }`.
+//
+// # Safety
+//
+// The output pointers must be writable. On `LIMPID_PROJECTION_OK` the caller
+// owns the body and frees it with `limpid_approval_bytes_free_v1`.
+int32_t limpid_projection_install_recipes_v1(uint8_t **out, size_t *out_len);
+
+// Reduces the records the host found into what to show and what to change.
+//
+// `state` is the body a previous call returned, or empty on the first call.
+// `input` is the `ProjectionInput` JSON, `now` the `Instants` JSON.
+//
+// # Safety
+//
+// Every non-null pointer must remain valid for its declared length for the
+// duration of this call. The output pointers must be writable, and on
+// `LIMPID_PROJECTION_OK` the caller owns the body and frees it with
+// `limpid_approval_bytes_free_v1`.
+int32_t limpid_projection_project_v1(const uint8_t *state,
+                                     size_t state_len,
+                                     const uint8_t *input,
+                                     size_t input_len,
+                                     const uint8_t *now,
+                                     size_t now_len,
+                                     uint8_t **out,
+                                     size_t *out_len);
+
+// Decides what to restore or retire before the interface exists.
+//
+// # Safety
+//
+// As `limpid_projection_project_v1`.
+int32_t limpid_projection_on_launch_v1(const uint8_t *input,
+                                       size_t input_len,
+                                       const uint8_t *now,
+                                       size_t now_len,
+                                       uint8_t **out,
+                                       size_t *out_len);
+
+// Records what Limpid is about to kill and what would bring it back.
+//
+// # Safety
+//
+// As `limpid_projection_project_v1`.
+int32_t limpid_projection_on_terminate_v1(const uint8_t *input,
+                                          size_t input_len,
+                                          const uint8_t *now,
+                                          size_t now_len,
+                                          uint8_t **out,
+                                          size_t *out_len);
 
 // Runs one lifecycle or worktree hook call and reports the outcome as JSON:
 // `{"outcome":"applied","exit_code":0}` or, after a worktree intercept,

@@ -1,12 +1,14 @@
 // AttentionState.swift
 // Limpid — cross-pane attention state ("the ring"): drives the
 // container column's Waiting list, the ⌘J cursor, and the
-// finished-turn viewed → acknowledged indicator → dismissed lifecycle. Owns
-// `viewed` / `dismissed` plus the derivations and actions that read
-// them. Held alongside `WindowSession` (not inside it) so the raw
-// agent-lifecycle facts stay separate from the UI's "what's still
-// asking for the user" view. Wired via
-// `@Environment(AttentionState.self)` from `AppState`.
+// finished-turn viewed → acknowledged indicator → dismissed lifecycle.
+// Every fact comes from the Rust-backed runtime projection: runtimes are
+// the only source of waiting rows, and the viewed / dismissed marks are
+// keyed by runtime id plus the runtime's episode token
+// (`attentionEventToken`). Held
+// alongside `WindowSession` (not inside it) so the raw agent-lifecycle
+// facts stay separate from the UI's "what's still asking for the user"
+// view. Wired via `@Environment(AttentionState.self)` from `AppState`.
 
 import Foundation
 
@@ -33,17 +35,6 @@ final class AttentionState {
     var isTurnReviewEnabled: () -> Bool = { false }
     var onFinishedTurnFocused: ((UUID, String, String) -> Void)?
     var selectedRuntimeID: String?
-    /// Per-pane "I've dismissed this finished turn" — the user pressed
-    /// the row's ×. Keyed to the badge's `updatedAt`; a newer finished
-    /// turn (later stamp) resurfaces automatically. `needsInput` / `error`
-    /// are never dismissed this way — those clear only when the
-    /// underlying state actually resolves.
-    private(set) var dismissedAt: [UUID: Date] = [:]
-
-    /// Per-pane "focus has visited this finished turn" — the row changes to
-    /// its acknowledged style but stays listed. Keyed to badge
-    /// `updatedAt` for the same resurfacing semantics.
-    private(set) var viewedAt: [UUID: Date] = [:]
 
     /// Container column Waiting list filter — when false, viewed-finished rows are
     /// hidden so the list shows only "next to deal with". `needsInput` /
@@ -72,88 +63,20 @@ final class AttentionState {
 
     // MARK: - Mutation
 
-    /// Manually dismiss a pane's *finished* turn ("conversation's done")
-    /// so it drops off the Waiting list + clears the container / tab column check.
-    /// No-op unless the pane is currently `.finished`.
-    func dismiss(paneID: UUID, in session: WindowSession) {
-        guard let stamp = currentFinishedStamp(paneID: paneID, in: session) else { return }
-        dismissedAt[paneID] = stamp
-    }
-
-    /// Mark a pane's *finished* turn as viewed — focus has visited it.
-    /// The row switches to its acknowledged style but stays. Cleared
-    /// automatically when the next turn starts (badge `updatedAt` advances).
-    func markViewed(paneID: UUID, in session: WindowSession) {
+    /// Mark every finished runtime visible in a pane as viewed — focus
+    /// has visited it. The row switches to its acknowledged style but
+    /// stays. Cleared automatically when the next episode starts.
+    func markViewed(paneID: UUID) {
         markVisibleRuntimesViewed(paneID: paneID)
-        guard let stamp = currentFinishedStamp(paneID: paneID, in: session) else { return }
-        if viewedAt[paneID] != stamp {
-            viewedAt[paneID] = stamp
-        }
     }
 
     /// Called by every focus-change site (mount, click, ⌘J, tab switch,
     /// arrow). Marks the *arrived* pane's finished turn as viewed.
     func focusMoved(to newPane: UUID?, in session: WindowSession) {
         if let newPane {
-            markViewed(paneID: newPane, in: session)
+            markViewed(paneID: newPane)
             onPaneFocused?(newPane)
         }
-    }
-
-    /// Drop a pane's attention state (call when the pane closes) so the
-    /// dictionaries don't grow without bound across long sessions.
-    func forget(paneID: UUID) {
-        dismissedAt[paneID] = nil
-        viewedAt[paneID] = nil
-    }
-
-    // MARK: - Queries
-
-    /// Whether a `.finished` pane has been dismissed for its current
-    /// turn — explicitly via ×, or implicitly because the turn was
-    /// viewed and has since aged past `viewedFinishedRetention`.
-    func isDismissed(paneID: UUID, badgeUpdatedAt: Date) -> Bool {
-        let matching = allRuntimes.filter { $0.paneIDs.contains(paneID) && $0.badge.updatedAt == badgeUpdatedAt }
-        if !matching.isEmpty {
-            return matching.allSatisfy { isDismissed($0) }
-        }
-        if let stamp = dismissedAt[paneID], badgeUpdatedAt <= stamp {
-            return true
-        }
-        guard let viewedStamp = viewedAt[paneID], badgeUpdatedAt <= viewedStamp else { return false }
-        return isPastRetention(badgeUpdatedAt)
-    }
-
-    /// Whether a `.finished` pane has been viewed for its current turn.
-    func isViewed(paneID: UUID, badgeUpdatedAt: Date) -> Bool {
-        let matching = allRuntimes.filter { $0.paneIDs.contains(paneID) && $0.badge.updatedAt == badgeUpdatedAt }
-        if !matching.isEmpty {
-            return matching.allSatisfy { isViewed($0) }
-        }
-        guard let stamp = viewedAt[paneID] else { return false }
-        return badgeUpdatedAt <= stamp
-    }
-
-    // MARK: - Helpers
-
-    /// The current `.finished` badge stamp for a pane (Claude or Codex),
-    /// or nil if the pane isn't sitting on a finished turn right now.
-    func currentFinishedStamp(paneID: UUID, in session: WindowSession) -> Date? {
-        guard let tab = session.tab(containing: paneID) else { return nil }
-        if let b = tab.claudeAgentBadges[paneID], b.state == .finished {
-            return b.updatedAt
-        }
-        if let b = tab.codexAgentBadges[paneID], b.state == .finished {
-            return b.updatedAt
-        }
-        return nil
-    }
-
-    /// True iff a finished turn has been dismissed for this exact badge
-    /// stamp. The container / tab column aggregate skips these so a dismissed pane
-    /// stops contributing to its container's badge.
-    private func isFinishedAndDismissed(paneID: UUID, state: AgentState, updatedAt: Date) -> Bool {
-        state == .finished && isDismissed(paneID: paneID, badgeUpdatedAt: updatedAt)
     }
 }
 
@@ -184,26 +107,9 @@ extension AttentionState {
     /// session worth confirming before close).
     private func allAgentStates(in tab: Tab) -> [PaneAgentState] {
         let leaves = Set(tab.splitTree.allLeafIDs())
-        var states = allRuntimes.filter {
+        return allRuntimes.filter {
             !$0.paneIDs.isDisjoint(with: leaves) && !($0.badge.state == .finished && isDismissed($0))
         }.map { PaneAgentState(id: $0.id, state: $0.badge.state, isViewed: isViewed($0)) }
-        for paneID in tab.splitTree.allLeafIDs() {
-            if runtimesByKind[.claude] == nil, let b = tab.claudeAgentBadges[paneID],
-               !isFinishedAndDismissed(paneID: paneID, state: b.state, updatedAt: b.updatedAt)
-            {
-                let viewed = b.state == .finished
-                    && isViewed(paneID: paneID, badgeUpdatedAt: b.updatedAt)
-                states.append(PaneAgentState(id: "claude:\(paneID.uuidString)", state: b.state, isViewed: viewed))
-            }
-            if runtimesByKind[.codex] == nil, let b = tab.codexAgentBadges[paneID],
-               !isFinishedAndDismissed(paneID: paneID, state: b.state, updatedAt: b.updatedAt)
-            {
-                let viewed = b.state == .finished
-                    && isViewed(paneID: paneID, badgeUpdatedAt: b.updatedAt)
-                states.append(PaneAgentState(id: "codex:\(paneID.uuidString)", state: b.state, isViewed: viewed))
-            }
-        }
-        return states
     }
 
     private func scopeAgentStates(across tabs: [Tab]) -> [PaneAgentState] {
@@ -279,7 +185,8 @@ extension AttentionState {
 extension AttentionState {
     /// Public, `Identifiable` view of one waiting target so the container column
     /// Waiting list can render it in the same order the ⌘J cursor
-    /// walks. `id` is the pane id — one entry per pane.
+    /// walks. `id` is the runtime id — one entry per agent invocation, so
+    /// a pane running two agents lists both.
     struct AttentionEntry: Identifiable {
         let tabID: UUID
         let paneID: UUID
@@ -297,9 +204,9 @@ extension AttentionState {
         /// Focus has visited this finished turn — render its acknowledged
         /// indicator. Always false for needsInput / error.
         let isViewed: Bool
-        var runtimeID: String?
+        var runtimeID: String
         var id: String {
-            runtimeID ?? paneID.uuidString
+            runtimeID
         }
     }
 
@@ -316,66 +223,7 @@ extension AttentionState {
         let turnRoot: String?
         /// Pre-computed so the sort comparator can stay self-contained.
         let isViewed: Bool
-        var runtimeID: String?
-    }
-
-    /// Per-pane agent info (state + when + last prompt) from whichever
-    /// integration owns it. A pane runs either Claude or Codex; if both
-    /// carry a badge the higher-priority one wins so a blocked pane is
-    /// never under-reported.
-    private struct AttentionInfo {
-        let state: AgentState
-        let updatedAt: Date
-        let lastPrompt: String?
-        let detail: String?
-        let turnBaseTree: String?
-        let turnRoot: String?
-    }
-
-    private func attentionInfo(in tab: Tab, paneID: UUID) -> AttentionInfo? {
-        let claude = (runtimesByKind[.claude] == nil ? tab.claudeAgentBadges[paneID] : nil).map {
-            AttentionInfo(
-                state: $0.state,
-                updatedAt: $0.updatedAt,
-                lastPrompt: $0.lastPrompt,
-                detail: $0.detail,
-                turnBaseTree: $0.turnBaseTree,
-                turnRoot: $0.turnRoot
-            )
-        }
-        let codex = (runtimesByKind[.codex] == nil ? tab.codexAgentBadges[paneID] : nil).map {
-            AttentionInfo(
-                state: $0.state,
-                updatedAt: $0.updatedAt,
-                lastPrompt: $0.lastPrompt,
-                detail: $0.detail,
-                turnBaseTree: $0.turnBaseTree,
-                turnRoot: $0.turnRoot
-            )
-        }
-        switch (claude, codex) {
-        case let (c?, x?):
-            // Strictly higher priority wins (error > needsInput >
-            // finished > running > idle). On equal priority — most
-            // commonly both `.finished` on the same pane after the user
-            // ran both agents in the same shell — pick the newer
-            // updatedAt so the visible stamp matches reality. Picking
-            // the older one would let a stale Claude badge hide a
-            // freshly-finished Codex turn (or vice versa), and because
-            // `dismissedAt` is keyed per pane, dismissing the visible
-            // row would also mute the other agent's later turn until it
-            // updates again.
-            if c.state.priority > x.state.priority {
-                return c
-            }
-            if x.state.priority > c.state.priority {
-                return x
-            }
-            return c.updatedAt >= x.updatedAt ? c : x
-        case let (c?, nil): return c
-        case let (nil, x?): return x
-        case (nil, nil): return nil
-        }
+        var runtimeID: String
     }
 
     /// Every pane (across all tabs) whose agent is waiting on the user
@@ -410,34 +258,6 @@ extension AttentionState {
                 turnBaseTree: badge.turnBaseTree, turnRoot: badge.turnRoot,
                 isViewed: isViewed(runtime), runtimeID: runtime.id
             ))
-        }
-        for tab in session.tabs {
-            for paneID in tab.splitTree.allLeafIDs() {
-                guard let info = attentionInfo(in: tab, paneID: paneID),
-                      info.state == .needsInput || info.state == .error || info.state == .finished
-                else { continue }
-                // A finished turn the user has explicitly dismissed drops
-                // off the list. Viewing (focus visit) only acknowledges the row.
-                // needsInput / error are never dismissed this way.
-                if info.state == .finished,
-                   isDismissed(paneID: paneID, badgeUpdatedAt: info.updatedAt)
-                {
-                    continue
-                }
-                let viewedNow = info.state == .finished
-                    && isViewed(paneID: paneID, badgeUpdatedAt: info.updatedAt)
-                targets.append(AttentionTarget(
-                    tabID: tab.id,
-                    paneID: paneID,
-                    state: info.state,
-                    updatedAt: info.updatedAt,
-                    lastPrompt: info.lastPrompt,
-                    detail: info.detail,
-                    turnBaseTree: info.turnBaseTree,
-                    turnRoot: info.turnRoot,
-                    isViewed: viewedNow
-                ))
-            }
         }
         return targets.sorted { a, b in
             if a.state.priority != b.state.priority {
@@ -519,7 +339,7 @@ extension AttentionState {
         let currentPane = session.activeTab?.splitTree.focusedLeafID
         let currentIndex = ordered.firstIndex {
             $0.tabID == currentTab && $0.paneID == currentPane
-                && ($0.runtimeID == nil || $0.runtimeID == selectedRuntimeID)
+                && $0.runtimeID == selectedRuntimeID
         }
         let target: AttentionTarget
         if let index = currentIndex {

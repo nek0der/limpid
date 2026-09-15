@@ -1,0 +1,159 @@
+{
+  "projection": {
+    "runtimes": [
+      {
+        "id": "claude:AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+        "provider": "claude",
+        "runId": "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+        "revision": 4,
+        "badge": {
+          "state": "finished",
+          "updatedAt": "2026-09-14T12:04:00Z",
+          "lastPrompt": "<prompt for cwd-changed>",
+          "firstPrompt": "<prompt for cwd-changed>",
+          "conversationId": "00000000-0000-4000-8000-000000000001",
+          "sessionStartedAt": "2026-09-14T12:00:00Z"
+        },
+        "panes": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "attachment": "attached",
+        "eventToken": "4",
+        "episodeToken": "4"
+      }
+    ],
+    "badges": {
+      "11111111-1111-4111-8111-111111111111": {
+        "claude": {
+          "state": "finished",
+          "updatedAt": "2026-09-14T12:04:00Z",
+          "lastPrompt": "<prompt for cwd-changed>",
+          "firstPrompt": "<prompt for cwd-changed>",
+          "conversationId": "00000000-0000-4000-8000-000000000001",
+          "sessionStartedAt": "2026-09-14T12:00:00Z"
+        }
+      }
+    },
+    "sessions": {
+      "11111111-1111-4111-8111-111111111111": {
+        "claude": {
+          "sessionId": "00000000-0000-4000-8000-000000000001",
+          "cwd": "/tmp/example"
+        }
+      }
+    },
+    "tabTitles": {
+      "9f9f9f9f-0000-4000-8000-9f9f9f9f9f9f": "<prompt for cwd-changed>"
+    },
+    "marksToKeep": {
+      "viewed": {},
+      "dismissed": {}
+    },
+    "resumeCandidates": {
+      "11111111-1111-4111-8111-111111111111": [
+        "claude"
+      ]
+    }
+  },
+  "commands": [
+    {
+      "op": {
+        "op": "pruneRetired",
+        "max": 200,
+        "lifetimeSecs": 604800
+      },
+      "target": {
+        "target": "retiredRecords",
+        "provider": "claude"
+      },
+      "expect": {
+        "expect": "none"
+      },
+      "onMismatch": "abort"
+    },
+    {
+      "op": {
+        "op": "cleanupPaneStore",
+        "keep": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "max": 200
+      },
+      "target": {
+        "target": "paneStore",
+        "provider": "claude",
+        "store": "sessions"
+      },
+      "expect": {
+        "expect": "none"
+      },
+      "onMismatch": "abort"
+    },
+    {
+      "op": {
+        "op": "cleanupPaneStore",
+        "keep": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "max": 200
+      },
+      "target": {
+        "target": "paneStore",
+        "provider": "claude",
+        "store": "cwdEvents"
+      },
+      "expect": {
+        "expect": "none"
+      },
+      "onMismatch": "abort"
+    },
+    {
+      "op": {
+        "op": "pruneRetired",
+        "max": 200,
+        "lifetimeSecs": 604800
+      },
+      "target": {
+        "target": "retiredRecords",
+        "provider": "codex"
+      },
+      "expect": {
+        "expect": "none"
+      },
+      "onMismatch": "abort"
+    },
+    {
+      "op": {
+        "op": "cleanupPaneStore",
+        "keep": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "max": 200
+      },
+      "target": {
+        "target": "paneStore",
+        "provider": "codex",
+        "store": "sessions"
+      },
+      "expect": {
+        "expect": "none"
+      },
+      "onMismatch": "abort"
+    },
+    {
+      "op": {
+        "op": "cwdChanged",
+        "pane": "11111111-1111-4111-8111-111111111111",
+        "newCwd": "/tmp/example",
+        "oldCwd": "/tmp/example"
+      },
+      "target": {
+        "target": "host"
+      },
+      "expect": {
+        "expect": "none"
+      },
+      "onMismatch": "abort"
+    }
+  ]
+}

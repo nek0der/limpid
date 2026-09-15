@@ -268,7 +268,7 @@ impl ApprovalService {
         };
         match result {
             Ok(snapshot) => ApprovalSnapshotWire::from_domain(snapshot)
-                .map(ResponseBody::ApprovalResult)
+                .map(|snapshot| ResponseBody::ApprovalResult(Box::new(snapshot)))
                 .map_err(|_| ServeError::Synchronization),
             Err(error) => Ok(broker_error(&error)),
         }
@@ -293,7 +293,7 @@ impl ApprovalService {
             );
             if snapshot.state != ApprovalState::Pending || caller_remaining_ms == 0 {
                 return ApprovalSnapshotWire::from_domain(snapshot)
-                    .map(ResponseBody::ApprovalResult)
+                    .map(|snapshot| ResponseBody::ApprovalResult(Box::new(snapshot)))
                     .map_err(|_| ServeError::Synchronization);
             }
             let request_remaining_ms = snapshot.deadline_ms.saturating_sub(now_ms);

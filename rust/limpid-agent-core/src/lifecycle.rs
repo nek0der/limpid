@@ -10,16 +10,10 @@
 //! `SideWrite` and `TurnSnapshotOp` belong to the runtime.
 
 use limpid_agent_model::{
-    AgentEvent, Capability, MAX_RECORD_TEXT_BYTES, RunRecord, RunState, Titles, TmuxEndpoint,
+    AgentEvent, Capability, MAX_RECORD_TEXT_BYTES, ProviderDescriptor, RunRecord, RunState, Titles,
+    TmuxEndpoint,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
-
-/// `SessionEnded` reasons after which a provider with
-/// `SessionEndDropsSession` no longer needs its resume hint. Other reasons
-/// (a signal, an unknown value) keep the hint so the next launch can resume.
-pub const SESSION_END_DROP_REASONS: [&str; 5] =
-    ["clear", "logout", "exit", "prompt_input_exit", "quit"];
 
 /// Everything the record needs that comes from the hook's environment
 /// rather than from the payload.
@@ -106,19 +100,21 @@ pub enum TurnSnapshotOp {
 #[must_use]
 pub fn turn_snapshot_cwd<'a>(
     event: &'a AgentEvent,
-    capabilities: &BTreeSet<Capability>,
+    descriptor: &ProviderDescriptor,
 ) -> Option<Option<&'a str>> {
     match event {
-        AgentEvent::PromptSubmitted { cwd, .. }
-            if capabilities.contains(&Capability::TurnSnapshot) =>
-        {
+        AgentEvent::PromptSubmitted { cwd, .. } if descriptor.has(Capability::TurnSnapshot) => {
             Some(cwd.as_deref())
         }
         _ => None,
     }
 }
 
-/// Applies `event` to `prev` under the provider's `capabilities`.
+/// Applies `event` to `prev` under the provider's descriptor.
+///
+/// The descriptor rather than a bare capability set, because some rules need
+/// the provider's own vocabulary as well: which session-end reasons count as
+/// the user ending the session is the provider's to say, not the rules'.
 ///
 /// `now` is one ISO-8601 UTC timestamp with second precision, used for every
 /// time field the event sets, so one hook call never straddles two seconds.
@@ -127,13 +123,13 @@ pub fn apply(
     prev: Option<&RunRecord>,
     event: &AgentEvent,
     context: &ApplyContext,
-    capabilities: &BTreeSet<Capability>,
+    descriptor: &ProviderDescriptor,
     now: &str,
 ) -> RecordWrites {
     let mut writes = RecordWrites::default();
     match event {
         AgentEvent::CwdChanged { new_cwd, old_cwd } => {
-            if capabilities.contains(&Capability::CwdEvents) {
+            if descriptor.has(Capability::CwdEvents) {
                 writes.side.push(SideWrite::CwdEvent {
                     new_cwd: new_cwd.clone(),
                     old_cwd: old_cwd.clone(),
@@ -164,13 +160,13 @@ pub fn apply(
                 prev,
                 event,
                 context,
-                capabilities,
+                descriptor,
                 now,
                 &mut next,
                 &mut writes,
             );
         }
-        _ => turn_transition(prev, event, capabilities, now, &mut next, &mut writes),
+        _ => turn_transition(prev, event, descriptor, now, &mut next, &mut writes),
     }
 
     next.last_hook_event = Some(event_name(event).to_owned());
@@ -189,7 +185,7 @@ fn session_transition(
     prev: Option<&RunRecord>,
     event: &AgentEvent,
     context: &ApplyContext,
-    capabilities: &BTreeSet<Capability>,
+    descriptor: &ProviderDescriptor,
     now: &str,
     next: &mut RunRecord,
     writes: &mut RecordWrites,
@@ -230,18 +226,21 @@ fn session_transition(
             next.run_started_at = None;
             // Only a provider that takes snapshots has one to remove; the
             // removal runs git, so it is not issued for the others.
-            if capabilities.contains(&Capability::TurnSnapshot) {
+            if descriptor.has(Capability::TurnSnapshot) {
                 writes.snapshot = Some(TurnSnapshotOp::Remove {
                     cwd: prev.and_then(|record| record.turn_root.clone()),
                 });
             }
             next.turn_base_tree = None;
             next.turn_root = None;
-            let drops = capabilities.contains(&Capability::SessionEndDropsSession)
+            let drops = descriptor.has(Capability::SessionEndDropsSession)
                 && !context.is_tmux_hosted
-                && reason
-                    .as_deref()
-                    .is_some_and(|reason| SESSION_END_DROP_REASONS.contains(&reason));
+                && reason.as_deref().is_some_and(|reason| {
+                    descriptor
+                        .session_end_drop_reasons
+                        .iter()
+                        .any(|it| it == reason)
+                });
             let hint = session_id.as_deref().filter(|id| is_hint_safe(id));
             if let Some(session_id) = hint.filter(|_| drops) {
                 writes.side.push(SideWrite::DeleteSessionHint {
@@ -257,7 +256,7 @@ fn session_transition(
 fn turn_transition(
     prev: Option<&RunRecord>,
     event: &AgentEvent,
-    capabilities: &BTreeSet<Capability>,
+    descriptor: &ProviderDescriptor,
     now: &str,
     next: &mut RunRecord,
     writes: &mut RecordWrites,
@@ -272,7 +271,7 @@ fn turn_transition(
             }
             next.last_prompt = prompt;
             observe_titles(next, titles.as_ref());
-            if let Some(cwd) = turn_snapshot_cwd(event, capabilities) {
+            if let Some(cwd) = turn_snapshot_cwd(event, descriptor) {
                 writes.snapshot = Some(TurnSnapshotOp::Capture {
                     cwd: cwd.map(str::to_owned),
                 });
@@ -480,6 +479,8 @@ fn is_dropped(character: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use limpid_agent_model::ProviderId;
+    use std::collections::BTreeSet;
 
     const NOW: &str = "2026-09-14T00:00:00Z";
     const LATER: &str = "2026-09-14T00:00:05Z";
@@ -494,18 +495,44 @@ mod tests {
         }
     }
 
-    fn claude() -> BTreeSet<Capability> {
-        BTreeSet::from([
-            Capability::SessionTitle,
-            Capability::SessionEndDropsSession,
-            Capability::Resume,
-            Capability::CwdEvents,
-            Capability::TurnSnapshot,
-        ])
+    fn descriptor(name: &str, capabilities: BTreeSet<Capability>) -> ProviderDescriptor {
+        let id = ProviderId::new(name).expect("provider id");
+        ProviderDescriptor {
+            display_name: name.to_owned(),
+            capabilities,
+            pid_sweep_interval_ms: 3_000,
+            state_directory: "states".to_owned(),
+            session_directory: "sessions".to_owned(),
+            cwd_events_directory: None,
+            process_names: Vec::new(),
+            session_end_drop_reasons: Vec::new(),
+            id,
+        }
     }
 
-    fn codex() -> BTreeSet<Capability> {
-        BTreeSet::from([Capability::Resume, Capability::TurnSnapshot])
+    fn claude() -> ProviderDescriptor {
+        let mut claude = descriptor(
+            "claude",
+            BTreeSet::from([
+                Capability::SessionTitle,
+                Capability::SessionEndDropsSession,
+                Capability::Resume,
+                Capability::CwdEvents,
+                Capability::TurnSnapshot,
+            ]),
+        );
+        claude.session_end_drop_reasons = ["clear", "logout", "exit", "prompt_input_exit", "quit"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        claude
+    }
+
+    fn codex() -> ProviderDescriptor {
+        descriptor(
+            "codex",
+            BTreeSet::from([Capability::Resume, Capability::TurnSnapshot]),
+        )
     }
 
     fn started(title: Option<&str>) -> AgentEvent {
@@ -528,14 +555,14 @@ mod tests {
     /// Applies `events` in order and returns the final record plus every
     /// side write and snapshot op, the way the runtime would see them.
     fn run(
-        capabilities: &BTreeSet<Capability>,
+        descriptor: &ProviderDescriptor,
         events: &[AgentEvent],
     ) -> (RunRecord, Vec<SideWrite>, Vec<TurnSnapshotOp>) {
         let mut record: Option<RunRecord> = None;
         let mut sides = Vec::new();
         let mut snapshots = Vec::new();
         for event in events {
-            let writes = apply(record.as_ref(), event, &context(), capabilities, NOW);
+            let writes = apply(record.as_ref(), event, &context(), descriptor, NOW);
             sides.extend(writes.side);
             snapshots.extend(writes.snapshot);
             if let Some(next) = writes.run {
@@ -660,7 +687,7 @@ mod tests {
                 session_id: None,
             },
             &context(),
-            &BTreeSet::from([Capability::Resume]),
+            &descriptor("claude", BTreeSet::from([Capability::Resume])),
             LATER,
         );
         assert_eq!(writes.snapshot, None);
