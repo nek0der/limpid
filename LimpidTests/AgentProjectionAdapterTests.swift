@@ -100,8 +100,30 @@ struct AgentProjectionAdapterTests {
         }
     }
 
-    @Test("a restored pane keeps the resume hint of a run that crashed")
-    func launch_keepsTheHintOfAProviderThatReportsItsOwnEnds() throws {
+    @Test("demo badges are seeded as runtimes so the Waiting list has rows")
+    func demoBadges_seedRuntimes() {
+        let (session, tab, pane) = WindowSessionFixture.withLooseTab()
+        session.update(tab.id) {
+            $0.agentBadges[.claude, default: [:]][pane] = AgentBadge(
+                state: .finished,
+                updatedAt: Date(timeIntervalSince1970: 1000)
+            )
+        }
+        let attention = AttentionState()
+        attention.now = { Date(timeIntervalSince1970: 2000) }
+        #expect(attention.attentionEntries(in: session).isEmpty)
+
+        // Demo mode is a process-wide flag, so the seeding it triggers is
+        // exercised directly: every staged badge becomes one runtime, in
+        // place of the pass demo mode never runs.
+        AgentProjectionAdapter.seedRuntimes(fromBadgesIn: session, into: attention)
+        let entries = attention.attentionEntries(in: session)
+        #expect(entries.map(\.paneID) == [pane])
+        #expect(entries.first?.state == .finished)
+    }
+
+    @Test("launch retires a dead run nothing claimed, hint and all")
+    func launch_retiresADeadRunNothingClaimed() throws {
         try withTempDir { root in
             let state = root.appendingPathComponent("agent-states", isDirectory: true)
             let sessions = root.appendingPathComponent("sessions", isDirectory: true)

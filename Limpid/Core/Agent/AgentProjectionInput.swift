@@ -149,6 +149,10 @@ struct AgentProjection: Decodable {
         Self.keyed(tabTitles)
     }
 
+    var resumeCandidatesByPane: [UUID: [String]] {
+        Self.keyed(resumeCandidates)
+    }
+
     private static func keyed<Value>(_ source: [String: Value]) -> [UUID: Value] {
         var result: [UUID: Value] = [:]
         for (key, value) in source {

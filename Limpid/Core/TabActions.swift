@@ -100,18 +100,11 @@ enum TabActions {
         session.closeTab(tabID)
         for leafID in leafIDs {
             registry.unregister(leafID)
-            // Drop each leaf's on-disk Claude session record. The
-            // snapshot above still carries the resume hints for an
-            // in-session `reopenClosedTab` to honor; once the user
-            // quits, the closed-tab stack is gone anyway and stale
-            // records would sit there until the next bootstrap
-            // cleanup pass swept them.
+            // Tell the projection the leaves are gone so their hints are
+            // judged now. The snapshot above still carries the resume hints
+            // for an in-session `reopenClosedTab` to honor; once the user
+            // quits, the closed-tab stack is gone anyway.
             agentProjection?.didClosePane(leafID)
-            // Drop the attention bookkeeping for the closed pane so the
-            // viewed / dismissed dictionaries don't accumulate dead
-            // entries across long sessions. UUIDs aren't reused, so
-            // this is a pure cleanup — never affects live panes.
-            attention?.forget(paneID: leafID)
         }
     }
 
@@ -156,6 +149,12 @@ enum TabActions {
         // signature, so assign them after construction.
         revived.scrollbackPaths = remapKeys(closed.tab.scrollbackPaths, using: idMap)
         revived.initialCommands = remapKeys(closed.tab.initialCommands, using: idMap)
+        // The projection answered which of those hints may resume while the
+        // pane was open. The hint file went with the pane, so the next pass
+        // cannot answer again; carrying the answer here gives the revived
+        // pane its chance to resume, on the same best-effort terms as the
+        // hints above (a pass that lands before the mount clears it).
+        revived.agentResumeCandidates = remapKeys(closed.tab.agentResumeCandidates, using: idMap)
 
         session.tabs.append(revived)
         session.setActiveTab(revived.id)
@@ -258,11 +257,10 @@ enum TabActions {
     // `executeCommandPaletteAction` moved to
     // `Limpid/Core/Actions/CommandPaletteActions.swift`.
 
-    /// Bundles the optional CLI-session and cwd-event trackers so the
-    /// dispatcher chain stays under the parameter-count budget. The
-    /// session trackers feed `--resume` plumbing; the cwd-event one
-    /// keeps the worktree-move suggester's seen-map in sync with the
-    /// close path.
+    /// Bundles the optional projection adapter so the dispatcher chain
+    /// stays under the parameter-count budget. The close path tells the
+    /// projection a pane is gone, which is what feeds the `--resume`
+    /// plumbing and lets the projection drop the closed pane's cwd history.
     struct SessionTrackers {
         let projection: AgentProjectionAdapter?
     }

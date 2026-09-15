@@ -41,8 +41,8 @@ final class AgentProjectionAdapter {
     private var hasBootstrapped = false
 
     /// `nonisolated(unsafe)` so `deinit`, which is nonisolated under Swift 6,
-    /// can cancel them. Each source owns the descriptor it was opened with;
-    /// see `startWatching`.
+    /// can cancel the sources and invalidate the timer. Each source owns the
+    /// descriptor it was opened with; see `watch(_:)`.
     private nonisolated(unsafe) var sources: [any DispatchSourceFileSystemObject] = []
     private nonisolated(unsafe) var sweep: Timer?
     /// Why the last pass could not run, if it could not. Kept because a pass
@@ -54,6 +54,9 @@ final class AgentProjectionAdapter {
     /// to look, and the records are the only place a socket this process never
     /// spawned is written down.
     private(set) var socketPaths: Set<String> = []
+    /// Where each tmux-hosted pane sits, as of the last pass. Kept on the
+    /// runtimes so attention can tell a visible tmux pane from one behind it.
+    private var paneLocations: [UUID: TmuxPaneLocation] = [:]
 
     /// The one the application builds: every provider the registry declares,
     /// rooted at this build's own support directory. Tests inject their
@@ -107,7 +110,39 @@ final class AgentProjectionAdapter {
         self.session = session
         self.attention = attention
         self.tmuxPresence = tmuxPresence
+        if DemoFixture.isDemoActive {
+            if let attention {
+                Self.seedRuntimes(fromBadgesIn: session, into: attention)
+            }
+            return
+        }
         refresh()
+    }
+
+    /// Demo mode never runs a pass, so the runtimes the Waiting list and the
+    /// row badges read would stay empty and the fixture's staged turns would
+    /// show nowhere. The fixture stages badges, and those are enough to stand
+    /// in for runtimes: one per badge, keyed by its pane so the identity is
+    /// stable across launches, which is what `make screenshot` depends on.
+    static func seedRuntimes(fromBadgesIn session: WindowSession, into attention: AttentionState) {
+        for kind in AgentKind.allCases {
+            var runtimes: [AgentRuntimePresentation] = []
+            for tab in session.tabs {
+                for (pane, badge) in tab.agentBadges[kind] ?? [:] {
+                    runtimes.append(AgentRuntimePresentation(
+                        kind: kind,
+                        runID: pane.uuidString,
+                        revision: nil,
+                        badge: badge,
+                        paneIDs: [pane],
+                        tmuxLocations: [:],
+                        stateEpisodeToken: "\(pane.uuidString):\(badge.updatedAt.timeIntervalSince1970)",
+                        attachmentResolution: .attached
+                    ))
+                }
+            }
+            attention.replaceRuntimes(runtimes, kind: kind)
+        }
     }
 
     /// Starts watching the directories the hooks write into and asking, on a
@@ -344,10 +379,9 @@ final class AgentProjectionAdapter {
             return []
         }
         return names.sorted().compactMap { name in
-            // The writer renames a dot-prefixed temporary into place, and a
-            // command that deletes one of these takes no lock, so anything
-            // that is not a finished event file is something we would create
-            // and then keep rediscovering as new.
+            // The writer renames a dot-prefixed temporary into place, so a
+            // name that is not a finished `.json` event is a write in
+            // progress and must not be read as an event.
             guard name.hasSuffix(".json"), !name.hasPrefix(".") else { return nil }
             guard let data = try? Data(contentsOf: directory.appendingPathComponent(name)),
                   let content = String(data: data, encoding: .utf8)
@@ -398,6 +432,7 @@ final class AgentProjectionAdapter {
         // its candidates before it starts and would otherwise have nowhere to
         // look for a session this process did not spawn.
         socketPaths = Set(records.compactMap { endpoint(in: $0)?.socketPath })
+        paneLocations = [:]
         guard let tmuxPresence else { return presence }
         for record in records {
             guard let endpoint = endpoint(in: record) else { continue }
@@ -413,6 +448,7 @@ final class AgentProjectionAdapter {
             presence.attachments[key] = Array(attachments.keys)
             for (pane, location) in attachments {
                 presence.locations[pane.uuidString] = .init(isActive: location.isActive)
+                paneLocations[pane] = location
             }
         }
         return presence
@@ -474,10 +510,15 @@ final class AgentProjectionAdapter {
                 kind: kind
             )
         }
+        // The rules trimmed the marks to the runs that still exist; what they
+        // handed back is the whole of what the interface keeps.
+        attention?.viewedRuntimeTokens = projection.marksToKeep.viewed
+        attention?.dismissedRuntimeTokens = projection.marksToKeep.dismissed
 
         let badgesByPane = projection.badgesByPane
         let sessionsByPane = projection.sessionsByPane
         let titlesByTab = projection.titlesByTab
+        let candidatesByPane = projection.resumeCandidatesByPane
         session.applyAcrossTabs { tab in
             let leaves = tab.splitTree.allLeafIDs()
             // Every provider the interface can key by, not only the ones the
@@ -504,6 +545,16 @@ final class AgentProjectionAdapter {
                     tab.agentSessions[kind] = sessions
                 }
             }
+            var candidates: [UUID: Set<AgentKind>] = [:]
+            for leaf in leaves {
+                let kinds = Set((candidatesByPane[leaf] ?? []).compactMap(AgentKind.init(rawValue:)))
+                if !kinds.isEmpty {
+                    candidates[leaf] = kinds
+                }
+            }
+            if tab.agentResumeCandidates != candidates {
+                tab.agentResumeCandidates = candidates
+            }
             if let title = titlesByTab[tab.id], tab.title != title {
                 tab.title = title
             }
@@ -525,9 +576,12 @@ final class AgentProjectionAdapter {
             revision: runtime.revision,
             badge: runtime.badge.asAgentBadge,
             paneIDs: panes,
-            // The suppression this used to feed is decided by the rules now
-            // and travels on the notification itself, so nothing reads it.
-            tmuxLocations: [:],
+            // From the topology probe: focus-driven viewed marks skip a tmux
+            // pane that is not its window's active one, and ⌘J selects the
+            // pane inside tmux.
+            tmuxLocations: Dictionary(uniqueKeysWithValues: runtime.panes.compactMap { pane in
+                paneLocations[pane].map { (pane, $0) }
+            }),
             stateEpisodeToken: runtime.episodeToken,
             attachmentResolution: resolution
         )
@@ -564,7 +618,8 @@ final class AgentProjectionAdapter {
         return outcomes
     }
 
-    /// Set by the host to receive the two events that leave this subsystem.
+    /// Set by the host to receive the cwd changes and git refetch requests
+    /// that leave this subsystem.
     var onCwdChanged: ((UUID, String, String?) -> Void)?
     var onGitSyncRequested: ((String) -> Void)?
     /// Set by the host to actually raise a notification. Returns whether it

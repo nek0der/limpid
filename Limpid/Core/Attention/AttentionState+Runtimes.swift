@@ -18,19 +18,19 @@ extension AttentionState {
         runtimesByKind.values.flatMap(\.self)
     }
 
+    /// Replaces one provider's runtimes. The marks are not trimmed here: the
+    /// projection returns the set that still applies with every pass, and the
+    /// adapter writes that back, so trimming twice would be two rules for one
+    /// thing.
     func replaceRuntimes(_ runtimes: [AgentRuntimePresentation], kind: AgentKind) {
         runtimesByKind[kind] = runtimes
-        let liveIDs = Set(allRuntimes.map(\.id))
-        viewedRuntimeTokens = viewedRuntimeTokens.filter { liveIDs.contains($0.key) }
-        dismissedRuntimeTokens = dismissedRuntimeTokens.filter { liveIDs.contains($0.key) }
     }
 
     func isViewed(_ runtime: AgentRuntimePresentation) -> Bool {
         viewedRuntimeTokens[runtime.id] == runtime.attentionEventToken
     }
 
-    /// Explicit × or a viewed finished turn past
-    /// `viewedFinishedRetention` — same rule as the pane-keyed variant.
+    /// Explicit × or a viewed finished turn past `viewedFinishedRetention`.
     func isDismissed(_ runtime: AgentRuntimePresentation) -> Bool {
         if dismissedRuntimeTokens[runtime.id] == runtime.attentionEventToken {
             return true
@@ -38,16 +38,6 @@ extension AttentionState {
         return runtime.badge.state == .finished
             && isViewed(runtime)
             && isPastRetention(runtime.badge.updatedAt)
-    }
-
-    func displayPriority(kind: AgentKind, runID: String, badge: AgentBadge) -> Int {
-        guard badge.state == .finished,
-              let runtime = runtimesByKind[kind]?.first(where: { $0.runID == runID })
-        else { return badge.state.priority }
-        if isDismissed(runtime) {
-            return -1
-        }
-        return isViewed(runtime) ? 1 : badge.state.priority
     }
 
     func dismissRuntime(_ id: String) {

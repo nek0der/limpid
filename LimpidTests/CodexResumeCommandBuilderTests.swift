@@ -46,12 +46,13 @@ struct CodexResumeCommandBuilderTests {
     @Test("initialCommand returns the resume chain when Codex session exists")
     func sessionPresent() {
         let paneID = UUID()
-        let tab = Tab(
+        var tab = Tab(
             title: "t",
             splitTree: SplitTree(leafID: paneID),
             container: .loose,
             agentSessions: [.codex: [paneID: AgentSessionInfo(sessionId: "S1", cwd: nil)]]
         )
+        tab.agentResumeCandidates[paneID] = [.codex]
         let cmd = CodexResumeCommandBuilder.initialCommand(for: tab, paneID: paneID)
         #expect(cmd == "codex resume S1 2>/dev/null || codex")
     }

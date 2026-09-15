@@ -399,7 +399,7 @@ final class GhosttyEventCoordinator {
         let owningTab = session.tab(containing: paneID)
 
         // Suppress Claude Code's generic OSC 9 / 777 broadcast when
-        // our agent-state tracker is already publishing an enriched
+        // the agent projection is already publishing an enriched
         // "Claude needs input" notification for this pane (Limpid's
         // banner carries container + permission / question context;
         // the OSC version is just "Claude is waiting for your input"
@@ -490,17 +490,10 @@ final class GhosttyEventCoordinator {
             }
         }
         registry.unregister(paneID)
-        // `closeTab` already forgets every leaf in the collapsing tab,
-        // so only the multi-pane branch needs an explicit sweep here.
-        // Without this, `AttentionState.dismissedAt` / `viewedAt` would
-        // keep entries for paneIDs that no longer exist, defeating the
-        // "don't grow without bound across long sessions" contract on
-        // `forget`.
         if oldLeafCount == 1 {
             session.closeTab(owningTab.id)
             log.notice("CLOSE_SURFACE collapsed tab \(owningTab.id, privacy: .public)")
         } else {
-            attention?.forget(paneID: paneID)
             log.notice("CLOSE_SURFACE removed pane in tab \(owningTab.id, privacy: .public)")
         }
     }

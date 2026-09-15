@@ -133,15 +133,11 @@ enum PaneActions {
             if let z = t.zoomedLeafID, !t.splitTree.contains(leafID: z) {
                 t.zoomedLeafID = nil
             }
-            // Drop every per-pane dictionary entry for the closed
-            // leaf. The resume hints were already swept here; the
-            // others (paneStates, scrollbackPaths, initialCommands,
-            // and the badges) are persisted through `SessionSnapshot`
-            // and used to
-            // accumulate on disk on every ⌘W against a multi-pane
-            // tab. `mergePaneIntoTab` already sweeps the same set on
-            // its leaf-out path — keep the two close-leaf paths
-            // structurally identical.
+            // Drop every per-pane dictionary entry for the closed leaf. All
+            // of them are persisted through `SessionSnapshot`, so a missed
+            // one accumulates on disk on every ⌘W against a multi-pane tab.
+            // `mergePaneIntoTab` sweeps the same set on its leaf-out path;
+            // keep the two close-leaf paths structurally identical.
             for provider in AgentKind.allCases {
                 t.agentSessions[provider]?.removeValue(forKey: leafID)
             }
@@ -156,12 +152,6 @@ enum PaneActions {
         session.paneTransients.removeValue(forKey: leafID)
         registry.unregister(leafID)
         agentProjection?.didClosePane(leafID)
-        // `AttentionState`'s dismiss/viewed dictionaries are pane-id
-        // keyed and session-scoped. `TabActions.closeTab` already
-        // forgets every leaf in the closing tab; the close-split
-        // path must mirror that or the entries leak across the
-        // session for every ⌘W against a multi-pane tab.
-        attention?.forget(paneID: leafID)
         // If the tab is now empty, close it altogether.
         if let refreshed = session.activeTab, refreshed.splitTree.isEmpty {
             session.closeTab(refreshed.id)

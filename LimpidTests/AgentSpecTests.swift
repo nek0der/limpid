@@ -8,173 +8,35 @@ import Testing
 @MainActor
 struct AgentSpecTests {
 
-    // MARK: - CodexAgent.shouldResume priority gate
+    // MARK: - Resume follows the projection's candidates
 
-    @Test("CodexAgent skips auto-resume when a live Claude session shares the pane")
-    func codex_shouldResume_defersToClaude() {
+    @Test("a provider resumes only when the projection named it for the pane")
+    func resume_followsTheProjectionCandidates() {
         let paneID = UUID()
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
         tab.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
         tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
 
-        #expect(CodexAgent.shouldResume(in: tab, paneID: paneID) == false)
+        // Both hints are there, but which one resumes is the rules' answer,
+        // not something this side works out from the hints again.
+        tab.agentResumeCandidates[paneID] = [.claude]
+        #expect(ClaudeResumeCommandBuilder.initialCommand(for: tab, paneID: paneID) != nil)
+        #expect(CodexResumeCommandBuilder.initialCommand(for: tab, paneID: paneID) == nil)
+
+        tab.agentResumeCandidates[paneID] = [.codex]
+        #expect(ClaudeResumeCommandBuilder.initialCommand(for: tab, paneID: paneID) == nil)
+        #expect(CodexResumeCommandBuilder.initialCommand(for: tab, paneID: paneID) != nil)
     }
 
-    @Test("CodexAgent resumes when no Claude session is present on the pane")
-    func codex_shouldResume_noClaude_returnsTrue() {
+    @Test("a hint without a candidate does not resume")
+    func resume_withoutACandidate_doesNothing() {
+        // Before the first pass has answered, or after the rules withheld the
+        // pane, a hint alone is not permission to start an agent.
         let paneID = UUID()
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
         tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
 
-        #expect(CodexAgent.shouldResume(in: tab, paneID: paneID) == true)
-    }
-
-    @Test("CodexAgent treats an empty Claude sessionId as no Claude session")
-    func codex_shouldResume_emptyClaudeId_returnsTrue() {
-        let paneID = UUID()
-        var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
-        tab.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(sessionId: "", cwd: nil)
-        tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
-
-        #expect(CodexAgent.shouldResume(in: tab, paneID: paneID) == true)
-    }
-
-    @Test("ClaudeAgent always resumes (default protocol conformance)")
-    func claude_shouldResume_alwaysTrue() {
-        let paneID = UUID()
-        var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
-        // Even with a competing Codex session, Claude wins.
-        tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
-        tab.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
-
-        #expect(ClaudeAgent.shouldResume(in: tab, paneID: paneID) == true)
-    }
-
-    // MARK: - CodexAgent.applyTabTitle firstPrompt → tab.title
-
-    @Test("CodexAgent.applyTabTitle writes the firstPrompt of the latest session owner")
-    func codex_applyTabTitle_setsTitleFromOwner() {
-        var (tab, pane) = Tab.newWithSinglePane(title: "old", container: .loose)
-        let sessionStart = Date(timeIntervalSince1970: 100)
-        let badge = AgentBadge(
-            state: .running,
-            detail: nil,
-            runStartedAt: nil,
-            contextTokens: nil,
-            updatedAt: sessionStart,
-            lastPrompt: nil,
-            firstPrompt: "What's the dance behind quicksort?",
-            sessionStartedAt: sessionStart
-        )
-        tab.agentBadges[.codex, default: [:]][pane] = badge
-
-        CodexAgent.applyTabTitle(&tab, badges: tab.agentBadges[.codex] ?? [:])
-
-        #expect(tab.title == "What's the dance behind quicksort?")
-    }
-
-    @Test("CodexAgent.applyTabTitle is a no-op when the firstPrompt is blank")
-    func codex_applyTabTitle_skipsBlankPrompt() {
-        var (tab, pane) = Tab.newWithSinglePane(title: "kept", container: .loose)
-        let badge = AgentBadge(
-            state: .running,
-            detail: nil,
-            runStartedAt: nil,
-            contextTokens: nil,
-            updatedAt: Date(timeIntervalSince1970: 100),
-            lastPrompt: nil,
-            firstPrompt: " \n\t ",
-            sessionStartedAt: Date(timeIntervalSince1970: 100)
-        )
-        tab.agentBadges[.codex, default: [:]][pane] = badge
-
-        CodexAgent.applyTabTitle(&tab, badges: tab.agentBadges[.codex] ?? [:])
-
-        #expect(tab.title == "kept")
-    }
-
-    @Test("CodexAgent.applyTabTitle normalizes unsafe and multiline input through Rust")
-    func codex_applyTabTitle_normalizesThroughRust() {
-        var (tab, pane) = Tab.newWithSinglePane(title: "old", container: .loose)
-        let badge = AgentBadge(
-            state: .running,
-            detail: nil,
-            runStartedAt: nil,
-            contextTokens: nil,
-            updatedAt: Date(timeIntervalSince1970: 100),
-            lastPrompt: nil,
-            firstPrompt: "  Safe\u{202E}\n\t title\u{200B}  ",
-            sessionStartedAt: Date(timeIntervalSince1970: 100)
-        )
-        tab.agentBadges[.codex, default: [:]][pane] = badge
-
-        CodexAgent.applyTabTitle(&tab, badges: tab.agentBadges[.codex] ?? [:])
-
-        #expect(tab.title == "Safe title")
-    }
-
-    @Test("CodexAgent.applyTabTitle bounds a long opening prompt through Rust")
-    func codex_applyTabTitle_boundsLongPromptThroughRust() {
-        var (tab, pane) = Tab.newWithSinglePane(title: "old", container: .loose)
-        let badge = AgentBadge(
-            state: .running,
-            detail: nil,
-            runStartedAt: nil,
-            contextTokens: nil,
-            updatedAt: Date(timeIntervalSince1970: 100),
-            lastPrompt: nil,
-            firstPrompt: String(repeating: "あ", count: 1400),
-            sessionStartedAt: Date(timeIntervalSince1970: 100)
-        )
-        tab.agentBadges[.codex, default: [:]][pane] = badge
-
-        CodexAgent.applyTabTitle(&tab, badges: tab.agentBadges[.codex] ?? [:])
-
-        #expect(tab.title == String(repeating: "あ", count: 1365))
-    }
-
-    @Test("ClaudeAgent.applyTabTitle uses the formal title of the latest session owner")
-    func claude_applyTabTitle_usesFormalTitle() {
-        var (tab, pane) = Tab.newWithSinglePane(title: "kept", container: .loose)
-        let badge = AgentBadge(
-            state: .running,
-            detail: nil,
-            runStartedAt: nil,
-            contextTokens: nil,
-            updatedAt: Date(timeIntervalSince1970: 100),
-            lastPrompt: nil,
-            firstPrompt: "Opening prompt",
-            conversationID: "session-1",
-            providerSessionTitle: "Formal title",
-            providerGeneratedTitle: "Generated title",
-            sessionStartedAt: Date(timeIntervalSince1970: 100)
-        )
-        tab.agentBadges[.claude, default: [:]][pane] = badge
-
-        ClaudeAgent.applyTabTitle(&tab, badges: tab.agentBadges[.claude] ?? [:])
-
-        #expect(tab.title == "Formal title")
-    }
-
-    @Test("ClaudeAgent.applyTabTitle does not use a title without conversation identity")
-    func claude_applyTabTitle_requiresConversationIdentity() {
-        var (tab, pane) = Tab.newWithSinglePane(title: "kept", container: .loose)
-        let badge = AgentBadge(
-            state: .running,
-            detail: nil,
-            runStartedAt: nil,
-            contextTokens: nil,
-            updatedAt: Date(timeIntervalSince1970: 100),
-            lastPrompt: nil,
-            firstPrompt: "Opening prompt",
-            providerSessionTitle: "Formal title",
-            sessionStartedAt: Date(timeIntervalSince1970: 100)
-        )
-        tab.agentBadges[.claude, default: [:]][pane] = badge
-
-        ClaudeAgent.applyTabTitle(&tab, badges: tab.agentBadges[.claude] ?? [:])
-
-        #expect(tab.title == "kept")
+        #expect(CodexResumeCommandBuilder.initialCommand(for: tab, paneID: paneID) == nil)
     }
 
     // MARK: - AgentResumeCommandBuilder priority gate
@@ -185,6 +47,8 @@ struct AgentSpecTests {
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
         tab.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
         tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
+        // What the projection answers for a pane with both hints.
+        tab.agentResumeCandidates[paneID] = [.claude]
 
         let command = AgentResumeCommandBuilder<CodexAgent>.initialCommand(
             for: tab,
@@ -198,6 +62,7 @@ struct AgentSpecTests {
         let paneID = UUID()
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
         tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
+        tab.agentResumeCandidates[paneID] = [.codex]
 
         let command = AgentResumeCommandBuilder<CodexAgent>.initialCommand(
             for: tab,
@@ -212,6 +77,7 @@ struct AgentSpecTests {
         var (tab, _) = Tab.newWithSinglePane(title: "scratch", container: .loose)
         tab.agentSessions[.codex, default: [:]][paneID] = AgentSessionInfo(sessionId: "codex-1", cwd: nil)
         tab.agentSessions[.claude, default: [:]][paneID] = AgentSessionInfo(sessionId: "claude-1", cwd: nil)
+        tab.agentResumeCandidates[paneID] = [.claude]
 
         let command = AgentResumeCommandBuilder<ClaudeAgent>.initialCommand(
             for: tab,

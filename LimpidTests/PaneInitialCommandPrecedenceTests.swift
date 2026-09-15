@@ -65,6 +65,7 @@ struct PaneInitialCommandPrecedenceTests {
     func noBinding_fallsThroughToAgentResume() throws {
         var tab = tab()
         tab.agentSessions[.claude, default: [:]][pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
+        tab.agentResumeCandidates[pane] = [.claude]
         let command = try #require(PaneHostRepresentable.resolveInitialCommand(tab: tab, paneID: pane))
         #expect(!command.hasPrefix("tmux -S "))
     }

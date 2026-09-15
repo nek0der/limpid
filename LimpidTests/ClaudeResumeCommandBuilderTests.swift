@@ -57,6 +57,7 @@ struct ClaudeResumeCommandBuilderTests {
                 sessionId: "sess-1",
                 cwd: "/tmp/repo"
             )
+            $0.agentResumeCandidates[paneID] = [.claude]
         }
         let tab = try #require(session.tab(tabID))
 
@@ -80,6 +81,7 @@ struct ClaudeResumeCommandBuilderTests {
             // deterministic regardless of insert ordering.
             let other = leaves.first { $0 != firstPaneID }!
             $0.agentSessions[.claude, default: [:]][firstPaneID] = ClaudeSessionInfo(sessionId: "first", cwd: nil)
+            $0.agentResumeCandidates[firstPaneID] = [.claude]
             // Re-attach our local handle to whatever the tree actually used.
             _ = other
         }
