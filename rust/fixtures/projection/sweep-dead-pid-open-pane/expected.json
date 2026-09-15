@@ -148,21 +148,6 @@
     },
     {
       "op": {
-        "op": "pruneRetired",
-        "max": 200,
-        "lifetimeSecs": 604800
-      },
-      "target": {
-        "target": "retiredRecords",
-        "provider": "codex"
-      },
-      "expect": {
-        "expect": "none"
-      },
-      "onMismatch": "abort"
-    },
-    {
-      "op": {
         "op": "cleanupPaneStore",
         "keep": [
           "33333333-3333-4333-8333-333333333333"
