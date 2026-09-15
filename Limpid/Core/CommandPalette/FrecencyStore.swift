@@ -21,6 +21,21 @@ final class FrecencyStore {
     private static let halfLifeSeconds: Double = 259_200
     private static let decayFactor: Double = 0.693 / halfLifeSeconds
 
+    /// Entries untouched for this long are dropped on load and before
+    /// each write. Against a 3-day half-life a 30-day-old entry keeps
+    /// roughly 0.1% of its recency weight, so dropping it cannot move a
+    /// ranking.
+    ///
+    /// This is eviction, not tidiness. Keys are per-object identities
+    /// (`tab.<uuid>`, `worktree.<projectID>.<worktreeID>`, `reopen.<uuid>`,
+    /// …), and closing a tab or deleting a worktree does not remove the
+    /// row — nothing did. The map is also persisted and reloaded every
+    /// launch, so without an age bound both `frecency.json` and the
+    /// in-memory dictionary grow for the life of the install. Aging it
+    /// out here keeps the bound inside the store, so call sites that
+    /// destroy objects do not each have to remember to clean up.
+    private static let entryLifetime: TimeInterval = 30 * 24 * 60 * 60
+
     private(set) var entries: [String: Entry] = [:]
     private let fileURL: URL
     private var pendingSave: DispatchWorkItem?
@@ -63,6 +78,7 @@ final class FrecencyStore {
     func flushSynchronously() {
         pendingSave?.cancel()
         pendingSave = nil
+        pruneExpired()
         let snapshot = entries
         let url = fileURL
         saveQueue.sync {
@@ -75,13 +91,23 @@ final class FrecencyStore {
         do {
             let decoder = PersistenceCoders.makeDecoder()
             entries = try decoder.decode([String: Entry].self, from: data)
+            pruneExpired()
         } catch {
             log.error("failed to decode frecency.json: \(String(describing: error), privacy: .public)")
         }
     }
 
+    /// Drop entries whose recency weight has decayed to nothing. Runs on
+    /// load and before each write, which is often enough to bound the map
+    /// and rare enough that the O(n) pass does not matter.
+    private func pruneExpired(now: Date = .now) {
+        let cutoff = now.addingTimeInterval(-Self.entryLifetime)
+        entries = entries.filter { $0.value.lastUsed > cutoff }
+    }
+
     private func scheduleSave() {
         pendingSave?.cancel()
+        pruneExpired()
         let snapshot = entries
         let url = fileURL
         let work = DispatchWorkItem { [saveQueue] in
