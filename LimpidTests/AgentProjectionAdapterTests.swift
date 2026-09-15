@@ -183,4 +183,40 @@ struct AgentProjectionAdapterTests {
             #expect(left == planted, "left: \(left.sorted())")
         }
     }
+
+    @Test("watching a fresh install creates the directories the hooks write into")
+    func startWatching_createsTheDirectoriesThatDoNotExistYet() throws {
+        try withTempDir { root in
+            // Nothing has run an agent on this machine yet, so none of the
+            // record directories are there to open a descriptor on.
+            let state = root.appendingPathComponent("codex-agent-states", isDirectory: true)
+            let sessions = root.appendingPathComponent("codex-sessions", isDirectory: true)
+            // Kept out of the provider's state directory so the store's own
+            // setup does not create it before the watcher gets there.
+            let adapter = ProjectionFixture.adapter(
+                state: state,
+                sessions: sessions,
+                resumeIntents: AgentResumeIntentStore(
+                    directory: root.appendingPathComponent("resume-intents", isDirectory: true)
+                )
+            )
+            #expect(!FileManager.default.fileExists(atPath: state.path))
+
+            adapter.startWatching()
+            defer { adapter.stopWatching() }
+
+            for directory in [
+                state,
+                sessions,
+                state.appendingPathComponent("worktree-events", isDirectory: true)
+            ] {
+                var isDirectory: ObjCBool = false
+                let exists = FileManager.default.fileExists(
+                    atPath: directory.path,
+                    isDirectory: &isDirectory
+                )
+                #expect(exists && isDirectory.boolValue, "missing: \(directory.path)")
+            }
+        }
+    }
 }

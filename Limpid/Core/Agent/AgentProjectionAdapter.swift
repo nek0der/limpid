@@ -60,12 +60,21 @@ final class AgentProjectionAdapter {
     /// directories through the designated initializer instead.
     convenience init() {
         let root = LimpidPaths.applicationSupportDirectory()
-        self.init(
-            directories: AgentProviderRegistry.directories(under: root),
-            descriptors: AgentProviderRegistry.descriptors,
-            resumeIntents: AgentResumeIntentStore(
-                directory: root.appendingPathComponent("resume-intents", isDirectory: true)
+        let directories = AgentProviderRegistry.directories(under: root)
+        let resumeIntents = AgentResumeIntentStore(
+            directory: root.appendingPathComponent("resume-intents", isDirectory: true)
+        )
+        // The intents an earlier build wrote under each provider's state
+        // directory, before they were shared.
+        for directory in directories.values {
+            resumeIntents.adoptLegacyIntents(
+                from: directory.state.appendingPathComponent("resume-intents", isDirectory: true)
             )
+        }
+        self.init(
+            directories: directories,
+            descriptors: AgentProviderRegistry.descriptors,
+            resumeIntents: resumeIntents
         )
     }
 
@@ -201,11 +210,17 @@ final class AgentProjectionAdapter {
     }
 
     private func watch(_ directory: URL) -> (any DispatchSourceFileSystemObject)? {
+        // Created here rather than waited for: on a fresh install nothing has
+        // written a record yet, and a descriptor cannot be opened on a
+        // directory that does not exist, so the first run of an agent would
+        // otherwise go unwatched until the next launch.
+        SecureFileWrite.ensureUserOnlyDirectory(directory)
         let descriptor = open(directory.path, O_EVTONLY)
         guard descriptor >= 0 else {
-            // A directory the hooks have not created yet is not an error; the
-            // next launch watches it once something has written there.
-            log.debug("cannot watch \(directory.path, privacy: .public): errno=\(errno)")
+            // We just tried to create it, so this is a directory we cannot
+            // have: the volume is read-only, or the sandbox refused. Nothing
+            // here can fix that, and the pass still reads what it can.
+            log.error("cannot watch \(directory.path, privacy: .public): errno=\(errno)")
             return nil
         }
         let source = DispatchSource.makeFileSystemObjectSource(

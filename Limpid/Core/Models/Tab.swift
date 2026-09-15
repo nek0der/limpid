@@ -85,15 +85,23 @@ struct Tab: Codable, Equatable, Identifiable {
     ///
     /// One dictionary per provider rather than a field per provider: adding a
     /// provider is a Rust crate, and nothing about this type should have to
-    /// change for it. The projection reconciles both maps with the on-disk
-    /// records on every pass, so a key this build does not recognize is
-    /// simply not read.
+    /// change for it. On disk the map is an object keyed by provider id, and
+    /// a key this build does not recognize is skipped on the way in: the
+    /// projection reconciles both maps with the records on every pass, so
+    /// nothing is lost by not reading it, whereas failing would drop the tab.
     var agentSessions: [AgentKind: [UUID: AgentSessionInfo]] = [:]
 
     /// Per-pane lifecycle badges, by provider, on the same terms. Mirrors the
     /// state records the selected receiver writes on every subscribed event;
     /// `TabRow` / `ContainerRow` aggregate them for the status icons.
     var agentBadges: [AgentKind: [UUID: AgentBadge]] = [:]
+
+    /// Which providers may auto-resume in each pane, as the projection decided
+    /// on its last pass. A pane with hints from two providers resumes only the
+    /// one the rules picked, so two agents do not fight over one terminal.
+    /// Not persisted: the first pass after launch runs before any surface
+    /// mounts, and the answer depends on the hints on disk, not on the tab.
+    var agentResumeCandidates: [UUID: Set<AgentKind>] = [:]
 
     /// Which tmux session each pane was showing when Limpid last quit,
     /// read off the pane's tty rather than reported by the shell. A pane
@@ -160,6 +168,39 @@ struct Tab: Codable, Equatable, Identifiable {
         return merged
     }
 
+    /// Reads a provider-keyed map, keeping only the providers this build has.
+    ///
+    /// The map is an object keyed by provider id. `AgentKind` is not a coding
+    /// key, so reading it as `[AgentKind: _]` would both take the array shape
+    /// Swift gives a non-string key and fail on a provider id this build does
+    /// not know, which is exactly the file a newer build leaves behind. A
+    /// build before the object shape wrote that array; it was never released,
+    /// but a machine that ran it must still restore, so the array is read too.
+    private static func decodeByProvider<Value: Decodable>(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) throws -> [AgentKind: [UUID: Value]]? {
+        guard container.contains(key) else { return nil }
+        do {
+            let raw = try container.decode([String: [UUID: Value]].self, forKey: key)
+            var known: [AgentKind: [UUID: Value]] = [:]
+            for (name, entries) in raw {
+                if let kind = AgentKind(rawValue: name) {
+                    known[kind] = entries
+                }
+            }
+            return known
+        } catch DecodingError.typeMismatch {
+            return try container.decode([AgentKind: [UUID: Value]].self, forKey: key)
+        }
+    }
+
+    private static func encodedByProvider<Value>(
+        _ map: [AgentKind: [UUID: Value]]
+    ) -> [String: [UUID: Value]] {
+        Dictionary(uniqueKeysWithValues: map.map { ($0.key.rawValue, $0.value) })
+    }
+
     /// Custom decoding so a `state.json` written by an older build keeps
     /// decoding instead of throwing `keyNotFound`: every field that has not
     /// always been present is read with a default, and the two agent maps are
@@ -184,20 +225,16 @@ struct Tab: Codable, Equatable, Identifiable {
         // A file written before the two maps existed keeps one field per
         // provider. Both are read so an upgrade does not blank the badges and
         // hints the interface is about to draw; only the new shape is written.
-        self.agentSessions = try c.decodeIfPresent(
-            [AgentKind: [UUID: AgentSessionInfo]].self,
-            forKey: .agentSessions
-        ) ?? Self.legacyByProvider(
-            claude: c.decodeIfPresent([UUID: AgentSessionInfo].self, forKey: .claudeSessions),
-            codex: c.decodeIfPresent([UUID: AgentSessionInfo].self, forKey: .codexSessions)
-        )
-        self.agentBadges = try c.decodeIfPresent(
-            [AgentKind: [UUID: AgentBadge]].self,
-            forKey: .agentBadges
-        ) ?? Self.legacyByProvider(
-            claude: c.decodeIfPresent([UUID: AgentBadge].self, forKey: .claudeAgentBadges),
-            codex: c.decodeIfPresent([UUID: AgentBadge].self, forKey: .codexAgentBadges)
-        )
+        self.agentSessions = try Self.decodeByProvider(c, forKey: .agentSessions)
+            ?? Self.legacyByProvider(
+                claude: c.decodeIfPresent([UUID: AgentSessionInfo].self, forKey: .claudeSessions),
+                codex: c.decodeIfPresent([UUID: AgentSessionInfo].self, forKey: .codexSessions)
+            )
+        self.agentBadges = try Self.decodeByProvider(c, forKey: .agentBadges)
+            ?? Self.legacyByProvider(
+                claude: c.decodeIfPresent([UUID: AgentBadge].self, forKey: .claudeAgentBadges),
+                codex: c.decodeIfPresent([UUID: AgentBadge].self, forKey: .codexAgentBadges)
+            )
         self.tmuxBindings = try c.decodeIfPresent(
             [UUID: TmuxBinding].self,
             forKey: .tmuxBindings
@@ -230,8 +267,8 @@ struct Tab: Codable, Equatable, Identifiable {
         try c.encode(scrollbackPaths, forKey: .scrollbackPaths)
         try c.encode(initialCommands, forKey: .initialCommands)
         try c.encode(container, forKey: .container)
-        try c.encode(agentSessions, forKey: .agentSessions)
-        try c.encode(agentBadges, forKey: .agentBadges)
+        try c.encode(Self.encodedByProvider(agentSessions), forKey: .agentSessions)
+        try c.encode(Self.encodedByProvider(agentBadges), forKey: .agentBadges)
         try c.encode(tmuxBindings, forKey: .tmuxBindings)
     }
 

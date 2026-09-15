@@ -2,6 +2,9 @@
 // Limpid — independent one-shot protection for direct agents killed at quit.
 
 import Foundation
+import OSLog
+
+private let log = Logger.limpid("agent.resume.intents")
 
 struct AgentResumeIntent: Codable {
     let runID: String
@@ -48,6 +51,38 @@ final class AgentResumeIntentStore {
                 return nil
             }
             return try? PersistenceCoders.makeDecoder().decode(AgentResumeIntent.self, from: data)
+        }
+    }
+
+    /// Takes over the intents an earlier build left under `legacy`.
+    ///
+    /// Intents used to live under each provider's state directory, but an
+    /// intent is not provider-scoped — it names a run, a pane and a pid — so
+    /// they moved to one shared directory. Without this, the first launch
+    /// after the move would find no intent for any run Limpid killed at the
+    /// previous quit and retire every one of them as an orphan, which is the
+    /// restore the user was promised silently not happening.
+    ///
+    /// An intent already present here wins: it was written by this build, so
+    /// it describes the run more recently than the file left behind. Failures
+    /// are logged rather than thrown, because a migration that cannot run
+    /// costs a restore, and refusing to launch costs more.
+    func adoptLegacyIntents(from legacy: URL) {
+        let fileManager = FileManager.default
+        guard let names = try? fileManager.contentsOfDirectory(atPath: legacy.path) else { return }
+        for name in names.sorted() where name.hasSuffix(".json") && !name.hasPrefix(".") {
+            let target = directory.appendingPathComponent(name)
+            guard !fileManager.fileExists(atPath: target.path) else { continue }
+            do {
+                try fileManager.moveItem(at: legacy.appendingPathComponent(name), to: target)
+            } catch {
+                log.error("adopt intent \(name, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
+        }
+        // Only when nothing is left: anything we could not move is still
+        // someone's evidence, and a later launch can try again.
+        if let remaining = try? fileManager.contentsOfDirectory(atPath: legacy.path), remaining.isEmpty {
+            try? fileManager.removeItem(at: legacy)
         }
     }
 
