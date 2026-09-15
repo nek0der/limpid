@@ -556,8 +556,10 @@ final class AgentProjectionAdapter {
         }
         // The rules trimmed the marks to the runs that still exist; what they
         // handed back is the whole of what the interface keeps.
-        attention?.viewedRuntimeTokens = projection.marksToKeep.viewed
-        attention?.dismissedRuntimeTokens = projection.marksToKeep.dismissed
+        attention?.replaceMarks(
+            viewed: projection.marksToKeep.viewed,
+            dismissed: projection.marksToKeep.dismissed
+        )
 
         let badgesByPane = projection.badgesByPane
         let sessionsByPane = projection.sessionsByPane

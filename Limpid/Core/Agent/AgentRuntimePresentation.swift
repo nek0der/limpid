@@ -3,7 +3,7 @@
 
 import Foundation
 
-struct AgentRuntimePresentation {
+struct AgentRuntimePresentation: Equatable {
     let kind: AgentKind
     let runID: String
     let revision: Int?

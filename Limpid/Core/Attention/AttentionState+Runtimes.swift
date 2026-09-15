@@ -20,10 +20,31 @@ extension AttentionState {
 
     /// Replaces one provider's runtimes. The marks are not trimmed here: the
     /// projection returns the set that still applies with every pass, and the
-    /// adapter writes that back, so trimming twice would be two rules for one
-    /// thing.
+    /// adapter writes that back through `replaceMarks`, so trimming twice
+    /// would be two rules for one thing.
+    ///
+    /// Skipped when nothing changed. `@Observable` reports every write as a
+    /// change whether or not the value moved, and every sidebar and tab
+    /// column row derives its badge from this dictionary, so a pass that
+    /// found the same runtimes as the last one would otherwise re-render all
+    /// of them. The key is still created on the first write: an empty list
+    /// and a provider that has never been projected are different answers
+    /// to the review surface.
     func replaceRuntimes(_ runtimes: [AgentRuntimePresentation], kind: AgentKind) {
+        guard runtimesByKind[kind] != runtimes else { return }
         runtimesByKind[kind] = runtimes
+    }
+
+    /// Replaces the marks with the set the projection says still applies.
+    /// Guarded for the same reason as `replaceRuntimes`: the Waiting list
+    /// and the notification history read both dictionaries.
+    func replaceMarks(viewed: [String: String], dismissed: [String: String]) {
+        if viewedRuntimeTokens != viewed {
+            viewedRuntimeTokens = viewed
+        }
+        if dismissedRuntimeTokens != dismissed {
+            dismissedRuntimeTokens = dismissed
+        }
     }
 
     func isViewed(_ runtime: AgentRuntimePresentation) -> Bool {
