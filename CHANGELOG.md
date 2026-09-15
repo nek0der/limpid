@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.7](https://github.com/nek0der/limpid/compare/v0.1.6...v0.1.7) (2026-09-15)
+
+
+### Features
+
+* **agent:** move the agent lifecycle projection to Rust ([#71](https://github.com/nek0der/limpid/issues/71)) ([1b19655](https://github.com/nek0der/limpid/commit/1b196554fc8d967ada27f89650bf5afc9ab9840e))
+
+
+### Bug Fixes
+
+* **palette:** evict frecency entries that have decayed to nothing ([#75](https://github.com/nek0der/limpid/issues/75)) ([fa9e2d9](https://github.com/nek0der/limpid/commit/fa9e2d9f24259fa3f98aed2b0fc9fafb32e281e1))
+
+
+### Performance
+
+* **agent:** stop idle wakeups and redundant sidebar work ([#74](https://github.com/nek0der/limpid/issues/74)) ([1f9e8cf](https://github.com/nek0der/limpid/commit/1f9e8cf8f2c82752a2cb1db702b23931b735286e))
+
+
+### Documentation
+
+* **ghostty:** add libghostty fork maintenance rules ([#76](https://github.com/nek0der/limpid/issues/76)) ([558d98c](https://github.com/nek0der/limpid/commit/558d98c5ccf95d35b648f9d364543e93fc4f6601))
+
 ## [0.1.6](https://github.com/nek0der/limpid/compare/v0.1.5...v0.1.6) (2026-09-14)
 
 
