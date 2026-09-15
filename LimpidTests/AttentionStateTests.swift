@@ -345,7 +345,7 @@ struct AttentionStateTests {
         _ = paneWithBadge(session, attention, .running, at: 200)
         attention.focusMoved(to: done, in: session)
 
-        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        let summary = attention.agentStateReport(in: .loose, session: session).summary
         #expect(summary == AgentStateSummary(state: .running, isViewedFinished: false))
     }
 
@@ -357,7 +357,7 @@ struct AttentionStateTests {
         _ = paneWithBadge(session, attention, .finished, at: 100)
         _ = paneWithBadge(session, attention, .running, at: 200)
 
-        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        let summary = attention.agentStateReport(in: .loose, session: session).summary
         #expect(summary == AgentStateSummary(state: .finished, isViewedFinished: false))
     }
 
@@ -368,7 +368,7 @@ struct AttentionStateTests {
         let done = paneWithBadge(session, attention, .finished, at: 100)
         attention.focusMoved(to: done, in: session)
 
-        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        let summary = attention.agentStateReport(in: .loose, session: session).summary
         #expect(summary == AgentStateSummary(state: .finished, isViewedFinished: true))
     }
 
@@ -383,8 +383,53 @@ struct AttentionStateTests {
         _ = paneWithBadge(session, attention, .error, at: 300)
         attention.focusMoved(to: done, in: session)
 
-        let summary = attention.aggregateAgentStateSummary(in: .loose, session: session)
+        let summary = attention.agentStateReport(in: .loose, session: session).summary
         #expect(summary == AgentStateSummary(state: .error, isViewedFinished: false))
+    }
+
+    // MARK: - Observation hygiene
+
+    @Test func replaceRuntimes_identicalPass_doesNotNotifyObservers() {
+        // Every sidebar and tab column row derives its badge from the
+        // runtimes, so a pass that found nothing new must not invalidate
+        // them. `@Observable` reports every write, so the store has to
+        // decline the write itself.
+        let session = WindowSession()
+        let attention = makeAttention()
+        let paneID = paneWithBadge(session, attention, .running, at: 100)
+        let same = attention.runtimesByKind[.claude] ?? []
+
+        let notified = NotificationFlag()
+        withObservationTracking {
+            _ = attention.runtimesByKind
+            _ = attention.viewedRuntimeTokens
+            _ = attention.dismissedRuntimeTokens
+        } onChange: {
+            notified.fire()
+        }
+        attention.replaceRuntimes(same, kind: .claude)
+        attention.replaceMarks(
+            viewed: attention.viewedRuntimeTokens,
+            dismissed: attention.dismissedRuntimeTokens
+        )
+        #expect(!notified.didFire)
+
+        // Control: a genuinely different pass must still notify, so the
+        // assertion above cannot pass by the tracking being dead.
+        setBadge(session, attention, paneID: paneID, .finished, at: 200)
+        #expect(notified.didFire)
+    }
+
+    @Test func replaceRuntimes_firstPass_createsTheKeyEvenWhenEmpty() {
+        // The review surface tells "no runs" from "never projected" by
+        // whether the provider's key exists, so the guard must not swallow
+        // the first, empty write.
+        let attention = makeAttention()
+        #expect(attention.runtimesByKind[.codex] == nil)
+
+        attention.replaceRuntimes([], kind: .codex)
+
+        #expect(attention.runtimesByKind[.codex] != nil)
     }
 
     @Test func viewedFinishedPresentation_usesAcknowledgedCheck() {

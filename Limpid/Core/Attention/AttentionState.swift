@@ -19,6 +19,13 @@ struct AgentStateSummary: Equatable {
     let isViewedFinished: Bool
 }
 
+/// What a container row shows for the agents inside it: the one badge that
+/// stands for all of them, and how many are in each state.
+struct AgentStateReport: Equatable {
+    let summary: AgentStateSummary?
+    let breakdown: [AgentState: Int]
+}
+
 @MainActor
 @Observable
 final class AttentionState {
@@ -147,36 +154,30 @@ extension AttentionState {
         Self.aggregateDemotingViewed(allAgentStates(in: tab))
     }
 
-    /// Aggregate summary across every tab in the given container.
-    func aggregateAgentStateSummary(in container: ContainerID, session: WindowSession) -> AgentStateSummary? {
-        Self.aggregateDemotingViewed(scopeAgentStates(across: session.tabs(in: container)))
+    /// Summary and per-state counts across every tab in the given container.
+    ///
+    /// One walk of the runtimes for both, because a container row shows
+    /// both. Asking for them through two calls walked the same tabs twice
+    /// for every row on every render.
+    func agentStateReport(in container: ContainerID, session: WindowSession) -> AgentStateReport {
+        Self.report(scopeAgentStates(across: session.tabs(in: container)))
     }
 
-    /// Aggregate summary across project-direct + every worktree inside the project.
-    func aggregateAgentStateSummaryInProject(_ projectID: UUID, session: WindowSession) -> AgentStateSummary? {
-        Self.aggregateDemotingViewed(
-            scopeAgentStates(across: session.tabs.filter { $0.container.projectID == projectID })
-        )
+    /// The same across project-direct + every worktree inside the project.
+    func agentStateReportInProject(_ projectID: UUID, session: WindowSession) -> AgentStateReport {
+        Self.report(scopeAgentStates(across: session.tabs.filter { $0.container.projectID == projectID }))
     }
 
-    /// Count invocations, not copies of them on multiple client surfaces.
-    func agentStateBreakdown(in container: ContainerID, session: WindowSession) -> [AgentState: Int] {
-        var out: [AgentState: Int] = [:]
-        for entry in scopeAgentStates(across: session.tabs(in: container)) {
-            out[entry.state, default: 0] += 1
+    /// Counts invocations, not copies of them on multiple client surfaces:
+    /// `scopeAgentStates` has already folded a tmux run shown in several
+    /// panes into one entry.
+    private static func report(_ states: [PaneAgentState]) -> AgentStateReport {
+        var breakdown: [AgentState: Int] = [:]
+        for entry in states {
+            breakdown[entry.state, default: 0] += 1
         }
-        return out
+        return AgentStateReport(summary: aggregateDemotingViewed(states), breakdown: breakdown)
     }
-
-    /// Same as the container variant but keyed off `Project.id`.
-    func agentStateBreakdownInProject(_ projectID: UUID, session: WindowSession) -> [AgentState: Int] {
-        var out: [AgentState: Int] = [:]
-        for entry in scopeAgentStates(across: session.tabs.filter { $0.container.projectID == projectID }) {
-            out[entry.state, default: 0] += 1
-        }
-        return out
-    }
-
 }
 
 // MARK: - Attention list + cursor

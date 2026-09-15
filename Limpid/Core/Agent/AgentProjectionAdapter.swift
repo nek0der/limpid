@@ -45,6 +45,15 @@ final class AgentProjectionAdapter {
     /// descriptor it was opened with; see `watch(_:)`.
     private nonisolated(unsafe) var sources: [any DispatchSourceFileSystemObject] = []
     private nonisolated(unsafe) var sweep: Timer?
+    private var isWatching = false
+    /// The cadence the sweep runs at, or nil while no provider has a record.
+    /// Recomputed on every pass so it follows the records. A record with no
+    /// process to ask about, such as a tmux-hosted run, still keeps the
+    /// sweep going: its presence is re-read on the same pass.
+    private(set) var sweepInterval: TimeInterval?
+    /// Between the file events and `refresh()`, so a hook write that fans out
+    /// into several events costs one pass now and at most one more later.
+    private lazy var watcherPasses = AgentPassCoalescer { [weak self] in self?.refresh() }
     /// Why the last pass could not run, if it could not. Kept because a pass
     /// that fails changes nothing visible, so without this the only evidence
     /// is a log line nobody is watching.
@@ -158,15 +167,45 @@ final class AgentProjectionAdapter {
             guard let source = watch(directory) else { continue }
             sources.append(source)
         }
+        isWatching = true
+        rearmSweep()
+    }
 
-        // Providers disagree about how quickly a dead process matters: one
-        // reports its own exit, another does not, so its records would sit
-        // there until something asked. The shortest declared interval wins,
-        // because a sweep costs one pass and asking too rarely shows a badge
-        // for a session that has gone.
-        let seconds = descriptors.values
-            .map { Double($0.pidSweepIntervalMs) / 1000 }
-            .min() ?? 30
+    /// Picks the sweep cadence from the records the pass just read.
+    ///
+    /// Providers disagree about how quickly a dead process matters: one
+    /// reports its own exit, another does not, so its records would sit
+    /// there until something asked. The shortest interval among the
+    /// providers that currently have records wins, because a sweep costs one
+    /// pass and asking too rarely shows a badge for a session that has gone.
+    /// A provider with no records has nothing a sweep could find, so it does
+    /// not set the pace; with no records at all the timer stops, and the file
+    /// event that announces the next record starts it again. Before this,
+    /// the fastest provider's three seconds applied all day whether or not
+    /// it had ever run.
+    private func stepSweep(for input: AgentProjectionInput) {
+        let present = Set(input.records.map(\.provider))
+        sweepInterval = descriptors
+            .filter { present.contains($0.key) }
+            .map { Double($0.value.pidSweepIntervalMs) / 1000 }
+            .min()
+        if isWatching {
+            rearmSweep()
+        }
+    }
+
+    /// Re-arms the sweep at `sweepInterval`, or leaves it alone when it
+    /// already runs at that rate.
+    private func rearmSweep() {
+        guard let seconds = sweepInterval else {
+            sweep?.invalidate()
+            sweep = nil
+            return
+        }
+        if let sweep, sweep.isValid, sweep.timeInterval == seconds {
+            return
+        }
+        sweep?.invalidate()
         let timer = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
@@ -228,6 +267,7 @@ final class AgentProjectionAdapter {
     }
 
     func stopWatching() {
+        isWatching = false
         sources.forEach { $0.cancel() }
         sources.removeAll()
         sweep?.invalidate()
@@ -264,7 +304,7 @@ final class AgentProjectionAdapter {
             queue: .main
         )
         source.setEventHandler { [weak self] in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in self?.watcherPasses.request() }
         }
         // Captured by value so the close belongs to this source's lifetime
         // rather than the adapter's.
@@ -276,7 +316,11 @@ final class AgentProjectionAdapter {
     /// Runs one pass: read the directories, ask the rules, apply the answer.
     func refresh() {
         guard let session, !DemoFixture.isDemoActive else { return }
+        // Whatever asked for this pass, it reads the directories now, so a
+        // trailing pass the watcher was owed has nothing left to pick up.
+        watcherPasses.didRun()
         let input = buildInput(session: session)
+        stepSweep(for: input)
         let response: AgentProjectionResponse
         let body: Data
         do {
@@ -512,8 +556,10 @@ final class AgentProjectionAdapter {
         }
         // The rules trimmed the marks to the runs that still exist; what they
         // handed back is the whole of what the interface keeps.
-        attention?.viewedRuntimeTokens = projection.marksToKeep.viewed
-        attention?.dismissedRuntimeTokens = projection.marksToKeep.dismissed
+        attention?.replaceMarks(
+            viewed: projection.marksToKeep.viewed,
+            dismissed: projection.marksToKeep.dismissed
+        )
 
         let badgesByPane = projection.badgesByPane
         let sessionsByPane = projection.sessionsByPane

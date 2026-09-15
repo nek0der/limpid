@@ -206,6 +206,26 @@ struct AgentProjectionAdapterTests {
         }
     }
 
+    @Test("the sweep follows the records: a provider with none does not set the pace")
+    func sweepInterval_followsTheRecordsThePassRead() throws {
+        try withTempDir { root in
+            let harness = try harness(in: root, paneID: UUID())
+
+            // The one record on disk is Claude's, so Claude's declared cadence
+            // is the one the sweep takes.
+            harness.adapter.bootstrap(into: harness.session, attention: AttentionState())
+            #expect(harness.adapter.lastFailure == nil)
+            #expect(harness.adapter.sweepInterval == 30)
+
+            // That pass retired the record (its process is dead and nothing
+            // claimed it). With nothing left to ask about, there is no sweep
+            // to run until a hook writes again.
+            #expect(!FileManager.default.fileExists(atPath: harness.recordURL.path))
+            harness.adapter.refresh()
+            #expect(harness.adapter.sweepInterval == nil)
+        }
+    }
+
     @Test("watching a fresh install creates the directories the hooks write into")
     func startWatching_createsTheDirectoriesThatDoNotExistYet() throws {
         try withTempDir { root in

@@ -56,17 +56,35 @@ pub(crate) fn sweep(
         .map(|(storage_id, run)| retire(storage_id, run, accepted))
         .collect();
 
+    // The retired directory only grows when a pass retires something, so
+    // that is when its cap is worth checking. The one other moment is the
+    // first pass after launch, which is where records that aged out while
+    // Limpid was closed get dropped. Pruning on every pass instead means a
+    // directory listing and a sort for each provider on every hook write and
+    // every sweep tick, to remove nothing.
+    let retiring: BTreeSet<limpid_agent_model::ProviderId> = commands
+        .iter()
+        .flat_map(|command| std::iter::once(command).chain(command.then.iter()))
+        .filter(|command| matches!(command.op, CommandOp::Retire))
+        .filter_map(|command| match &command.target {
+            Target::Record { provider, .. } => Some(provider.clone()),
+            _ => None,
+        })
+        .collect();
+
     for (provider, descriptor) in &input.providers {
-        commands.push(Command::new(
-            CommandOp::PruneRetired {
-                max: MAX_RETIRED_RECORDS,
-                lifetime_secs: RETIRED_RECORD_LIFETIME_SECS,
-            },
-            Target::RetiredRecords {
-                provider: provider.clone(),
-            },
-            Precondition::None,
-        ));
+        if input.is_bootstrap || retiring.contains(provider) {
+            commands.push(Command::new(
+                CommandOp::PruneRetired {
+                    max: MAX_RETIRED_RECORDS,
+                    lifetime_secs: RETIRED_RECORD_LIFETIME_SECS,
+                },
+                Target::RetiredRecords {
+                    provider: provider.clone(),
+                },
+                Precondition::None,
+            ));
+        }
         commands.push(cleanup(provider, PaneStoreKind::Sessions, alive));
         if descriptor.has(Capability::CwdEvents) {
             commands.push(cleanup(provider, PaneStoreKind::CwdEvents, alive));
@@ -377,10 +395,8 @@ mod tests {
         assert!(legacy.then.is_empty());
     }
 
-    #[test]
-    fn every_pass_sweeps_the_directories_it_is_responsible_for() {
-        let mut input = ProjectionInput::default();
-        let mut descriptor = limpid_agent_model::ProviderDescriptor {
+    fn descriptor() -> limpid_agent_model::ProviderDescriptor {
+        limpid_agent_model::ProviderDescriptor {
             id: claude(),
             display_name: "Claude".to_owned(),
             capabilities: [Capability::CwdEvents].into_iter().collect(),
@@ -390,10 +406,24 @@ mod tests {
             cwd_events_directory: Some("cwd-events".to_owned()),
             process_names: Vec::new(),
             session_end_drop_reasons: Vec::new(),
-        };
+        }
+    }
+
+    fn prunes(commands: &[Command]) -> usize {
+        commands
+            .iter()
+            .filter(|command| matches!(command.op, CommandOp::PruneRetired { .. }))
+            .count()
+    }
+
+    #[test]
+    fn every_pass_sweeps_the_pane_stores_it_is_responsible_for() {
+        let mut input = ProjectionInput::default();
+        let mut descriptor = descriptor();
         input.providers.insert(claude(), descriptor.clone());
         let commands = sweep(&BTreeMap::new(), &input, &BTreeSet::new(), &now());
-        assert_eq!(commands.len(), 3, "prune plus two pane stores");
+        assert_eq!(commands.len(), 2, "two pane stores, nothing to prune");
+        assert_eq!(prunes(&commands), 0);
 
         // A provider that reports no cwd changes has no such directory to
         // sweep, so it gets one fewer command rather than an empty one.
@@ -401,7 +431,32 @@ mod tests {
         input.providers.insert(claude(), descriptor);
         assert_eq!(
             sweep(&BTreeMap::new(), &input, &BTreeSet::new(), &now()).len(),
-            2
+            1
         );
+    }
+
+    #[test]
+    fn the_retired_directory_is_pruned_at_launch_and_when_a_pass_retires() {
+        let mut input = input(PidStatus::Dead);
+        input.providers.insert(claude(), descriptor());
+
+        // Nothing retired on an ordinary pass: the directory has not grown,
+        // so there is nothing new for the cap to catch.
+        let alive = sweep(&BTreeMap::new(), &input, &BTreeSet::new(), &now());
+        assert_eq!(prunes(&alive), 0);
+
+        // The first pass after launch prunes whatever aged out while Limpid
+        // was not running.
+        input.is_bootstrap = true;
+        let launch = sweep(&BTreeMap::new(), &input, &BTreeSet::new(), &now());
+        assert_eq!(prunes(&launch), 1);
+        input.is_bootstrap = false;
+
+        // A pass that retires a record is the one that grows the directory,
+        // and so the one that checks the cap.
+        let entries = records(vec![(RUN, run(Some(RUN), Some("4242")))]);
+        let retiring = sweep(&entries, &input, &BTreeSet::new(), &now());
+        assert_eq!(retirements(&retiring).len(), 1);
+        assert_eq!(prunes(&retiring), 1);
     }
 }
