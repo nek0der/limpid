@@ -71,16 +71,12 @@ secrets/
 .claude/local/
 .claude/worktrees/
 
-# Local-only docs (managed outside git, not for publication). Architecture
-# records that define committed interfaces are explicitly included below.
+# Local-only notes under docs/ stay out of git. Architecture decision records
+# and the protocol specification are published, so every file under docs/adr/
+# is tracked without a per-file entry here.
 docs/*
 !docs/adr/
 !docs/agent-integration-protocol.md
-docs/adr/*
-!docs/adr/0001-agent-integration-service.md
-!docs/adr/0002-portable-agent-integration-core.md
-!docs/adr/0003-agent-integration-service-reconciliation.md
-!docs/adr/0004-provider-adapter-contract.md
 
 # Distribution artifacts (dmg, zip, etc.)
 dist/
