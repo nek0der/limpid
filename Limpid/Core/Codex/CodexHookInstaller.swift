@@ -118,19 +118,6 @@ final class CodexHookInstaller {
             .appendingPathComponent(".codex", isDirectory: true)
     }
 
-    /// Where the hook receiver writes session records. Mirrors
-    /// `CodexSessionStore.directory`.
-    static var sessionsDirectoryURL: URL {
-        LimpidPaths.applicationSupportDirectory()
-            .appendingPathComponent("codex-sessions", isDirectory: true)
-    }
-
-    /// Where the hook receiver writes agent lifecycle records.
-    static var agentStatesDirectoryURL: URL {
-        LimpidPaths.applicationSupportDirectory()
-            .appendingPathComponent("codex-agent-states", isDirectory: true)
-    }
-
     // MARK: - Lifecycle
 
     /// Bring the trust block in the user's config up to date. Idempotent,
@@ -182,20 +169,38 @@ final class CodexHookInstaller {
         if ProcessInfo.processInfo.environment["LIMPID_DEMO"] == "1" {
             return [:]
         }
-        // The directory variables are the provider's to name; only the hook
-        // arguments are assembled here, because only here is the installed
-        // hook's path known.
-        var env = AgentProviderRegistry.environment(
-            for: AgentKind.codex.rawValue,
-            state: CodexHookInstaller.agentStatesDirectoryURL,
-            sessions: CodexHookInstaller.sessionsDirectoryURL,
-            cwdEvents: nil
-        )
-        env["LIMPID_CODEX_HOOK_ARGS"] = CodexHookInjection.arguments(
-            lifecycleCommand: lifecycleCommand,
-            worktreeCommand: worktreeCommand,
-            approvalCommand: approvalCommand
-        ).joined(separator: CodexHookInstaller.argumentSeparator)
+        // The variable names come from the provider's install recipe and the
+        // directories from its descriptor, so the receiver writes exactly
+        // where the projection reads. Only the hook arguments are assembled
+        // here, because only here is the installed hook's path known.
+        var env: [String: String] = [:]
+        if let directories = AgentProviderRegistry.directories(
+            under: LimpidPaths.applicationSupportDirectory()
+        )[AgentKind.codex.rawValue] {
+            env = AgentProviderRegistry.environment(
+                for: AgentKind.codex.rawValue,
+                state: directories.state,
+                sessions: directories.sessions,
+                cwdEvents: directories.cwdEvents
+            )
+        } else {
+            // Without a descriptor we have no name for the directories, and
+            // the projection reads none either, so guessing one would only
+            // scatter records nobody collects.
+            log.error("codex provider directories unavailable; exporting no record directories")
+        }
+        if let variable = AgentProviderRegistry.hookArgumentsVariable(for: AgentKind.codex.rawValue) {
+            env[variable] = CodexHookInjection.arguments(
+                lifecycleCommand: lifecycleCommand,
+                worktreeCommand: worktreeCommand,
+                approvalCommand: approvalCommand
+            ).joined(separator: CodexHookInstaller.argumentSeparator)
+        } else {
+            // The shim splices these flags into its own invocation; under a
+            // name we invented it would read none of them, which is the same
+            // as installing no hooks at all.
+            log.error("codex recipe names no hook arguments variable; installing no hook flags")
+        }
         env.merge(AgentHookBackend.environment) { _, backend in backend }
         return env
     }

@@ -2,7 +2,7 @@
 // Limpid — resolves the in-bundle `claude-shim/` directory and produces
 // the env-var dictionary every pty inherits so a `claude` invocation
 // inside Limpid gets intercepted by our shim and routes its hook
-// callbacks back to `ClaudeSessionStore`.
+// callbacks into the record directories the provider descriptor names.
 
 import Foundation
 import OSLog
@@ -18,34 +18,6 @@ enum ClaudeShimLocator {
         guard let resources = Bundle.main.resourceURL else { return nil }
         let url = resources.appendingPathComponent("claude-shim", isDirectory: true)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
-    }
-
-    /// Where the hook receiver writes session records. Mirrors
-    /// `ClaudeSessionStore.directory` so the receiver and the Swift
-    /// reader land on the same files.
-    static var sessionsDirectoryURL: URL {
-        LimpidPaths.applicationSupportDirectory()
-            .appendingPathComponent("sessions", isDirectory: true)
-    }
-
-    /// Where the hook receiver writes agent lifecycle records.
-    /// Mirrors `ClaudeAgentStateStore.directory` so the receiver and
-    /// the Swift watcher land on the same files. Critically: Limpid
-    /// Dev vs Release build use different Application Support paths,
-    /// so we must inject this rather than let the hook fall back to
-    /// the hard-coded "Limpid" default.
-    static var agentStatesDirectoryURL: URL {
-        LimpidPaths.applicationSupportDirectory()
-            .appendingPathComponent("agent-states", isDirectory: true)
-    }
-
-    /// Where the hook receiver writes per-pane `CwdChanged` events.
-    /// Mirrors the cwd-events directory the projection reads, so the receiver and the
-    /// Swift watcher meet on the same files. Same Dev/Release path
-    /// reasoning as `agentStatesDirectoryURL`.
-    static var cwdEventsDirectoryURL: URL {
-        LimpidPaths.applicationSupportDirectory()
-            .appendingPathComponent("cwd-events", isDirectory: true)
     }
 
     /// zsh startup-file forwarding dir, or `nil` when the bundle lacks it.
@@ -75,17 +47,28 @@ enum ClaudeShimLocator {
         } else {
             log.debug("claude-shim directory not found in bundle; skipping shim dir export")
         }
-        // The names and what each one carries are the provider's to declare;
-        // resolving them against this build's directories is ours. The bundle
-        // id among them keeps a Dev build from redirecting a Release session's
-        // live hook path or vice versa, while staying stable across updates of
-        // the same build.
-        env.merge(AgentProviderRegistry.environment(
-            for: AgentKind.claude.rawValue,
-            state: agentStatesDirectoryURL,
-            sessions: sessionsDirectoryURL,
-            cwdEvents: cwdEventsDirectoryURL
-        )) { _, recipe in recipe }
+        // The variable names come from the provider's install recipe and the
+        // directories from its descriptor, so the receiver writes exactly
+        // where the projection reads. The bundle id among them keeps a Dev
+        // build from redirecting a
+        // Release session's live hook path or vice versa, while staying stable
+        // across updates of the same build.
+        let directories = AgentProviderRegistry.directories(
+            under: LimpidPaths.applicationSupportDirectory()
+        )[AgentKind.claude.rawValue]
+        if let directories {
+            env.merge(AgentProviderRegistry.environment(
+                for: AgentKind.claude.rawValue,
+                state: directories.state,
+                sessions: directories.sessions,
+                cwdEvents: directories.cwdEvents
+            )) { _, recipe in recipe }
+        } else {
+            // Without a descriptor we have no name for the directories, and
+            // the projection reads none either, so guessing one would only
+            // scatter records nobody collects.
+            log.error("claude provider directories unavailable; exporting no record directories")
+        }
         env.merge(AgentHookBackend.environment) { _, backend in backend }
         return env
     }

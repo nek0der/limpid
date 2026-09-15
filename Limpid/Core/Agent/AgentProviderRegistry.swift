@@ -94,6 +94,17 @@ extension AgentProviderRegistry {
         }
     }()
 
+    /// The name the provider's recipe gives the variable carrying its hook's
+    /// own arguments, or nil when it asks for none.
+    ///
+    /// Assembling that value needs the installed hook's path, which only the
+    /// installer knows, so the installer exports it itself — but the name is
+    /// still the provider's to declare, and reading it here is what keeps the
+    /// installer from carrying a second copy that could drift.
+    static func hookArgumentsVariable(for provider: String) -> String? {
+        recipes[provider]?.environment.first { $0.value == .hookArguments }?.name
+    }
+
     /// The environment one provider's recipe asks for, with each placeholder
     /// resolved against the directories this build actually uses.
     static func environment(
