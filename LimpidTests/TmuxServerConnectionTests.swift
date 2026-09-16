@@ -51,7 +51,9 @@ private func waitUntil(_ timeout: Duration = .seconds(3), _ condition: () -> Boo
     let clock = ContinuousClock()
     let deadline = clock.now + timeout
     while clock.now < deadline {
-        if condition() { return true }
+        if condition() {
+            return true
+        }
         try? await Task.sleep(for: .milliseconds(20))
     }
     return condition()
@@ -70,7 +72,11 @@ private func readUntil(fd: Int32, contains marker: String, timeout: Duration) as
             var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
             guard poll(&descriptor, 1, 100) > 0 else { continue }
             let n = buffer.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
-            if n > 0 { collected.append(contentsOf: buffer[0..<n]) } else { break }
+            if n > 0 {
+                collected.append(contentsOf: buffer[0..<n])
+            } else {
+                break
+            }
         }
         return collected
     }.value
@@ -131,7 +137,9 @@ struct TmuxServerConnectionTests {
         defer { connection.stop() }
         var layouts: [String] = []
         connection.onNotification = { line in
-            if case let .layoutChange(_, layout, _, _) = line { layouts.append(layout) }
+            if case let .layoutChange(_, layout, _, _) = line {
+                layouts.append(layout)
+            }
         }
         try connection.start()
         #expect(await waitUntil { connection.state == .attached })
@@ -233,7 +241,9 @@ struct TmuxServerConnectionTests {
 
         server.run(["kill-server"])
         #expect(await waitUntil {
-            if case .exited = connection.state { return true }
+            if case .exited = connection.state {
+                return true
+            }
             return false
         })
     }

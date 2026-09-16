@@ -147,10 +147,18 @@ struct PaneLayout: Equatable {
     static func edges(of rect: CGRect, within outer: CGSize) -> PaneEdges {
         let tolerance: CGFloat = 0.5
         var edges: PaneEdges = []
-        if rect.minY <= tolerance { edges.insert(.top) }
-        if rect.maxY >= outer.height - tolerance { edges.insert(.bottom) }
-        if rect.minX <= tolerance { edges.insert(.left) }
-        if rect.maxX >= outer.width - tolerance { edges.insert(.right) }
+        if rect.minY <= tolerance {
+            edges.insert(.top)
+        }
+        if rect.maxY >= outer.height - tolerance {
+            edges.insert(.bottom)
+        }
+        if rect.minX <= tolerance {
+            edges.insert(.left)
+        }
+        if rect.maxX >= outer.width - tolerance {
+            edges.insert(.right)
+        }
         return edges
     }
 }

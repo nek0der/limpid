@@ -29,7 +29,9 @@ enum PaneIOSource: Equatable {
     case unavailable
 
     var isMirror: Bool {
-        if case .tmux = self { return true }
+        if case .tmux = self {
+            return true
+        }
         return false
     }
 }

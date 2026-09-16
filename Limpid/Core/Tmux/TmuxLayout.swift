@@ -174,7 +174,9 @@ struct TmuxLayout: Equatable {
             while true {
                 guard let child = readNode() else { return nil }
                 children.append(child)
-                if consume(close) { return children }
+                if consume(close) {
+                    return children
+                }
                 guard consume(0x2C) else { return nil }
             }
         }

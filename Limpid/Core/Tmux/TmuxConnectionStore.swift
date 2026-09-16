@@ -48,7 +48,9 @@ final class TmuxConnectionStore {
     }
 
     func dormantSink(paneID: UUID) -> TmuxPaneSink? {
-        if let existing = dormantSinks[paneID] { return existing }
+        if let existing = dormantSinks[paneID] {
+            return existing
+        }
         do {
             let sink = try TmuxPaneSink(queue: dormantQueue, onSurfaceOutput: { _ in }, onOverflow: {})
             dormantSinks[paneID] = sink
@@ -62,7 +64,9 @@ final class TmuxConnectionStore {
     /// The connection for `binding`'s session, started on first use.
     func connection(for binding: TmuxBinding) throws -> TmuxServerConnection {
         let key = Key(socketPath: binding.socketPath, sessionID: binding.sessionID)
-        if let existing = connections[key] { return existing }
+        if let existing = connections[key] {
+            return existing
+        }
         guard let tmuxExecutable else { throw TmuxStoreError.tmuxNotInstalled }
         let connection = TmuxServerConnection(
             executable: tmuxExecutable,

@@ -13,7 +13,9 @@ struct TmuxProtocolTests {
         let url = root.appendingPathComponent("LimpidTests/Fixtures/tmux/2026-09/\(fixtureCase)/control.raw")
         let bytes = try Array(Data(contentsOf: url))
         var lines = bytes.split(separator: 0x0A, omittingEmptySubsequences: false).map(Array.init)
-        if lines.last?.isEmpty == true { lines.removeLast() }
+        if lines.last?.isEmpty == true {
+            lines.removeLast()
+        }
         return lines
     }
 
@@ -54,7 +56,9 @@ struct TmuxProtocolTests {
     func sessionBasic_outputBytesAreUnescaped() throws {
         let lines = try recordedLines("session-basic").map { TmuxProtocol.parseLine($0[...]) }
         let outputs = lines.compactMap { line -> (String, Data)? in
-            if case let .output(pane, bytes) = line { return (pane, bytes) }
+            if case let .output(pane, bytes) = line {
+                return (pane, bytes)
+            }
             return nil
         }
         // The prompt repaint: CR, ESC [ K, "$ ".

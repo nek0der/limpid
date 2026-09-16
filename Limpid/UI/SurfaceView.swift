@@ -137,7 +137,11 @@ final class SurfaceView: NSView {
     /// side. Applied when set and again after each `createSurface`, so a value
     /// placed before the surface exists is not lost. See `PaddingOverride`.
     var paddingOverride: PaddingOverride? {
-        didSet { if paddingOverride != oldValue { applyPaddingOverride() } }
+        didSet {
+            if paddingOverride != oldValue {
+                applyPaddingOverride()
+            }
+        }
     }
 
     /// Descriptor that drives this surface's IO instead of a pty, or `-1` for a pane

@@ -199,7 +199,9 @@ final class TmuxPaneSink: @unchecked Sendable {
             guard let base = raw.baseAddress, !raw.isEmpty else { return 0 }
             let n = Darwin.write(hostFd, base, raw.count)
             if n < 0 {
-                if errno == EAGAIN || errno == EWOULDBLOCK { return 0 }
+                if errno == EAGAIN || errno == EWOULDBLOCK {
+                    return 0
+                }
                 log.error("pane socket write failed errno=\(errno, privacy: .public)")
                 return 0
             }

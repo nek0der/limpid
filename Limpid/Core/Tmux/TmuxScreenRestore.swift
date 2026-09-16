@@ -72,7 +72,9 @@ enum TmuxScreenRestore {
     /// homes the cursor, and the cursor is placed last.
     static func sequence(rows: [String], rowCount: Int, state: TmuxScreenState) -> Data {
         var out = ""
-        if state.isAlternateScreen { out += "\u{1b}[?1049h" }
+        if state.isAlternateScreen {
+            out += "\u{1b}[?1049h"
+        }
         out += "\u{1b}[m\u{1b}[H\u{1b}[2J"
         out += rows.joined(separator: "\r\n")
 
@@ -80,10 +82,18 @@ enum TmuxScreenRestore {
         out += state.isInsertMode ? "\u{1b}[4h" : "\u{1b}[4l"
         out += state.isCursorKeysApplication ? "\u{1b}[?1h" : "\u{1b}[?1l"
         out += state.isKeypadApplication ? "\u{1b}=" : "\u{1b}>"
-        if state.isMouseStandard { out += "\u{1b}[?1000h" }
-        if state.isMouseButton { out += "\u{1b}[?1002h" }
-        if state.isMouseAll || state.isMouseAny { out += "\u{1b}[?1003h" }
-        if state.isMouseSGR { out += "\u{1b}[?1006h" }
+        if state.isMouseStandard {
+            out += "\u{1b}[?1000h"
+        }
+        if state.isMouseButton {
+            out += "\u{1b}[?1002h"
+        }
+        if state.isMouseAll || state.isMouseAny {
+            out += "\u{1b}[?1003h"
+        }
+        if state.isMouseSGR {
+            out += "\u{1b}[?1006h"
+        }
         out += state.isCursorVisible ? "\u{1b}[?25h" : "\u{1b}[?25l"
 
         // tmux reports the region even when it spans the whole pane; only a

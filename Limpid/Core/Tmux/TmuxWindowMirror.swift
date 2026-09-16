@@ -189,11 +189,15 @@ final class TmuxWindowMirror {
         // and therefore its surface, scrollback, and search state.
         var leafIDs: [String: UUID] = [:]
         for (paneID, source) in tab.paneSources {
-            if case let .tmux(ref) = source, ref.windowID == windowID { leafIDs[ref.paneID] = paneID }
+            if case let .tmux(ref) = source, ref.windowID == windowID {
+                leafIDs[ref.paneID] = paneID
+            }
         }
         var added: [(UUID, String)] = []
         let tree = layout.paneNode { tmuxPane in
-            if let existing = leafIDs[tmuxPane] { return existing }
+            if let existing = leafIDs[tmuxPane] {
+                return existing
+            }
             let fresh = UUID()
             leafIDs[tmuxPane] = fresh
             added.append((fresh, tmuxPane))
@@ -203,7 +207,9 @@ final class TmuxWindowMirror {
         let removed = leafIDs.filter { !present.contains($0.key) }
 
         guard let binding = tab.paneSources.values.lazy.compactMap({ source -> TmuxBinding? in
-            if case let .tmux(ref) = source { return ref.binding }
+            if case let .tmux(ref) = source {
+                return ref.binding
+            }
             return nil
         }).first else { return }
 

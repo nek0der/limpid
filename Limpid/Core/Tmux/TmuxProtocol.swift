@@ -42,8 +42,12 @@ struct TmuxVersion: Equatable, Comparable {
     let isDevelopment: Bool
 
     static func < (lhs: TmuxVersion, rhs: TmuxVersion) -> Bool {
-        if lhs.major != rhs.major { return lhs.major < rhs.major }
-        if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
+        if lhs.major != rhs.major {
+            return lhs.major < rhs.major
+        }
+        if lhs.minor != rhs.minor {
+            return lhs.minor < rhs.minor
+        }
         return (lhs.patch ?? " ") < (rhs.patch ?? " ")
     }
 
@@ -63,7 +67,9 @@ enum TmuxProtocol {
     /// The caller tracks the block state; this function has none.
     static func parseLine(_ raw: ArraySlice<UInt8>, insideReplyBlock: Bool = false) -> TmuxControlLine {
         var line = raw
-        if line.last == 0x0D { line = line.dropLast() }
+        if line.last == 0x0D {
+            line = line.dropLast()
+        }
 
         let outputPrefix = Array("%output ".utf8)
         if line.starts(with: outputPrefix) {
@@ -201,7 +207,9 @@ enum TmuxProtocol {
     /// `next-3.4`, and the same with a leading `tmux `.
     static func parseVersion(_ text: String) -> TmuxVersion? {
         var body = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if body.hasPrefix("tmux ") { body.removeFirst("tmux ".count) }
+        if body.hasPrefix("tmux ") {
+            body.removeFirst("tmux ".count)
+        }
         var isDevelopment = false
         if body.hasPrefix("next-") {
             isDevelopment = true

@@ -121,7 +121,9 @@ final class TmuxServerConnection {
     /// overflow is reported through `onPaneOverflow`.
     func attachPane(_ pane: String, limit: Int = TmuxPaneSink.defaultLimit) throws -> TmuxPaneSink {
         guard let transport else { throw TmuxConnectionError.notStarted }
-        if let existing = sinks[pane] { return existing }
+        if let existing = sinks[pane] {
+            return existing
+        }
         let sink = try TmuxPaneSink(
             queue: transport.queue,
             limit: limit,
@@ -155,7 +157,9 @@ final class TmuxServerConnection {
             process.terminate()
         }
         process = nil
-        if case .exited = state { return }
+        if case .exited = state {
+            return
+        }
         setState(.exited(reason: nil))
     }
 
@@ -194,12 +198,16 @@ final class TmuxServerConnection {
     }
 
     private func handleEOF() {
-        if case .exited = state { return }
+        if case .exited = state {
+            return
+        }
         setState(.exited(reason: nil))
     }
 
     private func handleTermination() {
-        if case .exited = state { return }
+        if case .exited = state {
+            return
+        }
         setState(.exited(reason: nil))
     }
 
