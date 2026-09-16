@@ -311,11 +311,8 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         tmuxStore: TmuxConnectionStore?
     ) {
         guard let tmuxStore else { return }
-        if let mirror = tmuxStore.mirror(for: tabID), let sink = mirror.sink(for: paneID) {
+        if let sink = tmuxStore.sink(tabID: tabID, paneID: paneID) {
             view.mirrorIoFd = sink.surfaceFd
-            view.onGridChange = { [weak mirror] columns, rows in
-                mirror?.reportGrid(columns: columns, rows: rows)
-            }
         } else if let sink = tmuxStore.dormantSink(paneID: paneID) {
             view.mirrorIoFd = sink.surfaceFd
         }

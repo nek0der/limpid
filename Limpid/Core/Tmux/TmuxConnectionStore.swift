@@ -29,6 +29,11 @@ final class TmuxConnectionStore {
 
     private(set) var connections: [Key: TmuxServerConnection] = [:]
     private(set) var mirrors: [UUID: TmuxWindowMirror] = [:]
+    /// Which panes of each connection have their output paused. A control
+    /// client is fed every pane of the session; the ones no tab shows are
+    /// switched off so a build in a hidden window cannot fill the pipe
+    /// (design §8 D12).
+    private(set) var outputGates: [Key: TmuxOutputGate] = [:]
     /// Panes that mirror on paper but have no connection behind them: a
     /// restored tab before adoption, or a tab whose server went away.
     /// Each holds a descriptor that never delivers, so the surface shows
@@ -77,7 +82,27 @@ final class TmuxConnectionStore {
         }
         try connection.start()
         connections[key] = connection
+        outputGates[key] = TmuxOutputGate()
+        // Learn every pane of the session once; notifications keep the
+        // picture current from here on.
+        connection.send("list-panes -s -F '#{window_id} #{pane_id}'") { [weak self] lines, isError in
+            guard let self, !isError, self.connections[key] === connection else { return }
+            let panes = lines.compactMap { line -> (window: String, pane: String)? in
+                let fields = line.split(separator: " ")
+                guard fields.count == 2 else { return nil }
+                return (String(fields[0]), String(fields[1]))
+            }
+            self.outputGates[key]?.replaceAll(panes)
+            self.gateOutput(for: key)
+        }
         return connection
+    }
+
+    /// A surface reported its cell size; the mirror showing that pane lays
+    /// its panes out from it.
+    func cellSizeChanged(_ size: CellSize, paneID: UUID) {
+        guard let mirror = mirrors.values.first(where: { $0.shows(paneID: paneID) }) else { return }
+        mirror.cellSizeChanged(size, from: paneID)
     }
 
     func mirror(for tabID: UUID) -> TmuxWindowMirror? {
@@ -92,22 +117,28 @@ final class TmuxConnectionStore {
 
     func register(_ mirror: TmuxWindowMirror) {
         mirrors[mirror.tabID] = mirror
+        gateOutput(for: Self.key(of: mirror))
     }
 
     /// Drop mirrors whose tab is gone, then connections no mirror uses.
     /// Called whenever the tab list changes; idempotent.
     func reconcile(tabs: [Tab]) {
         let liveTabs = Set(tabs.map(\.id))
+        var touchedKeys: Set<Key> = []
         for (tabID, mirror) in mirrors where !liveTabs.contains(tabID) {
             mirror.stop()
             mirrors.removeValue(forKey: tabID)
+            touchedKeys.insert(Self.key(of: mirror))
         }
-        let usedKeys = Set(mirrors.values
-            .map { Key(socketPath: $0.connection.target.socketPath, sessionID: $0.connection.target.sessionID) })
+        let usedKeys = Set(mirrors.values.map(Self.key(of:)))
         for (key, connection) in connections where !usedKeys.contains(key) {
             connection.stop()
             connections.removeValue(forKey: key)
+            outputGates.removeValue(forKey: key)
             log.notice("closed idle connection session=\(key.sessionID, privacy: .public)")
+        }
+        for key in touchedKeys where usedKeys.contains(key) {
+            gateOutput(for: key)
         }
         let livePanes = Set(tabs.flatMap { $0.splitTree.allLeafIDs() })
         for (paneID, sink) in dormantSinks where !livePanes.contains(paneID) {
@@ -127,18 +158,60 @@ final class TmuxConnectionStore {
             connection.stop()
         }
         connections.removeAll()
+        outputGates.removeAll()
         for sink in dormantSinks.values {
             sink.close()
         }
         dormantSinks.removeAll()
     }
 
+    private static func key(of mirror: TmuxWindowMirror) -> Key {
+        Key(socketPath: mirror.connection.target.socketPath, sessionID: mirror.connection.target.sessionID)
+    }
+
     private func dispatch(_ line: TmuxControlLine, from key: Key) {
-        for mirror in mirrors.values
-            where mirror.connection.target.socketPath == key.socketPath
-            && mirror.connection.target.sessionID == key.sessionID
-        {
+        for mirror in mirrors.values where Self.key(of: mirror) == key {
             mirror.handle(line)
+        }
+        trackPanes(line, from: key)
+    }
+
+    // MARK: - Output gate
+
+    /// Keep the gate's picture of the session current. `%layout-change`
+    /// lists every pane of its window, so a pane created or killed anywhere
+    /// in the session shows up here; a new window is asked for its panes
+    /// because its first layout may have arrived before it was announced.
+    private func trackPanes(_ line: TmuxControlLine, from key: Key) {
+        switch line {
+        case let .layoutChange(window, layout, _, _):
+            guard let parsed = TmuxLayout.parse(layout) else { return }
+            outputGates[key]?.setPanes(Set(parsed.root.paneIDs), ofWindow: window)
+        case let .notification(name, arguments) where name == "window-add":
+            let window = arguments
+            guard let connection = connections[key] else { return }
+            connection.send("list-panes -t \(TmuxProtocol.quote(window)) -F '#{pane_id}'") { [weak self] lines, isError in
+                guard let self, !isError, self.connections[key] === connection else { return }
+                self.outputGates[key]?.setPanes(Set(lines), ofWindow: window)
+                self.gateOutput(for: key)
+            }
+            return
+        case let .notification(name, arguments) where name == "window-close":
+            outputGates[key]?.removeWindow(arguments)
+        default:
+            return
+        }
+        gateOutput(for: key)
+    }
+
+    /// Pause every pane no mirror on this connection shows, and resume the
+    /// ones a mirror now shows. Only the difference is sent.
+    private func gateOutput(for key: Key) {
+        guard let connection = connections[key], outputGates[key] != nil else { return }
+        let shown = Set(mirrors.values.filter { Self.key(of: $0) == key }.map(\.windowID))
+        for command in outputGates[key]?.reconcile(shownWindows: shown) ?? [] {
+            connection.send(command)
+            log.debug("output gate session=\(key.sessionID, privacy: .public): \(command, privacy: .public)")
         }
     }
 }

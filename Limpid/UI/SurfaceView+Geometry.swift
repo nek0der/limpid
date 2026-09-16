@@ -19,24 +19,20 @@ extension SurfaceView {
         onScrollbarStateChange?(state)
     }
 
-    /// Read the grid libghostty is drawing and tell the listener when it
-    /// differs from the last report. Called after every size push; the
-    /// comparison keeps a tmux mirror from re-sending the same window size
-    /// on every layout pass.
-    func reportGridIfChanged() {
-        guard let onGridChange, let surface else { return }
-        let grid = GhosttyFFI.surfaceGrid(surface)
-        guard grid.columns > 0, grid.rows > 0,
-              grid.columns != lastReportedGrid?.columns || grid.rows != lastReportedGrid?.rows
-        else { return }
-        lastReportedGrid = grid
-        onGridChange(grid.columns, grid.rows)
+    /// The grid libghostty is drawing right now, for checking a mirror
+    /// pane against the cells tmux gave it.
+    var drawnGrid: (columns: Int, rows: Int)? {
+        guard let surface else { return nil }
+        return GhosttyFFI.surfaceGrid(surface)
     }
 
     /// Convert libghostty's device-pixel cell report into points. We divide
     /// by the window's scale, not `lastPushedScale`: the first report fires
     /// inside `ghostty_surface_new`, before any scale has been pushed.
-    func updateCellSize(devicePixelWidth: UInt32, devicePixelHeight: UInt32) {
+    /// Returns whether the stored value changed, so the caller can pass a
+    /// new size on to whoever lays panes out from it.
+    @discardableResult
+    func updateCellSize(devicePixelWidth: UInt32, devicePixelHeight: UInt32) -> Bool {
         let scale = Double(window?.backingScaleFactor ?? 1)
         guard let size = CellSize.points(
             devicePixelWidth: devicePixelWidth,
@@ -44,11 +40,12 @@ extension SurfaceView {
             scale: scale
         ) else {
             log.debug("CELL_SIZE ignored (degenerate report)")
-            return
+            return false
         }
-        guard size != cellSize else { return }
+        guard size != cellSize else { return false }
         cellSize = size
         log.debug("CELL_SIZE \(size.width, privacy: .public)x\(size.height, privacy: .public)pt scale=\(scale, privacy: .public)")
+        return true
     }
 
     /// Hand the current `paddingOverride` to libghostty. A no-op until the

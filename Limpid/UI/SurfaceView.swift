@@ -148,10 +148,6 @@ final class SurfaceView: NSView {
     /// with its own shell. Read once, at `createSurface`, when libghostty picks its backend.
     var mirrorIoFd: Int32 = -1
 
-    /// Runs when the drawn cell grid changes size; a tmux mirror reports it to the server.
-    var onGridChange: ((_ columns: Int, _ rows: Int) -> Void)?
-    var lastReportedGrid: (columns: Int, rows: Int)?
-
     /// Effective advanced `scrollbar` preference read from the finalized
     /// libghostty config. The scroll geometry remains active when false so
     /// wheel and binding-driven movement still position the Metal viewport.
@@ -456,7 +452,6 @@ final class SurfaceView: NSView {
             ghostty_surface_set_size(surface, width, height)
             lastPushedSize = (width, height)
         }
-        reportGridIfChanged()
     }
 
     @available(*, unavailable)

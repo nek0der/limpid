@@ -365,8 +365,8 @@ enum PaneActions {
     /// Apply a font-size shortcut to the surfaces Limpid picks for it.
     /// libghostty keeps `font_size` per surface, so this is where the
     /// scope is decided: an ordinary tab changes only the focused pane
-    /// (the behavior users have today), and a tmux mirror tab will fan
-    /// out to every pane so its panes keep sharing one cell grid.
+    /// (the behavior users have today), and a tmux mirror tab fans out
+    /// to every pane so its panes keep sharing one cell grid.
     static func applyFontAction(
         _ action: LimpidShortcutAction,
         session: WindowSession,
@@ -376,7 +376,7 @@ enum PaneActions {
               let tab = session.activeTab,
               let focused = tab.splitTree.effectiveFocusedLeafID
         else { return }
-        let targets = [focused]
+        let targets = tab.kind == .tmuxMirror ? tab.splitTree.allLeafIDs() : [focused]
         for leafID in targets {
             guard let surface = registry.view(for: leafID)?.surface else { continue }
             _ = GhosttyFFI.performBindingAction(binding, on: surface)

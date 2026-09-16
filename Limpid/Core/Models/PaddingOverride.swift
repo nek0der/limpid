@@ -20,18 +20,24 @@ struct PaddingOverride: Equatable {
     /// The override a leaf needs given which of its edges touch the pane
     /// area's outer bounds.
     ///
-    /// A tmux mirror tab keeps the configured padding on outer edges and
-    /// none where two panes meet: the divider between them is exactly one
-    /// cell, and that budget cannot also pay for two inner paddings
-    /// (`6.5 − 16 < 0`). Ordinary tabs keep the config everywhere, so they
-    /// pin nothing and their surfaces are never touched.
+    /// A tmux mirror tab keeps padding on outer edges and none where two
+    /// panes meet: the divider between them is exactly one cell, and that
+    /// budget cannot also pay for two inner paddings (`6.5 − 16 < 0`). The
+    /// outer edges are pinned to Limpid's own values rather than left to
+    /// the config, because the mirror lays panes out as `cells × cell size
+    /// + padding` and reports the window grid as `(area − padding) / cell
+    /// size`: both need the number, and libghostty cannot hand the
+    /// configured padding back. Ordinary tabs keep the config everywhere,
+    /// so they pin nothing and their surfaces are never touched.
     static func forEdges(_ edges: PaneEdges, isMirror: Bool) -> PaddingOverride? {
         guard isMirror else { return nil }
+        let horizontal = GhosttyConfigBridge.windowPaddingX
+        let vertical = GhosttyConfigBridge.windowPaddingY
         return PaddingOverride(
-            top: edges.contains(.top) ? nil : 0,
-            bottom: edges.contains(.bottom) ? nil : 0,
-            left: edges.contains(.left) ? nil : 0,
-            right: edges.contains(.right) ? nil : 0
+            top: edges.contains(.top) ? vertical : 0,
+            bottom: edges.contains(.bottom) ? vertical : 0,
+            left: edges.contains(.left) ? horizontal : 0,
+            right: edges.contains(.right) ? horizontal : 0
         )
     }
 

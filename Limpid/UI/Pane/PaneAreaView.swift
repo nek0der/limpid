@@ -11,9 +11,25 @@ struct PaneAreaView: View {
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.tmuxConnectionStore) private var tmuxStore
     let ghosttyApp: GhosttyApp
+    /// The pane area's size, kept as state so a tab that comes on screen
+    /// at the same size as the last one still gets told what it is.
+    @State private var areaSize: CGSize = .zero
 
     private var renderableTab: Tab? {
         session.activeTab
+    }
+
+    /// What a mirror tab sizes its tmux window from. Keyed by tab as well
+    /// as size: the pane area keeps its view identity across a tab switch,
+    /// so a size that has not changed would otherwise never reach the tab
+    /// that just appeared.
+    private struct MirrorAreaKey: Equatable {
+        let tabID: UUID?
+        let size: CGSize
+    }
+
+    private var mirrorAreaKey: MirrorAreaKey {
+        MirrorAreaKey(tabID: renderableTab?.kind == .tmuxMirror ? renderableTab?.id : nil, size: areaSize)
     }
 
     /// Pane IDs currently on screen — used by the occlusion onChange to
@@ -85,6 +101,7 @@ struct PaneAreaView: View {
                     SplitContainerView(
                         node: resolved,
                         isMirrorTab: tab.kind == .tmuxMirror,
+                        mirrorGeometry: mirrorGeometry(for: tab),
                         onLeafFocus: { id in
                             // Move focus only; leave `tab.title` alone. The
                             // label is owned by the tab (Claude/Codex prompt
@@ -234,6 +251,13 @@ struct PaneAreaView: View {
         // on real structural changes.
         .onChange(of: renderableTab?.splitTree, initial: true) { _, _ in
             registry.updateOcclusion(visibleIDs: visiblePaneIDs)
+        }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { areaSize = $0 }
+        // A mirror tab sizes its tmux window from the area it has; the
+        // mirror itself compares and sends only real changes.
+        .onChange(of: mirrorAreaKey, initial: true) { _, key in
+            guard let tabID = key.tabID, key.size != .zero else { return }
+            tmuxStore?.mirror(for: tabID)?.areaSizeChanged(key.size)
         }
         // Only whether the pane is on screen, never how tall it is: driving
         // this from the height ran an occlusion pass on every frame of a
@@ -386,6 +410,26 @@ struct PaneAreaView: View {
                 }
             }
         }
+    }
+
+    /// tmux's layout for a connected mirror tab, once tmux has described
+    /// the window and a surface has reported the cell size. Both are read
+    /// off the observable mirror here, in the body, so a new layout or a
+    /// font change lays the tab out again. Until then, or when the tab is
+    /// not a mirror, the stored ratios place the panes (design §2 D0).
+    private func mirrorGeometry(for tab: Tab) -> TmuxMirrorGeometry? {
+        guard tab.kind == .tmuxMirror,
+              let mirror = tmuxStore?.mirror(for: tab.id),
+              let layout = mirror.cellLayout,
+              let cellSize = mirror.cellSize
+        else { return nil }
+        var leafIDs: [String: UUID] = [:]
+        for (paneID, source) in tab.paneSources {
+            if case let .tmux(ref) = source, ref.windowID == mirror.windowID {
+                leafIDs[ref.paneID] = paneID
+            }
+        }
+        return TmuxMirrorGeometry(layout: layout, cellSize: cellSize, leafIDs: leafIDs)
     }
 
     /// Resolve or create the `SurfaceView` for one leaf so the resolved

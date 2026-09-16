@@ -270,6 +270,7 @@ final class AppState {
         delegate.install()
 
         let coordinator = makeGhosttyEventCoordinator()
+        coordinator.tmuxStore = tmuxStore
         syncSecureInputPreference(from: ghosttyApp)
         self.eventCoordinator = coordinator
         GhosttyActionRouter.sink = { [weak coordinator] event in

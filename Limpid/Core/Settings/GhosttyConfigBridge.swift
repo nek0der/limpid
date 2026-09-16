@@ -14,6 +14,15 @@ private let log = Logger.limpid("ghostty.config-bridge")
 
 @MainActor
 enum GhosttyConfigBridge {
+    /// Padding between the cell grid and a pane's edges, in points. The
+    /// horizontal value is written into every generated config below; the
+    /// vertical one is libghostty's default, which Limpid leaves to the
+    /// user for ordinary panes. A tmux mirror pane pins both on the edges
+    /// that touch the pane area (`PaddingOverride`), because the mirror's
+    /// geometry is computed from these numbers and the C API cannot hand
+    /// `window-padding-*` back once the config is finalized.
+    nonisolated static let windowPaddingX = 8
+    nonisolated static let windowPaddingY = 2
 
     // MARK: - Serialization
 
@@ -79,7 +88,7 @@ enum GhosttyConfigBridge {
         // full-width row still runs edge to edge while ordinary text
         // keeps its margin. libghostty's own default is 2, which reads
         // as no margin at all once the pane stopped being inset.
-        lines.append("window-padding-x = 8")
+        lines.append("window-padding-x = \(windowPaddingX)")
         lines.append("window-padding-color = extend")
 
         // Theme: pick the bundled `Apple System Colors` pair so the

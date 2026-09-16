@@ -80,7 +80,13 @@ final class TmuxPaneSink: @unchecked Sendable {
         dispatchPrecondition(condition: .notOnQueue(.main))
         guard !isClosed else { return }
         noteActivity()
-        if isPaused || !pending.isEmpty {
+        // Paused means a screen capture is on its way. Everything tmux sends
+        // before that capture is already in the captured screen, so it is
+        // dropped rather than replayed on top of it; a pane whose output was
+        // switched off delivers a large batch of exactly that kind when it
+        // is switched back on.
+        guard !isPaused else { return }
+        if !pending.isEmpty {
             append(bytes)
             return
         }
@@ -91,8 +97,11 @@ final class TmuxPaneSink: @unchecked Sendable {
         }
     }
 
-    /// Hold output until `resume()`. Used while the screen is being rebuilt
-    /// from `capture-pane`, so live output cannot interleave with the paint.
+    /// Drop output until `resume()`. Used while the screen is being rebuilt
+    /// from `capture-pane`: what arrives meanwhile predates the capture, and
+    /// painting it again would duplicate it. Output that tmux emits after
+    /// the capture reply but before `resume` runs on this queue is lost as
+    /// well; that window is one hop through the main actor.
     func pause() {
         queue.async { [self] in isPaused = true }
     }
@@ -104,9 +113,9 @@ final class TmuxPaneSink: @unchecked Sendable {
         }
     }
 
-    /// Resume with `bytes` placed ahead of everything held while paused.
-    /// This is how a rebuilt screen (`capture-pane`) lands before the live
-    /// output that arrived during the rebuild, so the two cannot interleave.
+    /// Resume with `bytes` placed ahead of anything a stalled reader left
+    /// pending. This is how a rebuilt screen (`capture-pane`) lands as one
+    /// piece before live output starts flowing again.
     func resume(afterInjecting bytes: Data) {
         queue.async { [self] in
             pending.insert(contentsOf: bytes, at: pending.startIndex)

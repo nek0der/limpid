@@ -20,6 +20,10 @@ final class GhosttyEventCoordinator {
     private let bellFeaturesProvider: () -> BellFeatures
     private let secureInputManager: SecureInputManager
     private weak var attention: AttentionState?
+    /// Installed after boot by `AppState`. A tmux mirror tab lays its
+    /// panes out from the cell size, so the size a surface reports has to
+    /// reach the mirror that owns it.
+    weak var tmuxStore: TmuxConnectionStore?
 
     /// Pending SET_TITLE applies, keyed by pane id. We debounce title
     /// updates by a tiny delay so a shell that prints the command name
@@ -81,7 +85,11 @@ final class GhosttyEventCoordinator {
         case let .scrollbar(view, state):
             view.updateScrollbarState(state)
         case let .cellSize(view, devicePixelWidth, devicePixelHeight):
-            view.updateCellSize(devicePixelWidth: devicePixelWidth, devicePixelHeight: devicePixelHeight)
+            if view.updateCellSize(devicePixelWidth: devicePixelWidth, devicePixelHeight: devicePixelHeight),
+               let size = view.cellSize, let paneID = registry.id(for: view)
+            {
+                tmuxStore?.cellSizeChanged(size, paneID: paneID)
+            }
         case let .closeSurface(view, _):
             handleCloseSurface(view: view)
         case let .mouseOverLink(view, url):

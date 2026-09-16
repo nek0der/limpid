@@ -18,9 +18,14 @@ import UniformTypeIdentifiers
 struct SplitContainerView: View {
     let node: ResolvedSplitNode
     /// Whether this tab mirrors a tmux window. Only then does a leaf pin
-    /// its padding (config on outer edges, none where panes meet); an
+    /// its padding (Limpid's on outer edges, none where panes meet); an
     /// ordinary tab hands every leaf `nil` and never touches the setter.
     let isMirrorTab: Bool
+    /// tmux's cell layout for a connected mirror tab. When present the
+    /// leaves and dividers come from it and the stored ratios are not
+    /// consulted; a disconnected mirror, or one tmux has not described
+    /// yet, is placed from ratios like any other tab (design §2 D0).
+    var mirrorGeometry: TmuxMirrorGeometry?
     let onLeafFocus: (UUID) -> Void
     let onResize: (PaneSplitPath, Double, CGSize) -> Void
     /// Invoked when a `pane:<uuid>` drag is dropped on a leaf inside the
@@ -48,9 +53,14 @@ struct SplitContainerView: View {
 
     var body: some View {
         switch node {
-        case let .leaf(paneID, view):
-            leaf(paneID: paneID, view: view, paddingOverride: PaddingOverride.forEdges(.all, isMirror: isMirrorTab))
-        case .split:
+        case let .leaf(paneID, view) where !isMirrorTab:
+            leaf(paneID: paneID, view: view, paddingOverride: nil)
+        case .leaf, .split:
+            // A mirror tab is placed the same way whether it has one leaf
+            // or many, so the leaf keeps its view identity when the first
+            // layout arrives. Switching from a bare leaf to a placed one
+            // let the retiring host write its all-edges pin back over the
+            // new one and leave the pane two columns short.
             GeometryReader { geo in
                 placed(in: geo.size)
             }
@@ -59,9 +69,12 @@ struct SplitContainerView: View {
 
     @ViewBuilder
     private func placed(in size: CGSize) -> some View {
-        let layout = PaneLayout.resolve(node.paneNode, in: size, minPaneSize: minPaneSize)
+        let layout = mirrorGeometry?.resolve()
+            ?? PaneLayout.resolve(node.paneNode, in: size, minPaneSize: minPaneSize)
         let views = node.surfaceViews
 
+        // A mirror window can be larger than the area when another client
+        // sized it (design §8 D11): draw what fits, never over the chrome.
         ZStack(alignment: .topLeading) {
             ForEach(layout.leaves, id: \.id) { entry in
                 if let view = views[entry.id] {
@@ -92,6 +105,8 @@ struct SplitContainerView: View {
                     .help("Double-click to equalize")
             }
         }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .clipped()
         .coordinateSpace(name: Self.coordinateSpace)
     }
 
