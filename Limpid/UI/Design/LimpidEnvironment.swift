@@ -24,6 +24,10 @@ extension EnvironmentValues {
     /// own conformer.
     @Entry var surfaceRegistry: any SurfaceViewProviding = NoopSurfaceRegistry()
 
+    /// tmux control-mode connections and the tabs mirroring through
+    /// them. `nil` in Previews / tests, where no pane mirrors.
+    @Entry var tmuxConnectionStore: TmuxConnectionStore?
+
     /// Notification manager for OSC 9 / OSC 777 / COMMAND_FINISHED
     /// emission + Dock badge updates.
     @Entry var notificationManager: LimpidNotificationManager?

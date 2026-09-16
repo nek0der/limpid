@@ -68,6 +68,7 @@ final class TmuxPaneSink: @unchecked Sendable {
         // up here as a full socket rather than as a stuck thread.
         _ = fcntl(hostFd, F_SETFL, fcntl(hostFd, F_GETFL) | O_NONBLOCK)
         armReadSource()
+        log.debug("sink opened host=\(self.hostFd, privacy: .public) surface=\(self.surfaceFd, privacy: .public)")
     }
 
     /// Queue up output for the surface. Must run on `queue`; the transport
@@ -78,6 +79,7 @@ final class TmuxPaneSink: @unchecked Sendable {
         dispatchPrecondition(condition: .onQueue(queue))
         dispatchPrecondition(condition: .notOnQueue(.main))
         guard !isClosed else { return }
+        noteActivity()
         if isPaused || !pending.isEmpty {
             append(bytes)
             return
@@ -102,6 +104,58 @@ final class TmuxPaneSink: @unchecked Sendable {
         }
     }
 
+    /// Resume with `bytes` placed ahead of everything held while paused.
+    /// This is how a rebuilt screen (`capture-pane`) lands before the live
+    /// output that arrived during the rebuild, so the two cannot interleave.
+    func resume(afterInjecting bytes: Data) {
+        queue.async { [self] in
+            pending.insert(contentsOf: bytes, at: pending.startIndex)
+            isPaused = false
+            drain()
+        }
+    }
+
+    /// `handler` runs on the main actor when output arrives, at most once
+    /// per `activityInterval`, and once more after a burst has been quiet
+    /// for that long. A mirror uses it to re-check the pane's tty for a
+    /// password prompt: the prompt's own output arrives first, and the
+    /// program switches the line discipline just after, so the trailing
+    /// call is the one that sees the change.
+    func setOnOutputActivity(_ handler: (@MainActor () -> Void)?) {
+        queue.async { [self] in activityHandler = handler }
+    }
+
+    static let activityInterval: Duration = .milliseconds(250)
+    private var activityHandler: (@MainActor () -> Void)?
+    private var lastActivity: ContinuousClock.Instant?
+    private var hasTrailingActivityScheduled = false
+
+    private func noteActivity() {
+        guard activityHandler != nil else { return }
+        let now = ContinuousClock.now
+        if lastActivity.map({ now - $0 >= Self.activityInterval }) ?? true {
+            lastActivity = now
+            fireActivity()
+        }
+        guard !hasTrailingActivityScheduled else { return }
+        hasTrailingActivityScheduled = true
+        let delay = DispatchTimeInterval.milliseconds(Int(Self.activityInterval / .milliseconds(1)))
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            hasTrailingActivityScheduled = false
+            guard !isClosed else { return }
+            lastActivity = ContinuousClock.now
+            fireActivity()
+        }
+    }
+
+    private func fireActivity() {
+        guard let activityHandler else { return }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { activityHandler() }
+        }
+    }
+
     /// Stop reading the surface's output and close our end. `surfaceFd` is
     /// closed too, because after this nothing legitimate can use it; the
     /// surface must already be gone.
@@ -115,6 +169,7 @@ final class TmuxPaneSink: @unchecked Sendable {
             writeSource = nil
             Darwin.close(hostFd)
             Darwin.close(surfaceFd)
+            log.debug("sink closed host=\(self.hostFd, privacy: .public) surface=\(self.surfaceFd, privacy: .public)")
         }
     }
 

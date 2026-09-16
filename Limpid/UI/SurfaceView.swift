@@ -124,8 +124,9 @@ final class SurfaceView: NSView {
 
     /// Latest viewport metrics reported by libghostty. Stored on the
     /// persistent surface so a short-lived SwiftUI host can rebuild without
-    /// resetting the native scroller to the bottom.
-    private(set) var scrollbarState: TerminalScrollbarState?
+    /// resetting the native scroller to the bottom. Written only by
+    /// `updateScrollbarState` (`SurfaceView+Geometry.swift`).
+    var scrollbarState: TerminalScrollbarState?
 
     /// One cell's footprint in points from the latest `CELL_SIZE` action.
     /// `nil` until libghostty has a font grid; no layout may assume one before.
@@ -138,6 +139,14 @@ final class SurfaceView: NSView {
     var paddingOverride: PaddingOverride? {
         didSet { if paddingOverride != oldValue { applyPaddingOverride() } }
     }
+
+    /// Descriptor that drives this surface's IO instead of a pty, or `-1` for a pane
+    /// with its own shell. Read once, at `createSurface`, when libghostty picks its backend.
+    var mirrorIoFd: Int32 = -1
+
+    /// Runs when the drawn cell grid changes size; a tmux mirror reports it to the server.
+    var onGridChange: ((_ columns: Int, _ rows: Int) -> Void)?
+    var lastReportedGrid: (columns: Int, rows: Int)?
 
     /// Effective advanced `scrollbar` preference read from the finalized
     /// libghostty config. The scroll geometry remains active when false so
@@ -156,11 +165,6 @@ final class SurfaceView: NSView {
     /// overlay. Scrollbar state also changes while output streams, so it cannot
     /// serve as evidence of user interaction without making the overlay blink.
     var onScrollGesture: (() -> Void)?
-
-    func updateScrollbarState(_ state: TerminalScrollbarState) {
-        scrollbarState = state
-        onScrollbarStateChange?(state)
-    }
 
     /// Live SurfaceViews keyed by the raw pointer libghostty uses as
     /// `userdata`. The value side is a `WeakBox` so a deallocated view
@@ -448,6 +452,7 @@ final class SurfaceView: NSView {
             ghostty_surface_set_size(surface, width, height)
             lastPushedSize = (width, height)
         }
+        reportGridIfChanged()
     }
 
     @available(*, unavailable)
@@ -747,6 +752,7 @@ extension SurfaceView {
         config.platform.macos.nsview = viewPtr
         config.userdata = viewPtr
         config.scale_factor = scale
+        config.mirror_io_fd = mirrorIoFd
 
         // Point ghostty at the tab's stored cwd so the shell starts in
         // the project / worktree directory instead of $HOME. The C
@@ -835,7 +841,8 @@ extension SurfaceView {
     /// as paste-text and the submit via a synthesized Return key event
     /// so the shell actually runs the command.
     private func scheduleInitialCommandIfNeeded() {
-        guard let command = initialCommand, !command.isEmpty else { return }
+        // A mirror pane has no shell of its own; whatever runs there is already running inside tmux.
+        guard !isMirror, let command = initialCommand, !command.isEmpty else { return }
         let body = command.hasSuffix("\n") ? String(command.dropLast()) : command
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(600))

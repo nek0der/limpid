@@ -8,6 +8,31 @@ import OSLog
 private let log = Logger.limpid("surface.view")
 
 extension SurfaceView {
+    /// A pane whose bytes come from a descriptor rather than a pty: a tmux
+    /// mirror. Decided at creation and never changes for the surface's life.
+    var isMirror: Bool {
+        mirrorIoFd >= 0
+    }
+
+    func updateScrollbarState(_ state: TerminalScrollbarState) {
+        scrollbarState = state
+        onScrollbarStateChange?(state)
+    }
+
+    /// Read the grid libghostty is drawing and tell the listener when it
+    /// differs from the last report. Called after every size push; the
+    /// comparison keeps a tmux mirror from re-sending the same window size
+    /// on every layout pass.
+    func reportGridIfChanged() {
+        guard let onGridChange, let surface else { return }
+        let grid = GhosttyFFI.surfaceGrid(surface)
+        guard grid.columns > 0, grid.rows > 0,
+              grid.columns != lastReportedGrid?.columns || grid.rows != lastReportedGrid?.rows
+        else { return }
+        lastReportedGrid = grid
+        onGridChange(grid.columns, grid.rows)
+    }
+
     /// Convert libghostty's device-pixel cell report into points. We divide
     /// by the window's scale, not `lastPushedScale`: the first report fires
     /// inside `ghostty_surface_new`, before any scale has been pushed.

@@ -41,6 +41,7 @@ enum CommandPaletteActions {
         // Review can be up over a container with nothing to review, and the
         // palette is one of the ways to close it.
         reviewPresentation: ReviewPresentation?,
+        tmuxStore: TmuxConnectionStore? = nil,
         initialQuery: String = ">"
     ) {
         if session.commandPaletteState != nil {
@@ -53,7 +54,8 @@ enum CommandPaletteActions {
             settings: settings,
             attention: attention,
             registry: registry,
-            reviewPresentation: reviewPresentation
+            reviewPresentation: reviewPresentation,
+            tmuxTargets: tmuxStore?.availableTargets() ?? []
         )
         state.initialQuery = initialQuery.isEmpty ? nil : initialQuery
         state.applyFilter(query: "", frecencyStore: frecencyStore)
@@ -80,7 +82,9 @@ enum CommandPaletteActions {
         frecencyStore: FrecencyStore,
         toastCenter: ToastCenter,
         minPaneSize: Double,
-        agentProjection: AgentProjectionAdapter? = nil
+        agentProjection: AgentProjectionAdapter? = nil,
+        tmuxStore: TmuxConnectionStore? = nil,
+        secureInput: SecureInputManager? = nil
     ) {
         closeCommandPalette(session)
         frecencyStore.record(action.frecencyKey)
@@ -117,6 +121,17 @@ enum CommandPaletteActions {
             NotificationCenter.default.post(name: .limpidOpenSettings, object: nil)
         case .insertPrefix:
             break // Handled in ToolbarPaletteField, never reaches here.
+        case let .mirrorTmuxWindow(target):
+            // The row is only listed when a store exists; a missing one
+            // here is a wiring error, not a user-facing state.
+            guard let tmuxStore else { break }
+            TmuxMirrorActions.open(
+                target,
+                session: session,
+                store: tmuxStore,
+                registry: registry,
+                secureInput: secureInput
+            )
         }
 
         // Restore focus to the terminal surface so the next keystroke

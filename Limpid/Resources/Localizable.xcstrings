@@ -3355,6 +3355,22 @@
         }
       }
     },
+    "Mirror tmux Window": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mirror tmux Window"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux ウィンドウをミラー"
+          }
+        }
+      }
+    },
     "Move": {
       "comment": "Accept the worktree-move suggestion",
       "localizations": {

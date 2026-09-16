@@ -13,6 +13,7 @@ enum CommandPaletteAction: Equatable {
     case openRecentProject(URL)
     case openSettings
     case insertPrefix(PalettePrefix)
+    case mirrorTmuxWindow(TmuxMirrorTarget)
 
     var frecencyKey: String {
         switch self {
@@ -25,6 +26,7 @@ enum CommandPaletteAction: Equatable {
         case let .openRecentProject(url): "recent.\(url.path)"
         case .openSettings: "settings.open"
         case let .insertPrefix(mode): "prefix.\(mode.character)"
+        case let .mirrorTmuxWindow(target): "tmux.mirror.\(target.binding.socketPath).\(target.windowID)"
         }
     }
 }

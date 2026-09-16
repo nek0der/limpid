@@ -242,7 +242,8 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         ghosttyApp: GhosttyApp,
         registry: any SurfaceViewProviding,
         session: WindowSession,
-        hostsAgentsInTmux: Bool
+        hostsAgentsInTmux: Bool,
+        tmuxStore: TmuxConnectionStore? = nil
     ) -> SurfaceView {
         if let existing = registry.view(for: paneID) {
             return existing
@@ -250,6 +251,14 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         let view = SurfaceView(ghosttyApp: ghosttyApp)
         view.isScrollbarEnabled = ghosttyApp.isScrollbarEnabled
         let owningTab = session.tab(containing: paneID)
+        if let owningTab, owningTab.ioSource(for: paneID).isMirror {
+            // A mirror pane has no shell of its own: the sink's descriptor
+            // stands in for the pty, so no command, cwd, environment, or
+            // scrollback replay applies.
+            attachMirror(view, paneID: paneID, tabID: owningTab.id, tmuxStore: tmuxStore)
+            registry.register(view, for: paneID)
+            return view
+        }
         view.initialWorkingDirectory = owningTab?.workingDirectory
         view.initialCommand = Self.resolveInitialCommand(
             tab: owningTab,
@@ -287,6 +296,29 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         Self.stageScrollback(view: view, session: session, tab: owningTab, paneID: paneID)
         registry.register(view, for: paneID)
         return view
+    }
+
+    /// Hand the pane its output descriptor before the surface exists. A
+    /// live mirror supplies the sink tmux feeds; without one (a restored
+    /// tab, a store the Preview has no use for) the pane gets a dormant
+    /// descriptor that never delivers, so it shows nothing rather than a
+    /// login shell in a tab that promised to show a tmux window.
+    @MainActor
+    private static func attachMirror(
+        _ view: SurfaceView,
+        paneID: UUID,
+        tabID: UUID,
+        tmuxStore: TmuxConnectionStore?
+    ) {
+        guard let tmuxStore else { return }
+        if let mirror = tmuxStore.mirror(for: tabID), let sink = mirror.sink(for: paneID) {
+            view.mirrorIoFd = sink.surfaceFd
+            view.onGridChange = { [weak mirror] columns, rows in
+                mirror?.reportGrid(columns: columns, rows: rows)
+            }
+        } else if let sink = tmuxStore.dormantSink(paneID: paneID) {
+            view.mirrorIoFd = sink.surfaceFd
+        }
     }
 
     @MainActor

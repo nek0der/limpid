@@ -9,6 +9,7 @@ struct PaneAreaView: View {
     @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(SettingsStore.self) private var settings
     @Environment(\.surfaceRegistry) private var registry
+    @Environment(\.tmuxConnectionStore) private var tmuxStore
     let ghosttyApp: GhosttyApp
 
     private var renderableTab: Tab? {
@@ -399,7 +400,8 @@ struct PaneAreaView: View {
             ghosttyApp: ghosttyApp,
             registry: registry,
             session: session,
-            hostsAgentsInTmux: settings.settings.advanced.hostsAgentsInTmux
+            hostsAgentsInTmux: settings.settings.advanced.hostsAgentsInTmux,
+            tmuxStore: tmuxStore
         )
     }
 }

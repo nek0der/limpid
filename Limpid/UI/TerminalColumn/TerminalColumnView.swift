@@ -36,6 +36,7 @@ private struct TerminalColumnEmptyState: View {
     @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.frecencyStore) private var frecencyStore
+    @Environment(\.tmuxConnectionStore) private var tmuxStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -71,7 +72,8 @@ private struct TerminalColumnEmptyState: View {
                     frecencyStore: frecencyStore,
                     attention: attention,
                     registry: registry,
-                    reviewPresentation: reviewPresentation
+                    reviewPresentation: reviewPresentation,
+                    tmuxStore: tmuxStore
                 )
             },
             WelcomeCommand(title: "Toggle Sidebar", action: .toggleSidebar, isEnabled: true) {

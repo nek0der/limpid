@@ -19,7 +19,15 @@ final class WindowSession {
     /// All open tabs as a flat list. The tab column list is derived by
     /// filtering on `Tab.container`. Array order = user-visible order
     /// (drag-reorder mutates the array in place).
-    var tabs: [Tab]
+    var tabs: [Tab] {
+        didSet { onTabsChanged?() }
+    }
+
+    /// Runs after every write to `tabs`. The tmux connection store
+    /// derives which connections are still in use from the tab list,
+    /// so a closed mirror tab releases its client without any counting.
+    @ObservationIgnored
+    var onTabsChanged: (() -> Void)?
 
     /// Currently active tab. The terminal column detail view follows
     /// this. May be nil when the active container has zero tabs (empty

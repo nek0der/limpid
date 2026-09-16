@@ -34,7 +34,8 @@ enum CommandPaletteCatalog {
         settings: SettingsStore,
         attention: AttentionState,
         registry: (any SurfaceViewProviding)? = nil,
-        reviewPresentation: ReviewPresentation? = nil
+        reviewPresentation: ReviewPresentation? = nil,
+        tmuxTargets: [TmuxMirrorTarget] = []
     ) -> [CommandPaletteItem] {
         var items: [CommandPaletteItem] = []
         items.reserveCapacity(80)
@@ -53,8 +54,36 @@ enum CommandPaletteCatalog {
         appendProjects(to: &items, session: session)
         appendClosedTabs(to: &items, session: session)
         appendRecentProjects(to: &items, session: session)
+        appendTmuxTargets(to: &items, targets: tmuxTargets)
         appendSettings(to: &items)
         return items
+    }
+
+    // MARK: - tmux windows
+
+    /// One row per tmux window found on a reachable server. The window
+    /// is the row's subject; the verb is the same on every row, so it
+    /// stays in the title and the window name goes in the subtitle.
+    private static func appendTmuxTargets(to items: inout [CommandPaletteItem], targets: [TmuxMirrorTarget]) {
+        guard !targets.isEmpty else { return }
+        let resource: LocalizedStringResource = "Mirror tmux Window"
+        let localizedTitle = String(localized: resource)
+        var englishResource = resource
+        englishResource.locale = Locale(identifier: "en")
+        let englishTitle = String(localized: englishResource)
+        for target in targets {
+            let action = CommandPaletteAction.mirrorTmuxWindow(target)
+            items.append(CommandPaletteItem(
+                id: action.frecencyKey,
+                category: .actions,
+                title: "\(localizedTitle) \(target.displayName)",
+                searchAlias: localizedTitle != englishTitle ? "\(englishTitle) \(target.displayName)" : nil,
+                subtitle: target.binding.socketPath,
+                icon: "rectangle.split.2x1",
+                shortcutDisplay: nil,
+                action: action
+            ))
+        }
     }
 
     // MARK: - Shortcut actions

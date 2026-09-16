@@ -19,6 +19,9 @@ final class AppState {
     /// them. Declared here rather than built in `init` because it needs
     /// nothing but its collaborators, which are handed to `start`.
     let tmuxPresence = TmuxPanePresence()
+    /// Control-mode clients behind mirror tabs. Built in `init` so the
+    /// session's tab-change hook can capture it without touching `self`.
+    let tmuxStore: TmuxConnectionStore
     /// One draft pool for the whole app: every review surface opened on
     /// the same repository root shares a `ReviewStore`, so two surfaces
     /// can never race each other writing the same on-disk draft. Owned
@@ -186,6 +189,14 @@ final class AppState {
         session.quickTabDefaultsProvider = { [settingsStore] in
             let t = settingsStore.settings.terminal
             return (t.quickTabCwdMode, t.quickTabCwdPath)
+        }
+        let tmuxStore = TmuxConnectionStore()
+        self.tmuxStore = tmuxStore
+        // Liveness of a control client is derived from the tab list, so
+        // closing a mirror tab is what releases its connection.
+        session.onTabsChanged = { [weak session, tmuxStore] in
+            guard let session else { return }
+            tmuxStore.reconcile(tabs: session.tabs)
         }
         switch store.load() {
         case .absent:
@@ -582,6 +593,7 @@ struct LimpidApp: App {
                 .environment(state.prHoverPresentation)
                 .environment(\.prStatusSyncer, state.prStatusSyncer)
                 .environment(\.surfaceRegistry, state.registry)
+                .environment(\.tmuxConnectionStore, state.tmuxStore)
                 .environment(\.reviewStores, state.reviewStores)
                 .environment(state.reviewPresentation)
                 .environment(\.agentProjection, state.agentProjection)
@@ -717,7 +729,8 @@ struct LimpidApp: App {
                         frecencyStore: state.frecencyStore,
                         attention: state.attention,
                         registry: state.registry,
-                        reviewPresentation: state.reviewPresentation
+                        reviewPresentation: state.reviewPresentation,
+                        tmuxStore: state.tmuxStore
                     )
                 } label: {
                     Label("Command Palette", systemImage: "text.magnifyingglass")
@@ -732,6 +745,7 @@ struct LimpidApp: App {
                         attention: state.attention,
                         registry: state.registry,
                         reviewPresentation: state.reviewPresentation,
+                        tmuxStore: state.tmuxStore,
                         initialQuery: ""
                     )
                 } label: {
@@ -857,7 +871,9 @@ struct ContentView: View {
                 frecencyStore: state.frecencyStore,
                 toastCenter: state.toastCenter,
                 minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
-                agentProjection: state.agentProjection
+                agentProjection: state.agentProjection,
+                tmuxStore: state.tmuxStore,
+                secureInput: state.registry.secureInputManager
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: .limpidToggleNotificationHistory)) { _ in

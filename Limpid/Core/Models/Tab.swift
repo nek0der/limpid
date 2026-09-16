@@ -115,6 +115,15 @@ struct Tab: Codable, Equatable, Identifiable {
     /// snapshot version bump.
     var tmuxBindings: [UUID: TmuxBinding] = [:]
 
+    /// Where each pane's bytes come from, keyed by leaf id. Only panes that
+    /// are not plain shells have an entry; see `ioSource(for:)`. Kept beside
+    /// the other per-pane dictionaries so `SplitTree` stays a tree of ids.
+    var paneSources: [UUID: PaneIOSource] = [:]
+
+    func ioSource(for paneID: UUID) -> PaneIOSource {
+        paneSources[paneID] ?? .local
+    }
+
     init(
         id: UUID = UUID(),
         kind: Kind = .terminal,
@@ -128,7 +137,8 @@ struct Tab: Codable, Equatable, Identifiable {
         container: ContainerID,
         agentSessions: [AgentKind: [UUID: AgentSessionInfo]] = [:],
         agentBadges: [AgentKind: [UUID: AgentBadge]] = [:],
-        tmuxBindings: [UUID: TmuxBinding] = [:]
+        tmuxBindings: [UUID: TmuxBinding] = [:],
+        paneSources: [UUID: PaneIOSource] = [:]
     ) {
         self.id = id
         self.kind = kind
@@ -143,6 +153,7 @@ struct Tab: Codable, Equatable, Identifiable {
         self.agentSessions = agentSessions
         self.agentBadges = agentBadges
         self.tmuxBindings = tmuxBindings
+        self.paneSources = paneSources
     }
 
     /// Written and read explicitly because the decoder accepts a shape this
@@ -151,7 +162,7 @@ struct Tab: Codable, Equatable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, kind, title, titleOverride, workingDirectory, pwd, splitTree
         case zoomedLeafID, paneStates, scrollbackPaths, initialCommands, container
-        case agentSessions, agentBadges, tmuxBindings
+        case agentSessions, agentBadges, tmuxBindings, paneSources
         case claudeSessions, claudeAgentBadges, codexSessions, codexAgentBadges
     }
 
@@ -242,6 +253,10 @@ struct Tab: Codable, Equatable, Identifiable {
             [UUID: TmuxBinding].self,
             forKey: .tmuxBindings
         ) ?? [:]
+        self.paneSources = try c.decodeIfPresent(
+            [UUID: PaneIOSource].self,
+            forKey: .paneSources
+        ) ?? [:]
     }
 
     /// Title actually rendered in the UI. Honors a manual override; falls
@@ -265,6 +280,11 @@ struct Tab: Codable, Equatable, Identifiable {
         try c.encodeIfPresent(workingDirectory, forKey: .workingDirectory)
         try c.encodeIfPresent(pwd, forKey: .pwd)
         try c.encode(splitTree, forKey: .splitTree)
+        // Written only when a pane is not a plain shell, so an ordinary
+        // tab's snapshot is byte-identical to what earlier builds wrote.
+        if !paneSources.isEmpty {
+            try c.encode(paneSources, forKey: .paneSources)
+        }
         try c.encodeIfPresent(zoomedLeafID, forKey: .zoomedLeafID)
         try c.encode(paneStates, forKey: .paneStates)
         try c.encode(scrollbackPaths, forKey: .scrollbackPaths)

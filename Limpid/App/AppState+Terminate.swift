@@ -32,6 +32,7 @@ extension AppState {
         let registry = self.registry
         let agentProjection = self.agentProjection
         let tmuxPresence = self.tmuxPresence
+        let tmuxStore = self.tmuxStore
         return NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
@@ -54,6 +55,9 @@ extension AppState {
                     detachedPaneIDs: tmuxPresence.detachedPaneIDs
                 )
                 tmuxPresence.stop()
+                // Detach every control client so tmux stops serving a
+                // process that is about to exit.
+                tmuxStore.stopAll()
                 // Independent intents protect a direct agent's resume even if
                 // a concurrent hook owns the lifecycle record's advisory lock.
                 agentProjection.prepareForTermination()
