@@ -304,7 +304,9 @@ enum TabActions {
             )
         case .search:
             dispatchSearchAction(action, session: session, registry: registry)
-        case .terminal, .font:
+        case .font:
+            PaneActions.applyFontAction(action, session: session, registry: registry)
+        case .terminal:
             guard let ghosttyAction = action.ghosttyAction else { return }
             dispatchGhosttyAction(ghosttyAction, session: session, registry: registry)
         }

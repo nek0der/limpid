@@ -152,18 +152,16 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         }
     }
 
-    /// libghostty action string for `keybind = trigger=action`, or
-    /// `nil` when the menu bar owns the shortcut. Only actions with
-    /// **no menu item** get a non-`nil` value: the menu bar's
-    /// `keyboardShortcut` and libghostty's keybind table would
-    /// otherwise both match the same keystroke and fire their
-    /// handlers in parallel (menu → `TabActions.…`, libghostty
-    /// → `GhosttyActionRouter` callback), producing two splits per
-    /// ⌘D / two tab closes per ⌘⌥W / etc. So `splitRight`,
-    /// `splitDown`, `closeTab`, and `find` — all of which have menu
-    /// items — route exclusively through the menu Button. Only the
-    /// three font-size actions stay on the libghostty path because
-    /// they have no menu equivalent.
+    /// libghostty binding action Limpid forwards to a surface for this
+    /// shortcut, or `nil` when the action has no libghostty equivalent
+    /// (`splitRight`, `closeTab`, `find`, … are Limpid's own verbs).
+    ///
+    /// This is *what* to send, not *who* owns the keystroke — see
+    /// `isHandledByLibghosttyKeybind` for that. The font-size actions
+    /// have both a menu item and a binding action: the menu receives
+    /// ⌘+ and `PaneActions.applyFontAction` decides which surfaces get
+    /// `increase_font_size:1`, so a mirror tab can fan it out to every
+    /// pane while an ordinary tab keeps today's focused-pane behavior.
     var ghosttyAction: String? {
         switch self {
         case .nextPrompt: "jump_to_prompt:1"
@@ -184,6 +182,21 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
              .focusPaneUp, .focusPaneDown,
              .find, .findNext, .findPrevious,
              .commandPalette, .quickOpen: nil
+        }
+    }
+
+    /// Whether libghostty's own keybind table fires this shortcut when a
+    /// terminal has focus. Everything with a menu item must be `false`:
+    /// the menu's `keyboardShortcut` and libghostty's keybind would both
+    /// match the keystroke and fire in parallel (menu → `TabActions.…`,
+    /// libghostty → `GhosttyActionRouter`), producing two splits per ⌘D.
+    /// `GhosttyConfigBridge` emits `=ignore` for the others so a disabled
+    /// menu item never lets the raw character reach the shell. Only the
+    /// prompt-jump pair has no menu item and stays on the libghostty path.
+    var isHandledByLibghosttyKeybind: Bool {
+        switch self {
+        case .nextPrompt, .previousPrompt: true
+        default: false
         }
     }
 

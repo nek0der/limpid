@@ -81,7 +81,29 @@ struct PaneCommands: Commands {
             }
             .limpidShortcut(.previousTab, in: state.settingsStore)
             .disabled(state.session.tabs(in: state.session.activeContainerID).count <= 1)
+
+            // Font size lives here rather than in libghostty's keybind table
+            // so Limpid decides which surfaces the change applies to; a
+            // mirror tab must keep one cell size across all of its panes.
+            Divider()
+            fontButton(.increaseFontSize)
+            fontButton(.decreaseFontSize)
+            fontButton(.resetFontSize)
         }
+    }
+
+    private func fontButton(_ action: LimpidShortcutAction) -> some View {
+        Button {
+            PaneActions.applyFontAction(action, session: state.session, registry: state.registry)
+        } label: {
+            Label {
+                Text(action.localizedTitle)
+            } icon: {
+                Image(systemName: action.iconName)
+            }
+        }
+        .limpidShortcut(action, in: state.settingsStore)
+        .disabled(state.session.activeTab == nil)
     }
 
     /// One Focus/Move menu item for `direction`. Title + icon come from the

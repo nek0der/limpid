@@ -276,6 +276,22 @@ struct GhosttyConfigBridgeTests {
         #expect(!config.contains("keybind = super+down=ignore"))
     }
 
+    @Test("font-size shortcuts are menu-owned: their trigger emits ignore and the binding action never reaches the keybind table")
+    func makeConfig_fontSizeShortcuts_emitIgnore() throws {
+        let settings = LimpidSettings.default
+        let config = generate(settings)
+        // Limpid forwards `increase_font_size:1` itself via
+        // `PaneActions.applyFontAction`; if libghostty also bound the
+        // key, ⌘+ would step the focused pane twice.
+        for action in [LimpidShortcutAction.increaseFontSize, .decreaseFontSize, .resetFontSize] {
+            let trigger = try #require(settings.keyboard.shortcut(for: action)?.ghosttyTrigger)
+            #expect(config.contains("keybind = \(trigger)=ignore"))
+        }
+        #expect(!config.contains("=increase_font_size"))
+        #expect(!config.contains("=decrease_font_size"))
+        #expect(!config.contains("=reset_font_size"))
+    }
+
     @Test("user config diagnostics distinguish invalid and clean files")
     func userConfigDiagnostics_reportOnlyInvalidConfig() throws {
         try withTempDir { directory in

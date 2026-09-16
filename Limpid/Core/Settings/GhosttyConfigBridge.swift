@@ -169,20 +169,21 @@ enum GhosttyConfigBridge {
     }
 
     /// One `keybind = …` line per `LimpidShortcutAction` with a
-    /// configured trigger. Ghostty-dispatched actions
-    /// (`ghosttyAction != nil`) emit the real action so libghostty
-    /// fires it when the terminal has focus. Menu-owned actions
-    /// (`ghosttyAction == nil`) emit `=ignore` — a disabled menu
-    /// item lets the keystroke fall through to the focused
-    /// terminal, and without `ignore` libghostty would type the
-    /// literal character ("j", "R", …). An enabled menu item
-    /// consumes the event before libghostty sees it, so `ignore`
-    /// only fires on the disabled path.
+    /// configured trigger. Actions libghostty owns
+    /// (`isHandledByLibghosttyKeybind`) emit the real action so it
+    /// fires when the terminal has focus. Menu-owned actions emit
+    /// `=ignore` — a disabled menu item lets the keystroke fall
+    /// through to the focused terminal, and without `ignore`
+    /// libghostty would type the literal character ("j", "R", "=").
+    /// An enabled menu item consumes the event before libghostty
+    /// sees it, so `ignore` only fires on the disabled path. The
+    /// font-size actions are menu-owned too: their binding action
+    /// is sent by `PaneActions.applyFontAction`, not by this table.
     private static func actionKeybindLines(settings: LimpidSettings) -> [String] {
         var out: [String] = []
         for action in LimpidShortcutAction.allCases {
             guard let shortcut = settings.keyboard.shortcut(for: action) else { continue }
-            let rhs = action.ghosttyAction ?? "ignore"
+            let rhs = (action.isHandledByLibghosttyKeybind ? action.ghosttyAction : nil) ?? "ignore"
             out.append("keybind = \(shortcut.ghosttyTrigger)=\(rhs)")
         }
         return out
