@@ -28,7 +28,7 @@ enum FocusDirection {
     case spatial(SpatialDirection)
 }
 
-enum PaneSplitBranch: Equatable {
+enum PaneSplitBranch: Hashable {
     case first
     case second
 }

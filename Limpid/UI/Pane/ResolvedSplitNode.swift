@@ -24,56 +24,68 @@ indirect enum ResolvedSplitNode {
         _ node: PaneNode,
         resolveOrCreate: (UUID) -> SurfaceView?
     ) -> ResolvedSplitNode? {
-        build(node, path: [], resolveOrCreate: resolveOrCreate)
-    }
-
-    private static func build(
-        _ node: PaneNode,
-        path: PaneSplitPath,
-        resolveOrCreate: (UUID) -> SurfaceView?
-    ) -> ResolvedSplitNode? {
         switch node {
         case let .leaf(id):
             guard let view = resolveOrCreate(id) else { return nil }
             return .leaf(paneID: id, view: view)
         case let .split(data):
-            let first = build(data.first, path: path + [.first], resolveOrCreate: resolveOrCreate)
-            let second = build(data.second, path: path + [.second], resolveOrCreate: resolveOrCreate)
+            let first = build(data.first, resolveOrCreate: resolveOrCreate)
+            let second = build(data.second, resolveOrCreate: resolveOrCreate)
             if let l = first, let r = second {
                 return .split(ResolvedSplit(
-                    path: path,
                     direction: data.direction,
                     ratio: data.ratio,
                     first: l,
                     second: r
                 ))
             }
+            // A dropped leaf collapses its split. Divider paths are assigned
+            // afterwards by `PaneLayout` over this effective tree, so there
+            // is exactly one source for them; a path computed here over the
+            // persisted shape could disagree with it.
             return first ?? second
         }
     }
 
-    /// Mirror `PaneNode.minimumExtent` after live surfaces are resolved.
-    /// A missing surface can collapse a persisted split during resolution, so
-    /// the renderer must calculate from this effective tree rather than the
-    /// on-disk shape.
-    func minimumExtent(along axis: SplitDirection, leafMinimum: CGFloat) -> CGFloat {
+    /// The effective tree with views stripped back to ids. A missing surface
+    /// collapses a persisted split during resolution, so geometry must be
+    /// computed from this shape rather than the on-disk one; `PaneLayout`
+    /// takes a `PaneNode` so it stays free of AppKit and testable.
+    var paneNode: PaneNode {
         switch self {
-        case .leaf:
-            return leafMinimum
+        case let .leaf(paneID, _):
+            .leaf(id: paneID)
         case let .split(data):
-            let first = data.first.minimumExtent(along: axis, leafMinimum: leafMinimum)
-            let second = data.second.minimumExtent(along: axis, leafMinimum: leafMinimum)
-            if data.direction == axis {
-                return first + PaneSplit.dividerThickness + second
-            }
-            return max(first, second)
+            .split(PaneSplit(
+                direction: data.direction,
+                ratio: data.ratio,
+                first: data.first.paneNode,
+                second: data.second.paneNode
+            ))
+        }
+    }
+
+    /// Every resolved leaf's view by pane id, for placing leaves once
+    /// `PaneLayout` has decided where each one goes.
+    var surfaceViews: [UUID: SurfaceView] {
+        var views: [UUID: SurfaceView] = [:]
+        collectViews(into: &views)
+        return views
+    }
+
+    private func collectViews(into views: inout [UUID: SurfaceView]) {
+        switch self {
+        case let .leaf(paneID, view):
+            views[paneID] = view
+        case let .split(data):
+            data.first.collectViews(into: &views)
+            data.second.collectViews(into: &views)
         }
     }
 }
 
 @MainActor
 struct ResolvedSplit {
-    let path: PaneSplitPath
     let direction: SplitDirection
     let ratio: Double
     let first: ResolvedSplitNode
