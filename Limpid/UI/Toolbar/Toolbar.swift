@@ -58,6 +58,7 @@ struct ToolbarTerminalColumnSegment: View {
     @Environment(NotificationHistoryStore.self) private var historyStore
     @Environment(\.sparkleUpdater) private var updater
     @Environment(\.surfaceRegistry) private var registry
+    @Environment(\.tmuxConnectionStore) private var tmuxStore
     @Environment(\.agentProjection) private var agentProjection
 
     var body: some View {
@@ -105,13 +106,7 @@ struct ToolbarTerminalColumnSegment: View {
                     help: "Split Right (⌘D)",
                     isEnabled: session.activeTab != nil
                 ) {
-                    PaneActions.split(
-                        session,
-                        direction: .horizontal,
-                        registry: registry,
-                        minPaneSize: settings.settings.terminal.minPaneSize,
-                        toastCenter: toastCenter
-                    )
+                    split(.horizontal)
                 }
                 ToolbarGroupDivider()
                 ToolbarIconButton(
@@ -119,13 +114,7 @@ struct ToolbarTerminalColumnSegment: View {
                     help: "Split Down (⌘⇧D)",
                     isEnabled: session.activeTab != nil
                 ) {
-                    PaneActions.split(
-                        session,
-                        direction: .vertical,
-                        registry: registry,
-                        minPaneSize: settings.settings.terminal.minPaneSize,
-                        toastCenter: toastCenter
-                    )
+                    split(.vertical)
                 }
             }
             actionsMenu(density: .regular)
@@ -231,7 +220,8 @@ struct ToolbarTerminalColumnSegment: View {
             direction: direction,
             registry: registry,
             minPaneSize: settings.settings.terminal.minPaneSize,
-            toastCenter: toastCenter
+            toastCenter: toastCenter,
+            tmuxStore: tmuxStore
         )
     }
 }

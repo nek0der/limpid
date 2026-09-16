@@ -279,7 +279,10 @@ enum TabActions {
         registry: any SurfaceViewProviding,
         trackers: SessionTrackers,
         toastCenter: ToastCenter,
-        minPaneSize: Double
+        minPaneSize: Double,
+        // A mirror tab translates its split verbs into tmux commands; without
+        // the store those verbs stay inert rather than editing a tree tmux owns.
+        tmuxStore: TmuxConnectionStore? = nil
     ) {
         switch action.category {
         case .file:
@@ -300,7 +303,8 @@ enum TabActions {
                 session: session,
                 registry: registry,
                 toastCenter: toastCenter,
-                minPaneSize: minPaneSize
+                minPaneSize: minPaneSize,
+                tmuxStore: tmuxStore
             )
         case .search:
             dispatchSearchAction(action, session: session, registry: registry)
@@ -395,12 +399,14 @@ enum TabActions {
         }
     }
 
+    // swiftlint:disable:next function_parameter_count
     private static func dispatchSplitAction(
         _ action: LimpidShortcutAction,
         session: WindowSession,
         registry: any SurfaceViewProviding,
         toastCenter: ToastCenter,
-        minPaneSize: Double
+        minPaneSize: Double,
+        tmuxStore: TmuxConnectionStore?
     ) {
         switch action {
         case .splitRight:
@@ -409,7 +415,8 @@ enum TabActions {
                 direction: .horizontal,
                 registry: registry,
                 minPaneSize: minPaneSize,
-                toastCenter: toastCenter
+                toastCenter: toastCenter,
+                tmuxStore: tmuxStore
             )
         case .splitDown:
             PaneActions.split(
@@ -417,10 +424,13 @@ enum TabActions {
                 direction: .vertical,
                 registry: registry,
                 minPaneSize: minPaneSize,
-                toastCenter: toastCenter
+                toastCenter: toastCenter,
+                tmuxStore: tmuxStore
             )
-        case .equalizeSplits: PaneActions.equalizeSplits(session)
-        case .toggleSplitZoom: PaneActions.toggleZoom(session)
+        case .equalizeSplits:
+            PaneActions.equalizeSplits(session, tmuxStore: tmuxStore, toastCenter: toastCenter)
+        case .toggleSplitZoom:
+            PaneActions.toggleZoom(session, tmuxStore: tmuxStore, toastCenter: toastCenter)
         case .focusPaneLeft: PaneActions.focusPane(session, registry: registry, direction: .left)
         case .focusPaneRight: PaneActions.focusPane(session, registry: registry, direction: .right)
         case .focusPaneUp: PaneActions.focusPane(session, registry: registry, direction: .up)

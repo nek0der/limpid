@@ -100,7 +100,8 @@ enum CommandPaletteActions {
                     projection: agentProjection
                 ),
                 toastCenter: toastCenter,
-                minPaneSize: minPaneSize
+                minPaneSize: minPaneSize,
+                tmuxStore: tmuxStore
             )
         case let .jumpToTab(tabID):
             if let tab = session.tab(tabID) {
@@ -130,7 +131,8 @@ enum CommandPaletteActions {
                 session: session,
                 store: tmuxStore,
                 registry: registry,
-                secureInput: secureInput
+                secureInput: secureInput,
+                toastCenter: toastCenter
             )
         }
 

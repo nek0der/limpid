@@ -200,6 +200,17 @@ struct ThreePaneLayout: View {
                 undo: nil
             ))
         }
+        // Command-V on a tmux mirror pane. The refusal is raised in AppKit,
+        // where no toast center is reachable, so it arrives as a notification
+        // and the window that owns the surface is the one that speaks.
+        .onReceive(NotificationCenter.default.publisher(for: .limpidMirrorPasteRefused)) { notification in
+            guard let view = notification.object as? SurfaceView,
+                  state.registry.id(for: view) != nil else { return }
+            toastCenter.show(ToastItem(
+                message: String(localized: "Paste is not available in a tmux mirror pane"),
+                undo: nil
+            ))
+        }
     }
 
     private func dismissCompactSidebar() {

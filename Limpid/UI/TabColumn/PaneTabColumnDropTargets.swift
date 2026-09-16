@@ -75,19 +75,11 @@ extension View {
     ) -> some View {
         background {
             if dragState.current == .pane {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .paneStringDropCatcher(
-                        key: "pane-detach-\(container)",
-                        dragState: dragState
-                    ) { paneID in
-                        paneDropLog.debug("detach pane=\(paneID.uuidString, privacy: .public)")
-                        // Reuse the right-click path. The detach to new
-                        // tab is byte-identical between menu and drag;
-                        // gating on multi-leaf tabs is built into
-                        // `movePaneToNewTab`.
-                        TabActions.movePaneToNewTab(session, paneID: paneID)
-                    }
+                PaneDetachDropArea(
+                    container: container,
+                    session: session,
+                    dragState: dragState
+                )
             }
         }
     }
@@ -151,6 +143,10 @@ private struct PaneMergeDropArea: View {
     /// the active-pill shape memorized.
     let pillHorizontalPadding: CGFloat
     @Environment(\.limpidAccent) private var accent
+    @Environment(\.tmuxConnectionStore) private var tmuxStore
+    /// Optional because the tab column is also built in previews and tests,
+    /// which mount no toast center.
+    @Environment(ToastCenter.self) private var toastCenter: ToastCenter?
 
     private var key: String {
         "pane-merge-\(targetTabID)"
@@ -167,7 +163,17 @@ private struct PaneMergeDropArea: View {
                     paneDropLog.debug(
                         "merge target=\(targetTabID.uuidString, privacy: .public) pane=\(paneID.uuidString, privacy: .public)"
                     )
-                    TabActions.mergePaneIntoTab(session, paneID: paneID, into: targetTabID)
+                    // Routed through the mirror-aware action rather than
+                    // `TabActions` directly: two mirrors of one tmux session
+                    // merge with `join-pane`, and any other pairing that
+                    // involves a mirror is refused with a word to the user.
+                    TmuxMirrorActions.mergePaneIntoTab(
+                        session,
+                        paneID: paneID,
+                        into: targetTabID,
+                        store: tmuxStore,
+                        toastCenter: toastCenter
+                    )
                 }
             // Single accent rectangle slides between rows via a shared
             // `matchedGeometryEffect` id, mirroring AppKit's drop
@@ -183,6 +189,43 @@ private struct PaneMergeDropArea: View {
                     .allowsHitTesting(false)
             }
         }
+    }
+}
+
+/// The detach catcher, a view rather than a plain `Color` so it can read the
+/// tmux store and the toast center: a pane dragged out of a mirror tab leaves
+/// through `break-pane`, not through the ordinary tree surgery, and the
+/// `extension View` modifier around it cannot pull environment values.
+@MainActor
+private struct PaneDetachDropArea: View {
+    let container: ContainerID
+    let session: WindowSession
+    let dragState: LimpidDragState
+    @Environment(\.surfaceRegistry) private var registry
+    @Environment(\.tmuxConnectionStore) private var tmuxStore
+    /// Optional for the same reason as `PaneMergeDropArea`'s.
+    @Environment(ToastCenter.self) private var toastCenter: ToastCenter?
+
+    var body: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .paneStringDropCatcher(
+                key: "pane-detach-\(container)",
+                dragState: dragState
+            ) { paneID in
+                paneDropLog.debug("detach pane=\(paneID.uuidString, privacy: .public)")
+                // Reuse the right-click path. The detach to new tab is
+                // byte-identical between menu and drag; gating on multi-leaf
+                // tabs is built into `movePaneToNewTab`.
+                TmuxMirrorActions.movePaneToNewTab(
+                    session,
+                    paneID: paneID,
+                    store: tmuxStore,
+                    registry: registry,
+                    secureInput: registry.secureInput,
+                    toastCenter: toastCenter
+                )
+            }
     }
 }
 

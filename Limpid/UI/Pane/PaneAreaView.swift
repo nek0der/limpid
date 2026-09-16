@@ -117,6 +117,12 @@ struct PaneAreaView: View {
                             }
                         },
                         onResize: { splitPath, delta, bounds in
+                            // A mirror tab asks tmux for the new size in
+                            // cells and draws the layout that comes back.
+                            if tab.kind == .tmuxMirror {
+                                resizeMirrorPane(tab: tab, splitPath: splitPath, delta: delta)
+                                return
+                            }
                             let floor = settings.settings.terminal.minPaneSize
                             session.update(tab.id) { t in
                                 t.splitTree = t.splitTree.resize(
@@ -143,9 +149,15 @@ struct PaneAreaView: View {
                             guard let liveTab = session.tab(tab.id),
                                   liveTab.splitTree.contains(leafID: source),
                                   liveTab.splitTree.contains(leafID: target),
-                                  source != target,
-                                  isPaneDropSizeFeasible(source: source, target: target, zone: zone)
+                                  source != target
                             else { return }
+                            // A mirror tab only swaps, and tmux does it.
+                            if liveTab.kind == .tmuxMirror {
+                                guard zone == .center, liveTab.capabilities.canSwap else { return }
+                                tmuxStore?.mirror(for: tab.id)?.swap(source, target)
+                                return
+                            }
+                            guard isPaneDropSizeFeasible(source: source, target: target, zone: zone) else { return }
                             session.update(tab.id) { t in
                                 t.splitTree = switch zone {
                                 case .center:
@@ -175,6 +187,13 @@ struct PaneAreaView: View {
                             // each call — the user may have made other
                             // edits since the drag began.
                             guard let liveTab = session.tab(tab.id) else { return false }
+                            let capabilities = liveTab.capabilities
+                            if zone == .center, !capabilities.canSwap {
+                                return false
+                            }
+                            if zone != .center, !capabilities.canInsert {
+                                return false
+                            }
                             let tree = liveTab.splitTree
                             let result: SplitTree = switch zone {
                             case .center: tree.swappingLeaves(source, target)
@@ -208,6 +227,9 @@ struct PaneAreaView: View {
                             return true
                         },
                         onEqualize: { splitPath in
+                            // tmux's `-E` reaches only the focused pane's
+                            // neighbors, not an arbitrary subtree.
+                            guard tab.capabilities.canEqualizeSubtree else { return }
                             // `LimpidMotion.expand` (0.2s easeInOut) gives the
                             // ratio change a soft transition; Reduce Motion
                             // users get the same final state without the
@@ -410,6 +432,21 @@ struct PaneAreaView: View {
                 }
             }
         }
+    }
+
+    /// Turn a divider drag on a mirror tab into `resize-pane`. The delta is
+    /// relative to the layout on screen, so it converts to whole cells on
+    /// top of the extent tmux reported for the first side of the split.
+    private func resizeMirrorPane(tab: Tab, splitPath: PaneSplitPath, delta: Double) {
+        guard let mirror = tmuxStore?.mirror(for: tab.id),
+              let geometry = mirrorGeometry(for: tab),
+              let target = PaneLayout.mirrorResizeTarget(in: geometry.layout, path: splitPath),
+              let paneID = geometry.leafIDs[target.pane]
+        else { return }
+        let cell = target.direction == .horizontal ? geometry.cellSize.width : geometry.cellSize.height
+        let cells = target.extent + Int((delta / cell).rounded())
+        guard cells != target.extent else { return }
+        mirror.resize(paneID: paneID, direction: target.direction, cells: max(1, cells))
     }
 
     /// tmux's layout for a connected mirror tab, once tmux has described

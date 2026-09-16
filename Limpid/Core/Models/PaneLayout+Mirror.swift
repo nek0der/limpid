@@ -32,6 +32,13 @@ struct TmuxMirrorGeometry: Equatable {
     }
 }
 
+/// The pane a divider drag resizes and its current extent along the axis.
+struct MirrorResizeTarget: Equatable {
+    let pane: String
+    let direction: SplitDirection
+    let extent: Int
+}
+
 extension PaneLayout {
     /// Lay the panes of a tmux window out from the cell rectangles tmux
     /// reported, at `cellSize` points per cell. tmux has already decided
@@ -59,6 +66,57 @@ extension PaneLayout {
             var builder = MirrorBuilder(window: layout.root.rect, cellSize: cellSize, padding: padding, leafID: leafID)
             builder.place(layout.root, path: [])
             return PaneLayout(leaves: builder.leaves, dividers: builder.dividers)
+        }
+    }
+
+    /// What a divider drag on a mirror tab turns into: the pane tmux is
+    /// told to resize and the size it currently has, in cells. The divider
+    /// at `path` belongs to the split whose first side ends at it; tmux
+    /// resizes a pane's enclosing cell along the axis, so any leaf of that
+    /// side names it, and the first one is taken.
+    static func mirrorResizeTarget(in layout: TmuxLayout, path: PaneSplitPath) -> MirrorResizeTarget? {
+        var node = layout.root
+        var remaining = path[...]
+        while true {
+            let direction: SplitDirection
+            let children: [TmuxLayoutNode]
+            let rect = node.rect
+            switch node {
+            case .pane:
+                return nil
+            case let .sideBySide(_, kids):
+                direction = .horizontal
+                children = kids
+            case let .stacked(_, kids):
+                direction = .vertical
+                children = kids
+            }
+            guard let first = children.first, children.count > 1 else { return nil }
+            guard let step = remaining.first else {
+                let extent = direction == .horizontal ? first.rect.width : first.rect.height
+                guard let pane = first.paneIDs.first else { return nil }
+                return MirrorResizeTarget(pane: pane, direction: direction, extent: extent)
+            }
+            remaining = remaining.dropFirst()
+            switch step {
+            case .first:
+                node = first
+            case .second:
+                // The right fold: the rest of the siblings form one box that
+                // starts where the second sibling starts.
+                let rest = Array(children.dropFirst())
+                if rest.count == 1 {
+                    node = rest[0]
+                } else if direction == .horizontal {
+                    let restX = rest[0].rect.x
+                    let box = TmuxCellRect(width: rect.x + rect.width - restX, height: rect.height, x: restX, y: rect.y)
+                    node = .sideBySide(rect: box, children: rest)
+                } else {
+                    let restY = rest[0].rect.y
+                    let box = TmuxCellRect(width: rect.width, height: rect.y + rect.height - restY, x: rect.x, y: restY)
+                    node = .stacked(rect: box, children: rest)
+                }
+            }
         }
     }
 

@@ -565,6 +565,15 @@ struct LimpidApp: App {
         allowsAutomaticChecks: !LimpidPaths.isDevBuild
     )
 
+    /// ⌘W closes the focused pane, or the tab when it holds the last one.
+    /// A mirror tab refuses the pane half (a tmux pane's agent check would
+    /// answer "none" while killing one), so the item stays live only while
+    /// the cascade would reach the tab.
+    private var isClosePaneDisabled: Bool {
+        guard let tab = state.session.activeTab else { return true }
+        return !tab.capabilities.canClosePane && tab.splitTree.allLeafIDs().count > 1
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView(state: state)
@@ -687,7 +696,7 @@ struct LimpidApp: App {
                     Label("Close Pane", systemImage: "xmark")
                 }
                 .limpidShortcut(.closeSurface, in: state.settingsStore)
-                .disabled(state.session.activeTab == nil)
+                .disabled(isClosePaneDisabled)
                 // ⌘⌥W → close the entire tab regardless of how many
                 // panes it contains (no per-pane cascade).
                 Button {

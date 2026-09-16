@@ -56,6 +56,19 @@ final class TmuxWindowMirror {
     /// The grid last sent with `refresh-client -C`, so a layout pass that
     /// changes nothing sends nothing (design §8 D11).
     @ObservationIgnored private var reportedGrid: (columns: Int, rows: Int)?
+    /// tmux answered a verb with `%error`; the UI shows the text. Set by
+    /// whoever opens the mirror and owns a toast center.
+    @ObservationIgnored var onCommandFailed: ((String) -> Void)?
+    /// The divider drag in progress: only the newest request waits, and
+    /// only one is ever outstanding (`TmuxWindowMirror+Verbs.swift`).
+    @ObservationIgnored var queuedResize: PendingResize?
+    @ObservationIgnored var isResizeInFlight = false
+
+    struct PendingResize {
+        let paneID: UUID
+        let direction: SplitDirection
+        let cells: Int
+    }
 
     init(
         tabID: UUID,
@@ -93,6 +106,31 @@ final class TmuxWindowMirror {
 
     func shows(paneID: UUID) -> Bool {
         panes[paneID] != nil
+    }
+
+    func tmuxPane(for paneID: UUID) -> String? {
+        panes[paneID]?.tmuxPane
+    }
+
+    /// Let go of a pane tmux has moved out of this window, before another
+    /// mirror on the same connection attaches it. The connection keys sinks
+    /// by tmux pane, so without this the newcomer would be handed our sink
+    /// and lose it when our `%layout-change` detached it. Idempotent: if
+    /// that notification already ran, there is nothing left to do.
+    func release(paneID: UUID) {
+        detach(paneID: paneID)
+        registry.unregister(paneID)
+        guard let tab = session.tab(tabID), tab.splitTree.contains(leafID: paneID) else { return }
+        session.update(tabID) { t in
+            t.splitTree = t.splitTree.remove(paneID).tree
+            t.paneSources.removeValue(forKey: paneID)
+            if t.zoomedLeafID == paneID {
+                t.zoomedLeafID = nil
+            }
+            if let focused = t.splitTree.focusedLeafID, !t.splitTree.contains(leafID: focused) {
+                t.splitTree.focusedLeafID = t.splitTree.allLeafIDs().first
+            }
+        }
     }
 
     func stop() {
@@ -178,8 +216,9 @@ final class TmuxWindowMirror {
     func handle(_ line: TmuxControlLine) {
         guard !isStopped else { return }
         switch line {
-        case let .layoutChange(window, layout, _, _) where window == windowID:
+        case let .layoutChange(window, layout, visibleLayout, flags) where window == windowID:
             applyLayout(layout)
+            applyZoom(visibleLayout: visibleLayout, flags: flags)
         case .exit:
             // The connection is gone; the panes stay as dormant surfaces
             // until the user reconnects (no automatic reconnect by design).
@@ -315,6 +354,22 @@ final class TmuxWindowMirror {
         scheduleGridCheck(layout)
     }
 
+    /// Zoom follows tmux's window flag (`Z`), never a local toggle. The
+    /// visible layout names the one pane tmux is drawing over the whole
+    /// window; that leaf becomes the tab's zoomed leaf, and the pane area
+    /// gives it every edge, which is exactly the size tmux gave it.
+    private func applyZoom(visibleLayout: String?, flags: String?) {
+        let isZoomed = flags?.contains("Z") ?? false
+        var zoomedLeaf: UUID?
+        if isZoomed, let visible = visibleLayout.flatMap(TmuxLayout.parse),
+           case let .pane(tmuxPane, _) = visible.root
+        {
+            zoomedLeaf = panes.first { $0.value.tmuxPane == tmuxPane }?.key
+        }
+        guard let tab = session.tab(tabID), tab.zoomedLeafID != zoomedLeaf else { return }
+        session.update(tabID) { $0.zoomedLeafID = zoomedLeaf }
+    }
+
     /// Read each surface's grid back once the layout has had time to
     /// land and compare it with the cells tmux gave the pane (design §8
     /// D11). A mismatch is logged, not corrected: the arithmetic is meant
@@ -330,8 +385,11 @@ final class TmuxWindowMirror {
     private func checkGrids(_ node: TmuxLayoutNode) {
         switch node {
         case let .pane(tmuxPane, rect):
+            // A surface off screen keeps its old frame until the tab comes
+            // back, so only a mounted one can be held to tmux's numbers.
             guard let (paneID, _) = panes.first(where: { $0.value.tmuxPane == tmuxPane }),
-                  let drawn = registry.view(for: paneID)?.drawnGrid
+                  let view = registry.view(for: paneID), view.window != nil,
+                  let drawn = view.drawnGrid
             else { return }
             let drawnText = "\(drawn.columns)x\(drawn.rows)"
             let tmuxText = "\(rect.width)x\(rect.height)"

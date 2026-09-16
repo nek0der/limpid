@@ -11,6 +11,16 @@
         }
       }
     },
+    "A tmux pane can only move between windows of its own session": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux のペインは同じセッションのウィンドウ間でしか移動できません"
+          }
+        }
+      }
+    },
     "Agent responses and completed commands appear as notifications.": {
       "localizations": {
         "ja": {
@@ -3716,6 +3726,16 @@
         }
       }
     },
+    "Not connected to tmux": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux に接続していません"
+          }
+        }
+      }
+    },
     "Not enough room to split": {
       "localizations": {
         "ja": {
@@ -3926,6 +3946,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ペースト"
+          }
+        }
+      }
+    },
+    "Paste is not available in a tmux mirror pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux ミラーのペインには貼り付けできません"
           }
         }
       }

@@ -421,8 +421,6 @@ final class SurfaceView: NSView {
     }
 
     @objc private func frameDidChange(_ note: Notification) {
-        // libghostty owns the layer; we only keep it informed of the live
-        // pixel size and it resizes + redraws its own layer.
         pushSurfaceSize()
     }
 
@@ -523,6 +521,9 @@ final class SurfaceView: NSView {
         }
         if surface == nil {
             createSurface()
+        } else {
+            // A frame set while off screen was dropped by the window guard.
+            pushSurfaceSize()
         }
         // Focused leaf grabs the keyboard; others are marked unfocused so
         // they don't all render an active cursor. See `shouldFocusOnMount`.
@@ -691,7 +692,7 @@ final class SurfaceView: NSView {
     // MARK: - Drag and drop
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        guard sender.draggingPasteboard.canReadObject(forClasses: [NSURL.self], options: fileOnlyOptions) else {
+        guard !isMirror, sender.draggingPasteboard.canReadObject(forClasses: [NSURL.self], options: fileOnlyOptions) else {
             return []
         }
         return .copy

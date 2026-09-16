@@ -56,12 +56,26 @@ enum ReviewAgents {
         attention: AttentionState,
         presentation: ReviewPresentation?
     ) -> Bool {
-        if presentation?.isPresented == true || directory(session: session) != nil {
+        // A surface already up stays up even if the user has since switched to
+        // a tab that would not have opened it: the only reading left is to
+        // close it, and the affordance is what closes it.
+        if presentation?.isPresented == true {
+            return true
+        }
+        guard allowsReviewSurface(session: session) else { return false }
+        if directory(session: session) != nil {
             return true
         }
         let paneID = session.activeTab?.splitTree.effectiveFocusedLeafID
         guard isTransientTurnContainer(session: session, paneID: paneID) else { return false }
         return turnTarget(session: session, attention: attention, paneID: paneID) != nil
+    }
+
+    /// Whether the active tab lets review dock over it
+    /// (`TabCapabilities.canOpenReview`). A session with no active tab keeps
+    /// the older answer, since the rest of the check reads the session.
+    static func allowsReviewSurface(session: WindowSession) -> Bool {
+        session.activeTab?.capabilities.canOpenReview ?? true
     }
 
     static func isTransientTurnContainer(session: WindowSession, paneID: UUID?) -> Bool {

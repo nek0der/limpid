@@ -16,35 +16,45 @@ struct PaneCommands: Commands {
                     direction: .horizontal,
                     registry: state.registry,
                     minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
-                    toastCenter: state.toastCenter
+                    toastCenter: state.toastCenter,
+                    tmuxStore: state.tmuxStore
                 )
             } label: {
                 Label("Split Right", systemImage: "rectangle.split.2x1")
             }
             .limpidShortcut(.splitRight, in: state.settingsStore)
-            .disabled(state.session.activeTab == nil)
+            .disabled(capabilities?.canSplit != true)
             Button {
                 PaneActions.split(
                     state.session,
                     direction: .vertical,
                     registry: state.registry,
                     minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
-                    toastCenter: state.toastCenter
+                    toastCenter: state.toastCenter,
+                    tmuxStore: state.tmuxStore
                 )
             } label: {
                 Label("Split Down", systemImage: "rectangle.split.1x2")
             }
             .limpidShortcut(.splitDown, in: state.settingsStore)
-            .disabled(state.session.activeTab == nil)
+            .disabled(capabilities?.canSplit != true)
             Button {
-                PaneActions.equalizeSplits(state.session)
+                PaneActions.equalizeSplits(
+                    state.session,
+                    tmuxStore: state.tmuxStore,
+                    toastCenter: state.toastCenter
+                )
             } label: {
                 Label("Equalize Splits", systemImage: "rectangle.split.2x1.slash")
             }
             .limpidShortcut(.equalizeSplits, in: state.settingsStore)
-            .disabled(state.session.activeTab?.splitTree.isSplit != true)
+            .disabled(!isSplit || capabilities?.canEqualize != true)
             Button {
-                PaneActions.toggleZoom(state.session)
+                PaneActions.toggleZoom(
+                    state.session,
+                    tmuxStore: state.tmuxStore,
+                    toastCenter: state.toastCenter
+                )
             } label: {
                 if state.session.activeTab?.zoomedLeafID != nil {
                     Label("Unzoom Pane", systemImage: "arrow.down.right.and.arrow.up.left")
@@ -55,7 +65,7 @@ struct PaneCommands: Commands {
             // ⌘⇧↩ is the conventional "maximize pane" chord.
             // ⌘⇧Z would steal the system Redo shortcut.
             .limpidShortcut(.toggleSplitZoom, in: state.settingsStore)
-            .disabled(state.session.activeTab?.splitTree.isSplit != true)
+            .disabled(!isSplit)
 
             // ⌥⌘+arrow focuses the neighbor. Moving a pane to another
             // slot now uses ⌥⌘ + drag instead of a directional shortcut —
@@ -90,6 +100,16 @@ struct PaneCommands: Commands {
             fontButton(.decreaseFontSize)
             fontButton(.resetFontSize)
         }
+    }
+
+    /// What the active tab lets us do. `nil` when there is no active tab,
+    /// which disables the same items an unsupported verb would.
+    private var capabilities: TabCapabilities? {
+        state.session.activeTab?.capabilities
+    }
+
+    private var isSplit: Bool {
+        state.session.activeTab?.splitTree.isSplit == true
     }
 
     private func fontButton(_ action: LimpidShortcutAction) -> some View {

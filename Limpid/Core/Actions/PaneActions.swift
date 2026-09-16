@@ -26,11 +26,20 @@ enum PaneActions {
         direction: SplitDirection,
         registry: (any SurfaceViewProviding)? = nil,
         minPaneSize: Double = 0,
-        toastCenter: ToastCenter? = nil
+        toastCenter: ToastCenter? = nil,
+        tmuxStore: TmuxConnectionStore? = nil
     ) {
-        guard let tab = session.activeTab else { return }
+        guard let tab = session.activeTab, tab.capabilities.canSplit else { return }
         let pivotID = tab.splitTree.effectiveFocusedLeafID
         guard let pivotID else { return }
+
+        // A mirror tab asks tmux to split and draws whatever layout comes
+        // back; tmux is also the one that knows whether there is room.
+        if tab.kind == .tmuxMirror {
+            guard let mirror = liveMirror(for: tab, in: tmuxStore, toastCenter: toastCenter) else { return }
+            mirror.split(paneID: pivotID, direction: direction)
+            return
+        }
 
         if let registry, let toastCenter, minPaneSize > 0,
            let availableSize = renderedPaneAreaSize(
@@ -122,7 +131,10 @@ enum PaneActions {
         attention: AttentionState? = nil,
         agentProjection: AgentProjectionAdapter? = nil
     ) {
-        guard let tab = session.activeTab else { return }
+        // A tmux pane cannot be closed from here: the confirmation would
+        // check for a running agent through a badge a tmux pane never
+        // carries, and answer "none" while killing one (design §10).
+        guard let tab = session.activeTab, tab.capabilities.canClosePane else { return }
         guard let leafID = tab.splitTree.effectiveFocusedLeafID
         else { return }
         guard CloseConfirmer.allow(.pane, source: source, paneIDs: [leafID]) else { return }
@@ -330,11 +342,17 @@ enum PaneActions {
     /// renders only the zoomed leaf; the rest of the SplitTree stays
     /// intact so a second invocation restores the previous layout
     /// untouched. No-op when the active tab has a single leaf.
-    static func toggleZoom(_ session: WindowSession) {
+    static func toggleZoom(_ session: WindowSession, tmuxStore: TmuxConnectionStore? = nil, toastCenter: ToastCenter? = nil) {
         guard let tab = session.activeTab else { return }
         guard tab.splitTree.allLeafIDs().count > 1 else { return }
         guard let focusID = tab.splitTree.effectiveFocusedLeafID
         else { return }
+        // tmux owns the zoom of a mirror window; the tab's zoomed leaf
+        // follows the window flag when the answer arrives.
+        if tab.kind == .tmuxMirror {
+            liveMirror(for: tab, in: tmuxStore, toastCenter: toastCenter)?.toggleZoom(paneID: focusID)
+            return
+        }
         session.update(tab.id) { t in
             let entering = t.zoomedLeafID == nil
             t.zoomedLeafID = entering ? focusID : nil
@@ -353,11 +371,31 @@ enum PaneActions {
     /// Reset every split divider in the active tab back to 50/50.
     /// tmux `select-layout even-*` equivalent — most useful after one
     /// pane has drifted dominant from interactive drags.
-    static func equalizeSplits(_ session: WindowSession) {
-        guard let tab = session.activeTab else { return }
+    static func equalizeSplits(_ session: WindowSession, tmuxStore: TmuxConnectionStore? = nil, toastCenter: ToastCenter? = nil) {
+        guard let tab = session.activeTab, tab.capabilities.canEqualize else { return }
+        if tab.kind == .tmuxMirror {
+            guard let focusID = tab.splitTree.effectiveFocusedLeafID else { return }
+            liveMirror(for: tab, in: tmuxStore, toastCenter: toastCenter)?.equalize(from: focusID)
+            return
+        }
         session.update(tab.id) { t in
             t.splitTree = t.splitTree.equalize()
         }
+    }
+
+    /// The mirror behind a tmux tab, if it is connected. A verb on a
+    /// disconnected mirror has nowhere to go, so the user is told instead
+    /// of the tree being edited under tmux's feet.
+    static func liveMirror(
+        for tab: Tab,
+        in tmuxStore: TmuxConnectionStore?,
+        toastCenter: ToastCenter?
+    ) -> TmuxWindowMirror? {
+        if let mirror = tmuxStore?.mirror(for: tab.id) {
+            return mirror
+        }
+        toastCenter?.show(ToastItem(message: String(localized: "Not connected to tmux"), undo: nil))
+        return nil
     }
 
     // MARK: - Font
@@ -376,7 +414,7 @@ enum PaneActions {
               let tab = session.activeTab,
               let focused = tab.splitTree.effectiveFocusedLeafID
         else { return }
-        let targets = tab.kind == .tmuxMirror ? tab.splitTree.allLeafIDs() : [focused]
+        let targets = tab.capabilities.appliesFontToEveryPane ? tab.splitTree.allLeafIDs() : [focused]
         for leafID in targets {
             guard let surface = registry.view(for: leafID)?.surface else { continue }
             _ = GhosttyFFI.performBindingAction(binding, on: surface)

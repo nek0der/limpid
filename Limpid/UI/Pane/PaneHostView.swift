@@ -42,6 +42,7 @@ struct PaneHostView: View {
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(LimpidDragState.self) private var dragState
     @Environment(ReviewPresentation.self) private var reviewPresentation
+    @Environment(\.tmuxConnectionStore) private var tmuxStore
 
     private var isBeingDragged: Bool {
         dragState.current == .pane && dragState.currentSourceID == paneID.uuidString
@@ -60,6 +61,7 @@ struct PaneHostView: View {
                     toastCenter: toastCenter,
                     dragState: dragState,
                     reviewPresentation: reviewPresentation,
+                    tmuxStore: tmuxStore,
                     size: geo.size,
                     paddingOverride: paddingOverride
                 )
@@ -171,6 +173,10 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
     let toastCenter: ToastCenter
     let dragState: LimpidDragState
     let reviewPresentation: ReviewPresentation
+    /// The tmux store, when the app has one. Deliberately absent from `==`
+    /// below with the other environment references: it is an AppState-lifetime
+    /// singleton, so its identity never changes across renders.
+    let tmuxStore: TmuxConnectionStore?
     let size: CGSize
     let paddingOverride: PaddingOverride?
 
@@ -373,14 +379,15 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
                 t.splitTree.focusedLeafID = paneID
             }
         }
-        view.onRequestSplit = { [weak session, registry, settings, toastCenter] direction in
+        view.onRequestSplit = { [weak session, registry, settings, toastCenter, tmuxStore] direction in
             guard let session else { return }
             PaneActions.split(
                 session,
                 direction: direction,
                 registry: registry,
                 minPaneSize: settings.settings.terminal.minPaneSize,
-                toastCenter: toastCenter
+                toastCenter: toastCenter,
+                tmuxStore: tmuxStore
             )
         }
         view.onRequestCloseActivePane = { [weak session] in
@@ -395,9 +402,18 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
             guard let session else { return }
             SearchActions.beginSearch(session)
         }
-        view.onRequestMoveToNewTab = { [weak session] in
+        view.onRequestMoveToNewTab = { [weak session, registry, toastCenter, tmuxStore] in
             guard let session else { return }
-            TabActions.movePaneToNewTab(session, paneID: paneID)
+            // A mirror pane leaves through `break-pane`; the ordinary path
+            // still handles every other tab.
+            TmuxMirrorActions.movePaneToNewTab(
+                session,
+                paneID: paneID,
+                store: tmuxStore,
+                registry: registry,
+                secureInput: registry.secureInput,
+                toastCenter: toastCenter
+            )
         }
         view.canMoveToNewTab = { [weak session] in
             guard let session else { return false }

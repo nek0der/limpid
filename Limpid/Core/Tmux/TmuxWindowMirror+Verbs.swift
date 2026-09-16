@@ -1,0 +1,110 @@
+// TmuxWindowMirror+Verbs.swift
+// Limpid — the pane operations a mirror tab translates into tmux commands.
+
+import Foundation
+import OSLog
+
+private let log = Logger.limpid("tmux.mirror")
+
+/// Every verb has the same shape: send the command, then wait for the
+/// `%layout-change` tmux answers with and draw that (design §10). The tree
+/// is never edited here; a failure comes back as `%error`, is reported,
+/// and leaves the picture as it was.
+extension TmuxWindowMirror {
+    /// `split-window` next to `paneID`. `-c` is left off on purpose so
+    /// tmux's own default for the new pane's directory applies.
+    func split(paneID: UUID, direction: SplitDirection) {
+        guard let pane = tmuxPane(for: paneID) else { return }
+        let flag = direction == .horizontal ? "-h" : "-v"
+        run("split-window \(flag) -t \(TmuxProtocol.quote(pane))")
+    }
+
+    /// `swap-pane`: the two panes trade places, the layout keeps its shape.
+    func swap(_ first: UUID, _ second: UUID) {
+        guard let source = tmuxPane(for: first), let target = tmuxPane(for: second) else { return }
+        run("swap-pane -s \(TmuxProtocol.quote(source)) -t \(TmuxProtocol.quote(target))")
+    }
+
+    /// `select-layout -E` spreads the pane and its neighbors evenly. The
+    /// named layouts (`even-horizontal`, ...) are not used: they flatten
+    /// the nesting, so `main-vertical` would come back as a single row.
+    func equalize(from paneID: UUID) {
+        guard let pane = tmuxPane(for: paneID) else { return }
+        run("select-layout -E -t \(TmuxProtocol.quote(pane))")
+    }
+
+    /// `resize-pane -Z`. Zoom state is read back from the window flags on
+    /// `%layout-change`, never set locally: a local zoom would draw one
+    /// pane over the whole area while tmux still thinks it is small.
+    func toggleZoom(paneID: UUID) {
+        guard let pane = tmuxPane(for: paneID) else { return }
+        run("resize-pane -Z -t \(TmuxProtocol.quote(pane))")
+    }
+
+    /// `resize-pane -x` / `-y` with an absolute size, for a divider drag.
+    /// Absolute rather than incremental, so a request sent before the
+    /// previous one was answered cannot apply twice. At most one request
+    /// is outstanding; a newer one replaces whatever was waiting, so a
+    /// drag of hundreds of events sends only as many as tmux can answer.
+    func resize(paneID: UUID, direction: SplitDirection, cells: Int) {
+        guard cells > 0 else { return }
+        queuedResize = PendingResize(paneID: paneID, direction: direction, cells: cells)
+        sendQueuedResize()
+    }
+
+    /// `break-pane` moves the pane into a new window of its session and
+    /// reports that window's id, so the caller can open a mirror for it.
+    func breakPane(paneID: UUID, completion: @escaping (String?) -> Void) {
+        guard let pane = tmuxPane(for: paneID) else {
+            completion(nil)
+            return
+        }
+        connection.send("break-pane -d -s \(TmuxProtocol.quote(pane)) -P -F '#{window_id}'") { [weak self] lines, isError in
+            if isError {
+                self?.reportFailure(lines)
+                completion(nil)
+            } else {
+                completion(lines.first)
+            }
+        }
+    }
+
+    /// `join-pane` moves a pane of this window into `window` of the same
+    /// session, split against that window's active pane.
+    func joinPane(paneID: UUID, into window: String) {
+        guard let pane = tmuxPane(for: paneID) else { return }
+        run("join-pane -s \(TmuxProtocol.quote(pane)) -t \(TmuxProtocol.quote(window))")
+    }
+
+    // MARK: - Plumbing
+
+    private func run(_ command: String) {
+        log.debug("verb: \(command, privacy: .public)")
+        connection.send(command) { [weak self] lines, isError in
+            if isError {
+                self?.reportFailure(lines)
+            }
+        }
+    }
+
+    func sendQueuedResize() {
+        guard !isResizeInFlight, let next = queuedResize, let pane = tmuxPane(for: next.paneID) else { return }
+        queuedResize = nil
+        isResizeInFlight = true
+        let flag = next.direction == .horizontal ? "-x" : "-y"
+        connection.send("resize-pane -t \(TmuxProtocol.quote(pane)) \(flag) \(next.cells)") { [weak self] lines, isError in
+            guard let self else { return }
+            self.isResizeInFlight = false
+            if isError {
+                self.reportFailure(lines)
+            }
+            self.sendQueuedResize()
+        }
+    }
+
+    private func reportFailure(_ lines: [String]) {
+        let message = lines.joined(separator: " ")
+        log.error("tmux refused: \(message, privacy: .public)")
+        onCommandFailed?(message)
+    }
+}

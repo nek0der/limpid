@@ -178,6 +178,25 @@ struct PaneLayoutMirrorTests {
         #expect(layout.dividers.count == 2)
     }
 
+    @Test("a divider drag names the first side's first pane and its extent along the axis")
+    func resizeTarget_followsTheFold() throws {
+        let tmux = try #require(TmuxLayout.parse(mainVertical))
+
+        // The outer divider: %0 is 50 columns wide.
+        #expect(PaneLayout.mirrorResizeTarget(in: tmux, path: []) == MirrorResizeTarget(pane: "%0", direction: .horizontal, extent: 50))
+        // The inner divider on the right: %1 is 15 rows tall.
+        let inner = MirrorResizeTarget(pane: "%1", direction: .vertical, extent: 15)
+        #expect(PaneLayout.mirrorResizeTarget(in: tmux, path: [.second]) == inner)
+        // No split there.
+        #expect(PaneLayout.mirrorResizeTarget(in: tmux, path: [.first]) == nil)
+
+        // Three siblings fold right: the second divider sits inside the remainder box.
+        let three = try #require(TmuxLayout.parse(threeSiblings))
+        #expect(PaneLayout.mirrorResizeTarget(in: three, path: []) == MirrorResizeTarget(pane: "%0", direction: .horizontal, extent: 33))
+        let second = MirrorResizeTarget(pane: "%1", direction: .horizontal, extent: 33)
+        #expect(PaneLayout.mirrorResizeTarget(in: three, path: [.second]) == second)
+    }
+
     @Test("the window grid is the whole cells left once the outer padding is removed")
     func mirrorGrid_floorsToWholeCells() {
         /// 1000 − 16 = 984 → 151.38 columns; 600 − 4 = 596 → 39.73 rows.

@@ -197,6 +197,12 @@ extension SurfaceView: NSMenuItemValidation {
         case #selector(copy(_:)):
             guard let surface else { return false }
             return ghostty_surface_has_selection(surface)
+        // A mirror tab does not close panes (`TabCapabilities.canClosePane`);
+        // the item stays in the menu, disabled, so the list keeps its shape.
+        // Paste stays enabled on purpose: `paste(_:)` refuses it with a toast,
+        // and a disabled Edit-menu item would swallow Command-V before that.
+        case #selector(closePaneFromMenu(_:)):
+            return surface != nil && !isMirror
         case #selector(paste(_:)),
              #selector(selectAll(_:)),
              #selector(clearScreen(_:)),
@@ -204,8 +210,7 @@ extension SurfaceView: NSMenuItemValidation {
              #selector(scrollToBottom(_:)),
              #selector(findInSurface(_:)),
              #selector(splitRight(_:)),
-             #selector(splitDown(_:)),
-             #selector(closePaneFromMenu(_:)):
+             #selector(splitDown(_:)):
             return surface != nil
         case #selector(movePaneToNewTab(_:)):
             return surface != nil && canMoveToNewTab?() == true

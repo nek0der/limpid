@@ -18,6 +18,11 @@ enum CommandPaletteCatalog {
         let hasClosedTabs: Bool
         let hasActiveSearch: Bool
         let hasWaitingAttention: Bool
+        /// Whether ⌘W has anything to do. A mirror tab refuses the pane
+        /// half, so the row stays live only while the cascade reaches the
+        /// tab — that is, while the tab holds a single leaf.
+        let canCloseSurface: Bool
+        let canEqualize: Bool
         let canReview: Bool
         let canReviewTurn: Bool
     }
@@ -108,6 +113,8 @@ enum CommandPaletteCatalog {
         let focusedPaneID = session.activeTab?.splitTree.effectiveFocusedLeafID
         let hasActiveSearch = focusedPaneID.map { session.paneSearchStates[$0] != nil } ?? false
         let hasWaitingAttention = !dependencies.attention.attentionEntries(in: session).isEmpty
+        let capabilities = session.activeTab?.capabilities
+        let leafCount = session.activeTab?.splitTree.allLeafIDs().count ?? 0
 
         let context = ActionEnabledContext(
             hasActiveTab: hasActiveTab,
@@ -119,6 +126,8 @@ enum CommandPaletteCatalog {
             hasClosedTabs: hasClosedTabs,
             hasActiveSearch: hasActiveSearch,
             hasWaitingAttention: hasWaitingAttention,
+            canCloseSurface: (capabilities?.canClosePane ?? false) || leafCount <= 1,
+            canEqualize: capabilities?.canEqualize ?? false,
             canReview: ReviewAgents.canReview(
                 session: session,
                 attention: dependencies.attention,
@@ -299,7 +308,8 @@ enum CommandPaletteCatalog {
         case .newWorktree: context.isProjectActive
         case .renameTab: context.hasActiveTab
         case .reopenClosedTab: context.hasClosedTabs
-        case .closeSurface, .closeTab: context.hasActiveTab
+        case .closeSurface: context.hasActiveTab && context.canCloseSurface
+        case .closeTab: context.hasActiveTab
         case .nextTab, .previousTab: context.hasMultipleTabs
         case .nextSection, .previousSection: context.hasMultipleSections
         case .nextAttention, .previousAttention: context.hasWaitingAttention
@@ -307,7 +317,8 @@ enum CommandPaletteCatalog {
         case .findNext, .findPrevious: context.hasActiveSearch
         case .nextPrompt, .previousPrompt: context.hasActiveTab
         case .splitRight, .splitDown: context.hasActiveTab
-        case .equalizeSplits, .toggleSplitZoom: context.isSplit
+        case .equalizeSplits: context.isSplit && context.canEqualize
+        case .toggleSplitZoom: context.isSplit
         case .focusPaneLeft: context.reachable(.left)
         case .focusPaneRight: context.reachable(.right)
         case .focusPaneUp: context.reachable(.up)

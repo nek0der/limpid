@@ -32,12 +32,27 @@ protocol SurfaceViewProviding: AnyObject {
     /// `view(for:)` so review's delivery path can be answered without a
     /// `SurfaceView` — the concrete registry returns the view itself.
     func deliverer(for id: UUID) -> (any ReviewTextDelivering)?
+    /// The process-wide Secure Input state, for callers that open a tmux
+    /// mirror from a view. On the protocol for the same reason as
+    /// `updateOcclusion`: reached by downcast it would silently be `nil`
+    /// wherever the registry is a test double.
+    var secureInput: SecureInputManager? { get }
+}
+
+extension SurfaceViewProviding {
+    var secureInput: SecureInputManager? {
+        nil
+    }
 }
 
 @MainActor
 final class SurfaceRegistry: SurfaceViewProviding {
     private var views: [UUID: SurfaceView] = [:]
     let secureInputManager: SecureInputManager
+
+    var secureInput: SecureInputManager? {
+        secureInputManager
+    }
 
     init(secureInputManager: SecureInputManager = SecureInputManager()) {
         self.secureInputManager = secureInputManager

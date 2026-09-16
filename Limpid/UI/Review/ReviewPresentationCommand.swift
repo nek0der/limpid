@@ -20,6 +20,7 @@ enum ReviewPresentationCommand {
             presentation.close()
             return
         }
+        guard ReviewAgents.allowsReviewSurface(session: session) else { return }
         let paneID = session.activeTab?.splitTree.effectiveFocusedLeafID
         if let directory = ReviewAgents.directory(session: session) {
             presentation.open(directory, originPaneID: paneID)
@@ -46,6 +47,7 @@ enum ReviewPresentationCommand {
         attention: AttentionState,
         presentation: ReviewPresentation
     ) {
+        guard ReviewAgents.allowsReviewSurface(session: session) else { return }
         let paneID = session.activeTab?.splitTree.effectiveFocusedLeafID
         guard let target = ReviewAgents.turnTarget(
             session: session,
