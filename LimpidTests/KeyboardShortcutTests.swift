@@ -106,13 +106,13 @@ struct KeyboardShortcutTests {
     /// guarantees the user's choice trumps Ghostty defaults.
     @Test("User overrides appear after forced-override keybinds")
     func bridge_overridesAppearLast() {
-        // Pick a libghostty-routed action (font size) so the
+        // Pick a libghostty-routed action (prompt jump) so the
         // override actually lands in the emitted config. Menu-owned
-        // actions like `.newTab` deliberately skip emit.
+        // actions like `.newTab` deliberately emit `ignore`.
         var settings = LimpidSettings.default
         settings.keyboard.setOverride(
             .init(key: "k", modifiers: [.command, .control]),
-            for: .increaseFontSize
+            for: .nextPrompt
         )
         let config = GhosttyConfigBridge.makeConfigString(
             settings: settings,
@@ -120,7 +120,7 @@ struct KeyboardShortcutTests {
         )
         guard
             let forcedIdx = config.range(of: "keybind = super+q=unbind"),
-            let userIdx = config.range(of: "keybind = super+ctrl+k=increase_font_size:1")
+            let userIdx = config.range(of: "keybind = super+ctrl+k=jump_to_prompt:1")
         else {
             Issue.record("expected both forced override and user binding to appear in config")
             return
@@ -134,7 +134,7 @@ struct KeyboardShortcutTests {
             settings: .default,
             resourcesDir: nil
         )
-        for action in LimpidShortcutAction.allCases {
+        for action in LimpidShortcutAction.allCases where action.isHandledByLibghosttyKeybind {
             guard let ghosttyAction = action.ghosttyAction,
                   let shortcut = action.defaultShortcut
             else { continue }
@@ -146,32 +146,40 @@ struct KeyboardShortcutTests {
         }
     }
 
-    /// The set of `ghosttyAction` strings we emit must stay limited
-    /// to actions with **no menu item** — otherwise the menu's
+    /// The actions libghostty's keybind table fires itself must stay
+    /// limited to actions with **no menu item** — otherwise the menu's
     /// `keyboardShortcut` and libghostty's keybind both fire for the
-    /// same keystroke, producing duplicate actions (e.g. ⌘D
-    /// splitting twice). Snapshot test — when someone adds a new
-    /// non-`nil` `ghosttyAction`, this fails until they confirm the
-    /// action has no menu Button.
-    @Test("Emitted libghostty actions stay limited to menu-less actions")
-    func bridge_emittedActionsMatchHandlers() {
-        let emitted = Set(LimpidShortcutAction.allCases.compactMap(\.ghosttyAction))
+    /// same keystroke, producing duplicate actions (e.g. ⌘D splitting
+    /// twice). Snapshot test — when someone flips
+    /// `isHandledByLibghosttyKeybind` for a new action, this fails until
+    /// they confirm the action has no menu Button. Having a
+    /// `ghosttyAction` alone is fine: the font-size actions keep one so
+    /// `PaneActions.applyFontAction` can forward it, while their keystroke
+    /// belongs to the Pane menu.
+    @Test("Keybind-owned libghostty actions stay limited to menu-less actions")
+    func bridge_keybindOwnedActionsMatchHandlers() {
+        let keybindOwned = Set(
+            LimpidShortcutAction.allCases
+                .filter(\.isHandledByLibghosttyKeybind)
+                .compactMap(\.ghosttyAction)
+        )
         let expected: Set = [
-            // Font-size and prompt-navigation actions are the only ones
-            // libghostty owns — they have no menu item, so there's no
+            // Prompt navigation is the only thing libghostty's keybind
+            // table still fires — it has no menu item, so there's no
             // risk of the menu path also firing.
-            "increase_font_size:1",
-            "decrease_font_size:1",
-            "reset_font_size",
             "jump_to_prompt:1",
             "jump_to_prompt:-1"
         ]
-        #expect(emitted == expected, """
-        `ghosttyAction` set drifted. Adding a binding for an action \
-        that also has a menu Button reintroduces the double-fire bug \
-        (two splits per ⌘D, two tab closes per ⌘⌥W, etc.). See \
-        `LimpidShortcutAction.ghosttyAction` doc.
+        #expect(keybindOwned == expected, """
+        Keybind-owned action set drifted. Letting libghostty bind an \
+        action that also has a menu Button reintroduces the double-fire \
+        bug (two splits per ⌘D, two tab closes per ⌘⌥W, etc.). See \
+        `LimpidShortcutAction.isHandledByLibghosttyKeybind` doc.
         """)
+        // Every keybind-owned action must also have something to bind.
+        for action in LimpidShortcutAction.allCases where action.isHandledByLibghosttyKeybind {
+            #expect(action.ghosttyAction != nil, "\(action.rawValue) is keybind-owned but has no ghosttyAction")
+        }
     }
 
     /// Menu-owned actions must reach libghostty only as `=ignore`.
@@ -354,10 +362,10 @@ struct KeyboardShortcutTests {
         )
         guard
             let clearIdx = config.range(of: "keybind = clear"),
-            // `.increaseFontSize` is one of the few actions still
-            // routed through libghostty (no menu item), so its
-            // default ⌘+ shortcut shows up in the emitted config.
-            let userIdx = config.range(of: "keybind = super+shift+==increase_font_size:1")
+            // `.nextPrompt` is one of the two actions still routed
+            // through libghostty (no menu item), so its default ⌘↓
+            // shortcut shows up in the emitted config with its real action.
+            let userIdx = config.range(of: "keybind = super+down=jump_to_prompt:1")
         else {
             Issue.record("expected `keybind = clear` and a default user binding to appear")
             return
