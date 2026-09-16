@@ -65,6 +65,29 @@ struct TmuxProtocolTests {
         #expect(echoed.contains("\\\\\\033[31mhi\\\\\\033[0m\\\\\\n"))
     }
 
+    @Test("inside a reply block a line starting with % is the command's output, and only the terminators are markers")
+    func parseLine_insideBlock_keepsPercentLinesAsText() {
+        let paneID = Array("%0".utf8)[...]
+        #expect(TmuxProtocol.parseLine(paneID, insideReplyBlock: true) == .text("%0"))
+        #expect(TmuxProtocol.parseLine(paneID, insideReplyBlock: false) == .notification(name: "0", arguments: ""))
+
+        let layoutChange = Array("%layout-change @0 a87d,100x30,0,0,0 a87d,100x30,0,0,0 *".utf8)[...]
+        #expect(TmuxProtocol.parseLine(layoutChange, insideReplyBlock: true) == .text(TmuxProtocol.lossyText(layoutChange)))
+
+        let end = Array("%end 1789549530 305 1".utf8)[...]
+        #expect(TmuxProtocol.parseLine(end, insideReplyBlock: true) == .end(TmuxReplyMarker(
+            timestamp: 1_789_549_530,
+            number: 305,
+            flags: 1
+        )))
+        let error = Array("%error 1789549534 331 1".utf8)[...]
+        #expect(TmuxProtocol.parseLine(error, insideReplyBlock: true) == .error(TmuxReplyMarker(
+            timestamp: 1_789_549_534,
+            number: 331,
+            flags: 1
+        )))
+    }
+
     @Test("a backslash without three octal digits is passed through untouched")
     func unescape_leavesMalformedEscapesAlone() {
         #expect(TmuxProtocol.unescapeOutput(Array("a\\12".utf8)[...]) == Data("a\\12".utf8))

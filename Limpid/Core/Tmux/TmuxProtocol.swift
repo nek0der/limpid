@@ -56,7 +56,12 @@ enum TmuxProtocol {
     /// Classify one line, without its trailing newline. `%output` is matched
     /// on bytes before any text decoding because its payload is arbitrary
     /// terminal output, not UTF-8.
-    static func parseLine(_ raw: ArraySlice<UInt8>) -> TmuxControlLine {
+    ///
+    /// Inside a reply block tmux prints the command's output verbatim, so a
+    /// line there is text even when it starts with `%` — a pane id is the
+    /// everyday case — and only the block's own terminators are markers.
+    /// The caller tracks the block state; this function has none.
+    static func parseLine(_ raw: ArraySlice<UInt8>, insideReplyBlock: Bool = false) -> TmuxControlLine {
         var line = raw
         if line.last == 0x0D { line = line.dropLast() }
 
@@ -73,6 +78,9 @@ enum TmuxProtocol {
         let parts = text.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
         let name = String(parts[0].dropFirst())
         let arguments = parts.count > 1 ? String(parts[1]) : ""
+        if insideReplyBlock, name != "end", name != "error" {
+            return .text(text)
+        }
         return parseNotification(name: name, arguments: arguments)
     }
 
