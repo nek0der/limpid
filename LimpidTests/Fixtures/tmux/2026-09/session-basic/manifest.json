@@ -1,0 +1,7 @@
+{
+  "tmux_version": "tmux 3.7c",
+  "recorded": "2026-09-16",
+  "window": "@0",
+  "first_pane": "%0",
+  "note": "private socket, 120x40 then refresh-client 100x30; shells are sh with PS1='$ '"
+}

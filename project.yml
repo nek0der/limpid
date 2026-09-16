@@ -444,6 +444,11 @@ targets:
     platform: macOS
     sources:
       - path: LimpidTests
+        excludes:
+          # Recorded protocol traffic the tests open by path (see
+          # `RepoFixture.limpidRoot`); copying it into the bundle would
+          # flatten same-named files from different cases onto each other.
+          - "Fixtures"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.LimpidTests

@@ -1,0 +1,11 @@
+display-message -p -t %0 '#{version}|#{pane_tty}|#{cursor_x} #{cursor_y} #{alternate_on}'
+refresh-client -C '@0:100x30'
+split-window -h -t %0 sh -c "PS1='$ ' exec sh"
+split-window -v -t @0.1 sh -c "PS1='$ ' exec sh"
+send-keys -t %0 -H 70 72 69 6e 74 66 20 27 5c 5c 5c 5c 5c 5c 30 33 33 5b 33 31 6d 68 69 5c 5c 5c 5c 5c 5c 30 33 33 5b 30 6d 5c 5c 5c 5c 5c 5c 6e 27 0a
+display-message -p -t @0 '#{window_layout}'
+select-layout -t fx even-horizontal
+display-message -p -t @0 '#{window_layout}'
+bogus-command-for-error
+kill-pane -t @0.2
+detach-client

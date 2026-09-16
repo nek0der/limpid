@@ -1,0 +1,8 @@
+{
+  "tmux_version": "tmux 3.7c",
+  "recorded": "2026-09-16",
+  "payload_bytes": 3320000,
+  "note": "cat of payload.txt inside a 200x50 pane; control.raw is what the control client received. Trimmed to the first 1199897 bytes at a line boundary (the full recording was 4468704 bytes) to keep the repository small; record_bulk.py reproduces the full stream.",
+  "raw_bytes": 1199897,
+  "output_lines": 636
+}
