@@ -127,6 +127,10 @@ final class SurfaceView: NSView {
     /// resetting the native scroller to the bottom.
     private(set) var scrollbarState: TerminalScrollbarState?
 
+    /// One cell's footprint in points from the latest `CELL_SIZE` action.
+    /// `nil` until libghostty has a font grid; no layout may assume one before.
+    private(set) var cellSize: CellSize?
+
     /// Effective advanced `scrollbar` preference read from the finalized
     /// libghostty config. The scroll geometry remains active when false so
     /// wheel and binding-driven movement still position the Metal viewport.
@@ -148,6 +152,24 @@ final class SurfaceView: NSView {
     func updateScrollbarState(_ state: TerminalScrollbarState) {
         scrollbarState = state
         onScrollbarStateChange?(state)
+    }
+
+    /// Convert libghostty's device-pixel cell report into points. We divide
+    /// by the window's scale, not `lastPushedScale`: the first report fires
+    /// inside `ghostty_surface_new`, before any scale has been pushed.
+    func updateCellSize(devicePixelWidth: UInt32, devicePixelHeight: UInt32) {
+        let scale = Double(window?.backingScaleFactor ?? 1)
+        guard let size = CellSize.points(
+            devicePixelWidth: devicePixelWidth,
+            devicePixelHeight: devicePixelHeight,
+            scale: scale
+        ) else {
+            log.debug("CELL_SIZE ignored (degenerate report)")
+            return
+        }
+        guard size != cellSize else { return }
+        cellSize = size
+        log.debug("CELL_SIZE \(size.width, privacy: .public)x\(size.height, privacy: .public)pt scale=\(scale, privacy: .public)")
     }
 
     /// Live SurfaceViews keyed by the raw pointer libghostty uses as

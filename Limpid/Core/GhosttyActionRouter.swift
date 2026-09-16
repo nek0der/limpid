@@ -43,6 +43,10 @@ enum GhosttyEvent {
     case searchSelected(SurfaceView, selected: Int?)
     /// Updated scrollback extent and viewport position for one surface.
     case scrollbar(SurfaceView, state: TerminalScrollbarState)
+    /// The surface's cell footprint changed (font size, DPI, or first
+    /// layout). Reported in device pixels; `SurfaceView` converts to
+    /// points against its window's backing scale.
+    case cellSize(SurfaceView, devicePixelWidth: UInt32, devicePixelHeight: UInt32)
     /// Fired from `GhosttyApp.closeSurfaceCallback` (not the action
     /// callback). Lives in the same enum so all libghostty-driven
     /// session mutations flow through a single dispatch point.
@@ -182,6 +186,12 @@ enum GhosttyActionRouter {
                     length: payload.len
                 )
             )
+
+        case GHOSTTY_ACTION_CELL_SIZE:
+            guard let view = surfaceView(from: target) else { return nil }
+            let payload = action.action.cell_size
+            log.debug("CELL_SIZE px=\(payload.width, privacy: .public)x\(payload.height, privacy: .public)")
+            return .cellSize(view, devicePixelWidth: payload.width, devicePixelHeight: payload.height)
 
         case GHOSTTY_ACTION_COMMAND_FINISHED:
             guard let view = surfaceView(from: target) else { return nil }
