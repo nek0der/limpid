@@ -32,6 +32,9 @@ struct PaneHostView: View {
     /// the same AppKit reference across consecutive renders. See
     /// `ResolvedSplitNode`.
     let surfaceView: SurfaceView
+    /// Padding the layout pinned for this leaf; handed to the surface in
+    /// `updateNSView` because SwiftUI's body must not mutate AppKit.
+    var paddingOverride: PaddingOverride?
     @Environment(\.surfaceRegistry) private var registry
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settings
@@ -57,7 +60,8 @@ struct PaneHostView: View {
                     toastCenter: toastCenter,
                     dragState: dragState,
                     reviewPresentation: reviewPresentation,
-                    size: geo.size
+                    size: geo.size,
+                    paddingOverride: paddingOverride
                 )
                 if surfaceView.creationFailed {
                     PaneCreationFailureCard(surfaceView: surfaceView)
@@ -168,6 +172,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
     let dragState: LimpidDragState
     let reviewPresentation: ReviewPresentation
     let size: CGSize
+    let paddingOverride: PaddingOverride?
 
     /// SwiftUI honors `Equatable` on representables and skips
     /// `updateNSView` when equal. `PaneHostView`'s body re-runs on
@@ -187,6 +192,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         lhs.paneID == rhs.paneID
             && lhs.surfaceView === rhs.surfaceView
             && lhs.size == rhs.size
+            && lhs.paddingOverride == rhs.paddingOverride
     }
 
     func makeNSView(context: Context) -> PaneContainerNSView {
@@ -194,6 +200,9 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         wireCallbacks(on: surfaceView)
         container.mount(surfaceView)
         container.applyExpectedSize(size)
+        // Placed before `createSurface` runs so the pin is already there
+        // when the surface appears; `createSurface` re-applies it then.
+        surfaceView.paddingOverride = paddingOverride
         // Defer createSurface to the next run-loop tick so the wrapper
         // is fully attached to its window first. Without this, the first
         // mount can land `viewDidMoveToWindow` with `window == nil`, the
@@ -214,6 +223,9 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         // tab switch this picks it back up; otherwise it's a no-op.
         container.mount(surfaceView)
         container.applyExpectedSize(size)
+        // Idempotent: the surface only talks to libghostty when the value
+        // actually changed, so a resize re-running this costs nothing.
+        surfaceView.paddingOverride = paddingOverride
         // Defensive retry — `SurfaceView.viewDidMoveToWindow` early-
         // returns when `window == nil`, so `createSurface()` never runs
         // if AppKit ferries the view through a detached mount. This

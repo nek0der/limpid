@@ -17,6 +17,10 @@ import UniformTypeIdentifiers
 
 struct SplitContainerView: View {
     let node: ResolvedSplitNode
+    /// Whether this tab mirrors a tmux window. Only then does a leaf pin
+    /// its padding (config on outer edges, none where panes meet); an
+    /// ordinary tab hands every leaf `nil` and never touches the setter.
+    let isMirrorTab: Bool
     let onLeafFocus: (UUID) -> Void
     let onResize: (PaneSplitPath, Double, CGSize) -> Void
     /// Invoked when a `pane:<uuid>` drag is dropped on a leaf inside the
@@ -45,7 +49,7 @@ struct SplitContainerView: View {
     var body: some View {
         switch node {
         case let .leaf(paneID, view):
-            leaf(paneID: paneID, view: view)
+            leaf(paneID: paneID, view: view, paddingOverride: PaddingOverride.forEdges(.all, isMirror: isMirrorTab))
         case .split:
             GeometryReader { geo in
                 placed(in: geo.size)
@@ -61,9 +65,13 @@ struct SplitContainerView: View {
         ZStack(alignment: .topLeading) {
             ForEach(layout.leaves, id: \.id) { entry in
                 if let view = views[entry.id] {
-                    leaf(paneID: entry.id, view: view)
-                        .frame(width: entry.rect.width, height: entry.rect.height)
-                        .offset(x: entry.rect.minX, y: entry.rect.minY)
+                    leaf(
+                        paneID: entry.id,
+                        view: view,
+                        paddingOverride: PaddingOverride.forEdges(entry.edges, isMirror: isMirrorTab)
+                    )
+                    .frame(width: entry.rect.width, height: entry.rect.height)
+                    .offset(x: entry.rect.minX, y: entry.rect.minY)
                 }
             }
             ForEach(layout.dividers, id: \.path) { divider in
@@ -87,8 +95,8 @@ struct SplitContainerView: View {
         .coordinateSpace(name: Self.coordinateSpace)
     }
 
-    private func leaf(paneID: UUID, view: SurfaceView) -> some View {
-        PaneContainerView(paneID: paneID, surfaceView: view)
+    private func leaf(paneID: UUID, view: SurfaceView, paddingOverride: PaddingOverride?) -> some View {
+        PaneContainerView(paneID: paneID, surfaceView: view, paddingOverride: paddingOverride)
             .onTapGesture { onLeafFocus(paneID) }
             // SwiftUI identity ties to the pane id so a swap (one pane
             // reparented into another slot) keeps the split structure and

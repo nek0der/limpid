@@ -14,6 +14,9 @@ struct Tab: Codable, Equatable, Identifiable {
     /// values back to `.terminal`, so the offending tab still loads.
     enum Kind: String, Codable, Equatable {
         case terminal
+        /// Every pane shows a pane of one tmux window over control mode;
+        /// tmux owns the layout and the tab pins padding per pane.
+        case tmuxMirror
 
         static let unknownFallback: Kind = .terminal
 

@@ -1,0 +1,37 @@
+// SurfaceView+Geometry.swift
+// Limpid — the geometry a surface exchanges with libghostty: the cell size it reports and the padding we pin.
+
+import AppKit
+import GhosttyKit
+import OSLog
+
+private let log = Logger.limpid("surface.view")
+
+extension SurfaceView {
+    /// Convert libghostty's device-pixel cell report into points. We divide
+    /// by the window's scale, not `lastPushedScale`: the first report fires
+    /// inside `ghostty_surface_new`, before any scale has been pushed.
+    func updateCellSize(devicePixelWidth: UInt32, devicePixelHeight: UInt32) {
+        let scale = Double(window?.backingScaleFactor ?? 1)
+        guard let size = CellSize.points(
+            devicePixelWidth: devicePixelWidth,
+            devicePixelHeight: devicePixelHeight,
+            scale: scale
+        ) else {
+            log.debug("CELL_SIZE ignored (degenerate report)")
+            return
+        }
+        guard size != cellSize else { return }
+        cellSize = size
+        log.debug("CELL_SIZE \(size.width, privacy: .public)x\(size.height, privacy: .public)pt scale=\(scale, privacy: .public)")
+    }
+
+    /// Hand the current `paddingOverride` to libghostty. A no-op until the
+    /// surface exists; `createSurface` calls this again once it does, which
+    /// is how a value placed on a not-yet-mounted view still lands.
+    func applyPaddingOverride() {
+        guard let surface else { return }
+        GhosttyFFI.setPadding(paddingOverride, on: surface)
+        log.debug("padding override applied: \(String(describing: self.paddingOverride), privacy: .public)")
+    }
+}

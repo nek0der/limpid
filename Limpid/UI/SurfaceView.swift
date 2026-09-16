@@ -129,7 +129,15 @@ final class SurfaceView: NSView {
 
     /// One cell's footprint in points from the latest `CELL_SIZE` action.
     /// `nil` until libghostty has a font grid; no layout may assume one before.
-    private(set) var cellSize: CellSize?
+    /// Written only by `updateCellSize` (`SurfaceView+Geometry.swift`).
+    var cellSize: CellSize?
+
+    /// Sides whose padding the layout pinned; `nil` keeps the config on every
+    /// side. Applied when set and again after each `createSurface`, so a value
+    /// placed before the surface exists is not lost. See `PaddingOverride`.
+    var paddingOverride: PaddingOverride? {
+        didSet { if paddingOverride != oldValue { applyPaddingOverride() } }
+    }
 
     /// Effective advanced `scrollbar` preference read from the finalized
     /// libghostty config. The scroll geometry remains active when false so
@@ -152,24 +160,6 @@ final class SurfaceView: NSView {
     func updateScrollbarState(_ state: TerminalScrollbarState) {
         scrollbarState = state
         onScrollbarStateChange?(state)
-    }
-
-    /// Convert libghostty's device-pixel cell report into points. We divide
-    /// by the window's scale, not `lastPushedScale`: the first report fires
-    /// inside `ghostty_surface_new`, before any scale has been pushed.
-    func updateCellSize(devicePixelWidth: UInt32, devicePixelHeight: UInt32) {
-        let scale = Double(window?.backingScaleFactor ?? 1)
-        guard let size = CellSize.points(
-            devicePixelWidth: devicePixelWidth,
-            devicePixelHeight: devicePixelHeight,
-            scale: scale
-        ) else {
-            log.debug("CELL_SIZE ignored (degenerate report)")
-            return
-        }
-        guard size != cellSize else { return }
-        cellSize = size
-        log.debug("CELL_SIZE \(size.width, privacy: .public)x\(size.height, privacy: .public)pt scale=\(scale, privacy: .public)")
     }
 
     /// Live SurfaceViews keyed by the raw pointer libghostty uses as
@@ -819,6 +809,11 @@ extension SurfaceView {
         surface = s
         creationFailed = false
         app.applyColorScheme(to: s)
+        // Only a pinned pane talks to the setter; an ordinary pane never
+        // does, so its padding path is untouched by this feature.
+        if paddingOverride != nil {
+            applyPaddingOverride()
+        }
 
         // Push the initial size now that libghostty owns the layer.
         pushSurfaceSize()

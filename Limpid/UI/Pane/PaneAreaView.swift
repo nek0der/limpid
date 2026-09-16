@@ -72,12 +72,18 @@ struct PaneAreaView: View {
                    tab.splitTree.contains(leafID: zoomID),
                    let view = resolveSurfaceView(zoomID, in: tab)
                 {
-                    PaneContainerView(paneID: zoomID, surfaceView: view)
+                    // Zoomed, the leaf touches every edge of the pane area.
+                    PaneContainerView(
+                        paneID: zoomID,
+                        surfaceView: view,
+                        paddingOverride: PaddingOverride.forEdges(.all, isMirror: tab.kind == .tmuxMirror)
+                    )
                 } else if let resolved = ResolvedSplitNode.build(root, resolveOrCreate: { id in
                     resolveSurfaceView(id, in: tab)
                 }) {
                     SplitContainerView(
                         node: resolved,
+                        isMirrorTab: tab.kind == .tmuxMirror,
                         onLeafFocus: { id in
                             // Move focus only; leave `tab.title` alone. The
                             // label is owned by the tab (Claude/Codex prompt

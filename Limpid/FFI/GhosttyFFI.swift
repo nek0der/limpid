@@ -80,6 +80,14 @@ enum GhosttyFFI {
         }
     }
 
+    /// Pin the surface's padding per side, or clear every pin with `nil`.
+    /// The argument mapping lives on `PaddingOverride.cSides` so it can be
+    /// tested without a surface.
+    static func setPadding(_ override: PaddingOverride?, on surface: ghostty_surface_t) {
+        let sides = PaddingOverride.cSides(of: override)
+        ghostty_surface_set_padding(surface, sides[0], sides[1], sides[2], sides[3])
+    }
+
     /// Complete a clipboard read request with a single `text/plain`
     /// representation.
     ///

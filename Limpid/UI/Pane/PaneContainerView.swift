@@ -17,6 +17,9 @@ struct PaneContainerView: View {
     /// the SwiftUI view-tree diff anchors on the AppKit reference, not
     /// the UUID. See `ResolvedSplitNode` for the rationale.
     let surfaceView: SurfaceView
+    /// Padding the layout pinned for this leaf, or `nil` to keep the
+    /// config on every side. Only a tmux mirror tab ever pins anything.
+    var paddingOverride: PaddingOverride?
     @Environment(\.surfaceRegistry) private var registry
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settingsStore
@@ -54,7 +57,7 @@ struct PaneContainerView: View {
         let opacity = resolvedOpacity
 
         return ZStack {
-            PaneHostView(paneID: paneID, surfaceView: surfaceView)
+            PaneHostView(paneID: paneID, surfaceView: surfaceView, paddingOverride: paddingOverride)
                 // ZStack would otherwise size to the *banner* when it
                 // appears; force the host to fill the available area so
                 // the underlying `NSView` keeps receiving frame updates.
