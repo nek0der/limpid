@@ -145,4 +145,18 @@ struct TmuxWindowMirrorLayoutTests {
         harness.mirror.handle(.windowPaneChanged(window: "@1", pane: "%1"))
         #expect(harness.tab?.splitTree.focusedLeafID != harness.leafID)
     }
+
+    /// tmux 3.7c answers for a window that no longer exists with every field
+    /// empty, so the reply names its window and an empty one matches none.
+    @Test("the start reply splits into window, pane, and a name that may hold spaces")
+    func windowReply_parsesAndKeepsItsWindow() throws {
+        let reply = try #require(TmuxWindowMirror.parseWindowReply("@3 %7 build logs"))
+        #expect(reply.windowID == "@3")
+        #expect(reply.pane == "%7")
+        #expect(reply.name == "build logs")
+
+        let gone = try #require(TmuxWindowMirror.parseWindowReply("  "))
+        #expect(gone.windowID.isEmpty)
+        #expect(TmuxWindowMirror.parseWindowReply("@3") == nil)
+    }
 }

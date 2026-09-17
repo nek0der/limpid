@@ -182,7 +182,9 @@ enum TmuxProtocol {
         return TmuxReplyMarker(timestamp: timestamp, number: number, flags: flags)
     }
 
-    private static func splitFirstField(_ arguments: String) -> (String, String)? {
+    /// The first space-separated field and everything after it, for a line
+    /// whose last field is a name that may contain spaces.
+    static func splitFirstField(_ arguments: String) -> (String, String)? {
         let split = arguments.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
         guard split.count == 2 else { return nil }
         return (String(split[0]), String(split[1]))

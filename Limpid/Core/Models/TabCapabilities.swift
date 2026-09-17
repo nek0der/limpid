@@ -42,6 +42,11 @@ struct TabCapabilities: Equatable {
     /// Font shortcuts change every pane of the tab, not only the focused
     /// one: the panes share one cell grid.
     var appliesFontToEveryPane: Bool
+    /// The tab's title follows the title its focused pane's program sets
+    /// (OSC 0/2). A mirror tab is named after its tmux window instead, the
+    /// name the palette lists it by, and tmux announces that name when it
+    /// changes (`%window-renamed`).
+    var titleFollowsPaneTitle: Bool
 
     static func of(_ kind: Tab.Kind) -> TabCapabilities {
         switch kind {
@@ -57,7 +62,8 @@ struct TabCapabilities: Equatable {
                 pastesThroughTmux: false,
                 canAcceptForeignPane: true,
                 canOpenReview: true,
-                appliesFontToEveryPane: false
+                appliesFontToEveryPane: false,
+                titleFollowsPaneTitle: true
             )
         case .tmuxMirror:
             TabCapabilities(
@@ -71,7 +77,8 @@ struct TabCapabilities: Equatable {
                 pastesThroughTmux: true,
                 canAcceptForeignPane: false,
                 canOpenReview: false,
-                appliesFontToEveryPane: true
+                appliesFontToEveryPane: true,
+                titleFollowsPaneTitle: false
             )
         }
     }

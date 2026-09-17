@@ -63,19 +63,29 @@ extension TmuxWindowMirror {
         sendQueuedResize()
     }
 
+    /// The window `break-pane` made: its id, and the name tmux gave it.
+    struct BrokenOutWindow: Equatable {
+        let windowID: String
+        let windowName: String
+    }
+
     /// `break-pane` moves the pane into a new window of its session and
-    /// reports that window's id, so the caller can open a mirror for it.
-    func breakPane(paneID: UUID, completion: @escaping (String?) -> Void) {
+    /// reports that window's id and name, so the caller can open a mirror
+    /// for it under the name tmux shows. The id holds no space; the name
+    /// may.
+    func breakPane(paneID: UUID, completion: @escaping (BrokenOutWindow?) -> Void) {
         guard canSend, let pane = tmuxPane(for: paneID) else {
             completion(nil)
             return
         }
-        connection.send("break-pane -d -s \(TmuxProtocol.quote(pane)) -P -F '#{window_id}'") { [weak self] lines, isError in
+        connection.send("break-pane -d -s \(TmuxProtocol.quote(pane)) -P -F '#{window_id} #{window_name}'") { [weak self] lines, isError in
             if isError {
                 self?.reportFailure(lines, message: String(localized: "Couldn't move the pane to a new tab"))
                 completion(nil)
             } else {
-                completion(lines.first)
+                completion(lines.first.flatMap(TmuxProtocol.splitFirstField).map {
+                    BrokenOutWindow(windowID: $0.0, windowName: $0.1)
+                })
             }
         }
     }

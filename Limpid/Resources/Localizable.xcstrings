@@ -213,6 +213,48 @@
         }
       }
     },
+    "Some output was dropped; redrawing from tmux": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出力の一部を取りこぼしました。tmux から描き直しています"
+          }
+        }
+      }
+    },
+    "The tmux window is larger than this tab, so part of it is hidden": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux のウィンドウがこのタブより大きいため、一部が表示されていません"
+          }
+        }
+      }
+    },
+    "Server %@": {
+      "comment": "tmux palette row — which server a window is on",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバー %@"
+          }
+        }
+      }
+    },
+    "Window %lld": {
+      "comment": "tmux palette row — the window's number in tmux",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウィンドウ %lld"
+          }
+        }
+      }
+    },
     "It was saved in a form this version of Limpid can't read, so nothing runs in it.": {
       "localizations": {
         "ja": {

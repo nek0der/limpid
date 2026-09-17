@@ -74,7 +74,7 @@ extension TmuxMirrorActions {
         let target = TmuxMirrorTarget(
             binding: binding,
             windowID: ref.windowID,
-            windowName: store.mirror(for: tabID)?.windowName ?? tab.title,
+            windowName: windowName(of: tab, binding: binding, store: store),
             activePaneID: ref.paneID,
             serverVersion: nil
         )
@@ -230,6 +230,14 @@ extension TmuxMirrorActions {
         }.first
     }
 
+    /// The window name a reconnected tab starts from: the one its last
+    /// mirror had, or else the one inside its saved title. The new mirror
+    /// asks tmux for the current name once it connects.
+    private static func windowName(of tab: Tab, binding: TmuxBinding, store: TmuxConnectionStore) -> String {
+        store.mirror(for: tab.id)?.windowName
+            ?? TmuxMirrorTarget.windowName(inTitle: tab.title, sessionName: binding.sessionName)
+    }
+
     /// The tabs a reconnect still speaks for after a wait: a tab the user
     /// closed meanwhile is gone from the session, and its state from the
     /// store.
@@ -267,7 +275,7 @@ extension TmuxMirrorActions {
             let mirror = makeMirror(
                 tabID: tabID,
                 windowID: ref.windowID,
-                names: (binding.sessionName, store.mirror(for: tabID)?.windowName ?? tab.title),
+                names: (binding.sessionName, windowName(of: tab, binding: binding, store: store)),
                 connection: connection,
                 context: context
             )

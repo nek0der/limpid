@@ -266,6 +266,12 @@ struct TabRow: View {
             // status mark and the close sit closer to each other than
             // either does to the title, because they are one thing.
             HStack(spacing: LimpidLayout.containerColumnTrailingSpacing) {
+                // How a mirror tab stands with tmux, and what its mirror
+                // warns about. Ahead of the activity mark: it says whether
+                // the picture that mark describes is current at all.
+                if tab.kind == .tmuxMirror {
+                    TmuxTabRowMarkView(tabID: tab.id)
+                }
                 if let summary = aggregateAgentStateSummary,
                    let iconName = summary.state.iconName(isViewedFinished: summary.isViewedFinished),
                    let iconColor = summary.state.iconColor(isViewedFinished: summary.isViewedFinished)

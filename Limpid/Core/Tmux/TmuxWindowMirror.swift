@@ -23,11 +23,17 @@ final class TmuxWindowMirror {
     let windowID: String
     let connection: TmuxServerConnection
     /// Names for what the user reads when tmux ends the window or the
-    /// session. Kept here because the tab's title follows the focused
-    /// pane's terminal title, and the window is gone by the time it is
-    /// named.
+    /// session, kept here because the window is gone by the time it is
+    /// named. The window's name follows tmux (`%window-renamed`, and the
+    /// name tmux gives when the mirror starts), and the tab's title follows
+    /// it; a name the user gave the tab overrides the title only.
     let sessionName: String
-    let windowName: String
+    @ObservationIgnored private(set) var windowName: String
+
+    /// `session:window`, as the palette lists the window.
+    var displayName: String {
+        TmuxMirrorTarget.displayName(sessionName: sessionName, windowName: windowName)
+    }
 
     enum ConnectionState: Equatable {
         /// Commands reach tmux, or are held until the attach completes.
@@ -76,6 +82,12 @@ final class TmuxWindowMirror {
         /// A capture is on its way. At most one is, so a pane resized
         /// again meanwhile starts its next capture from this one's reply.
         var isRebuilding = false
+        /// The sink dropped output that no capture has repainted yet.
+        var hasDroppedOutput = false
+        /// The capture on its way was asked for after the drop, so its
+        /// screen includes what was dropped. A capture already running
+        /// when the sink overflowed does not.
+        var isRepairingDrop = false
     }
 
     struct Grid: Equatable {
@@ -111,6 +123,21 @@ final class TmuxWindowMirror {
     /// only one is ever outstanding (`TmuxWindowMirror+Verbs.swift`).
     @ObservationIgnored var queuedResize: PendingResize?
     @ObservationIgnored var isResizeInFlight = false
+    /// The grid tmux last confirmed from a `refresh-client -C` of ours. tmux
+    /// announces the layout for a size report after answering it (measured
+    /// on 3.7c), so a layout is compared with the size tmux had already
+    /// taken when it was made, not with one still on its way.
+    @ObservationIgnored private var acceptedGrid: Grid?
+    /// What the tab's row warns about (`TmuxTabIssues`), handed to whoever
+    /// publishes it on each change.
+    @ObservationIgnored private(set) var issues = TmuxTabIssues() {
+        didSet {
+            guard issues != oldValue else { return }
+            onIssuesChanged?(issues)
+        }
+    }
+
+    @ObservationIgnored var onIssuesChanged: ((TmuxTabIssues) -> Void)?
     /// The pane tmux made active and the tab has not focused yet. tmux
     /// reports a split's new pane with `%window-pane-changed`, which can
     /// arrive before the `%layout-change` that gives the pane a leaf, so
@@ -179,13 +206,36 @@ final class TmuxWindowMirror {
         activePane = tab.splitTree.focusedLeafID.flatMap { tmuxPane(ofLeaf: $0, in: tab) }
         adoptReportedCellSize(tab: tab)
         reportGridIfChanged()
-        // The palette listed the window a while ago, so tmux is asked which
-        // pane is active now. The answer is a report like any other.
+        // The palette listed the window a while ago, and a restored or
+        // reconnected tab knows only what it was last shown, so tmux is asked
+        // which pane is active and what the window is called now. Both
+        // answers are reports like any other.
         guard canSend else { return }
-        connection.send("display-message -p -t \(TmuxProtocol.quote(windowID)) '#{pane_id}'") { [weak self] lines, isError in
-            guard let self, !isError, let pane = lines.first else { return }
-            handle(.windowPaneChanged(window: windowID, pane: pane))
+        let format = "#{window_id} #{pane_id} #{window_name}"
+        connection.send("display-message -p -t \(TmuxProtocol.quote(windowID)) '\(format)'") { [weak self] lines, isError in
+            guard let self, !isError, let reply = lines.first, let window = Self.parseWindowReply(reply),
+                  window.windowID == windowID
+            else { return }
+            handle(.windowPaneChanged(window: windowID, pane: window.pane))
+            handle(.windowRenamed(window: windowID, name: window.name))
         }
+    }
+
+    /// The reply `start` asks for. It names the window it describes because
+    /// tmux 3.7c answers for a window that no longer exists with every
+    /// field empty rather than with an error (measured), and a reply for no
+    /// window must not rename this one. The ids hold no space; the name may.
+    static func parseWindowReply(_ reply: String) -> WindowReply? {
+        guard let (windowID, rest) = TmuxProtocol.splitFirstField(reply),
+              let (pane, name) = TmuxProtocol.splitFirstField(rest)
+        else { return nil }
+        return WindowReply(windowID: windowID, pane: pane, name: name)
+    }
+
+    struct WindowReply: Equatable {
+        let windowID: String
+        let pane: String
+        let name: String
     }
 
     func sink(for paneID: UUID) -> TmuxPaneSink? {
@@ -343,9 +393,13 @@ final class TmuxWindowMirror {
     func reportGrid(columns: Int, rows: Int) {
         guard canSend, columns > 0, rows > 0 else { return }
         log.debug("refresh-client -C \(self.windowID, privacy: .public):\(columns, privacy: .public)x\(rows, privacy: .public)")
-        connection.send("refresh-client -C '\(windowID):\(columns)x\(rows)'") { [weak self] _, _ in
-            guard let self, self.cellLayout == nil else { return }
-            self.fetchLayout()
+        connection.send("refresh-client -C '\(windowID):\(columns)x\(rows)'") { [weak self] _, isError in
+            guard let self else { return }
+            if !isError {
+                acceptedGrid = Grid(columns: columns, rows: rows)
+            }
+            guard cellLayout == nil else { return }
+            fetchLayout()
         }
     }
 
@@ -378,9 +432,20 @@ final class TmuxWindowMirror {
         case let .windowPaneChanged(window, pane) where window == windowID:
             pendingActivePane = pane
             applyActivePane()
+        case let .windowRenamed(window, name) where window == windowID:
+            rename(to: name)
         default:
             break
         }
+    }
+
+    /// The tab's title is the window's `session:window` name, whatever the
+    /// panes' programs call themselves.
+    private func rename(to name: String) {
+        windowName = name
+        let title = displayName
+        guard let tab = session.tab(tabID), tab.title != title else { return }
+        session.update(tabID) { $0.title = title }
     }
 
     // MARK: - Panes
@@ -394,7 +459,7 @@ final class TmuxWindowMirror {
         do {
             // A sink that dropped output is repainted from tmux.
             let sink = try connection.attachPane(tmuxPane, channel: channel) { [weak self] in
-                self?.markStale(paneID: paneID)
+                self?.outputDropped(paneID: paneID)
             }
             panes[paneID] = Pane(tmuxPane: tmuxPane, sink: sink)
             markStale(paneID: paneID)
@@ -408,6 +473,20 @@ final class TmuxWindowMirror {
     private func detach(paneID: UUID) {
         guard let pane = panes.removeValue(forKey: paneID) else { return }
         connection.detachPane(pane.tmuxPane)
+        refreshDroppedOutput()
+    }
+
+    /// The pane's sink dropped output. The row says so until a capture
+    /// taken after the drop has repainted the pane.
+    private func outputDropped(paneID: UUID) {
+        guard panes[paneID] != nil else { return }
+        panes[paneID]?.hasDroppedOutput = true
+        refreshDroppedOutput()
+        markStale(paneID: paneID)
+    }
+
+    private func refreshDroppedOutput() {
+        issues.hasDroppedOutput = panes.values.contains { $0.hasDroppedOutput }
     }
 
     /// libghostty resized the surface of `paneID`, and the store has
@@ -437,6 +516,7 @@ final class TmuxWindowMirror {
         else { return }
         pane.isStale = false
         pane.isRebuilding = true
+        pane.isRepairingDrop = pane.hasDroppedOutput
         panes[paneID] = pane
         bootstrap(paneID: paneID, pane: pane)
     }
@@ -534,7 +614,12 @@ final class TmuxWindowMirror {
         case .superseded:
             log.debug("screen bootstrap for \(tmuxPane, privacy: .public) superseded by a newer pause")
         }
-        guard panes[paneID] != nil else { return }
+        guard let pane = panes[paneID] else { return }
+        if case .painted = outcome, pane.isRepairingDrop {
+            panes[paneID]?.hasDroppedOutput = false
+            refreshDroppedOutput()
+        }
+        panes[paneID]?.isRepairingDrop = false
         panes[paneID]?.isRebuilding = false
         rebuildIfReady(paneID: paneID)
     }
@@ -554,6 +639,12 @@ final class TmuxWindowMirror {
         }
         let visible = visibleLayout.flatMap(TmuxLayout.parse)?.root.paneRects ?? [:]
         applyPaneGrids(layout.root.paneRects.merging(visible) { $1 })
+        // tmux keeps a window larger than the size it took from us when the
+        // window cannot be that small (eight side-by-side panes asked for 6
+        // columns keep 15, measured on 3.7c), and the tab draws only what
+        // fits. The next layout that fits clears it.
+        let window = layout.root.rect
+        issues.isWindowLargerThanTab = acceptedGrid.map { window.width > $0.columns || window.height > $0.rows } ?? false
     }
 
     private func foldLayout(_ layout: TmuxLayout) {

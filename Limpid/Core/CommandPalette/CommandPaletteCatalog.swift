@@ -97,6 +97,9 @@ enum CommandPaletteCatalog {
     /// one whose version is unknown, is still listed, disabled and labeled
     /// with the version it needs, so the user learns why it will not open
     /// instead of wondering where it went.
+    ///
+    /// Rows that share a name carry a subtitle that tells them apart
+    /// (`TmuxMirrorTarget.distinguishingLabels`); the rest carry none.
     static func tmuxWindowItems(
         targets: [TmuxMirrorTarget],
         isOpen: (TmuxMirrorTarget) -> Bool
@@ -105,7 +108,8 @@ enum CommandPaletteCatalog {
         let verbs = Array(Set([englishString(verb), String(localized: verb)])).sorted()
         let openLabel = String(localized: LocalizedStringResource("palette.tmux.windowOpen", defaultValue: "Open"))
         let unsupportedLabel = String(localized: "Needs tmux \(TmuxMirrorTarget.minimumVersion.description) or later")
-        return targets.map { target in
+        let labels = TmuxMirrorTarget.distinguishingLabels(for: targets)
+        return zip(targets, labels).map { target, label in
             let action = CommandPaletteAction.mirrorTmuxWindow(target)
             let isShown = isOpen(target)
             return CommandPaletteItem(
@@ -113,7 +117,7 @@ enum CommandPaletteCatalog {
                 category: .tmux,
                 title: target.displayName,
                 searchKeywords: verbs.map { "tmux \($0) \(target.displayName)" },
-                subtitle: nil,
+                subtitle: label,
                 icon: "rectangle.split.2x1",
                 shortcutDisplay: nil,
                 statusLabel: isShown ? openLabel : (target.isSupported ? nil : unsupportedLabel),

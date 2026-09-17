@@ -1,5 +1,5 @@
 // TmuxTabConnection.swift
-// Limpid — how a mirror tab stands with the tmux server it shows.
+// Limpid — how a mirror tab stands with the tmux server it shows, and what else its row warns about.
 
 import Foundation
 
@@ -22,4 +22,18 @@ enum TmuxTabConnection: Equatable {
     /// Nothing answered on the socket. The tab can be connected again once
     /// the server is back, or closed.
     case unreachable
+}
+
+/// What a live mirror tab's row warns about besides its connection. Both
+/// clear by themselves, so they are marks on the row rather than cards
+/// over the panes.
+struct TmuxTabIssues: Equatable {
+    /// A pane's output came faster than its surface took it and some was
+    /// dropped. Set until a capture taken after the drop has repainted
+    /// every such pane.
+    var hasDroppedOutput = false
+    /// tmux keeps the window larger than the size this tab reported (its
+    /// panes cannot shrink that far), so the tab shows only part of it.
+    /// Set until a layout fits again.
+    var isWindowLargerThanTab = false
 }

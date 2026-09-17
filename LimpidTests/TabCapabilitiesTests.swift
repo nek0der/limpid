@@ -18,8 +18,9 @@ struct TabCapabilitiesTests {
         #expect(tab.capabilities == TabCapabilities.of(.tmuxMirror))
     }
 
-    /// The rows only AppKit and SwiftUI read: the file drop, the paste
-    /// route, the divider tooltip, and the split buttons. No action test
+    /// The rows only AppKit and SwiftUI read, or only the title path reads:
+    /// the file drop, the paste route, the divider tooltip, the split
+    /// buttons, and whether the pane's title names the tab. No action test
     /// would notice one of them flipping, so their values are pinned here.
     @Test("the rows only the UI reads hold their values for each kind")
     func uiOnlyRows_arePinned() {
@@ -28,6 +29,7 @@ struct TabCapabilitiesTests {
         #expect(!terminal.pastesThroughTmux)
         #expect(terminal.canEqualizeSubtree)
         #expect(terminal.canSplit)
+        #expect(terminal.titleFollowsPaneTitle)
 
         // A mirror pane takes a drop too, typed through tmux's paste.
         let mirror = TabCapabilities.of(.tmuxMirror)
@@ -35,6 +37,8 @@ struct TabCapabilitiesTests {
         #expect(mirror.pastesThroughTmux)
         #expect(!mirror.canEqualizeSubtree)
         #expect(mirror.canSplit)
+        // Named after its tmux window, never after a pane's OSC title.
+        #expect(!mirror.titleFollowsPaneTitle)
     }
 
     /// The drop overlay's highlight and the drop handler both ask this, so

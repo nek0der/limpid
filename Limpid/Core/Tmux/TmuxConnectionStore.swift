@@ -18,10 +18,11 @@ private let log = Logger.limpid("tmux.store")
 /// "one per server", which holds for the first version's scope of one
 /// window per tab.
 ///
-/// Observable only for `mirrors` and `tabConnections`: the pane area draws a
-/// mirror tab from its mirror and says how the tab stands with its server,
-/// and either can change after the tab is on screen. Everything else is
-/// bookkeeping the view never reads.
+/// Observable only for `mirrors`, `tabConnections`, and `tabIssues`: the
+/// pane area draws a mirror tab from its mirror and says how the tab stands
+/// with its server, the tab's row marks both that and what its mirror warns
+/// about, and all of it can change after the tab is on screen. Everything
+/// else is bookkeeping the view never reads.
 @MainActor
 @Observable
 final class TmuxConnectionStore {
@@ -63,6 +64,12 @@ final class TmuxConnectionStore {
     /// mirror is registered and when its connection ends; released on
     /// `reconcile` once the tab is gone.
     private(set) var tabConnections: [UUID: TmuxTabConnection] = [:]
+    /// What each live mirror tab's row warns about, by tab id, as its
+    /// mirror last reported. A tab with nothing to warn about has no entry.
+    /// Forgotten when the mirror loses its connection, since nothing is
+    /// repainted or resized from then on and the connection state says
+    /// more, and when another mirror takes the tab over.
+    private(set) var tabIssues: [UUID: TmuxTabIssues] = [:]
     /// Which panes of each connection have their output paused. A control
     /// client is fed every pane of the session; the ones no tab shows are
     /// switched off so a build in a hidden window cannot fill the pipe
@@ -282,6 +289,11 @@ final class TmuxConnectionStore {
         }
         mirrors[mirror.tabID] = mirror
         tabConnections[mirror.tabID] = mirror.connectionState == .connected ? .live : .disconnected
+        tabIssues.removeValue(forKey: mirror.tabID)
+        mirror.onIssuesChanged = { [weak self, weak mirror] issues in
+            guard let self, let mirror, mirrors[mirror.tabID] === mirror, mirror.connectionState == .connected else { return }
+            tabIssues[mirror.tabID] = issues == TmuxTabIssues() ? nil : issues
+        }
         gateOutput(for: Self.key(of: mirror))
     }
 
@@ -323,7 +335,7 @@ final class TmuxConnectionStore {
             for mirror in started where !present.contains(mirror.windowID) {
                 guard mirrors[mirror.tabID] === mirror, mirror.connectionState == .connected else { continue }
                 mirror.closeTab()
-                onNotice?(Self.windowClosedNotice(name: "\(mirror.sessionName):\(mirror.windowName)"))
+                onNotice?(Self.windowClosedNotice(name: mirror.displayName))
             }
         }
     }
@@ -375,6 +387,9 @@ final class TmuxConnectionStore {
         for tabID in tabConnections.keys where !liveTabs.contains(tabID) {
             tabConnections.removeValue(forKey: tabID)
         }
+        for tabID in tabIssues.keys where !liveTabs.contains(tabID) {
+            tabIssues.removeValue(forKey: tabID)
+        }
         for paneID in channels.keys where !channelLeaves.contains(paneID) {
             channels.removeValue(forKey: paneID)
         }
@@ -389,6 +404,7 @@ final class TmuxConnectionStore {
         }
         mirrors.removeAll()
         tabConnections.removeAll()
+        tabIssues.removeAll()
         for connection in connections.values {
             connection.stop()
         }
@@ -431,7 +447,7 @@ final class TmuxConnectionStore {
         mirror.connection.send("display-message -p ''") { [weak self, weak mirror] _, _ in
             guard let self, let mirror, mirrors[mirror.tabID] === mirror, mirror.connectionState == .connected else { return }
             mirror.closeTab()
-            onNotice?(Self.windowClosedNotice(name: "\(mirror.sessionName):\(mirror.windowName)"))
+            onNotice?(Self.windowClosedNotice(name: mirror.displayName))
         }
     }
 
@@ -464,6 +480,7 @@ final class TmuxConnectionStore {
         for mirror in affected {
             mirror.connectionEnded()
             tabConnections[mirror.tabID] = .disconnected
+            tabIssues.removeValue(forKey: mirror.tabID)
         }
         guard !affected.isEmpty else { return }
         if !connection.hasAttached, refusal == .closesTabs {
@@ -510,7 +527,7 @@ final class TmuxConnectionStore {
         for mirror in affected {
             mirror.closeTab()
         }
-        onNotice?(Self.openFailureNotice(name: "\(first.sessionName):\(first.windowName)", reason: reason))
+        onNotice?(Self.openFailureNotice(name: first.displayName, reason: reason))
     }
 
     /// What the user reads when a mirror tab could not be opened. `name`

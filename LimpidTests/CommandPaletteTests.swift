@@ -383,6 +383,37 @@ struct CommandPaletteTests {
         #expect(items[1].statusLabel != nil)
     }
 
+    /// Names alone cannot tell these rows apart; only rows that share a
+    /// name get a subtitle.
+    @Test func tmuxWindowItems_sharingAName_carryWhatTellsThemApart() {
+        func window(_ socket: String, _ id: String, index: Int, name: String) -> TmuxMirrorTarget {
+            TmuxMirrorTarget(
+                binding: TmuxBinding(socketPath: socket, sessionID: "$0", sessionName: "work"),
+                windowID: id,
+                windowName: name,
+                activePaneID: "%0",
+                serverVersion: Self.supportedVersion,
+                windowIndex: index
+            )
+        }
+        let targets = [
+            window("/tmp/limpid-test/default", "@1", index: 1, name: "zsh"),
+            window("/tmp/limpid-test/default", "@2", index: 2, name: "zsh"),
+            window("/tmp/limpid-test/other", "@1", index: 1, name: "zsh"),
+            window("/tmp/limpid-test/default", "@3", index: 3, name: "vim")
+        ]
+        let items = CommandPaletteCatalog.tmuxWindowItems(targets: targets) { _ in false }
+
+        #expect(items.map(\.title) == ["work:zsh", "work:zsh", "work:zsh", "work:vim"])
+        let server = { (name: String) in String(localized: "Server \(name)") }
+        let window = { (index: Int) in String(localized: "Window \(index)") }
+        #expect(items[0].subtitle == "\(server("default")) · \(window(1))")
+        #expect(items[1].subtitle == "\(server("default")) · \(window(2))")
+        // Alone on its server, so only the server tells it apart.
+        #expect(items[2].subtitle == server("other"))
+        #expect(items[3].subtitle == nil)
+    }
+
     private static func target(version: String?, windowID: String = "@7") -> TmuxMirrorTarget {
         TmuxMirrorTarget(
             binding: TmuxBinding(socketPath: "/tmp/limpid-test/old", sessionID: "$3", sessionName: "old"),

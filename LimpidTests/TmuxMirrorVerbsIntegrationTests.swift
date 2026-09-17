@@ -245,7 +245,7 @@ struct TmuxMirrorVerbsIntegrationTests {
         #expect(connection.sinks[tmuxPane] != nil)
 
         var newWindow: String?
-        harness.mirror.breakPane(paneID: moved) { newWindow = $0 }
+        harness.mirror.breakPane(paneID: moved) { newWindow = $0?.windowID }
         #expect(await waitUntil { newWindow != nil })
         harness.mirror.release(paneID: moved)
 

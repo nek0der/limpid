@@ -278,13 +278,13 @@ enum TmuxMirrorActions {
               let mirror = PaneActions.liveMirror(for: sourceTab, in: store, toastCenter: toastCenter),
               case let .tmux(ref) = sourceTab.ioSource(for: paneID)
         else { return }
-        mirror.breakPane(paneID: paneID) { windowID in
-            guard let windowID else { return }
+        mirror.breakPane(paneID: paneID) { window in
+            guard let window else { return }
             mirror.release(paneID: paneID)
             let target = TmuxMirrorTarget(
                 binding: ref.binding,
-                windowID: windowID,
-                windowName: sourceTab.title,
+                windowID: window.windowID,
+                windowName: window.windowName,
                 activePaneID: ref.paneID,
                 serverVersion: mirror.connection.version
             )

@@ -555,7 +555,7 @@ final class AgentProjectionAdapter {
             if tab.agentResumeCandidates != candidates {
                 tab.agentResumeCandidates = candidates
             }
-            if let title = titlesByTab[tab.id], tab.title != title {
+            if let title = titlesByTab[tab.id], tab.capabilities.titleFollowsPaneTitle, tab.title != title {
                 tab.title = title
             }
         }

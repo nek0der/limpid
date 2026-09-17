@@ -186,7 +186,8 @@ final class GhosttyEventCoordinator {
     }
 
     /// Decide whether `paneID`'s OSC 2 should be propagated up to
-    /// `tab.title`. Two regimes:
+    /// `tab.title`. A tab whose capabilities name it otherwise (a tmux
+    /// mirror tab) takes none. Otherwise two regimes:
     ///   1. **Agent in the tab** — only the pane whose Claude / Codex
     ///      session started most recently is allowed, regardless of
     ///      focus. The tab label is "owned" by the latest conversation
@@ -199,6 +200,10 @@ final class GhosttyEventCoordinator {
     ///      it always has (background pane prompts don't flicker the
     ///      tab name).
     private func shouldPropagateTitle(from paneID: UUID, in tab: Tab) -> Bool {
+        guard tab.capabilities.titleFollowsPaneTitle else {
+            log.debug("SET_TITLE ignored: the tab is named by something else")
+            return false
+        }
         if let owner = tab.latestAgentSessionPaneID {
             if owner != paneID {
                 log.debug("SET_TITLE ignored: pane is not the latest agent session owner")
