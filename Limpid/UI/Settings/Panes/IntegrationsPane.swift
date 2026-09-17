@@ -79,25 +79,63 @@ struct IntegrationsPane: View {
 
             Section {
                 Toggle(
-                    "Run agents in tmux",
+                    "Show agents in a tmux tab",
                     isOn: $store.settings.advanced.hostsAgentsInTmux
                 )
+                .disabled(!store.agentTmuxSupport.allowsHostingSetting)
                 .settingsSearchTarget(SettingsSearchCatalog.hostsAgentsInTmux.id)
+                if let reason = tmuxUnavailability {
+                    reason
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             } header: {
                 Text("tmux")
             } footer: {
                 Text(
                     """
-                    Starts each agent in a tmux session of its own. The agent keeps running \
-                    when Limpid quits, including the relaunch after an update, and the pane \
-                    reconnects to the same session on the next launch. Requires tmux.
+                    Starts each agent in a tmux session of its own and shows that session as \
+                    its own tab. The agent keeps running after Limpid quits, including the \
+                    relaunch after an update, and the tab reconnects to it on the next \
+                    launch. The command you typed returns to the prompt as soon as the tab \
+                    opens.
 
-                    Applies to panes opened after the change. The pane's scrollback stays in \
-                    tmux rather than Limpid. A command that prints and exits, such as \
-                    `claude --version`, runs outside it.
+                    Applies to panes opened after the change. The agent's scrollback is \
+                    Limpid's, not tmux's. Reviewing a turn is not available in these tabs \
+                    yet. A command that prints and exits, such as `claude --version`, runs \
+                    outside tmux.
                     """
                 )
             }
+        }
+    }
+
+    /// What the launch probe found, when what it found is the reason the
+    /// setting cannot be switched on. A tab is opened by attaching to the
+    /// agent's session, so a tmux a mirror cannot attach to leaves nothing to
+    /// offer, and the reason belongs next to the switch rather than in a log.
+    private var tmuxUnavailability: Text? {
+        let minimum = TmuxMirrorTarget.minimumVersion.description
+        switch store.agentTmuxSupport {
+        case .pending, .supported:
+            return nil
+        case .notInstalled:
+            return Text("No tmux found. Showing agents in a tab needs tmux \(minimum) or newer.")
+        case .unreadableVersion:
+            return Text(
+                """
+                Limpid could not read the version of the tmux it found. Showing agents in a \
+                tab needs tmux \(minimum) or newer.
+                """
+            )
+        case let .unsupported(_, version):
+            return Text(
+                """
+                The tmux found is version \(version.description). Showing agents in a tab \
+                needs \(minimum) or newer.
+                """
+            )
         }
     }
 }

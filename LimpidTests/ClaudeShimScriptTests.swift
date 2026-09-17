@@ -194,55 +194,106 @@ struct ClaudeShimScriptTests {
         }
     }
 
-    /// Runs the shim under a pty with tmux hosting switched on, and
-    /// returns the argv tmux was handed. The hosting decision asks
-    /// whether stdin and stdout are terminals, and a `Process` pipe is
-    /// not one, so the harness above can never reach this branch. The
-    /// decision itself is shared with the Codex shim and pinned there;
+    /// One hosted invocation: what each stub was handed, what the pane
+    /// saw, and the request the shim left for Limpid.
+    private struct HostedRun {
+        var tmux: [String]
+        var claude: [String]
+        var status: Int32
+        var output: String
+        var errors: String
+        var request: Data?
+    }
+
+    /// The socket name the tmux stub reports, as this build's own.
+    private static let ownSocketName = "limpid-dev.limpid.Limpid"
+
+    /// Runs the shim under a pty with tmux hosting switched on. The hosting
+    /// decision asks whether stdin and stdout are terminals, and a `Process`
+    /// pipe is not one, so the harness above can never reach this branch.
+    /// The decision itself is shared with the Codex shim and pinned there;
     /// what is Claude's own is that our `--settings` survives the wrap.
-    private func runShimHosted(_ args: [String]) throws -> (tmux: [String], claude: [String]) {
+    private func runShimHosted(_ args: [String], tmuxFails: Bool = false) throws -> HostedRun {
         try withTempDir { dir in
             let root = try #require(RepoFixture.limpidRoot)
             let shim = root.appendingPathComponent("Limpid/Resources/claude-shim/claude")
             let claudeArgv = dir.appendingPathComponent("claude.argv")
             let tmuxArgv = dir.appendingPathComponent("tmux.argv")
-            let claudeStub = dir.appendingPathComponent("fake-claude")
-            let tmuxStub = dir.appendingPathComponent("fake-tmux")
-            for (stub, argvFile) in [(claudeStub, claudeArgv), (tmuxStub, tmuxArgv)] {
-                try """
-                #!/bin/sh
-                : > "\(argvFile.path)"
-                for a in "$@"; do printf '%s\\000' "$a" >> "\(argvFile.path)"; done
-                exit 0
-                """.write(to: stub, atomically: true, encoding: .utf8)
-                try FileManager.default.setAttributes(
-                    [.posixPermissions: 0o755], ofItemAtPath: stub.path
+            let errorFile = dir.appendingPathComponent("stderr")
+            let requests = dir.appendingPathComponent("requests", isDirectory: true)
+            try FileManager.default.createDirectory(at: requests, withIntermediateDirectories: true)
+            let report = #"printf '/private/tmp/tmux-501/limpid-dev.limpid.Limpid\t$3\t@4\t%%5\t4100\t1758130000\n'"#
+            for (name, argvFile, tail) in [
+                ("fake-claude", claudeArgv, "exit 0"),
+                ("fake-tmux", tmuxArgv, tmuxFails ? "exit 1" : report)
+            ] {
+                // NUL-separated: the settings payload is pretty-printed JSON,
+                // so a newline-delimited dump would split one argument.
+                try Self.writeScript(
+                    """
+                    : > "\(argvFile.path)"
+                    for a in "$@"; do printf '%s\\000' "$a" >> "\(argvFile.path)"; done
+                    \(tail)
+                    """,
+                    to: dir.appendingPathComponent(name)
                 )
             }
+            // stderr goes to a file rather than the pty so the two streams
+            // can be read apart; the shim only asks about stdin and stdout.
+            let runner = dir.appendingPathComponent("run.sh")
+            try Self.writeScript(
+                """
+                stty rows 37 columns 103 2>/dev/null
+                exec /bin/sh "\(shim.path)" "$@" 2> "\(errorFile.path)"
+                """,
+                to: runner
+            )
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/script")
-            process.arguments = ["-q", "/dev/null", "/bin/sh", shim.path] + args
+            process.arguments = ["-q", "/dev/null", runner.path] + args
+            let output = Pipe()
+            process.standardOutput = output
             process.environment = [
                 "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                 "HOME": dir.path,
                 "TMPDIR": dir.path,
                 "LIMPID_CLAUDE_SETTINGS_TEMPLATE": Self.templatePath(root),
-                "LIMPID_REAL_CLAUDE": claudeStub.path,
-                "LIMPID_AGENT_TMUX": tmuxStub.path,
-                "LIMPID_AGENT_TMUX_SOCKET": "limpid-test.socket",
+                "LIMPID_REAL_CLAUDE": dir.appendingPathComponent("fake-claude").path,
+                "LIMPID_AGENT_TMUX": dir.appendingPathComponent("fake-tmux").path,
+                "LIMPID_AGENT_TMUX_SOCKET": Self.ownSocketName,
+                AgentMirrorRequest.directoryVariable: requests.path,
                 "LIMPID_PANE_ID": "547D688D-39DF-4A06-BD6F-316C3385532C",
                 "LIMPID_AGENT_HOOK_BACKEND": "rust"
             ]
             try process.run()
+            let printed = output.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
 
             func argv(_ url: URL) -> [String] {
                 let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
                 return text.split(separator: "\0").map(String.init)
             }
-            return (argv(tmuxArgv), argv(claudeArgv))
+            let written = ((try? FileManager.default.contentsOfDirectory(atPath: requests.path)) ?? [])
+                .filter { $0.hasSuffix(".json") && !$0.hasPrefix(".") }
+            return HostedRun(
+                tmux: argv(tmuxArgv),
+                claude: argv(claudeArgv),
+                status: process.terminationStatus,
+                output: (String(bytes: printed, encoding: .utf8) ?? "").replacingOccurrences(of: "\r", with: ""),
+                errors: (try? String(contentsOf: errorFile, encoding: .utf8)) ?? "",
+                request: written.count == 1
+                    ? try? Data(contentsOf: requests.appendingPathComponent(written[0]))
+                    : nil
+            )
         }
+    }
+
+    private static func writeScript(_ body: String, to url: URL) throws {
+        try "#!/bin/sh\n\(body)\n".write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: url.path
+        )
     }
 
     /// The hooks are the reason the shim exists, so they have to survive
@@ -253,7 +304,9 @@ struct ClaudeShimScriptTests {
     func hostedInvocation_stillCarriesTheSettingsFlag() throws {
         let handover = try runShimHosted([])
         #expect(handover.claude.isEmpty)
-        #expect(handover.tmux.prefix(4) == ["-L", "limpid-test.socket", "-f", "/dev/null"])
+        #expect(handover.tmux.prefix(5) == ["-L", Self.ownSocketName, "-u", "-f", "/dev/null"])
+        #expect(handover.tmux.contains("new-session"))
+        #expect(handover.tmux.contains("-d"))
         #expect(handover.tmux.contains { $0.hasPrefix("LIMPID_AGENT_RUN_ID=") })
         #expect(handover.tmux.contains("LIMPID_AGENT_TMUX_HOST_MODE=limpidHosted"))
         // The hook backend is fixed per pane and must reach the hooks that
@@ -266,6 +319,33 @@ struct ClaudeShimScriptTests {
             with: Data(handover.tmux[settings + 1].utf8)
         ) as? [String: Any]
         #expect(payload?["hooks"] != nil)
+    }
+
+    /// The tab is opened from this file alone, so a Claude launch has to
+    /// leave one Limpid accepts, naming Claude as its provider.
+    @Test("asks Limpid for a tab on the session it created")
+    func hostedInvocation_writesAValidRequest() throws {
+        let handover = try runShimHosted([])
+        #expect(handover.status == 0)
+        #expect(handover.output.trimmingCharacters(in: .whitespacesAndNewlines) == "Opened in a Limpid tab.")
+        let data = try #require(handover.request)
+        let request = try AgentMirrorRequest.parse(data, ownSocketName: Self.ownSocketName)
+        #expect(request.provider == .claude)
+        #expect(request.launchPaneID == UUID(uuidString: "547D688D-39DF-4A06-BD6F-316C3385532C"))
+        // The agent is given the mirror leaf's id, not the launching pane's.
+        let passed = try #require(handover.tmux.first { $0.hasPrefix("LIMPID_PANE_ID=") })
+        #expect(passed == "LIMPID_PANE_ID=\(request.leafID.uuidString)")
+    }
+
+    /// An agent that ran where the user cannot see it is the failure that
+    /// is hard to notice, so a launch that cannot be shown does not happen.
+    @Test("fails loudly when tmux cannot create the session")
+    func hostedInvocation_tmuxFailure_exitsNonZero() throws {
+        let handover = try runShimHosted([], tmuxFails: true)
+        #expect(handover.status != 0)
+        #expect(handover.errors.contains("limpid:"))
+        #expect(handover.request == nil)
+        #expect(handover.claude.isEmpty)
     }
 
     /// `--bg` prints a session id and returns, so hosting it would put

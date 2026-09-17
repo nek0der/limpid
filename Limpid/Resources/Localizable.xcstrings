@@ -21,6 +21,26 @@
         }
       }
     },
+    "Limpid could not read the version of the tmux it found. Showing agents in a tab needs tmux %@ or newer.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見つかった tmux のバージョンを読み取れませんでした。エージェントをタブで表示するには tmux %@ 以降が必要です。"
+          }
+        }
+      }
+    },
+    "No tmux found. Showing agents in a tab needs tmux %@ or newer.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux が見つかりません。エージェントをタブで表示するには tmux %@ 以降が必要です。"
+          }
+        }
+      }
+    },
     "Only panes of the same tmux session can move into this tab": {
       "localizations": {
         "ja": {
@@ -213,12 +233,42 @@
         }
       }
     },
+    "Show agents in a tmux tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを tmux のタブで表示"
+          }
+        }
+      }
+    },
     "Some output was dropped; redrawing from tmux": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "出力の一部を取りこぼしました。tmux から描き直しています"
+          }
+        }
+      }
+    },
+    "Starts each agent in a tmux session of its own and shows that session as its own tab. The agent keeps running after Limpid quits, including the relaunch after an update, and the tab reconnects to it on the next launch. The command you typed returns to the prompt as soon as the tab opens.\n\nApplies to panes opened after the change. The agent's scrollback is Limpid's, not tmux's. Reviewing a turn is not available in these tabs yet. A command that prints and exits, such as `claude --version`, runs outside tmux.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを専用の tmux セッションで起動し、そのセッションを 1 つのタブとして表示します。Limpid を終了してもエージェントは動作を継続し、更新後の再起動でも同様です。次回起動時に、タブは同じセッションへ再接続します。入力したコマンドは、タブが開くとすぐにプロンプトへ戻ります。\n\nこの設定は、変更後に開いたペインから有効になります。エージェントのスクロールバックは tmux ではなく Limpid に入ります。これらのタブでは、ターンのレビューはまだ利用できません。`claude --version` のように結果を表示して終了するコマンドは、tmux を経由しません。"
+          }
+        }
+      }
+    },
+    "The tmux found is version %@. Showing agents in a tab needs %@ or newer.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見つかった tmux のバージョンは %1$@ です。エージェントをタブで表示するには %2$@ 以降が必要です。"
           }
         }
       }
@@ -6865,16 +6915,6 @@
         }
       }
     },
-    "Run agents in tmux": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "エージェントを tmux で実行"
-          }
-        }
-      }
-    },
     "tmux": {
       "localizations": {
         "ja": {
@@ -6901,16 +6941,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "tmux で実行中。Limpid を終了してもセッションは残る。"
-          }
-        }
-      }
-    },
-    "Starts each agent in a tmux session of its own. The agent keeps running when Limpid quits, including the relaunch after an update, and the pane reconnects to the same session on the next launch. Requires tmux.\n\nApplies to panes opened after the change. The pane's scrollback stays in tmux rather than Limpid. A command that prints and exits, such as `claude --version`, runs outside it.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "エージェントを専用の tmux セッションで起動します。Limpid を終了してもエージェントは動作を継続し、更新後の再起動でも同様です。次回起動時に、ペインは同じセッションへ再接続します。tmux が必要です。\n\nこの設定は、変更後に開いたペインから有効になります。ペインのスクロールバックは Limpid ではなく tmux 側に残ります。`claude --version` のように結果を表示して終了するコマンドは、tmux を経由しません。"
           }
         }
       }

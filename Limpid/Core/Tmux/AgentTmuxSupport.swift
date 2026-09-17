@@ -30,6 +30,19 @@ enum AgentTmuxSupport: Equatable {
         return binary
     }
 
+    /// Whether the setting that offers a tmux tab can be switched on. A
+    /// pending probe reads as available rather than as a refusal: it answers
+    /// within a moment of launch, and switching the setting on before it does
+    /// costs nothing, since a pane opened in the meantime simply runs its
+    /// agents directly. Every other answer means no tab could be opened, so
+    /// the setting is disabled and the pane says which answer it was.
+    var allowsHostingSetting: Bool {
+        switch self {
+        case .pending, .supported: true
+        case .notInstalled, .unreadableVersion, .unsupported: false
+        }
+    }
+
     /// Classifies what was found. Pure, so each outcome is testable without a
     /// tmux on the machine.
     static func evaluate(binary: String?, versionOutput: TmuxCommandResult?) -> AgentTmuxSupport {

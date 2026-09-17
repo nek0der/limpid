@@ -14,12 +14,213 @@ limpid_is_uuid() {
   return 0
 }
 
+# One uppercase UUID on stdout, or a failure. `uuidgen` is part of macOS,
+# so the random fallback is only there because a hosted launch now refuses
+# to run at all without an id, and a PATH the user narrowed is not a reason
+# to lose an agent. The fallback fixes the version and variant nibbles so
+# what we print is a version 4 UUID rather than 16 random bytes.
+limpid_new_uuid() {
+  lnu_value=$(/usr/bin/uuidgen 2>/dev/null || uuidgen 2>/dev/null || true)
+  if [ -z "$lnu_value" ]; then
+    lnu_hex=$(od -An -tx1 -N16 /dev/urandom 2>/dev/null | tr -d ' \n')
+    case "$lnu_hex" in
+      ????????????????????????????????) ;;
+      *) return 1 ;;
+    esac
+    lnu_value="$(printf '%s' "$lnu_hex" | cut -c1-8)-$(printf '%s' "$lnu_hex" | cut -c9-12)"
+    lnu_value="$lnu_value-4$(printf '%s' "$lnu_hex" | cut -c14-16)"
+    lnu_value="$lnu_value-8$(printf '%s' "$lnu_hex" | cut -c18-20)"
+    lnu_value="$lnu_value-$(printf '%s' "$lnu_hex" | cut -c21-32)"
+  fi
+  printf '%s' "$lnu_value" | tr 'a-f' 'A-F'
+}
+
 limpid_ensure_run_id() {
   # We exec the real agent (not this shim) when handing off to tmux, so
   # every shim entry is a new invocation, including an agent's child.
-  LIMPID_AGENT_RUN_ID=$(/usr/bin/uuidgen 2>/dev/null || true)
-  LIMPID_AGENT_RUN_ID=$(printf '%s' "$LIMPID_AGENT_RUN_ID" | tr 'a-f' 'A-F')
+  LIMPID_AGENT_RUN_ID=$(limpid_new_uuid 2>/dev/null || true)
   export LIMPID_AGENT_RUN_ID
+}
+
+# One JSON string literal, escaped, on stdout. Only `"` and `\` can occur
+# in what we pass through here — a socket path may hold either — and a
+# control character would make the file unreadable, so the caller checks
+# the fields for shape before it builds the object.
+limpid_json_string() {
+  printf '"%s"' "$(printf '%s' "${1:-}" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+}
+
+limpid_is_decimal() {
+  case "${1:-}" in
+    '' | *[!0-9]*) return 1 ;;
+  esac
+  return 0
+}
+
+# Removes what a launch left half-done. Installed as the `EXIT` trap for
+# the whole of `limpid_host_agent_in_tmux`, so an interrupt or a failure
+# part way through leaves neither a hidden temporary file in the request
+# directory nor a session no tab will ever be opened for.
+limpid_host_abort() {
+  [ -z "${limpid_host_tmp:-}" ] || rm -f "$limpid_host_tmp"
+  limpid_host_tmp=""
+  if [ -n "${limpid_host_session:-}" ]; then
+    "$LIMPID_AGENT_TMUX" -L "${LIMPID_AGENT_TMUX_SOCKET:-limpid}" \
+      kill-session -t "$limpid_host_session" 2>/dev/null || :
+    limpid_host_session=""
+  fi
+}
+
+# Starts the agent in "$@" in a detached session of this build's agent
+# server and asks Limpid to show that session as a mirror tab, then
+# returns to the prompt. The agent is never a child of this shell, which
+# is what lets it outlive Limpid.
+#
+# The caller sets `limpid_agent_provider` (an `AgentKind` id) and
+# `limpid_hosted_env_names` (the variables the session is given rather
+# than left to inherit; a session created on a server that already exists
+# inherits that server's environment for everything outside tmux's
+# `update-environment`).
+#
+# We return non-zero rather than running the agent directly when any of
+# this fails. The alternative — an agent that silently runs where the user
+# cannot see it after asking for a tab — is the failure that is hard to
+# notice, and `tmux` is only offered at all once Limpid knows a mirror can
+# attach to it (`AgentTmuxSupport`), so a failure here is a real fault.
+limpid_host_agent_in_tmux() {
+  limpid_host_tmp=""
+  limpid_host_session=""
+  trap 'limpid_host_abort' EXIT
+  trap 'exit 1' HUP INT TERM
+
+  lha_requests="${LIMPID_AGENT_MIRROR_REQUESTS_DIR:-}"
+  if [ -z "$lha_requests" ] || [ ! -d "$lha_requests" ]; then
+    printf 'limpid: not starting the agent: no directory to ask for a tab in\n' >&2
+    return 1
+  fi
+  lha_launch_pane="${LIMPID_PANE_ID:-}"
+  if ! limpid_is_uuid "$lha_launch_pane"; then
+    printf 'limpid: not starting the agent: this pane has no id to open the tab beside\n' >&2
+    return 1
+  fi
+  if ! lha_leaf=$(limpid_new_uuid) || [ -z "$lha_leaf" ]; then
+    printf 'limpid: not starting the agent: cannot make an id for the tab\n' >&2
+    return 1
+  fi
+
+  # Unique per invocation. `-A` is deliberately absent: with the name
+  # already taken it attaches and silently drops the command, handing
+  # back the running agent instead of starting the one that was asked
+  # for.
+  lha_session="limpid-$(printf '%s' "$lha_launch_pane" | tr -cd 'A-Za-z0-9' | cut -c1-8)-$$"
+  lha_tab=$(printf '\t')
+  # `stty` reads the terminal we were started on. A session sized here
+  # opens at the size of the pane the command was typed in, so the agent
+  # does not draw once at tmux's default and reflow when the tab attaches.
+  lha_size=$(stty size 2>/dev/null || true)
+  lha_rows="${lha_size%% *}"
+  lha_cols="${lha_size##* }"
+
+  # The agent command is in "$@" and the tmux command line has to come
+  # before it. We append the tmux side after it and then rotate the
+  # agent command to the end, which is how a list whose values may hold
+  # spaces is built in POSIX sh.
+  lha_count=$#
+  set -- "$@" -L "${LIMPID_AGENT_TMUX_SOCKET:-limpid}" -u -f /dev/null \
+    set -s escape-time 10 ";" \
+    set -s default-terminal tmux-256color ";" \
+    set -sa terminal-overrides ",*:RGB" ";" \
+    set -g prefix None ";" \
+    new-session -d -s "$lha_session" -P -F \
+    "#{socket_path}$lha_tab#{session_id}$lha_tab#{window_id}$lha_tab#{pane_id}$lha_tab#{pid}$lha_tab#{start_time}"
+  if limpid_is_decimal "$lha_rows" && limpid_is_decimal "$lha_cols" &&
+    [ "$lha_rows" -gt 0 ] && [ "$lha_cols" -gt 0 ]
+  then
+    set -- "$@" -x "$lha_cols" -y "$lha_rows"
+  fi
+  # The leaf of the mirror tab is the agent's pane as far as every record
+  # is concerned, so the agent is given that id and not the one belonging
+  # to the pane the command was typed in. The launching pane travels in
+  # the request instead, as where to put the tab.
+  LIMPID_PANE_ID="$lha_leaf"
+  for lha_name in ${limpid_hosted_env_names:-}; do
+    eval "lha_value=\${$lha_name:-}"
+    [ -n "$lha_value" ] || continue
+    set -- "$@" -e "$lha_name=$lha_value"
+  done
+  # `/usr/bin/env` guarantees more than one argument after the options,
+  # which is what makes tmux exec our argv directly rather than passing
+  # a single string to `sh -c` — so nothing here needs quoting.
+  set -- "$@" /usr/bin/env
+  while [ "$lha_count" -gt 0 ]; do
+    lha_arg="$1"
+    shift
+    set -- "$@" "$lha_arg"
+    lha_count=$((lha_count - 1))
+  done
+
+  # Armed before the call rather than from what tmux reports: a session
+  # that was created but not described is exactly the one we could not
+  # otherwise clean up, and the name is ours alone.
+  limpid_host_session="$lha_session"
+  if ! lha_report=$("$LIMPID_AGENT_TMUX" "$@"); then
+    printf 'limpid: not starting the agent: tmux could not create its session\n' >&2
+    return 1
+  fi
+  IFS="$lha_tab" read -r lha_socket lha_session_id lha_window_id lha_pane_id \
+    lha_server_pid lha_started <<LIMPID_TMUX_REPORT
+$lha_report
+LIMPID_TMUX_REPORT
+  if ! limpid_host_report_is_whole; then
+    printf 'limpid: not starting the agent: tmux did not say where it put the session\n' >&2
+    return 1
+  fi
+
+  lha_tmp="$lha_requests/.$lha_leaf.json.tmp"
+  limpid_host_tmp="$lha_tmp"
+  # Written under a hidden name and renamed, so Limpid only ever sees a
+  # whole request; 077 because the file says which server to attach to.
+  if ! (
+    umask 077
+    printf '{"version":1,"socket":%s,"sessionID":%s,"sessionName":%s,"windowID":%s,"paneID":%s,"serverPID":%s,"serverStartedAt":%s,"leafID":%s,"launchPaneID":%s,"provider":%s}\n' \
+      "$(limpid_json_string "$lha_socket")" \
+      "$(limpid_json_string "$lha_session_id")" \
+      "$(limpid_json_string "$lha_session")" \
+      "$(limpid_json_string "$lha_window_id")" \
+      "$(limpid_json_string "$lha_pane_id")" \
+      "$(limpid_json_string "$lha_server_pid")" \
+      "$(limpid_json_string "$lha_started")" \
+      "$(limpid_json_string "$lha_leaf")" \
+      "$(limpid_json_string "$lha_launch_pane")" \
+      "$(limpid_json_string "${limpid_agent_provider:-}")" \
+      > "$lha_tmp"
+  ) || ! mv -f "$lha_tmp" "$lha_requests/$lha_leaf.json"; then
+    printf 'limpid: not starting the agent: cannot ask for a tab in %s\n' "$lha_requests" >&2
+    return 1
+  fi
+
+  limpid_host_tmp=""
+  limpid_host_session=""
+  trap - EXIT HUP INT TERM
+  printf 'Opened in a Limpid tab.\n'
+  return 0
+}
+
+# Every field tmux reported has the shape the request format promises.
+# Checked here because the ids are spliced into tmux commands on the
+# other side, and because an empty report is what a tmux too old for one
+# of these variables would leave behind.
+limpid_host_report_is_whole() {
+  case "${lha_socket:-}" in /*) ;; *) return 1 ;; esac
+  case "${lha_session_id:-}" in '$'[0-9]*) ;; *) return 1 ;; esac
+  case "${lha_window_id:-}" in '@'[0-9]*) ;; *) return 1 ;; esac
+  case "${lha_pane_id:-}" in '%'[0-9]*) ;; *) return 1 ;; esac
+  limpid_is_decimal "${lha_session_id#?}" || return 1
+  limpid_is_decimal "${lha_window_id#?}" || return 1
+  limpid_is_decimal "${lha_pane_id#?}" || return 1
+  limpid_is_decimal "${lha_server_pid:-}" || return 1
+  limpid_is_decimal "${lha_started:-}" || return 1
+  return 0
 }
 
 limpid_capture_tmux_endpoint() {

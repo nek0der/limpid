@@ -123,7 +123,7 @@ enum SettingsSearchCatalog {
                 "integrations.tmux",
                 .integrations,
                 "tmux",
-                "Run agents in tmux",
+                "Show agents in a tmux tab",
                 keywords: ["Agents"],
                 technicalAliases: ["tmux"],
                 order: 3

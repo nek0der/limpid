@@ -32,10 +32,12 @@ import Foundation
 /// }
 /// ```
 ///
-/// `socket` is the server's socket path (`#{socket_path}`); `sessionID`,
-/// `windowID`, `paneID`, `serverPID`, and `serverStartedAt` are what
-/// `new-session -P -F '#{session_id}\t#{window_id}\t#{pane_id}\t#{pid}\t#{start_time}'`
-/// prints, all as JSON strings. `leafID` is the `LIMPID_PANE_ID` the shim
+/// `socket`, `sessionID`, `windowID`, `paneID`, `serverPID`, and
+/// `serverStartedAt` are the six fields of the one tab-separated line
+/// `new-session -d -P -F` prints for `#{socket_path}`, `#{session_id}`,
+/// `#{window_id}`, `#{pane_id}`, `#{pid}` and `#{start_time}`, all as JSON
+/// strings. `sessionName` is the name the shim gave `-s`, which is why it
+/// is not read back from tmux. `leafID` is the `LIMPID_PANE_ID` the shim
 /// gave the agent with `new-session -e`, and `launchPaneID` the
 /// `LIMPID_PANE_ID` of the pane the user typed the command in. `provider` is
 /// a provider id (`AgentKind`). Unknown keys are ignored.

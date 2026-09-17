@@ -73,6 +73,10 @@ fi
 # the user asked for this, so the variable carries both the opt-in and
 # the binary and there is nothing to search for here.
 #
+# The session is detached and Limpid shows it as a mirror tab, so the
+# agent is nobody's child and outlives the app; this shell writes the
+# request for that tab and returns to the prompt.
+#
 # The session goes on a server of our own, because the options we set
 # are server-wide and not ours to set on a server the user also uses.
 # `escape-time` guards the Esc that interrupts a turn on a tmux old
@@ -94,10 +98,14 @@ interactive_first_args="-r --resume -c --continue"
 one_shot_flags="--version -v -V --help -h -p --print --bg --background"
 # Passed through explicitly rather than left to inheritance, for the
 # reason above.
-hosted_env_names="LIMPID_PANE_ID LIMPID_SESSIONS_DIR LIMPID_AGENT_STATES_DIR LIMPID_CWD_EVENTS_DIR LIMPID_AGENT_RUN_ID LIMPID_AGENT_TMUX_HOST_MODE LIMPID_AGENT_TMUX LIMPID_AGENT_HOOK_BACKEND"
+limpid_hosted_env_names="LIMPID_PANE_ID LIMPID_SESSIONS_DIR LIMPID_AGENT_STATES_DIR LIMPID_CWD_EVENTS_DIR LIMPID_AGENT_RUN_ID LIMPID_AGENT_TMUX_HOST_MODE LIMPID_AGENT_TMUX LIMPID_AGENT_HOOK_BACKEND"
+limpid_agent_provider="claude"
 
 should_host_in_tmux() {
   [ -n "${LIMPID_AGENT_TMUX:-}" ] && [ -x "${LIMPID_AGENT_TMUX:-}" ] || return 1
+  # The launch lives in the shared runtime; without it there is no way to
+  # ask for the tab, and hosting without a tab is what we never do.
+  command -v limpid_host_agent_in_tmux >/dev/null 2>&1 || return 1
   # Both variables come from the same place, so a missing pane id means
   # we are not in a Limpid pane and have nothing to name the session for.
   [ -n "${LIMPID_PANE_ID:-}" ] || return 1
@@ -138,42 +146,13 @@ elif [ -n "${TMUX:-}" ]; then
 fi
 export LIMPID_AGENT_TMUX_HOST_MODE
 
-# Hand off to the real agent, inside a tmux session of its own when the
-# user asked for that. Every exit from this script goes through here.
+# Hand off to the real agent, in a detached tmux session Limpid opens a
+# tab on when the user asked for that. Every exit from this script goes
+# through here.
 exec_agent() {
   [ "$hosts_in_tmux" = 1 ] || exec "$@"
-  # Unique per invocation. `-A` is deliberately absent: with the name
-  # already taken it attaches and silently drops the command, handing
-  # back the running agent instead of starting the one that was asked
-  # for.
-  ea_session="limpid-$(printf '%s' "$LIMPID_PANE_ID" | tr -cd 'A-Za-z0-9' | cut -c1-8)-$$"
-  # The agent command is in "$@" and the tmux command line has to come
-  # before it. We append the tmux side after it and then rotate the
-  # agent command to the end, which is how a list whose values may hold
-  # spaces is built in POSIX sh.
-  ea_count=$#
-  set -- "$@" -L "${LIMPID_AGENT_TMUX_SOCKET:-limpid}" -f /dev/null \
-    set -s escape-time 10 ";" \
-    set -s default-terminal tmux-256color ";" \
-    set -sa terminal-overrides ",*:RGB" ";" \
-    set -g prefix None ";" \
-    new-session -s "$ea_session"
-  for ea_name in $hosted_env_names; do
-    eval "ea_value=\${$ea_name:-}"
-    [ -n "$ea_value" ] || continue
-    set -- "$@" -e "$ea_name=$ea_value"
-  done
-  # `/usr/bin/env` guarantees more than one argument after the options,
-  # which is what makes tmux exec our argv directly rather than passing
-  # a single string to `sh -c` — so nothing here needs quoting.
-  set -- "$@" /usr/bin/env
-  while [ "$ea_count" -gt 0 ]; do
-    ea_arg="$1"
-    shift
-    set -- "$@" "$ea_arg"
-    ea_count=$((ea_count - 1))
-  done
-  exec "$LIMPID_AGENT_TMUX" "$@"
+  limpid_host_agent_in_tmux "$@"
+  exit $?
 }
 
 if [ "${LIMPID_DISABLE_CLAUDE_RESUME:-0}" = "1" ]; then
@@ -263,9 +242,9 @@ settings_json=$(sed \
 # clears stale state when Claude crashes without firing Stop.
 # `$$` here is the shim shell's pid; after exec it becomes the real
 # claude process's pid, which is exactly what the hook is run under —
-# unless the handoff goes through tmux, where it becomes the tmux
-# client's instead. The receiver drops the value inside tmux and walks
-# for the agent rather than trusting it.
+# unless the handoff goes through tmux, where this shell exits and the
+# agent is a child of the tmux server instead. The receiver drops the
+# value inside tmux and walks for the agent rather than trusting it.
 export LIMPID_CLAUDE_PID="$$"
 
 # Claude Code writes its title + spinner to the terminal via OSC 2. Rust now

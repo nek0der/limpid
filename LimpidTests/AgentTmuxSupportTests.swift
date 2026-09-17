@@ -83,6 +83,33 @@ struct AgentTmuxSupportTests {
         #expect(env["LIMPID_AGENT_TMUX"] == nil)
     }
 
+    /// The setting offers a tab, so it is only offered when a tab could be
+    /// opened. A pending probe is not a refusal: it answers within a moment
+    /// of launch, and a pane opened before it does just runs its agents
+    /// directly.
+    @Test func hostingSetting_isOfferedOnlyWhenAMirrorCouldAttach() {
+        #expect(Self.version("tmux 3.5").allowsHostingSetting)
+        #expect(AgentTmuxSupport.pending.allowsHostingSetting)
+        #expect(!Self.version("tmux 3.2").allowsHostingSetting)
+        #expect(!AgentTmuxSupport.notInstalled.allowsHostingSetting)
+        #expect(!AgentTmuxSupport.unreadableVersion(binary: Self.binary).allowsHostingSetting)
+    }
+
+    /// The reasons the pane prints beside a disabled switch. English is the
+    /// key, so a missing `ja` is what an untranslated reason looks like.
+    @Test(arguments: [
+        "No tmux found. Showing agents in a tab needs tmux %@ or newer.",
+        "Limpid could not read the version of the tmux it found. Showing agents in a tab needs tmux %@ or newer.",
+        "The tmux found is version %@. Showing agents in a tab needs %@ or newer.",
+        "Show agents in a tmux tab"
+    ])
+    func hostingSetting_stringsAreLocalized(key: String) throws {
+        let app = Bundle(for: SettingsStore.self)
+        let path = try #require(app.path(forResource: "ja", ofType: "lproj"))
+        let japanese = try #require(Bundle(path: path))
+        #expect(japanese.localizedString(forKey: key, value: nil, table: nil) != key)
+    }
+
     @Test func probe_readsTheVersionOfTheLocatedBinary() async {
         let asked = Mutex<[String]>([])
         let support = await AgentTmuxSupport.probe(
