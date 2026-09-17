@@ -156,6 +156,12 @@ final class AppState {
         let settingsStore = SettingsStore()
         self.settingsStore = settingsStore
         self.lastAppliedSettings = settingsStore.settings
+        // Once per launch and off the main thread, so creating a pane only
+        // reads the answer. Panes created before it arrives run their agents
+        // directly; see `PaneShellEnvironment.agentTmuxHost`.
+        Task { [settingsStore] in
+            settingsStore.agentTmuxSupport = await AgentTmuxSupport.probe()
+        }
         // Stand up the clipboard sheet coordinator before GhosttyApp
         // boots — the `confirm_read_clipboard_cb` reaches it through
         // the static `shared` and we don't want a window of time

@@ -55,12 +55,32 @@ enum PaneShellEnvironment {
         return env
     }
 
+    /// The tmux host to announce to a new pane, or `nil` when its agents
+    /// must run directly.
+    ///
+    /// Hosting needs both the user's opt-in and a tmux a mirror tab can
+    /// attach to, as the launch probe found it. A pane created before the
+    /// probe answers is not told to host: a shim that is told must be able
+    /// to rely on a tab opening for its agent, and until the probe answers
+    /// nothing says one can. Such a pane runs its agents directly, which is
+    /// what the setting being off looks like, and panes created afterwards
+    /// pick hosting up. Reading a cached answer rather than probing here
+    /// keeps surface creation from starting a process per pane.
+    static func agentTmuxHost(
+        hostsAgentsInTmux: Bool,
+        support: AgentTmuxSupport,
+        socketName: @autoclosure () -> String = defaultAgentSocketName()
+    ) -> AgentTmuxHost? {
+        guard hostsAgentsInTmux, let binary = support.hostBinary else { return nil }
+        return AgentTmuxHost(binary: binary, socketName: socketName())
+    }
+
     /// Production assembly, with the shim directories resolved from the
     /// app bundle. Kept next to `variables` so the call site stays one
     /// line and the bundle lookups have exactly one home.
     static func resolved(
         forPaneID paneID: UUID?,
-        hostsAgentsInTmux: Bool = false
+        agentTmux: AgentTmuxHost? = nil
     ) -> [String: String] {
         variables(
             paneID: paneID,
@@ -70,13 +90,7 @@ enum PaneShellEnvironment {
             ].compactMap(\.self),
             zdotdir: ClaudeShimLocator.zdotdirURL,
             basePath: ProcessInfo.processInfo.environment["PATH"] ?? fallbackPath,
-            // Resolved through the same locator the reattach probe uses,
-            // so the session a shim creates is one the probe can find.
-            agentTmux: hostsAgentsInTmux
-                ? TmuxClientProbe.locateTmux().map {
-                    AgentTmuxHost(binary: $0, socketName: defaultAgentSocketName())
-                }
-                : nil
+            agentTmux: agentTmux
         )
     }
 

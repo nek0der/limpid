@@ -34,6 +34,12 @@ final class SettingsStore {
     /// and are refreshed after startup and every live config reload.
     var ghosttyConfigDiagnostics: [String] = []
 
+    /// What the launch probe found about tmux, for the panes that decide
+    /// whether to host their agents and for the setting that offers it.
+    /// Found out rather than chosen, so it stays in memory like the
+    /// diagnostics above. `AppState` sets it once, when the probe answers.
+    var agentTmuxSupport: AgentTmuxSupport = .pending
+
     // MARK: - Language (UserDefaults / AppKit-visible)
 
     /// User-facing app language. `.system` reads OS Region prefs.

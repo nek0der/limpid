@@ -306,7 +306,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         ghosttyApp: GhosttyApp,
         registry: any SurfaceViewProviding,
         session: WindowSession,
-        hostsAgentsInTmux: Bool,
+        agentTmux: PaneShellEnvironment.AgentTmuxHost?,
         tmuxStore: TmuxConnectionStore?
     ) -> SurfaceView? {
         if let existing = registry.view(for: paneID) {
@@ -340,7 +340,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         // uniform across panes.
         var env = PaneShellEnvironment.resolved(
             forPaneID: paneID,
-            hostsAgentsInTmux: hostsAgentsInTmux
+            agentTmux: agentTmux
         )
         for (k, v) in ClaudeShimLocator.environment(forPaneID: paneID) {
             env[k] = v
