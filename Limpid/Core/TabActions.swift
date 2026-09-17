@@ -301,8 +301,9 @@ enum TabActions {
         toastCenter: ToastCenter,
         minPaneSize: Double,
         // A mirror tab translates its split verbs into tmux commands; without
-        // the store those verbs stay inert rather than editing a tree tmux owns.
-        tmuxStore: TmuxConnectionStore? = nil
+        // the store they tell the user the tab is not connected rather than
+        // editing a tree tmux owns.
+        tmuxStore: TmuxConnectionStore?
     ) {
         switch action.category {
         case .file:
@@ -312,7 +313,7 @@ enum TabActions {
                 registry: registry,
                 attention: attention,
                 trackers: trackers,
-                mirrors: TmuxMirrorActions.MirrorContext(session: session, store: tmuxStore, registry: registry, toastCenter: toastCenter)
+                tmuxStore: tmuxStore
             )
         case .view:
             dispatchViewAction(action, session: session)
@@ -346,14 +347,14 @@ enum TabActions {
         registry: any SurfaceViewProviding,
         attention: AttentionState,
         trackers: SessionTrackers,
-        mirrors: TmuxMirrorActions.MirrorContext?
+        tmuxStore: TmuxConnectionStore?
     ) {
         switch action {
         case .newTab: newTab(session)
         case .newWorktree:
             NotificationCenter.default.post(name: .limpidCreateWorktreeRequested, object: session)
         case .renameTab: renameActiveTab(session)
-        case .reopenClosedTab: TmuxMirrorActions.reopenClosedTab(session, context: mirrors)
+        case .reopenClosedTab: TmuxMirrorActions.reopenClosedTab(session, store: tmuxStore)
         case .closeSurface:
             PaneActions.closeActivePaneOrTab(
                 session,

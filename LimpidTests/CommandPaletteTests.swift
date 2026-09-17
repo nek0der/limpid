@@ -192,7 +192,7 @@ struct CommandPaletteTests {
         try withTempDir { directory in
             let (session, tab, _) = WindowSessionFixture.withLooseTab()
             for _ in 1..<leafCount {
-                PaneActions.split(session, direction: .horizontal)
+                PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
             }
             session.update(tab.id) { $0.kind = kind }
             let live = try #require(session.activeTab)
@@ -256,7 +256,8 @@ struct CommandPaletteTests {
                 settings: settings,
                 frecencyStore: frecency,
                 attention: AttentionState(),
-                reviewPresentation: nil
+                reviewPresentation: nil,
+                tmuxStore: nil
             )
             #expect(session.commandPaletteState != nil)
             #expect(!session.commandPaletteState!.allItems.isEmpty)
@@ -274,7 +275,8 @@ struct CommandPaletteTests {
                 settings: settings,
                 frecencyStore: frecency,
                 attention: AttentionState(),
-                reviewPresentation: nil
+                reviewPresentation: nil,
+                tmuxStore: nil
             )
             CommandPaletteActions.closeCommandPalette(session)
             #expect(session.commandPaletteState == nil)
@@ -315,7 +317,8 @@ struct CommandPaletteTests {
                 settings: settings,
                 frecencyStore: frecency,
                 attention: AttentionState(),
-                reviewPresentation: nil
+                reviewPresentation: nil,
+                tmuxStore: nil
             )
             let first = session.commandPaletteState
             CommandPaletteActions.openCommandPalette(
@@ -323,7 +326,8 @@ struct CommandPaletteTests {
                 settings: settings,
                 frecencyStore: frecency,
                 attention: AttentionState(),
-                reviewPresentation: nil
+                reviewPresentation: nil,
+                tmuxStore: nil
             )
             #expect(session.commandPaletteState === first)
         }
@@ -531,7 +535,7 @@ struct CommandPaletteTests {
                 frecencyStore: FrecencyStore(directory: dir),
                 attention: AttentionState(),
                 reviewPresentation: nil,
-                tmuxStore: TmuxConnectionStore(tmuxExecutable: nil)
+                tmuxStore: TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
             )
             let items = try #require(session.commandPaletteState).allItems
             #expect(!items.contains { $0.action == .insertPrefix(.tmux) })
@@ -567,7 +571,7 @@ struct CommandPaletteTests {
         let task = CommandPaletteActions.loadTmuxWindows(
             into: state,
             session: session,
-            store: TmuxConnectionStore(tmuxExecutable: "/nonexistent/tmux"),
+            store: TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: "/nonexistent/tmux"),
             frecencyStore: nil,
             listWindows: { _ in targets }
         )
@@ -590,7 +594,7 @@ struct CommandPaletteTests {
         let task = CommandPaletteActions.loadTmuxWindows(
             into: state,
             session: session,
-            store: TmuxConnectionStore(tmuxExecutable: "/nonexistent/tmux"),
+            store: TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: "/nonexistent/tmux"),
             frecencyStore: nil,
             listWindows: { _ in targets }
         )
@@ -615,7 +619,7 @@ struct CommandPaletteTests {
         let task = CommandPaletteActions.loadTmuxWindows(
             into: state,
             session: session,
-            store: TmuxConnectionStore(tmuxExecutable: nil),
+            store: TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil),
             frecencyStore: nil
         )
         #expect(task == nil)

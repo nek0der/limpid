@@ -12,45 +12,40 @@ import Foundation
 
 @MainActor
 indirect enum ResolvedSplitNode {
-    case leaf(paneID: UUID, view: SurfaceView)
+    /// `view` is `nil` for a leaf that has no surface (see `build`).
+    case leaf(paneID: UUID, view: SurfaceView?)
     case split(ResolvedSplit)
 
     /// Walk the persisted `PaneNode` tree and resolve each leaf UUID to
     /// the live `SurfaceView` through the supplied closure. The closure
-    /// is normally `registry.view(for:)` or a create-on-miss wrapper;
-    /// returning `nil` drops the leaf (the parent split collapses to its
-    /// surviving child).
+    /// is normally `registry.view(for:)` or a create-on-miss wrapper.
+    ///
+    /// A leaf the closure cannot resolve stays in the tree without a view,
+    /// and the container draws a placeholder in its place
+    /// (`PaneHostRepresentable.SurfaceBacking.noSurface`). Collapsing its
+    /// split instead would number the dividers over a tree other than the
+    /// stored one, while a divider drag or double-click resizes the stored
+    /// tree by that number and would move another split.
     static func build(
         _ node: PaneNode,
         resolveOrCreate: (UUID) -> SurfaceView?
-    ) -> ResolvedSplitNode? {
+    ) -> ResolvedSplitNode {
         switch node {
         case let .leaf(id):
-            guard let view = resolveOrCreate(id) else { return nil }
-            return .leaf(paneID: id, view: view)
+            .leaf(paneID: id, view: resolveOrCreate(id))
         case let .split(data):
-            let first = build(data.first, resolveOrCreate: resolveOrCreate)
-            let second = build(data.second, resolveOrCreate: resolveOrCreate)
-            if let l = first, let r = second {
-                return .split(ResolvedSplit(
-                    direction: data.direction,
-                    ratio: data.ratio,
-                    first: l,
-                    second: r
-                ))
-            }
-            // A dropped leaf collapses its split. Divider paths are assigned
-            // afterwards by `PaneLayout` over this effective tree, so there
-            // is exactly one source for them; a path computed here over the
-            // persisted shape could disagree with it.
-            return first ?? second
+            .split(ResolvedSplit(
+                direction: data.direction,
+                ratio: data.ratio,
+                first: build(data.first, resolveOrCreate: resolveOrCreate),
+                second: build(data.second, resolveOrCreate: resolveOrCreate)
+            ))
         }
     }
 
-    /// The effective tree with views stripped back to ids. A missing surface
-    /// collapses a persisted split during resolution, so geometry must be
-    /// computed from this shape rather than the on-disk one; `PaneLayout`
-    /// takes a `PaneNode` so it stays free of AppKit and testable.
+    /// The tree with views stripped back to ids, the same shape as the
+    /// stored one; `PaneLayout` takes a `PaneNode` so it stays free of
+    /// AppKit and testable.
     var paneNode: PaneNode {
         switch self {
         case let .leaf(paneID, _):
@@ -65,15 +60,17 @@ indirect enum ResolvedSplitNode {
         }
     }
 
-    /// Every resolved leaf's view by pane id, for placing leaves once
-    /// `PaneLayout` has decided where each one goes.
-    var surfaceViews: [UUID: SurfaceView] {
-        var views: [UUID: SurfaceView] = [:]
+    /// Every leaf's view by pane id, for placing leaves once `PaneLayout`
+    /// has decided where each one goes. A leaf without a surface is present
+    /// with a `nil` view, so a lookup tells "draw a placeholder" apart from
+    /// "not a leaf of this tree".
+    var surfaceViews: [UUID: SurfaceView?] {
+        var views: [UUID: SurfaceView?] = [:]
         collectViews(into: &views)
         return views
     }
 
-    private func collectViews(into views: inout [UUID: SurfaceView]) {
+    private func collectViews(into views: inout [UUID: SurfaceView?]) {
         switch self {
         case let .leaf(paneID, view):
             views[paneID] = view

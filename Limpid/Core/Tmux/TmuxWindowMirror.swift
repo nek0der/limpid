@@ -10,8 +10,15 @@ private let log = Logger.limpid("tmux.mirror")
 /// Keeps a mirror tab in step with the tmux window it shows. tmux owns the
 /// layout: every `%layout-change` for the window is folded onto the tab's
 /// split tree, reusing each pane's leaf id so its surface, scrollback, and
-/// search state survive. Limpid only ever sends the window size and, later,
-/// the verbs the user performs; it never writes the tree on its own.
+/// search state survive. Limpid only ever sends the window size and the
+/// verbs the user performs; it does not write the tree on its own.
+///
+/// One exception: `removeMovedPane` takes a pane out of the tree before
+/// tmux announces the layout without it. The pane's surface has to be let
+/// go of at that moment, because a mirror on the pane's new window attaches
+/// it next, and a surface the registry has dropped for a leaf still in the
+/// tree would be created again by the pane area. The layout that follows
+/// finds the leaf already gone and changes nothing more.
 ///
 /// Observable for the values the pane area draws from: the cell layout, the
 /// cell size, and whether the connection still carries commands. Everything
@@ -21,7 +28,7 @@ private let log = Logger.limpid("tmux.mirror")
 final class TmuxWindowMirror {
     let tabID: UUID
     let windowID: String
-    let connection: TmuxServerConnection
+    let connection: TmuxSessionConnection
     /// The tab was created to show this mirror: it has shown nothing else,
     /// and the user never kept it before. Such a tab has nothing to keep
     /// when tmux refuses the attach, while one that showed an earlier
@@ -172,7 +179,7 @@ final class TmuxWindowMirror {
         windowID: String,
         sessionName: String,
         windowName: String,
-        connection: TmuxServerConnection,
+        connection: TmuxSessionConnection,
         isNewTab: Bool,
         session: WindowSession,
         registry: any SurfaceViewProviding,
@@ -210,9 +217,8 @@ final class TmuxWindowMirror {
     /// that grid is repainted without waiting for another report.
     func start() {
         guard let tab = session.tab(tabID) else { return }
-        for (paneID, source) in tab.paneSources {
-            guard case let .tmux(ref) = source, ref.windowID == windowID else { continue }
-            attach(paneID: paneID, tmuxPane: ref.paneID)
+        for (tmuxPane, leafID) in tab.tmuxLeafIDs(inWindow: windowID) {
+            attach(paneID: leafID, tmuxPane: tmuxPane)
         }
         activePane = tab.splitTree.focusedLeafID.flatMap { tmuxPane(ofLeaf: $0, in: tab) }
         adoptReportedCellSize(tab: tab)
@@ -253,7 +259,9 @@ final class TmuxWindowMirror {
         panes[paneID]?.sink
     }
 
-    func shows(paneID: UUID) -> Bool {
+    /// Whether this mirror feeds leaf `paneID`: it has attached the leaf's
+    /// tmux pane and not let go of it.
+    func contains(paneID: UUID) -> Bool {
         panes[paneID] != nil
     }
 
@@ -281,7 +289,7 @@ final class TmuxWindowMirror {
     /// a pane that still has a sink, so the newcomer could not attach it
     /// until we detach it here. Idempotent: if that notification already
     /// ran, there is nothing left to do.
-    func release(paneID: UUID) {
+    func removeMovedPane(_ paneID: UUID) {
         detach(paneID: paneID)
         registry.unregister(paneID)
         guard let tab = session.tab(tabID), tab.splitTree.contains(leafID: paneID) else { return }
@@ -309,9 +317,11 @@ final class TmuxWindowMirror {
         refreshSecureInput(paneID: leafID)
     }
 
-    /// The connection ended. The panes stay as they are until tmux is
-    /// asked whether the session survived (`TmuxConnectionStore`); there is
-    /// no automatic reconnect (design §9 D14).
+    /// The connection ended, and this mirror with it: a reconnect gives the
+    /// tab a new mirror (`TmuxMirrorActions.reconnect`), on the user's
+    /// request, and without one at launch and when ⌘⇧T brings the tab back.
+    /// The panes stay as they are until tmux is asked whether the session
+    /// survived (`TmuxConnectionStore`).
     ///
     /// A pane that was taking a password when the connection went keeps
     /// no Secure Input: nothing re-checks its tty from here on, so the
@@ -335,7 +345,7 @@ final class TmuxWindowMirror {
 
     /// This tab, for `TmuxConnectionStore.sessionEnded`.
     var endedTab: TmuxConnectionStore.EndedTab {
-        TmuxConnectionStore.EndedTab(tabID: tabID, session: session, registry: registry)
+        TmuxConnectionStore.EndedTab(tabID: tabID, session: session)
     }
 
     func stop() {
@@ -406,7 +416,11 @@ final class TmuxWindowMirror {
     /// `%layout-change` after every `refresh-client -C`, but we do not rely
     /// on a server doing so for a window that already had this size, which
     /// would otherwise never show its other panes.
-    func reportGrid(columns: Int, rows: Int) {
+    ///
+    /// Reached only through `reportGridIfChanged`, so a test sizes the
+    /// window the way the app does: from a surface's cell size and the pane
+    /// area's size, both handed to the store.
+    private func reportGrid(columns: Int, rows: Int) {
         guard canSend, columns > 0, rows > 0 else { return }
         log.debug("refresh-client -C \(self.windowID, privacy: .public):\(columns, privacy: .public)x\(rows, privacy: .public)")
         connection.send("refresh-client -C '\(windowID):\(columns)x\(rows)'") { [weak self] _, isError in
@@ -669,12 +683,7 @@ final class TmuxWindowMirror {
         guard let tab = session.tab(tabID) else { return }
         // Reverse map first, so a pane that is still here keeps its leaf id
         // and therefore its surface, scrollback, and search state.
-        var leafIDs: [String: UUID] = [:]
-        for (paneID, source) in tab.paneSources {
-            if case let .tmux(ref) = source, ref.windowID == windowID {
-                leafIDs[ref.paneID] = paneID
-            }
-        }
+        var leafIDs = tab.tmuxLeafIDs(inWindow: windowID)
         var added: [(UUID, String)] = []
         let tree = layout.paneNode { tmuxPane in
             if let existing = leafIDs[tmuxPane] {
@@ -741,12 +750,7 @@ final class TmuxWindowMirror {
     /// before the focus is written.
     private func applyActivePane() {
         guard let tmuxPane = pendingActivePane, let tab = session.tab(tabID),
-              let leafID = tab.paneSources.first(where: { _, source in
-                  if case let .tmux(ref) = source {
-                      return ref.windowID == windowID && ref.paneID == tmuxPane
-                  }
-                  return false
-              })?.key
+              let leafID = tab.tmuxLeafIDs(inWindow: windowID)[tmuxPane]
         else { return }
         pendingActivePane = nil
         activePane = tmuxPane
@@ -771,14 +775,15 @@ final class TmuxWindowMirror {
     /// window; that leaf becomes the tab's zoomed leaf, and the pane area
     /// gives it every edge, which is exactly the size tmux gave it.
     private func applyZoom(visibleLayout: String?, flags: String?) {
+        guard let tab = session.tab(tabID) else { return }
         let isZoomed = flags?.contains("Z") ?? false
         var zoomedLeaf: UUID?
         if isZoomed, let visible = visibleLayout.flatMap(TmuxLayout.parse),
            case let .pane(tmuxPane, _) = visible.root
         {
-            zoomedLeaf = panes.first { $0.value.tmuxPane == tmuxPane }?.key
+            zoomedLeaf = tab.tmuxLeafIDs(inWindow: windowID)[tmuxPane]
         }
-        guard let tab = session.tab(tabID), tab.zoomedLeafID != zoomedLeaf else { return }
+        guard tab.zoomedLeafID != zoomedLeaf else { return }
         session.update(tabID) { $0.zoomedLeafID = zoomedLeaf }
     }
 

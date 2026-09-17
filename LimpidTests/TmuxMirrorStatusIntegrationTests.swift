@@ -13,12 +13,14 @@ private final class StatusHarness {
     let server: TmuxServerFixture
     let session = WindowSession()
     let store: TmuxConnectionStore
-    let registry = RecordingSurfaceRegistry()
+    let registry: RecordingSurfaceRegistry
     private(set) var notices: [String] = []
 
     init(windows: Int = 1) throws {
         server = try TmuxServerFixture.launch(windows: windows)
-        store = TmuxConnectionStore(tmuxExecutable: server.executable)
+        let registry = RecordingSurfaceRegistry()
+        self.registry = registry
+        store = TmuxConnectionStore(registry: registry, secureInput: nil, tmuxExecutable: server.executable)
         session.onTabsChanged = { [weak session, store] in
             guard let session else { return }
             store.reconcile(tabs: session.tabs)
@@ -41,12 +43,21 @@ private final class StatusHarness {
             activePaneID: server.paneID(inWindow: window),
             serverVersion: TmuxProtocol.parseVersion(server.format("#{version}", target: window))
         )
-        #expect(TmuxMirrorActions.open(target, session: session, store: store, registry: registry, secureInput: nil))
+        #expect(TmuxMirrorActions.open(target, session: session, store: store))
         let mirror = try #require(store.liveMirror(showing: window, of: binding))
         #expect(await waitUntil { mirror.connection.state == .attached })
-        mirror.reportGrid(columns: 80, rows: 24)
+        reportGrid(columns: 80, rows: 24, of: mirror)
         #expect(await waitUntil { mirror.cellLayout != nil })
         return mirror
+    }
+
+    /// Size `mirror`'s window the way the app does, from its first leaf.
+    func reportGrid(columns: Int, rows: Int, of mirror: TmuxWindowMirror) {
+        guard let leaf = session.tab(mirror.tabID)?.splitTree.allLeafIDs().first else {
+            Issue.record("the mirror tab has no leaf")
+            return
+        }
+        store.reportTestGrid(columns: columns, rows: rows, tabID: mirror.tabID, leafID: leaf)
     }
 
     func title(of mirror: TmuxWindowMirror) -> String? {
@@ -171,8 +182,6 @@ struct TmuxMirrorStatusIntegrationTests {
             harness.session,
             paneID: moved,
             store: harness.store,
-            registry: harness.registry,
-            secureInput: nil,
             toastCenter: nil
         )
 
@@ -200,11 +209,11 @@ struct TmuxMirrorStatusIntegrationTests {
         let mirror = try await harness.open(window: window, windowName: "w")
         #expect(harness.store.tabIssues[mirror.tabID] == nil)
 
-        mirror.reportGrid(columns: 6, rows: 24)
+        harness.reportGrid(columns: 6, rows: 24, of: mirror)
         #expect(await waitUntil { harness.store.tabIssues[mirror.tabID]?.isWindowLargerThanTab == true })
         #expect(harness.server.windowSize(window) == "15x24")
 
-        mirror.reportGrid(columns: 80, rows: 24)
+        harness.reportGrid(columns: 80, rows: 24, of: mirror)
         #expect(await waitUntil { harness.store.tabIssues[mirror.tabID] == nil })
     }
 
@@ -246,7 +255,7 @@ struct TmuxMirrorStatusIntegrationTests {
         let window = try #require(harness.server.windowIDs().first)
         harness.splitIntoEightColumns(window)
         let mirror = try await harness.open(window: window, windowName: "w")
-        mirror.reportGrid(columns: 6, rows: 24)
+        harness.reportGrid(columns: 6, rows: 24, of: mirror)
         #expect(await waitUntil { harness.store.tabIssues[mirror.tabID] != nil })
 
         harness.server.run(["detach-client", "-s", "t"])

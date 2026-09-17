@@ -130,8 +130,8 @@ private final class ReconnectHarness {
     let server: TmuxServerFixture
     let session = WindowSession()
     let store: TmuxConnectionStore
-    let registry = RecordingSurfaceRegistry()
-    let secureInput = SecureInputLog()
+    let registry: RecordingSurfaceRegistry
+    let secureInput: SecureInputLog
     private(set) var notices: [String] = []
     private var readers: [ChannelReader] = []
     private var clients: [TmuxPTYClient] = []
@@ -155,10 +155,19 @@ private final class ReconnectHarness {
         if keepServer {
             try #require(server.run(["new-session", "-d", "-s", "keep"]) != nil)
         }
+        let registry = RecordingSurfaceRegistry()
+        let secureInput = SecureInputLog()
+        self.registry = registry
+        self.secureInput = secureInput
         store = if let sessionPresence {
-            TmuxConnectionStore(tmuxExecutable: server.executable, sessionPresence: sessionPresence)
+            TmuxConnectionStore(
+                registry: registry,
+                secureInput: secureInput,
+                tmuxExecutable: server.executable,
+                sessionPresence: sessionPresence
+            )
         } else {
-            TmuxConnectionStore(tmuxExecutable: server.executable)
+            TmuxConnectionStore(registry: registry, secureInput: secureInput, tmuxExecutable: server.executable)
         }
         store.onNotice = { [weak self] in self?.notices.append($0) }
         session.onTabsChanged = { [weak session, store] in
@@ -191,7 +200,7 @@ private final class ReconnectHarness {
             activePaneID: server.paneID(inWindow: window),
             serverVersion: TmuxProtocol.parseVersion(server.format("#{version}", target: window))
         )
-        #expect(TmuxMirrorActions.open(target, session: session, store: store, registry: registry, secureInput: secureInput))
+        #expect(TmuxMirrorActions.open(target, session: session, store: store))
         let mirror = try #require(store.liveMirror(showing: window, of: target.binding))
         let leaf = try #require(session.tab(mirror.tabID)?.splitTree.allLeafIDs().first)
         let reader = try ChannelReader(channel: #require(store.channel(paneID: leaf)))
@@ -237,9 +246,6 @@ private final class ReconnectHarness {
             tabID: tabID,
             session: session,
             store: store,
-            registry: registry,
-            secureInput: secureInput,
-            toastCenter: nil,
             otherClients: otherClients
         )
     }
@@ -491,7 +497,6 @@ struct TmuxMirrorReconnectIntegrationTests {
             tmuxPath: harness.server.executable,
             session: harness.session,
             store: harness.store,
-            registry: harness.registry,
             limpidTTYs: [],
             confirm: log.answer
         )
@@ -642,7 +647,7 @@ extension ReconnectHarness {
     /// tab it created.
     func openTab(_ target: TmuxMirrorTarget) -> UUID? {
         let before = Set(session.tabs.map(\.id))
-        #expect(TmuxMirrorActions.open(target, session: session, store: store, registry: registry, secureInput: secureInput))
+        #expect(TmuxMirrorActions.open(target, session: session, store: store))
         return session.tabs.map(\.id).first { !before.contains($0) }
     }
 }
@@ -650,16 +655,6 @@ extension ReconnectHarness {
 // MARK: - Automatic reconnect
 
 extension ReconnectHarness {
-    var context: TmuxMirrorActions.MirrorContext {
-        TmuxMirrorActions.MirrorContext(
-            session: session,
-            store: store,
-            registry: registry,
-            secureInput: secureInput,
-            toastCenter: nil
-        )
-    }
-
     /// Session `name`'s binding, with the server run recorded or, as a
     /// snapshot from before generations were kept, without it.
     func binding(session name: String, isRecorded: Bool = true) throws -> TmuxBinding {
@@ -710,7 +705,7 @@ extension ReconnectHarness {
     /// Run the launch's reconnect and wait for everything it started.
     /// Returns how many reconnects it started.
     func reconnectAtLaunch(limpidTTYs: Set<String>? = nil) async -> Int {
-        let tasks = TmuxMirrorActions.reconnectAtLaunch(context: context, limpidTTYs: limpidTTYs)
+        let tasks = TmuxMirrorActions.reconnectAtLaunch(session: session, store: store, limpidTTYs: limpidTTYs)
         for task in tasks {
             await task.value
         }
@@ -890,7 +885,7 @@ struct TmuxMirrorAutoReconnectIntegrationTests {
         let windows = try harness.server.windowIDs()
         let tabs = try harness.restoreTabs(windows.map { try harness.paneRef(window: $0) })
 
-        let tasks = TmuxMirrorActions.reconnectAtLaunch(context: harness.context)
+        let tasks = TmuxMirrorActions.reconnectAtLaunch(session: harness.session, store: harness.store)
         // The first tab takes its sibling along; while they connect,
         // neither can be started again.
         #expect(tasks.count == 1)
@@ -939,7 +934,7 @@ struct TmuxMirrorAutoReconnectIntegrationTests {
         TabActions.closeTab(harness.session, registry: harness.registry, tabID: tab.tabID)
         #expect(await waitUntil { harness.controlClientCount() == 0 })
 
-        TmuxMirrorActions.reopenClosedTab(harness.session, context: harness.context)
+        TmuxMirrorActions.reopenClosedTab(harness.session, store: harness.store)
 
         let revived = try #require(harness.session.activeTab)
         #expect(revived.id != tab.tabID)

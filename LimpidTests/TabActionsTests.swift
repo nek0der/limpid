@@ -83,7 +83,7 @@ struct TabActionsTests {
         // The model step alone makes no mirror; the app's entry points go
         // through `TmuxMirrorActions.reopenClosedTab`, which connects the
         // tab (`TmuxMirrorAutoReconnectIntegrationTests`).
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
         defer { store.reconcile(tabs: []) }
         store.reconcile(tabs: session.tabs)
         #expect(store.mirror(for: revived.id) == nil)
@@ -125,8 +125,8 @@ struct TabActionsTests {
     func reopenClosedTab_splitTab_restoresLayout() throws {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
-        PaneActions.split(session, direction: .horizontal)
-        PaneActions.split(session, direction: .vertical)
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
+        PaneActions.split(session, direction: .vertical, tmuxStore: nil)
         // Snapshot the original split-tree structure before close.
         let originalLeafCount = try #require(session.tab(tab.id)?.splitTree.allLeafIDs().count)
         let originalIsSplit = try #require(session.tab(tab.id)).splitTree.isSplit
@@ -149,8 +149,8 @@ struct TabActionsTests {
     func reopenClosedTab_zoomedTab_preservesZoomViaRemap() throws {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
-        PaneActions.split(session, direction: .horizontal)
-        PaneActions.toggleZoom(session)
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
+        PaneActions.toggleZoom(session, tmuxStore: nil)
         let zoomedBefore = try #require(session.tab(tab.id)?.zoomedLeafID)
 
         TabActions.closeTab(session, registry: registry, tabID: tab.id)

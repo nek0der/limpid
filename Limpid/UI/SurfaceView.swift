@@ -125,7 +125,7 @@ final class SurfaceView: NSView {
     /// Latest viewport metrics reported by libghostty. Stored on the
     /// persistent surface so a short-lived SwiftUI host can rebuild without
     /// resetting the native scroller to the bottom. Written only by
-    /// `updateScrollbarState` (`SurfaceView+Geometry.swift`).
+    /// `updateScrollbarState` (`SurfaceView+Scrollbar.swift`).
     var scrollbarState: TerminalScrollbarState?
 
     /// One cell's footprint in points from the latest `CELL_SIZE` action.

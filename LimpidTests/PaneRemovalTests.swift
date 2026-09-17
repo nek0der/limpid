@@ -107,7 +107,7 @@ struct PaneRemovalTests {
         #expect(session.tab(tab.id)?.splitTree.focusedLeafID == dropped)
         // Never started: commands queue unsent and attaching fails, so no
         // tmux process is involved; the layout fold does not need one.
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: "/usr/bin/false",
             target: .init(socketPath: Self.binding.socketPath, sessionID: Self.binding.sessionID)
         )

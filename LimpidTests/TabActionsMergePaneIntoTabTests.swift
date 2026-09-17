@@ -37,7 +37,7 @@ struct TabActionsMergePaneIntoTabTests {
         // Add panes to the source tab via the same `split` action the UI
         // uses, so the splitTree shape mirrors what the user would see.
         for _ in 1..<sourcePanes {
-            PaneActions.split(session, direction: .horizontal)
+            PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
         }
         // Pick the pane that became focused after the splits — that's
         // the one a real drag would have picked up first.
@@ -224,5 +224,40 @@ struct TabActionsMergePaneIntoTabTests {
             ? String(localized: "A tmux pane can only move between windows of its own session")
             : String(localized: "Only panes of the same tmux session can move into this tab")
         #expect(toastCenter.current?.message == expected)
+    }
+
+    /// The tab row a pane is dragged over lights up only when this holds,
+    /// and the drop refuses exactly the pairings it refuses.
+    @Test("a pane is accepted by an ordinary tab, or by a mirror tab of its own tmux session")
+    func acceptsPane_followsTheTabsAndTheSession() {
+        let terminal = Self.tab(kind: .terminal, source: nil)
+        let otherTerminal = Self.tab(kind: .terminal, source: nil)
+        let mirror = Self.tab(kind: .tmuxMirror, source: Self.ref(session: "$0", window: "@0"))
+        let sameSession = Self.tab(kind: .tmuxMirror, source: Self.ref(session: "$0", window: "@1"))
+        let otherSession = Self.tab(kind: .tmuxMirror, source: Self.ref(session: "$1", window: "@0"))
+
+        #expect(TmuxMirrorActions.acceptsPane(from: terminal, into: otherTerminal))
+        #expect(!TmuxMirrorActions.acceptsPane(from: terminal, into: mirror))
+        #expect(!TmuxMirrorActions.acceptsPane(from: mirror, into: terminal))
+        #expect(TmuxMirrorActions.acceptsPane(from: mirror, into: sameSession))
+        #expect(!TmuxMirrorActions.acceptsPane(from: mirror, into: otherSession))
+    }
+
+    private static func ref(session: String, window: String) -> TmuxPaneRef {
+        TmuxPaneRef(
+            binding: TmuxBinding(socketPath: "/tmp/limpid-test.sock", sessionID: session, sessionName: "t"),
+            windowID: window,
+            paneID: "%0"
+        )
+    }
+
+    private static func tab(kind: Tab.Kind, source: TmuxPaneRef?) -> Tab {
+        let leaf = UUID()
+        var tab = Tab(title: "t", workingDirectory: nil, pwd: nil, splitTree: SplitTree(leafID: leaf), container: .loose)
+        tab.kind = kind
+        if let source {
+            tab.paneSources[leaf] = .tmux(source)
+        }
+        return tab
     }
 }

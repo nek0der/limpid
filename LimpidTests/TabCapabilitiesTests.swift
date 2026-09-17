@@ -19,14 +19,15 @@ struct TabCapabilitiesTests {
     }
 
     /// The rows only AppKit and SwiftUI read, or only the title path reads:
-    /// the file drop, the paste route, the divider tooltip, the split
-    /// buttons, and whether the pane's title names the tab. No action test
+    /// the file drop, the input route, the Clear item, the divider tooltip,
+    /// the split buttons, and whether the pane's title names the tab. No action test
     /// would notice one of them flipping, so their values are pinned here.
     @Test("the rows only the UI reads hold their values for each kind")
     func uiOnlyRows_arePinned() {
         let terminal = TabCapabilities.of(.terminal)
         #expect(terminal.canDropFile)
-        #expect(!terminal.pastesThroughTmux)
+        #expect(!terminal.sendsInputThroughTmux)
+        #expect(terminal.canClearScreen)
         #expect(terminal.canEqualizeSubtree)
         #expect(terminal.canSplit)
         #expect(terminal.titleFollowsPaneTitle)
@@ -34,7 +35,9 @@ struct TabCapabilitiesTests {
         // A mirror pane takes a drop too, typed through tmux's paste.
         let mirror = TabCapabilities.of(.tmuxMirror)
         #expect(mirror.canDropFile)
-        #expect(mirror.pastesThroughTmux)
+        #expect(mirror.sendsInputThroughTmux)
+        // libghostty would clear only its own copy of a tmux pane.
+        #expect(!mirror.canClearScreen)
         #expect(!mirror.canEqualizeSubtree)
         #expect(mirror.canSplit)
         // Named after its tmux window, never after a pane's OSC title.

@@ -8,11 +8,6 @@ import OSLog
 private let log = Logger.limpid("surface.view")
 
 extension SurfaceView {
-    func updateScrollbarState(_ state: TerminalScrollbarState) {
-        scrollbarState = state
-        onScrollbarStateChange?(state)
-    }
-
     /// Convert libghostty's device-pixel cell report into points. We divide
     /// by the window's scale, not `lastPushedScale`: the first report fires
     /// inside `ghostty_surface_new`, before any scale has been pushed.

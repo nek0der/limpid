@@ -4,15 +4,6 @@
 import AppKit
 import GhosttyKit
 
-extension Notification.Name {
-    /// Posted when files are dropped on a pane whose tab pastes through
-    /// tmux. `object` is the `SurfaceView`; the dropped file URLs are under
-    /// `SurfaceView.droppedFileURLsKey`. The window whose registry owns the
-    /// view sends the paste, for the same reason as
-    /// `limpidMirrorPasteRequested`.
-    static let limpidMirrorFileDropRequested = Notification.Name("dev.limpid.mirrorFileDropRequested")
-}
-
 extension SurfaceView {
     /// `userInfo` key of `limpidMirrorFileDropRequested`: a `[URL]`.
     static let droppedFileURLsKey = "fileURLs"
@@ -47,7 +38,7 @@ extension SurfaceView {
         // A mirror pane types the paths as a tmux paste, the route its
         // clipboard takes, so tmux brackets them exactly when the program
         // in the pane asked for bracketed paste.
-        if capabilities.pastesThroughTmux {
+        if capabilities.sendsInputThroughTmux {
             NotificationCenter.default.post(
                 name: .limpidMirrorFileDropRequested,
                 object: self,

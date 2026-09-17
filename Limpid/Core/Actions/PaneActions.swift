@@ -19,15 +19,19 @@ enum PaneActions {
     /// Pass `registry` + `minPaneSize` + `toastCenter` to enable the
     /// pre-flight geometry check. The candidate tree is compared with the
     /// complete rendered pane area so splitting a zoomed pane cannot reveal
-    /// an undersized sibling when zoom is cleared. All three are optional so
-    /// unit tests can drive `split` without an attached view tree.
+    /// an undersized sibling when zoom is cleared. Those three are optional
+    /// so unit tests can drive `split` without an attached view tree.
+    ///
+    /// `tmuxStore` has no default: a mirror tab splits through it, and a
+    /// caller that forgot it would tell the user the tab is not connected.
+    /// Only a caller that has no store passes `nil`.
     static func split(
         _ session: WindowSession,
         direction: SplitDirection,
         registry: (any SurfaceViewProviding)? = nil,
         minPaneSize: Double = 0,
         toastCenter: ToastCenter? = nil,
-        tmuxStore: TmuxConnectionStore? = nil
+        tmuxStore: TmuxConnectionStore?
     ) {
         guard let tab = session.activeTab, tab.capabilities.canSplit else { return }
         let pivotID = tab.splitTree.effectiveFocusedLeafID
@@ -36,7 +40,7 @@ enum PaneActions {
         // A mirror tab asks tmux to split and draws whatever layout comes
         // back; tmux is also the one that knows whether there is room.
         if tab.kind == .tmuxMirror {
-            guard let mirror = liveMirror(for: tab, in: tmuxStore, toastCenter: toastCenter) else { return }
+            guard let mirror = liveMirrorOrNotify(for: tab, in: tmuxStore, toastCenter: toastCenter) else { return }
             mirror.split(paneID: pivotID, direction: direction)
             return
         }
@@ -329,7 +333,7 @@ enum PaneActions {
     /// renders only the zoomed leaf; the rest of the SplitTree stays
     /// intact so a second invocation restores the previous layout
     /// untouched. No-op when the active tab has a single leaf.
-    static func toggleZoom(_ session: WindowSession, tmuxStore: TmuxConnectionStore? = nil, toastCenter: ToastCenter? = nil) {
+    static func toggleZoom(_ session: WindowSession, tmuxStore: TmuxConnectionStore?, toastCenter: ToastCenter? = nil) {
         guard let tab = session.activeTab else { return }
         guard tab.splitTree.allLeafIDs().count > 1 else { return }
         guard let focusID = tab.splitTree.effectiveFocusedLeafID
@@ -337,7 +341,7 @@ enum PaneActions {
         // tmux owns the zoom of a mirror window; the tab's zoomed leaf
         // follows the window flag when the answer arrives.
         if tab.kind == .tmuxMirror {
-            liveMirror(for: tab, in: tmuxStore, toastCenter: toastCenter)?.toggleZoom(paneID: focusID)
+            liveMirrorOrNotify(for: tab, in: tmuxStore, toastCenter: toastCenter)?.toggleZoom(paneID: focusID)
             return
         }
         session.update(tab.id) { t in
@@ -358,11 +362,11 @@ enum PaneActions {
     /// Reset every split divider in the active tab back to 50/50.
     /// tmux `select-layout even-*` equivalent — most useful after one
     /// pane has drifted dominant from interactive drags.
-    static func equalizeSplits(_ session: WindowSession, tmuxStore: TmuxConnectionStore? = nil, toastCenter: ToastCenter? = nil) {
+    static func equalizeSplits(_ session: WindowSession, tmuxStore: TmuxConnectionStore?, toastCenter: ToastCenter? = nil) {
         guard let tab = session.activeTab, tab.capabilities.canEqualize else { return }
         if tab.kind == .tmuxMirror {
             guard let focusID = tab.splitTree.effectiveFocusedLeafID else { return }
-            liveMirror(for: tab, in: tmuxStore, toastCenter: toastCenter)?.equalize(from: focusID)
+            liveMirrorOrNotify(for: tab, in: tmuxStore, toastCenter: toastCenter)?.equalize(from: focusID)
             return
         }
         session.update(tab.id) { t in
@@ -370,11 +374,13 @@ enum PaneActions {
         }
     }
 
-    /// The mirror behind a tmux tab, if it is connected. A verb on a
-    /// disconnected mirror has nowhere to go, so the user is told instead
-    /// of the tree being edited under tmux's feet. Every user-initiated
-    /// verb shares this one message, whichever verb it was.
-    static func liveMirror(
+    /// The mirror behind a tmux tab, if it is connected; otherwise the user
+    /// is told the tab is not connected. A verb on a disconnected mirror has
+    /// nowhere to go, so it is refused out loud instead of the tree being
+    /// edited under tmux's feet. Every user-initiated verb shares this one
+    /// message, whichever verb it was. `TmuxConnectionStore.liveMirror(for:)`
+    /// is the silent lookup.
+    static func liveMirrorOrNotify(
         for tab: Tab,
         in tmuxStore: TmuxConnectionStore?,
         toastCenter: ToastCenter?

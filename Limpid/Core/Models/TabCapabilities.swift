@@ -29,12 +29,20 @@ struct TabCapabilities: Equatable {
     var canClosePane: Bool
     /// Drop a file onto a pane to type its path.
     var canDropFile: Bool
-    /// A paste, and the paths a file drop types, go to tmux as a paste
-    /// buffer (`TmuxMirrorActions.paste`) instead of through libghostty:
-    /// only tmux knows whether the program in the pane wants them
-    /// bracketed. Only a mirror tab holds mirror surfaces, so this row and
-    /// the kind of surface a pane has always agree.
-    var pastesThroughTmux: Bool
+    /// Input that is not a keystroke, a paste and the paths a file drop
+    /// types, goes to tmux as a paste buffer (`TmuxMirrorActions.paste`
+    /// and `dropFiles`) instead of through libghostty: only tmux knows
+    /// whether the program in the pane wants it bracketed. Only a mirror
+    /// tab holds mirror surfaces, so this row and the kind of surface a
+    /// pane has always agree.
+    var sendsInputThroughTmux: Bool
+    /// Clear the screen and scrollback from the pane's menu. libghostty
+    /// erases its own copy and asks the shell to redraw only when it has
+    /// seen the shell's prompt marks. On a mirror pane tmux keeps the rows,
+    /// so they come back with the next repaint from tmux, while the
+    /// scrollback erased here is the only copy the pane shows. tmux has no
+    /// command that does the same to a pane, so the item is refused there.
+    var canClearScreen: Bool
     /// Receive a pane dragged out of another tab.
     var canAcceptForeignPane: Bool
     /// Show the review surface over the tab.
@@ -59,7 +67,8 @@ struct TabCapabilities: Equatable {
                 canEqualizeSubtree: true,
                 canClosePane: true,
                 canDropFile: true,
-                pastesThroughTmux: false,
+                sendsInputThroughTmux: false,
+                canClearScreen: true,
                 canAcceptForeignPane: true,
                 canOpenReview: true,
                 appliesFontToEveryPane: false,
@@ -74,7 +83,8 @@ struct TabCapabilities: Equatable {
                 canEqualizeSubtree: false,
                 canClosePane: false,
                 canDropFile: true,
-                pastesThroughTmux: true,
+                sendsInputThroughTmux: true,
+                canClearScreen: false,
                 canAcceptForeignPane: false,
                 canOpenReview: false,
                 appliesFontToEveryPane: true,

@@ -300,13 +300,14 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
     }
 
     @MainActor
+    // swiftlint:disable:next function_parameter_count
     static func resolveOrCreateSurfaceView(
         paneID: UUID,
         ghosttyApp: GhosttyApp,
         registry: any SurfaceViewProviding,
         session: WindowSession,
         hostsAgentsInTmux: Bool,
-        tmuxStore: TmuxConnectionStore? = nil
+        tmuxStore: TmuxConnectionStore?
     ) -> SurfaceView? {
         if let existing = registry.view(for: paneID) {
             return existing
@@ -444,7 +445,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
             guard let session else { return }
             SearchActions.beginSearch(session)
         }
-        view.onRequestMoveToNewTab = { [weak session, registry, toastCenter, tmuxStore] in
+        view.onRequestMoveToNewTab = { [weak session, toastCenter, tmuxStore] in
             guard let session else { return }
             // A mirror pane leaves through `break-pane`; the ordinary path
             // still handles every other tab.
@@ -452,8 +453,6 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
                 session,
                 paneID: paneID,
                 store: tmuxStore,
-                registry: registry,
-                secureInput: registry.secureInput,
                 toastCenter: toastCenter
             )
         }

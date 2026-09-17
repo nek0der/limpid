@@ -51,7 +51,8 @@ enum LimpidShortcutCategory: Int, CaseIterable, Identifiable {
 
 /// Every action the user can rebind. When adding a new case,
 /// update these locations:
-///   1. `defaultShortcut`, `localizedTitle`, `category`, `ghosttyAction`
+///   1. `defaultShortcut`, `localizedTitle`, `category`, `ghosttyAction`,
+///      `isHandledByLibghosttyKeybind`
 ///   2. `TabActions.dispatchShortcutAction` (palette dispatch)
 ///   3. `CommandPaletteCatalog.icon(for:)` + `isActionEnabled`
 ///   4. `iconNames` dictionary (same file) — missing entries fall back to
@@ -203,11 +204,26 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// menu item never lets the raw character reach the shell. Only the
     /// terminal actions (prompt jumps and viewport scrolling) have no menu
     /// item and stay on the libghostty path.
+    ///
+    /// Every case is listed, with no `default`, so a new action does not
+    /// fall to `false` unseen: a new terminal action left there would have
+    /// its keystroke bound to `ignore` and do nothing.
     var isHandledByLibghosttyKeybind: Bool {
         switch self {
         case .nextPrompt, .previousPrompt,
              .scrollToTop, .scrollToBottom, .scrollPageUp, .scrollPageDown: true
-        default: false
+        case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
+             .closeSurface, .closeTab, .toggleSidebar, .toggleTabLayout,
+             .notificationHistory, .reviewChanges, .reviewTurn,
+             .nextSection, .previousSection, .nextTab, .previousTab,
+             .nextAttention, .previousAttention,
+             .splitRight, .splitDown,
+             .equalizeSplits, .toggleSplitZoom,
+             .focusPaneLeft, .focusPaneRight,
+             .focusPaneUp, .focusPaneDown,
+             .find, .findNext, .findPrevious,
+             .increaseFontSize, .decreaseFontSize, .resetFontSize,
+             .commandPalette, .quickOpen: false
         }
     }
 

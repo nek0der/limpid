@@ -44,7 +44,7 @@ struct TmuxWindowMirrorLayoutTests {
             t.kind = .tmuxMirror
             t.paneSources = [leafID: Self.source("%0")]
         }
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: "/usr/bin/false",
             target: .init(socketPath: Self.binding.socketPath, sessionID: Self.binding.sessionID)
         )

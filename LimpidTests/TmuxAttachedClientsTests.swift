@@ -79,12 +79,14 @@ private final class PaletteHarness {
     let server: TmuxServerFixture
     let session = WindowSession()
     let store: TmuxConnectionStore
-    let registry = RecordingSurfaceRegistry()
+    let registry: RecordingSurfaceRegistry
     private var clients: [TmuxPTYClient] = []
 
     init(windows: Int = 1) throws {
         server = try TmuxServerFixture.launch(windows: windows)
-        store = TmuxConnectionStore(tmuxExecutable: server.executable)
+        let registry = RecordingSurfaceRegistry()
+        self.registry = registry
+        store = TmuxConnectionStore(registry: registry, secureInput: nil, tmuxExecutable: server.executable)
         session.onTabsChanged = { [weak session, store] in
             guard let session else { return }
             store.reconcile(tabs: session.tabs)
@@ -135,9 +137,6 @@ private final class PaletteHarness {
             target(window: window),
             session: session,
             store: store,
-            registry: registry,
-            secureInput: nil,
-            toastCenter: nil,
             limpidTTYs: limpidTTYs,
             confirm: confirm.answer
         )

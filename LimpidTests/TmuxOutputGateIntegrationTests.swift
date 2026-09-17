@@ -21,7 +21,7 @@ struct TmuxOutputGateIntegrationTests {
     /// Send one command and wait for its reply block, so the next assertion
     /// measures a server that has already applied it.
     private func sendAndWait(
-        _ connection: TmuxServerConnection,
+        _ connection: TmuxSessionConnection,
         _ command: String,
         timeout: Duration = .seconds(3)
     ) async -> (lines: [String], isError: Bool)? {
@@ -31,9 +31,9 @@ struct TmuxOutputGateIntegrationTests {
         return reply
     }
 
-    private func attachedConnection(_ server: TmuxServerFixture) async throws -> TmuxServerConnection {
+    private func attachedConnection(_ server: TmuxServerFixture) async throws -> TmuxSessionConnection {
         let sessionID = try #require(server.run(["display-message", "-p", "-t", "t", "#{session_id}"]))
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: sessionID)
         )

@@ -18,7 +18,7 @@ struct PaneActionsTests {
     @Test("toggleZoom on a single-leaf tab is a no-op")
     func toggleZoom_singleLeaf_doesNothing() {
         let (session, _, _) = WindowSessionFixture.withLooseTab()
-        PaneActions.toggleZoom(session)
+        PaneActions.toggleZoom(session, tmuxStore: nil)
         #expect(session.activeTab?.zoomedLeafID == nil)
     }
 
@@ -26,26 +26,26 @@ struct PaneActionsTests {
     func toggleZoom_splitTab_togglesFocusedLeaf() throws {
         let (session, tab, paneA) = WindowSessionFixture.withLooseTab()
         // Add a sibling pane so toggleZoom has something to act on.
-        PaneActions.split(session, direction: .horizontal)
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
         let active = try #require(session.tab(tab.id))
         let focused = try #require(active.splitTree.focusedLeafID)
         #expect(focused != paneA)
 
-        PaneActions.toggleZoom(session)
+        PaneActions.toggleZoom(session, tmuxStore: nil)
         #expect(session.tab(tab.id)?.zoomedLeafID == focused)
 
-        PaneActions.toggleZoom(session)
+        PaneActions.toggleZoom(session, tmuxStore: nil)
         #expect(session.tab(tab.id)?.zoomedLeafID == nil)
     }
 
     @Test("splitting while zoomed exits zoom so the new sibling is visible")
     func split_whileZoomed_clearsZoom() {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
-        PaneActions.split(session, direction: .horizontal)
-        PaneActions.toggleZoom(session)
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
+        PaneActions.toggleZoom(session, tmuxStore: nil)
         #expect(session.tab(tab.id)?.zoomedLeafID != nil)
 
-        PaneActions.split(session, direction: .vertical)
+        PaneActions.split(session, direction: .vertical, tmuxStore: nil)
         #expect(session.tab(tab.id)?.zoomedLeafID == nil)
     }
 
@@ -87,8 +87,8 @@ struct PaneActionsTests {
     func closeActivePane_removesZoomedLeaf_clearsZoom() {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
-        PaneActions.split(session, direction: .horizontal)
-        PaneActions.toggleZoom(session)
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
+        PaneActions.toggleZoom(session, tmuxStore: nil)
         #expect(session.tab(tab.id)?.zoomedLeafID != nil)
 
         PaneActions.closeActivePane(session, registry: registry)
@@ -104,7 +104,7 @@ struct PaneActionsTests {
     func closeActivePane_doesNotSweepInactiveTabsSurfaces() throws {
         let (session, tabA, _, _, paneB) = WindowSessionFixture.withTwoLooseTabs()
         let registry = RecordingSurfaceRegistry()
-        PaneActions.split(session, direction: .horizontal)
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
         // After the split, tabA holds two leaves; the focused one is the
         // newly-spawned sibling. Capture the surviving leaf so we can
         // confirm it remains alongside paneB after the close.
@@ -130,7 +130,7 @@ struct PaneActionsTests {
     @Test("equalizeSplits routes the SplitTree primitive through the active tab")
     func equalizeSplits_drivesSplitTreeEqualize() throws {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
-        PaneActions.split(session, direction: .horizontal)
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
         // Drift the ratio off-center so equalize has work to do.
         session.update(tab.id) { t in
             t.splitTree = t.splitTree.resize(
@@ -147,7 +147,7 @@ struct PaneActionsTests {
         }
         #expect(beforeData.ratio != 0.5)
 
-        PaneActions.equalizeSplits(session)
+        PaneActions.equalizeSplits(session, tmuxStore: nil)
 
         let afterRoot = try #require(session.tab(tab.id)?.splitTree.root)
         guard case let .split(afterData) = afterRoot else {
@@ -163,7 +163,7 @@ struct PaneActionsTests {
     func focusPane_splitTab_movesFocus() throws {
         let (session, tab, paneA) = WindowSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
-        PaneActions.split(session, direction: .horizontal)
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
         // After split, focused leaf is the new pane (right of paneA).
         PaneActions.focusPane(session, registry: registry, direction: .left)
         let focused = try #require(session.tab(tab.id)?.splitTree.focusedLeafID)
@@ -181,10 +181,10 @@ struct PaneActionsTests {
     @Test("toggleZoom pins focusedLeafID to the zoomed leaf even when focus was nil")
     func toggleZoom_pinsFocusedLeafIDToZoomedLeaf() {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
-        PaneActions.split(session, direction: .horizontal)
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
         // Wipe focus to force toggleZoom into its fallback path.
         session.update(tab.id) { $0.splitTree.focusedLeafID = nil }
-        PaneActions.toggleZoom(session)
+        PaneActions.toggleZoom(session, tmuxStore: nil)
         let stored = session.tab(tab.id)
         #expect(stored?.zoomedLeafID != nil)
         #expect(stored?.splitTree.focusedLeafID == stored?.zoomedLeafID)
@@ -194,9 +194,9 @@ struct PaneActionsTests {
     func focusPane_whileZoomed_doesNotMoveFocus() throws {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
-        PaneActions.split(session, direction: .horizontal)
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
         let beforeZoom = try #require(session.tab(tab.id)?.splitTree.focusedLeafID)
-        PaneActions.toggleZoom(session)
+        PaneActions.toggleZoom(session, tmuxStore: nil)
 
         PaneActions.focusPane(session, registry: registry, direction: .left)
         #expect(session.tab(tab.id)?.splitTree.focusedLeafID == beforeZoom)
@@ -215,7 +215,7 @@ struct PaneActionsTests {
     @Test("a verb on a mirror tab with no tmux connection leaves the tree and zoom alone", arguments: MirrorVerb.allCases)
     func mirrorTab_withoutStore_verbLeavesTreeAlone(verb: MirrorVerb) throws {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
-        PaneActions.split(session, direction: .horizontal)
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
         session.update(tab.id) { t in
             t.splitTree = t.splitTree.resize(
                 splitAt: [],
@@ -230,10 +230,10 @@ struct PaneActionsTests {
         let registry = RecordingSurfaceRegistry()
 
         switch verb {
-        case .split: PaneActions.split(session, direction: .vertical)
+        case .split: PaneActions.split(session, direction: .vertical, tmuxStore: nil)
         case .closePane: PaneActions.closeActivePane(session, registry: registry)
-        case .equalize: PaneActions.equalizeSplits(session)
-        case .zoom: PaneActions.toggleZoom(session)
+        case .equalize: PaneActions.equalizeSplits(session, tmuxStore: nil)
+        case .zoom: PaneActions.toggleZoom(session, tmuxStore: nil)
         }
 
         let after = try #require(session.tab(tab.id))
@@ -257,7 +257,7 @@ struct PaneActionsTests {
     func canClosePaneOrTab_matchesTheCascade(kind: Tab.Kind, leafCount: Int, isAllowed: Bool) throws {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()
         for _ in 1..<leafCount {
-            PaneActions.split(session, direction: .horizontal)
+            PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
         }
         session.update(tab.id) { $0.kind = kind }
         let before = try #require(session.tab(tab.id))

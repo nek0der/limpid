@@ -15,6 +15,20 @@ extension Notification.Name {
     /// back off them.
     static let limpidReviewPasteDenied = Notification.Name("dev.limpid.reviewPasteDenied")
 
+    /// Posted by a surface when the user pastes into a pane that mirrors a
+    /// tmux pane. `object` is the `SurfaceView`, so the window whose registry
+    /// owns it is the one that pastes: it holds the tmux store and the toast
+    /// center the view cannot reach. Declared here with the other names a
+    /// view posts and a window answers, since the two sit in different
+    /// layers.
+    static let limpidMirrorPasteRequested = Notification.Name("dev.limpid.mirrorPasteRequested")
+
+    /// Posted when files are dropped on a pane whose tab sends its input
+    /// through tmux. `object` is the `SurfaceView`; the dropped file URLs
+    /// are under `SurfaceView.droppedFileURLsKey`. Answered by the window
+    /// for the same reason as `limpidMirrorPasteRequested`.
+    static let limpidMirrorFileDropRequested = Notification.Name("dev.limpid.mirrorFileDropRequested")
+
     /// Posted when the command palette opens so the overlay grabs focus.
     static let limpidCommandPaletteFocus = Notification.Name("dev.limpid.commandPaletteFocus")
 
@@ -28,6 +42,7 @@ extension Notification.Name {
 
 @MainActor
 enum CommandPaletteActions {
+    // swiftlint:disable function_parameter_count
     /// ⌘P / ⌘⇧P — surface the palette. Idempotent: if a state
     /// already exists, focus the existing one (the overlay observes
     /// `session.commandPaletteState` and grabs focus on the next
@@ -41,7 +56,7 @@ enum CommandPaletteActions {
         // Review can be up over a container with nothing to review, and the
         // palette is one of the ways to close it.
         reviewPresentation: ReviewPresentation?,
-        tmuxStore: TmuxConnectionStore? = nil,
+        tmuxStore: TmuxConnectionStore?,
         initialQuery: String = ">"
     ) {
         if session.commandPaletteState != nil {
@@ -64,6 +79,8 @@ enum CommandPaletteActions {
             loadTmuxWindows(into: state, session: session, store: tmuxStore, frecencyStore: frecencyStore)
         }
     }
+
+    // swiftlint:enable function_parameter_count
 
     /// List the tmux windows after the palette is already up and merge
     /// them into it. Listing runs one client per server socket, and a
@@ -125,8 +142,7 @@ enum CommandPaletteActions {
         toastCenter: ToastCenter,
         minPaneSize: Double,
         agentProjection: AgentProjectionAdapter? = nil,
-        tmuxStore: TmuxConnectionStore? = nil,
-        secureInput: SecureInputManager? = nil
+        tmuxStore: TmuxConnectionStore?
     ) {
         closeCommandPalette(session)
         frecencyStore.record(action.frecencyKey)
@@ -160,7 +176,7 @@ enum CommandPaletteActions {
             TmuxMirrorActions.reopenClosedTab(
                 session,
                 specificID: tabID,
-                context: TmuxMirrorActions.MirrorContext(session: session, store: tmuxStore, registry: registry, toastCenter: toastCenter)
+                store: tmuxStore
             )
         case let .openRecentProject(url):
             session.addOrActivateProject(rootURL: url)
@@ -172,14 +188,7 @@ enum CommandPaletteActions {
             // The row is only listed when a store exists; a missing one
             // here is a wiring error, not a user-facing state.
             guard let tmuxStore else { break }
-            TmuxMirrorActions.openFromPalette(
-                target,
-                session: session,
-                store: tmuxStore,
-                registry: registry,
-                secureInput: secureInput,
-                toastCenter: toastCenter
-            )
+            TmuxMirrorActions.openFromPalette(target, session: session, store: tmuxStore)
         }
 
         // Restore focus to the terminal surface so the next keystroke

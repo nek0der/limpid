@@ -275,12 +275,12 @@
         }
       }
     },
-    "Start the server again, then reconnect.": {
+    "The server didn't answer, or its socket can't be opened. Reconnect to try again.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーバーを起動し直してから再接続してください。"
+            "value": "サーバーが応答しないか、ソケットを開けません。再接続してもう一度お試しください。"
           }
         }
       }

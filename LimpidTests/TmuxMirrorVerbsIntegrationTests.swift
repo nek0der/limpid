@@ -46,7 +46,7 @@ private struct MirrorHarness {
             t.kind = .tmuxMirror
             t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: paneID))
         }
-        let store = TmuxConnectionStore(tmuxExecutable: server.executable)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
         let connection = try store.connection(for: binding)
         let mirror = TmuxWindowMirror(
             tabID: tab.id,
@@ -66,7 +66,7 @@ private struct MirrorHarness {
         #expect(await waitUntil { connection.state == .attached })
         // The first size report also fetches the layout, which is what
         // `%layout-change` later folds onto.
-        mirror.reportGrid(columns: 80, rows: 24)
+        store.reportTestGrid(columns: 80, rows: 24, tabID: tab.id, leafID: leafID)
         #expect(await waitUntil { mirror.cellLayout != nil })
         return MirrorHarness(server: server, session: session, store: store, mirror: mirror, tabID: tab.id, windowID: windowID)
     }
@@ -248,7 +248,7 @@ struct TmuxMirrorVerbsIntegrationTests {
         var newWindow: String?
         harness.mirror.breakPane(paneID: moved) { newWindow = $0?.windowID }
         #expect(await waitUntil { newWindow != nil })
-        harness.mirror.release(paneID: moved)
+        harness.mirror.removeMovedPane(moved)
 
         #expect(harness.leafCount == 1)
         #expect(harness.tab?.paneSources[moved] == nil)
@@ -553,10 +553,10 @@ struct TmuxMirrorRebuildIntegrationTests {
         harness.server.run(["kill-pane", "-t", pane])
 
         #expect(await waitUntil { harness.leafCount == 1 })
-        #expect(!harness.mirror.shows(paneID: second))
+        #expect(!harness.mirror.contains(paneID: second))
         #expect(harness.mirror.sink(for: second) == nil)
         #expect(connection.sinks[pane] == nil)
         harness.store.mirrorGridResized(columns: 80, rows: 24, paneID: second)
-        #expect(!harness.mirror.shows(paneID: second))
+        #expect(!harness.mirror.contains(paneID: second))
     }
 }

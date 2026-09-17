@@ -17,15 +17,6 @@
 import AppKit
 import GhosttyKit
 
-extension Notification.Name {
-    /// Posted when the user pastes into a pane that mirrors a tmux pane.
-    /// `object` is the `SurfaceView`, so the window whose registry owns it
-    /// is the one that pastes: it holds the tmux store and the toast center
-    /// this view cannot reach. Defined here rather than beside the other
-    /// Limpid names because nothing outside this file posts it.
-    static let limpidMirrorPasteRequested = Notification.Name("dev.limpid.mirrorPasteRequested")
-}
-
 extension SurfaceView {
 
     // MARK: - Clipboard (responder-chain selectors)
@@ -53,12 +44,12 @@ extension SurfaceView {
     /// suspicious paste content — still runs.
     @objc func paste(_ sender: Any?) {
         // The route is a row of the tab's capabilities
-        // (`pastesThroughTmux`). We branch here because AppKit hands
+        // (`sendsInputThroughTmux`). We branch here because AppKit hands
         // Command-V straight to the focused surface; the tmux side needs a
         // store and a toast center this view cannot reach, so it goes out
         // as a notification. A view no tab has claimed pastes nowhere.
         guard let capabilities = tabCapabilities?() else { return }
-        guard !capabilities.pastesThroughTmux else {
+        guard !capabilities.sendsInputThroughTmux else {
             NotificationCenter.default.post(name: .limpidMirrorPasteRequested, object: self)
             return
         }

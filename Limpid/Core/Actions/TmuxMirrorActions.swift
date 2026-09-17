@@ -22,14 +22,7 @@ enum TmuxMirrorActions {
     /// A window a live tab already mirrors is not opened twice; that tab is
     /// brought forward instead, because each tmux pane feeds one sink.
     @discardableResult
-    static func open(
-        _ target: TmuxMirrorTarget,
-        session: WindowSession,
-        store: TmuxConnectionStore,
-        registry: any SurfaceViewProviding,
-        secureInput: (any TmuxSecureInputSwitching)?,
-        toastCenter: ToastCenter? = nil
-    ) -> Bool {
+    static func open(_ target: TmuxMirrorTarget, session: WindowSession, store: TmuxConnectionStore) -> Bool {
         if let existing = store.liveMirror(showing: target.windowID, of: target.binding) {
             session.setActiveTab(existing.tabID)
             return true
@@ -42,74 +35,29 @@ enum TmuxMirrorActions {
             t.title = target.displayName
             t.paneSources[paneID] = .tmux(ref)
         }
-        let connection: TmuxServerConnection
+        let connection: TmuxSessionConnection
         do {
             connection = try store.connection(for: target.binding)
         } catch {
             log.error("cannot mirror \(target.displayName, privacy: .private): \(String(describing: error), privacy: .public)")
             // No tmux spoke here, so there is no reason of tmux's to show;
             // the log keeps the system's.
-            TabActions.closeTab(session, registry: registry, tabID: tab.id, confirm: false, isReopenable: false)
+            TabActions.closeTab(session, registry: store.registry, tabID: tab.id, confirm: false, isReopenable: false)
             store.onNotice?(TmuxConnectionStore.openFailureNotice(name: target.displayName, reason: nil))
             return false
         }
-        let mirror = makeMirror(
+        let mirror = store.makeMirror(
             tabID: tab.id,
             windowID: target.windowID,
             names: (target.binding.sessionName, target.windowName),
             connection: connection,
             isNewTab: true,
-            context: MirrorContext(session: session, store: store, registry: registry, secureInput: secureInput, toastCenter: toastCenter)
+            session: session
         )
         store.register(mirror)
         mirror.start()
         return true
     }
-
-    /// What every mirror of a window session is built with.
-    struct MirrorContext {
-        let session: WindowSession
-        let store: TmuxConnectionStore
-        let registry: any SurfaceViewProviding
-        let secureInput: (any TmuxSecureInputSwitching)?
-        let toastCenter: ToastCenter?
-    }
-
-    // swiftlint:disable function_parameter_count
-    /// A mirror for tab `tabID`, fed through the leaves' channels and
-    /// started from the store's reports, whether the tab is new or had a
-    /// mirror before. `isNewTab` says which (`TmuxWindowMirror.isNewTab`).
-    static func makeMirror(
-        tabID: UUID,
-        windowID: String,
-        names: (session: String, window: String),
-        connection: TmuxServerConnection,
-        isNewTab: Bool,
-        context: MirrorContext
-    ) -> TmuxWindowMirror {
-        let store = context.store
-        let mirror = TmuxWindowMirror(
-            tabID: tabID,
-            windowID: windowID,
-            sessionName: names.session,
-            windowName: names.window,
-            connection: connection,
-            isNewTab: isNewTab,
-            session: context.session,
-            registry: context.registry,
-            secureInput: context.secureInput,
-            channelForPane: { [weak store] in store?.channel(paneID: $0) },
-            surfaceReports: { [weak store] in store?.surfaceReports ?? TmuxSurfaceReports() }
-        )
-        // tmux refused a verb (`%error`): the picture stays as it was and
-        // the user reads which operation failed (design §12).
-        mirror.onCommandFailed = { [weak toastCenter = context.toastCenter] message in
-            toastCenter?.show(ToastItem(message: message, undo: nil))
-        }
-        return mirror
-    }
-
-    // swiftlint:enable function_parameter_count
 
     /// What the user chose about clients another app has attached.
     enum OtherClientsChoice: Equatable {
@@ -118,7 +66,6 @@ enum TmuxMirrorActions {
         case cancel
     }
 
-    // swiftlint:disable function_parameter_count
     /// Open `target` the way the palette does (design D7). The clients
     /// already attached to its session are found first. Those running in a
     /// Limpid pane are detached, which returns the pane to its shell with
@@ -137,14 +84,11 @@ enum TmuxMirrorActions {
         _ target: TmuxMirrorTarget,
         session: WindowSession,
         store: TmuxConnectionStore,
-        registry: any SurfaceViewProviding,
-        secureInput: SecureInputManager?,
-        toastCenter: ToastCenter?,
         limpidTTYs: Set<String>? = nil,
         confirm: @escaping @MainActor (TmuxMirrorTarget, [TmuxAttachedClient]) -> OtherClientsChoice = askAboutOtherClients
     ) -> Task<Void, Never>? {
         let finish: () -> Void = {
-            open(target, session: session, store: store, registry: registry, secureInput: secureInput, toastCenter: toastCenter)
+            open(target, session: session, store: store)
         }
         // `open` makes the same check; answering here keeps a window that is
         // already on screen from waiting on a child process.
@@ -158,7 +102,6 @@ enum TmuxMirrorActions {
             tmuxPath: tmuxPath,
             session: session,
             store: store,
-            registry: registry,
             limpidTTYs: limpidTTYs,
             confirm: confirm
         )
@@ -167,8 +110,6 @@ enum TmuxMirrorActions {
             finish()
         }
     }
-
-    // swiftlint:enable function_parameter_count
 
     /// Decides, before a client attaches to `target`'s session, whether it
     /// goes ahead. Returns false only when the user cancelled.
@@ -183,7 +124,6 @@ enum TmuxMirrorActions {
         tmuxPath: String,
         session: WindowSession,
         store: TmuxConnectionStore,
-        registry: any SurfaceViewProviding,
         limpidTTYs: Set<String>? = nil,
         confirm: @escaping @MainActor (TmuxMirrorTarget, [TmuxAttachedClient]) -> OtherClientsChoice = askAboutOtherClients
     ) -> OtherClientsGate {
@@ -194,7 +134,7 @@ enum TmuxMirrorActions {
                 tmuxPath: tmuxPath,
                 binding: binding,
                 ownControlPIDs: store.ownControlPIDs,
-                limpidTTYs: limpidTTYs ?? paneTTYs(session: session, registry: registry)
+                limpidTTYs: limpidTTYs ?? paneTTYs(session: session, registry: store.registry)
             )
             guard !found.otherApps.isEmpty else { return true }
             switch confirm(target, found.otherApps) {
@@ -261,7 +201,6 @@ enum TmuxMirrorActions {
         }
     }
 
-    // swiftlint:disable function_parameter_count
     /// Move a pane into a tab of its own. For a mirror tab this is
     /// `break-pane`: tmux gives the pane a new window, and a mirror tab is
     /// opened on that window once tmux reports its id. Anything else goes
@@ -270,8 +209,6 @@ enum TmuxMirrorActions {
         _ session: WindowSession,
         paneID: UUID,
         store: TmuxConnectionStore?,
-        registry: any SurfaceViewProviding,
-        secureInput: SecureInputManager?,
         toastCenter: ToastCenter?
     ) {
         guard let sourceTab = session.tab(containing: paneID) else { return }
@@ -281,12 +218,12 @@ enum TmuxMirrorActions {
         }
         guard sourceTab.splitTree.allLeafIDs().count > 1,
               let store,
-              let mirror = PaneActions.liveMirror(for: sourceTab, in: store, toastCenter: toastCenter),
+              let mirror = PaneActions.liveMirrorOrNotify(for: sourceTab, in: store, toastCenter: toastCenter),
               case let .tmux(ref) = sourceTab.ioSource(for: paneID)
         else { return }
         mirror.breakPane(paneID: paneID) { window in
             guard let window else { return }
-            mirror.release(paneID: paneID)
+            mirror.removeMovedPane(paneID)
             let target = TmuxMirrorTarget(
                 binding: ref.binding,
                 windowID: window.windowID,
@@ -294,17 +231,16 @@ enum TmuxMirrorActions {
                 activePaneID: ref.paneID,
                 serverVersion: mirror.connection.version
             )
-            open(target, session: session, store: store, registry: registry, secureInput: secureInput, toastCenter: toastCenter)
+            open(target, session: session, store: store)
         }
     }
-
-    // swiftlint:enable function_parameter_count
 
     /// Merge a pane into another tab. Two mirror tabs on the same tmux
     /// session use `join-pane`; a tmux pane cannot leave tmux, and a mirror
     /// tab stays pure (design §1), so every other pairing that involves a
-    /// mirror is refused with a word to the user. Two mirror tabs of which
-    /// either is disconnected cannot ask tmux, and say so.
+    /// mirror is refused with a word to the user (`acceptsPane`). Two
+    /// mirror tabs of which either is disconnected cannot ask tmux, and say
+    /// so.
     static func mergePaneIntoTab(
         _ session: WindowSession,
         paneID: UUID,
@@ -316,29 +252,37 @@ enum TmuxMirrorActions {
               let targetTab = session.tab(targetTabID),
               sourceTab.id != targetTabID
         else { return }
-        let sourceIsMirror = sourceTab.kind == .tmuxMirror
-        if !sourceIsMirror {
-            guard targetTab.capabilities.canAcceptForeignPane else {
-                // The user moved an ordinary pane, so the refusal speaks of
-                // the tab it was dropped on, not of a tmux pane.
-                let message = String(localized: "Only panes of the same tmux session can move into this tab")
-                toastCenter?.show(ToastItem(message: message, undo: nil))
-                return
-            }
+        guard acceptsPane(from: sourceTab, into: targetTab) else {
+            // The refusal speaks of what the user moved: an ordinary pane
+            // was refused by the tab it was dropped on, a tmux pane by
+            // tmux.
+            let message = sourceTab.kind == .tmuxMirror
+                ? String(localized: "A tmux pane can only move between windows of its own session")
+                : String(localized: "Only panes of the same tmux session can move into this tab")
+            toastCenter?.show(ToastItem(message: message, undo: nil))
+            return
+        }
+        guard sourceTab.kind == .tmuxMirror else {
             TabActions.mergePaneIntoTab(session, paneID: paneID, into: targetTabID)
             return
         }
-        if targetTab.kind == .tmuxMirror {
-            guard let source = store?.liveMirror(for: sourceTab.id), let target = store?.liveMirror(for: targetTabID) else {
-                toastCenter?.show(ToastItem(message: String(localized: "Not connected to tmux"), undo: nil))
-                return
-            }
-            if source.connection.target == target.connection.target {
-                source.joinPane(paneID: paneID, into: target.windowID)
-                return
-            }
+        guard let source = store?.liveMirror(for: sourceTab.id), let target = store?.liveMirror(for: targetTabID) else {
+            toastCenter?.show(ToastItem(message: String(localized: "Not connected to tmux"), undo: nil))
+            return
         }
-        toastCenter?.show(ToastItem(message: String(localized: "A tmux pane can only move between windows of its own session"), undo: nil))
+        source.joinPane(paneID: paneID, into: target.windowID)
+    }
+
+    /// Whether a pane of `sourceTab` may land in `targetTab`, as far as the
+    /// two tabs say: an ordinary pane goes to a tab that takes foreign
+    /// panes, and a tmux pane only to a mirror tab of its own tmux session.
+    /// The tab row a pane is dragged over lights up only when this holds,
+    /// and the drop decides by it too. Whether both mirrors are connected
+    /// is left to the drop, which says so; the tabs cannot tell.
+    static func acceptsPane(from sourceTab: Tab, into targetTab: Tab) -> Bool {
+        guard sourceTab.kind == .tmuxMirror else { return targetTab.capabilities.canAcceptForeignPane }
+        guard let source = mirrorRef(of: sourceTab), let target = mirrorRef(of: targetTab) else { return false }
+        return TmuxConnectionStore.Key(source.binding) == TmuxConnectionStore.Key(target.binding)
     }
 
     /// Paste the clipboard into a mirror pane through tmux. A paste that
@@ -392,7 +336,7 @@ enum TmuxMirrorActions {
         confirmation: ClipboardConfirmationCoordinator?
     ) {
         guard let tab = session.tab(containing: paneID),
-              let mirror = PaneActions.liveMirror(for: tab, in: store, toastCenter: toastCenter)
+              let mirror = PaneActions.liveMirrorOrNotify(for: tab, in: store, toastCenter: toastCenter)
         else { return }
         guard TmuxPasteBuffer.needsConfirmation(text) else {
             mirror.paste(text, paneID: paneID)

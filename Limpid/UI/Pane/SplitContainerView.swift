@@ -80,6 +80,8 @@ struct SplitContainerView: View {
         // sized it (design §8 D11): draw what fits, never over the chrome.
         ZStack(alignment: .topLeading) {
             ForEach(layout.leaves, id: \.id) { entry in
+                // Unwrapped once: a leaf of this tree, with or without a
+                // surface.
                 if let view = views[entry.id] {
                     leaf(
                         paneID: entry.id,
@@ -113,7 +115,23 @@ struct SplitContainerView: View {
         .coordinateSpace(name: Self.coordinateSpace)
     }
 
-    private func leaf(paneID: UUID, view: SurfaceView, paddingOverride: PaddingOverride?) -> some View {
+    /// A leaf with a surface, or the placeholder of one without. The
+    /// placeholder keeps the leaf's place and takes focus like a pane, and
+    /// accepts no drop: there is no surface for a swap to move.
+    @ViewBuilder
+    private func leaf(paneID: UUID, view: SurfaceView?, paddingOverride: PaddingOverride?) -> some View {
+        if let view {
+            surfaceLeaf(paneID: paneID, view: view, paddingOverride: paddingOverride)
+        } else {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { onLeafFocus(paneID) }
+                .accessibilityHidden(true)
+                .id(paneID)
+        }
+    }
+
+    private func surfaceLeaf(paneID: UUID, view: SurfaceView, paddingOverride: PaddingOverride?) -> some View {
         PaneContainerView(paneID: paneID, surfaceView: view, paddingOverride: paddingOverride)
             .onTapGesture { onLeafFocus(paneID) }
             // SwiftUI identity ties to the pane id so a swap (one pane

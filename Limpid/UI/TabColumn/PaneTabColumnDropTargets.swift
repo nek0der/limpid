@@ -50,6 +50,7 @@ extension View {
                 } else {
                     PaneMergeDropArea(
                         targetTabID: targetTabID,
+                        sourceTabID: sourceTabID,
                         session: session,
                         dragState: dragState,
                         highlightNamespace: highlightNamespace,
@@ -132,6 +133,9 @@ private func paneIDFromWire(_ wire: String) -> UUID? {
 @MainActor
 private struct PaneMergeDropArea: View {
     let targetTabID: UUID
+    /// The tab the dragged pane comes from, `nil` when the drag did not
+    /// record one.
+    let sourceTabID: UUID?
     let session: WindowSession
     let dragState: LimpidDragState
     let highlightNamespace: Namespace.ID
@@ -150,6 +154,19 @@ private struct PaneMergeDropArea: View {
 
     private var key: String {
         "pane-merge-\(targetTabID)"
+    }
+
+    /// Whether this row takes the dragged pane. A row that would refuse it
+    /// is not lit, so the refusal shows before the drop; the drop is still
+    /// caught, so a pane dropped anyway gets the word that says why rather
+    /// than landing in a new tab behind the row. A drag without a known
+    /// source is lit as before, and the drop decides.
+    private var acceptsDraggedPane: Bool {
+        guard let sourceTabID,
+              let sourceTab = session.tab(sourceTabID),
+              let targetTab = session.tab(targetTabID)
+        else { return true }
+        return TmuxMirrorActions.acceptsPane(from: sourceTab, into: targetTab)
     }
 
     var body: some View {
@@ -178,7 +195,7 @@ private struct PaneMergeDropArea: View {
             // Single accent rectangle slides between rows via a shared
             // `matchedGeometryEffect` id, mirroring AppKit's drop
             // indicator glide.
-            if dragState.hoverTargetID == key {
+            if dragState.hoverTargetID == key, acceptsDraggedPane {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(accent.opacity(0.20))
                     .padding(.horizontal, pillHorizontalPadding)
@@ -201,7 +218,6 @@ private struct PaneDetachDropArea: View {
     let container: ContainerID
     let session: WindowSession
     let dragState: LimpidDragState
-    @Environment(\.surfaceRegistry) private var registry
     @Environment(\.tmuxConnectionStore) private var tmuxStore
     /// Optional for the same reason as `PaneMergeDropArea`'s.
     @Environment(ToastCenter.self) private var toastCenter: ToastCenter?
@@ -221,8 +237,6 @@ private struct PaneDetachDropArea: View {
                     session,
                     paneID: paneID,
                     store: tmuxStore,
-                    registry: registry,
-                    secureInput: registry.secureInput,
                     toastCenter: toastCenter
                 )
             }

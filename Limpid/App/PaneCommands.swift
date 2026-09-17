@@ -127,7 +127,7 @@ struct PaneCommands: Commands {
     /// palette does: the user chose to connect now.
     private func reconnectActiveMirror() {
         guard let tabID = state.session.activeTabID else { return }
-        TmuxMirrorActions.reconnectAsked(tabID: tabID, context: state.tmuxMirrorContext)
+        TmuxMirrorActions.reconnectAsked(tabID: tabID, session: state.session, store: state.tmuxStore)
     }
 
     private var isSplit: Bool {

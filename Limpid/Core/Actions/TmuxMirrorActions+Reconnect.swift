@@ -7,7 +7,6 @@ import OSLog
 private let log = Logger.limpid("tmux.mirror")
 
 extension TmuxMirrorActions {
-    // swiftlint:disable function_parameter_count
     /// Connect tab `tabID` to its tmux session again, together with every
     /// other tab of the same socket and session that can be (store key,
     /// stage 11 decision 5), over one control client. Only tabs that
@@ -48,9 +47,6 @@ extension TmuxMirrorActions {
         tabID: UUID,
         session: WindowSession,
         store: TmuxConnectionStore,
-        registry: any SurfaceViewProviding,
-        secureInput: (any TmuxSecureInputSwitching)?,
-        toastCenter: ToastCenter?,
         otherClients: OtherClientsGate?
     ) -> Task<Void, Never>? {
         guard let tmuxPath = store.tmuxExecutable,
@@ -72,7 +68,6 @@ extension TmuxMirrorActions {
             previous[other.id] = store.tabConnections[other.id]
             store.setTabConnection(.connecting, tabID: other.id)
         }
-        let context = MirrorContext(session: session, store: store, registry: registry, secureInput: secureInput, toastCenter: toastCenter)
         let target = TmuxMirrorTarget(
             binding: binding,
             windowID: ref.windowID,
@@ -92,11 +87,11 @@ extension TmuxMirrorActions {
                     }
                     return
                 }
-                attachAgain(waiting(tabIDs, store: store, session: session), binding: binding, context: context)
+                attachAgain(waiting(tabIDs, store: store, session: session), binding: binding, session: session, store: store)
             case .matches(hasSession: false), .serverGone:
                 var ended: [TmuxConnectionStore.EndedTab] = []
                 for tabID in waiting(tabIDs, store: store, session: session) {
-                    ended.append(TmuxConnectionStore.EndedTab(tabID: tabID, session: session, registry: registry))
+                    ended.append(TmuxConnectionStore.EndedTab(tabID: tabID, session: session))
                 }
                 store.sessionEnded(ended, sessionName: binding.sessionName)
             case .replaced, .unrecorded:
@@ -111,52 +106,46 @@ extension TmuxMirrorActions {
         }
     }
 
-    // swiftlint:enable function_parameter_count
-
     /// Reconnect tab `tabID` because the user asked for it, from the menu or
     /// from the tab's card. Other apps' clients are asked about (decision
     /// 10), as they are when a window is opened from the palette.
     @discardableResult
-    static func reconnectAsked(tabID: UUID, context: MirrorContext) -> Task<Void, Never>? {
-        guard let tmuxPath = context.store.tmuxExecutable else { return nil }
+    static func reconnectAsked(tabID: UUID, session: WindowSession, store: TmuxConnectionStore) -> Task<Void, Never>? {
+        guard let tmuxPath = store.tmuxExecutable else { return nil }
         return reconnect(
             tabID: tabID,
-            session: context.session,
-            store: context.store,
-            registry: context.registry,
-            secureInput: context.secureInput,
-            toastCenter: context.toastCenter,
-            otherClients: otherClientsGate(
-                tmuxPath: tmuxPath,
-                session: context.session,
-                store: context.store,
-                registry: context.registry
-            )
+            session: session,
+            store: store,
+            otherClients: otherClientsGate(tmuxPath: tmuxPath, session: session, store: store)
         )
     }
 
     // MARK: - Automatic reconnect
 
-    /// Connect every mirror tab of `context.session` again, once, after the
+    /// Connect every mirror tab of `session` again, once, after the
     /// session was restored at launch (stage 11 decision 6). Not from
     /// `reconcile`: that runs on every change to the tab list, and a tab the
     /// user has not asked for must not be attached again each time.
     @discardableResult
-    static func reconnectAtLaunch(context: MirrorContext, limpidTTYs: Set<String>? = nil) -> [Task<Void, Never>] {
-        let tabIDs = context.session.tabs.filter { mirrorRef(of: $0) != nil }.map(\.id)
-        return reconnectWithoutAsking(tabIDs, context: context, limpidTTYs: limpidTTYs)
+    static func reconnectAtLaunch(
+        session: WindowSession,
+        store: TmuxConnectionStore,
+        limpidTTYs: Set<String>? = nil
+    ) -> [Task<Void, Never>] {
+        let tabIDs = session.tabs.filter { mirrorRef(of: $0) != nil }.map(\.id)
+        return reconnectWithoutAsking(tabIDs, session: session, store: store, limpidTTYs: limpidTTYs)
     }
 
     /// ⌘⇧T: bring the most recently closed tab back, and connect it again
     /// at once when it is a mirror tab, as a restored one is (stage 11
     /// decision 6). Without a store the tab comes back unconnected.
-    static func reopenClosedTab(_ session: WindowSession, specificID: UUID? = nil, context: MirrorContext?) {
+    static func reopenClosedTab(_ session: WindowSession, specificID: UUID? = nil, store: TmuxConnectionStore?) {
         guard let tabID = TabActions.reopenClosedTab(session, specificID: specificID),
-              let context,
+              let store,
               let tab = session.tab(tabID),
               mirrorRef(of: tab) != nil
         else { return }
-        reconnectWithoutAsking([tabID], context: context)
+        reconnectWithoutAsking([tabID], session: session, store: store)
     }
 
     /// Reconnect `tabIDs` with no dialog (decision 10): nobody asked for
@@ -167,27 +156,14 @@ extension TmuxMirrorActions {
     @discardableResult
     static func reconnectWithoutAsking(
         _ tabIDs: [UUID],
-        context: MirrorContext,
+        session: WindowSession,
+        store: TmuxConnectionStore,
         limpidTTYs: Set<String>? = nil
     ) -> [Task<Void, Never>] {
-        guard let tmuxPath = context.store.tmuxExecutable else { return [] }
-        let gate = otherClientsGateWithoutAsking(
-            tmuxPath: tmuxPath,
-            session: context.session,
-            store: context.store,
-            registry: context.registry,
-            limpidTTYs: limpidTTYs
-        )
+        guard let tmuxPath = store.tmuxExecutable else { return [] }
+        let gate = otherClientsGateWithoutAsking(tmuxPath: tmuxPath, session: session, store: store, limpidTTYs: limpidTTYs)
         return tabIDs.compactMap { tabID in
-            reconnect(
-                tabID: tabID,
-                session: context.session,
-                store: context.store,
-                registry: context.registry,
-                secureInput: context.secureInput,
-                toastCenter: context.toastCenter,
-                otherClients: gate
-            )
+            reconnect(tabID: tabID, session: session, store: store, otherClients: gate)
         }
     }
 
@@ -206,14 +182,12 @@ extension TmuxMirrorActions {
         tmuxPath: String,
         session: WindowSession,
         store: TmuxConnectionStore,
-        registry: any SurfaceViewProviding,
         limpidTTYs: Set<String>? = nil
     ) -> OtherClientsGate {
         otherClientsGate(
             tmuxPath: tmuxPath,
             session: session,
             store: store,
-            registry: registry,
             limpidTTYs: limpidTTYs,
             confirm: { _, _ in .openWithoutDetaching }
         )
@@ -253,10 +227,14 @@ extension TmuxMirrorActions {
     /// Mirror each tab over the session's connection. A tab whose window
     /// another tab already shows again stays disconnected: tmux feeds each
     /// pane to one sink.
-    private static func attachAgain(_ tabIDs: [UUID], binding: TmuxBinding, context: MirrorContext) {
+    private static func attachAgain(
+        _ tabIDs: [UUID],
+        binding: TmuxBinding,
+        session: WindowSession,
+        store: TmuxConnectionStore
+    ) {
         guard !tabIDs.isEmpty else { return }
-        let store = context.store
-        let connection: TmuxServerConnection
+        let connection: TmuxSessionConnection
         do {
             connection = try store.connection(for: binding)
         } catch {
@@ -268,33 +246,23 @@ extension TmuxMirrorActions {
         }
         var started: [TmuxWindowMirror] = []
         for tabID in tabIDs {
-            guard let tab = context.session.tab(tabID), let ref = mirrorRef(of: tab) else { continue }
+            guard let tab = session.tab(tabID), let ref = mirrorRef(of: tab) else { continue }
             if store.liveMirror(showing: ref.windowID, of: binding) != nil {
                 store.setTabConnection(.disconnected, tabID: tabID)
                 continue
             }
-            let mirror = makeMirror(
+            let mirror = store.makeMirror(
                 tabID: tabID,
                 windowID: ref.windowID,
                 names: (binding.sessionName, windowName(of: tab, binding: binding, store: store)),
                 connection: connection,
                 isNewTab: false,
-                context: context
+                session: session
             )
             store.register(mirror)
             mirror.start()
             started.append(mirror)
         }
         store.closeMirrorsOfMissingWindows(started, on: connection)
-    }
-}
-
-extension TmuxMirrorActions.MirrorContext {
-    /// The context of an entry point that may run without tmux support,
-    /// where there is no store; Secure Input goes through the registry's.
-    @MainActor
-    init?(session: WindowSession, store: TmuxConnectionStore?, registry: any SurfaceViewProviding, toastCenter: ToastCenter?) {
-        guard let store else { return nil }
-        self.init(session: session, store: store, registry: registry, secureInput: registry.secureInput, toastCenter: toastCenter)
     }
 }

@@ -12,25 +12,37 @@ struct PaneAreaView: View {
     @Environment(\.tmuxConnectionStore) private var tmuxStore
     @Environment(ToastCenter.self) private var toastCenter: ToastCenter?
     let ghosttyApp: GhosttyApp
-    /// The pane area's size, kept as state so a tab that comes on screen
-    /// at the same size as the last one still gets told what it is.
-    @State private var areaSize: CGSize = .zero
+    /// The pane area's last size, kept where the body does not read it: a
+    /// size read in the body rebuilt the whole pane area on every frame of
+    /// a live window resize, for ordinary tabs too. Kept at all so a mirror
+    /// tab that comes on screen at the same size as the last tab is still
+    /// told what it is.
+    @State private var lastAreaSize = AreaSizeBox()
+
+    /// A reference the view holds but never observes.
+    private final class AreaSizeBox {
+        var size: CGSize = .zero
+    }
 
     private var renderableTab: Tab? {
         session.activeTab
     }
 
-    /// What a mirror tab sizes its tmux window from. Keyed by tab as well
-    /// as size: the pane area keeps its view identity across a tab switch,
-    /// so a size that has not changed would otherwise never reach the tab
-    /// that just appeared.
-    private struct MirrorAreaKey: Equatable {
-        let tabID: UUID?
-        let size: CGSize
+    /// The tab on screen when it is a mirror tab, the one tab whose tmux
+    /// window is sized from this area.
+    private var mirrorTabID: UUID? {
+        guard let tab = renderableTab, tab.kind == .tmuxMirror else { return nil }
+        return tab.id
     }
 
-    private var mirrorAreaKey: MirrorAreaKey {
-        MirrorAreaKey(tabID: renderableTab?.kind == .tmuxMirror ? renderableTab?.id : nil, size: areaSize)
+    /// Hand the store the area's size for the mirror tab on screen. The
+    /// store records it whether or not the tab has a mirror yet, so one
+    /// attached later starts from it, and ignores a size it already has
+    /// for the tab; the mirror sends only real changes.
+    private func reportAreaSize() {
+        let size = lastAreaSize.size
+        guard let tabID = mirrorTabID, size != .zero else { return }
+        tmuxStore?.areaSizeChanged(size, tabID: tabID)
     }
 
     /// Pane IDs currently on screen — used by the occlusion onChange to
@@ -97,11 +109,11 @@ struct PaneAreaView: View {
                 {
                     // Zoomed, the leaf touches every edge of the pane area.
                     PaneContainerView(paneID: zoomID, surfaceView: view)
-                } else if let resolved = ResolvedSplitNode.build(renderedRoot(of: tab, root: root), resolveOrCreate: { id in
-                    resolveSurfaceView(id, in: tab)
-                }) {
+                } else {
                     SplitContainerView(
-                        node: resolved,
+                        node: ResolvedSplitNode.build(renderedRoot(of: tab, root: root)) { id in
+                            resolveSurfaceView(id, in: tab)
+                        },
                         isMirrorTab: tab.kind == .tmuxMirror,
                         mirrorGeometry: mirrorGeometry(for: tab),
                         onLeafFocus: { id in
@@ -157,7 +169,7 @@ struct PaneAreaView: View {
                             // A mirror tab only swaps (its capabilities refuse
                             // the edges), and tmux does it.
                             if liveTab.kind == .tmuxMirror {
-                                PaneActions.liveMirror(for: liveTab, in: tmuxStore, toastCenter: toastCenter)?
+                                PaneActions.liveMirrorOrNotify(for: liveTab, in: tmuxStore, toastCenter: toastCenter)?
                                     .swap(source, target)
                                 return
                             }
@@ -257,11 +269,7 @@ struct PaneAreaView: View {
                         }
                     }
                 }
-            }
-            // If `ResolvedSplitNode.build` returned nil every leaf failed
-            // to resolve (only possible mid-close); fall through to the
-            // empty state until the model catches up.
-            else {
+            } else {
                 VStack(spacing: 12) {
                     Text("No active tab")
                         .font(LimpidFont.title)
@@ -283,14 +291,17 @@ struct PaneAreaView: View {
         .onChange(of: renderableTab?.splitTree, initial: true) { _, _ in
             registry.updateOcclusion(visibleIDs: visiblePaneIDs)
         }
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { areaSize = $0 }
-        // A mirror tab sizes its tmux window from the area it has. The
-        // store records the size whether or not the tab has a mirror yet,
-        // so one attached later starts from it; the mirror sends only real
-        // changes.
-        .onChange(of: mirrorAreaKey, initial: true) { _, key in
-            guard let tabID = key.tabID, key.size != .zero else { return }
-            tmuxStore?.areaSizeChanged(key.size, tabID: tabID)
+        // A mirror tab sizes its tmux window from the area it has. The size
+        // goes to the store from here, never through the body.
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+            lastAreaSize.size = size
+            reportAreaSize()
+        }
+        // The pane area keeps its view identity across a tab switch, so a
+        // mirror tab that comes on screen is told the size the area already
+        // has.
+        .onChange(of: mirrorTabID, initial: true) { _, _ in
+            reportAreaSize()
         }
         // Only whether the pane is on screen, never how tall it is: driving
         // this from the height ran an occlusion pass on every frame of a
@@ -491,12 +502,7 @@ struct PaneAreaView: View {
               let layout = mirror.cellLayout,
               let cellSize = mirror.cellSize
         else { return nil }
-        var leafIDs: [String: UUID] = [:]
-        for (paneID, source) in tab.paneSources {
-            if case let .tmux(ref) = source, ref.windowID == mirror.windowID {
-                leafIDs[ref.paneID] = paneID
-            }
-        }
+        let leafIDs = tab.tmuxLeafIDs(inWindow: mirror.windowID)
         let zoomedPane = tab.zoomedLeafID.flatMap { zoomed in
             leafIDs.first { $0.value == zoomed }?.key
         }

@@ -13,9 +13,9 @@ private let log = Logger.limpid("pane.container")
 
 struct PaneContainerView: View {
     let paneID: UUID
-    /// Resolved by `PaneAreaView` before the recursive split walk, so
-    /// the SwiftUI view-tree diff anchors on the AppKit reference, not
-    /// the UUID. See `ResolvedSplitNode` for the rationale.
+    /// Resolved by `PaneAreaView` before `SplitContainerView` places the
+    /// leaves, so the SwiftUI view-tree diff anchors on the AppKit
+    /// reference, not the UUID. See `ResolvedSplitNode` for the rationale.
     let surfaceView: SurfaceView
     /// Padding the layout pinned for this leaf, or `nil` to keep the
     /// config on every side. Only a tmux mirror tab ever pins anything.

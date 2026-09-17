@@ -205,11 +205,12 @@ extension SurfaceView: NSMenuItemValidation {
         case #selector(splitRight(_:)),
              #selector(splitDown(_:)):
             return surface != nil && tabCapabilities?()?.canSplit == true
+        case #selector(clearScreen(_:)):
+            return surface != nil && tabCapabilities?()?.canClearScreen == true
         // Paste stays enabled on every tab; `paste(_:)` picks the route
-        // from `TabCapabilities.pastesThroughTmux`.
+        // from `TabCapabilities.sendsInputThroughTmux`.
         case #selector(paste(_:)),
              #selector(selectAll(_:)),
-             #selector(clearScreen(_:)),
              #selector(scrollToTop(_:)),
              #selector(scrollToBottom(_:)),
              #selector(findInSurface(_:)):

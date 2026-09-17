@@ -73,8 +73,8 @@ private let alt = GHOSTTY_MODS_ALT
 )
 @MainActor
 struct TmuxMirrorInputIntegrationTests {
-    private func connect(_ server: TmuxServerFixture) async throws -> TmuxServerConnection {
-        let connection = try TmuxServerConnection(
+    private func connect(_ server: TmuxServerFixture) async throws -> TmuxSessionConnection {
+        let connection = try TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: server.format("#{session_id}"))
         )
@@ -86,7 +86,7 @@ struct TmuxMirrorInputIntegrationTests {
     /// Send every case through the translator and the connection's batch,
     /// each behind its marker, all in one main-actor turn, then read back
     /// what the pane received for each.
-    private func deliver(_ cases: [[TmuxInput]], to pane: RawPane, over connection: TmuxServerConnection) async -> [Data] {
+    private func deliver(_ cases: [[TmuxInput]], to pane: RawPane, over connection: TmuxSessionConnection) async -> [Data] {
         for (index, inputs) in cases.enumerated() {
             connection.sendInput([.literal(marker(index))] + inputs, pane: pane.paneID)
         }
@@ -317,7 +317,7 @@ struct TmuxMirrorInputIntegrationTests {
             foreground: .init(red: 0x10, green: 0x20, blue: 0x30),
             background: .init(red: 0xFA, green: 0xFB, blue: 0xFC)
         )
-        let connection = try TmuxServerConnection(
+        let connection = try TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: server.format("#{session_id}"))
         )
@@ -392,7 +392,7 @@ private struct PasteHarness {
             t.kind = .tmuxMirror
             t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: String(panes[0])))
         }
-        let store = TmuxConnectionStore(tmuxExecutable: server.executable)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
         let connection = try store.connection(for: binding)
         let mirror = TmuxWindowMirror(
             tabID: tab.id,
@@ -412,7 +412,7 @@ private struct PasteHarness {
         store.register(mirror)
         mirror.start()
         #expect(await waitUntil { connection.state == .attached })
-        mirror.reportGrid(columns: 80, rows: 24)
+        store.reportTestGrid(columns: 80, rows: 24, tabID: tab.id, leafID: leafID)
         #expect(await waitUntil { mirror.cellLayout != nil && session.tab(tab.id)?.splitTree.allLeafIDs().count == paneCommands.count })
         return PasteHarness(server: server, session: session, store: store, mirror: mirror, tabID: tab.id, failures: failures)
     }

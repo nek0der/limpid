@@ -72,7 +72,11 @@ struct TmuxConnectionCardContent {
             return Self(
                 kind: .unreachable,
                 title: "Can't reach the tmux server",
-                message: "Start the server again, then reconnect.",
+                // A server that is not running is treated as gone and its
+                // tabs close, so this card only follows a timeout or a
+                // socket that cannot be opened; starting the server is not
+                // the advice.
+                message: "The server didn't answer, or its socket can't be opened. Reconnect to try again.",
                 actions: closing
             )
         case .serverReplaced:

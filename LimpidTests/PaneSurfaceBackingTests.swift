@@ -28,7 +28,7 @@ struct PaneSurfaceBackingTests {
 
     @Test("an unavailable pane reads its leaf's channel, not a shell")
     func unavailable_withStore_getsLeafChannel() throws {
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
         defer { store.reconcile(tabs: []) }
         let backing = PaneHostRepresentable.surfaceBacking(for: .unavailable, paneID: paneID, tmuxStore: store)
         let channel = try #require(store.channel(paneID: paneID))
@@ -37,7 +37,7 @@ struct PaneSurfaceBackingTests {
 
     @Test("a tmux pane with no live mirror reads its leaf's channel")
     func tmux_withoutMirror_getsLeafChannel() throws {
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
         defer { store.reconcile(tabs: []) }
         let backing = PaneHostRepresentable.surfaceBacking(for: tmuxSource, paneID: paneID, tmuxStore: store)
         let channel = try #require(store.channel(paneID: paneID))

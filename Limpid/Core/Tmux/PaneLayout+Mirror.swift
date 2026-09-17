@@ -4,17 +4,19 @@
 import CoreGraphics
 import Foundation
 
-/// Padding a mirror tab keeps on the edges of its pane area, in points.
-/// The same numbers are pinned on each outer leaf (`PaddingOverride`), so
-/// a surface sized by this producer draws exactly the grid tmux gave it.
+/// Padding a mirror tab keeps on the edges of its pane area, in whole
+/// points. `pinned` is the one value both sides read: this producer lays
+/// the panes out and sizes the window with it, and each outer leaf pins it
+/// on its surface (`PaddingOverride.forEdges`), so a surface sized here
+/// draws exactly the grid tmux gave it.
 struct OuterPadding: Equatable {
-    let horizontal: CGFloat
-    let vertical: CGFloat
+    let horizontal: Int
+    let vertical: Int
 
-    /// What Limpid writes into the generated config.
+    /// Limpid's own padding, the one it writes into the generated config.
     static let pinned = OuterPadding(
-        horizontal: CGFloat(GhosttyConfigBridge.windowPaddingX),
-        vertical: CGFloat(GhosttyConfigBridge.windowPaddingY)
+        horizontal: GhosttyConfigBridge.windowPaddingX,
+        vertical: GhosttyConfigBridge.windowPaddingY
     )
 }
 
@@ -113,8 +115,8 @@ extension PaneLayout {
         padding: OuterPadding
     ) -> (columns: Int, rows: Int) {
         guard cellSize.width > 0, cellSize.height > 0 else { return (0, 0) }
-        let width = areaSize.width - 2 * padding.horizontal
-        let height = areaSize.height - 2 * padding.vertical
+        let width = areaSize.width - 2 * CGFloat(padding.horizontal)
+        let height = areaSize.height - 2 * CGFloat(padding.vertical)
         return (
             max(0, Int((width / cellSize.width).rounded(.down))),
             max(0, Int((height / cellSize.height).rounded(.down)))
@@ -164,12 +166,20 @@ private struct MirrorBuilder {
 
     // MARK: - Cells to points
 
+    private var paddingX: CGFloat {
+        CGFloat(padding.horizontal)
+    }
+
+    private var paddingY: CGFloat {
+        CGFloat(padding.vertical)
+    }
+
     private func gridX(_ column: Int) -> CGFloat {
-        padding.horizontal + CGFloat(column) * CGFloat(cellSize.width)
+        paddingX + CGFloat(column) * CGFloat(cellSize.width)
     }
 
     private func gridY(_ row: Int) -> CGFloat {
-        padding.vertical + CGFloat(row) * CGFloat(cellSize.height)
+        paddingY + CGFloat(row) * CGFloat(cellSize.height)
     }
 
     /// A cell rectangle in points, extended over the outer padding on
@@ -177,9 +187,9 @@ private struct MirrorBuilder {
     private func points(of rect: TmuxCellRect) -> CGRect {
         let edges = edges(of: rect)
         let minX = edges.contains(.left) ? 0 : gridX(rect.x)
-        let maxX = edges.contains(.right) ? gridX(rect.x + rect.width) + padding.horizontal : gridX(rect.x + rect.width)
+        let maxX = edges.contains(.right) ? gridX(rect.x + rect.width) + paddingX : gridX(rect.x + rect.width)
         let minY = edges.contains(.top) ? 0 : gridY(rect.y)
-        let maxY = edges.contains(.bottom) ? gridY(rect.y + rect.height) + padding.vertical : gridY(rect.y + rect.height)
+        let maxY = edges.contains(.bottom) ? gridY(rect.y + rect.height) + paddingY : gridY(rect.y + rect.height)
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 

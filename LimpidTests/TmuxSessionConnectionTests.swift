@@ -1,4 +1,4 @@
-// TmuxServerConnectionTests.swift
+// TmuxSessionConnectionTests.swift
 // Limpid — drives a real tmux server on a private socket through the control-mode connection, end to end.
 
 import Darwin
@@ -24,7 +24,7 @@ private final class OverflowCount {
 private final class ReplyRecord {
     var replies: [(lines: [String], isError: Bool)] = []
 
-    func handler() -> TmuxServerConnection.ReplyHandler {
+    func handler() -> TmuxSessionConnection.ReplyHandler {
         { lines, isError in self.replies.append((lines, isError)) }
     }
 }
@@ -35,7 +35,7 @@ private let neverAnswered = "wait-for limpid-tests-never-signaled"
 
 /// The text a pending command is failed with for `state`.
 @MainActor
-private func exitReply(_ state: TmuxServerConnection.State) -> [String]? {
+private func exitReply(_ state: TmuxSessionConnection.State) -> [String]? {
     guard case let .exited(reason) = state else { return nil }
     return [reason ?? "connection closed"]
 }
@@ -47,7 +47,7 @@ private func exitReply(_ state: TmuxServerConnection.State) -> [String]? {
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )
 @MainActor
-struct TmuxServerConnectionTests {
+struct TmuxSessionConnectionTests {
     @Test("attaching closes the attach block, then a command gets exactly its own reply")
     func attach_answersCommandsInOrder() async throws {
         let server = try TmuxServerFixture.launch()
@@ -55,7 +55,7 @@ struct TmuxServerConnectionTests {
         let paneID = try server.format("#{pane_id}")
         let sessionID = try server.format("#{session_id}")
 
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: sessionID)
         )
@@ -103,7 +103,7 @@ struct TmuxServerConnectionTests {
             (server.run(["capture-pane", "-p", "-t", paneID]) ?? "").contains("\nafter")
         })
 
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: sessionID)
         )
@@ -134,7 +134,7 @@ struct TmuxServerConnectionTests {
         server.run(["set-hook", "-g", "after-split-window", "display-message -p hooked"])
         let sessionID = try server.format("#{session_id}")
 
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: sessionID)
         )
@@ -161,7 +161,7 @@ struct TmuxServerConnectionTests {
         let server = try TmuxServerFixture.launch()
         defer { server.tearDown() }
 
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: "$99")
         )
@@ -187,7 +187,7 @@ struct TmuxServerConnectionTests {
         let bogus = server.directory.appendingPathComponent("not-a-socket")
         FileManager.default.createFile(atPath: bogus.path, contents: Data())
 
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: bogus.path, sessionID: "$0")
         )
@@ -208,7 +208,7 @@ struct TmuxServerConnectionTests {
         let windowID = try server.format("#{window_id}")
         let sessionID = try server.format("#{session_id}")
 
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: sessionID)
         )
@@ -233,7 +233,7 @@ struct TmuxServerConnectionTests {
         let paneID = try server.format("#{pane_id}")
         let sessionID = try server.format("#{session_id}")
 
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: sessionID)
         )
@@ -269,7 +269,7 @@ struct TmuxServerConnectionTests {
         let line = String(repeating: "x", count: 100) + "\n"
         try String(repeating: line, count: 4000).write(to: payload, atomically: true, encoding: .utf8)
 
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: sessionID)
         )
@@ -298,7 +298,7 @@ struct TmuxServerConnectionTests {
         defer { server.tearDown() }
         let sessionID = try server.format("#{session_id}")
 
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: sessionID)
         )
@@ -320,7 +320,7 @@ struct TmuxServerConnectionTests {
 
     @Test("a client that cannot be spawned throws and fails the commands sent before start once")
     func failedSpawn_endsTheConnection() async throws {
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: "/nonexistent/limpid-tests/tmux",
             target: .init(socketPath: "/nonexistent/limpid-tests/socket", sessionID: "$0")
         )
@@ -342,7 +342,7 @@ struct TmuxServerConnectionTests {
         defer { server.tearDown() }
         let sessionID = try server.format("#{session_id}")
 
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: sessionID)
         )
@@ -364,7 +364,7 @@ struct TmuxServerConnectionTests {
         let sessionID = try server.format("#{session_id}")
         let serverPID = try #require(pid_t(server.format("#{pid}")))
 
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: server.executable,
             target: .init(socketPath: server.socketPath, sessionID: sessionID)
         )

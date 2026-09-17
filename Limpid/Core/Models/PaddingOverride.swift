@@ -27,17 +27,17 @@ struct PaddingOverride: Equatable {
     /// the config, because the mirror lays panes out as `cells × cell size
     /// + padding` and reports the window grid as `(area − padding) / cell
     /// size`: both need the number, and libghostty cannot hand the
-    /// configured padding back. Ordinary tabs keep the config everywhere,
-    /// so they pin nothing and their surfaces are never touched.
+    /// configured padding back. Both read `OuterPadding.pinned`, so the two
+    /// cannot drift apart. Ordinary tabs keep the config everywhere, so they
+    /// pin nothing and their surfaces are never touched.
     static func forEdges(_ edges: PaneEdges, isMirror: Bool) -> PaddingOverride? {
         guard isMirror else { return nil }
-        let horizontal = GhosttyConfigBridge.windowPaddingX
-        let vertical = GhosttyConfigBridge.windowPaddingY
+        let padding = OuterPadding.pinned
         return PaddingOverride(
-            top: edges.contains(.top) ? vertical : 0,
-            bottom: edges.contains(.bottom) ? vertical : 0,
-            left: edges.contains(.left) ? horizontal : 0,
-            right: edges.contains(.right) ? horizontal : 0
+            top: edges.contains(.top) ? padding.vertical : 0,
+            bottom: edges.contains(.bottom) ? padding.vertical : 0,
+            left: edges.contains(.left) ? padding.horizontal : 0,
+            right: edges.contains(.right) ? padding.horizontal : 0
         )
     }
 

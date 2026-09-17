@@ -43,7 +43,7 @@ struct TmuxPaneChannelIntegrationTests {
             t.kind = .tmuxMirror
             t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: paneID))
         }
-        let store = TmuxConnectionStore(tmuxExecutable: server.executable)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
         store.reconcile(tabs: session.tabs)
         let channel = try #require(store.channel(paneID: leafID))
 
@@ -64,7 +64,7 @@ struct TmuxPaneChannelIntegrationTests {
         store.register(mirror)
         mirror.start()
         #expect(await waitUntil { connection.state == .attached })
-        mirror.reportGrid(columns: 80, rows: 24)
+        store.reportTestGrid(columns: 80, rows: 24, tabID: tab.id, leafID: leafID)
         #expect(await waitUntil { mirror.cellLayout != nil })
         return Harness(server: server, store: store, mirror: mirror, leafID: leafID, channel: channel)
     }
@@ -178,7 +178,7 @@ struct TmuxPaneChannelIntegrationTests {
             t.kind = .tmuxMirror
             t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: paneID))
         }
-        let store = TmuxConnectionStore(tmuxExecutable: server.executable)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
         store.reconcile(tabs: session.tabs)
         let channel = try #require(store.channel(paneID: leafID))
         return DormantLeaf(

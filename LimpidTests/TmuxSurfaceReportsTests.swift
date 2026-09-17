@@ -30,7 +30,7 @@ struct TmuxSurfaceReportsTests {
             t.kind = .tmuxMirror
             t.paneSources[leafID] = .tmux(Self.ref)
         }
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
         store.reconcile(tabs: session.tabs)
         _ = try #require(store.channel(paneID: leafID))
         return MirrorTab(session: session, store: store, tabID: tab.id, leafID: leafID)
@@ -59,7 +59,7 @@ struct TmuxSurfaceReportsTests {
     @Test("a local pane's reports are not recorded")
     func localPane_isNotRecorded() {
         let (session, _, leafID) = WindowSessionFixture.withLooseTab()
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
         defer { store.reconcile(tabs: []) }
         store.reconcile(tabs: session.tabs)
 
@@ -100,7 +100,7 @@ struct TmuxSurfaceReportsTests {
         let fixture = try makeMirrorTab()
         let (session, store, tabID, leafID) = (fixture.session, fixture.store, fixture.tabID, fixture.leafID)
         defer { store.reconcile(tabs: []) }
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: "/usr/bin/false",
             target: .init(socketPath: Self.binding.socketPath, sessionID: Self.binding.sessionID)
         )

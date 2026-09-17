@@ -18,7 +18,6 @@ struct TmuxConnectionBanner: View {
     let tabID: UUID
     @Environment(WindowSession.self) private var session
     @Environment(AttentionState.self) private var attention
-    @Environment(ToastCenter.self) private var toastCenter: ToastCenter?
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.tmuxConnectionStore) private var tmuxStore
     @Environment(\.agentProjection) private var agentProjection
@@ -62,13 +61,8 @@ struct TmuxConnectionBanner: View {
     private func perform(_ action: TmuxConnectionCardContent.Action) {
         switch action {
         case .reconnect:
-            guard let context = TmuxMirrorActions.MirrorContext(
-                session: session,
-                store: tmuxStore,
-                registry: registry,
-                toastCenter: toastCenter
-            ) else { return }
-            TmuxMirrorActions.reconnectAsked(tabID: tabID, context: context)
+            guard let tmuxStore else { return }
+            TmuxMirrorActions.reconnectAsked(tabID: tabID, session: session, store: tmuxStore)
         case .closeTab:
             TabActions.closeTab(
                 session,

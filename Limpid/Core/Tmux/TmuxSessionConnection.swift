@@ -1,4 +1,4 @@
-// TmuxServerConnection.swift
+// TmuxSessionConnection.swift
 // Limpid — one `tmux -C attach` client per tmux session: the process, its replies, and the panes it feeds.
 
 import Foundation
@@ -18,7 +18,7 @@ private let log = Logger.limpid("tmux.connection")
 /// queue, and only the attach result, notifications, and main-delivered
 /// replies are hopped here, in order.
 @MainActor
-final class TmuxServerConnection {
+final class TmuxSessionConnection {
     struct Target: Equatable {
         /// Absolute socket path (`-S`). Addressed by path rather than `-L`
         /// because a server started with `-S` is only reachable this way.
@@ -159,7 +159,7 @@ final class TmuxServerConnection {
     /// that isolation and trap there (see `TmuxPaneSink`).
     private nonisolated static func terminationHandler(
         errorOutput: FileHandle,
-        connection: TmuxServerConnection
+        connection: TmuxSessionConnection
     ) -> @Sendable (Process) -> Void {
         { [weak connection] process in
             // The child is gone, so its end of the pipe is closed and this

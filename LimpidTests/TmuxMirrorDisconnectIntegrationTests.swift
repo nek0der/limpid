@@ -46,14 +46,18 @@ private final class DisconnectHarness {
     let server: TmuxServerFixture
     let session = WindowSession()
     let store: TmuxConnectionStore
-    let registry = RecordingSurfaceRegistry()
-    let secureInput = RecordingSecureInput()
+    let registry: RecordingSurfaceRegistry
+    let secureInput: RecordingSecureInput
 
     init() throws {
         server = try TmuxServerFixture.launch()
+        let registry = RecordingSurfaceRegistry()
+        let secureInput = RecordingSecureInput()
+        self.registry = registry
+        self.secureInput = secureInput
         // Whatever the session check answers, the tabs are not closed by
         // it: a detached client leaves the session running.
-        store = TmuxConnectionStore(tmuxExecutable: server.executable) { _, _, _ in .exists }
+        store = TmuxConnectionStore(registry: registry, secureInput: secureInput, tmuxExecutable: server.executable) { _, _, _ in .exists }
         session.onTabsChanged = { [weak session, store] in
             guard let session else { return }
             store.reconcile(tabs: session.tabs)
@@ -76,11 +80,11 @@ private final class DisconnectHarness {
             activePaneID: server.paneID(inWindow: window),
             serverVersion: TmuxProtocol.parseVersion(server.format("#{version}", target: window))
         )
-        #expect(TmuxMirrorActions.open(target, session: session, store: store, registry: registry, secureInput: secureInput))
+        #expect(TmuxMirrorActions.open(target, session: session, store: store))
         let mirror = try #require(store.liveMirror(showing: window, of: binding))
         let leaf = try #require(session.tab(mirror.tabID)?.splitTree.allLeafIDs().first)
         #expect(await waitUntil { mirror.connection.state == .attached })
-        mirror.reportGrid(columns: 80, rows: 24)
+        store.reportTestGrid(columns: 80, rows: 24, tabID: mirror.tabID, leafID: leaf)
         #expect(await waitUntil { mirror.cellLayout != nil })
         store.mirrorGridResized(columns: 80, rows: 24, paneID: leaf)
         return (mirror, leaf)

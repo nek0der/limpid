@@ -181,7 +181,7 @@ final class AppState {
             let t = settingsStore.settings.terminal
             return (t.quickTabCwdMode, t.quickTabCwdPath)
         }
-        let tmuxStore = TmuxConnectionStore()
+        let tmuxStore = TmuxConnectionStore(registry: registry, secureInput: registry.secureInputManager)
         self.tmuxStore = tmuxStore
         // Liveness of a control client is derived from the tab list, so
         // closing a mirror tab is what releases its connection.
@@ -335,18 +335,7 @@ final class AppState {
         // Once per launch, after the restore above and after libghostty has
         // announced the colors a new control client takes. The tabs' notices
         // reach `toastCenter`, wired above, whenever the server answers.
-        TmuxMirrorActions.reconnectAtLaunch(context: tmuxMirrorContext)
-    }
-
-    /// What a mirror tab of this window is connected with.
-    var tmuxMirrorContext: TmuxMirrorActions.MirrorContext {
-        TmuxMirrorActions.MirrorContext(
-            session: session,
-            store: tmuxStore,
-            registry: registry,
-            secureInput: registry.secureInputManager,
-            toastCenter: toastCenter
-        )
+        TmuxMirrorActions.reconnectAtLaunch(session: session, store: tmuxStore)
     }
 
     private func configureTurnReview() {
@@ -705,7 +694,7 @@ struct LimpidApp: App {
                 .limpidShortcut(.renameTab, in: state.settingsStore)
                 .disabled(state.session.activeTab == nil)
                 Button {
-                    TmuxMirrorActions.reopenClosedTab(state.session, context: state.tmuxMirrorContext)
+                    TmuxMirrorActions.reopenClosedTab(state.session, store: state.tmuxStore)
                 } label: {
                     Label("Reopen Closed Tab", systemImage: "arrow.uturn.backward.square")
                 }
@@ -913,8 +902,7 @@ struct ContentView: View {
                 toastCenter: state.toastCenter,
                 minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
                 agentProjection: state.agentProjection,
-                tmuxStore: state.tmuxStore,
-                secureInput: state.registry.secureInputManager
+                tmuxStore: state.tmuxStore
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: .limpidToggleNotificationHistory)) { _ in

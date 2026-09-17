@@ -32,24 +32,26 @@ struct PaneLayoutMirrorTests {
     /// padding on the edges the leaf carries, then divide by the cell.
     private func cells(of leaf: PaneLayout.Leaf) -> TmuxCellRect {
         var rect = leaf.rect
+        let padX = CGFloat(padding.horizontal)
+        let padY = CGFloat(padding.vertical)
         if leaf.edges.contains(.left) {
-            rect.origin.x += padding.horizontal
-            rect.size.width -= padding.horizontal
+            rect.origin.x += padX
+            rect.size.width -= padX
         }
         if leaf.edges.contains(.right) {
-            rect.size.width -= padding.horizontal
+            rect.size.width -= padX
         }
         if leaf.edges.contains(.top) {
-            rect.origin.y += padding.vertical
-            rect.size.height -= padding.vertical
+            rect.origin.y += padY
+            rect.size.height -= padY
         }
         if leaf.edges.contains(.bottom) {
-            rect.size.height -= padding.vertical
+            rect.size.height -= padY
         }
         let width = rect.width / cell.width
         let height = rect.height / cell.height
-        let x = (rect.minX - padding.horizontal) / cell.width
-        let y = (rect.minY - padding.vertical) / cell.height
+        let x = (rect.minX - padX) / cell.width
+        let y = (rect.minY - padY) / cell.height
         #expect(width == width.rounded(), "width \(rect.width) is not whole cells")
         #expect(height == height.rounded(), "height \(rect.height) is not whole cells")
         return TmuxCellRect(width: Int(width.rounded()), height: Int(height.rounded()), x: Int(x.rounded()), y: Int(y.rounded()))

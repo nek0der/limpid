@@ -34,7 +34,6 @@ private struct TerminalColumnEmptyState: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AttentionState.self) private var attention
     @Environment(ReviewPresentation.self) private var reviewPresentation
-    @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.frecencyStore) private var frecencyStore
     @Environment(\.tmuxConnectionStore) private var tmuxStore
@@ -63,15 +62,7 @@ private struct TerminalColumnEmptyState: View {
                 action: .reopenClosedTab,
                 isEnabled: !session.closedTabStack.isEmpty
             ) {
-                TmuxMirrorActions.reopenClosedTab(
-                    session,
-                    context: TmuxMirrorActions.MirrorContext(
-                        session: session,
-                        store: tmuxStore,
-                        registry: registry,
-                        toastCenter: toastCenter
-                    )
-                )
+                TmuxMirrorActions.reopenClosedTab(session, store: tmuxStore)
             },
             WelcomeCommand(title: "Command Palette", action: .commandPalette, isEnabled: true) {
                 guard let frecencyStore else { return }

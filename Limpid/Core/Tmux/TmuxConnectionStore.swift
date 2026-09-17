@@ -7,7 +7,7 @@ import OSLog
 
 private let log = Logger.limpid("tmux.store")
 
-/// Owns every `TmuxServerConnection` and every `TmuxWindowMirror`. A
+/// Owns every `TmuxSessionConnection` and every `TmuxWindowMirror`. A
 /// connection stays open exactly as long as some tab mirrors through it:
 /// liveness is derived from the tabs on each `reconcile`, never counted by
 /// hand, because counts leak.
@@ -44,7 +44,7 @@ final class TmuxConnectionStore {
     /// installed where a GUI app can see it.
     let tmuxExecutable: String?
 
-    @ObservationIgnored private(set) var connections: [Key: TmuxServerConnection] = [:]
+    @ObservationIgnored private(set) var connections: [Key: TmuxSessionConnection] = [:]
     private(set) var mirrors: [UUID: TmuxWindowMirror] = [:]
     /// How each mirror tab stands with its server, by tab id. Set when a
     /// mirror is registered and when its connection ends; released on
@@ -78,8 +78,9 @@ final class TmuxConnectionStore {
     /// config libghostty resolved, which is where a light or dark switch
     /// shows up. The first arrives while libghostty starts.
     @ObservationIgnored private(set) var terminalColors: TerminalColors?
-    /// What the user is told when tmux ends a mirrored window or session.
-    /// Set by whoever owns the toast center.
+    /// What the user is told when tmux ends a mirrored window or session,
+    /// or refuses a verb a mirror sent. Set by whoever owns the toast
+    /// center.
     @ObservationIgnored var onNotice: ((String) -> Void)?
 
     typealias SessionPresenceCheck = @Sendable (
@@ -89,10 +90,24 @@ final class TmuxConnectionStore {
     ) async -> TmuxSessionPresence
     @ObservationIgnored private let sessionPresence: SessionPresenceCheck
 
+    /// The surfaces of the window this store serves. Every mirror reaches
+    /// its leaves' views through it, and a tab tmux ends is closed through
+    /// it. Held here rather than passed by each caller, so a new way of
+    /// opening a mirror cannot build one that reaches other surfaces.
+    @ObservationIgnored let registry: any SurfaceViewProviding
+    /// Where every mirror turns Secure Input on for a pane taking a
+    /// password. `nil` only where nothing may change the process-wide
+    /// state, such as a test that does not observe it.
+    @ObservationIgnored private let secureInput: (any TmuxSecureInputSwitching)?
+
     init(
+        registry: any SurfaceViewProviding,
+        secureInput: (any TmuxSecureInputSwitching)?,
         tmuxExecutable: String? = TmuxClientProbe.locateTmux(),
         sessionPresence: @escaping SessionPresenceCheck = TmuxSessionProbe.check
     ) {
+        self.registry = registry
+        self.secureInput = secureInput
         self.tmuxExecutable = tmuxExecutable
         self.sessionPresence = sessionPresence
     }
@@ -134,7 +149,7 @@ final class TmuxConnectionStore {
     /// stopped. The mirrors of tabs that lost it still hold it and its
     /// sinks, and they release them when their tabs close or are
     /// reconnected.
-    func connection(for binding: TmuxBinding) throws -> TmuxServerConnection {
+    func connection(for binding: TmuxBinding) throws -> TmuxSessionConnection {
         let key = Key(binding)
         if let existing = connections[key] {
             guard case .exited = existing.state else { return existing }
@@ -143,7 +158,7 @@ final class TmuxConnectionStore {
             log.notice("replacing ended connection session=\(key.sessionID, privacy: .public)")
         }
         guard let tmuxExecutable else { throw TmuxStoreError.tmuxNotInstalled }
-        let connection = TmuxServerConnection(
+        let connection = TmuxSessionConnection(
             executable: tmuxExecutable,
             target: .init(socketPath: binding.socketPath, sessionID: binding.sessionID)
         )
@@ -180,7 +195,7 @@ final class TmuxConnectionStore {
     func cellSizeChanged(_ size: CellSize, paneID: UUID) {
         guard channels[paneID] != nil else { return }
         surfaceReports.setCellSize(size, paneID: paneID)
-        guard let mirror = mirrors.values.first(where: { $0.shows(paneID: paneID) }) else { return }
+        guard let mirror = mirrors.values.first(where: { $0.contains(paneID: paneID) }) else { return }
         mirror.cellSizeChanged(size, from: paneID)
     }
 
@@ -189,7 +204,7 @@ final class TmuxConnectionStore {
     func mirrorGridResized(columns: Int, rows: Int, paneID: UUID) {
         guard channels[paneID] != nil else { return }
         surfaceReports.setGrid(TmuxWindowMirror.Grid(columns: columns, rows: rows), paneID: paneID)
-        guard let mirror = mirrors.values.first(where: { $0.shows(paneID: paneID) }) else { return }
+        guard let mirror = mirrors.values.first(where: { $0.contains(paneID: paneID) }) else { return }
         mirror.surfaceGridChanged(paneID: paneID)
     }
 
@@ -213,7 +228,7 @@ final class TmuxConnectionStore {
     }
 
     private func sendInput(_ inputs: [TmuxInput], paneID: UUID) {
-        guard !inputs.isEmpty, let mirror = mirrors.values.first(where: { $0.shows(paneID: paneID) }) else { return }
+        guard !inputs.isEmpty, let mirror = mirrors.values.first(where: { $0.contains(paneID: paneID) }) else { return }
         mirror.sendInput(inputs, paneID: paneID)
     }
 
@@ -253,6 +268,43 @@ final class TmuxConnectionStore {
     var ownControlPIDs: Set<pid_t> {
         Set(connections.values.compactMap(\.clientPID))
     }
+
+    // swiftlint:disable function_parameter_count
+    /// A mirror for tab `tabID` of `session`, fed through the leaves'
+    /// channels and started from this store's reports, whether the tab is
+    /// new or had a mirror before. `isNewTab` says which
+    /// (`TmuxWindowMirror.isNewTab`). Not registered yet: the caller does
+    /// that once it has decided the mirror goes ahead.
+    func makeMirror(
+        tabID: UUID,
+        windowID: String,
+        names: (session: String, window: String),
+        connection: TmuxSessionConnection,
+        isNewTab: Bool,
+        session: WindowSession
+    ) -> TmuxWindowMirror {
+        let mirror = TmuxWindowMirror(
+            tabID: tabID,
+            windowID: windowID,
+            sessionName: names.session,
+            windowName: names.window,
+            connection: connection,
+            isNewTab: isNewTab,
+            session: session,
+            registry: registry,
+            secureInput: secureInput,
+            channelForPane: { [weak self] in self?.channel(paneID: $0) },
+            surfaceReports: { [weak self] in self?.surfaceReports ?? TmuxSurfaceReports() }
+        )
+        // tmux refused a verb (`%error`): the picture stays as it was and
+        // the user reads which operation failed (design §12).
+        mirror.onCommandFailed = { [weak self] message in
+            self?.onNotice?(message)
+        }
+        return mirror
+    }
+
+    // swiftlint:enable function_parameter_count
 
     /// Make `mirror` the one behind its tab. A mirror the tab had before,
     /// one that lost its connection, is stopped first: its sinks are
@@ -303,7 +355,7 @@ final class TmuxConnectionStore {
     /// reconnected client answers. The listing runs after the attach, so it
     /// describes the session the mirrors now show. A mirror that has been
     /// replaced or lost its connection meanwhile is left alone.
-    func closeMirrorsOfMissingWindows(_ started: [TmuxWindowMirror], on connection: TmuxServerConnection) {
+    func closeMirrorsOfMissingWindows(_ started: [TmuxWindowMirror], on connection: TmuxSessionConnection) {
         guard !started.isEmpty else { return }
         let target = TmuxProtocol.quote(connection.target.sessionID)
         connection.send("list-windows -t \(target) -F '#{window_id}'") { [weak self] lines, isError in
@@ -415,7 +467,7 @@ final class TmuxConnectionStore {
     /// Mirrors are matched by connection, not by key, so a tab that lost
     /// its connection never reacts to the server that replaced it; a new
     /// server numbers its windows from `@0` again.
-    private func dispatch(_ line: TmuxControlLine, from key: Key, connection: TmuxServerConnection) {
+    private func dispatch(_ line: TmuxControlLine, from key: Key, connection: TmuxSessionConnection) {
         guard connections[key] === connection else { return }
         let onConnection = mirrors.values.filter { $0.connection === connection }
         for mirror in onConnection {
@@ -466,7 +518,7 @@ final class TmuxConnectionStore {
     /// in it. A tab that showed the session before goes through the session
     /// check, as it does after a connection that did attach: a refusal
     /// alone does not say the session is gone.
-    private func connectionEnded(_ connection: TmuxServerConnection) {
+    private func connectionEnded(_ connection: TmuxSessionConnection) {
         let affected = mirrors.values.filter { $0.connection === connection }
         for mirror in affected {
             mirror.connectionEnded()
@@ -491,7 +543,7 @@ final class TmuxConnectionStore {
     /// exists can be mirrored again, and one we could not ask about may
     /// still exist (stage 11 decision 2). Tabs closed or reconnected while
     /// the check ran are left alone.
-    private func sessionChecked(_ presence: TmuxSessionPresence, of checked: [TmuxWindowMirror], connection: TmuxServerConnection) {
+    private func sessionChecked(_ presence: TmuxSessionPresence, of checked: [TmuxWindowMirror], connection: TmuxSessionConnection) {
         let session = connection.target.sessionID
         log.notice("session \(session, privacy: .public) after exit: \(String(describing: presence), privacy: .public)")
         let remaining = checked.filter { mirrors[$0.tabID] === $0 }
@@ -499,11 +551,10 @@ final class TmuxConnectionStore {
         sessionEnded(remaining.map(\.endedTab), sessionName: first.sessionName)
     }
 
-    /// A tab whose tmux session is gone, with what closing it needs.
+    /// A tab whose tmux session is gone, and the window session it is in.
     struct EndedTab {
         let tabID: UUID
         let session: WindowSession
-        let registry: any SurfaceViewProviding
     }
 
     /// What becomes of tabs whose session tmux no longer has, whether a
@@ -518,7 +569,7 @@ final class TmuxConnectionStore {
     func sessionEnded(_ tabs: [EndedTab], sessionName: String) {
         var hasClosed = false
         for ended in tabs where ended.session.tab(ended.tabID) != nil {
-            TabActions.closeTab(ended.session, registry: ended.registry, tabID: ended.tabID, confirm: false, isReopenable: false)
+            TabActions.closeTab(ended.session, registry: registry, tabID: ended.tabID, confirm: false, isReopenable: false)
             hasClosed = true
         }
         guard hasClosed else { return }
@@ -531,7 +582,7 @@ final class TmuxConnectionStore {
     /// would only repeat the refusal. tmux states its reason in the attach
     /// block's `%error`; a client that could not reach the server at all
     /// ends without one.
-    private func attachFailed(_ affected: [TmuxWindowMirror], connection: TmuxServerConnection) {
+    private func attachFailed(_ affected: [TmuxWindowMirror], connection: TmuxSessionConnection) {
         guard let first = affected.first else { return }
         var reason: String?
         if case let .exited(exitReason) = connection.state {

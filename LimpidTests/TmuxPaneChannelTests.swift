@@ -238,7 +238,7 @@ struct TmuxPaneChannelStoreTests {
     @Test("a leaf keeps one channel across calls, and a local leaf's channel is released")
     func channel_isStablePerLeaf() throws {
         let (session, tab, leafID) = WindowSessionFixture.withLooseTab()
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
         defer { store.reconcile(tabs: []) }
         let first = try #require(store.channel(paneID: leafID))
         #expect(store.channel(paneID: leafID) === first)
@@ -260,7 +260,7 @@ struct TmuxPaneChannelStoreTests {
     func reconcile_releasesButAHolderKeepsItOpen() async throws {
         let (session, tab, leafID) = WindowSessionFixture.withLooseTab()
         session.update(tab.id) { $0.paneSources[leafID] = .tmux(Self.ref) }
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
         defer { store.reconcile(tabs: []) }
         // What `SurfaceView.mirrorChannel` holds.
         var held = store.channel(paneID: leafID)
@@ -284,7 +284,7 @@ struct TmuxPaneChannelStoreTests {
     /// these holds only one kind of state, which must still be released.
     @Test("a store holding only a tab's connection state forgets it once the tab is gone")
     func reconcile_onlyTabConnection_isReleased() {
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
         let tabID = UUID()
         store.setTabConnection(.unreachable, tabID: tabID)
 
@@ -295,7 +295,7 @@ struct TmuxPaneChannelStoreTests {
 
     @Test("a store holding only a pane area's report forgets it once the tab is gone")
     func reconcile_onlyAreaReport_isReleased() {
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
         store.areaSizeChanged(CGSize(width: 640, height: 400), tabID: UUID())
 
         store.reconcile(tabs: [])
@@ -307,7 +307,7 @@ struct TmuxPaneChannelStoreTests {
     func reconcile_emptyStore_staysEmpty() {
         let (session, tab, leafID) = WindowSessionFixture.withLooseTab()
         session.update(tab.id) { $0.paneSources[leafID] = .tmux(Self.ref) }
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
 
         store.reconcile(tabs: session.tabs)
 
@@ -328,7 +328,7 @@ struct TmuxPaneChannelStoreTests {
     func surfaceOutput_withoutMirror_isDropped() async throws {
         let (session, tab, leafID) = WindowSessionFixture.withLooseTab()
         session.update(tab.id) { $0.paneSources[leafID] = .unavailable }
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
         defer { store.reconcile(tabs: []) }
         let channel = try #require(store.channel(paneID: leafID))
 

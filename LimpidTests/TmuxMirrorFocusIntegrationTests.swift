@@ -16,7 +16,7 @@ private final class FocusHarness {
     let server: TmuxServerFixture
     let session = WindowSession()
     let store: TmuxConnectionStore
-    let registry = RecordingSurfaceRegistry()
+    let registry: RecordingSurfaceRegistry
     let windowID: String
     /// Left to right. Each pane is split from the one before it, so the
     /// last is active and the one before it was active last.
@@ -26,7 +26,13 @@ private final class FocusHarness {
     init(paneCount: Int = 2) throws {
         server = try TmuxServerFixture.launch()
         commandLog = server.directory.appendingPathComponent("commands")
-        store = try TmuxConnectionStore(tmuxExecutable: Self.recordingTmux(server: server, log: commandLog))
+        let registry = RecordingSurfaceRegistry()
+        self.registry = registry
+        store = try TmuxConnectionStore(
+            registry: registry,
+            secureInput: nil,
+            tmuxExecutable: Self.recordingTmux(server: server, log: commandLog)
+        )
         windowID = try #require(server.windowIDs().first)
         var panes = try [server.paneID(inWindow: windowID)]
         for _ in 1..<paneCount {
@@ -77,10 +83,15 @@ private final class FocusHarness {
             activePaneID: activePane,
             serverVersion: TmuxProtocol.parseVersion(server.format("#{version}", target: "t:"))
         )
-        #expect(TmuxMirrorActions.open(target, session: session, store: store, registry: registry, secureInput: nil))
+        #expect(TmuxMirrorActions.open(target, session: session, store: store))
         let mirror = try #require(store.liveMirror(showing: windowID, of: binding))
         #expect(await waitUntil { mirror.connection.state == .attached })
-        mirror.reportGrid(columns: 80, rows: 24)
+        try store.reportTestGrid(
+            columns: 80,
+            rows: 24,
+            tabID: mirror.tabID,
+            leafID: #require(session.tab(mirror.tabID)?.splitTree.allLeafIDs().first)
+        )
         #expect(await waitUntil { self.panes.allSatisfy { self.leaf(of: $0, in: mirror) != nil } })
         return mirror
     }
@@ -242,8 +253,6 @@ struct TmuxMirrorFocusIntegrationTests {
             harness.session,
             paneID: moved,
             store: harness.store,
-            registry: harness.registry,
-            secureInput: nil,
             toastCenter: nil
         )
 

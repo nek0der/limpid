@@ -23,7 +23,7 @@ private final class EndHarness {
     let server: TmuxServerFixture
     let session = WindowSession()
     let store: TmuxConnectionStore
-    let registry = RecordingSurfaceRegistry()
+    let registry: RecordingSurfaceRegistry
     let toastCenter = ToastCenter()
     let presences: PresenceLog
     private(set) var notices: [String] = []
@@ -32,7 +32,13 @@ private final class EndHarness {
         server = try TmuxServerFixture.launch(windows: windows)
         let presences = PresenceLog()
         self.presences = presences
-        store = TmuxConnectionStore(tmuxExecutable: server.executable) { tmuxPath, socketPath, sessionID in
+        let registry = RecordingSurfaceRegistry()
+        self.registry = registry
+        store = TmuxConnectionStore(
+            registry: registry,
+            secureInput: nil,
+            tmuxExecutable: server.executable
+        ) { tmuxPath, socketPath, sessionID in
             let answer = await TmuxSessionProbe.check(tmuxPath: tmuxPath, socketPath: socketPath, sessionID: sessionID)
             await presences.append(answer)
             return answer
@@ -67,10 +73,15 @@ private final class EndHarness {
             activePaneID: server.paneID(inWindow: window),
             serverVersion: TmuxProtocol.parseVersion(server.format("#{version}", target: window))
         )
-        #expect(TmuxMirrorActions.open(target, session: session, store: store, registry: registry, secureInput: nil))
+        #expect(TmuxMirrorActions.open(target, session: session, store: store))
         let mirror = try #require(store.liveMirror(showing: window, of: binding))
         #expect(await waitUntil { mirror.connection.state == .attached })
-        mirror.reportGrid(columns: 80, rows: 24)
+        try store.reportTestGrid(
+            columns: 80,
+            rows: 24,
+            tabID: mirror.tabID,
+            leafID: #require(session.tab(mirror.tabID)?.splitTree.allLeafIDs().first)
+        )
         #expect(await waitUntil { mirror.cellLayout != nil })
         return mirror
     }
@@ -87,7 +98,7 @@ private final class EndHarness {
             serverVersion: TmuxProtocol.parseVersion(server.format("#{version}", target: window))
         )
         let before = Set(session.tabs.map(\.id))
-        #expect(TmuxMirrorActions.open(target, session: session, store: store, registry: registry, secureInput: nil))
+        #expect(TmuxMirrorActions.open(target, session: session, store: store))
         return try #require(session.tabs.map(\.id).first { !before.contains($0) })
     }
 
@@ -385,7 +396,7 @@ struct TmuxMirrorEndIntegrationTests {
     @Test("a client that cannot be started closes the new tab, says so once, and reports the open as failed")
     func unstartableClient_closesTabAndReturnsFalse() {
         let session = WindowSession()
-        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
         session.onTabsChanged = { [weak session, store] in
             guard let session else { return }
             store.reconcile(tabs: session.tabs)
@@ -402,13 +413,7 @@ struct TmuxMirrorEndIntegrationTests {
         )
         let before = session.tabs.map(\.id)
 
-        let isOpened = TmuxMirrorActions.open(
-            target,
-            session: session,
-            store: store,
-            registry: RecordingSurfaceRegistry(),
-            secureInput: nil
-        )
+        let isOpened = TmuxMirrorActions.open(target, session: session, store: store)
 
         #expect(!isOpened)
         #expect(session.tabs.map(\.id) == before)

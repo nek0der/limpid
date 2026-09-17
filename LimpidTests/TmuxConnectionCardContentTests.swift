@@ -90,7 +90,7 @@ struct TmuxConnectionCardContentTests {
         #expect(resolved(disconnected.message, in: "ja") == "セッション「work」は動き続けている可能性があります。")
         let unreachable = try #require(card(.unreachable))
         #expect(resolved(unreachable.title, in: "ja") == "tmux サーバーに接続できません")
-        #expect(resolved(unreachable.message, in: "ja") == "サーバーを起動し直してから再接続してください。")
+        #expect(resolved(unreachable.message, in: "ja") == "サーバーが応答しないか、ソケットを開けません。再接続してもう一度お試しください。")
         let replaced = try #require(card(.serverReplaced))
         #expect(resolved(replaced.title, in: "ja") == "このタブは再接続できません")
         #expect(
