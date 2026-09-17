@@ -4789,6 +4789,38 @@
         }
       }
     },
+    "Scroll Page Down": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll Page Down"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 ページ下へスクロール"
+          }
+        }
+      }
+    },
+    "Scroll Page Up": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll Page Up"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 ページ上へスクロール"
+          }
+        }
+      }
+    },
     "Scroll to Bottom": {
       "localizations": {
         "en": {

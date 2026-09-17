@@ -276,6 +276,24 @@ struct GhosttyConfigBridgeTests {
         #expect(!config.contains("keybind = super+down=ignore"))
     }
 
+    @Test("viewport scroll shortcuts re-emit libghostty's macOS defaults that `keybind = clear` removes")
+    func makeConfig_scrollShortcuts_emitDefaultTriggers() {
+        let config = generate(.default)
+        #expect(config.contains("keybind = super+home=scroll_to_top"))
+        #expect(config.contains("keybind = super+end=scroll_to_bottom"))
+        #expect(config.contains("keybind = super+page_up=scroll_page_up"))
+        #expect(config.contains("keybind = super+page_down=scroll_page_down"))
+    }
+
+    @Test("a remapped scroll shortcut moves the keybind line and leaves no default trigger behind")
+    func makeConfig_scrollShortcuts_followUserOverride() {
+        var settings = LimpidSettings.default
+        settings.keyboard.setOverride(.init(key: "up", modifiers: [.command, .shift]), for: .scrollPageUp)
+        let config = generate(settings)
+        #expect(config.contains("keybind = super+shift+up=scroll_page_up"))
+        #expect(!config.contains("keybind = super+page_up="))
+    }
+
     @Test("font-size shortcuts are menu-owned: their trigger emits ignore and the binding action never reaches the keybind table")
     func makeConfig_fontSizeShortcuts_emitIgnore() throws {
         let settings = LimpidSettings.default

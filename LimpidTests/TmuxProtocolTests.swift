@@ -52,6 +52,27 @@ struct TmuxProtocolTests {
         #expect(layouts.last == "7f4b,100x30,0,0{33x30,0,0,0,66x30,34,0,1}")
     }
 
+    @Test("a layout fetch reply reads as the %layout-change it restates, flags included or empty")
+    func layoutFetchReply_readsAsLayoutChange() {
+        let zoomed = "6b8b,100x30,0,0{50x30,0,0,0,49x30,51,0,1} a87e,100x30,0,0,1 *Z"
+        #expect(TmuxProtocol.layoutChange(window: "@0", reply: zoomed) == .layoutChange(
+            window: "@0",
+            layout: "6b8b,100x30,0,0{50x30,0,0,0,49x30,51,0,1}",
+            visibleLayout: "a87e,100x30,0,0,1",
+            flags: "*Z"
+        ))
+        // A window with no flags ends the reply with a space, as tmux 3.7c
+        // prints it; the empty field is not a flags value.
+        #expect(TmuxProtocol.layoutChange(window: "@1", reply: "a87f,100x30,0,0,2 a87f,100x30,0,0,2 ") == .layoutChange(
+            window: "@1",
+            layout: "a87f,100x30,0,0,2",
+            visibleLayout: "a87f,100x30,0,0,2",
+            flags: nil
+        ))
+        #expect(TmuxProtocol.layoutChange(window: "@1", reply: "") == nil)
+        #expect(TmuxProtocol.layoutFormat == "#{window_layout} #{window_visible_layout} #{window_flags}")
+    }
+
     @Test("%output unescapes \\ooo for control bytes and for the backslash itself, and nothing else")
     func sessionBasic_outputBytesAreUnescaped() throws {
         let lines = try recordedLines("session-basic").map { TmuxProtocol.parseLine($0[...]) }

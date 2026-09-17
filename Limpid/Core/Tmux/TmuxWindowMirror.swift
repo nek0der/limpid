@@ -201,10 +201,11 @@ final class TmuxWindowMirror {
         reportGrid(columns: grid.columns, rows: grid.rows)
     }
 
-    /// Tell tmux the window's size. The first report also asks for the
-    /// layout outright: tmux only announces `%layout-change` when something
-    /// changed, and a window that already had this size would otherwise
-    /// never show its other panes.
+    /// Tell tmux the window's size. Until a layout has arrived, the report
+    /// also asks for the layout outright: tmux 3.7c announces
+    /// `%layout-change` after every `refresh-client -C`, but we do not rely
+    /// on a server doing so for a window that already had this size, which
+    /// would otherwise never show its other panes.
     func reportGrid(columns: Int, rows: Int) {
         guard !isStopped, columns > 0, rows > 0 else { return }
         log.debug("refresh-client -C \(self.windowID, privacy: .public):\(columns, privacy: .public)x\(rows, privacy: .public)")
@@ -214,11 +215,20 @@ final class TmuxWindowMirror {
         }
     }
 
+    /// The fetched reply carries the same fields as `%layout-change` and
+    /// goes through `handle`, because the announcement for the same report
+    /// usually arrives first: a reply applied without the visible layout
+    /// and flags would give a zoomed pane its unzoomed cell again, a grid
+    /// its whole-window surface never reports, and leave it paused.
     private func fetchLayout() {
         let target = TmuxProtocol.quote(windowID)
-        connection.send("display-message -p -t \(target) '#{window_layout}'") { [weak self] lines, isError in
+        connection.send("display-message -p -t \(target) '\(TmuxProtocol.layoutFormat)'") { [weak self] lines, isError in
             guard let self, !isError, let text = lines.first else { return }
-            self.applyLayout(text, visibleLayout: nil)
+            guard let line = TmuxProtocol.layoutChange(window: self.windowID, reply: text) else {
+                log.error("unparseable layout reply for \(self.windowID, privacy: .public)")
+                return
+            }
+            self.handle(line)
         }
     }
 

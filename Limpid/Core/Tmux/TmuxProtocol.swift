@@ -144,6 +144,17 @@ enum TmuxProtocol {
         }
     }
 
+    /// The `display-message` format whose reply reads like the arguments of
+    /// `%layout-change` after the window id: tmux prints `#{window_flags}`
+    /// in the same form (`*Z`, or nothing) as that line's last field.
+    static let layoutFormat = "#{window_layout} #{window_visible_layout} #{window_flags}"
+
+    /// A reply to `layoutFormat` for `window`, read as the `%layout-change`
+    /// it restates so a fetched layout and an announced one take one path.
+    static func layoutChange(window: String, reply: String) -> TmuxControlLine? {
+        parseLayoutChange([window] + reply.split(separator: " ").map(String.init))
+    }
+
     /// `%layout-change @window layout [visible-layout [flags]]`; the last two
     /// arrived with tmux 2.9, so a 3.3 server always sends them, but we do
     /// not depend on it.

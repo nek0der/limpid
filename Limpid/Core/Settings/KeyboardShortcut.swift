@@ -115,6 +115,10 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     // Terminal (libghostty)
     case nextPrompt
     case previousPrompt
+    case scrollToTop
+    case scrollToBottom
+    case scrollPageUp
+    case scrollPageDown
 
     // Font (libghostty)
     case increaseFontSize
@@ -146,7 +150,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .splitRight, .splitDown, .equalizeSplits, .toggleSplitZoom,
              .focusPaneLeft, .focusPaneRight, .focusPaneUp, .focusPaneDown: .splits
         case .find, .findNext, .findPrevious: .search
-        case .nextPrompt, .previousPrompt: .terminal
+        case .nextPrompt, .previousPrompt,
+             .scrollToTop, .scrollToBottom, .scrollPageUp, .scrollPageDown: .terminal
         case .increaseFontSize, .decreaseFontSize, .resetFontSize: .font
         case .commandPalette, .quickOpen: .view
         }
@@ -166,6 +171,10 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .nextPrompt: "jump_to_prompt:1"
         case .previousPrompt: "jump_to_prompt:-1"
+        case .scrollToTop: "scroll_to_top"
+        case .scrollToBottom: "scroll_to_bottom"
+        case .scrollPageUp: "scroll_page_up"
+        case .scrollPageDown: "scroll_page_down"
         case .increaseFontSize: "increase_font_size:1"
         case .decreaseFontSize: "decrease_font_size:1"
         case .resetFontSize: "reset_font_size"
@@ -192,10 +201,12 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// libghostty → `GhosttyActionRouter`), producing two splits per ⌘D.
     /// `GhosttyConfigBridge` emits `=ignore` for the others so a disabled
     /// menu item never lets the raw character reach the shell. Only the
-    /// prompt-jump pair has no menu item and stays on the libghostty path.
+    /// terminal actions (prompt jumps and viewport scrolling) have no menu
+    /// item and stay on the libghostty path.
     var isHandledByLibghosttyKeybind: Bool {
         switch self {
-        case .nextPrompt, .previousPrompt: true
+        case .nextPrompt, .previousPrompt,
+             .scrollToTop, .scrollToBottom, .scrollPageUp, .scrollPageDown: true
         default: false
         }
     }
@@ -235,6 +246,10 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .findPrevious: "Find Previous"
         case .nextPrompt: "Next Prompt"
         case .previousPrompt: "Previous Prompt"
+        case .scrollToTop: "Scroll to Top"
+        case .scrollToBottom: "Scroll to Bottom"
+        case .scrollPageUp: "Scroll Page Up"
+        case .scrollPageDown: "Scroll Page Down"
         case .increaseFontSize: "Increase Font Size"
         case .decreaseFontSize: "Decrease Font Size"
         case .resetFontSize: "Reset Font Size"
@@ -280,6 +295,10 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .findPrevious: "chevron.up"
         case .nextPrompt: "arrow.down.to.line"
         case .previousPrompt: "arrow.up.to.line"
+        case .scrollToTop: "arrow.up.to.line.compact"
+        case .scrollToBottom: "arrow.down.to.line.compact"
+        case .scrollPageUp: "chevron.up.2"
+        case .scrollPageDown: "chevron.down.2"
         case .increaseFontSize: "textformat.size.larger"
         case .decreaseFontSize: "textformat.size.smaller"
         case .resetFontSize: "textformat.size"
@@ -332,6 +351,13 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .findPrevious: .init(key: "g", modifiers: [.command, .shift])
         case .nextPrompt: .init(key: "down", modifiers: [.command])
         case .previousPrompt: .init(key: "up", modifiers: [.command])
+        // `keybind = clear` drops libghostty's macOS scroll defaults, so we
+        // carry the same triggers here; without them the keystroke reaches
+        // the program as an escape sequence instead of moving the viewport.
+        case .scrollToTop: .init(key: "home", modifiers: [.command])
+        case .scrollToBottom: .init(key: "end", modifiers: [.command])
+        case .scrollPageUp: .init(key: "page_up", modifiers: [.command])
+        case .scrollPageDown: .init(key: "page_down", modifiers: [.command])
         // ⌘+ is the cross-app zoom convention — `⇧=` on a US keyboard layout.
         // Stored as `= + [.command, .shift]` because libghostty's
         // matcher hits this binding via the `unshifted_codepoint`

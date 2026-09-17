@@ -21,7 +21,14 @@ private struct MirrorHarness {
 
     /// `paneCommand` is typed into the first pane before the mirror
     /// attaches, so it is already running when the screen is captured.
-    static func make(windows: Int = 1, paneCommand: String? = nil) async throws -> MirrorHarness {
+    /// `prepareWindow` runs against the mirrored window after its first
+    /// pane is known and before the mirror opens, so the tab starts from a
+    /// window tmux already changed.
+    static func make(
+        windows: Int = 1,
+        paneCommand: String? = nil,
+        prepareWindow: ((TmuxServerFixture, _ windowID: String) -> Void)? = nil
+    ) async throws -> MirrorHarness {
         let server = try TmuxServerFixture.launch(windows: windows)
         let sessionID = try server.format("#{session_id}")
         let windowID = try #require(server.windowIDs().first)
@@ -29,6 +36,7 @@ private struct MirrorHarness {
         if let paneCommand {
             server.run(["send-keys", "-t", paneID, paneCommand, "Enter"])
         }
+        prepareWindow?(server, windowID)
         let binding = TmuxBinding(socketPath: server.socketPath, sessionID: sessionID, sessionName: "t")
 
         let session = WindowSession()
@@ -498,6 +506,31 @@ struct TmuxMirrorRebuildIntegrationTests {
         harness.mirror.surfaceGridChanged(columns: split.width, rows: split.height, paneID: first)
         seen = await readUntil(fd: sink.surfaceFd, contains: Self.repaint, timeout: .seconds(5))
         #expect(repaints(in: seen) == 1)
+    }
+
+    /// tmux announces the layout for the first size report before it
+    /// answers the layout fetch, so the fetched reply is the last word on
+    /// the zoomed pane's grid. It must keep the whole window, or the pane
+    /// waits for a grid its surface never reports.
+    @Test("a window zoomed before the mirror opens rebuilds its zoomed pane at the whole window's grid")
+    func zoomedBeforeOpen_rebuildsTheZoomedPane() async throws {
+        let harness = try await MirrorHarness.make { server, windowID in
+            server.run(["split-window", "-h", "-t", windowID, "sh", "-c", "PS1='$ ' exec sh"])
+            server.run(["resize-pane", "-Z", "-t", windowID])
+        }
+        defer { harness.tearDown() }
+        let zoomed = try harness.server.format("#{pane_id}", target: harness.windowID)
+        #expect(await waitUntil { harness.leafCount == 2 })
+        let leaf = try #require(harness.leaf(of: zoomed))
+        #expect(await waitUntil { harness.tab?.zoomedLeafID == leaf })
+        await settle(harness)
+        let sink = try #require(harness.mirror.sink(for: leaf))
+
+        harness.mirror.surfaceGridChanged(columns: 80, rows: 24, paneID: leaf)
+        let seen = await readUntil(fd: sink.surfaceFd, contains: Self.repaint, timeout: .seconds(5))
+        await settle(harness)
+        #expect(repaints(in: seen + available(sink.surfaceFd)) == 1)
+        #expect(harness.tab?.zoomedLeafID == leaf)
     }
 
     @Test("a stale pane tmux closes is let go: its sink is detached and a late grid report is ignored")

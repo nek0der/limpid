@@ -164,11 +164,16 @@ struct KeyboardShortcutTests {
                 .compactMap(\.ghosttyAction)
         )
         let expected: Set = [
-            // Prompt navigation is the only thing libghostty's keybind
-            // table still fires — it has no menu item, so there's no
-            // risk of the menu path also firing.
+            // Prompt navigation and viewport scrolling are the only
+            // things libghostty's keybind table still fires — they have
+            // no menu item, so there's no risk of the menu path also
+            // firing.
             "jump_to_prompt:1",
-            "jump_to_prompt:-1"
+            "jump_to_prompt:-1",
+            "scroll_to_top",
+            "scroll_to_bottom",
+            "scroll_page_up",
+            "scroll_page_down"
         ]
         #expect(keybindOwned == expected, """
         Keybind-owned action set drifted. Letting libghostty bind an \

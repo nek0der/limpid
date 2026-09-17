@@ -315,7 +315,8 @@ enum CommandPaletteCatalog {
         case .nextAttention, .previousAttention: context.hasWaitingAttention
         case .find: context.hasActiveTab
         case .findNext, .findPrevious: context.hasActiveSearch
-        case .nextPrompt, .previousPrompt: context.hasActiveTab
+        case .nextPrompt, .previousPrompt,
+             .scrollToTop, .scrollToBottom, .scrollPageUp, .scrollPageDown: context.hasActiveTab
         case .splitRight, .splitDown: context.hasActiveTab
         case .equalizeSplits: context.isSplit && context.canEqualize
         case .toggleSplitZoom: context.isSplit
