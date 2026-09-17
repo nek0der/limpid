@@ -80,6 +80,9 @@ struct TabActionsTests {
         #expect(revivedLeaf != leafID)
         #expect(revived.paneSources == [revivedLeaf: .tmux(ref)])
 
+        // The model step alone makes no mirror; the app's entry points go
+        // through `TmuxMirrorActions.reopenClosedTab`, which connects the
+        // tab (`TmuxMirrorAutoReconnectIntegrationTests`).
         let store = TmuxConnectionStore(tmuxExecutable: nil)
         defer { store.reconcile(tabs: []) }
         store.reconcile(tabs: session.tabs)

@@ -123,13 +123,18 @@ enum TabActions {
     /// SwiftUI then mounts a new PaneHostView per leaf and the
     /// existing `stageScrollback` path replays each `.vt` above the
     /// fresh shell prompt — the same machinery ⌘Q + restart uses.
-    static func reopenClosedTab(_ session: WindowSession, specificID: UUID? = nil) {
+    ///
+    /// Returns the revived tab's id, or nil when nothing was closed. A
+    /// mirror tab is connected by `TmuxMirrorActions.reopenClosedTab`,
+    /// which the app's entry points call instead.
+    @discardableResult
+    static func reopenClosedTab(_ session: WindowSession, specificID: UUID? = nil) -> UUID? {
         let closed: ClosedTab? = if let specificID {
             session.popClosedTab(id: specificID)
         } else {
             session.popClosedTab()
         }
-        guard let closed else { return }
+        guard let closed else { return nil }
 
         let oldLeafIDs = closed.tab.splitTree.allLeafIDs()
         let idMap: [UUID: UUID] = Dictionary(
@@ -160,8 +165,8 @@ enum TabActions {
         revived.initialCommands = remapKeys(closed.tab.initialCommands, using: idMap)
         // A mirror tab comes back as a mirror: its panes read tmux, never a
         // shell of their own (design §9 D14). The new tab id has no mirror
-        // behind it, so its panes get dormant descriptors until it is
-        // connected again.
+        // behind it yet, so its panes read channels nothing feeds until
+        // `TmuxMirrorActions.reopenClosedTab` connects it.
         revived.paneSources = remapKeys(closed.tab.paneSources, using: idMap)
         // The projection answered which of those hints may resume while the
         // pane was open. The hint file went with the pane, so the next pass
@@ -172,6 +177,7 @@ enum TabActions {
 
         session.tabs.append(revived)
         session.setActiveTab(revived.id)
+        return revived.id
     }
 
     /// Rewrite the keys of a `[UUID: T]` through the given mapping.
@@ -305,7 +311,8 @@ enum TabActions {
                 session: session,
                 registry: registry,
                 attention: attention,
-                trackers: trackers
+                trackers: trackers,
+                mirrors: TmuxMirrorActions.MirrorContext(session: session, store: tmuxStore, registry: registry, toastCenter: toastCenter)
             )
         case .view:
             dispatchViewAction(action, session: session)
@@ -332,19 +339,21 @@ enum TabActions {
 
     // swiftlint:enable function_parameter_count
 
+    // swiftlint:disable:next function_parameter_count
     private static func dispatchFileAction(
         _ action: LimpidShortcutAction,
         session: WindowSession,
         registry: any SurfaceViewProviding,
         attention: AttentionState,
-        trackers: SessionTrackers
+        trackers: SessionTrackers,
+        mirrors: TmuxMirrorActions.MirrorContext?
     ) {
         switch action {
         case .newTab: newTab(session)
         case .newWorktree:
             NotificationCenter.default.post(name: .limpidCreateWorktreeRequested, object: session)
         case .renameTab: renameActiveTab(session)
-        case .reopenClosedTab: reopenClosedTab(session)
+        case .reopenClosedTab: TmuxMirrorActions.reopenClosedTab(session, context: mirrors)
         case .closeSurface:
             PaneActions.closeActivePaneOrTab(
                 session,

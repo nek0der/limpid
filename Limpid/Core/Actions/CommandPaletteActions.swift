@@ -157,7 +157,11 @@ enum CommandPaletteActions {
         case let .activateWorktree(pid, wid):
             session.setActiveContainer(.worktree(projectID: pid, worktreeID: wid))
         case let .reopenClosedTab(tabID):
-            TabActions.reopenClosedTab(session, specificID: tabID)
+            TmuxMirrorActions.reopenClosedTab(
+                session,
+                specificID: tabID,
+                context: TmuxMirrorActions.MirrorContext(session: session, store: tmuxStore, registry: registry, toastCenter: toastCenter)
+            )
         case let .openRecentProject(url):
             session.addOrActivateProject(rootURL: url)
         case .openSettings:

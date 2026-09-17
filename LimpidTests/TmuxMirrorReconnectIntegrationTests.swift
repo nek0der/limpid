@@ -459,3 +459,299 @@ struct TmuxMirrorReconnectIntegrationTests {
         #expect(await waitUntil(.seconds(5)) { harness.secureInput.history(for: tab.leaf) == [true, false, true] })
     }
 }
+
+// MARK: - Automatic reconnect
+
+extension ReconnectHarness {
+    var context: TmuxMirrorActions.MirrorContext {
+        TmuxMirrorActions.MirrorContext(
+            session: session,
+            store: store,
+            registry: registry,
+            secureInput: secureInput,
+            toastCenter: nil
+        )
+    }
+
+    /// Session `name`'s binding, with the server run recorded or, as a
+    /// snapshot from before generations were kept, without it.
+    func binding(session name: String, isRecorded: Bool = true) throws -> TmuxBinding {
+        let generation = isRecorded ? try server.generation() : nil
+        return try TmuxBinding(
+            socketPath: server.socketPath,
+            sessionID: server.format("#{session_id}", target: "\(name):"),
+            sessionName: name,
+            serverPID: generation?.pid,
+            serverStartedAt: generation?.startedAt
+        )
+    }
+
+    func paneRef(window: String, session name: String = "t", isRecorded: Bool = true) throws -> TmuxPaneRef {
+        try TmuxPaneRef(
+            binding: binding(session: name, isRecorded: isRecorded),
+            windowID: window,
+            paneID: server.paneID(inWindow: window)
+        )
+    }
+
+    /// Restore one mirror tab per reference the way a launch does: the tabs
+    /// are written into a snapshot by another window session, read back
+    /// into `session`, and have no mirror. Each comes with a reader of the
+    /// channel its surface takes when it mounts.
+    func restoreTabs(_ refs: [TmuxPaneRef]) throws -> [OpenedTab] {
+        let previous = WindowSession()
+        for ref in refs {
+            let tab = previous.openTab(container: .loose)
+            let leaf = try #require(tab.splitTree.allLeafIDs().first)
+            previous.update(tab.id) { t in
+                t.kind = .tmuxMirror
+                t.paneSources = [leaf: .tmux(ref)]
+            }
+        }
+        let data = try JSONEncoder().encode(previous.makeSnapshot())
+        try session.restore(from: JSONDecoder().decode(SessionSnapshot.self, from: data))
+        return try refs.map { ref in
+            let tab = try #require(session.tabs.first { TmuxMirrorActions.mirrorRef(of: $0) == ref })
+            let leaf = try #require(tab.splitTree.allLeafIDs().first)
+            #expect(store.mirror(for: tab.id) == nil)
+            let reader = try ChannelReader(channel: #require(store.channel(paneID: leaf)))
+            readers.append(reader)
+            return OpenedTab(tabID: tab.id, leaf: leaf, reader: reader)
+        }
+    }
+
+    /// Run the launch's reconnect and wait for everything it started.
+    /// Returns how many reconnects it started.
+    func reconnectAtLaunch(limpidTTYs: Set<String>? = nil) async -> Int {
+        let tasks = TmuxMirrorActions.reconnectAtLaunch(context: context, limpidTTYs: limpidTTYs)
+        for task in tasks {
+            await task.value
+        }
+        return tasks.count
+    }
+
+    /// What a mounted surface and its pane area report, then wait until the
+    /// tab's mirror has laid its window out from them.
+    func reportSurface(of tab: OpenedTab) async throws {
+        store.cellSizeChanged(Self.cellSize, paneID: tab.leaf)
+        store.mirrorGridResized(columns: 80, rows: 24, paneID: tab.leaf)
+        store.areaSizeChanged(Self.areaSize, tabID: tab.tabID)
+        let mirror = try #require(store.mirror(for: tab.tabID))
+        #expect(await waitUntil(.seconds(5)) { mirror.cellLayout != nil })
+    }
+
+    /// Print `marker` in `window` without any tab watching, and wait until
+    /// tmux holds it on the pane.
+    func printUnwatched(_ marker: String, in window: String) async -> Bool {
+        let split = marker.index(after: marker.startIndex)
+        server.run(["send-keys", "-t", window, "echo \(marker[..<split])''\(marker[split...])", "Enter"])
+        return await waitUntil(.seconds(5)) {
+            (self.server.run(["capture-pane", "-p", "-t", window]) ?? "").contains(marker)
+        }
+    }
+}
+
+@Suite(
+    "tmux mirror reconnect at launch and on reopen",
+    .tags(.smoke),
+    .serialized,
+    .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
+)
+@MainActor
+struct TmuxMirrorAutoReconnectIntegrationTests {
+    @Test("a restored mirror tab connects at launch and is repainted on the channel its surface reads")
+    func restoredTab_connectsAtLaunch() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        #expect(await harness.printUnwatched("EARLIER", in: window))
+        let tab = try #require(harness.restoreTabs([harness.paneRef(window: window)]).first)
+        let channel = try #require(harness.store.channel(paneID: tab.leaf))
+
+        #expect(await harness.reconnectAtLaunch() == 1)
+
+        #expect(harness.store.tabConnections[tab.tabID] == .live)
+        let mirror = try #require(harness.store.mirror(for: tab.tabID))
+        #expect(mirror.sink(for: tab.leaf)?.channel === channel)
+        #expect(await waitUntil { mirror.connection.state == .attached })
+        try await harness.reportSurface(of: tab)
+        // The repaint shows what the pane held before any tab watched it.
+        #expect(await waitUntil(.seconds(5)) { tab.reader.text.contains("EARLIER") })
+        #expect(await harness.echo("LATER", in: window, reader: tab.reader))
+        #expect(harness.store.channel(paneID: tab.leaf) === channel)
+        #expect(!tab.reader.didEnd)
+        #expect(harness.notices.isEmpty)
+    }
+
+    @Test("tabs of two sessions each connect over their own client")
+    func tabsOfTwoSessions_connectEach() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let server = harness.server
+        try #require(server.run(["new-session", "-d", "-s", "u", "-x", "80", "-y", "24", "sh", "-c", "PS1='$ ' exec sh"]) != nil)
+        let first = try #require(server.windowIDs().first)
+        let second = try #require(server.run(["list-windows", "-t", "u", "-F", "#{window_id}"]))
+        let tabs = try harness.restoreTabs([
+            harness.paneRef(window: first),
+            harness.paneRef(window: second, session: "u")
+        ])
+
+        #expect(await harness.reconnectAtLaunch() == 2)
+
+        for tab in tabs {
+            #expect(harness.store.tabConnections[tab.tabID] == .live)
+        }
+        let connections = try tabs.map { try #require(harness.store.mirror(for: $0.tabID)?.connection) }
+        #expect(connections[0] !== connections[1])
+        #expect(await waitUntil { connections.allSatisfy { $0.state == .attached } })
+        #expect(harness.controlClientCount() == 2)
+        for tab in tabs {
+            try await harness.reportSurface(of: tab)
+        }
+        #expect(await harness.echo("FIRST", in: first, reader: tabs[0].reader))
+        #expect(await harness.echo("SECOND", in: second, reader: tabs[1].reader))
+    }
+
+    @Test("a server started again since the snapshot leaves the tab replaced and unattached")
+    func replacedServer_isNotAttachedAtLaunch() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let tab = try #require(harness.restoreTabs([harness.paneRef(window: window)]).first)
+        try await harness.server.restartServer()
+
+        #expect(await harness.reconnectAtLaunch() == 1)
+
+        #expect(harness.store.tabConnections[tab.tabID] == .serverReplaced)
+        #expect(harness.store.mirror(for: tab.tabID) == nil)
+        #expect(harness.session.tab(tab.tabID) != nil)
+        #expect(harness.controlClientCount() == 0)
+        #expect(harness.notices.isEmpty)
+    }
+
+    @Test("a snapshot that recorded no server run leaves the tab replaced and unattached")
+    func unrecordedServer_isNotAttachedAtLaunch() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let tab = try #require(harness.restoreTabs([harness.paneRef(window: window, isRecorded: false)]).first)
+
+        #expect(await harness.reconnectAtLaunch() == 1)
+
+        #expect(harness.store.tabConnections[tab.tabID] == .serverReplaced)
+        #expect(harness.store.mirror(for: tab.tabID) == nil)
+        #expect(harness.controlClientCount() == 0)
+    }
+
+    @Test("a socket that is gone leaves the restored tab unreachable")
+    func missingSocket_isUnreachableAtLaunch() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let tab = try #require(harness.restoreTabs([harness.paneRef(window: window)]).first)
+        let pid = try #require(Int32(harness.server.format("#{pid}")))
+        try FileManager.default.removeItem(atPath: harness.server.socketPath)
+        // Without its socket `kill-server` cannot reach the server, so the
+        // teardown would leave it running.
+        defer { kill(pid, SIGTERM) }
+
+        #expect(await harness.reconnectAtLaunch() == 1)
+
+        #expect(harness.store.tabConnections[tab.tabID] == .unreachable)
+        #expect(harness.store.mirror(for: tab.tabID) == nil)
+        #expect(harness.session.tab(tab.tabID) != nil)
+        #expect(harness.controlClientCount() == 0)
+    }
+
+    @Test("a session that ended since the snapshot closes its tab with one notice")
+    func endedSession_closesTheTabAtLaunch() async throws {
+        let harness = try ReconnectHarness(keepServer: true)
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let tab = try #require(harness.restoreTabs([harness.paneRef(window: window)]).first)
+        harness.server.run(["kill-session", "-t", "t"])
+
+        #expect(await harness.reconnectAtLaunch() == 1)
+
+        #expect(harness.session.tab(tab.tabID) == nil)
+        #expect(harness.notices == [TmuxConnectionStore.sessionEndedNotice(sessionName: "t")])
+        #expect(harness.session.closedTabStack.isEmpty)
+        #expect(harness.controlClientCount() == 0)
+    }
+
+    @Test("running the launch reconnect again attaches nothing more")
+    func secondLaunchReconnect_attachesNothing() async throws {
+        let harness = try ReconnectHarness(windows: 2)
+        defer { harness.tearDown() }
+        let windows = try harness.server.windowIDs()
+        let tabs = try harness.restoreTabs(windows.map { try harness.paneRef(window: $0) })
+
+        let tasks = TmuxMirrorActions.reconnectAtLaunch(context: harness.context)
+        // The first tab takes its sibling along; while they connect,
+        // neither can be started again.
+        #expect(tasks.count == 1)
+        #expect(await harness.reconnectAtLaunch() == 0)
+        for task in tasks {
+            await task.value
+        }
+        #expect(await harness.reconnectAtLaunch() == 0)
+
+        let mirrors = try tabs.map { try #require(harness.store.mirror(for: $0.tabID)) }
+        #expect(mirrors.allSatisfy { harness.store.tabConnections[$0.tabID] == .live })
+        #expect(mirrors[0].connection === mirrors[1].connection)
+        #expect(await waitUntil { mirrors[0].connection.state == .attached })
+        #expect(harness.controlClientCount() == 1)
+    }
+
+    @Test("at launch a Limpid pane's client is detached and another app's is left without asking")
+    func launchReconnect_detachesLimpidPanesOnly() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let inPane = try await harness.attachTerminal()
+        let otherApp = try await harness.attachTerminal()
+        let tab = try #require(harness.restoreTabs([harness.paneRef(window: window)]).first)
+
+        // The gate has no one to ask: were it to show the alert, this call
+        // would block on a modal the test host never answers.
+        #expect(await harness.reconnectAtLaunch(limpidTTYs: [inPane.tty]) == 1)
+
+        #expect(harness.store.tabConnections[tab.tabID] == .live)
+        #expect(await waitUntil(.seconds(5)) { !inPane.isRunning })
+        #expect(otherApp.isRunning)
+        let ttys = harness.server.run(["list-clients", "-F", "#{client_tty}"]) ?? ""
+        #expect(!ttys.contains(inPane.tty))
+        #expect(ttys.contains(otherApp.tty))
+    }
+
+    @Test("a mirror tab reopened with ⌘⇧T connects again on its new leaf")
+    func reopenedTab_connectsAgain() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let tab = try #require(harness.restoreTabs([harness.paneRef(window: window)]).first)
+        #expect(await harness.reconnectAtLaunch() == 1)
+        #expect(harness.store.tabConnections[tab.tabID] == .live)
+        TabActions.closeTab(harness.session, registry: harness.registry, tabID: tab.tabID)
+        #expect(await waitUntil { harness.controlClientCount() == 0 })
+
+        TmuxMirrorActions.reopenClosedTab(harness.session, context: harness.context)
+
+        let revived = try #require(harness.session.activeTab)
+        #expect(revived.id != tab.tabID)
+        #expect(revived.kind == .tmuxMirror)
+        let leaf = try #require(revived.splitTree.allLeafIDs().first)
+        #expect(harness.store.tabConnections[revived.id] == .connecting)
+        #expect(await waitUntil(.seconds(5)) { harness.store.tabConnections[revived.id] == .live })
+        let channel = try #require(harness.store.channel(paneID: leaf))
+        let mirror = try #require(harness.store.mirror(for: revived.id))
+        #expect(mirror.sink(for: leaf)?.channel === channel)
+        #expect(await waitUntil { mirror.connection.state == .attached })
+        let reader = try ChannelReader(channel: channel)
+        defer { reader.stop() }
+        let reopened = OpenedTab(tabID: revived.id, leaf: leaf, reader: reader)
+        try await harness.reportSurface(of: reopened)
+        #expect(await harness.echo("REOPENED", in: window, reader: reader))
+        #expect(harness.controlClientCount() == 1)
+    }
+}

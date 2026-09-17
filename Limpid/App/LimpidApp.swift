@@ -331,6 +331,22 @@ final class AppState {
         // Register the ⌘Q + tab/pane close gates. Gate bodies live in
         // `AppState+QuitGate.swift`.
         registerConfirmGates()
+
+        // Once per launch, after the restore above and after libghostty has
+        // announced the colors a new control client takes. The tabs' notices
+        // reach `toastCenter`, wired above, whenever the server answers.
+        TmuxMirrorActions.reconnectAtLaunch(context: tmuxMirrorContext)
+    }
+
+    /// What a mirror tab of this window is connected with.
+    var tmuxMirrorContext: TmuxMirrorActions.MirrorContext {
+        TmuxMirrorActions.MirrorContext(
+            session: session,
+            store: tmuxStore,
+            registry: registry,
+            secureInput: registry.secureInputManager,
+            toastCenter: toastCenter
+        )
     }
 
     private func configureTurnReview() {
@@ -692,7 +708,7 @@ struct LimpidApp: App {
                 .limpidShortcut(.renameTab, in: state.settingsStore)
                 .disabled(state.session.activeTab == nil)
                 Button {
-                    TabActions.reopenClosedTab(state.session)
+                    TmuxMirrorActions.reopenClosedTab(state.session, context: state.tmuxMirrorContext)
                 } label: {
                     Label("Reopen Closed Tab", systemImage: "arrow.uturn.backward.square")
                 }

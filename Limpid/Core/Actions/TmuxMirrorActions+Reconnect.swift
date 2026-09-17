@@ -34,9 +34,10 @@ extension TmuxMirrorActions {
     /// identity, so nothing the old one still has in flight can reach the
     /// new one (decision 2 of the B4 plan).
     ///
-    /// `otherClients` is nil where no dialog may be shown (the automatic
-    /// reconnect at launch, decision 10); the menu passes
-    /// `otherClientsGate`.
+    /// `otherClients` decides about the clients already attached: the menu
+    /// passes `otherClientsGate`, which asks about other apps' clients, and
+    /// the automatic reconnect passes `otherClientsGateWithoutAsking`
+    /// (decision 10). Nil attaches beside every client.
     ///
     /// Returns the task that finishes the reconnect, or nil when the tab
     /// cannot be reconnected now.
@@ -111,6 +112,90 @@ extension TmuxMirrorActions {
 
     // swiftlint:enable function_parameter_count
 
+    // MARK: - Automatic reconnect
+
+    /// Connect every mirror tab of `context.session` again, once, after the
+    /// session was restored at launch (stage 11 decision 6). Not from
+    /// `reconcile`: that runs on every change to the tab list, and a tab the
+    /// user has not asked for must not be attached again each time.
+    @discardableResult
+    static func reconnectAtLaunch(context: MirrorContext, limpidTTYs: Set<String>? = nil) -> [Task<Void, Never>] {
+        let tabIDs = context.session.tabs.filter { mirrorRef(of: $0) != nil }.map(\.id)
+        return reconnectWithoutAsking(tabIDs, context: context, limpidTTYs: limpidTTYs)
+    }
+
+    /// ⌘⇧T: bring the most recently closed tab back, and connect it again
+    /// at once when it is a mirror tab, as a restored one is (stage 11
+    /// decision 6). Without a store the tab comes back unconnected.
+    static func reopenClosedTab(_ session: WindowSession, specificID: UUID? = nil, context: MirrorContext?) {
+        guard let tabID = TabActions.reopenClosedTab(session, specificID: specificID),
+              let context,
+              let tab = session.tab(tabID),
+              mirrorRef(of: tab) != nil
+        else { return }
+        reconnectWithoutAsking([tabID], context: context)
+    }
+
+    /// Reconnect `tabIDs` with no dialog (decision 10): nobody asked for
+    /// this connection at this moment, so a question about other apps'
+    /// clients would come out of nowhere. Tabs of one socket, session, and
+    /// server run are taken along by the first of them, so the later calls
+    /// for those tabs return nil and add nothing.
+    @discardableResult
+    static func reconnectWithoutAsking(
+        _ tabIDs: [UUID],
+        context: MirrorContext,
+        limpidTTYs: Set<String>? = nil
+    ) -> [Task<Void, Never>] {
+        guard let tmuxPath = context.store.tmuxExecutable else { return [] }
+        let gate = otherClientsGateWithoutAsking(
+            tmuxPath: tmuxPath,
+            session: context.session,
+            store: context.store,
+            registry: context.registry,
+            limpidTTYs: limpidTTYs
+        )
+        return tabIDs.compactMap { tabID in
+            reconnect(
+                tabID: tabID,
+                session: context.session,
+                store: context.store,
+                registry: context.registry,
+                secureInput: context.secureInput,
+                toastCenter: context.toastCenter,
+                otherClients: gate
+            )
+        }
+    }
+
+    /// The other-clients gate with nobody to ask. A client running in a
+    /// Limpid pane is still detached, as it is when the user opens a
+    /// window: the pane would otherwise hold the same session a second
+    /// time. Another app's client is left attached and the tab opens.
+    ///
+    /// The Limpid panes are those whose tty can be read when the gate runs.
+    /// That misses none that matter: a pane's pty exists exactly while its
+    /// surface does, and a surface is registered before it is created, so
+    /// a pane without a readable tty has no process that could have
+    /// attached. A pane whose shell attaches later is not seen, and waiting
+    /// would not see it either.
+    static func otherClientsGateWithoutAsking(
+        tmuxPath: String,
+        session: WindowSession,
+        store: TmuxConnectionStore,
+        registry: any SurfaceViewProviding,
+        limpidTTYs: Set<String>? = nil
+    ) -> OtherClientsGate {
+        otherClientsGate(
+            tmuxPath: tmuxPath,
+            session: session,
+            store: store,
+            registry: registry,
+            limpidTTYs: limpidTTYs,
+            confirm: { _, _ in .openWithoutDetaching }
+        )
+    }
+
     /// The tmux side of a mirror tab: every leaf of one shows a pane of the
     /// same window of the same session, so any leaf's reference names it.
     static func mirrorRef(of tab: Tab) -> TmuxPaneRef? {
@@ -169,5 +254,15 @@ extension TmuxMirrorActions {
             started.append(mirror)
         }
         store.closeMirrorsOfMissingWindows(started, on: connection)
+    }
+}
+
+extension TmuxMirrorActions.MirrorContext {
+    /// The context of an entry point that may run without tmux support,
+    /// where there is no store; Secure Input goes through the registry's.
+    @MainActor
+    init?(session: WindowSession, store: TmuxConnectionStore?, registry: any SurfaceViewProviding, toastCenter: ToastCenter?) {
+        guard let store else { return nil }
+        self.init(session: session, store: store, registry: registry, secureInput: registry.secureInput, toastCenter: toastCenter)
     }
 }
