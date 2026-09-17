@@ -32,6 +32,15 @@ enum PaneDropZone: Equatable {
     case left, right, top, bottom
 }
 
+extension TabCapabilities {
+    /// Whether the tab lets a pane drop on `zone` do anything: the center
+    /// swaps, an edge inserts. The overlay's highlight and the drop handler
+    /// both ask this, so a zone shown as live is one the drop carries out.
+    func allowsPaneDrop(on zone: PaneDropZone) -> Bool {
+        zone == .center ? canSwap : canInsert
+    }
+}
+
 struct PaneSwapDropOverlay: View {
     let targetPaneID: UUID
     let onDrop: (_ source: UUID, _ target: UUID, _ zone: PaneDropZone) -> Void

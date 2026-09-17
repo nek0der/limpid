@@ -215,6 +215,22 @@ struct ThreePaneLayout: View {
                 toastCenter: toastCenter
             )
         }
+        // Files dropped on a tmux mirror pane, raised in AppKit for the
+        // same reason as the paste above.
+        .onReceive(NotificationCenter.default.publisher(for: .limpidMirrorFileDropRequested)) { notification in
+            guard let view = notification.object as? SurfaceView,
+                  let paneID = state.registry.id(for: view),
+                  let urls = notification.userInfo?[SurfaceView.droppedFileURLsKey] as? [URL]
+            else { return }
+            TmuxMirrorActions.dropFiles(
+                urls,
+                into: paneID,
+                view: view,
+                session: state.session,
+                store: state.tmuxStore,
+                toastCenter: toastCenter
+            )
+        }
     }
 
     private func dismissCompactSidebar() {

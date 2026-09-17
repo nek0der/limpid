@@ -165,6 +165,16 @@ enum PaneActions {
         }
     }
 
+    /// Whether the ⌘W cascade has anything to do on `tab`. A tab whose
+    /// capabilities refuse the pane half still closes as a whole once it
+    /// holds a single leaf. The File menu, the palette, and the right-click
+    /// Close Pane all read this, and `closeActivePaneOrTab` guards on it, so
+    /// none of them offers a close the cascade would not carry out.
+    static func canClosePaneOrTab(_ tab: Tab?) -> Bool {
+        guard let tab else { return false }
+        return tab.capabilities.canClosePane || tab.splitTree.allLeafIDs().count <= 1
+    }
+
     /// ⌘W cascade: close the focused pane; if the tab has only one
     /// pane left after that, close the tab too. Both branches flow
     /// through `CloseConfirmer` so the confirm policy is honored
@@ -176,7 +186,7 @@ enum PaneActions {
         attention: AttentionState? = nil,
         agentProjection: AgentProjectionAdapter? = nil
     ) {
-        guard let tab = session.activeTab else { return }
+        guard let tab = session.activeTab, canClosePaneOrTab(tab) else { return }
         let leafCount = tab.splitTree.allLeafIDs().count
         if leafCount <= 1 {
             TabActions.closeActiveTab(

@@ -104,7 +104,7 @@ struct ToolbarTerminalColumnSegment: View {
                 ToolbarIconButton(
                     systemImage: "rectangle.split.2x1",
                     help: "Split Right (⌘D)",
-                    isEnabled: session.activeTab != nil
+                    isEnabled: canSplit
                 ) {
                     split(.horizontal)
                 }
@@ -112,7 +112,7 @@ struct ToolbarTerminalColumnSegment: View {
                 ToolbarIconButton(
                     systemImage: "rectangle.split.1x2",
                     help: "Split Down (⌘⇧D)",
-                    isEnabled: session.activeTab != nil
+                    isEnabled: canSplit
                 ) {
                     split(.vertical)
                 }
@@ -182,13 +182,13 @@ struct ToolbarTerminalColumnSegment: View {
                 } label: {
                     Label("Split Right", systemImage: "rectangle.split.2x1")
                 }
-                .disabled(session.activeTab == nil)
+                .disabled(!canSplit)
                 Button {
                     split(.vertical)
                 } label: {
                     Label("Split Down", systemImage: "rectangle.split.1x2")
                 }
-                .disabled(session.activeTab == nil)
+                .disabled(!canSplit)
                 Divider()
             }
             Button {
@@ -212,6 +212,12 @@ struct ToolbarTerminalColumnSegment: View {
             }
             .disabled(session.tabs(in: session.activeContainerID).isEmpty)
         }
+    }
+
+    /// The split buttons read the same capability row `PaneActions.split`
+    /// guards on, so a tab that cannot split never shows a live button.
+    private var canSplit: Bool {
+        session.activeTab?.capabilities.canSplit == true
     }
 
     private func split(_ direction: SplitDirection) {

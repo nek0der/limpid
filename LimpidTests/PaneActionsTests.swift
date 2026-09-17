@@ -241,4 +241,38 @@ struct PaneActionsTests {
         #expect(after.zoomedLeafID == before.zoomedLeafID)
         #expect(registry.unregisteredIDs.isEmpty)
     }
+
+    // MARK: - Close rule shared by ⌘W, the palette, and the right-click menu
+
+    /// A mirror tab refuses the pane half of ⌘W but still closes as a whole
+    /// once it holds one leaf. The rule every close entry point reads has to
+    /// say the same, or the right-click item stays disabled on a tab ⌘W
+    /// closes.
+    @Test("the close rule allows a close exactly when the ⌘W cascade carries one out", arguments: [
+        (Tab.Kind.terminal, 1, true),
+        (Tab.Kind.terminal, 2, true),
+        (Tab.Kind.tmuxMirror, 1, true),
+        (Tab.Kind.tmuxMirror, 2, false)
+    ])
+    func canClosePaneOrTab_matchesTheCascade(kind: Tab.Kind, leafCount: Int, isAllowed: Bool) throws {
+        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+        for _ in 1..<leafCount {
+            PaneActions.split(session, direction: .horizontal)
+        }
+        session.update(tab.id) { $0.kind = kind }
+        let before = try #require(session.tab(tab.id))
+        #expect(before.splitTree.allLeafIDs().count == leafCount)
+        #expect(PaneActions.canClosePaneOrTab(session.activeTab) == isAllowed)
+
+        let registry = RecordingSurfaceRegistry()
+        PaneActions.closeActivePaneOrTab(session, registry: registry)
+
+        let didClose = session.tab(tab.id)?.splitTree != before.splitTree
+        #expect(didClose == isAllowed)
+    }
+
+    @Test("the close rule allows nothing without a tab")
+    func canClosePaneOrTab_withoutTab_isFalse() {
+        #expect(!PaneActions.canClosePaneOrTab(nil))
+    }
 }

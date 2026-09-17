@@ -491,6 +491,53 @@ struct TmuxMirrorPasteIntegrationTests {
         #expect(harness.failures.messages.isEmpty)
     }
 
+    /// A file dropped on a mirror pane types what the same drop types in
+    /// an ordinary pane, sent as a tmux paste: bracketed exactly when the
+    /// program asked, into the pane it was dropped on and no other.
+    @Test("dropped files reach the tmux pane as their quoted paths, through a paste")
+    func dropFiles_typesTheQuotedPathsIntoThatPane() async throws {
+        let root = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bracketed = root.appendingPathComponent("bracketed")
+        let untouched = root.appendingPathComponent("untouched")
+        let harness = try await PasteHarness.make(paneCommands: [
+            rawCommand(modes: #"\033[?2004h"#, output: bracketed),
+            rawCommand(modes: "", output: untouched)
+        ])
+        defer { harness.tearDown() }
+        let panes = harness.server.panes().map { String($0.split(separator: " ")[0]) }
+        #expect(await waitUntil {
+            panes.allSatisfy { (try? harness.server.format("#{pane_current_command}", target: $0)) == "cat" }
+        })
+        let first = try #require(harness.leaf(of: panes[0]))
+        let files = [
+            URL(fileURLWithPath: "/tmp/shot one.png"),
+            URL(fileURLWithPath: "/tmp/it's here.txt")
+        ]
+
+        TmuxMirrorActions.dropFiles(
+            files,
+            into: first,
+            view: nil,
+            session: harness.session,
+            store: harness.store,
+            toastCenter: nil
+        )
+
+        let typed = FileDropText.text(for: files)
+        #expect(typed == #"'/tmp/shot one.png' '/tmp/it'\''s here.txt'"#)
+        let expected = Data("\u{1B}[200~\(typed)\u{1B}[201~".utf8)
+        var got = Data()
+        _ = await waitUntil(.seconds(5)) {
+            got = (try? Data(contentsOf: bracketed)) ?? Data()
+            return got.count >= expected.count
+        }
+        #expect(got == expected)
+        #expect((try? Data(contentsOf: untouched)) ?? Data() == Data())
+        #expect(harness.server.run(["list-buffers"]) == "")
+        #expect(harness.failures.messages.isEmpty)
+    }
+
     /// A pane tmux no longer has fails the paste after the buffer loaded;
     /// the buffer is deleted and the user is told.
     @Test("a paste tmux refuses deletes its buffer and its file, and is reported")

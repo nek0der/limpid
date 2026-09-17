@@ -52,11 +52,13 @@ extension SurfaceView {
     /// so libghostty's clipboard plumbing — including its prompt for
     /// suspicious paste content — still runs.
     @objc func paste(_ sender: Any?) {
-        // A mirror pane pastes through tmux, not libghostty: only tmux knows
-        // whether the program there wants the paste bracketed. We branch
-        // here because AppKit hands Command-V straight to the focused
-        // surface, which knows it mirrors tmux but not which tab it sits in.
-        guard !isMirror else {
+        // The route is a row of the tab's capabilities
+        // (`pastesThroughTmux`). We branch here because AppKit hands
+        // Command-V straight to the focused surface; the tmux side needs a
+        // store and a toast center this view cannot reach, so it goes out
+        // as a notification. A view no tab has claimed pastes nowhere.
+        guard let capabilities = tabCapabilities?() else { return }
+        guard !capabilities.pastesThroughTmux else {
             NotificationCenter.default.post(name: .limpidMirrorPasteRequested, object: self)
             return
         }

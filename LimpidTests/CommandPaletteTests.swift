@@ -180,6 +180,37 @@ struct CommandPaletteTests {
         }
     }
 
+    /// The palette's Close Pane and split rows follow the rules ⌘W and
+    /// ⌘D run on, so a mirror tab with two panes offers splitting but not
+    /// closing, and with one pane offers both.
+    @Test("Close Pane and split rows follow the tab's close rule and split row", arguments: [
+        (Tab.Kind.terminal, 2),
+        (Tab.Kind.tmuxMirror, 1),
+        (Tab.Kind.tmuxMirror, 2)
+    ])
+    func catalog_closeAndSplitRowsFollowCapabilities(kind: Tab.Kind, leafCount: Int) throws {
+        try withTempDir { directory in
+            let (session, tab, _) = WindowSessionFixture.withLooseTab()
+            for _ in 1..<leafCount {
+                PaneActions.split(session, direction: .horizontal)
+            }
+            session.update(tab.id) { $0.kind = kind }
+            let live = try #require(session.activeTab)
+            let items = CommandPaletteCatalog.buildItems(
+                session: session,
+                settings: SettingsStore(directory: directory),
+                attention: AttentionState()
+            )
+            let isEnabled = { (action: LimpidShortcutAction) in
+                items.first(where: { $0.id == "shortcut.\(action.rawValue)" })?.isEnabled
+            }
+            #expect(isEnabled(.closeSurface) == PaneActions.canClosePaneOrTab(live))
+            #expect(isEnabled(.closeSurface) == (kind == .terminal || leafCount == 1))
+            #expect(isEnabled(.splitRight) == live.capabilities.canSplit)
+            #expect(isEnabled(.splitDown) == live.capabilities.canSplit)
+        }
+    }
+
     @Test("catalog includes open tabs with display titles")
     func catalog_includesOpenTabs() {
         let (session, _, _) = WindowSessionFixture.withLooseTab()

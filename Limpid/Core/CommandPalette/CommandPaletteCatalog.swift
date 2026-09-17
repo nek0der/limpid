@@ -18,10 +18,9 @@ enum CommandPaletteCatalog {
         let hasClosedTabs: Bool
         let hasActiveSearch: Bool
         let hasWaitingAttention: Bool
-        /// Whether ⌘W has anything to do. A mirror tab refuses the pane
-        /// half, so the row stays live only while the cascade reaches the
-        /// tab — that is, while the tab holds a single leaf.
+        /// Whether ⌘W has anything to do (`PaneActions.canClosePaneOrTab`).
         let canCloseSurface: Bool
+        let canSplit: Bool
         let canEqualize: Bool
         let canReview: Bool
         let canReviewTurn: Bool
@@ -150,7 +149,6 @@ enum CommandPaletteCatalog {
         let hasActiveSearch = focusedPaneID.map { session.paneSearchStates[$0] != nil } ?? false
         let hasWaitingAttention = !dependencies.attention.attentionEntries(in: session).isEmpty
         let capabilities = session.activeTab?.capabilities
-        let leafCount = session.activeTab?.splitTree.allLeafIDs().count ?? 0
 
         let context = ActionEnabledContext(
             hasActiveTab: hasActiveTab,
@@ -162,7 +160,8 @@ enum CommandPaletteCatalog {
             hasClosedTabs: hasClosedTabs,
             hasActiveSearch: hasActiveSearch,
             hasWaitingAttention: hasWaitingAttention,
-            canCloseSurface: (capabilities?.canClosePane ?? false) || leafCount <= 1,
+            canCloseSurface: PaneActions.canClosePaneOrTab(session.activeTab),
+            canSplit: capabilities?.canSplit ?? false,
             canEqualize: capabilities?.canEqualize ?? false,
             canReview: ReviewAgents.canReview(
                 session: session,
@@ -353,7 +352,7 @@ enum CommandPaletteCatalog {
         case .findNext, .findPrevious: context.hasActiveSearch
         case .nextPrompt, .previousPrompt,
              .scrollToTop, .scrollToBottom, .scrollPageUp, .scrollPageDown: context.hasActiveTab
-        case .splitRight, .splitDown: context.hasActiveTab
+        case .splitRight, .splitDown: context.hasActiveTab && context.canSplit
         case .equalizeSplits: context.isSplit && context.canEqualize
         case .toggleSplitZoom: context.isSplit
         case .focusPaneLeft: context.reachable(.left)

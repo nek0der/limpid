@@ -462,6 +462,15 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
             guard let tab = session.tab(containing: paneID) else { return false }
             return tab.splitTree.allLeafIDs().count > 1
         }
+        view.tabCapabilities = { [weak session] in
+            session?.tab(containing: paneID)?.capabilities
+        }
+        // The item runs `closeActivePaneOrTab`, which acts on the active
+        // tab, so we ask about that tab; a pane the user can right-click is
+        // on screen, which only the active tab's panes are.
+        view.canClosePaneOrTab = { [weak session] in
+            PaneActions.canClosePaneOrTab(session?.activeTab)
+        }
     }
 
     /// Pick the initial shell command for a freshly-created surface.

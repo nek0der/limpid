@@ -311,6 +311,16 @@ final class SurfaceView: NSView {
     /// disabled. Nil means "don't show".
     var canMoveToNewTab: (() -> Bool)?
 
+    /// What the owning tab lets its panes do (`TabCapabilities`), read at
+    /// the moment of use. Set by `PaneHostView`; nil, or a nil answer, means
+    /// no tab claims this view, and the verbs it gates stay off.
+    var tabCapabilities: (() -> TabCapabilities?)?
+
+    /// Whether the right-click Close Pane has anything to do. Set by
+    /// `PaneHostView` to `PaneActions.canClosePaneOrTab`, the rule ⌘W and
+    /// the palette read, so the three never disagree. Nil means disabled.
+    var canClosePaneOrTab: (() -> Bool)?
+
     /// The pane this view represents. Set by `PaneHostView`; lets the
     /// AppKit drag-source path write a `pane:<UUID>` payload to the
     /// pasteboard without threading the id through every drag handler.
@@ -687,44 +697,8 @@ final class SurfaceView: NSView {
     // `forward(_:action:…)`, `isNavigationOrFunctionKey`).
     // `NSTextInputClient` lives in `SurfaceView+TextInput.swift`;
     // static `NSEvent` → libghostty helpers in `SurfaceView+Input.swift`;
-    // mouse handlers in `SurfaceView+Mouse.swift`.
-
-    // MARK: - Drag and drop
-
-    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        guard !isMirror, sender.draggingPasteboard.canReadObject(forClasses: [NSURL.self], options: fileOnlyOptions) else {
-            return []
-        }
-        return .copy
-    }
-
-    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        guard let surface,
-              let urls = sender.draggingPasteboard.readObjects(
-                  forClasses: [NSURL.self],
-                  options: fileOnlyOptions
-              ) as? [URL],
-              !urls.isEmpty
-        else { return false }
-
-        let paths = urls.map { shellEscape($0.path) }
-        let joined = paths.joined(separator: " ")
-        joined.withCString { ptr in
-            ghostty_surface_text(surface, ptr, UInt(strlen(ptr)))
-        }
-        return true
-    }
-
-    private var fileOnlyOptions: [NSPasteboard.ReadingOptionKey: Any] {
-        [.urlReadingFileURLsOnly: true]
-    }
-
-    /// Shell-escape a file path so spaces and special characters don't
-    /// break the command line. Wraps in single quotes with internal
-    /// single quotes escaped via the `'\''` idiom.
-    private func shellEscape(_ path: String) -> String {
-        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
+    // mouse handlers in `SurfaceView+Mouse.swift`; file drops in
+    // `SurfaceView+Drop.swift`.
 }
 
 extension SurfaceView {

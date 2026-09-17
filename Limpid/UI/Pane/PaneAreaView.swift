@@ -151,11 +151,12 @@ struct PaneAreaView: View {
                             guard let liveTab = session.tab(tab.id),
                                   liveTab.splitTree.contains(leafID: source),
                                   liveTab.splitTree.contains(leafID: target),
-                                  source != target
+                                  source != target,
+                                  liveTab.capabilities.allowsPaneDrop(on: zone)
                             else { return }
-                            // A mirror tab only swaps, and tmux does it.
+                            // A mirror tab only swaps (its capabilities refuse
+                            // the edges), and tmux does it.
                             if liveTab.kind == .tmuxMirror {
-                                guard zone == .center, liveTab.capabilities.canSwap else { return }
                                 PaneActions.liveMirror(for: liveTab, in: tmuxStore, toastCenter: toastCenter)?
                                     .swap(source, target)
                                 return
@@ -189,14 +190,9 @@ struct PaneAreaView: View {
                             // Read the *live* tree from the session
                             // each call — the user may have made other
                             // edits since the drag began.
-                            guard let liveTab = session.tab(tab.id) else { return false }
-                            let capabilities = liveTab.capabilities
-                            if zone == .center, !capabilities.canSwap {
-                                return false
-                            }
-                            if zone != .center, !capabilities.canInsert {
-                                return false
-                            }
+                            guard let liveTab = session.tab(tab.id),
+                                  liveTab.capabilities.allowsPaneDrop(on: zone)
+                            else { return false }
                             let tree = liveTab.splitTree
                             let result: SplitTree = switch zone {
                             case .center: tree.swappingLeaves(source, target)
@@ -248,6 +244,7 @@ struct PaneAreaView: View {
                                 }
                             }
                         },
+                        canEqualizeSubtree: tab.capabilities.canEqualizeSubtree,
                         minPaneSize: settings.settings.terminal.minPaneSize
                     )
                     // Floated over the panes rather than laid out above them;

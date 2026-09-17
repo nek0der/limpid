@@ -41,6 +41,9 @@ struct SplitContainerView: View {
     /// split. The structural path is shared with `onResize`, so nested
     /// same-axis dividers remain unambiguous.
     let onEqualize: (PaneSplitPath) -> Void
+    /// `TabCapabilities.canEqualizeSubtree` for this tab. When false the
+    /// dividers carry no tooltip, since the double-click would do nothing.
+    let canEqualizeSubtree: Bool
     /// Smallest each side of a divider may shrink to, in points. Every
     /// split in the tree shares this floor; `PaneAreaView` resolves the
     /// value from `terminal.minPaneSize`.
@@ -102,7 +105,7 @@ struct SplitContainerView: View {
                             onEqualize(divider.path)
                         }
                     )
-                    .help("Double-click to equalize")
+                    .modifier(EqualizeHelp(isShown: canEqualizeSubtree))
             }
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
@@ -140,5 +143,20 @@ struct SplitContainerView: View {
             .onChanged { gesture in
                 onResize(divider.path, divider.dragDelta(to: gesture.location), divider.bounds)
             }
+    }
+}
+
+/// The divider's tooltip, attached only where the double-click it names
+/// does something. A tab's capabilities never change while it is shown,
+/// so the branch does not churn the divider's identity.
+private struct EqualizeHelp: ViewModifier {
+    let isShown: Bool
+
+    func body(content: Content) -> some View {
+        if isShown {
+            content.help("Double-click to equalize")
+        } else {
+            content
+        }
     }
 }

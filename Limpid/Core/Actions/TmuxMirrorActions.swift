@@ -311,11 +311,18 @@ enum TmuxMirrorActions {
               sourceTab.id != targetTabID
         else { return }
         let sourceIsMirror = sourceTab.kind == .tmuxMirror
-        if !sourceIsMirror, targetTab.capabilities.canAcceptForeignPane {
+        if !sourceIsMirror {
+            guard targetTab.capabilities.canAcceptForeignPane else {
+                // The user moved an ordinary pane, so the refusal speaks of
+                // the tab it was dropped on, not of a tmux pane.
+                let message = String(localized: "Only panes of the same tmux session can move into this tab")
+                toastCenter?.show(ToastItem(message: message, undo: nil))
+                return
+            }
             TabActions.mergePaneIntoTab(session, paneID: paneID, into: targetTabID)
             return
         }
-        if sourceIsMirror, targetTab.kind == .tmuxMirror {
+        if targetTab.kind == .tmuxMirror {
             guard let source = store?.liveMirror(for: sourceTab.id), let target = store?.liveMirror(for: targetTabID) else {
                 toastCenter?.show(ToastItem(message: String(localized: "Not connected to tmux"), undo: nil))
                 return
@@ -341,20 +348,57 @@ enum TmuxMirrorActions {
         pasteboard: NSPasteboard = .general,
         confirmation: ClipboardConfirmationCoordinator? = ClipboardConfirmationCoordinator.shared
     ) {
-        guard let text = pasteboard.string(forType: .string), !text.isEmpty,
-              let tab = session.tab(containing: paneID)
-        else { return }
+        guard let text = pasteboard.string(forType: .string), !text.isEmpty else { return }
         guard text.utf8.count <= TmuxPasteBuffer.byteLimit else {
             toastCenter?.show(ToastItem(message: String(localized: "The clipboard is too large to paste into a tmux pane"), undo: nil))
             return
         }
-        guard let mirror = PaneActions.liveMirror(for: tab, in: store, toastCenter: toastCenter) else { return }
+        paste(text, into: paneID, view: view, session: session, store: store, toastCenter: toastCenter, confirmation: confirmation)
+    }
+
+    // swiftlint:disable function_parameter_count
+    /// Type the shell-quoted paths of files dropped on a mirror pane, the
+    /// same text an ordinary pane types (`FileDropText`), as a paste
+    /// through tmux. A path list stays far below `TmuxPasteBuffer.byteLimit`,
+    /// so only the clipboard is checked against it. A path with a line
+    /// break in it asks first, as the same paste from the clipboard would.
+    static func dropFiles(
+        _ fileURLs: [URL],
+        into paneID: UUID,
+        view: SurfaceView?,
+        session: WindowSession,
+        store: TmuxConnectionStore?,
+        toastCenter: ToastCenter?,
+        confirmation: ClipboardConfirmationCoordinator? = ClipboardConfirmationCoordinator.shared
+    ) {
+        guard !fileURLs.isEmpty else { return }
+        let text = FileDropText.text(for: fileURLs)
+        paste(text, into: paneID, view: view, session: session, store: store, toastCenter: toastCenter, confirmation: confirmation)
+    }
+
+    private static func paste(
+        _ text: String,
+        into paneID: UUID,
+        view: SurfaceView?,
+        session: WindowSession,
+        store: TmuxConnectionStore?,
+        toastCenter: ToastCenter?,
+        confirmation: ClipboardConfirmationCoordinator?
+    ) {
+        guard let tab = session.tab(containing: paneID),
+              let mirror = PaneActions.liveMirror(for: tab, in: store, toastCenter: toastCenter)
+        else { return }
         guard TmuxPasteBuffer.needsConfirmation(text) else {
             mirror.paste(text, paneID: paneID)
             return
         }
+        // The sheet is anchored to the pane's view; without one there is
+        // nowhere to ask, and the text is not sent.
+        guard let view else { return }
         confirmation?.enqueueMirrorPaste(contents: text, view: view) { [weak mirror] in
             mirror?.paste(text, paneID: paneID)
         }
     }
+
+    // swiftlint:enable function_parameter_count
 }

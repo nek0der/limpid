@@ -21,6 +21,16 @@
         }
       }
     },
+    "Only panes of the same tmux session can move into this tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このタブには同じ tmux セッションのペインしか移動できません"
+          }
+        }
+      }
+    },
     "Couldn't equalize the splits": {
       "localizations": {
         "ja": {

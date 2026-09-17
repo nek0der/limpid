@@ -197,19 +197,22 @@ extension SurfaceView: NSMenuItemValidation {
         case #selector(copy(_:)):
             guard let surface else { return false }
             return ghostty_surface_has_selection(surface)
-        // A mirror tab does not close panes (`TabCapabilities.canClosePane`);
-        // the item stays in the menu, disabled, so the list keeps its shape.
-        // Paste stays enabled: `paste(_:)` sends a mirror pane's paste to tmux.
+        // Items the tab may refuse stay in the menu, disabled, so the list
+        // keeps its shape. Close follows the ⌘W rule: a mirror tab refuses
+        // the pane half, and the item still closes a tab's last pane.
         case #selector(closePaneFromMenu(_:)):
-            return surface != nil && !isMirror
+            return surface != nil && canClosePaneOrTab?() == true
+        case #selector(splitRight(_:)),
+             #selector(splitDown(_:)):
+            return surface != nil && tabCapabilities?()?.canSplit == true
+        // Paste stays enabled on every tab; `paste(_:)` picks the route
+        // from `TabCapabilities.pastesThroughTmux`.
         case #selector(paste(_:)),
              #selector(selectAll(_:)),
              #selector(clearScreen(_:)),
              #selector(scrollToTop(_:)),
              #selector(scrollToBottom(_:)),
-             #selector(findInSurface(_:)),
-             #selector(splitRight(_:)),
-             #selector(splitDown(_:)):
+             #selector(findInSurface(_:)):
             return surface != nil
         case #selector(movePaneToNewTab(_:)):
             return surface != nil && canMoveToNewTab?() == true

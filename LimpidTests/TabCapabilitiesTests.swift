@@ -7,8 +7,7 @@ import Testing
 
 @Suite("Tab capabilities")
 struct TabCapabilitiesTests {
-    /// The rows of `TabCapabilities.of` are not restated here; the call
-    /// sites that read them are tested where the behavior lives
+    /// Rows an action guards on are tested where the behavior lives
     /// (`PaneActionsTests`, `TabActionsMergePaneIntoTabTests`, and the
     /// review cases below).
     @Test("a tab reads its capabilities from its kind")
@@ -17,6 +16,45 @@ struct TabCapabilitiesTests {
         #expect(tab.capabilities == TabCapabilities.of(.terminal))
         tab.kind = .tmuxMirror
         #expect(tab.capabilities == TabCapabilities.of(.tmuxMirror))
+    }
+
+    /// The rows only AppKit and SwiftUI read: the file drop, the paste
+    /// route, the divider tooltip, and the split buttons. No action test
+    /// would notice one of them flipping, so their values are pinned here.
+    @Test("the rows only the UI reads hold their values for each kind")
+    func uiOnlyRows_arePinned() {
+        let terminal = TabCapabilities.of(.terminal)
+        #expect(terminal.canDropFile)
+        #expect(!terminal.pastesThroughTmux)
+        #expect(terminal.canEqualizeSubtree)
+        #expect(terminal.canSplit)
+
+        // A mirror pane takes a drop too, typed through tmux's paste.
+        let mirror = TabCapabilities.of(.tmuxMirror)
+        #expect(mirror.canDropFile)
+        #expect(mirror.pastesThroughTmux)
+        #expect(!mirror.canEqualizeSubtree)
+        #expect(mirror.canSplit)
+    }
+
+    /// The drop overlay's highlight and the drop handler both ask this, so
+    /// a mirror tab lights only the center, which tmux can swap.
+    @Test("a pane drop is allowed on the center when the tab swaps and on an edge when it inserts")
+    func allowsPaneDrop_followsSwapAndInsert() {
+        let edges: [PaneDropZone] = [.left, .right, .top, .bottom]
+        let terminal = TabCapabilities.of(.terminal)
+        #expect(terminal.allowsPaneDrop(on: .center))
+        #expect(edges.allSatisfy { terminal.allowsPaneDrop(on: $0) })
+
+        let mirror = TabCapabilities.of(.tmuxMirror)
+        #expect(mirror.allowsPaneDrop(on: .center))
+        #expect(!edges.contains { mirror.allowsPaneDrop(on: $0) })
+
+        var custom = terminal
+        custom.canSwap = false
+        custom.canInsert = false
+        #expect(!custom.allowsPaneDrop(on: .center))
+        #expect(!edges.contains { custom.allowsPaneDrop(on: $0) })
     }
 
     /// Review takes a pane implicitly when it follows the user, and a mirror

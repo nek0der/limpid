@@ -208,4 +208,21 @@ struct TabActionsMergePaneIntoTabTests {
         #expect(session.tab(source.id)?.splitTree == sourceBefore)
         #expect(session.tab(target.id)?.splitTree == targetBefore)
     }
+
+    /// The refusal names what the user did. Dropping an ordinary pane on a
+    /// mirror tab is about the tab; moving a tmux pane out is about the
+    /// tmux pane.
+    @Test("a refused merge says whether the tab or the tmux pane stopped it", arguments: [false, true])
+    func mirrorMerge_refusal_namesTheSideThatRefused(sourceIsMirror: Bool) throws {
+        let (session, source, target, movedPane) = try Self.sessionWithSourceAndTarget()
+        session.update(sourceIsMirror ? source.id : target.id) { $0.kind = .tmuxMirror }
+        let toastCenter = ToastCenter()
+
+        TmuxMirrorActions.mergePaneIntoTab(session, paneID: movedPane, into: target.id, store: nil, toastCenter: toastCenter)
+
+        let expected = sourceIsMirror
+            ? String(localized: "A tmux pane can only move between windows of its own session")
+            : String(localized: "Only panes of the same tmux session can move into this tab")
+        #expect(toastCenter.current?.message == expected)
+    }
 }

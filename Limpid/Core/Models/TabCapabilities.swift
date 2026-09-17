@@ -29,6 +29,12 @@ struct TabCapabilities: Equatable {
     var canClosePane: Bool
     /// Drop a file onto a pane to type its path.
     var canDropFile: Bool
+    /// A paste, and the paths a file drop types, go to tmux as a paste
+    /// buffer (`TmuxMirrorActions.paste`) instead of through libghostty:
+    /// only tmux knows whether the program in the pane wants them
+    /// bracketed. Only a mirror tab holds mirror surfaces, so this row and
+    /// the kind of surface a pane has always agree.
+    var pastesThroughTmux: Bool
     /// Receive a pane dragged out of another tab.
     var canAcceptForeignPane: Bool
     /// Show the review surface over the tab.
@@ -48,6 +54,7 @@ struct TabCapabilities: Equatable {
                 canEqualizeSubtree: true,
                 canClosePane: true,
                 canDropFile: true,
+                pastesThroughTmux: false,
                 canAcceptForeignPane: true,
                 canOpenReview: true,
                 appliesFontToEveryPane: false
@@ -60,7 +67,8 @@ struct TabCapabilities: Equatable {
                 canEqualize: true,
                 canEqualizeSubtree: false,
                 canClosePane: false,
-                canDropFile: false,
+                canDropFile: true,
+                pastesThroughTmux: true,
                 canAcceptForeignPane: false,
                 canOpenReview: false,
                 appliesFontToEveryPane: true
