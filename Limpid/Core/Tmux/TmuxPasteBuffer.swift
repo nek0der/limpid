@@ -3,6 +3,9 @@
 
 import Darwin
 import Foundation
+import OSLog
+
+private let log = Logger.limpid("tmux.paste")
 
 /// A paste into a mirror pane goes to tmux as a buffer, not as keystrokes:
 /// `paste-buffer -p` brackets it exactly when the program in the pane has
@@ -34,6 +37,25 @@ enum TmuxPasteBuffer {
     /// Where the files live: a per-user directory only we can list.
     static var defaultDirectory: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("dev.limpid.tmux-paste", isDirectory: true)
+    }
+
+    /// Drop whatever an earlier run left in the paste directory, at launch.
+    /// A file is removed as soon as tmux has read it or refused to, but a
+    /// crash in between leaves the clipboard's text on disk, and nothing
+    /// running now can be waiting for a file from a run that is over. The
+    /// directory is created first, so a launch that never pastes still
+    /// leaves it owner-only for the first paste that does.
+    static func removeLeftoverFiles(in directory: URL = defaultDirectory) {
+        SecureFileWrite.ensureUserOnlyDirectory(directory)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in names where name.hasPrefix("limpid-") {
+            let file = directory.appendingPathComponent(name, isDirectory: false)
+            do {
+                try FileManager.default.removeItem(at: file)
+            } catch {
+                log.error("left a paste file behind: \(String(describing: error), privacy: .public)")
+            }
+        }
     }
 
     /// Write `text` to a new file readable by us alone. Created with

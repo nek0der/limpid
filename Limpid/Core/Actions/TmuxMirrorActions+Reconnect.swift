@@ -49,11 +49,11 @@ extension TmuxMirrorActions {
         store: TmuxConnectionStore,
         otherClients: OtherClientsGate?
     ) -> Task<Void, Never>? {
-        guard let tmuxPath = store.tmuxExecutable,
-              let tab = session.tab(tabID),
-              let ref = mirrorRef(of: tab),
-              store.canReconnect(tabID: tabID)
-        else { return nil }
+        guard let tmuxPath = store.tmuxExecutable else {
+            log.notice("no reconnect for tab \(tabID, privacy: .public): no tmux on this machine")
+            return nil
+        }
+        guard let (tab, ref) = reconnectable(tabID: tabID, session: session, store: store) else { return nil }
         let binding = ref.binding
         let key = TmuxConnectionStore.Key(binding)
         let generation = TmuxServerGeneration.recorded(in: binding)
@@ -104,6 +104,31 @@ extension TmuxMirrorActions {
                 }
             }
         }
+    }
+
+    /// The tab and the tmux side of it, when a reconnect can go ahead at
+    /// all. Every reason it cannot leaves a line: from outside, a reconnect
+    /// that returns here and one that ran and found nothing to do look the
+    /// same — nothing about the tab changes either way.
+    private static func reconnectable(
+        tabID: UUID,
+        session: WindowSession,
+        store: TmuxConnectionStore
+    ) -> (tab: Tab, ref: TmuxPaneRef)? {
+        guard let tab = session.tab(tabID), let ref = mirrorRef(of: tab) else {
+            log.notice("no reconnect for tab \(tabID, privacy: .public): not a mirror tab")
+            return nil
+        }
+        // The everyday reason, and the quiet one: another tab of the same
+        // session took this one along a moment ago, or it is already live.
+        guard store.canReconnect(tabID: tabID) else {
+            log.debug("""
+            no reconnect for tab \(tabID, privacy: .public): \
+            \(String(describing: store.tabConnections[tabID]), privacy: .public)
+            """)
+            return nil
+        }
+        return (tab, ref)
     }
 
     /// Reconnect tab `tabID` because the user asked for it, from the menu or
@@ -247,13 +272,21 @@ extension TmuxMirrorActions {
         var started: [TmuxWindowMirror] = []
         for tabID in tabIDs {
             guard let tab = session.tab(tabID), let ref = mirrorRef(of: tab) else { continue }
-            if store.liveMirror(showing: ref.windowID, of: binding) != nil {
+            if let shown = store.liveMirror(showing: ref.windowID, of: binding) {
+                // tmux feeds each pane to one sink, so this tab stays
+                // disconnected while the other one shows the window. It
+                // reads as a reconnect that did nothing at all.
+                log.notice("""
+                tab \(tabID, privacy: .public) not reconnected: window \(ref.windowID, privacy: .public) \
+                is already mirrored by tab \(shown.tabID, privacy: .public)
+                """)
                 store.setTabConnection(.disconnected, tabID: tabID)
                 continue
             }
             let mirror = store.makeMirror(
                 tabID: tabID,
                 windowID: ref.windowID,
+                binding: ref.binding,
                 names: (binding.sessionName, windowName(of: tab, binding: binding, store: store)),
                 connection: connection,
                 isNewTab: false,

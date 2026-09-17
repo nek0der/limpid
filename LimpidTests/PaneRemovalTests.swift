@@ -114,6 +114,7 @@ struct PaneRemovalTests {
         let mirror = TmuxWindowMirror(
             tabID: tab.id,
             windowID: "@1",
+            binding: Self.binding,
             sessionName: "t",
             windowName: "w",
             connection: connection,

@@ -67,9 +67,21 @@ extension TmuxMirrorActions {
             // The store is released from the check whichever way the body
             // ends, so a pane can never be left without a surface.
             defer { store.endRestoreCheck() }
-            var answers: [String: TmuxServerSessions] = [:]
-            for socketPath in orderedSockets(claims) {
-                answers[socketPath] = await probe.sessions(socketPath)
+            // One socket's answer says nothing about another's, and a
+            // server that has stopped answering costs the query its whole
+            // timeout, so the sockets are asked at once: the panes hold
+            // their surfaces back until every answer is in.
+            let answers = await withTaskGroup(
+                of: (socketPath: String, answer: TmuxServerSessions).self
+            ) { group in
+                for socketPath in orderedSockets(claims) {
+                    group.addTask { await (socketPath, probe.sessions(socketPath)) }
+                }
+                var collected: [String: TmuxServerSessions] = [:]
+                for await answered in group {
+                    collected[answered.socketPath] = answered.answer
+                }
+                return collected
             }
             var panes: [String: TmuxSessionPane] = [:]
             for session in TmuxBindingMigration.liveAgentSessions(claims, answers: answers) {
@@ -87,8 +99,8 @@ extension TmuxMirrorActions {
         }
     }
 
-    /// One query per socket, in the order the claims name them, so a
-    /// session with several panes on one server costs one client.
+    /// One query per socket, so a session with several panes on one server
+    /// costs one client.
     private static func orderedSockets(_ claims: [TmuxBindingMigration.Claim]) -> [String] {
         var sockets: [String] = []
         for claim in claims where !sockets.contains(claim.socketPath) {

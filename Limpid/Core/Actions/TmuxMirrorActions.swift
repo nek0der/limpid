@@ -63,6 +63,7 @@ enum TmuxMirrorActions {
         let mirror = store.makeMirror(
             tabID: tab.id,
             windowID: target.windowID,
+            binding: target.binding,
             names: (target.binding.sessionName, target.windowName),
             connection: connection,
             isNewTab: true,

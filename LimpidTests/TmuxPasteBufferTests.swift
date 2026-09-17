@@ -70,6 +70,36 @@ struct TmuxPasteBufferTests {
         }
     }
 
+    /// The file holds the clipboard in plain text and is removed as soon as
+    /// tmux answers, so only a run that ended before the answer leaves one.
+    @Test("a launch clears the paste files an earlier run left, and creates the directory owner-only")
+    func removeLeftoverFiles_clearsThePasteDirectory() throws {
+        try withTempDir { root in
+            let directory = root.appendingPathComponent("paste")
+            _ = try TmuxPasteBuffer.writeFile("secret", in: directory, name: TmuxPasteBuffer.bufferName())
+            _ = try TmuxPasteBuffer.writeFile("secret", in: directory, name: TmuxPasteBuffer.bufferName())
+            let other = directory.appendingPathComponent("not-ours.txt")
+            try Data("keep".utf8).write(to: other)
+
+            TmuxPasteBuffer.removeLeftoverFiles(in: directory)
+
+            let left = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            #expect(left == ["not-ours.txt"])
+            let mode = try #require(FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? Int)
+            #expect(mode & 0o777 == 0o700)
+        }
+    }
+
+    @Test("clearing a directory that does not exist yet creates it and leaves nothing behind")
+    func removeLeftoverFiles_withoutADirectory_createsIt() throws {
+        try withTempDir { root in
+            let directory = root.appendingPathComponent("paste")
+            TmuxPasteBuffer.removeLeftoverFiles(in: directory)
+            let left = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            #expect(left.isEmpty)
+        }
+    }
+
     @Test("the commands quote the buffer, the path, and the pane")
     func commands_areQuoted() {
         let file = URL(fileURLWithPath: "/tmp/it's here/limpid-x")

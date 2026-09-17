@@ -20,6 +20,27 @@ struct TmuxReplyAssembler: Equatable {
         /// their own replies in order.
         case attachFinished(lines: [String], isError: Bool)
         case reply(lines: [String], isError: Bool, marker: TmuxReplyMarker)
+        /// The stream broke a rule that pairing rests on. Nothing here can
+        /// re-synchronize: which command a later block answers is no longer
+        /// derivable, so the caller ends the connection.
+        case broken(Violation)
+    }
+
+    /// A stream that is not the ordered sequence of closed blocks the
+    /// protocol describes.
+    enum Violation: Equatable {
+        /// A `%begin` arrived while a block was still open. tmux runs one
+        /// command at a time for a control client and never nests blocks,
+        /// so the line before it was taken for something it was not.
+        case nestedBegin(begin: TmuxReplyMarker, open: TmuxReplyMarker)
+        /// A terminator arrived with no block open. Taking it for a reply
+        /// would hand the oldest command an answer that is not its own.
+        case terminatorWithoutBegin(TmuxReplyMarker)
+        /// A block numbered at or below the block before it. tmux numbers
+        /// them per server and strictly increasing, so this is either a
+        /// repeat or a reordering, and the block a reply belongs to can no
+        /// longer be told.
+        case numberNotIncreasing(begin: TmuxReplyMarker, previous: Int)
     }
 
     /// The `%begin` of the block being read, and the lines read so far.
@@ -30,6 +51,11 @@ struct TmuxReplyAssembler: Equatable {
 
     private var pending: Block?
     private var hasSeenAttachBlock = false
+    /// The number of the last `%begin` we read. tmux numbers blocks per
+    /// server, so the numbers of one client's blocks have gaps (299, 305,
+    /// 306, 309 in the recorded session) and only their order is ours to
+    /// check.
+    private var lastBeginNumber: Int?
 
     /// The marker of the block between its `%begin` and its terminator, or
     /// `nil` outside a block. The line parser needs it to tell the
@@ -46,10 +72,20 @@ struct TmuxReplyAssembler: Equatable {
     mutating func consume(_ line: TmuxControlLine) -> Event? {
         switch line {
         case let .begin(marker):
+            if let open = pending?.begin {
+                return .broken(.nestedBegin(begin: marker, open: open))
+            }
+            if let previous = lastBeginNumber, marker.number <= previous {
+                return .broken(.numberNotIncreasing(begin: marker, previous: previous))
+            }
+            lastBeginNumber = marker.number
             pending = Block(begin: marker)
             return nil
         case let .end(marker), let .error(marker):
-            let lines = pending?.lines ?? []
+            guard let block = pending else {
+                return .broken(.terminatorWithoutBegin(marker))
+            }
+            let lines = block.lines
             pending = nil
             var isError = false
             if case .error = line {

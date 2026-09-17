@@ -52,6 +52,7 @@ struct TmuxWindowMirrorLayoutTests {
         let mirror = TmuxWindowMirror(
             tabID: tab.id,
             windowID: "@1",
+            binding: Self.binding,
             sessionName: "t",
             windowName: "w",
             connection: connection,
@@ -82,6 +83,26 @@ struct TmuxWindowMirrorLayoutTests {
         let added = try #require(leaves.last)
         #expect(tab.paneSources == [harness.leafID: Self.source("%0"), added: Self.source("%1")])
         #expect(harness.registry.unregisteredIDs.isEmpty)
+    }
+
+    /// tmux moves a pane out of the window (`break-pane`, `join-pane`) and
+    /// announces the layout without it. The mirror lets that leaf go before
+    /// the announcement, so the tab can hold no `.tmux` source at all when
+    /// the layout arrives; reading the session back out of the tab would
+    /// leave the mirror unable to write a source for any pane tmux adds
+    /// afterwards, for the rest of its life.
+    @Test("a layout is folded even when the tab has no pane source left to name its session")
+    func layoutFold_withoutAnyPaneSource_stillWritesSources() throws {
+        let harness = makeHarness()
+        harness.session.update(harness.tabID) { $0.paneSources = [:] }
+
+        harness.mirror.handle(layoutChange(Self.sideBySide))
+
+        let tab = try #require(harness.tab)
+        let leaves = tab.splitTree.allLeafIDs()
+        #expect(leaves.count == 2)
+        #expect(tab.paneSources[leaves[0]] == Self.source("%0"))
+        #expect(tab.paneSources[leaves[1]] == Self.source("%1"))
     }
 
     @Test("a layout for another window changes nothing")

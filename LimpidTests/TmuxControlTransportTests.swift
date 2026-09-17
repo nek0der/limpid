@@ -411,11 +411,22 @@ struct TmuxControlTransportTests {
     /// `%0 | %1`, recorded by `record_tmux.py` (tmux 3.7c, 100x30 window).
     private static let sideBySide = "6b8b,100x30,0,0{50x30,0,0,0,49x30,51,0,1}"
     private static let layoutWithPane0 = "%layout-change @1 \(sideBySide) \(sideBySide) *"
+    /// The same two panes with the divider ten columns further right, so
+    /// the layout above resizes both of them.
+    private static let widerPane0 = "6b8b,100x30,0,0{60x30,0,0,0,39x30,61,0,1}"
+    private static let earlierLayout = "%layout-change @1 \(widerPane0) \(widerPane0) *"
 
     /// A paused, attached transport with a sink on `%0`, and the rebuild
     /// the pause started, read on the routing queue as a mirror reads it.
+    ///
+    /// The window's panes are given a size first, before the sink exists:
+    /// a pause names the panes a layout resizes, so the transport has to
+    /// know what they measured before. That first layout is delivered like
+    /// any other, which is why these tests count two.
     private func pausedSink(_ piped: PipedTransport) async throws -> (sink: TmuxPaneSink, rebuild: Int) {
         await piped.attach()
+        piped.feed(Self.earlierLayout + "\n")
+        #expect(await waitUntil { piped.log.lines.count == 1 })
         let sink = try TmuxPaneSink(channel: TmuxPaneChannel { _ in }, queue: piped.transport.queue, onOverflow: {})
         piped.transport.setSink(sink, forPane: "%0")
         sink.pause()
@@ -449,7 +460,7 @@ struct TmuxControlTransportTests {
         #expect(await waitUntil { outcome.value != nil })
         #expect(outcome.value == false)
         #expect(surfaceBytes(piped, sink).isEmpty)
-        #expect(await waitUntil { piped.log.lines.count == 1 })
+        #expect(await waitUntil { piped.log.lines.count == 2 })
         #expect(piped.transport.queue.sync { sink.latestRebuild } == rebuild + 1)
     }
 
@@ -467,10 +478,90 @@ struct TmuxControlTransportTests {
         _ = await piped.written(until: "capture-pane -p\n")
         piped.feed("%begin 2 5 1\nrow\n%end 2 5 1\n%output %0 BEFORE\n" + Self.layoutWithPane0 + "\n%output %0 AFTER\n")
 
-        #expect(await waitUntil { piped.log.lines.count == 1 })
+        #expect(await waitUntil { piped.log.lines.count == 2 })
         #expect(outcome.value == true)
         // Output between the reply and the layout is live; after it, dropped.
         #expect(surfaceBytes(piped, sink) == Data("CAP|BEFORE".utf8))
+    }
+
+    @Test("a layout that moves a pane without resizing it pauses nothing, so a drag does not repaint the window")
+    func layoutChange_withoutAResize_pausesNothing() async throws {
+        let piped = try PipedTransport()
+        defer { piped.tearDown() }
+        let (sink, rebuild) = try await pausedSink(piped)
+        defer { sink.close() }
+        // `%0` keeps 60x30 and only `%1` shrinks, so `%0` is not paused and
+        // the bytes it prints after the layout reach the surface.
+        let moved = "6b8b,100x30,0,0{60x30,0,0,0,29x30,61,0,1}"
+        piped.transport.queue.sync { sink.resumeInOrder(injecting: nil, rebuild: rebuild) }
+        piped.feed("%layout-change @1 \(moved) \(moved) *\n%output %0 LIVE\n")
+
+        let seen = await readUntil(fd: sink.channel.surfaceFd, contains: "LIVE", timeout: .seconds(2))
+        #expect(seen == Data("LIVE".utf8))
+        #expect(piped.transport.queue.sync { sink.latestRebuild } == rebuild)
+    }
+
+    // MARK: - Pairing
+
+    // Pairing is FIFO, and a stream that breaks the order it rests on
+    // would hand one command's reply to another — one pane's captured
+    // screen painted into another pane. None of these can be recovered
+    // from, so the connection ends and every command in flight fails.
+
+    @Test("a reply block numbered at or below the block before it ends the connection", arguments: [
+        "%begin 3 5 1\nlate\n%end 3 5 1\n",
+        "%begin 3 4 1\nearlier\n%end 3 4 1\n"
+    ])
+    func replyNumberNotIncreasing_endsTheConnection(second: String) async throws {
+        let piped = try PipedTransport()
+        defer { piped.tearDown() }
+        let log = piped.log
+        await piped.attach()
+        piped.transport.send("first", completion: log.recordReply())
+        piped.transport.send("second", completion: log.recordReply())
+        _ = await piped.written(until: "second\n")
+
+        piped.feed("%begin 3 5 1\none\n%end 3 5 1\n" + second)
+        #expect(await waitUntil { log.replies.count == 2 })
+        #expect(log.replies.map(\.lines) == [["one"], ["control stream broken"]])
+        #expect(log.replies.map(\.isError) == [false, true])
+        #expect(await waitUntil { log.linesAtEOF != nil })
+    }
+
+    @Test("a terminator with no block open ends the connection instead of answering the oldest command")
+    func terminatorWithoutBegin_endsTheConnection() async throws {
+        let piped = try PipedTransport()
+        defer { piped.tearDown() }
+        let log = piped.log
+        await piped.attach()
+        piped.transport.send("held", completion: log.recordReply())
+        _ = await piped.written(until: "held\n")
+
+        piped.feed("%end 3 5 1\n")
+        #expect(await waitUntil { log.replies.count == 1 })
+        #expect(log.replies.first?.lines == ["control stream broken"])
+        #expect(await waitUntil { log.linesAtEOF != nil })
+    }
+
+    @Test("a reply with no command waiting is dropped, and the next command still gets its own reply")
+    func replyWithNothingWaiting_isNotPaired() async throws {
+        let piped = try PipedTransport()
+        defer { piped.tearDown() }
+        let log = piped.log
+        await piped.attach()
+
+        // Routed before the command is sent: the trailing notification is
+        // what says the block has been through the queue.
+        piped.feed("%begin 3 5 1\nnobody\n%end 3 5 1\n%window-add @1\n")
+        #expect(await waitUntil { log.lines.count == 1 })
+        piped.transport.send("mine", completion: log.recordReply())
+        _ = await piped.written(until: "mine\n")
+        piped.feed("%begin 3 6 1\nours\n%end 3 6 1\n")
+
+        #expect(await waitUntil { log.replies.count == 1 })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(log.replies.map(\.lines) == [["ours"]])
+        #expect(log.linesAtEOF == nil)
     }
 
     @Test("a %layout-change naming panes without sinks pauses nothing and is still delivered")

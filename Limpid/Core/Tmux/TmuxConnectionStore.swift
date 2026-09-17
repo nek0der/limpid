@@ -310,6 +310,7 @@ final class TmuxConnectionStore {
     func makeMirror(
         tabID: UUID,
         windowID: String,
+        binding: TmuxBinding,
         names: (session: String, window: String),
         connection: TmuxSessionConnection,
         isNewTab: Bool,
@@ -318,6 +319,7 @@ final class TmuxConnectionStore {
         let mirror = TmuxWindowMirror(
             tabID: tabID,
             windowID: windowID,
+            binding: binding,
             sessionName: names.session,
             windowName: names.window,
             connection: connection,
@@ -396,7 +398,7 @@ final class TmuxConnectionStore {
             for mirror in started where !present.contains(mirror.windowID) {
                 guard mirrors[mirror.tabID] === mirror, mirror.connectionState == .connected else { continue }
                 let name = mirror.displayName
-                if endTab(mirror.endedTab) {
+                if endTab(mirror.endedTab, route: .windowMissing) {
                     onNotice?(Self.windowClosedNotice(name: name))
                 }
             }
@@ -428,11 +430,13 @@ final class TmuxConnectionStore {
         guard !holdsNothing else { return }
         let liveTabs = Set(tabs.map(\.id))
         var touchedKeys: Set<Key> = []
+        // Stopped first, then dropped in one pass: a dictionary is not
+        // walked while it is being written.
         for (tabID, mirror) in mirrors where !liveTabs.contains(tabID) {
             mirror.stop()
-            mirrors.removeValue(forKey: tabID)
             touchedKeys.insert(Self.key(of: mirror))
         }
+        mirrors = mirrors.filter { liveTabs.contains($0.key) }
         // By identity, not by key: a tab that lost its connection keeps a
         // mirror under the same key as the connection that replaced it.
         let usedKeys = Set(connections.compactMap { key, connection in
@@ -440,10 +444,10 @@ final class TmuxConnectionStore {
         })
         for (key, connection) in connections where !usedKeys.contains(key) {
             connection.stop()
-            connections.removeValue(forKey: key)
-            outputGates.removeValue(forKey: key)
             log.notice("closed idle connection session=\(key.sessionID, privacy: .public)")
         }
+        connections = connections.filter { usedKeys.contains($0.key) }
+        outputGates = outputGates.filter { usedKeys.contains($0.key) }
         for key in touchedKeys where usedKeys.contains(key) {
             gateOutput(for: key)
         }
@@ -454,19 +458,13 @@ final class TmuxConnectionStore {
                 mirrors[tab.id]?.tabChanged(tab)
             }
         }
-        for tabID in tabConnections.keys where !liveTabs.contains(tabID) {
-            tabConnections.removeValue(forKey: tabID)
-        }
-        for tabID in tabIssues.keys where !liveTabs.contains(tabID) {
-            tabIssues.removeValue(forKey: tabID)
-        }
+        tabConnections = tabConnections.filter { liveTabs.contains($0.key) }
+        tabIssues = tabIssues.filter { liveTabs.contains($0.key) }
         guard !channels.isEmpty || !surfaceReports.isEmpty else { return }
         let channelLeaves = Set(tabs.flatMap { tab in
             tab.splitTree.allLeafIDs().filter { tab.ioSource(for: $0) != .local }
         })
-        for paneID in channels.keys where !channelLeaves.contains(paneID) {
-            channels.removeValue(forKey: paneID)
-        }
+        channels = channels.filter { channelLeaves.contains($0.key) }
         surfaceReports.retain(leaves: channelLeaves, tabs: liveTabs)
     }
 
@@ -527,7 +525,7 @@ final class TmuxConnectionStore {
         mirror.connection.send("display-message -p ''") { [weak self, weak mirror] _, _ in
             guard let self, let mirror, mirrors[mirror.tabID] === mirror, mirror.connectionState == .connected else { return }
             let name = mirror.displayName
-            if endTab(mirror.endedTab) {
+            if endTab(mirror.endedTab, route: .windowClosed) {
                 onNotice?(Self.windowClosedNotice(name: name))
             }
         }
@@ -593,6 +591,19 @@ final class TmuxConnectionStore {
         let session: WindowSession
     }
 
+    /// Which news reached us about a mirror tab's tmux. Only the log reads
+    /// it: every route ends in the same decision (`endTab`), and a report
+    /// that a tab closed by itself is hard to place without it.
+    enum EndRoute: String {
+        /// tmux announced that the mirrored window closed.
+        case windowClosed = "window closed"
+        /// A reconnected client no longer lists the mirrored window.
+        case windowMissing = "window missing on reconnect"
+        /// The session is gone, whether its connection lost it or a
+        /// reconnect found it so.
+        case sessionGone = "session gone"
+    }
+
     /// Every tab whose session tmux no longer has, whether a connection lost
     /// it or a reconnect found it gone, and whether the session ended or its
     /// whole server stopped. Each is dealt with by `endTab`, and the tabs
@@ -603,8 +614,8 @@ final class TmuxConnectionStore {
     /// tmux's side to confirm, and nothing to reopen it onto.
     func sessionEnded(_ tabs: [EndedTab], sessionName: String) {
         var isWorthTelling = false
-        for ended in tabs where endTab(ended) {
-            isWorthTelling = true
+        for ended in tabs {
+            isWorthTelling = endTab(ended, route: .sessionGone) || isWorthTelling
         }
         guard isWorthTelling else { return }
         onNotice?(Self.sessionEndedNotice(sessionName: sessionName))
@@ -621,9 +632,14 @@ final class TmuxConnectionStore {
     /// what the user watched happen, and a tab that becomes a terminal is
     /// still there with the conversation in it.
     @discardableResult
-    func endTab(_ ended: EndedTab) -> Bool {
+    func endTab(_ ended: EndedTab, route: EndRoute) -> Bool {
         guard let tab = ended.session.tab(ended.tabID) else { return false }
-        switch outcome(ofEnded: tab) {
+        let outcome = outcome(ofEnded: tab)
+        log.notice("""
+        tab \(ended.tabID, privacy: .public) window \(self.mirrors[ended.tabID]?.windowID ?? "?", privacy: .public): \
+        \(route.rawValue, privacy: .public) → \(String(describing: outcome), privacy: .public)
+        """)
+        switch outcome {
         case .close:
             TabActions.closeTab(ended.session, registry: registry, tabID: ended.tabID, confirm: false, isReopenable: false)
             return tab.mirrorOrigin == .user
@@ -674,7 +690,8 @@ final class TmuxConnectionStore {
         for endpoint in tab.mirroredEndpoints(aliases: [:]).keys {
             agentRuns?.reportGone(endpoint)
         }
-        mirrors.removeValue(forKey: tab.id)?.stop()
+        let mirror = mirrors.removeValue(forKey: tab.id)
+        mirror?.stop()
         tabConnections.removeValue(forKey: tab.id)
         tabIssues.removeValue(forKey: tab.id)
         for leafID in tab.splitTree.allLeafIDs() {
@@ -685,6 +702,11 @@ final class TmuxConnectionStore {
             t.paneSources = [:]
             t.mirrorOrigin = .user
             t.mirroredAgent = nil
+        }
+        // The connection may still serve other tabs, and this tab's window
+        // is no longer shown by any of them.
+        if let mirror {
+            gateOutput(for: Self.key(of: mirror))
         }
         log.notice("agent tab \(tab.id, privacy: .public) became a terminal: its tmux is gone")
     }

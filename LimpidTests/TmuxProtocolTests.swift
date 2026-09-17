@@ -264,6 +264,33 @@ struct TmuxProtocolTests {
         #expect(assembler.openBlock == nil)
     }
 
+    /// Pairing is FIFO over the blocks, so a stream that opens or closes
+    /// them out of order has already shifted which command a reply answers.
+    /// The assembler says so rather than answering the oldest command with
+    /// a block that is not its own; the transport ends the connection there
+    /// (`TmuxControlTransport.handle`).
+    @Test("a stream that breaks the block rules is reported as broken, not paired")
+    func assembler_brokenBlockStream_isReported() {
+        let open = TmuxReplyMarker(timestamp: 1, number: 5, flags: 1)
+        let inner = TmuxReplyMarker(timestamp: 1, number: 6, flags: 1)
+        let lower = TmuxReplyMarker(timestamp: 1, number: 4, flags: 1)
+
+        var nested = TmuxReplyAssembler()
+        #expect([TmuxControlLine.begin(open), .begin(inner)].compactMap { nested.consume($0) }
+            == [.broken(.nestedBegin(begin: inner, open: open))])
+
+        var loose = TmuxReplyAssembler()
+        #expect([TmuxControlLine.end(open)].compactMap { loose.consume($0) }
+            == [.broken(.terminatorWithoutBegin(open))])
+
+        var backwards = TmuxReplyAssembler()
+        let stream: [TmuxControlLine] = [.begin(open), .end(open), .begin(lower)]
+        #expect(stream.compactMap { backwards.consume($0) } == [
+            .reply(lines: [], isError: false, marker: open),
+            .broken(.numberNotIncreasing(begin: lower, previous: open.number))
+        ])
+    }
+
     @Test("an attach block that ends in %error carries tmux's reason")
     func assembler_refusedAttach_carriesItsLines() {
         var assembler = TmuxReplyAssembler()

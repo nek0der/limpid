@@ -58,7 +58,7 @@ final class AgentMirrorRequestWatcher {
         }
         let descriptor = Darwin.open(directory.path, O_EVTONLY)
         guard descriptor >= 0 else {
-            log.error("cannot watch \(self.directory.path, privacy: .private): errno=\(errno)")
+            log.error("cannot watch \(self.directory.path, privacy: .private): errno=\(errno, privacy: .public)")
             return
         }
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -90,7 +90,7 @@ final class AgentMirrorRequestWatcher {
             let data = Self.readOwnFile(file)
             removeRequest(file)
             guard let data else {
-                log.error("dropped request \(name, privacy: .public): not a private regular file")
+                log.error("dropped request \(name, privacy: .private): not a private regular file")
                 continue
             }
             handle(data, name: name)
@@ -102,11 +102,11 @@ final class AgentMirrorRequestWatcher {
         do {
             request = try AgentMirrorRequest.parse(data, ownSocketName: ownSocketName)
         } catch {
-            log.error("dropped request \(name, privacy: .public): \(String(describing: error), privacy: .public)")
+            log.error("dropped request \(name, privacy: .private): \(String(describing: error), privacy: .public)")
             return
         }
         guard !hasLeaf(request.leafID) else {
-            log.notice("request \(name, privacy: .public) already has its tab")
+            log.notice("request \(name, privacy: .private) already has its tab")
             return
         }
         open(request)
@@ -118,7 +118,7 @@ final class AgentMirrorRequestWatcher {
         } catch {
             // Left behind, the file is read again on the next look and then
             // dropped as already served, since its tab exists by then.
-            log.error("cannot remove \(file.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+            log.error("cannot remove \(file.lastPathComponent, privacy: .private): \(String(describing: error), privacy: .public)")
         }
     }
 

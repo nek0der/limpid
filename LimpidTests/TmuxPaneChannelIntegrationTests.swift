@@ -51,6 +51,7 @@ struct TmuxPaneChannelIntegrationTests {
             let mirror = TmuxWindowMirror(
                 tabID: tab.id,
                 windowID: windowID,
+                binding: binding,
                 sessionName: "t",
                 windowName: "w",
                 connection: connection,
@@ -139,6 +140,7 @@ struct TmuxPaneChannelIntegrationTests {
             let mirror = try TmuxWindowMirror(
                 tabID: tabID,
                 windowID: windowID,
+                binding: binding,
                 sessionName: "t",
                 windowName: "w",
                 connection: store.connection(for: binding),

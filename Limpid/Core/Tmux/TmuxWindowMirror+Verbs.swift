@@ -137,7 +137,11 @@ extension TmuxWindowMirror {
 
     private func run(_ command: String, failure: String) {
         guard canSend else { return }
-        log.debug("verb: \(command, privacy: .public)")
+        // The tmux command name says which verb ran; its arguments name
+        // panes and windows of the user's session.
+        let name = command.prefix { $0 != " " }
+        let arguments = command.dropFirst(name.count)
+        log.debug("verb \(String(name), privacy: .public)\(String(arguments), privacy: .private)")
         connection.send(command) { [weak self] lines, isError in
             if isError {
                 self?.reportFailure(lines, message: failure)
@@ -168,12 +172,16 @@ extension TmuxWindowMirror {
     /// same error flag as a `%error`. Those failures arrive after the store
     /// marked this mirror disconnected, and they are not tmux refusing the
     /// verb, so the user is not told the verb failed.
+    ///
+    /// Only the toast is raised here. Every `%error` tmux sends is already
+    /// recorded once, with the command it refused, by the transport that
+    /// paired it (`TmuxControlTransport.handle`); a second error line for
+    /// the same refusal only makes the log harder to read.
     private func reportFailure(_ lines: [String], message: String) {
         guard connectionState == .connected else {
-            log.notice("verb ended with the connection: \(lines.joined(separator: " "), privacy: .private)")
+            log.debug("verb ended with the connection: \(lines.joined(separator: " "), privacy: .private)")
             return
         }
-        log.error("tmux refused: \(lines.joined(separator: " "), privacy: .private)")
         onCommandFailed?(message)
     }
 }

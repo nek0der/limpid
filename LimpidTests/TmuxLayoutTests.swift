@@ -144,4 +144,51 @@ struct TmuxLayoutTests {
         let second = try #require(TmuxLayout.parse(mainVertical)).paneNode(leafID: leafID)
         #expect(first == second)
     }
+
+    // MARK: - Bounds
+
+    // The string arrives on a stream we do not write, and it is parsed on
+    // the routing queue, so every one of these would take the app down
+    // rather than leave a tab unpainted.
+
+    @Test("a field longer than a window's cell coordinates fails instead of overflowing")
+    func parse_overlongField_fails() {
+        let digits = String(repeating: "9", count: TmuxLayout.Bound.digitCount + 1)
+        #expect(TmuxLayout.parse("a87d,\(digits)x30,0,0,0") == nil)
+        #expect(TmuxLayout.parse("a87d,100x30,0,0,\(digits)") == nil)
+        // One digit under the bound still parses, so the bound is not in
+        // the way of anything tmux can describe.
+        let widest = String(repeating: "9", count: TmuxLayout.Bound.digitCount)
+        #expect(TmuxLayout.parse("a87d,\(widest)x30,0,0,0") != nil)
+    }
+
+    @Test("nesting past the bound fails, and nesting up to it parses")
+    func parse_deepNesting_failsPastTheBound() {
+        #expect(TmuxLayout.parse(nested(depth: TmuxLayout.Bound.depth - 1)) != nil)
+        #expect(TmuxLayout.parse(nested(depth: TmuxLayout.Bound.depth + 2)) == nil)
+        // Far past it, which is what a stream that is not tmux would send.
+        #expect(TmuxLayout.parse(nested(depth: 200_000)) == nil)
+    }
+
+    /// `{100x30,0,0{100x30,0,0{…,0}}}`: one container per level, each with
+    /// a single child, ending in a pane.
+    private func nested(depth: Int) -> String {
+        let box = "100x30,0,0"
+        return "a87d," + String(repeating: "\(box){", count: depth) + "\(box),0" + String(repeating: "}", count: depth)
+    }
+
+    @Test("more panes than a window could hold fails, and a wide flat container folds without recursing")
+    func parse_paneCount_isBounded() throws {
+        let wide = try #require(TmuxLayout.parse(flat(panes: TmuxLayout.Bound.paneCount)))
+        #expect(wide.root.paneIDs.count == TmuxLayout.Bound.paneCount)
+        #expect(wide.root.paneRects.count == TmuxLayout.Bound.paneCount)
+        #expect(TmuxLayout.parse(flat(panes: TmuxLayout.Bound.paneCount + 1)) == nil)
+    }
+
+    /// One horizontal container of `panes` one-cell panes, which is the
+    /// shape that folds to a tree as deep as it is wide.
+    private func flat(panes: Int) -> String {
+        let children = (0..<panes).map { "1x30,\($0 * 2),0,\($0)" }.joined(separator: ",")
+        return "a87d,\(panes * 2)x30,0,0{\(children)}"
+    }
 }

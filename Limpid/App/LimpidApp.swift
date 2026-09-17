@@ -355,6 +355,9 @@ final class AppState {
         // Settles the restored bindings first — an agent Limpid hosted in
         // tmux becomes a mirror tab here — and reconnects every mirror tab
         // after that.
+        // The clipboard text of a paste this process did not live to see
+        // read is still on disk; no connection of this run is waiting for it.
+        TmuxPasteBuffer.removeLeftoverFiles()
         TmuxMirrorActions.reconcileRestoredBindings(session: session, store: tmuxStore)
         // After the restore, so a request whose tab was saved is recognized
         // as served rather than opened twice.

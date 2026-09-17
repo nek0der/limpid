@@ -341,6 +341,53 @@ struct TmuxPaneSinkTests {
         #expect(readBytes(8, from: fd) == Data("CAP|LIVE".utf8))
     }
 
+    /// A capture reply can reach a sink that is not paused: the mirror that
+    /// asked for it may have detached the pane and attached it again, or
+    /// another pause may have been ended first. Nothing can be injected
+    /// there without landing on top of output already on screen, and the
+    /// caller reads the same answer it reads for a superseded capture.
+    @Test("a resume without a pause injects nothing and answers no")
+    func resumeInOrder_withoutAPause_returnsFalse() async throws {
+        let harness = try SinkHarness()
+        defer { harness.sink.close() }
+        let sink = harness.sink
+
+        harness.write("LIVE|")
+        let rebuild = harness.queue.sync { sink.latestRebuild }
+        #expect(!harness.queue.sync { sink.resumeInOrder(injecting: Data("CAP".utf8), rebuild: rebuild) })
+        harness.write("MORE")
+
+        let seen = await readUntil(fd: sink.channel.surfaceFd, contains: "MORE", timeout: .seconds(2))
+        #expect(seen == Data("LIVE|MORE".utf8))
+    }
+
+    /// A write source keeps reporting a descriptor whose write fails for
+    /// good as writable, so retrying would spin at full speed for as long
+    /// as the sink lives.
+    @Test("a write that fails for good stops the sink and is reported once")
+    func permanentWriteFailure_stopsTheSink() async throws {
+        let harness = try SinkHarness()
+        defer { harness.sink.close() }
+        let sink = harness.sink
+        // Without this the failing write raises SIGPIPE in the test runner;
+        // the channel keeps both ends open in the app, so this cannot
+        // happen there.
+        var isOn: Int32 = 1
+        #expect(setsockopt(
+            sink.channel.hostFd, SOL_SOCKET, SO_NOSIGPIPE, &isOn, socklen_t(MemoryLayout<Int32>.size)
+        ) == 0)
+        #expect(shutdown(sink.channel.hostFd, SHUT_WR) == 0)
+
+        harness.write("ONE")
+        #expect(await eventually { await harness.log.overflows == 1 })
+        // Nothing is held for a retry, and nothing more is reported.
+        harness.write("TWO")
+        harness.flood(512 * 1024)
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(await harness.log.overflows == 1)
+        #expect(harness.pendingStorage()?.isEmpty == true)
+    }
+
     @Test("a closed sink refuses a resume")
     func resumeInOrder_afterClose_returnsFalse() throws {
         let harness = try SinkHarness()

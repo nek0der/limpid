@@ -119,7 +119,10 @@ final class TmuxPaneChannel: @unchecked Sendable {
                 log.error("channel read failed host=\(hostFd, privacy: .public) errno=\(code, privacy: .public); reading stops")
                 source?.cancel()
             case .ended:
-                log.error("channel read reached EOF host=\(hostFd, privacy: .public); reading stops")
+                // Our own end of the socketpair is held open for as long as
+                // the channel exists, and the surface's end with it, so a
+                // reader here cannot legitimately see the far end close.
+                log.fault("channel read reached EOF host=\(hostFd, privacy: .public); reading stops")
                 source?.cancel()
             }
         }

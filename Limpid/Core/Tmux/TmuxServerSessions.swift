@@ -2,6 +2,9 @@
 // Limpid — asks one socket, once, which sessions its server has, and where an agent's session keeps its pane.
 
 import Foundation
+import OSLog
+
+private let log = Logger.limpid("tmux.sessions")
 
 /// One session of one server, as `TmuxServerSessions.listFormat` prints it.
 /// Every row carries the server's own run, so any row answers for the
@@ -39,7 +42,12 @@ enum TmuxServerSessions: Equatable {
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
             // A row we cannot read leaves us unable to say what the server
             // has, which is not the same as a server without the session.
-            guard fields.count == 4 else { return .unreachable }
+            // Every binding on this socket then reads as unreachable, which
+            // is otherwise indistinguishable from a server that hung.
+            guard fields.count == 4 else {
+                log.error("unreadable session row (\(fields.count, privacy: .public) fields): \(String(line), privacy: .private)")
+                return .unreachable
+            }
             rows.append(TmuxServerSessionRow(
                 serverPID: String(fields[0]),
                 serverStartedAt: String(fields[1]),

@@ -2,6 +2,9 @@
 // Limpid — bounded, cancellable execution of our own tmux client processes.
 
 import Foundation
+import OSLog
+
+private let log = Logger.limpid("tmux.command")
 
 enum TmuxTiming {
     static let queryTimeout: TimeInterval = 0.5
@@ -100,7 +103,28 @@ final class TmuxCommand: @unchecked Sendable {
                 _ = poll(&descriptor, 1, TmuxTiming.readPollMilliseconds)
             }
         }
-        return result(for: output)
+        let outcome = result(for: output)
+        Self.logIfFailed(outcome, arguments: arguments)
+        return outcome
+    }
+
+    /// A client that did not answer is the only record of why a probe, a
+    /// listing, or a generation check came back empty, and every caller
+    /// turns the result into a verdict that says nothing about the cause.
+    /// The subcommand says which query it was; the socket names a path of
+    /// the user's.
+    private static func logIfFailed(_ outcome: TmuxCommandResult, arguments: [String]) {
+        if case .success = outcome {
+            return
+        }
+        let socketPath = arguments.firstIndex(of: "-S").map { $0 + 1 }.flatMap { index in
+            index < arguments.count ? arguments[index] : nil
+        }
+        let subcommand = arguments.first { !$0.hasPrefix("-") && $0 != socketPath } ?? "?"
+        log.error("""
+        tmux \(subcommand, privacy: .public) on \(socketPath ?? "?", privacy: .private) \
+        came back \(String(describing: outcome), privacy: .public)
+        """)
     }
 
     private func result(for output: OutputState) -> TmuxCommandResult {

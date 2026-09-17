@@ -51,6 +51,7 @@ private struct MirrorHarness {
             let mirror = TmuxWindowMirror(
                 tabID: tab.id,
                 windowID: windowID,
+                binding: binding,
                 sessionName: "t",
                 windowName: "w",
                 connection: connection,
@@ -423,21 +424,31 @@ struct TmuxMirrorRebuildIntegrationTests {
         #expect(seen.range(of: Data("MARK".utf8)) != nil)
     }
 
-    @Test("a layout that leaves a pane's size alone repaints that pane at once")
-    func layoutChange_unchangedPane_isRepainted() async throws {
+    /// A drag of a divider announces a layout per step. Repainting every
+    /// pane of the window on each of them costs a capture per pane per
+    /// step, and a pane tmux did not resize has nothing new to show.
+    @Test("a layout that leaves a pane's size alone neither repaints it nor stops its output")
+    func layoutChange_unchangedPane_keepsRunning() async throws {
         let harness = try await MirrorHarness.make()
         defer { harness.tearDown() }
         let (first, second) = try await sideBySide(harness)
         let sink = try await paintOnce(harness, first)
         let before = try tmuxGrid(harness, first)
+        let pane = try #require(harness.mirror.tmuxPane(for: first))
 
         // Splitting the right pane changes only the right column.
         harness.mirror.split(paneID: second, direction: .vertical)
         #expect(await waitUntil { harness.mirror.cellLayout?.root.paneIDs.count == 3 })
         #expect(try tmuxGrid(harness, first) == before)
+        await settle(harness)
+        #expect(repaints(in: available(sink.channel.surfaceFd)) == 0)
 
-        let seen = await readUntil(fd: sink.channel.surfaceFd, contains: Self.repaint, timeout: .seconds(5))
-        #expect(seen.starts(with: Self.repaint))
+        // The pane was never paused either: what it prints after the layout
+        // reaches the surface without waiting for a capture.
+        harness.server.run(["send-keys", "-t", pane, "echo MA\"\"RK", "Enter"])
+        let seen = await readUntil(fd: sink.channel.surfaceFd, contains: "MARK", timeout: .seconds(5))
+        #expect(seen.range(of: Data("MARK".utf8)) != nil)
+        #expect(repaints(in: seen) == 0)
     }
 
     @Test("a resized pane waits for its new grid: another report does nothing, the matching one repaints once")

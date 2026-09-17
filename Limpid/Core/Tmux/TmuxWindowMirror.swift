@@ -28,6 +28,13 @@ private let log = Logger.limpid("tmux.mirror")
 final class TmuxWindowMirror {
     let tabID: UUID
     let windowID: String
+    /// The session this mirror's panes belong to, as a pane source records
+    /// it. Held rather than read back from the tab: a layout that adds a
+    /// pane needs it to write that pane's source, and a tab whose leaves
+    /// have all gone (the last one moved to another window, a tab being
+    /// rebuilt) has none left to read it from, which would drop every
+    /// layout from then on.
+    let binding: TmuxBinding
     let connection: TmuxSessionConnection
     /// The tab was created to show this mirror: it has shown nothing else,
     /// and the user never kept it before. Such a tab has nothing to keep
@@ -178,6 +185,7 @@ final class TmuxWindowMirror {
     init(
         tabID: UUID,
         windowID: String,
+        binding: TmuxBinding,
         sessionName: String,
         windowName: String,
         connection: TmuxSessionConnection,
@@ -190,6 +198,7 @@ final class TmuxWindowMirror {
     ) {
         self.tabID = tabID
         self.windowID = windowID
+        self.binding = binding
         self.sessionName = sessionName
         self.windowName = windowName
         self.connection = connection
@@ -389,7 +398,8 @@ final class TmuxWindowMirror {
     func cellSizeChanged(_ size: CellSize, from paneID: UUID) {
         guard size != cellSize else { return }
         if cellSize != nil, session.tab(tabID)?.splitTree.effectiveFocusedLeafID != paneID {
-            log.notice("pane \(self.panes[paneID]?.tmuxPane ?? "?", privacy: .public) reports a different cell size; keeping the tab's")
+            // Once per unfocused pane per font change, so a debug line.
+            log.debug("pane \(self.panes[paneID]?.tmuxPane ?? "?", privacy: .public) reports a different cell size; keeping the tab's")
             return
         }
         cellSize = size
@@ -635,7 +645,8 @@ final class TmuxWindowMirror {
     private func finishRebuild(paneID: UUID, tmuxPane: String, outcome: RebuildOutcome) {
         switch outcome {
         case let .painted(rowCount):
-            log.notice("bootstrapped \(tmuxPane, privacy: .public) rows=\(rowCount, privacy: .public)")
+            // Once per repaint, so once per pane per resize step.
+            log.debug("bootstrapped \(tmuxPane, privacy: .public) rows=\(rowCount, privacy: .public)")
             refreshSecureInput(paneID: paneID)
         case .liveOnly:
             // A connection that ended fails every pending capture; only a
@@ -708,13 +719,6 @@ final class TmuxWindowMirror {
             activePane = successor
         }
 
-        guard let binding = tab.paneSources.values.lazy.compactMap({ source -> TmuxBinding? in
-            if case let .tmux(ref) = source {
-                return ref.binding
-            }
-            return nil
-        }).first else { return }
-
         let removed = session.removePanes(fromTab: tabID) { t in
             t.splitTree = SplitTree(root: tree, focusedLeafID: focus)
             for (leafID, tmuxPane) in added {
@@ -733,14 +737,21 @@ final class TmuxWindowMirror {
         log.debug("layout \(self.windowID, privacy: .public) \(size, privacy: .public) panes=\(present.count, privacy: .public)")
     }
 
-    /// Every pane the layout names is repainted. The transport paused it
-    /// on the announcement and dropped its output, which the capture
-    /// restores; one whose size did not change is captured at once, one
-    /// that was resized waits until its surface reports the new grid.
+    /// Every pane the layout gives a new size is repainted; it waits until
+    /// its surface reports that grid, because only then are tmux and the
+    /// surface describing the same screen. The transport paused exactly
+    /// these panes on the announcement and dropped their output, which the
+    /// capture restores (`TmuxControlTransport.resizedPanes`).
+    ///
+    /// A pane the layout only moved keeps what it shows: nothing redrew it,
+    /// and repainting the whole window on every step of a divider drag
+    /// costs a capture per pane per step.
     private func applyPaneGrids(_ rects: [String: TmuxCellRect]) {
         for (paneID, pane) in panes {
             guard let rect = rects[pane.tmuxPane] else { continue }
-            panes[paneID]?.tmuxGrid = Grid(columns: rect.width, rows: rect.height)
+            let grid = Grid(columns: rect.width, rows: rect.height)
+            guard pane.tmuxGrid != grid else { continue }
+            panes[paneID]?.tmuxGrid = grid
             markStale(paneID: paneID)
         }
     }

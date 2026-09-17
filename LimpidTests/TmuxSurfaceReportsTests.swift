@@ -107,6 +107,7 @@ struct TmuxSurfaceReportsTests {
         let mirror = TmuxWindowMirror(
             tabID: tabID,
             windowID: "@1",
+            binding: Self.binding,
             sessionName: "t",
             windowName: "w",
             connection: connection,

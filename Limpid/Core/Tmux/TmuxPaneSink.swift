@@ -93,6 +93,7 @@ final class TmuxPaneSink: @unchecked Sendable {
             return
         }
         let written = writeNow(bytes)
+        guard !isClosed else { return }
         if written < bytes.count {
             append(bytes.dropFirst(written))
             armWriteSource()
@@ -140,7 +141,9 @@ final class TmuxPaneSink: @unchecked Sendable {
     ///
     /// Only valid after a pause (or an overflow, which pauses): the
     /// injected screen replaces what was dropped, and on a sink that was
-    /// never paused it would land on top of output already shown.
+    /// never paused it would land on top of output already shown. A resume
+    /// on a sink that is not paused injects nothing and returns `false`, so
+    /// the caller treats it as it treats a superseded capture.
     ///
     /// `rebuild` is the `latestRebuild` the caller read before asking for
     /// the capture. Returns `false`, injecting nothing and staying paused,
@@ -149,7 +152,10 @@ final class TmuxPaneSink: @unchecked Sendable {
     func resumeInOrder(injecting bytes: Data?, rebuild: Int) -> Bool {
         dispatchPrecondition(condition: .onQueue(queue))
         guard !isClosed else { return false }
-        precondition(isPaused, "resumeInOrder without a pause")
+        guard isPaused else {
+            log.error("resume without a pause host=\(self.channel.hostFd, privacy: .public)")
+            return false
+        }
         guard rebuild == self.rebuild else { return false }
         pending = bytes ?? Data()
         isPaused = false
@@ -258,18 +264,42 @@ final class TmuxPaneSink: @unchecked Sendable {
 
     /// Takes `Data` rather than any `DataProtocol`, so the held output is
     /// written from its own storage instead of a copy of all of it.
+    ///
+    /// Only a full socket is retried. Any other failure is permanent — the
+    /// surface's end is gone, or the descriptor is not what we think it is
+    /// — and retrying it would spin, because a write source keeps reporting
+    /// such a descriptor as writable. The sink gives up there, the same way
+    /// `TmuxPaneChannel` stops reading, and the caller checks `isClosed`.
     private func writeNow(_ data: Data) -> Int {
-        data.withUnsafeBytes { raw -> Int in
-            guard let base = raw.baseAddress, !raw.isEmpty else { return 0 }
+        guard !isClosed else { return 0 }
+        let result = data.withUnsafeBytes { raw -> (written: Int, failure: Int32?) in
+            guard let base = raw.baseAddress, !raw.isEmpty else { return (0, nil) }
             let n = Darwin.write(channel.hostFd, base, raw.count)
-            if n < 0 {
-                if errno == EAGAIN || errno == EWOULDBLOCK {
-                    return 0
-                }
-                log.error("pane socket write failed errno=\(errno, privacy: .public)")
-                return 0
-            }
-            return n
+            guard n < 0 else { return (n, nil) }
+            let code = errno
+            return (0, code == EAGAIN || code == EWOULDBLOCK ? nil : code)
+        }
+        if let failure = result.failure {
+            failWriting(errno: failure)
+        }
+        return result.written
+    }
+
+    /// Stop writing for good and tell the owner, which marks the pane as
+    /// having lost output. Nothing repaints it: the stream the surface
+    /// reads is what failed, and a surface created for the leaf later opens
+    /// a channel of its own.
+    private func failWriting(errno code: Int32) {
+        guard !isClosed else { return }
+        isClosed = true
+        discardPending()
+        log.error("""
+        pane socket write failed host=\(self.channel.hostFd, privacy: .public) \
+        errno=\(code, privacy: .public); this sink stops writing
+        """)
+        let notify = onOverflow
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { notify() }
         }
     }
 
@@ -279,8 +309,9 @@ final class TmuxPaneSink: @unchecked Sendable {
     /// buffer is replaced, and one that never empties is copied once its
     /// dead prefix passes `limit`, which keeps the storage under twice it.
     private func drain() {
-        guard !isPaused, !pending.isEmpty else { return }
+        guard !isPaused, !isClosed, !pending.isEmpty else { return }
         let n = writeNow(pending)
+        guard !isClosed else { return }
         pending.removeFirst(n)
         if pending.isEmpty {
             discardPending()
