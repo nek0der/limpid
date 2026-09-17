@@ -1,5 +1,6 @@
 //! The environment the shim sets for a pane, read as data.
 
+use limpid_agent_core::TmuxHostMode;
 use limpid_agent_model::{InstallRecipe, RecipePlaceholder, TmuxEndpoint};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -120,6 +121,19 @@ impl HookEnv {
         self.get("TMUX").is_some()
     }
 
+    /// Who put the agent in tmux (`LIMPID_AGENT_TMUX_HOST_MODE`).
+    ///
+    /// `None` outside tmux whatever the variable says: the shim exports it and
+    /// every child inherits it, so a process that has left tmux can still
+    /// carry a value that no longer describes it.
+    #[must_use]
+    pub fn tmux_host_mode(&self) -> Option<TmuxHostMode> {
+        if !self.is_tmux_hosted() {
+            return None;
+        }
+        TmuxHostMode::from_shim_value(self.get("LIMPID_AGENT_TMUX_HOST_MODE")?)
+    }
+
     /// The agent pid the shim exported (`LIMPID_<PROVIDER>_PID`), when it is
     /// a number.
     #[must_use]
@@ -181,6 +195,21 @@ mod tests {
         );
         let env = HookEnv::from_pairs([("LIMPID_AGENT_RUN_ID", "nope")]);
         assert_eq!(env.run_id(), None);
+    }
+
+    #[test]
+    fn the_host_mode_is_read_only_inside_tmux() {
+        let tmux = ("TMUX", "/tmp/tmux-501/limpid,4242,0");
+        let hosted = ("LIMPID_AGENT_TMUX_HOST_MODE", "limpidHosted");
+        let env = HookEnv::from_pairs([tmux, hosted]);
+        assert_eq!(env.tmux_host_mode(), Some(TmuxHostMode::LimpidHosted));
+        let env = HookEnv::from_pairs([tmux, ("LIMPID_AGENT_TMUX_HOST_MODE", "manual")]);
+        assert_eq!(env.tmux_host_mode(), Some(TmuxHostMode::Manual));
+        let env = HookEnv::from_pairs([tmux, ("LIMPID_AGENT_TMUX_HOST_MODE", "other")]);
+        assert_eq!(env.tmux_host_mode(), None);
+        assert_eq!(HookEnv::from_pairs([tmux]).tmux_host_mode(), None);
+        // Inherited by a process outside tmux, the value describes nothing.
+        assert_eq!(HookEnv::from_pairs([hosted]).tmux_host_mode(), None);
     }
 
     #[test]

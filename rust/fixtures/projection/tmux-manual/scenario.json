@@ -1,12 +1,12 @@
 {
-  "description": "A run Limpid hosts in tmux carries an endpoint and no pid, so presence decides which panes show it, and it keeps a resume hint like a native run.",
+  "description": "A run started inside the user's own tmux carries an endpoint but no resume hint, because the pane it names only shows a tmux client.",
   "runs": [
     {
       "provider": "claude",
       "pane": "11111111-1111-4111-8111-111111111111",
       "run": "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
       "tmux": true,
-      "tmuxHostMode": "limpidHosted",
+      "tmuxHostMode": "manual",
       "replay": [
         {
           "case": "tmux-hosted",

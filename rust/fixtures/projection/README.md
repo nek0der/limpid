@@ -57,8 +57,10 @@ writes depends on the record before it.
   with `<provider>/` to borrow another provider's payload.
 - `pid` is what the shim exports. Leave it out for a tmux-hosted run, which is
   how a pane inside tmux actually reaches the hook.
-- `tmux` sets a fixed endpoint so the generated record carries the tmux fields
-  and withholds the resume hint.
+- `tmux` sets a fixed endpoint so the generated record carries the tmux fields.
+- `tmuxHostMode` is what the shim exports as `LIMPID_AGENT_TMUX_HOST_MODE` for
+  a run in tmux. `limpidHosted` writes the resume hint as a native run does;
+  `manual`, or leaving it out, withholds it.
 - `now` is explicit on every step. Retention rules (a viewed finish older than a
   day, a resume intent past its window) are only reachable with a controlled
   clock, and a wall clock would make the records unstable.

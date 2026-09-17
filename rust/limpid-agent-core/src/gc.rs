@@ -25,8 +25,9 @@ use uuid::Uuid;
 
 /// Returns the retirements and sweeps this pass calls for.
 ///
-/// `alive` is the set of panes the interface still has. It decides which
-/// pane-scoped files the sweeps keep; it plays no part in retiring records.
+/// `alive` is the set of panes the interface still has. Together with the
+/// runs in tmux it decides which pane-scoped files the sweeps keep; it plays
+/// no part in retiring records.
 pub(crate) fn sweep(
     accepted: &BTreeMap<String, AcceptedRun>,
     input: &ProjectionInput,
@@ -56,6 +57,7 @@ pub(crate) fn sweep(
         .map(|(storage_id, run)| retire(storage_id, run, accepted))
         .collect();
 
+    let keep = pane_store_keep(accepted, alive);
     for (provider, descriptor) in &input.providers {
         commands.push(Command::new(
             CommandOp::PruneRetired {
@@ -67,12 +69,38 @@ pub(crate) fn sweep(
             },
             Precondition::None,
         ));
-        commands.push(cleanup(provider, PaneStoreKind::Sessions, alive));
+        commands.push(cleanup(provider, PaneStoreKind::Sessions, &keep));
         if descriptor.has(Capability::CwdEvents) {
-            commands.push(cleanup(provider, PaneStoreKind::CwdEvents, alive));
+            commands.push(cleanup(provider, PaneStoreKind::CwdEvents, &keep));
         }
     }
     commands
+}
+
+/// The panes whose side files the sweep keeps: every pane the interface has,
+/// and the pane of every run in tmux whose session has not ended.
+///
+/// A run in tmux can write under a pane before the interface has one. Limpid
+/// hands the agent the id of the pane that will show it, and the hook may
+/// report before the application has built that pane. Sweeping by open panes
+/// alone would take the run's resume hint in that window.
+///
+/// A session end is the test for "not over" because it is the only one a run
+/// in tmux has: its record names no pid of ours, and it is never retired.
+fn pane_store_keep(
+    accepted: &BTreeMap<String, AcceptedRun>,
+    alive: &BTreeSet<Uuid>,
+) -> BTreeSet<Uuid> {
+    let mut keep = alive.clone();
+    keep.extend(
+        accepted
+            .values()
+            .map(|run| &run.record)
+            .filter(|record| record.tmux_socket_path.is_some())
+            .filter(|record| !crate::lifecycle::has_session_ended(record))
+            .filter_map(|record| Uuid::parse_str(&record.pane_id).ok()),
+    );
+    keep
 }
 
 /// Whether a record describes a run that is definitely over.
@@ -403,5 +431,62 @@ mod tests {
             sweep(&BTreeMap::new(), &input, &BTreeSet::new(), &now()).len(),
             2
         );
+    }
+
+    fn kept(commands: &[Command]) -> Vec<&BTreeSet<Uuid>> {
+        commands
+            .iter()
+            .filter_map(|command| match &command.op {
+                CommandOp::CleanupPaneStore { keep, .. } => Some(keep),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_run_in_tmux_keeps_its_pane_files_until_its_session_ends() {
+        // The hook can write under the pane before the interface has built
+        // it, so an open pane cannot be the only reason to keep the files.
+        let mut input = input(PidStatus::Unknown);
+        let mut descriptor = limpid_agent_model::ProviderDescriptor {
+            id: claude(),
+            display_name: "Claude".to_owned(),
+            capabilities: [Capability::CwdEvents].into_iter().collect(),
+            pid_sweep_interval_ms: 30_000,
+            state_directory: "agent-states".to_owned(),
+            session_directory: "sessions".to_owned(),
+            cwd_events_directory: Some("cwd-events".to_owned()),
+            process_names: Vec::new(),
+            session_end_drop_reasons: Vec::new(),
+        };
+        descriptor.capabilities.insert(Capability::Resume);
+        input.providers.insert(claude(), descriptor);
+        let pane: Uuid = PANE.parse().expect("pane");
+        let open: Uuid = "22222222-2222-4222-8222-222222222222"
+            .parse()
+            .expect("pane");
+        let alive: BTreeSet<Uuid> = [open].into_iter().collect();
+
+        let mut hosted = run(Some(RUN), None);
+        hosted.record.tmux_socket_path = Some("/tmp/socket".to_owned());
+        hosted.record.last_hook_event = Some("session_started".to_owned());
+        let entries = records(vec![(RUN, hosted.clone())]);
+        let commands = sweep(&entries, &input, &alive, &now());
+        let expected: BTreeSet<Uuid> = [pane, open].into_iter().collect();
+        assert_eq!(kept(&commands), vec![&expected, &expected]);
+
+        // Once the session has ended the pane is kept only while it is open.
+        for ended in ["session_ended", "SessionEnd"] {
+            let mut over = hosted.clone();
+            over.record.last_hook_event = Some(ended.to_owned());
+            let entries = records(vec![(RUN, over)]);
+            let commands = sweep(&entries, &input, &alive, &now());
+            assert_eq!(kept(&commands), vec![&alive, &alive], "{ended}");
+        }
+
+        // A run outside tmux is kept by its pane or not at all.
+        let entries = records(vec![(RUN, run(Some(RUN), Some("4242")))]);
+        let commands = sweep(&entries, &input, &alive, &now());
+        assert_eq!(kept(&commands), vec![&alive, &alive]);
     }
 }

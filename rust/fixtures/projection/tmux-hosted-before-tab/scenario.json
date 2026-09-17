@@ -1,0 +1,19 @@
+{
+  "description": "A hosted run reports before the interface has built the pane it was given, and the sweep keeps its resume hint for when the pane appears.",
+  "runs": [
+    {
+      "provider": "claude",
+      "pane": "33333333-3333-4333-8333-333333333333",
+      "run": "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+      "tmux": true,
+      "tmuxHostMode": "limpidHosted",
+      "replay": [
+        {
+          "case": "tmux-hosted",
+          "payload": "0000-SessionStart.json",
+          "now": "2026-09-14T12:00:00Z"
+        }
+      ]
+    }
+  ]
+}

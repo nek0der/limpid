@@ -234,6 +234,7 @@ fn identity(
         pid,
         tmux,
         is_tmux_hosted,
+        tmux_host_mode: env.tmux_host_mode(),
     };
     (context, apply_context)
 }

@@ -39,10 +39,14 @@ struct RunSpec {
     /// tmux-hosted pane reaches the hook.
     #[serde(default)]
     pid: Option<String>,
-    /// Set to host the run in tmux, which changes the record's endpoint fields
-    /// and withholds the resume hint.
+    /// Set to run in tmux, which changes the record's endpoint fields.
     #[serde(default)]
     tmux: bool,
+    /// What the shim exports as `LIMPID_AGENT_TMUX_HOST_MODE` for a run in
+    /// tmux: `limpidHosted` keeps the resume hint, `manual` or nothing
+    /// withholds it.
+    #[serde(default, rename = "tmuxHostMode")]
+    tmux_host_mode: Option<String>,
     replay: Vec<Step>,
 }
 
@@ -193,6 +197,9 @@ fn environment(case: &Path, run: &RunSpec) -> HookEnv {
             "/tmp/limpid-corpus-socket,4242,0".to_owned(),
         ));
         pairs.push(("TMUX_PANE".to_owned(), "%3".to_owned()));
+        if let Some(mode) = &run.tmux_host_mode {
+            pairs.push(("LIMPID_AGENT_TMUX_HOST_MODE".to_owned(), mode.clone()));
+        }
     }
     HookEnv::from_pairs(pairs)
 }

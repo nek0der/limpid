@@ -14,8 +14,8 @@ pub use approval::{
     ApprovalState, BrokerError, Principal, RequestId, RunId, ServiceEpoch,
 };
 pub use lifecycle::{
-    ApplyContext, RecordWrites, SideWrite, TurnSnapshotOp, apply, sanitize_text, sanitize_title,
-    turn_snapshot_cwd,
+    ApplyContext, RecordWrites, SideWrite, TmuxHostMode, TurnSnapshotOp, apply, sanitize_text,
+    sanitize_title, turn_snapshot_cwd,
 };
 /// Re-exported so the protocol crate can name a provider without depending
 /// on the model crate directly.

@@ -28,14 +28,18 @@ impl Scratch {
         HookEnv::from_pairs(self.pairs(provider))
     }
 
-    /// The environment of a pane hosted in tmux, on top of `env`.
-    fn tmux_env(&self, provider: &str) -> HookEnv {
+    /// The environment of a pane inside tmux, on top of `env`, with the host
+    /// mode the shim would export when there is one.
+    fn tmux_env(&self, provider: &str, mode: Option<&str>) -> HookEnv {
         let mut pairs = self.pairs(provider);
         pairs.push((
             "TMUX".to_owned(),
             "/tmp/limpid-test-socket,4242,0".to_owned(),
         ));
         pairs.push(("TMUX_PANE".to_owned(), "%3".to_owned()));
+        if let Some(mode) = mode {
+            pairs.push(("LIMPID_AGENT_TMUX_HOST_MODE".to_owned(), mode.to_owned()));
+        }
         HookEnv::from_pairs(pairs)
     }
 
@@ -227,14 +231,34 @@ fn codex_session_keeps_its_hint_and_finishes_tools() {
 }
 
 #[test]
-fn a_tmux_hosted_pane_records_the_endpoint_and_withholds_the_hint() {
-    let scratch = Scratch::new("tmux");
+fn a_pane_in_the_users_tmux_records_the_endpoint_and_withholds_the_hint() {
+    // The pane only shows a tmux client; a missing mode is read the same way.
+    for mode in [Some("manual"), None] {
+        let scratch = Scratch::new("tmux-manual");
+        let payloads = fixture_case("claude", "tmux-hosted");
+        let env = scratch.tmux_env("claude", mode);
+        let runtime = HookRuntime::new(&env, &NoSnapshots);
+        for payload in &payloads {
+            assert_eq!(run_hook("claude", payload, &runtime), HookOutcome::Applied);
+            assert_eq!(scratch.hint(), None, "{mode:?}");
+        }
+    }
+}
+
+#[test]
+fn a_run_limpid_hosts_in_tmux_writes_the_hint_and_drops_it_at_exit() {
+    let scratch = Scratch::new("tmux-hosted");
     let payloads = fixture_case("claude", "tmux-hosted");
-    let env = scratch.tmux_env("claude");
+    let env = scratch.tmux_env("claude", Some("limpidHosted"));
     let runtime = HookRuntime::new(&env, &NoSnapshots);
     for payload in &payloads[..2] {
         assert_eq!(run_hook("claude", payload, &runtime), HookOutcome::Applied);
     }
+    let hint = scratch.hint().expect("hint");
+    assert_eq!(hint["paneId"], PANE);
+    assert_eq!(hint["runId"], RUN);
+    assert_eq!(hint["sessionId"], "00000000-0000-4000-8000-000000000001");
+
     let record = scratch.record().expect("record");
     assert_eq!(record.is_tmux_hosted, Some(true));
     assert_eq!(
@@ -251,7 +275,13 @@ fn a_tmux_hosted_pane_records_the_endpoint_and_withholds_the_hint() {
         record.pid, None,
         "inside tmux the exported pid names the client"
     );
-    assert_eq!(scratch.hint(), None, "resume hints are native-only");
+
+    // The last payload is the user's `/exit` (`prompt_input_exit`).
+    for payload in &payloads[2..] {
+        assert_eq!(run_hook("claude", payload, &runtime), HookOutcome::Applied);
+    }
+    assert_eq!(scratch.hint(), None, "the user's exit drops the hint");
+    assert_eq!(scratch.log(), "");
 }
 
 #[test]

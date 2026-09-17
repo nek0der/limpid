@@ -31,6 +31,54 @@ pub struct ApplyContext {
     /// Whether the agent runs inside any tmux, hosted or manual. Set even
     /// when the endpoint could not be parsed.
     pub is_tmux_hosted: bool,
+    /// Who put the agent in tmux, when it runs in tmux and the shim said so.
+    /// `None` inside tmux is read the way `Manual` is.
+    pub tmux_host_mode: Option<TmuxHostMode>,
+}
+
+/// Who put an agent in tmux, as the shim reports it in
+/// `LIMPID_AGENT_TMUX_HOST_MODE`.
+///
+/// The difference decides what `LIMPID_PANE_ID` means. Limpid starts a hosted
+/// agent in a session of its own, so the pane id names the pane that owns the
+/// session. Inside the user's own tmux, the pane id names whichever Limpid pane
+/// happens to show the tmux client, and resuming there would start the
+/// session a second time next to the one tmux keeps alive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TmuxHostMode {
+    /// Limpid started the agent in tmux (`limpidHosted`).
+    LimpidHosted,
+    /// The agent was started inside tmux the user runs (`manual`).
+    Manual,
+}
+
+impl TmuxHostMode {
+    /// Parses the shim's spelling. Anything else is not a mode this build
+    /// knows, and the caller treats it as no mode at all.
+    #[must_use]
+    pub fn from_shim_value(value: &str) -> Option<Self> {
+        match value {
+            "limpidHosted" => Some(Self::LimpidHosted),
+            "manual" => Some(Self::Manual),
+            _ => None,
+        }
+    }
+}
+
+/// The `lastHookEvent` values a session end leaves on a record: this writer's
+/// name and the raw hook name the shell receivers still write.
+const SESSION_ENDED_EVENTS: [&str; 2] = ["session_ended", "SessionEnd"];
+
+/// Whether the record's last hook call ended the session.
+///
+/// For a run in tmux this is the only sign on disk that it is over: its record
+/// carries no pid of ours to ask about, and the sweep never retires it.
+#[must_use]
+pub(crate) fn has_session_ended(record: &RunRecord) -> bool {
+    record
+        .last_hook_event
+        .as_deref()
+        .is_some_and(|event| SESSION_ENDED_EVENTS.contains(&event))
 }
 
 /// What the runtime must write after one event.
@@ -51,8 +99,9 @@ pub struct RecordWrites {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SideWrite {
     /// Remember the provider session for resume. Written on session start
-    /// outside tmux only, because a tmux client is not the pane that owns
-    /// the session.
+    /// outside tmux and for agents Limpid hosts in tmux. Inside the user's own
+    /// tmux the pane is only showing a client, not the pane that owns the
+    /// session.
     SessionHint {
         session_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -214,7 +263,7 @@ fn session_transition(
                 next.session_id = Some(session_id.clone());
             }
             let hint = session_id.as_deref().filter(|id| is_hint_safe(id));
-            if let Some(session_id) = hint.filter(|_| !context.is_tmux_hosted) {
+            if let Some(session_id) = hint.filter(|_| owns_resume_hint(context)) {
                 writes.side.push(SideWrite::SessionHint {
                     session_id: session_id.to_owned(),
                     cwd: cwd.clone(),
@@ -234,7 +283,7 @@ fn session_transition(
             next.turn_base_tree = None;
             next.turn_root = None;
             let drops = descriptor.has(Capability::SessionEndDropsSession)
-                && !context.is_tmux_hosted
+                && owns_resume_hint(context)
                 && reason.as_deref().is_some_and(|reason| {
                     descriptor
                         .session_end_drop_reasons
@@ -250,6 +299,15 @@ fn session_transition(
         }
         _ => {}
     }
+}
+
+/// Whether the launching pane owns this run's session, and so its resume hint.
+///
+/// A hosted run follows the same drop rule as a native one on purpose: a
+/// session end the user did not ask for (tmux losing its server is one) keeps
+/// the hint, because resuming is how such a run comes back.
+fn owns_resume_hint(context: &ApplyContext) -> bool {
+    !context.is_tmux_hosted || context.tmux_host_mode == Some(TmuxHostMode::LimpidHosted)
 }
 
 /// Everything between session start and end: the state machine of one turn.
@@ -492,6 +550,7 @@ mod tests {
             pid: Some(4242),
             tmux: None,
             is_tmux_hosted: false,
+            tmux_host_mode: None,
         }
     }
 
@@ -874,9 +933,8 @@ mod tests {
         assert_eq!(finished.state_episode_token.as_deref(), Some("5"));
     }
 
-    #[test]
-    fn tmux_hosting_marks_the_record_and_withholds_the_hint() {
-        let context = ApplyContext {
+    fn tmux_context(mode: Option<TmuxHostMode>) -> ApplyContext {
+        ApplyContext {
             tmux: Some(TmuxEndpoint {
                 socket_path: "/tmp/tmux-501/limpid".into(),
                 pane: "%3".into(),
@@ -884,21 +942,100 @@ mod tests {
                 server_started_at: Some(1_700_000_000),
             }),
             is_tmux_hosted: true,
+            tmux_host_mode: mode,
             pid: None,
             ..self::context()
-        };
+        }
+    }
+
+    fn ended(reason: &str) -> AgentEvent {
+        AgentEvent::SessionEnded {
+            reason: Some(reason.into()),
+            session_id: Some("session-1".into()),
+        }
+    }
+
+    #[test]
+    fn tmux_hosting_marks_the_record_and_withholds_the_hint_in_the_users_tmux() {
+        // Inside the user's own tmux the pane only shows a client, and a mode
+        // this build cannot read is treated the same way.
+        for mode in [Some(TmuxHostMode::Manual), None] {
+            let context = tmux_context(mode);
+            let writes = apply(None, &started(None), &context, &claude(), NOW);
+            let record = writes.run.expect("record");
+            assert_eq!(record.is_tmux_hosted, Some(true));
+            assert_eq!(
+                record.tmux_socket_path.as_deref(),
+                Some("/tmp/tmux-501/limpid")
+            );
+            assert_eq!(record.tmux_pane_id.as_deref(), Some("%3"));
+            assert_eq!(record.tmux_server_pid.as_deref(), Some("777"));
+            assert_eq!(record.tmux_server_started_at.as_deref(), Some("1700000000"));
+            assert_eq!(record.pid, None);
+            assert!(writes.side.is_empty(), "{mode:?}");
+
+            let ending = ended("prompt_input_exit");
+            let writes = apply(Some(&record), &ending, &context, &claude(), LATER);
+            assert!(writes.side.is_empty(), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn a_run_limpid_hosts_in_tmux_keeps_a_hint_like_a_native_one() {
+        // Limpid gave the agent a session of its own, so the pane id names the
+        // pane that owns it and resuming there cannot start it twice.
+        let context = tmux_context(Some(TmuxHostMode::LimpidHosted));
         let writes = apply(None, &started(None), &context, &claude(), NOW);
+        assert_eq!(
+            writes.side,
+            vec![SideWrite::SessionHint {
+                session_id: "session-1".into(),
+                cwd: Some("/repo".into()),
+            }]
+        );
         let record = writes.run.expect("record");
         assert_eq!(record.is_tmux_hosted, Some(true));
+
+        // The user ending the session drops it.
+        let ending = ended("prompt_input_exit");
+        let writes = apply(Some(&record), &ending, &context, &claude(), LATER);
         assert_eq!(
-            record.tmux_socket_path.as_deref(),
-            Some("/tmp/tmux-501/limpid")
+            writes.side,
+            vec![SideWrite::DeleteSessionHint {
+                session_id: "session-1".into()
+            }]
         );
-        assert_eq!(record.tmux_pane_id.as_deref(), Some("%3"));
-        assert_eq!(record.tmux_server_pid.as_deref(), Some("777"));
-        assert_eq!(record.tmux_server_started_at.as_deref(), Some("1700000000"));
-        assert_eq!(record.pid, None);
+        assert!(has_session_ended(&writes.run.expect("record")));
+
+        // An end the user did not ask for keeps it, so the run can come back.
+        let writes = apply(Some(&record), &ended("other"), &context, &claude(), LATER);
         assert!(writes.side.is_empty());
+    }
+
+    #[test]
+    fn a_session_end_is_recognized_from_either_writer() {
+        let (mut record, _, _) = run(&claude(), &[started(None)]);
+        assert!(!has_session_ended(&record));
+        record.last_hook_event = Some("SessionEnd".into());
+        assert!(has_session_ended(&record));
+        record.last_hook_event = Some("session_ended".into());
+        assert!(has_session_ended(&record));
+        record.last_hook_event = None;
+        assert!(!has_session_ended(&record));
+    }
+
+    #[test]
+    fn host_modes_parse_only_the_shims_spelling() {
+        assert_eq!(
+            TmuxHostMode::from_shim_value("limpidHosted"),
+            Some(TmuxHostMode::LimpidHosted)
+        );
+        assert_eq!(
+            TmuxHostMode::from_shim_value("manual"),
+            Some(TmuxHostMode::Manual)
+        );
+        assert_eq!(TmuxHostMode::from_shim_value("LimpidHosted"), None);
+        assert_eq!(TmuxHostMode::from_shim_value(""), None);
     }
 
     #[test]
