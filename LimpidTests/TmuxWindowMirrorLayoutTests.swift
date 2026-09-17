@@ -57,7 +57,8 @@ struct TmuxWindowMirrorLayoutTests {
             connection: connection,
             session: session,
             registry: registry,
-            secureInput: nil
+            secureInput: nil,
+            channelForPane: { _ in try? TmuxPaneChannel { _ in } }
         )
         return Harness(session: session, tabID: tab.id, leafID: leafID, mirror: mirror, registry: registry)
     }

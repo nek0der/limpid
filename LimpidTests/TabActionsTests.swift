@@ -58,7 +58,7 @@ struct TabActionsTests {
         #expect(revived.container == .loose)
     }
 
-    @Test("a closed tmux mirror tab reopens as a mirror whose panes read dormant descriptors, not shells")
+    @Test("a closed tmux mirror tab reopens as a mirror whose panes read their channels, not shells")
     func reopenClosedTab_mirrorTab_restoresKindAndSources() throws {
         let (session, tab, leafID) = WindowSessionFixture.withLooseTab()
         let ref = TmuxPaneRef(
@@ -88,11 +88,10 @@ struct TabActionsTests {
         let backing = PaneHostRepresentable.surfaceBacking(
             for: revived.ioSource(for: revivedLeaf),
             paneID: revivedLeaf,
-            tabID: revived.id,
             tmuxStore: store
         )
-        let dormant = try #require(store.dormantSink(paneID: revivedLeaf))
-        #expect(backing == .descriptor(dormant.surfaceFd))
+        let channel = try #require(store.channel(paneID: revivedLeaf))
+        #expect(backing == .channel(channel))
     }
 
     @Test("an ordinary tab reopens as an ordinary tab with local panes")

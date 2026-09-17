@@ -1,5 +1,5 @@
 // TmuxPaneSinkTests.swift
-// Limpid — the pane sink's contract without tmux: pauses drop output, a repaint leads live output, overflow pauses, close ends delivery.
+// Limpid — the pane sink's contract without tmux: pauses drop output, a repaint leads live output, overflow pauses, close ends writing.
 
 import Darwin
 import Foundation
@@ -13,7 +13,8 @@ private final class CallbackLog {
     var activity = 0
 }
 
-/// A sink on a private queue, fed the way the transport feeds it. Not
+/// A sink on a private queue writing into its own channel, fed the way the
+/// transport feeds it. `surfaceFd` is what the surface would read. Not
 /// main-actor: the sink asserts it is written off the main queue, and a
 /// `sync` from the main thread would still count as the main queue.
 private struct SinkHarness {
@@ -21,13 +22,17 @@ private struct SinkHarness {
     let queue: DispatchQueue
     let log: CallbackLog
 
+    var surfaceFd: Int32 {
+        sink.channel.surfaceFd
+    }
+
     init(limit: Int = TmuxPaneSink.defaultLimit) throws {
         let log = CallbackLog()
         let queue = DispatchQueue(label: "dev.limpid.tests.sink")
         sink = try TmuxPaneSink(
+            channel: TmuxPaneChannel { _ in },
             queue: queue,
             limit: limit,
-            onSurfaceOutput: { _ in },
             onOverflow: { log.overflows += 1 }
         )
         self.queue = queue
@@ -122,7 +127,7 @@ struct TmuxPaneSinkTests {
         harness.resume(injecting: nil)
         harness.write("LIVE")
 
-        let seen = await readUntil(fd: harness.sink.surfaceFd, contains: "LIVE", timeout: .seconds(2))
+        let seen = await readUntil(fd: harness.surfaceFd, contains: "LIVE", timeout: .seconds(2))
         #expect(seen == Data("BEFORE|LIVE".utf8))
     }
 
@@ -138,7 +143,7 @@ struct TmuxPaneSinkTests {
         harness.write("LIVE")
 
         // Only what the socket had already taken precedes the repaint.
-        let seen = await readUntil(fd: harness.sink.surfaceFd, contains: "LIVE", timeout: .seconds(2))
+        let seen = await readUntil(fd: harness.surfaceFd, contains: "LIVE", timeout: .seconds(2))
         #expect(isFiller(UInt8(ascii: "y"), thenExactly: "CAPLIVE", seen))
         #expect(seen.count < held)
     }
@@ -156,7 +161,7 @@ struct TmuxPaneSinkTests {
         harness.resume(injecting: "CAP")
         harness.write("LIVE")
 
-        let seen = await readUntil(fd: harness.sink.surfaceFd, contains: "LIVE", timeout: .seconds(2))
+        let seen = await readUntil(fd: harness.surfaceFd, contains: "LIVE", timeout: .seconds(2))
         #expect(isFiller(UInt8(ascii: "x"), thenExactly: "CAPLIVE", seen))
     }
 
@@ -164,7 +169,7 @@ struct TmuxPaneSinkTests {
     func overflow_isReportedOncePerPause() async throws {
         let harness = try SinkHarness(limit: 32 * 1024)
         defer { harness.sink.close() }
-        let fd = harness.sink.surfaceFd
+        let fd = harness.surfaceFd
 
         harness.flood(512 * 1024)
         harness.flood(512 * 1024)
@@ -194,19 +199,8 @@ struct TmuxPaneSinkTests {
             harness.sink.write(Data("LIVE".utf8))
         }
 
-        let seen = await readUntil(fd: harness.sink.surfaceFd, contains: "LIVE", timeout: .seconds(2))
+        let seen = await readUntil(fd: harness.surfaceFd, contains: "LIVE", timeout: .seconds(2))
         #expect(seen == Data("CAP|LIVE".utf8))
-    }
-
-    /// A shell an ordinary pane forks must not inherit the pane's end. Both
-    /// ends are set in one loop; the host end is private, so the surface end
-    /// stands for both.
-    @Test("the surface end is close-on-exec")
-    func surfaceEnd_isCloseOnExec() throws {
-        let harness = try SinkHarness()
-        defer { harness.sink.close() }
-
-        #expect(fcntl(harness.sink.surfaceFd, F_GETFD) & FD_CLOEXEC != 0)
     }
 
     @Test("close stops every callback, including the trailing activity report")
@@ -233,7 +227,7 @@ struct TmuxPaneSinkTests {
         let limit = 1024 * 1024
         let harness = try SinkHarness(limit: limit)
         defer { harness.sink.close() }
-        let fd = harness.sink.surfaceFd
+        let fd = harness.surfaceFd
         let chunk = Data(repeating: UInt8(ascii: "z"), count: 64 * 1024)
         let backlog = 256 * 1024
         var written = 0
@@ -286,7 +280,7 @@ struct TmuxPaneSinkTests {
         #expect(isLatestTaken)
         harness.write("LIVE")
 
-        let seen = await readUntil(fd: sink.surfaceFd, contains: "LIVE", timeout: .seconds(2))
+        let seen = await readUntil(fd: sink.channel.surfaceFd, contains: "LIVE", timeout: .seconds(2))
         #expect(seen == Data("CAP|LIVE".utf8))
     }
 
@@ -305,7 +299,7 @@ struct TmuxPaneSinkTests {
         let harness = try SinkHarness(limit: 32 * 1024)
         defer { harness.sink.close() }
         let sink = harness.sink
-        let fd = sink.surfaceFd
+        let fd = sink.channel.surfaceFd
 
         harness.flood(512 * 1024)
         #expect(await eventually { await harness.log.overflows == 1 })

@@ -144,9 +144,9 @@ final class SurfaceView: NSView {
         }
     }
 
-    /// Descriptor that drives this surface's IO instead of a pty, or `-1` for a pane
-    /// with its own shell. Read once, at `createSurface`, when libghostty picks its backend.
-    var mirrorIoFd: Int32 = -1
+    /// The stream that drives this surface's IO instead of a pty, or `nil` for a pane
+    /// with its own shell. Held for the view's life; see `SurfaceView+Mirror.swift`.
+    var mirrorChannel: TmuxPaneChannel?
 
     /// Effective advanced `scrollbar` preference read from the finalized
     /// libghostty config. The scroll geometry remains active when false so

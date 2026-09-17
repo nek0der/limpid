@@ -243,12 +243,12 @@ struct TmuxControlTransportTests {
 
         // Registered only now, so the recording's own `%0` output (which is
         // legitimately routed) cannot be mistaken for a leak.
-        let sink = try TmuxPaneSink(queue: transport.queue, onSurfaceOutput: { _ in }, onOverflow: {})
+        let sink = try TmuxPaneSink(channel: TmuxPaneChannel { _ in }, queue: transport.queue, onOverflow: {})
         defer { sink.close() }
         transport.setSink(sink, forPane: "%0")
 
         await writeChunked(synthetic, to: piped.input[1], chunkSize: 7)
-        let routed = await readUntil(fd: sink.surfaceFd, contains: Data("y".utf8), timeout: .seconds(2))
+        let routed = await readUntil(fd: sink.channel.surfaceFd, contains: Data("y".utf8), timeout: .seconds(2))
         #expect(routed == Data("y".utf8))
 
         // The reply block itself is consumed by pairing, never delivered.
@@ -265,7 +265,7 @@ struct TmuxControlTransportTests {
         let piped = try PipedTransport()
         defer { piped.tearDown() }
         await piped.attach()
-        let sink = try TmuxPaneSink(queue: piped.transport.queue, onSurfaceOutput: { _ in }, onOverflow: {})
+        let sink = try TmuxPaneSink(channel: TmuxPaneChannel { _ in }, queue: piped.transport.queue, onOverflow: {})
         defer { sink.close() }
         piped.transport.setSink(sink, forPane: "%0")
         sink.pause()
@@ -277,7 +277,7 @@ struct TmuxControlTransportTests {
         // still paused and drop `LIVE`.
         piped.feed("%output %0 STALE\n%begin 2 5 1\nrow\n%end 2 5 1\n%output %0 LIVE\n")
 
-        let seen = await readUntil(fd: sink.surfaceFd, contains: "LIVE", timeout: .seconds(2))
+        let seen = await readUntil(fd: sink.channel.surfaceFd, contains: "LIVE", timeout: .seconds(2))
         #expect(seen == Data("CAP|LIVE".utf8))
     }
 
@@ -380,7 +380,7 @@ struct TmuxControlTransportTests {
     /// the pause started, read on the routing queue as a mirror reads it.
     private func pausedSink(_ piped: PipedTransport) async throws -> (sink: TmuxPaneSink, rebuild: Int) {
         await piped.attach()
-        let sink = try TmuxPaneSink(queue: piped.transport.queue, onSurfaceOutput: { _ in }, onOverflow: {})
+        let sink = try TmuxPaneSink(channel: TmuxPaneChannel { _ in }, queue: piped.transport.queue, onOverflow: {})
         piped.transport.setSink(sink, forPane: "%0")
         sink.pause()
         let rebuild = piped.transport.queue.sync { sink.latestRebuild }
@@ -392,7 +392,7 @@ struct TmuxControlTransportTests {
     /// nothing is still on its way once a block queued behind it has run.
     private func surfaceBytes(_ piped: PipedTransport, _ sink: TmuxPaneSink) -> Data {
         piped.transport.queue.sync {}
-        return readAvailable(sink.surfaceFd)
+        return readAvailable(sink.channel.surfaceFd)
     }
 
     @Test("a %layout-change routed before a capture reply makes that reply stand aside, and the sink keeps dropping")
@@ -446,14 +446,14 @@ struct TmuxControlTransportTests {
         piped.feed("%layout-change @7 a87d,100x30,0,0,5 a87d,100x30,0,0,5 *\n")
         #expect(await waitUntil { piped.log.lines.count == 1 })
 
-        let sink = try TmuxPaneSink(queue: piped.transport.queue, onSurfaceOutput: { _ in }, onOverflow: {})
+        let sink = try TmuxPaneSink(channel: TmuxPaneChannel { _ in }, queue: piped.transport.queue, onOverflow: {})
         defer { sink.close() }
         piped.transport.setSink(sink, forPane: "%0")
         // Another window's layout, and one tmux could not have sent: neither
         // names `%0`, so its output keeps flowing.
         piped.feed("%layout-change @7 a87d,100x30,0,0,5 a87d,100x30,0,0,5 *\n%layout-change @8 garbage\n%output %0 LIVE\n")
 
-        let seen = await readUntil(fd: sink.surfaceFd, contains: "LIVE", timeout: .seconds(2))
+        let seen = await readUntil(fd: sink.channel.surfaceFd, contains: "LIVE", timeout: .seconds(2))
         #expect(seen == Data("LIVE".utf8))
         #expect(await waitUntil { piped.log.lines.count == 3 })
         #expect(piped.transport.queue.sync { sink.latestRebuild } == 0)

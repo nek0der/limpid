@@ -248,36 +248,44 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
     /// place that promised something else.
     enum SurfaceBacking: Equatable {
         case ownProcess
-        case descriptor(Int32)
+        /// The leaf's stream, read in place of a pty. Compared by identity:
+        /// two channels are the same stream only if they are one object.
+        case channel(TmuxPaneChannel)
         /// Nothing can drive the pane, so the leaf is left out of the
         /// render (see `ResolvedSplitNode.build`).
         case noSurface
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            switch (lhs, rhs) {
+            case (.ownProcess, .ownProcess), (.noSurface, .noSurface):
+                true
+            case let (.channel(left), .channel(right)):
+                left === right
+            default:
+                false
+            }
+        }
     }
 
     /// Decided per source with an exhaustive switch, so a source added
     /// later cannot fall through to a login shell until someone chooses
-    /// what it gets. A pane that is not local reads a live mirror's sink
-    /// when there is one, and otherwise the store's dormant descriptor
-    /// that never delivers (a restored tab, a source this build cannot
-    /// read). Without a store (Previews) or when the dormant pipe cannot
-    /// be opened there is no descriptor to hand over, and we mount
-    /// nothing rather than a shell.
+    /// what it gets. A pane that is not local reads its leaf's channel,
+    /// which is the same whether a mirror feeds it now, later, or never
+    /// (a restored tab, a source this build cannot read). Without a store
+    /// (Previews) or when the channel cannot be opened there is no stream
+    /// to hand over, and we mount nothing rather than a shell.
     @MainActor
     static func surfaceBacking(
         for source: PaneIOSource,
         paneID: UUID,
-        tabID: UUID,
         tmuxStore: TmuxConnectionStore?
     ) -> SurfaceBacking {
         switch source {
         case .local:
             return .ownProcess
         case .tmux, .unavailable:
-            guard let tmuxStore else { return .noSurface }
-            if let sink = tmuxStore.sink(tabID: tabID, paneID: paneID) ?? tmuxStore.dormantSink(paneID: paneID) {
-                return .descriptor(sink.surfaceFd)
-            }
-            return .noSurface
+            guard let tmuxStore, let channel = tmuxStore.channel(paneID: paneID) else { return .noSurface }
+            return .channel(channel)
         }
     }
 
@@ -295,17 +303,17 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         }
         let owningTab = session.tab(containing: paneID)
         let backing = owningTab.map {
-            surfaceBacking(for: $0.ioSource(for: paneID), paneID: paneID, tabID: $0.id, tmuxStore: tmuxStore)
+            surfaceBacking(for: $0.ioSource(for: paneID), paneID: paneID, tmuxStore: tmuxStore)
         } ?? .noSurface
         if backing == .noSurface {
             return nil
         }
         let view = SurfaceView(ghosttyApp: ghosttyApp)
         view.isScrollbarEnabled = ghosttyApp.isScrollbarEnabled
-        if case let .descriptor(fd) = backing {
-            // The descriptor stands in for the pty, so no command, cwd,
+        if case let .channel(channel) = backing {
+            // The channel stands in for the pty, so no command, cwd,
             // environment, or scrollback replay applies.
-            view.mirrorIoFd = fd
+            view.mirrorChannel = channel
             registry.register(view, for: paneID)
             return view
         }

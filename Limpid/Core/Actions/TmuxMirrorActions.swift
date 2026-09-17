@@ -61,7 +61,8 @@ enum TmuxMirrorActions {
             connection: connection,
             session: session,
             registry: registry,
-            secureInput: secureInput
+            secureInput: secureInput,
+            channelForPane: { [weak store] in store?.channel(paneID: $0) }
         )
         // tmux refused a verb (`%error`): the picture stays as it was and
         // the user reads which operation failed (design §12).

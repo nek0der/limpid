@@ -202,14 +202,20 @@ struct TmuxServerConnectionTests {
         defer { connection.stop() }
         try connection.start()
         #expect(await waitUntil { connection.state == .attached })
-        let sink = try connection.attachPane(paneID) {}
+        // What the surface writes goes back as keys, the way the store
+        // routes a leaf's channel to the connection feeding it.
+        let channel = try TmuxPaneChannel { [weak connection] data in
+            connection?.sendInput([.bytes(Array(data))], pane: paneID)
+        }
+        let sink = try connection.attachPane(paneID, channel: channel) {}
+        #expect(sink.channel === channel)
 
         // Typed through the surface end, as libghostty would encode a
         // keystroke; tmux runs it in the pane and the echo comes back.
         let typed = Data("printf limpid-e2e-ok\n".utf8)
-        _ = typed.withUnsafeBytes { write(sink.surfaceFd, $0.baseAddress, $0.count) }
+        _ = typed.withUnsafeBytes { write(channel.surfaceFd, $0.baseAddress, $0.count) }
 
-        let seen = await readUntil(fd: sink.surfaceFd, contains: "limpid-e2e-ok", timeout: .seconds(5))
+        let seen = await readUntil(fd: channel.surfaceFd, contains: "limpid-e2e-ok", timeout: .seconds(5))
         #expect(seen.range(of: Data("limpid-e2e-ok".utf8)) != nil)
         connection.detachPane(paneID)
         #expect(connection.sinks[paneID] == nil)
@@ -233,7 +239,7 @@ struct TmuxServerConnectionTests {
         let overflows = OverflowCount()
         try connection.start()
         #expect(await waitUntil { connection.state == .attached })
-        let sink = try connection.attachPane(paneID, limit: 32 * 1024) { overflows.value += 1 }
+        let sink = try connection.attachPane(paneID, channel: TmuxPaneChannel { _ in }, limit: 32 * 1024) { overflows.value += 1 }
 
         // Nobody reads the surface end, so 400 KB has nowhere to go.
         connection.send("send-keys -t \(paneID) 'cat \(payload.path)' Enter")
@@ -244,7 +250,7 @@ struct TmuxServerConnectionTests {
         // pause of its own, is what gets it flowing again.
         sink.pause()
         connection.sendInStream("display-message -p repaint", completion: resumeInStream(sink, injecting: Data("REPAINT".utf8)))
-        let drained = await readUntil(fd: sink.surfaceFd, contains: "REPAINT", timeout: .seconds(2))
+        let drained = await readUntil(fd: sink.channel.surfaceFd, contains: "REPAINT", timeout: .seconds(2))
         #expect(drained.range(of: Data("REPAINT".utf8)) != nil)
     }
 

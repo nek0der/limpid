@@ -325,7 +325,8 @@ struct TmuxMirrorInputIntegrationTests {
         connection.terminalColors = dark
         try connection.start()
         // Attached before the server's version is known, as a mirror does.
-        _ = try connection.attachPane(paneID) {}
+        let channel = try TmuxPaneChannel { _ in }
+        _ = try connection.attachPane(paneID, channel: channel) {}
         #expect(await waitUntil { connection.version != nil })
         var isSettled = false
         connection.send("display-message -p ok") { _, _ in isSettled = true }
@@ -401,7 +402,8 @@ private struct PasteHarness {
             connection: connection,
             session: session,
             registry: RecordingSurfaceRegistry(),
-            secureInput: nil
+            secureInput: nil,
+            channelForPane: { store.channel(paneID: $0) }
         )
         let failures = FailureLog()
         mirror.onCommandFailed = { failures.messages.append($0) }

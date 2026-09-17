@@ -89,6 +89,10 @@ final class TmuxWindowMirror {
     @ObservationIgnored private let session: WindowSession
     @ObservationIgnored private let registry: any SurfaceViewProviding
     @ObservationIgnored private let secureInput: SecureInputManager?
+    /// The channel of a leaf, which outlives this mirror: the store opens
+    /// it for the leaf, the surface reads it, and a sink of ours only
+    /// writes into it while we feed the pane.
+    @ObservationIgnored private let channelForPane: (UUID) -> TmuxPaneChannel?
     @ObservationIgnored private var panes: [UUID: Pane] = [:]
     @ObservationIgnored private var isStopped = false
     /// The pane area in points, from the view showing this tab. Zero while
@@ -133,7 +137,8 @@ final class TmuxWindowMirror {
         connection: TmuxServerConnection,
         session: WindowSession,
         registry: any SurfaceViewProviding,
-        secureInput: SecureInputManager?
+        secureInput: SecureInputManager?,
+        channelForPane: @escaping (UUID) -> TmuxPaneChannel?
     ) {
         self.tabID = tabID
         self.windowID = windowID
@@ -148,11 +153,12 @@ final class TmuxWindowMirror {
         self.session = session
         self.registry = registry
         self.secureInput = secureInput
+        self.channelForPane = channelForPane
     }
 
-    /// Attach a sink for every tmux pane the tab already lists. Sinks
-    /// exist before any surface does, which is what lets `PaneHostView`
-    /// hand the descriptor over at creation.
+    /// Attach a sink for every tmux pane the tab already lists. The sinks
+    /// write into the leaves' channels, which the surfaces read whether
+    /// they were created before this or are created later.
     func start() {
         guard let tab = session.tab(tabID) else { return }
         for (paneID, source) in tab.paneSources {
@@ -350,9 +356,13 @@ final class TmuxWindowMirror {
 
     private func attach(paneID: UUID, tmuxPane: String) {
         guard panes[paneID] == nil else { return }
+        guard let channel = channelForPane(paneID) else {
+            log.error("attach pane \(tmuxPane, privacy: .public) failed: no channel")
+            return
+        }
         do {
             // A sink that dropped output is repainted from tmux.
-            let sink = try connection.attachPane(tmuxPane) { [weak self] in
+            let sink = try connection.attachPane(tmuxPane, channel: channel) { [weak self] in
                 self?.markStale(paneID: paneID)
             }
             panes[paneID] = Pane(tmuxPane: tmuxPane, sink: sink)

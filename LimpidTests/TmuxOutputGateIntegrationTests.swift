@@ -53,8 +53,10 @@ struct TmuxOutputGateIntegrationTests {
 
         let connection = try await attachedConnection(server)
         defer { connection.stop() }
-        let openSink = try connection.attachPane(openPane) {}
-        let gatedSink = try connection.attachPane(gatedPane) {}
+        let openChannel = try TmuxPaneChannel { _ in }
+        let gatedChannel = try TmuxPaneChannel { _ in }
+        _ = try connection.attachPane(openPane, channel: openChannel) {}
+        _ = try connection.attachPane(gatedPane, channel: gatedChannel) {}
 
         let gateOff = await sendAndWait(connection, "refresh-client -A '\(gatedPane):off'")
         #expect(gateOff?.isError == false)
@@ -64,11 +66,11 @@ struct TmuxOutputGateIntegrationTests {
 
         // Nothing should reach the gated sink at all: not the echo of the
         // keys we typed, not the command's output.
-        let silenced = await readUntil(fd: gatedSink.surfaceFd, contains: "GATED-1", timeout: .seconds(2))
+        let silenced = await readUntil(fd: gatedChannel.surfaceFd, contains: "GATED-1", timeout: .seconds(2))
         #expect(!contains(silenced, "GATED-1"))
         #expect(silenced.isEmpty)
 
-        let open = await readUntil(fd: openSink.surfaceFd, contains: "OPEN-1", timeout: .seconds(5))
+        let open = await readUntil(fd: openChannel.surfaceFd, contains: "OPEN-1", timeout: .seconds(5))
         #expect(contains(open, "OPEN-1"))
 
         let gateOn = await sendAndWait(connection, "refresh-client -A '\(gatedPane):on'")
@@ -78,12 +80,12 @@ struct TmuxOutputGateIntegrationTests {
         // Turning the gate back on makes tmux redraw the pane, so the
         // screen the mirror missed — GATED-1 included — arrives together
         // with the new output. We only require the new output.
-        let resumed = await readUntil(fd: gatedSink.surfaceFd, contains: "GATED-2", timeout: .seconds(5))
+        let resumed = await readUntil(fd: gatedChannel.surfaceFd, contains: "GATED-2", timeout: .seconds(5))
         #expect(contains(resumed, "GATED-2"))
 
         // The open pane is unaffected by either side of the gate.
         server.run(["send-keys", "-t", openPane, "echo OPEN-2", "Enter"])
-        let openAgain = await readUntil(fd: openSink.surfaceFd, contains: "OPEN-2", timeout: .seconds(5))
+        let openAgain = await readUntil(fd: openChannel.surfaceFd, contains: "OPEN-2", timeout: .seconds(5))
         #expect(contains(openAgain, "OPEN-2"))
     }
 

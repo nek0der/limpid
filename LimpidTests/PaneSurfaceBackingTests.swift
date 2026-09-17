@@ -11,7 +11,6 @@ import Testing
 @Suite("Pane surface backing")
 struct PaneSurfaceBackingTests {
     private let paneID = UUID()
-    private let tabID = UUID()
 
     private var tmuxSource: PaneIOSource {
         .tmux(TmuxPaneRef(
@@ -23,32 +22,32 @@ struct PaneSurfaceBackingTests {
 
     @Test("a local pane starts its own process")
     func local_ownsProcess() {
-        let backing = PaneHostRepresentable.surfaceBacking(for: .local, paneID: paneID, tabID: tabID, tmuxStore: nil)
+        let backing = PaneHostRepresentable.surfaceBacking(for: .local, paneID: paneID, tmuxStore: nil)
         #expect(backing == .ownProcess)
     }
 
-    @Test("an unavailable pane reads the dormant descriptor, not a shell")
-    func unavailable_withStore_getsDormantDescriptor() throws {
+    @Test("an unavailable pane reads its leaf's channel, not a shell")
+    func unavailable_withStore_getsLeafChannel() throws {
         let store = TmuxConnectionStore(tmuxExecutable: nil)
         defer { store.reconcile(tabs: []) }
-        let backing = PaneHostRepresentable.surfaceBacking(for: .unavailable, paneID: paneID, tabID: tabID, tmuxStore: store)
-        let dormant = try #require(store.dormantSink(paneID: paneID))
-        #expect(backing == .descriptor(dormant.surfaceFd))
+        let backing = PaneHostRepresentable.surfaceBacking(for: .unavailable, paneID: paneID, tmuxStore: store)
+        let channel = try #require(store.channel(paneID: paneID))
+        #expect(backing == .channel(channel))
     }
 
-    @Test("a tmux pane with no live mirror reads the dormant descriptor")
-    func tmux_withoutMirror_getsDormantDescriptor() throws {
+    @Test("a tmux pane with no live mirror reads its leaf's channel")
+    func tmux_withoutMirror_getsLeafChannel() throws {
         let store = TmuxConnectionStore(tmuxExecutable: nil)
         defer { store.reconcile(tabs: []) }
-        let backing = PaneHostRepresentable.surfaceBacking(for: tmuxSource, paneID: paneID, tabID: tabID, tmuxStore: store)
-        let dormant = try #require(store.dormantSink(paneID: paneID))
-        #expect(backing == .descriptor(dormant.surfaceFd))
+        let backing = PaneHostRepresentable.surfaceBacking(for: tmuxSource, paneID: paneID, tmuxStore: store)
+        let channel = try #require(store.channel(paneID: paneID))
+        #expect(backing == .channel(channel))
     }
 
     @Test("without a store a pane that is not local gets no surface")
     func notLocal_withoutStore_getsNoSurface() {
         for source in [tmuxSource, .unavailable] {
-            let backing = PaneHostRepresentable.surfaceBacking(for: source, paneID: paneID, tabID: tabID, tmuxStore: nil)
+            let backing = PaneHostRepresentable.surfaceBacking(for: source, paneID: paneID, tmuxStore: nil)
             #expect(backing == .noSurface)
         }
     }

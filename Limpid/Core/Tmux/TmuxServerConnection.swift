@@ -227,34 +227,29 @@ final class TmuxServerConnection {
         }
     }
 
-    /// Create the sink for `pane` and route its `%output` there. What the
-    /// surface still writes (mouse and focus reports; keys arrive through
-    /// `sendInput`) goes to the pane as bytes, and `onOverflow` goes to
-    /// whoever attached it, the only party that can repaint that pane. A
-    /// pane already attached is refused: tmux feeds one sink per pane, and
-    /// two owners of it would close it under each other.
+    /// Create a sink that writes `pane`'s `%output` into `channel`, and
+    /// route the pane there. `onOverflow` goes to whoever attached it, the
+    /// only party that can repaint that pane. What the surface writes back
+    /// arrives on the channel, whose owner routes it; this connection only
+    /// feeds it. A pane already attached is refused: tmux feeds one sink
+    /// per pane, and two owners of it would detach it under each other.
     func attachPane(
         _ pane: String,
+        channel: TmuxPaneChannel,
         limit: Int = TmuxPaneSink.defaultLimit,
         onOverflow: @escaping @MainActor () -> Void
     ) throws -> TmuxPaneSink {
         guard process != nil else { throw TmuxConnectionError.notStarted }
         guard sinks[pane] == nil else { throw TmuxConnectionError.paneAlreadyAttached(pane) }
-        let sink = try TmuxPaneSink(
-            queue: transport.queue,
-            limit: limit,
-            onSurfaceOutput: { [weak self] data in self?.sendInput([.bytes(Array(data))], pane: pane) },
-            onOverflow: onOverflow
-        )
+        let sink = TmuxPaneSink(channel: channel, queue: transport.queue, limit: limit, onOverflow: onOverflow)
         sinks[pane] = sink
         transport.setSink(sink, forPane: pane)
         reportColors(toPane: pane)
         return sink
     }
 
-    /// Stop routing to `pane` and close its sink. A surface still showing
-    /// the pane is unaffected beyond seeing the stream end: libghostty
-    /// reads its own duplicate of `surfaceFd`.
+    /// Stop routing to `pane` and close its sink. The channel stays open,
+    /// so a surface showing the pane keeps its screen and can be fed again.
     func detachPane(_ pane: String) {
         guard let sink = sinks.removeValue(forKey: pane) else { return }
         transport.setSink(nil, forPane: pane)

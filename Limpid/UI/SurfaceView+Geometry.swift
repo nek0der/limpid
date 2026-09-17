@@ -8,12 +8,6 @@ import OSLog
 private let log = Logger.limpid("surface.view")
 
 extension SurfaceView {
-    /// A pane whose bytes come from a descriptor rather than a pty: a tmux
-    /// mirror. Decided at creation and never changes for the surface's life.
-    var isMirror: Bool {
-        mirrorIoFd >= 0
-    }
-
     func updateScrollbarState(_ state: TerminalScrollbarState) {
         scrollbarState = state
         onScrollbarStateChange?(state)

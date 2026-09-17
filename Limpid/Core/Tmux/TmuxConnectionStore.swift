@@ -34,12 +34,14 @@ final class TmuxConnectionStore {
     /// switched off so a build in a hidden window cannot fill the pipe
     /// (design §8 D12).
     private(set) var outputGates: [Key: TmuxOutputGate] = [:]
-    /// Panes that mirror on paper but have no connection behind them: a
-    /// restored tab before adoption, or a tab whose server went away.
-    /// Each holds a descriptor that never delivers, so the surface shows
-    /// nothing instead of spawning a shell. Released on `reconcile`.
-    private var dormantSinks: [UUID: TmuxPaneSink] = [:]
-    private let dormantQueue = DispatchQueue(label: "dev.limpid.tmux.dormant")
+    /// The stream each `.tmux` or `.unavailable` leaf's surface reads, with
+    /// or without a mirror feeding it: a restored tab before adoption, a
+    /// tab whose server went away, and a live mirror's pane all read their
+    /// leaf's channel, so a surface never has to be recreated to be fed by
+    /// a later connection. A leaf without a feeding mirror shows nothing
+    /// instead of spawning a shell. Released on `reconcile` once the leaf
+    /// is gone; a surface or a sink still holding one keeps it open.
+    private var channels: [UUID: TmuxPaneChannel] = [:]
     /// The colors every connection reports to its panes: those of the last
     /// config libghostty resolved, which is where a light or dark switch
     /// shows up. The first arrives while libghostty starts.
@@ -63,18 +65,28 @@ final class TmuxConnectionStore {
         self.sessionPresence = sessionPresence
     }
 
-    func dormantSink(paneID: UUID) -> TmuxPaneSink? {
-        if let existing = dormantSinks[paneID] {
+    /// The channel of leaf `paneID`, opened on first use. `nil` only when
+    /// no socketpair could be opened.
+    func channel(paneID: UUID) -> TmuxPaneChannel? {
+        if let existing = channels[paneID] {
             return existing
         }
         do {
-            let sink = try TmuxPaneSink(queue: dormantQueue, onSurfaceOutput: { _ in }, onOverflow: {})
-            dormantSinks[paneID] = sink
-            return sink
+            let channel = try TmuxPaneChannel { [weak self] data in
+                self?.surfaceWrote(data, paneID: paneID)
+            }
+            channels[paneID] = channel
+            return channel
         } catch {
-            log.error("dormant sink failed: \(String(describing: error), privacy: .public)")
+            log.error("pane channel failed: \(String(describing: error), privacy: .public)")
             return nil
         }
+    }
+
+    /// What a surface wrote back (mouse and focus reports) goes to the pane
+    /// through the mirror showing it, and nowhere without one.
+    private func surfaceWrote(_ data: Data, paneID: UUID) {
+        sendInput([.bytes(Array(data))], paneID: paneID)
     }
 
     /// The connection for `binding`'s session, started on first use.
@@ -176,12 +188,6 @@ final class TmuxConnectionStore {
         return mirror
     }
 
-    /// The sink feeding `paneID` of `tabID`, if that tab mirrors and the
-    /// pane is attached. `PaneHostView` hands its descriptor to the surface.
-    func sink(tabID: UUID, paneID: UUID) -> TmuxPaneSink? {
-        mirrors[tabID]?.sink(for: paneID)
-    }
-
     /// The mirror already showing `windowID` of `binding`'s session over a
     /// connection that still delivers. A tmux pane feeds exactly one sink,
     /// so a second tab on the same window is never opened (design §4).
@@ -233,10 +239,11 @@ final class TmuxConnectionStore {
         for tab in tabs {
             mirrors[tab.id]?.tabChanged(tab)
         }
-        let livePanes = Set(tabs.flatMap { $0.splitTree.allLeafIDs() })
-        for (paneID, sink) in dormantSinks where !livePanes.contains(paneID) {
-            sink.close()
-            dormantSinks.removeValue(forKey: paneID)
+        let channelLeaves = Set(tabs.flatMap { tab in
+            tab.splitTree.allLeafIDs().filter { tab.ioSource(for: $0) != .local }
+        })
+        for paneID in channels.keys where !channelLeaves.contains(paneID) {
+            channels.removeValue(forKey: paneID)
         }
     }
 
@@ -252,10 +259,7 @@ final class TmuxConnectionStore {
         }
         connections.removeAll()
         outputGates.removeAll()
-        for sink in dormantSinks.values {
-            sink.close()
-        }
-        dormantSinks.removeAll()
+        channels.removeAll()
     }
 
     private static func key(of mirror: TmuxWindowMirror) -> Key {

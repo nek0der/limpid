@@ -1,5 +1,5 @@
 // TmuxPaneSink.swift
-// Limpid — one pane's output channel: a socketpair whose far end libghostty reads, fed without ever blocking.
+// Limpid — one connection's writes into a pane's channel: held, paused, and rebuilt without ever blocking.
 
 import Darwin
 import Foundation
@@ -7,11 +7,11 @@ import OSLog
 
 private let log = Logger.limpid("tmux.sink")
 
-/// The host side of one pane's `socketpair(2)`. `surfaceFd` is handed to
-/// libghostty's mirror backend at surface creation; everything written
-/// here appears as terminal output there, and what the surface still writes
-/// back — mouse and focus reports; keys reach tmux as actions instead —
-/// arrives on `onSurfaceOutput`.
+/// What one connection writes into a pane's `TmuxPaneChannel`. Everything
+/// written here appears as terminal output on the surface reading that
+/// channel. The sink owns no descriptor and closes none: the channel
+/// belongs to the leaf and outlives the connection, so a later connection
+/// can attach a sink of its own to the same surface.
 ///
 /// Output is only ever the newest state of the pane. Whenever the screen is
 /// rebuilt from `capture-pane`, everything tmux sent before that capture is
@@ -32,19 +32,16 @@ final class TmuxPaneSink: @unchecked Sendable {
     /// enough that one `capture-pane` rebuilds the screen afterwards.
     static let defaultLimit = 4 * 1024 * 1024
 
-    /// Descriptor for `ghostty_surface_config_s.mirror_io_fd`. The backend
-    /// reads its own duplicate, taken at surface creation, so `close()` may
-    /// close ours while the surface lives: closing `hostFd` ends its stream.
-    let surfaceFd: Int32
+    /// The stream this sink writes. Held for the sink's life, and past it
+    /// by a write source until that source's cancel handler has run, so its
+    /// host descriptor stays open while Dispatch watches it.
+    let channel: TmuxPaneChannel
 
-    /// Runs on the main actor with whatever the surface wrote.
-    let onSurfaceOutput: @MainActor (Data) -> Void
     /// Runs on the main actor when the held output passed `limit`. The sink
     /// has dropped it and paused itself, so this happens at most once per
     /// pause; the caller rebuilds the screen from tmux and resumes.
     let onOverflow: @MainActor () -> Void
 
-    private let hostFd: Int32
     private let queue: DispatchQueue
     private let limit: Int
     private var pending = Data()
@@ -54,38 +51,25 @@ final class TmuxPaneSink: @unchecked Sendable {
     /// the rebuild the overflow asks for pauses again anyway.
     private var rebuild = 0
     private var isClosed = false
-    private var readSource: (any DispatchSourceRead)?
     private var writeSource: (any DispatchSourceWrite)?
 
     init(
+        channel: TmuxPaneChannel,
         queue: DispatchQueue,
         limit: Int = TmuxPaneSink.defaultLimit,
-        onSurfaceOutput: @escaping @MainActor (Data) -> Void,
         onOverflow: @escaping @MainActor () -> Void
-    ) throws {
-        var fds: [Int32] = [-1, -1]
-        guard socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0 else {
-            throw TmuxSinkError.socketpairFailed(errno)
-        }
-        // Close-on-exec on both ends: libghostty forks a shell for every
-        // ordinary pane without sweeping descriptors, and an inherited copy
-        // would keep the stream open after we close ours and let that
-        // shell read or type into the mirrored pane.
-        for fd in fds {
-            _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
-        }
-        surfaceFd = fds[0]
-        hostFd = fds[1]
+    ) {
+        self.channel = channel
         self.queue = queue
         self.limit = limit
-        self.onSurfaceOutput = onSurfaceOutput
         self.onOverflow = onOverflow
-        // Non-blocking on our side only: the backend's read thread blocks
-        // on its end by design, and that is what makes a stalled pane show
-        // up here as a full socket rather than as a stuck thread.
-        _ = fcntl(hostFd, F_SETFL, fcntl(hostFd, F_GETFL) | O_NONBLOCK)
-        armReadSource()
-        log.debug("sink opened host=\(self.hostFd, privacy: .public) surface=\(self.surfaceFd, privacy: .public)")
+        log.debug("sink attached host=\(channel.hostFd, privacy: .public)")
+    }
+
+    /// An owner that never called `close` still stops watching the socket.
+    /// Nothing else can reach the source once the sink is gone.
+    deinit {
+        writeSource?.cancel()
     }
 
     /// Queue up output for the surface. Must run on `queue`; the transport
@@ -214,20 +198,15 @@ final class TmuxPaneSink: @unchecked Sendable {
         }
     }
 
-    /// Stop reading the surface's output and close both descriptors. A
-    /// surface still showing the pane sees its stream end, since it reads
-    /// its own duplicate of `surfaceFd`; after this nothing is delivered.
+    /// Stop writing and drop whatever is held. The channel stays open, so
+    /// the surface keeps its screen and its stream: another sink may feed
+    /// it next. After this nothing is written or reported.
     func close() {
         queue.async { [self] in
             guard !isClosed else { return }
             isClosed = true
-            readSource?.cancel()
-            writeSource?.cancel()
-            readSource = nil
-            writeSource = nil
-            Darwin.close(hostFd)
-            Darwin.close(surfaceFd)
-            log.debug("sink closed host=\(self.hostFd, privacy: .public) surface=\(self.surfaceFd, privacy: .public)")
+            discardPending()
+            log.debug("sink detached host=\(self.channel.hostFd, privacy: .public)")
         }
     }
 
@@ -263,7 +242,7 @@ final class TmuxPaneSink: @unchecked Sendable {
         let data = Data(bytes)
         return data.withUnsafeBytes { raw -> Int in
             guard let base = raw.baseAddress, !raw.isEmpty else { return 0 }
-            let n = Darwin.write(hostFd, base, raw.count)
+            let n = Darwin.write(channel.hostFd, base, raw.count)
             if n < 0 {
                 if errno == EAGAIN || errno == EWOULDBLOCK {
                     return 0
@@ -296,35 +275,16 @@ final class TmuxPaneSink: @unchecked Sendable {
 
     private func armWriteSource() {
         guard writeSource == nil, !isClosed else { return }
-        let source = DispatchSource.makeWriteSource(fileDescriptor: hostFd, queue: queue)
+        let channel = channel
+        let source = DispatchSource.makeWriteSource(fileDescriptor: channel.hostFd, queue: queue)
         source.setEventHandler { [weak self] in self?.drain() }
+        // The channel closes its descriptors when released. Holding it here
+        // until the source has stopped watching is what keeps that close
+        // after this cancel, whichever of the sink and the channel's other
+        // owners lets go first.
+        source.setCancelHandler { withExtendedLifetime(channel) {} }
         source.resume()
         writeSource = source
-    }
-
-    private func armReadSource() {
-        let source = DispatchSource.makeReadSource(fileDescriptor: hostFd, queue: queue)
-        source.setEventHandler { [weak self] in self?.readSurfaceOutput() }
-        source.resume()
-        readSource = source
-    }
-
-    private func readSurfaceOutput() {
-        var buffer = [UInt8](repeating: 0, count: 16384)
-        let n = buffer.withUnsafeMutableBytes { Darwin.read(hostFd, $0.baseAddress, $0.count) }
-        if n > 0 {
-            let data = Data(buffer[0..<n])
-            let deliver = onSurfaceOutput
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { deliver(data) }
-            }
-        } else if n == 0 {
-            // The surface closed its end. The source keeps reporting a
-            // closed descriptor as readable, so tear it down here or the
-            // handler spins.
-            readSource?.cancel()
-            readSource = nil
-        }
     }
 }
 
