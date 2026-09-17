@@ -184,14 +184,18 @@ struct AgentMirrorTabCapabilityTests {
         #expect(session.tab(containing: agent.leaf)?.agentSessions[.codex]?[agent.leaf]?.sessionId == "s")
     }
 
-    /// The one place a tab tmux ended is decided. Both origins close for
-    /// now; the agent's outcome is the next stage's.
-    @Test func endedTab_closes_forEitherOrigin() throws {
+    /// The one place a tab tmux ended is decided. A user's mirror tab closes,
+    /// whatever it was showing. An agent's tab is decided by its run record,
+    /// and a store with nobody to ask — a window with no agent tracking
+    /// behind it — keeps the tab, the outcome that loses nothing.
+    @Test func endedTab_closesForAUser_andIsKeptForAnAgent() throws {
         let session = WindowSession()
-        for origin in [Tab.MirrorOrigin.user, .agent] {
-            let tab = try #require(session.tab(mirrorTab(in: session, origin: origin).tab))
-            #expect(TmuxConnectionStore.outcome(ofEnded: tab) == .close)
-        }
+        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: nil)
+        let user = try #require(session.tab(mirrorTab(in: session, origin: .user).tab))
+        let agent = try #require(session.tab(mirrorTab(in: session, origin: .agent).tab))
+
+        #expect(store.outcome(ofEnded: user) == .close)
+        #expect(store.outcome(ofEnded: agent) == .becomeTerminal)
     }
 }
 

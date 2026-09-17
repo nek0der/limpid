@@ -109,6 +109,15 @@ pub struct PanePresence {
     pub attachments: BTreeMap<String, Vec<Uuid>>,
     #[serde(default)]
     pub locations: BTreeMap<Uuid, PaneLocation>,
+    /// Endpoints whose tmux the host has positive evidence is gone: no server
+    /// answers on the socket, another server run answers there, or the
+    /// recorded server no longer lists the pane. Keyed as `attachments` is.
+    ///
+    /// A run at such an endpoint is over whatever its record last said. Its
+    /// record cannot say so itself: a run in tmux names no pid of ours, and a
+    /// server killed outright runs no hook on the way out.
+    #[serde(default)]
+    pub gone_endpoints: BTreeSet<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -364,6 +373,14 @@ pub struct Projection {
     pub marks_to_keep: AttentionMarks,
     /// Panes where offering to resume makes sense, per provider.
     pub resume_candidates: BTreeMap<Uuid, BTreeSet<ProviderId>>,
+    /// Panes whose run in tmux ended on its own terms — a session-end hook —
+    /// with no other run of theirs still going in tmux.
+    ///
+    /// The host reads it when tmux drops the window showing such a run, to
+    /// tell an agent that finished from a tmux that went away. Only the
+    /// record says which happened, and only the rules read records.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub ended_tmux_panes: BTreeSet<Uuid>,
 }
 
 impl RuntimePresentation {

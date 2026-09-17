@@ -10,8 +10,8 @@
 //! `SideWrite` and `TurnSnapshotOp` belong to the runtime.
 
 use limpid_agent_model::{
-    AgentEvent, Capability, MAX_RECORD_TEXT_BYTES, ProviderDescriptor, RunRecord, RunState, Titles,
-    TmuxEndpoint,
+    AgentEvent, Capability, MAX_RECORD_TEXT_BYTES, PanePresence, ProviderDescriptor, RunRecord,
+    RunState, Titles, TmuxEndpoint,
 };
 use serde::{Deserialize, Serialize};
 
@@ -86,9 +86,35 @@ pub(crate) fn has_session_ended(record: &RunRecord) -> bool {
 /// Such a run outlives every pane, so the rules cannot ask a pane about it:
 /// its side files are kept while it goes on, and its conversation is not
 /// offered for resume anywhere, because tmux already holds it.
+///
+/// Two things can end it, and the record only carries one of them. The agent
+/// ending its session leaves a session-end hook behind; a server that was
+/// killed leaves nothing at all, so the host's evidence that the endpoint is
+/// gone counts as the other. Without it a killed run would hold its
+/// conversation out of resume for good.
 #[must_use]
-pub(crate) fn is_live_tmux_run(record: &RunRecord) -> bool {
-    record.tmux_socket_path.is_some() && !has_session_ended(record)
+pub(crate) fn is_live_tmux_run(record: &RunRecord, presence: &PanePresence) -> bool {
+    if record.tmux_socket_path.is_none() || has_session_ended(record) {
+        return false;
+    }
+    !endpoint_key(record).is_some_and(|key| presence.gone_endpoints.contains(&key))
+}
+
+/// The key the host indexes tmux endpoints by, for the attachments it reports
+/// and the endpoints it reports gone.
+///
+/// The host builds the same key from what its own topology probe reported, so
+/// the shape is a contract between two codebases rather than something either
+/// one owns. `AgentProjectionPresence.key(socketPath:pane:)` is the other
+/// half, and a test there pins this spelling.
+#[must_use]
+pub(crate) fn endpoint_key(record: &RunRecord) -> Option<String> {
+    let socket = record.tmux_socket_path.as_deref()?;
+    let pane = record.tmux_pane_id.as_deref()?;
+    if socket.is_empty() || pane.is_empty() {
+        return None;
+    }
+    Some(format!("{socket}|{pane}"))
 }
 
 /// What the runtime must write after one event.

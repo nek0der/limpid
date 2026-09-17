@@ -35,12 +35,27 @@ struct TmuxPaneLocation: Equatable {
     let isActive: Bool
 }
 
+/// What a probe found on one socket, when it found something conclusive.
+///
+/// A command that fails says nothing by itself: the server may be wedged or
+/// the socket unreadable. Only a missing or refused socket says no server
+/// runs, and only a full listing says which server run does
+/// (`TmuxSessionProbe.isServerAbsent` draws the same line for a client that
+/// lost its session).
+enum TmuxServerPresence: Equatable {
+    case absent
+    case running(pid: String, startedAt: String)
+}
+
 struct TmuxTopology: Equatable {
     var clients: [String: TmuxBinding] = [:]
     var panes: [TmuxPaneLocation] = []
     /// Built by the I/O collector, never by a parser or a UI lookup.
     var socketAliases: [String: String] = [:]
     var outcomes: [String: TmuxCommandResult] = [:]
+    /// Per socket, as the last probe of it concluded. A socket the probe
+    /// could not answer for has no entry rather than a guess.
+    var servers: [String: TmuxServerPresence] = [:]
     var observedAt: [String: TimeInterval] = [:]
 
     func socketKey(_ raw: String) -> String {
@@ -85,6 +100,32 @@ struct TmuxTopology: Equatable {
         }
     }
 
+    /// Whether the tmux behind `endpoint` is gone, as far as the last probe
+    /// of its socket could tell.
+    ///
+    /// Three findings say so, and nothing else does: no server answers on the
+    /// socket, another server run answers there (pane ids start again with
+    /// each server, so the endpoint names nothing on it), and the recorded
+    /// server no longer listing the pane. A socket the probe could not answer
+    /// for says nothing, and an endpoint that records no server run cannot be
+    /// told apart from a later one, so neither is called gone.
+    func isGone(_ endpoint: TmuxRuntimeEndpoint) -> Bool {
+        switch servers[socketKey(endpoint.socketPath)] {
+        case .absent:
+            true
+        case let .running(pid, startedAt):
+            if endpoint.serverPID.isEmpty || endpoint.serverStartedAt.isEmpty {
+                false
+            } else if pid != endpoint.serverPID || startedAt != endpoint.serverStartedAt {
+                true
+            } else {
+                locations(for: endpoint).isEmpty
+            }
+        case nil:
+            false
+        }
+    }
+
     mutating func merge(_ batch: TmuxTopology, candidates: Set<String>, now: TimeInterval) {
         socketAliases = batch.socketAliases
         let expired = Set(observedAt.compactMap { key, stamp in
@@ -93,6 +134,12 @@ struct TmuxTopology: Equatable {
         let replaced = Set(batch.outcomes.keys).union(expired)
         panes.removeAll { replaced.contains($0.socketPath) }
         clients = clients.filter { !replaced.contains($0.value.socketPath) }
+        for path in replaced {
+            // Including the sockets this batch visited: what it concluded
+            // about them replaces what it concluded before, and a socket it
+            // could not answer for this time has no conclusion at all.
+            servers[path] = nil
+        }
         for path in expired {
             outcomes[path] = nil
             observedAt[path] = nil
@@ -100,6 +147,7 @@ struct TmuxTopology: Equatable {
         panes += batch.panes
         clients.merge(batch.clients) { _, new in new }
         outcomes.merge(batch.outcomes) { _, new in new }
+        servers.merge(batch.servers) { _, new in new }
         observedAt.merge(batch.observedAt) { _, new in new }
     }
 }

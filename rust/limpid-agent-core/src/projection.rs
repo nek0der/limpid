@@ -68,6 +68,7 @@ pub fn project(
     ));
     commands.extend(seen_where_the_user_is_looking(&runtimes, input));
     let resume_candidates = resume_candidates(input, &sessions, &state.accepted);
+    let ended_tmux_panes = ended_tmux_panes(&state.accepted);
 
     state.episodes = runtimes
         .iter()
@@ -89,6 +90,7 @@ pub fn project(
         tab_titles,
         marks_to_keep,
         resume_candidates,
+        ended_tmux_panes,
     };
     (state, projection, commands)
 }
@@ -222,7 +224,7 @@ fn capabilities_of<'a>(
 /// answer can be "cannot tell yet": the topology probe may not have reported.
 /// Everything else belongs to the single pane it was launched in.
 fn panes_for(record: &RunRecord, input: &ProjectionInput) -> (Vec<Uuid>, AttachmentResolution) {
-    let Some(key) = endpoint_key(record) else {
+    let Some(key) = crate::lifecycle::endpoint_key(record) else {
         // A run that says it is hosted in tmux but names no endpoint is
         // somewhere we cannot work out. Falling back to the pane it was
         // launched from would show it where it very likely is not: the
@@ -240,21 +242,6 @@ fn panes_for(record: &RunRecord, input: &ProjectionInput) -> (Vec<Uuid>, Attachm
         Some(panes) => (panes.clone(), AttachmentResolution::Attached),
         None => (Vec::new(), AttachmentResolution::Unresolved),
     }
-}
-
-/// The key the host indexes tmux attachments by.
-///
-/// The host builds the same key from what its own topology probe reported, so
-/// the shape is a contract between two codebases rather than something either
-/// one owns. `AgentProjectionPresence.key(socketPath:pane:)` is the other
-/// half, and a test there pins this spelling.
-fn endpoint_key(record: &RunRecord) -> Option<String> {
-    let socket = record.tmux_socket_path.as_deref()?;
-    let pane = record.tmux_pane_id.as_deref()?;
-    if socket.is_empty() || pane.is_empty() {
-        return None;
-    }
-    Some(format!("{socket}|{pane}"))
 }
 
 /// Identifies one record write. The revision when the writer numbered it, and
@@ -592,6 +579,35 @@ fn surviving_marks(marks: &AttentionMarks, runtimes: &[RuntimePresentation]) -> 
     }
 }
 
+/// The panes whose run in tmux ended on its own terms.
+///
+/// A pane is named only when every run of its that is in tmux has ended: an
+/// agent the user started again in the same leaf is still going there, and
+/// the tab must not be closed under it.
+///
+/// Read by the host when tmux drops the window showing an agent, to tell a
+/// session the agent ended from a server that went away. The record is the
+/// only thing that can say which, and reading records is the rules' job.
+fn ended_tmux_panes(accepted: &BTreeMap<String, AcceptedRun>) -> BTreeSet<Uuid> {
+    let mut ended: BTreeSet<Uuid> = BTreeSet::new();
+    let mut going: BTreeSet<Uuid> = BTreeSet::new();
+    for run in accepted.values() {
+        if run.record.tmux_socket_path.is_none() {
+            continue;
+        }
+        let Ok(pane) = Uuid::parse_str(&run.record.pane_id) else {
+            continue;
+        };
+        if crate::lifecycle::has_session_ended(&run.record) {
+            ended.insert(pane);
+        } else {
+            going.insert(pane);
+        }
+    }
+    ended.retain(|pane| !going.contains(pane));
+    ended
+}
+
 /// Which panes are worth offering a resume for.
 ///
 /// A provider that defers steps aside when another provider already has a
@@ -610,7 +626,7 @@ fn resume_candidates(
 ) -> BTreeMap<Uuid, BTreeSet<ProviderId>> {
     let held_in_tmux: BTreeSet<(&ProviderId, &str)> = accepted
         .values()
-        .filter(|run| crate::lifecycle::is_live_tmux_run(&run.record))
+        .filter(|run| crate::lifecycle::is_live_tmux_run(&run.record, &input.presence))
         .filter_map(|run| Some((&run.provider, run.record.session_id.as_deref()?)))
         .collect();
     let mut candidates: BTreeMap<Uuid, BTreeSet<ProviderId>> = BTreeMap::new();
@@ -645,7 +661,7 @@ fn resume_candidates(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use limpid_agent_model::{Focus, PaneLocation, ProjectionState, TabPanes};
+    use limpid_agent_model::{Focus, PaneLocation, PanePresence, ProjectionState, TabPanes};
 
     const PANE: &str = "11111111-1111-4111-8111-111111111111";
     const RUN: &str = "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1";
@@ -960,6 +976,103 @@ mod tests {
             resume_candidates(&input, &sessions, &accepted(&native)).len(),
             1
         );
+    }
+
+    #[test]
+    fn a_conversation_whose_tmux_is_gone_is_offered_again() {
+        // A killed server runs no hook, so the record still says the run is
+        // going. The host's evidence that the endpoint is gone is the only
+        // thing that lets the conversation be resumed in a pane again.
+        let pane: Uuid = PANE.parse().expect("pane");
+        let mut descriptor = descriptor();
+        descriptor.capabilities.insert(Capability::Resume);
+        let hint = format!(r#"{{"schemaVersion":1,"paneId":"{PANE}","sessionId":"S"}}"#);
+        let sessions = session_infos(
+            &ProjectionInput {
+                session_records: vec![file(Some(hint))],
+                ..ProjectionInput::default()
+            },
+            &[pane].into_iter().collect(),
+        );
+        let mut record =
+            RunRecord::decode(record(Some(1), "2026-09-14T12:00:00Z", "running").as_bytes())
+                .expect("record");
+        record.session_id = Some("S".to_owned());
+        record.tmux_socket_path = Some("/tmp/socket".to_owned());
+        record.tmux_pane_id = Some("%3".to_owned());
+        record.last_hook_event = Some("session_started".to_owned());
+        let accepted: BTreeMap<String, AcceptedRun> = [(
+            RUN.to_owned(),
+            AcceptedRun {
+                provider: claude(),
+                record,
+            },
+        )]
+        .into_iter()
+        .collect();
+        let input = |gone: &[&str]| ProjectionInput {
+            providers: [(claude(), descriptor.clone())].into_iter().collect(),
+            presence: PanePresence {
+                gone_endpoints: gone.iter().map(|it| (*it).to_owned()).collect(),
+                ..PanePresence::default()
+            },
+            ..ProjectionInput::default()
+        };
+
+        assert!(resume_candidates(&input(&[]), &sessions, &accepted).is_empty());
+        // Another endpoint of the same server says nothing about this one.
+        assert!(resume_candidates(&input(&["/tmp/socket|%9"]), &sessions, &accepted).is_empty());
+        assert_eq!(
+            resume_candidates(&input(&["/tmp/socket|%3"]), &sessions, &accepted)[&pane].len(),
+            1
+        );
+    }
+
+    #[test]
+    fn only_a_session_end_names_a_pane_as_ended() {
+        // What tells an agent that finished from a tmux that went away: the
+        // first left a session-end hook behind, the second left nothing.
+        let pane: Uuid = PANE.parse().expect("pane");
+        let mut record =
+            RunRecord::decode(record(Some(1), "2026-09-14T12:00:00Z", "running").as_bytes())
+                .expect("record");
+        record.tmux_socket_path = Some("/tmp/socket".to_owned());
+        record.tmux_pane_id = Some("%3".to_owned());
+        let accepted = |records: Vec<(&str, RunRecord)>| {
+            records
+                .into_iter()
+                .map(|(id, record)| {
+                    (
+                        id.to_owned(),
+                        AcceptedRun {
+                            provider: claude(),
+                            record,
+                        },
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+
+        assert!(ended_tmux_panes(&accepted(vec![(RUN, record.clone())])).is_empty());
+
+        let mut ended = record.clone();
+        ended.last_hook_event = Some("SessionEnd".to_owned());
+        assert_eq!(
+            ended_tmux_panes(&accepted(vec![(RUN, ended.clone())])),
+            [pane].into_iter().collect::<BTreeSet<_>>()
+        );
+
+        // A second agent started in the same leaf is still going there.
+        let second = "BBBBBBBB-2222-4222-8222-BBBBBBBBBBB2";
+        assert!(
+            ended_tmux_panes(&accepted(vec![(RUN, ended), (second, record.clone())])).is_empty()
+        );
+
+        // A run outside tmux ends by its pid, and this is not about it.
+        let mut native = record;
+        native.tmux_socket_path = None;
+        native.last_hook_event = Some("session_ended".to_owned());
+        assert!(ended_tmux_panes(&accepted(vec![(RUN, native)])).is_empty());
     }
 
     #[test]

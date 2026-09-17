@@ -15,6 +15,11 @@ struct AgentRuntimePresentation {
     var stateEpisodeToken: String?
     /// Nil on compatibility fixtures; production always supplies evidence.
     var attachmentResolution: AgentAttachmentResolution?
+    /// Where the run lives in tmux, when its record names an endpoint. What
+    /// opens its tab again once nothing shows it
+    /// (`TmuxMirrorActions.openDetachedAgentRun`); nil for every run outside
+    /// tmux, which lives in the pane it was started in.
+    var tmuxRun: AgentTmuxRun?
 
     var resolution: AgentAttachmentResolution {
         attachmentResolution ?? (paneIDs.isEmpty ? .unresolved : .attached)

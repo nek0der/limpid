@@ -71,6 +71,11 @@ struct AgentProjectionMarks: Codable {
 struct AgentProjectionPresence: Encodable {
     var attachments: [String: [UUID]] = [:]
     var locations: [String: AgentProjectionPaneLocation] = [:]
+    /// The endpoints this process has evidence are gone (`TmuxPanePresence`),
+    /// keyed as `attachments` is. A run there is over however its record
+    /// reads: a server that was killed writes no record on the way out, and
+    /// without this its conversation would be held out of resume for good.
+    var goneEndpoints: Set<String> = []
 
     /// Keyed by socket and pane because that pair is what identifies one tmux
     /// endpoint, and the rules match a record's own fields against it.
@@ -132,6 +137,13 @@ struct AgentProjection: Decodable {
     var tabTitles: [String: String] = [:]
     var marksToKeep = AgentProjectionMarks()
     var resumeCandidates: [String: [String]] = [:]
+    /// Panes whose run in tmux ended on its own terms. Read when tmux drops
+    /// the window showing an agent, to tell that from a server that went away
+    /// (`TmuxConnectionStore.outcome(ofEnded:)`).
+    ///
+    /// Optional because the rules leave the key out when no pane qualifies,
+    /// which is the usual pass; absent and empty mean the same thing here.
+    var endedTmuxPanes: Set<UUID>?
 
     /// The pane-keyed maps, re-keyed by identifier rather than by the text of
     /// one. The two sides spell an identifier differently — lower case on the

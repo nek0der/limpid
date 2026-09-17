@@ -6376,6 +6376,50 @@
         }
       }
     },
+    "Running in tmux without a tab": {
+      "comment": "Waiting row detail for an agent whose tab was closed",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブのない tmux で実行中"
+          }
+        }
+      }
+    },
+    "Open %@ in a tab": {
+      "comment": "Waiting row accessibility label for a detached agent run",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ をタブで開く"
+          }
+        }
+      }
+    },
+    "Shows the agent that is running in tmux": {
+      "comment": "Waiting row accessibility hint for a detached agent run",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux で実行中のエージェントを表示します"
+          }
+        }
+      }
+    },
+    "That agent is no longer running in tmux": {
+      "comment": "Notice when a detached agent run cannot be reopened",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのエージェントは tmux で実行されていません"
+          }
+        }
+      }
+    },
     "Jump to this pane": {
       "comment": "Waiting row accessibility hint",
       "localizations": {

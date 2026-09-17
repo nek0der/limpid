@@ -5,11 +5,12 @@
         "id": "claude:AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
         "provider": "claude",
         "runId": "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
-        "revision": 4,
+        "revision": 2,
         "badge": {
-          "state": "unknown",
+          "state": "running",
+          "runStartedAt": "2026-09-14T12:01:00Z",
           "isTmuxHosted": true,
-          "updatedAt": "2026-09-14T12:03:00Z",
+          "updatedAt": "2026-09-14T12:01:00Z",
           "lastPrompt": "<prompt for tmux-hosted>",
           "firstPrompt": "<prompt for tmux-hosted>",
           "conversationId": "00000000-0000-4000-8000-000000000001",
@@ -17,21 +18,29 @@
         },
         "panes": [],
         "attachment": "unresolved",
-        "eventToken": "4",
-        "episodeToken": "4"
+        "eventToken": "2",
+        "episodeToken": "2"
       }
     ],
     "badges": {},
-    "sessions": {},
+    "sessions": {
+      "33333333-3333-4333-8333-333333333333": {
+        "claude": {
+          "sessionId": "00000000-0000-4000-8000-000000000001",
+          "cwd": "/tmp/example"
+        }
+      }
+    },
     "tabTitles": {},
     "marksToKeep": {
       "viewed": {},
       "dismissed": {}
     },
-    "resumeCandidates": {},
-    "endedTmuxPanes": [
-      "33333333-3333-4333-8333-333333333333"
-    ]
+    "resumeCandidates": {
+      "33333333-3333-4333-8333-333333333333": [
+        "claude"
+      ]
+    }
   },
   "commands": [
     {
@@ -53,7 +62,7 @@
       "op": {
         "op": "cleanupPaneStore",
         "keep": [
-          "11111111-1111-4111-8111-111111111111"
+          "33333333-3333-4333-8333-333333333333"
         ],
         "max": 200
       },
@@ -71,7 +80,7 @@
       "op": {
         "op": "cleanupPaneStore",
         "keep": [
-          "11111111-1111-4111-8111-111111111111"
+          "33333333-3333-4333-8333-333333333333"
         ],
         "max": 200
       },
@@ -104,7 +113,7 @@
       "op": {
         "op": "cleanupPaneStore",
         "keep": [
-          "11111111-1111-4111-8111-111111111111"
+          "33333333-3333-4333-8333-333333333333"
         ],
         "max": 200
       },

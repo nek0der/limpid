@@ -27,6 +27,15 @@ final class TmuxPanePresence {
     private(set) var topology = TmuxTopology()
     private(set) var surfaces: [TmuxSurfaceSnapshot] = []
     private(set) var detachedPaneIDs: Set<UUID> = []
+    /// Endpoints something asked tmux about directly and was told are gone:
+    /// the session check a mirror runs when its control client ends
+    /// (`TmuxConnectionStore`). Kept beside what the poll sees, because the
+    /// poll runs every couple of seconds while a tab that lost its tmux is
+    /// dealt with at once, and both answer the same question.
+    ///
+    /// Held canonically and never dropped: a server run is named by its pid
+    /// and its start time together, so the endpoint it held cannot come back.
+    @ObservationIgnored private var reportedGone: Set<TmuxRuntimeEndpoint> = []
     var onBindingsChanged: (() -> Void)?
     nonisolated static let pollInterval: TimeInterval = 2
 
@@ -142,6 +151,21 @@ final class TmuxPanePresence {
             }
         }
         return result
+    }
+
+    /// Remember that the tmux behind `endpoint` is gone. Ignored for an
+    /// endpoint that does not name its server run: without one, the report
+    /// could not be told from a later server's pane of the same number.
+    func reportGone(_ endpoint: TmuxRuntimeEndpoint) {
+        guard !endpoint.serverPID.isEmpty, !endpoint.serverStartedAt.isEmpty else { return }
+        reportedGone.insert(endpoint.canonical(aliases: topology.socketAliases))
+    }
+
+    /// Whether the tmux behind `endpoint` is gone: reported by whoever asked
+    /// tmux, or found so by the poll (`TmuxTopology.isGone`).
+    func isGone(_ endpoint: TmuxRuntimeEndpoint) -> Bool {
+        reportedGone.contains(endpoint.canonical(aliases: topology.socketAliases))
+            || topology.isGone(endpoint)
     }
 
     func resolution(for endpoint: TmuxRuntimeEndpoint?) -> AgentAttachmentResolution {

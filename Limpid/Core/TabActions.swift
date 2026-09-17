@@ -119,6 +119,8 @@ enum TabActions {
     /// ⌘⇧T — pop the most-recently-closed tab back. Mints fresh pane
     /// IDs (the old SurfaceViews are gone, and Limpid uses paneID as
     /// the surface registry key — collisions would point at nothing),
+    /// except for an agent's mirror tab, which comes back on its own ids
+    /// or not at all (see below),
     /// remaps every paneID-keyed field on the Tab, and appends it.
     /// SwiftUI then mounts a new PaneHostView per leaf and the
     /// existing `stageScrollback` path replays each `.vt` above the
@@ -137,8 +139,21 @@ enum TabActions {
         guard let closed else { return nil }
 
         let oldLeafIDs = closed.tab.splitTree.allLeafIDs()
+        // An agent's tab is the exception to the fresh ids below: its leaf
+        // carries the `LIMPID_PANE_ID` the agent's records name, and a new
+        // one would part the tab from its run, its resume hint, and its
+        // approval cards (design §6 decision 3).
+        let keepsLeafIDs = closed.tab.mirrorOrigin == .agent
+        // Which is only sound while no live leaf holds one of those ids. A
+        // tab that holds one is the tab this would open a second time — the
+        // agent asked for it again, or a reconnect brought it back — so it is
+        // brought forward instead, and the stale snapshot is spent either way.
+        if keepsLeafIDs, let live = oldLeafIDs.lazy.compactMap({ session.tab(containing: $0) }).first {
+            session.setActiveTab(live.id)
+            return nil
+        }
         let idMap: [UUID: UUID] = Dictionary(
-            uniqueKeysWithValues: oldLeafIDs.map { ($0, UUID()) }
+            uniqueKeysWithValues: oldLeafIDs.map { ($0, keepsLeafIDs ? $0 : UUID()) }
         )
 
         var revived = Tab(

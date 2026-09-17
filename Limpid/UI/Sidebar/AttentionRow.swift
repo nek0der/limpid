@@ -243,6 +243,60 @@ struct AttentionRow: View {
 
 }
 
+/// One agent that is running in tmux with no tab showing it: its tab was
+/// closed, or it was never opened. Tapping the row opens that tab again, on
+/// the leaf the agent's records name (design §5 decision 5).
+///
+/// Below the waiting rows rather than among them: nothing here is waiting on
+/// the user, and the row says where an agent went rather than what it wants.
+struct DetachedAgentRow: View {
+    /// What the agent calls itself, from the provider registry.
+    let agentName: String
+    /// The agent's last prompt, when it has one to show.
+    let prompt: String?
+    let onTap: () -> Void
+
+    @State private var isHovering = false
+
+    private var detail: String {
+        let preview = prompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return preview.isEmpty ? String(localized: "Running in tmux without a tab") : preview
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "rectangle.on.rectangle.slash")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.primary.opacity(0.55))
+                .frame(width: 16)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: agentName)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.primary.opacity(0.85))
+                    .lineLimit(1)
+                Text(verbatim: detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.primary.opacity(0.45))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, LimpidLayout.containerColumnIndentTop)
+        .padding(.vertical, 5)
+        .selectablePillBackground(isActive: false, isHovering: isHovering)
+        .contentShape(Rectangle())
+        .onTapGesture { onTap() }
+        .onHover { isHovering = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(Text("Open \(agentName) in a tab"))
+        .accessibilityHint(Text("Shows the agent that is running in tmux"))
+    }
+}
+
 /// One state's tally in the Waiting header. A named type rather than a
 /// tuple so `ForEach` has a stable `Identifiable` element.
 private struct AttentionStateCount: Identifiable {

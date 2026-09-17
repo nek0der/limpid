@@ -82,6 +82,11 @@ final class TmuxConnectionStore {
     /// or refuses a verb a mirror sent. Set by whoever owns the toast
     /// center.
     @ObservationIgnored var onNotice: ((String) -> Void)?
+    /// What the store asks about the agent runs behind its tabs
+    /// (`outcome(ofEnded:)`). Without one — in a test, in a preview — an
+    /// agent's tab is kept rather than closed: nothing here can say the agent
+    /// finished, and keeping the tab loses nothing.
+    @ObservationIgnored var agentRuns: AgentTmuxRuns?
 
     typealias SessionPresenceCheck = @Sendable (
         _ tmuxPath: String,
@@ -363,8 +368,10 @@ final class TmuxConnectionStore {
             let present = Set(lines)
             for mirror in started where !present.contains(mirror.windowID) {
                 guard mirrors[mirror.tabID] === mirror, mirror.connectionState == .connected else { continue }
-                mirror.closeTab()
-                onNotice?(Self.windowClosedNotice(name: mirror.displayName))
+                let name = mirror.displayName
+                if endTab(mirror.endedTab) {
+                    onNotice?(Self.windowClosedNotice(name: name))
+                }
             }
         }
     }
@@ -492,8 +499,10 @@ final class TmuxConnectionStore {
     private func closeAfterWindowEnd(_ mirror: TmuxWindowMirror) {
         mirror.connection.send("display-message -p ''") { [weak self, weak mirror] _, _ in
             guard let self, let mirror, mirrors[mirror.tabID] === mirror, mirror.connectionState == .connected else { return }
-            mirror.closeTab()
-            onNotice?(Self.windowClosedNotice(name: mirror.displayName))
+            let name = mirror.displayName
+            if endTab(mirror.endedTab) {
+                onNotice?(Self.windowClosedNotice(name: name))
+            }
         }
     }
 
@@ -557,42 +566,100 @@ final class TmuxConnectionStore {
         let session: WindowSession
     }
 
-    /// What becomes of tabs whose session tmux no longer has, whether a
-    /// connection lost it or a reconnect found it gone, and whether the
-    /// session ended or its whole server stopped. The one place that
-    /// decides it. Each tab closes without asking, since there is nothing
-    /// left on tmux's side to confirm, and is not kept for reopening; the
-    /// user reads one notice. A tab that is already gone is skipped.
+    /// Every tab whose session tmux no longer has, whether a connection lost
+    /// it or a reconnect found it gone, and whether the session ended or its
+    /// whole server stopped. Each is dealt with by `endTab`, and the tabs
+    /// that are worth telling the user about share one notice. A tab that is
+    /// already gone is skipped.
     ///
-    /// The decision is made per tab, from the tab (`outcome(ofEnded:)`).
+    /// Nothing is asked before a tab closes here: there is nothing left on
+    /// tmux's side to confirm, and nothing to reopen it onto.
     func sessionEnded(_ tabs: [EndedTab], sessionName: String) {
-        var hasClosed = false
-        for ended in tabs {
-            guard let tab = ended.session.tab(ended.tabID) else { continue }
-            switch Self.outcome(ofEnded: tab) {
-            case .close:
-                TabActions.closeTab(ended.session, registry: registry, tabID: ended.tabID, confirm: false, isReopenable: false)
-                hasClosed = true
-            }
+        var isWorthTelling = false
+        for ended in tabs where endTab(ended) {
+            isWorthTelling = true
         }
-        guard hasClosed else { return }
+        guard isWorthTelling else { return }
         onNotice?(Self.sessionEndedNotice(sessionName: sessionName))
+    }
+
+    /// What becomes of one mirror tab whose window or session tmux no longer
+    /// has, whichever route brought the news. The one place that decides it,
+    /// and the one place that acts on the decision; the caller only names the
+    /// notice it would give.
+    ///
+    /// Returns whether the user is worth telling. A user's mirror tab reads
+    /// its notice because they opened it themselves and what it showed is
+    /// gone. An agent's tab says nothing either way: the agent finishing is
+    /// what the user watched happen, and a tab that becomes a terminal is
+    /// still there with the conversation in it.
+    @discardableResult
+    func endTab(_ ended: EndedTab) -> Bool {
+        guard let tab = ended.session.tab(ended.tabID) else { return false }
+        switch outcome(ofEnded: tab) {
+        case .close:
+            TabActions.closeTab(ended.session, registry: registry, tabID: ended.tabID, confirm: false, isReopenable: false)
+            return tab.mirrorOrigin == .user
+        case .becomeTerminal:
+            becomeTerminalTab(tab, session: ended.session)
+            return false
+        }
     }
 
     /// What becomes of one tab whose session tmux no longer has.
     enum EndedTabOutcome: Equatable {
         /// Closed without asking, and not kept for reopening.
         case close
+        /// Kept as an ordinary terminal tab, on the same leaf.
+        case becomeTerminal
     }
 
-    /// Decided by who opened the tab. An agent's tab closes as a user's
-    /// does for now; telling an agent that finished from a server that went
-    /// away is the next stage's (design §6 decision 2), and belongs here.
-    static func outcome(ofEnded tab: Tab) -> EndedTabOutcome {
-        switch tab.mirrorOrigin {
-        case .user, .agent:
-            .close
+    /// Decided by who opened the tab, and for an agent's tab by its run
+    /// record (design §6 decision 2).
+    ///
+    /// An agent that ended its own session leaves a session-end hook behind,
+    /// and its tab has nothing left to show. Anything else that takes the
+    /// tmux away — a killed server, a killed session — leaves the record
+    /// saying the run is going, and the conversation is still worth having:
+    /// the tab becomes a terminal and resumes it (decision 3). A user's
+    /// mirror tab closes either way, as it always has.
+    func outcome(ofEnded tab: Tab) -> EndedTabOutcome {
+        guard tab.mirrorOrigin == .agent else { return .close }
+        // One agent, one session, one window, one leaf: the tab's only leaf
+        // is the pane the agent's records name.
+        guard let leaf = tab.splitTree.allLeafIDs().first,
+              agentRuns?.hasEndedRun(inPane: leaf) == true
+        else { return .becomeTerminal }
+        return .close
+    }
+
+    /// Turn an agent's tab into an ordinary terminal tab on the same leaves.
+    ///
+    /// The leaf keeps its id, which is what the agent's records name, so the
+    /// conversation's resume hint still belongs to it and the shell that
+    /// starts there resumes the conversation (`AgentResumeCommandBuilder`).
+    /// Two things have to happen before the tab is written, because the write
+    /// is what builds the surface: the endpoint is reported gone, so the
+    /// rules stop holding the conversation back from resume, and the leaves'
+    /// surfaces are let go, because a surface reading a mirror channel never
+    /// starts a process of its own.
+    private func becomeTerminalTab(_ tab: Tab, session: WindowSession) {
+        for endpoint in tab.mirroredEndpoints(aliases: [:]).keys {
+            agentRuns?.reportGone(endpoint)
         }
+        mirrors.removeValue(forKey: tab.id)?.stop()
+        tabConnections.removeValue(forKey: tab.id)
+        tabIssues.removeValue(forKey: tab.id)
+        for leafID in tab.splitTree.allLeafIDs() {
+            registry.unregister(leafID)
+        }
+        session.update(tab.id) { t in
+            t.kind = .terminal
+            t.paneSources = [:]
+            t.mirrorOrigin = .user
+            t.mirroredAgent = nil
+        }
+        log.notice("agent tab \(tab.id, privacy: .public) became a terminal: its tmux is gone")
     }
 
     /// The tabs waiting on a connection tmux refused close, with one

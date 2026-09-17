@@ -30,6 +30,9 @@ struct ContainerSlabView: View {
     @Environment(LimpidDragState.self) private var dragState
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.surfaceRegistry) private var registry
+    /// Only the detached agent rows need it: without a store there is
+    /// nothing to open a run's tab through, and the rows are not offered.
+    @Environment(\.tmuxConnectionStore) private var tmuxStore
     @Environment(\.limpidAccent) var limpidAccent
     // Read only to hand back down through `slabEnvironment` — the
     // rows below need them, the slab itself does not.
@@ -234,6 +237,9 @@ struct ContainerSlabView: View {
             let entries = attention.attentionEntries(in: session).filter {
                 $0.state != .needsInput || !nativeApprovalPaneIDs.contains($0.paneID)
             }
+            // Agents running in tmux with no tab showing them. Derived in the
+            // tick with the rest: a tab opened or closed anywhere changes it.
+            let detached = tmuxStore == nil ? [] : attention.detachedAgentRuns(in: session)
             // The header carries the per-state counts, so it belongs
             // inside the tick as well.
             VStack(alignment: .leading, spacing: 0) {
@@ -244,7 +250,7 @@ struct ContainerSlabView: View {
                 )
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        if entries.isEmpty, approvals.isEmpty {
+                        if entries.isEmpty, approvals.isEmpty, detached.isEmpty {
                             // Two empty-state messages so the region is
                             // never a silent blank rectangle:
                             //   - filter on + things hidden → "N hidden"
@@ -317,6 +323,22 @@ struct ContainerSlabView: View {
                                         tabID: entry.tabID,
                                         paneID: entry.paneID,
                                         runtimeID: entry.runtimeID
+                                    )
+                                }
+                            }
+                        }
+                        ForEach(detached, id: \.id) { runtime in
+                            if let run = runtime.tmuxRun {
+                                DetachedAgentRow(
+                                    agentName: AgentProviderRegistry.displayName(for: run.kind),
+                                    prompt: runtime.badge.lastPrompt ?? runtime.badge.firstPrompt
+                                ) {
+                                    guard let tmuxStore else { return }
+                                    TmuxMirrorActions.openDetachedAgentRun(
+                                        run,
+                                        session: session,
+                                        store: tmuxStore,
+                                        toastCenter: toastCenter
                                     )
                                 }
                             }

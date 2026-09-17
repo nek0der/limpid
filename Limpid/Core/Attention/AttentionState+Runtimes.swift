@@ -14,6 +14,29 @@ extension AttentionState {
         return true
     }
 
+    /// The agent runs in tmux that nothing shows: their tab was closed, or
+    /// the request to open it never arrived. Each one can be opened again
+    /// (`TmuxMirrorActions.openDetachedAgentRun`), which is the only way back
+    /// to them — an agent's tab is deliberately not in the palette (design §5
+    /// decision 5).
+    ///
+    /// Only runs the probe answered for are listed: a run whose server does
+    /// not answer reads as unresolved, not detached, so a row is never
+    /// offered for an agent there is nothing left to open. Oldest first, as
+    /// the waiting rows are, so what has been out of sight longest is on top.
+    func detachedAgentRuns(in session: WindowSession) -> [AgentRuntimePresentation] {
+        allRuntimes
+            .filter { runtime in
+                guard runtime.resolution == .detached, let run = runtime.tmuxRun else { return false }
+                return session.tab(containing: run.leafID) == nil
+            }
+            .sorted { left, right in
+                left.badge.updatedAt == right.badge.updatedAt
+                    ? left.id < right.id
+                    : left.badge.updatedAt < right.badge.updatedAt
+            }
+    }
+
     var allRuntimes: [AgentRuntimePresentation] {
         runtimesByKind.values.flatMap(\.self)
     }

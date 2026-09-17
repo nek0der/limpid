@@ -113,6 +113,10 @@ final class AppState {
     private var gitSync: GitSyncCoordinator?
     /// Opens the mirror tabs shims ask for (`AppState+AgentTracking`).
     private var agentMirrorRequests: AgentMirrorRequestWatcher?
+    /// What the tmux store asks about the agent runs in its tabs. Owned here
+    /// because the store holds it unowned: it is a seam onto two objects this
+    /// state owns, not a thing of the store's own.
+    private var agentTmuxRuns: AgentTmuxRuns?
     /// Sidebar pull-request status: data, hover state, and the
     /// scheduler that fills them. See each type for its own contract.
     let prStatusStore = PRStatusStore()
@@ -256,6 +260,11 @@ final class AppState {
         tmuxStore.onNotice = { [weak toastCenter] message in
             toastCenter?.show(ToastItem(message: message, undo: nil))
         }
+        // How a tab whose tmux ended tells an agent that finished from a
+        // server that went away, and how it reports the endpoint gone.
+        let agentTmuxRuns = AgentTmuxRuns(projection: agentProjection, presence: tmuxPresence)
+        self.agentTmuxRuns = agentTmuxRuns
+        tmuxStore.agentRuns = agentTmuxRuns
         let delegate = LimpidNotificationDelegate()
         self.notificationDelegate = delegate
         // Hand the registry to the delegate so `willPresent` can

@@ -88,16 +88,23 @@ enum TmuxMirrorActions {
     ///   the active one (design §5 decision 4): a command started in a tab the user has
     ///   since left must not pull them back. The session is the one every
     ///   window of the app shows, so there is no other window's selection to
-    ///   keep apart (§6 decision 13).
+    ///   keep apart (§6 decision 13). `isUserAsked` overrides both: a tab the
+    ///   user asked for a moment ago (`openDetachedAgentRun`) opens where a
+    ///   new tab opens and takes the focus.
     /// - Other clients are not asked about: the session was created a moment
     ///   ago, detached, by the shim. The server's version is not checked
     ///   here either, as none is for a tab `break-pane` opens: the shim is
     ///   only told to host when the tmux it runs passed the launch probe
     ///   (`AgentTmuxSupport`).
     @discardableResult
-    static func openAgentMirror(_ request: AgentMirrorRequest, session: WindowSession, store: TmuxConnectionStore) -> Bool {
+    static func openAgentMirror(
+        _ request: AgentMirrorRequest,
+        session: WindowSession,
+        store: TmuxConnectionStore,
+        isUserAsked: Bool = false
+    ) -> Bool {
         guard session.tab(containing: request.leafID) == nil else { return false }
-        let launchTab = session.tab(containing: request.launchPaneID)
+        let launchTab = isUserAsked ? nil : session.tab(containing: request.launchPaneID)
         let workingDirectory = (launchTab?.pwd ?? launchTab?.workingDirectory).map { URL(fileURLWithPath: $0) }
         let name = AgentProviderRegistry.displayName(for: request.provider)
         let tab = session.openTab(
@@ -106,7 +113,7 @@ enum TmuxMirrorActions {
             workingDirectory: workingDirectory,
             paneID: request.leafID,
             after: launchTab?.id,
-            activates: launchTab.map { $0.id == session.activeTabID } ?? false
+            activates: isUserAsked || (launchTab.map { $0.id == session.activeTabID } ?? false)
         )
         // The window's name is tmux's to give; until the mirror asks, the
         // notices name the window after the agent.

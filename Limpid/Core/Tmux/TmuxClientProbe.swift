@@ -147,10 +147,18 @@ enum TmuxClientProbe {
             // checked here as well.
             guard isOwnSocket(atPath: path) else {
                 snapshot.outcomes[path] = .launchFailed
+                // A socket file that is not there is a server that is not
+                // there — the same reading `TmuxSessionProbe.isServerAbsent`
+                // gives a client that cannot connect. A path that exists but
+                // is not ours says nothing about a server of ours.
+                if TmuxSessionProbe.connectError(socketPath: path) == ENOENT {
+                    snapshot.servers[path] = .absent
+                }
                 continue
             }
             let result = probeServer(tmuxPath: tmuxPath, socketPath: path, deadline: deadline, timeout: timeout)
             snapshot.outcomes[path] = result.outcome
+            snapshot.servers[path] = result.server
             snapshot.panes += result.panes
             snapshot.clients.merge(result.clients) { _, new in new }
         }
@@ -159,6 +167,11 @@ enum TmuxClientProbe {
 
     private struct ServerResult {
         let outcome: TmuxCommandResult
+        /// What the probe concluded about the server itself, when it
+        /// concluded anything (`TmuxServerPresence`). A listing that was
+        /// refused, timed out, or came back malformed leaves it nil: none of
+        /// those says whether a server runs.
+        var server: TmuxServerPresence?
         var panes: [TmuxPaneLocation] = []
         var clients: [String: TmuxBinding] = [:]
     }
@@ -176,7 +189,12 @@ enum TmuxClientProbe {
             )
         }
         let paneResult = query(TmuxTopology.paneArguments)
-        guard case let .success(paneText) = paneResult else { return ServerResult(outcome: paneResult) }
+        guard case let .success(paneText) = paneResult else {
+            let isAbsent = TmuxSessionProbe.isServerAbsent(after: paneResult) {
+                TmuxSessionProbe.connectError(socketPath: socketPath)
+            }
+            return ServerResult(outcome: paneResult, server: isAbsent ? .absent : nil)
+        }
         let panes = TmuxTopology.parsePanes(paneText, socketPath: socketPath)
         guard !panes.isEmpty, panes.count == paneText.split(separator: "\n").count else { return ServerResult(outcome: .invalidOutput) }
         let clientResult = query(listClientsArguments)
@@ -193,7 +211,12 @@ enum TmuxClientProbe {
             clients[tty]?.serverStartedAt = panes.first?.serverStartedAt
             clients[tty]?.isProvisional = false
         }
-        return ServerResult(outcome: .success(""), panes: panes, clients: clients)
+        // Every pane answered with the same pid and start time above, so the
+        // first names the server run this listing describes.
+        let server: TmuxServerPresence? = panes.first.map {
+            .running(pid: $0.serverPID, startedAt: $0.serverStartedAt)
+        }
+        return ServerResult(outcome: .success(""), server: server, panes: panes, clients: clients)
     }
 
     static func selectPane(tmuxPath: String, location: TmuxPaneLocation) {

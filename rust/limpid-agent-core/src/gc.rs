@@ -57,7 +57,7 @@ pub(crate) fn sweep(
         .map(|(storage_id, run)| retire(storage_id, run, accepted))
         .collect();
 
-    let keep = pane_store_keep(accepted, alive);
+    let keep = pane_store_keep(accepted, input, alive);
     for (provider, descriptor) in &input.providers {
         commands.push(Command::new(
             CommandOp::PruneRetired {
@@ -89,6 +89,7 @@ pub(crate) fn sweep(
 /// rules cannot disagree about whether a run is still going.
 fn pane_store_keep(
     accepted: &BTreeMap<String, AcceptedRun>,
+    input: &ProjectionInput,
     alive: &BTreeSet<Uuid>,
 ) -> BTreeSet<Uuid> {
     let mut keep = alive.clone();
@@ -96,7 +97,7 @@ fn pane_store_keep(
         accepted
             .values()
             .map(|run| &run.record)
-            .filter(|record| crate::lifecycle::is_live_tmux_run(record))
+            .filter(|record| crate::lifecycle::is_live_tmux_run(record, &input.presence))
             .filter_map(|record| Uuid::parse_str(&record.pane_id).ok()),
     );
     keep
@@ -482,6 +483,25 @@ mod tests {
             let commands = sweep(&entries, &input, &alive, &now());
             assert_eq!(kept(&commands), vec![&alive, &alive], "{ended}");
         }
+
+        // A server that went away ends the run as surely as a session-end
+        // hook does, and the host is what knows it, so the files of a run at
+        // a gone endpoint are kept only while its pane is open.
+        let mut killed = hosted.clone();
+        killed.record.tmux_pane_id = Some("%3".to_owned());
+        let mut gone = input.clone();
+        gone.presence.gone_endpoints = ["/tmp/socket|%3".to_owned()].into_iter().collect();
+        let entries = records(vec![(RUN, killed.clone())]);
+        assert_eq!(
+            kept(&sweep(&entries, &gone, &alive, &now())),
+            vec![&alive, &alive]
+        );
+        // The same run while its endpoint is still there.
+        let expected: BTreeSet<Uuid> = [pane, open].into_iter().collect();
+        assert_eq!(
+            kept(&sweep(&entries, &input, &alive, &now())),
+            vec![&expected, &expected]
+        );
 
         // A run outside tmux is kept by its pane or not at all.
         let entries = records(vec![(RUN, run(Some(RUN), Some("4242")))]);

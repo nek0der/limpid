@@ -57,6 +57,15 @@ final class AgentProjectionAdapter {
     /// Where each tmux-hosted pane sits, as of the last pass. Kept on the
     /// runtimes so attention can tell a visible tmux pane from one behind it.
     private var paneLocations: [UUID: TmuxPaneLocation] = [:]
+    /// Where each run in tmux lives, by the runtime identifier the rules key
+    /// it with, as of the last pass. Read by the entries that open a run's
+    /// tab again; built here because the endpoint is in the record and the
+    /// runtimes the rules return name no record.
+    private var tmuxRuns: [String: AgentTmuxRun] = [:]
+    /// The leaves whose run in tmux ended on its own terms, as of the last
+    /// pass. The rules decide it from the records; this is where the tmux
+    /// side reads their answer (`TmuxConnectionStore.outcome(ofEnded:)`).
+    private(set) var endedTmuxPanes: Set<UUID> = []
 
     /// The one the application builds: every provider the registry declares,
     /// rooted at this build's own support directory. Tests inject their
@@ -447,6 +456,7 @@ final class AgentProjectionAdapter {
         // look for a session this process did not spawn.
         socketPaths = Set(records.compactMap { endpoint(in: $0)?.socketPath })
         paneLocations = [:]
+        tmuxRuns = [:]
         let aliases = tmuxPresence?.topology.socketAliases ?? [:]
         var mirrored: [TmuxRuntimeEndpoint: [UUID]] = [:]
         for tab in session.tabs {
@@ -456,10 +466,23 @@ final class AgentProjectionAdapter {
         }
         for record in records {
             guard let endpoint = endpoint(in: record) else { continue }
+            if let identity = runIdentity(in: record), let kind = AgentKind(rawValue: record.provider) {
+                tmuxRuns[identity.runtimeID] = AgentTmuxRun(
+                    kind: kind,
+                    endpoint: endpoint,
+                    leafID: identity.leafID
+                )
+            }
             let key = AgentProjectionPresence.key(
                 socketPath: endpoint.socketPath,
                 pane: endpoint.paneID
             )
+            // Reported whether or not anything shows the endpoint: it is what
+            // says the run is over, and a run nothing shows is exactly the
+            // one the rules would otherwise keep holding.
+            if tmuxPresence?.isGone(endpoint) == true {
+                presence.goneEndpoints.insert(key)
+            }
             guard presence.attachments[key] == nil else { continue }
             let leaves = mirrored[endpoint.canonical(aliases: aliases)] ?? []
             let attachments = tmuxPresence?.attachments(for: endpoint) ?? [:]
@@ -475,9 +498,29 @@ final class AgentProjectionAdapter {
         return presence
     }
 
+    /// The runtime this record belongs to, and the leaf it names.
+    ///
+    /// The identifier is built the way the rules build it — provider, then run
+    /// id, falling back to the pane id for a record from before run ids — so
+    /// what is learned here meets a runtime they returned. `AgentTmuxRun` is
+    /// the only thing keyed by it, and a spelling that drifted would leave a
+    /// run without one rather than attaching it to the wrong runtime.
+    private func runIdentity(in record: AgentProjectionFile) -> (runtimeID: String, leafID: UUID)? {
+        guard let object = object(in: record),
+              let paneID = object["paneId"] as? String,
+              let leafID = UUID(uuidString: paneID)
+        else { return nil }
+        let runID = (object["runId"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? paneID
+        return ("\(record.provider):\(runID)", leafID)
+    }
+
+    private func object(in record: AgentProjectionFile) -> [String: Any]? {
+        guard let content = record.content else { return nil }
+        return try? JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any]
+    }
+
     private func endpoint(in record: AgentProjectionFile) -> TmuxRuntimeEndpoint? {
-        guard let content = record.content,
-              let object = try? JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any],
+        guard let object = object(in: record),
               let socketPath = object["tmuxSocketPath"] as? String, !socketPath.isEmpty,
               let paneID = object["tmuxPaneId"] as? String, !paneID.isEmpty
         else { return nil }
@@ -531,6 +574,7 @@ final class AgentProjectionAdapter {
                 kind: kind
             )
         }
+        endedTmuxPanes = projection.endedTmuxPanes ?? []
         // The rules trimmed the marks to the runs that still exist; what they
         // handed back is the whole of what the interface keeps.
         attention?.viewedRuntimeTokens = projection.marksToKeep.viewed
@@ -604,7 +648,8 @@ final class AgentProjectionAdapter {
                 paneLocations[pane].map { (pane, $0) }
             }),
             stateEpisodeToken: runtime.episodeToken,
-            attachmentResolution: resolution
+            attachmentResolution: resolution,
+            tmuxRun: tmuxRuns[runtime.id]
         )
     }
 
