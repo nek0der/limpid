@@ -19,4 +19,9 @@ extension Tag {
 
     /// Round-trips through disk-backed storage (JSON, plist, etc.).
     @Tag static var persistence: Self
+
+    /// Records how tmux itself behaves where a design decision relies on
+    /// it, without exercising Limpid's code. A failure after a tmux
+    /// upgrade means the premise changed, not that Limpid regressed.
+    @Tag static var tmuxBehavior: Self
 }

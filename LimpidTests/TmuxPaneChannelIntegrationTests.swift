@@ -31,42 +31,43 @@ struct TmuxPaneChannelIntegrationTests {
     }
 
     private func makeHarness() async throws -> Harness {
-        let server = try TmuxServerFixture.launch()
-        let sessionID = try server.format("#{session_id}")
-        let windowID = try #require(server.windowIDs().first)
-        let paneID = try server.paneID(inWindow: windowID)
-        let binding = TmuxBinding(socketPath: server.socketPath, sessionID: sessionID, sessionName: "t")
-        let session = WindowSession()
-        let tab = session.openTab(container: .loose)
-        let leafID = try #require(tab.splitTree.allLeafIDs().first)
-        session.update(tab.id) { t in
-            t.kind = .tmuxMirror
-            t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: paneID))
-        }
-        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
-        store.reconcile(tabs: session.tabs)
-        let channel = try #require(store.channel(paneID: leafID))
+        try await TmuxServerFixture.launch { server in
+            let sessionID = try server.format("#{session_id}")
+            let windowID = try #require(server.windowIDs().first)
+            let paneID = try server.paneID(inWindow: windowID)
+            let binding = TmuxBinding(socketPath: server.socketPath, sessionID: sessionID, sessionName: "t")
+            let session = WindowSession()
+            let tab = session.openTab(container: .loose)
+            let leafID = try #require(tab.splitTree.allLeafIDs().first)
+            session.update(tab.id) { t in
+                t.kind = .tmuxMirror
+                t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: paneID))
+            }
+            let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
+            store.reconcile(tabs: session.tabs)
+            let channel = try #require(store.channel(paneID: leafID))
 
-        let connection = try store.connection(for: binding)
-        let mirror = TmuxWindowMirror(
-            tabID: tab.id,
-            windowID: windowID,
-            sessionName: "t",
-            windowName: "w",
-            connection: connection,
-            isNewTab: true,
-            session: session,
-            registry: RecordingSurfaceRegistry(),
-            secureInput: nil,
-            channelForPane: { store.channel(paneID: $0) },
-            surfaceReports: { store.surfaceReports }
-        )
-        store.register(mirror)
-        mirror.start()
-        #expect(await waitUntil { connection.state == .attached })
-        store.reportTestGrid(columns: 80, rows: 24, tabID: tab.id, leafID: leafID)
-        #expect(await waitUntil { mirror.cellLayout != nil })
-        return Harness(server: server, store: store, mirror: mirror, leafID: leafID, channel: channel)
+            let connection = try store.connection(for: binding)
+            let mirror = TmuxWindowMirror(
+                tabID: tab.id,
+                windowID: windowID,
+                sessionName: "t",
+                windowName: "w",
+                connection: connection,
+                isNewTab: true,
+                session: session,
+                registry: RecordingSurfaceRegistry(),
+                secureInput: nil,
+                channelForPane: { store.channel(paneID: $0) },
+                surfaceReports: { store.surfaceReports }
+            )
+            store.register(mirror)
+            mirror.start()
+            #expect(await waitUntil { connection.state == .attached })
+            store.reportTestGrid(columns: 80, rows: 24, tabID: tab.id, leafID: leafID)
+            #expect(await waitUntil { mirror.cellLayout != nil })
+            return Harness(server: server, store: store, mirror: mirror, leafID: leafID, channel: channel)
+        }
     }
 
     @Test("a mirror started after the surface took its channel feeds that same channel")
@@ -163,34 +164,35 @@ struct TmuxPaneChannelIntegrationTests {
     /// can bring it to the channel: tmux sends live output only for what
     /// is written after the client attached.
     private func makeDormantLeaf(marker: String) async throws -> DormantLeaf {
-        let server = try TmuxServerFixture.launch()
-        let sessionID = try server.format("#{session_id}")
-        let windowID = try #require(server.windowIDs().first)
-        let paneID = try server.paneID(inWindow: windowID)
-        let split = marker.index(after: marker.startIndex)
-        server.run(["send-keys", "-t", paneID, "echo \(marker[..<split])''\(marker[split...])", "Enter"])
-        #expect(await waitUntil { server.run(["capture-pane", "-p", "-t", paneID])?.contains("\n\(marker)") == true })
-        let binding = TmuxBinding(socketPath: server.socketPath, sessionID: sessionID, sessionName: "t")
-        let session = WindowSession()
-        let tab = session.openTab(container: .loose)
-        let leafID = try #require(tab.splitTree.allLeafIDs().first)
-        session.update(tab.id) { t in
-            t.kind = .tmuxMirror
-            t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: paneID))
+        try await TmuxServerFixture.launch { server in
+            let sessionID = try server.format("#{session_id}")
+            let windowID = try #require(server.windowIDs().first)
+            let paneID = try server.paneID(inWindow: windowID)
+            let split = marker.index(after: marker.startIndex)
+            server.run(["send-keys", "-t", paneID, "echo \(marker[..<split])''\(marker[split...])", "Enter"])
+            #expect(await waitUntil { server.run(["capture-pane", "-p", "-t", paneID])?.contains("\n\(marker)") == true })
+            let binding = TmuxBinding(socketPath: server.socketPath, sessionID: sessionID, sessionName: "t")
+            let session = WindowSession()
+            let tab = session.openTab(container: .loose)
+            let leafID = try #require(tab.splitTree.allLeafIDs().first)
+            session.update(tab.id) { t in
+                t.kind = .tmuxMirror
+                t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: paneID))
+            }
+            let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
+            store.reconcile(tabs: session.tabs)
+            let channel = try #require(store.channel(paneID: leafID))
+            return DormantLeaf(
+                server: server,
+                store: store,
+                session: session,
+                tabID: tab.id,
+                leafID: leafID,
+                windowID: windowID,
+                binding: binding,
+                channel: channel
+            )
         }
-        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
-        store.reconcile(tabs: session.tabs)
-        let channel = try #require(store.channel(paneID: leafID))
-        return DormantLeaf(
-            server: server,
-            store: store,
-            session: session,
-            tabID: tab.id,
-            leafID: leafID,
-            windowID: windowID,
-            binding: binding,
-            channel: channel
-        )
     }
 
     @Test("a mirror attached to a leaf that already reported its sizes repaints it without another report")

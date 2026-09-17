@@ -205,6 +205,13 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// terminal actions (prompt jumps and viewport scrolling) have no menu
     /// item and stay on the libghostty path.
     ///
+    /// An action a tab's capabilities can refuse must stay off that path:
+    /// libghostty performs such a binding inside the core, so no callback
+    /// gives the app a chance to check the table. `clear_screen` is the
+    /// case in point. It has no shortcut here, and `keybind = clear`
+    /// removes libghostty's ⌘K default, so the right-click item, which
+    /// reads `canClearScreen`, is its only route.
+    ///
     /// Every case is listed, with no `default`, so a new action does not
     /// fall to `false` unseen: a new terminal action left there would have
     /// its keystroke bound to `ignore` and do nothing.

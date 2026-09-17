@@ -24,24 +24,32 @@ private final class FocusHarness {
     private let commandLog: URL
 
     init(paneCount: Int = 2) throws {
-        server = try TmuxServerFixture.launch()
+        let server = try TmuxServerFixture.launch()
+        self.server = server
         commandLog = server.directory.appendingPathComponent("commands")
         let registry = RecordingSurfaceRegistry()
         self.registry = registry
-        store = try TmuxConnectionStore(
-            registry: registry,
-            secureInput: nil,
-            tmuxExecutable: Self.recordingTmux(server: server, log: commandLog)
-        )
-        windowID = try #require(server.windowIDs().first)
-        var panes = try [server.paneID(inWindow: windowID)]
-        for _ in 1..<paneCount {
-            let pane = try #require(server.run([
-                "split-window", "-h", "-P", "-F", "#{pane_id}", "-t", panes[panes.count - 1], "sh", "-c", "PS1='$ ' exec sh"
-            ]))
-            panes.append(pane)
+        // A harness whose init throws is never handed to a caller that
+        // would tear it down, so the server is torn down here.
+        do {
+            store = try TmuxConnectionStore(
+                registry: registry,
+                secureInput: nil,
+                tmuxExecutable: Self.recordingTmux(server: server, log: commandLog)
+            )
+            windowID = try #require(server.windowIDs().first)
+            var panes = try [server.paneID(inWindow: windowID)]
+            for _ in 1..<paneCount {
+                let pane = try #require(server.run([
+                    "split-window", "-h", "-P", "-F", "#{pane_id}", "-t", panes[panes.count - 1], "sh", "-c", "PS1='$ ' exec sh"
+                ]))
+                panes.append(pane)
+            }
+            self.panes = panes
+        } catch {
+            server.tearDown()
+            throw error
         }
-        self.panes = panes
         session.onTabsChanged = { [weak session, store] in
             guard let session else { return }
             store.reconcile(tabs: session.tabs)

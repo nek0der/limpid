@@ -88,9 +88,13 @@ jobs:
       - name: Install xcbeautify
         run: brew install xcbeautify
 
+      # xcodebuild passes the test process only the variables prefixed
+      # TEST_RUNNER_, with the prefix removed, so the tests read
+      # LIMPID_REQUIRE_TMUX_TESTS. With it set, a missing tmux fails the
+      # real-tmux suites instead of skipping them.
       - name: Build and test with coverage
         env:
-          LIMPID_REQUIRE_TMUX_TESTS: "1"
+          TEST_RUNNER_LIMPID_REQUIRE_TMUX_TESTS: "1"
         run: |
           set -o pipefail
           xcodebuild \

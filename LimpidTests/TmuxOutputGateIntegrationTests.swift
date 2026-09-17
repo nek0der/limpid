@@ -89,7 +89,7 @@ struct TmuxOutputGateIntegrationTests {
         #expect(contains(openAgain, "OPEN-2"))
     }
 
-    @Test("a per-window refresh-client -C resizes only the window it names")
+    @Test("a per-window refresh-client -C resizes only the window it names", .tags(.tmuxBehavior))
     func windowScopedSize_leavesOtherWindowsAlone() async throws {
         let server = try TmuxServerFixture.launch(windows: 2)
         defer { server.tearDown() }
@@ -112,7 +112,7 @@ struct TmuxOutputGateIntegrationTests {
         #expect(server.windowSize(windows[0]) == "60x20")
     }
 
-    @Test("with a second control client attached, each client's window-scoped size stands on its own")
+    @Test("with a second control client attached, each client's window-scoped size stands on its own", .tags(.tmuxBehavior))
     func windowScopedSize_doesNotDisturbAnotherClientsWindow() async throws {
         let server = try TmuxServerFixture.launch(windows: 2)
         defer { server.tearDown() }

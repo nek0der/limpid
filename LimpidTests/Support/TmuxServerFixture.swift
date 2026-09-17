@@ -15,15 +15,22 @@ struct TmuxServerFixture {
     let directory: URL
     let socketPath: String
 
-    /// Whether the real-tmux suites skip. CI sets
-    /// `LIMPID_REQUIRE_TMUX_TESTS=1`, so a missing tmux there fails the
-    /// fixture's `#require` instead of skipping the suite silently, as
-    /// `TmuxClientProbeSmokeTests` does.
     static let commandTimeout: TimeInterval = 10
 
+    /// Whether a missing tmux fails the real-tmux suites instead of
+    /// skipping them. CI asks for it so a runner without tmux cannot pass
+    /// by skipping. xcodebuild hands the test process only the variables
+    /// prefixed `TEST_RUNNER_`, with the prefix removed, so the workflow
+    /// sets `TEST_RUNNER_LIMPID_REQUIRE_TMUX_TESTS=1`.
+    static var isTmuxRequired: Bool {
+        ProcessInfo.processInfo.environment["LIMPID_REQUIRE_TMUX_TESTS"] == "1"
+    }
+
+    /// Whether the real-tmux suites skip. When tmux is required, a missing
+    /// one fails the fixture's `#require` instead, as it does for
+    /// `TmuxClientProbeSmokeTests`.
     static var isUnavailable: Bool {
-        TmuxClientProbe.locateTmux() == nil
-            && ProcessInfo.processInfo.environment["LIMPID_REQUIRE_TMUX_TESTS"] != "1"
+        TmuxClientProbe.locateTmux() == nil && !isTmuxRequired
     }
 
     /// Launches session `t` at 80×24 with `windows` windows, each running a
@@ -41,8 +48,33 @@ struct TmuxServerFixture {
             directory: directory,
             socketPath: directory.appendingPathComponent("sock").path
         )
-        try fixture.startServer(windows: windows)
+        // A server whose setup failed halfway may already be running, and
+        // the caller never receives the fixture that would tear it down.
+        do {
+            try fixture.startServer(windows: windows)
+        } catch {
+            fixture.tearDown()
+            throw error
+        }
         return fixture
+    }
+
+    /// Launches a server and hands it to `setUp`, which builds whatever
+    /// the test holds on to. A harness that fails halfway is never
+    /// returned, so the caller's `defer { tearDown() }` cannot run for it;
+    /// the server is torn down here instead, before the error propagates.
+    static func launch<Value>(
+        windows: Int = 1,
+        isolation: isolated (any Actor)? = #isolation,
+        setUp: (TmuxServerFixture) async throws -> Value
+    ) async throws -> Value {
+        let server = try launch(windows: windows)
+        do {
+            return try await setUp(server)
+        } catch {
+            server.tearDown()
+            throw error
+        }
     }
 
     /// Setup must not fail quietly: a window missing here surfaces later

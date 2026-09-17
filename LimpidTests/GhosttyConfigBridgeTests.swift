@@ -310,6 +310,45 @@ struct GhosttyConfigBridgeTests {
         #expect(!config.contains("=reset_font_size"))
     }
 
+    /// Whether ⌘K reaches a binding in the config built from `layers`,
+    /// loaded in order the way `GhosttyApp` loads the user's file and then
+    /// ours. `nil` layers mean libghostty's defaults alone.
+    private func commandKIsBound(layers: [String]?) throws -> Bool {
+        try withTempDir { directory in
+            let config = try #require(ghostty_config_new())
+            defer { ghostty_config_free(config) }
+            for (index, text) in (layers ?? []).enumerated() {
+                let path = directory.appendingPathComponent("layer-\(index)")
+                try text.write(to: path, atomically: true, encoding: .utf8)
+                path.path.withCString { ghostty_config_load_file(config, $0) }
+            }
+            ghostty_config_finalize(config)
+            var key = ghostty_input_key_s()
+            key.action = GHOSTTY_ACTION_PRESS
+            key.keycode = 40 // kVK_ANSI_K
+            key.mods = GHOSTTY_MODS_SUPER
+            key.unshifted_codepoint = UInt32(("k" as Unicode.Scalar).value)
+            return "k".withCString { text in
+                key.text = text
+                return ghostty_config_key_is_binding(config, key)
+            }
+        }
+    }
+
+    /// libghostty's macOS defaults bind ⌘K to `clear_screen`, which the
+    /// core performs itself: no action reaches the app, so the capability
+    /// table (`canClearScreen`) could not refuse it for a mirror pane,
+    /// where it would drop the only scrollback while tmux keeps its own.
+    /// The right-click item is the one route, and it reads the table.
+    /// `keybind = clear` is what keeps the keystroke away, including a
+    /// binding the user's own file adds.
+    @Test("no config Limpid generates binds ⌘K, the key libghostty's defaults give to clear_screen")
+    func makeConfig_commandK_isNotBound() throws {
+        #expect(try commandKIsBound(layers: nil))
+        #expect(try !commandKIsBound(layers: [generate(.default)]))
+        #expect(try !commandKIsBound(layers: ["keybind = super+k=clear_screen\n", generate(.default)]))
+    }
+
     @Test("user config diagnostics distinguish invalid and clean files")
     func userConfigDiagnostics_reportOnlyInvalidConfig() throws {
         try withTempDir { directory in

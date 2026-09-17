@@ -22,7 +22,14 @@ struct TmuxScreenRestoreTests {
         #expect(state.scrollRegionTop == 0)
         #expect(state.scrollRegionBottom == 29)
         #expect(!state.isInCopyMode)
-        #expect(TmuxScreenRestore.stateFormat.split(separator: " ").count == 15)
+        // The order `parseState` reads the fields in, spelled out: a count
+        // alone would pass with two fields swapped.
+        #expect(TmuxScreenRestore.stateFormat == [
+            "#{cursor_x}", "#{cursor_y}", "#{alternate_on}", "#{cursor_flag}", "#{insert_flag}",
+            "#{keypad_cursor_flag}", "#{keypad_flag}", "#{wrap_flag}",
+            "#{mouse_button_flag}", "#{mouse_standard_flag}", "#{mouse_all_flag}", "#{mouse_sgr_flag}",
+            "#{scroll_region_upper}", "#{scroll_region_lower}", "#{pane_in_mode}"
+        ].joined(separator: " "))
     }
 
     @Test("a state line with the wrong field count is rejected")

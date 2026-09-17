@@ -253,10 +253,10 @@ struct PaneLayoutMirrorTests {
 
     @Test("the window grid is the whole cells left once the outer padding is removed")
     func mirrorGrid_floorsToWholeCells() {
-        /// 1000 − 16 = 984 → 151.38 columns; 600 − 4 = 596 → 39.73 rows.
         func grid(_ width: CGFloat, _ height: CGFloat, cell: CellSize? = nil) -> (columns: Int, rows: Int) {
             PaneLayout.mirrorGrid(areaSize: CGSize(width: width, height: height), cellSize: cell ?? self.cell, padding: padding)
         }
+        // 1000 − 16 = 984 → 151.38 columns; 600 − 4 = 596 → 39.73 rows.
         #expect(grid(1000, 600) == (151, 39))
         // An exact fit stays exact: what the producer sizes a one-pane window to.
         #expect(grid(151 * 6.5 + 16, 41 * 15 + 4) == (151, 41))

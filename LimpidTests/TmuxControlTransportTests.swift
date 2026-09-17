@@ -213,12 +213,12 @@ struct TmuxControlTransportTests {
         return delivered
     }
 
-    @Test("lines split across reads are delivered whole, and a reply body that looks like %output never reaches a sink")
-    func chunkedStream_deliversLinesAndKeepsReplyBodiesAwayFromSinks() async throws {
-        let root = try #require(RepoFixture.limpidRoot)
-        let recording = try Array(Data(contentsOf: root.appendingPathComponent(
-            "LimpidTests/Fixtures/tmux/2026-09/session-basic/control.raw"
-        )))
+    @Test(
+        "lines split across reads are delivered whole, and a reply body that looks like %output never reaches a sink",
+        arguments: TmuxRecording.all("session-basic")
+    )
+    func chunkedStream_deliversLinesAndKeepsReplyBodiesAwayFromSinks(fixture: TmuxRecording) async throws {
+        let recording = try fixture.bytes()
         // A `capture-pane` reply whose rows read like protocol lines, then
         // real output for the same pane so the test knows when routing has
         // caught up.

@@ -374,47 +374,48 @@ private struct PasteHarness {
     /// `paneCommands` are typed into the window's panes, which are split
     /// until there are as many, before the mirror opens.
     static func make(paneCommands: [String]) async throws -> PasteHarness {
-        let server = try TmuxServerFixture.launch()
-        let sessionID = try server.format("#{session_id}")
-        let windowID = try #require(server.windowIDs().first)
-        for _ in 1..<paneCommands.count {
-            server.run(["split-window", "-t", windowID, "sh", "-c", "PS1='$ ' exec sh"])
+        try await TmuxServerFixture.launch { server in
+            let sessionID = try server.format("#{session_id}")
+            let windowID = try #require(server.windowIDs().first)
+            for _ in 1..<paneCommands.count {
+                server.run(["split-window", "-t", windowID, "sh", "-c", "PS1='$ ' exec sh"])
+            }
+            let panes = try #require(server.run(["list-panes", "-t", windowID, "-F", "#{pane_id}"])).split(separator: "\n")
+            for (pane, command) in zip(panes, paneCommands) {
+                server.run(["send-keys", "-t", String(pane), command, "Enter"])
+            }
+            let binding = TmuxBinding(socketPath: server.socketPath, sessionID: sessionID, sessionName: "t")
+            let session = WindowSession()
+            let tab = session.openTab(container: .loose)
+            let leafID = try #require(tab.splitTree.allLeafIDs().first)
+            session.update(tab.id) { t in
+                t.kind = .tmuxMirror
+                t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: String(panes[0])))
+            }
+            let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
+            let connection = try store.connection(for: binding)
+            let mirror = TmuxWindowMirror(
+                tabID: tab.id,
+                windowID: windowID,
+                sessionName: "t",
+                windowName: "w",
+                connection: connection,
+                isNewTab: true,
+                session: session,
+                registry: RecordingSurfaceRegistry(),
+                secureInput: nil,
+                channelForPane: { store.channel(paneID: $0) },
+                surfaceReports: { store.surfaceReports }
+            )
+            let failures = FailureLog()
+            mirror.onCommandFailed = { failures.messages.append($0) }
+            store.register(mirror)
+            mirror.start()
+            #expect(await waitUntil { connection.state == .attached })
+            store.reportTestGrid(columns: 80, rows: 24, tabID: tab.id, leafID: leafID)
+            #expect(await waitUntil { mirror.cellLayout != nil && session.tab(tab.id)?.splitTree.allLeafIDs().count == paneCommands.count })
+            return PasteHarness(server: server, session: session, store: store, mirror: mirror, tabID: tab.id, failures: failures)
         }
-        let panes = try #require(server.run(["list-panes", "-t", windowID, "-F", "#{pane_id}"])).split(separator: "\n")
-        for (pane, command) in zip(panes, paneCommands) {
-            server.run(["send-keys", "-t", String(pane), command, "Enter"])
-        }
-        let binding = TmuxBinding(socketPath: server.socketPath, sessionID: sessionID, sessionName: "t")
-        let session = WindowSession()
-        let tab = session.openTab(container: .loose)
-        let leafID = try #require(tab.splitTree.allLeafIDs().first)
-        session.update(tab.id) { t in
-            t.kind = .tmuxMirror
-            t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: String(panes[0])))
-        }
-        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
-        let connection = try store.connection(for: binding)
-        let mirror = TmuxWindowMirror(
-            tabID: tab.id,
-            windowID: windowID,
-            sessionName: "t",
-            windowName: "w",
-            connection: connection,
-            isNewTab: true,
-            session: session,
-            registry: RecordingSurfaceRegistry(),
-            secureInput: nil,
-            channelForPane: { store.channel(paneID: $0) },
-            surfaceReports: { store.surfaceReports }
-        )
-        let failures = FailureLog()
-        mirror.onCommandFailed = { failures.messages.append($0) }
-        store.register(mirror)
-        mirror.start()
-        #expect(await waitUntil { connection.state == .attached })
-        store.reportTestGrid(columns: 80, rows: 24, tabID: tab.id, leafID: leafID)
-        #expect(await waitUntil { mirror.cellLayout != nil && session.tab(tab.id)?.splitTree.allLeafIDs().count == paneCommands.count })
-        return PasteHarness(server: server, session: session, store: store, mirror: mirror, tabID: tab.id, failures: failures)
     }
 
     func leaf(of tmuxPane: String) -> UUID? {

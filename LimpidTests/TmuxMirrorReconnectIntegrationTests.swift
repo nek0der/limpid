@@ -151,9 +151,17 @@ private final class ReconnectHarness {
         keepServer: Bool = false,
         sessionPresence: TmuxConnectionStore.SessionPresenceCheck? = nil
     ) throws {
-        server = try TmuxServerFixture.launch(windows: windows)
+        let server = try TmuxServerFixture.launch(windows: windows)
+        self.server = server
         if keepServer {
-            try #require(server.run(["new-session", "-d", "-s", "keep"]) != nil)
+            // A harness whose init throws is never handed to a caller that
+            // would tear it down, so the server is torn down here.
+            do {
+                try #require(server.run(["new-session", "-d", "-s", "keep"]) != nil)
+            } catch {
+                server.tearDown()
+                throw error
+            }
         }
         let registry = RecordingSurfaceRegistry()
         let secureInput = SecureInputLog()

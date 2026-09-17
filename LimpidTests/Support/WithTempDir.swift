@@ -5,7 +5,12 @@
 
 import Foundation
 
-func withTempDir<T>(_ body: (URL) async throws -> T) async throws -> T {
+/// Runs `body` in the caller's isolation, so a main-actor test can hand it
+/// main-actor state.
+func withTempDir<T>(
+    isolation: isolated (any Actor)? = #isolation,
+    _ body: (URL) async throws -> T
+) async throws -> T {
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("limpid-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

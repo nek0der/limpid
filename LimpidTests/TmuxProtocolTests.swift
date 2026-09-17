@@ -7,37 +7,54 @@ import Testing
 
 @Suite("tmux control-mode protocol")
 struct TmuxProtocolTests {
-    /// Every line of `control.raw`, without newlines, in order.
-    private func recordedLines(_ fixtureCase: String) throws -> [[UInt8]] {
-        let root = try #require(RepoFixture.limpidRoot)
-        let url = root.appendingPathComponent("LimpidTests/Fixtures/tmux/2026-09/\(fixtureCase)/control.raw")
-        let bytes = try Array(Data(contentsOf: url))
-        var lines = bytes.split(separator: 0x0A, omittingEmptySubsequences: false).map(Array.init)
-        if lines.last?.isEmpty == true {
-            lines.removeLast()
-        }
-        return lines
+    // What these tests pin follows from the commands `record_tmux.py`
+    // sends. What tmux picks per run (reply timestamps and numbers, the
+    // pane's tty, the version) is checked by shape or read from the
+    // manifest, so recording a case again leaves the tests passing.
+
+    /// The first reply of `session-basic`, to
+    /// `display-message '#{version}|#{pane_tty}|#{cursor_x} #{cursor_y} #{alternate_on}'`.
+    private func isVersionReply(_ line: String, version: String) -> Bool {
+        line.wholeMatch(of: /(.+)\|\/dev\/ttys[0-9]+\|2 0 0/)?.output.1 == Substring(version)
     }
 
     // MARK: - Line classification (session-basic)
 
-    @Test("the attach block, notifications, and the final %exit are classified from a real recording")
-    func sessionBasic_classifiesEveryLineKind() throws {
-        let lines = try recordedLines("session-basic").map { TmuxProtocol.parseLine($0[...]) }
+    @Test(
+        "the attach block, notifications, and the final %exit are classified from a real recording",
+        arguments: TmuxRecording.all("session-basic")
+    )
+    func sessionBasic_classifiesEveryLineKind(recording: TmuxRecording) throws {
+        let lines = try recording.lines().map { TmuxProtocol.parseLine($0[...]) }
+        let version = try recording.manifest().version
 
-        #expect(lines[0] == .begin(TmuxReplyMarker(timestamp: 1_789_549_529, number: 299, flags: 0)))
-        #expect(lines[1] == .end(TmuxReplyMarker(timestamp: 1_789_549_529, number: 299, flags: 0)))
+        guard case let .begin(attach) = lines.first else {
+            Issue.record("the recording does not open with the attach block: \(String(describing: lines.first))")
+            return
+        }
+        #expect(attach.flags == 0)
+        #expect(lines[1] == .end(attach))
         #expect(lines.contains(.notification(name: "session-changed", arguments: "$0 fx")))
         #expect(lines.contains(.windowRenamed(window: "@0", name: "bash")))
         #expect(lines.contains(.windowPaneChanged(window: "@0", pane: "%1")))
-        #expect(lines.contains(.text("3.7c|/dev/ttys019|2 0 0")))
-        #expect(lines.contains(.error(TmuxReplyMarker(timestamp: 1_789_549_534, number: 331, flags: 1))))
+        #expect(lines.contains { line in
+            if case let .text(text) = line {
+                return isVersionReply(text, version: version)
+            }
+            return false
+        })
+        #expect(lines.contains { line in
+            if case let .error(marker) = line {
+                return marker.flags == 1
+            }
+            return false
+        })
         #expect(lines.last == .exit(reason: nil))
     }
 
-    @Test("%layout-change carries the window, both layout strings, and the flags field")
-    func sessionBasic_layoutChangeFields() throws {
-        let lines = try recordedLines("session-basic").map { TmuxProtocol.parseLine($0[...]) }
+    @Test("%layout-change carries the window, both layout strings, and the flags field", arguments: TmuxRecording.all("session-basic"))
+    func sessionBasic_layoutChangeFields(recording: TmuxRecording) throws {
+        let lines = try recording.lines().map { TmuxProtocol.parseLine($0[...]) }
         let layouts = lines.compactMap { line -> String? in
             if case let .layoutChange(window, layout, visible, flags) = line {
                 #expect(window == "@0")
@@ -73,9 +90,12 @@ struct TmuxProtocolTests {
         #expect(TmuxProtocol.layoutFormat == "#{window_layout} #{window_visible_layout} #{window_flags}")
     }
 
-    @Test("%output unescapes \\ooo for control bytes and for the backslash itself, and nothing else")
-    func sessionBasic_outputBytesAreUnescaped() throws {
-        let lines = try recordedLines("session-basic").map { TmuxProtocol.parseLine($0[...]) }
+    @Test(
+        "%output unescapes \\ooo for control bytes and for the backslash itself, and nothing else",
+        arguments: TmuxRecording.all("session-basic")
+    )
+    func sessionBasic_outputBytesAreUnescaped(recording: TmuxRecording) throws {
+        let lines = try recording.lines().map { TmuxProtocol.parseLine($0[...]) }
         let outputs = lines.compactMap { line -> (String, Data)? in
             if case let .output(pane, bytes) = line {
                 return (pane, bytes)
@@ -187,9 +207,15 @@ struct TmuxProtocolTests {
 
     // MARK: - Reply assembly
 
-    @Test("the attach block is not a reply; every later block pairs with one command in order")
-    func sessionBasic_repliesPairWithCommandsInOrder() throws {
-        let lines = try recordedLines("session-basic").map { TmuxProtocol.parseLine($0[...]) }
+    @Test(
+        "the attach block is not a reply; every later block pairs with one command in order",
+        arguments: TmuxRecording.all("session-basic")
+    )
+    func sessionBasic_repliesPairWithCommandsInOrder(recording: TmuxRecording) throws {
+        let lines = try recording.lines().map { TmuxProtocol.parseLine($0[...]) }
+        let commands = try String(contentsOf: recording.directory.appendingPathComponent("commands.txt"), encoding: .utf8)
+            .split(separator: "\n")
+        let version = try recording.manifest().version
         var assembler = TmuxReplyAssembler()
         let events = lines.compactMap { assembler.consume($0) }
 
@@ -205,11 +231,13 @@ struct TmuxProtocolTests {
             }
             return nil
         }
-        // commands.txt lists eleven commands; tmux answered each once.
-        #expect(replies.count == 11)
-        #expect(replies[0].lines == ["3.7c|/dev/ttys019|2 0 0"])
+        // tmux answered each command once, in the order they were sent.
+        try #require(commands.count == 11)
+        try #require(replies.count == commands.count)
+        #expect(replies[0].lines.count == 1)
+        #expect(isVersionReply(replies[0].lines.first ?? "", version: version))
         #expect(replies[0].isError == false)
-        #expect(replies.map(\.number) == [305, 306, 309, 318, 321, 322, 323, 330, 331, 332, 336])
+        #expect(zip(replies, replies.dropFirst()).allSatisfy { $0.number < $1.number })
         #expect(replies[5].lines == ["77dd,100x30,0,0{50x30,0,0,0,49x30,51,0[49x15,51,0,1,49x14,51,16,2]}"])
         #expect(replies[8].isError == true)
         #expect(replies[8].lines == ["parse error: unknown command: bogus-command-for-error"])
@@ -306,9 +334,9 @@ struct TmuxProtocolTests {
 
     // MARK: - Decode throughput (design §6)
 
-    /// Always a decode check: every `%output` line of the recording must
-    /// unescape to the byte count an independent decoder of `control.raw`
-    /// gives (902,195 bytes over 636 lines). The speed half is a
+    /// Always a decode check: the `%output` lines of the recording must
+    /// unescape to the line and byte counts an independent decoder of
+    /// `control.raw` gave (`record_bulk.py`, into the manifest). The speed half is a
     /// measurement, not a gate: wall-clock time in a shared, parallel Debug
     /// test process depends on the machine and its load, so the floor is
     /// asserted only when a measurement is asked for. xcodebuild forwards
@@ -317,24 +345,33 @@ struct TmuxProtocolTests {
     ///
     ///     TEST_RUNNER_LIMPID_MEASURE_OUT=/tmp/decode.txt xcodebuild test \
     ///       -project Limpid.xcodeproj -scheme Limpid -destination 'platform=macOS' \
-    ///       -only-testing:LimpidTests/TmuxProtocolTests/bulkOutput_decodeThroughput
-    @Test("a recorded bulk stream decodes to its exact byte count; its speed is checked only when measuring")
-    func bulkOutput_decodeThroughput() throws {
-        let lines = try recordedLines("bulk-output")
+    ///       -only-testing:'LimpidTests/TmuxProtocolTests/bulkOutput_decodeThroughput(recording:)'
+    @Test(
+        "a recorded bulk stream decodes to its exact byte count; its speed is checked only when measuring",
+        arguments: TmuxRecording.all("bulk-output")
+    )
+    func bulkOutput_decodeThroughput(recording: TmuxRecording) throws {
+        let lines = try recording.lines()
+        let manifest = try recording.manifest()
+        let expectedBytes = try #require(manifest.decodedBytes)
+        let expectedLines = try #require(manifest.outputLines)
         let inputBytes = lines.reduce(0) { $0 + $1.count + 1 }
         let clock = ContinuousClock()
         var decodedBytes = 0
+        var outputLines = 0
         let passes = 5
         let elapsed = clock.measure {
             for _ in 0..<passes {
                 for line in lines {
                     if case let .output(_, bytes) = TmuxProtocol.parseLine(line[...]) {
                         decodedBytes += bytes.count
+                        outputLines += 1
                     }
                 }
             }
         }
-        #expect(decodedBytes == 902_195 * passes)
+        #expect(outputLines == expectedLines * passes)
+        #expect(decodedBytes == expectedBytes * passes)
 
         guard let path = ProcessInfo.processInfo.environment["LIMPID_MEASURE_OUT"] else { return }
         let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18

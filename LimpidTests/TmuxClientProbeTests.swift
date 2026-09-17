@@ -312,7 +312,7 @@ struct TmuxClientProbeLocateTests {
 @Suite(
     "TmuxClientProbe smoke",
     .tags(.smoke),
-    .disabled(if: installedTmux == nil && ProcessInfo.processInfo.environment["LIMPID_REQUIRE_TMUX_TESTS"] != "1", "no tmux installed")
+    .disabled(if: installedTmux == nil && !TmuxServerFixture.isTmuxRequired, "no tmux installed")
 )
 struct TmuxClientProbeSmokeTests {
     @Test("an unresponsive real server cannot block a later probe")

@@ -29,46 +29,47 @@ private struct MirrorHarness {
         paneCommand: String? = nil,
         prepareWindow: ((TmuxServerFixture, _ windowID: String) -> Void)? = nil
     ) async throws -> MirrorHarness {
-        let server = try TmuxServerFixture.launch(windows: windows)
-        let sessionID = try server.format("#{session_id}")
-        let windowID = try #require(server.windowIDs().first)
-        let paneID = try server.paneID(inWindow: windowID)
-        if let paneCommand {
-            server.run(["send-keys", "-t", paneID, paneCommand, "Enter"])
-        }
-        prepareWindow?(server, windowID)
-        let binding = TmuxBinding(socketPath: server.socketPath, sessionID: sessionID, sessionName: "t")
+        try await TmuxServerFixture.launch(windows: windows) { server in
+            let sessionID = try server.format("#{session_id}")
+            let windowID = try #require(server.windowIDs().first)
+            let paneID = try server.paneID(inWindow: windowID)
+            if let paneCommand {
+                server.run(["send-keys", "-t", paneID, paneCommand, "Enter"])
+            }
+            prepareWindow?(server, windowID)
+            let binding = TmuxBinding(socketPath: server.socketPath, sessionID: sessionID, sessionName: "t")
 
-        let session = WindowSession()
-        let tab = session.openTab(container: .loose)
-        let leafID = try #require(tab.splitTree.allLeafIDs().first)
-        session.update(tab.id) { t in
-            t.kind = .tmuxMirror
-            t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: paneID))
+            let session = WindowSession()
+            let tab = session.openTab(container: .loose)
+            let leafID = try #require(tab.splitTree.allLeafIDs().first)
+            session.update(tab.id) { t in
+                t.kind = .tmuxMirror
+                t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: paneID))
+            }
+            let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
+            let connection = try store.connection(for: binding)
+            let mirror = TmuxWindowMirror(
+                tabID: tab.id,
+                windowID: windowID,
+                sessionName: "t",
+                windowName: "w",
+                connection: connection,
+                isNewTab: true,
+                session: session,
+                registry: RecordingSurfaceRegistry(),
+                secureInput: nil,
+                channelForPane: { store.channel(paneID: $0) },
+                surfaceReports: { store.surfaceReports }
+            )
+            store.register(mirror)
+            mirror.start()
+            #expect(await waitUntil { connection.state == .attached })
+            // The first size report also fetches the layout, which is what
+            // `%layout-change` later folds onto.
+            store.reportTestGrid(columns: 80, rows: 24, tabID: tab.id, leafID: leafID)
+            #expect(await waitUntil { mirror.cellLayout != nil })
+            return MirrorHarness(server: server, session: session, store: store, mirror: mirror, tabID: tab.id, windowID: windowID)
         }
-        let store = TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: server.executable)
-        let connection = try store.connection(for: binding)
-        let mirror = TmuxWindowMirror(
-            tabID: tab.id,
-            windowID: windowID,
-            sessionName: "t",
-            windowName: "w",
-            connection: connection,
-            isNewTab: true,
-            session: session,
-            registry: RecordingSurfaceRegistry(),
-            secureInput: nil,
-            channelForPane: { store.channel(paneID: $0) },
-            surfaceReports: { store.surfaceReports }
-        )
-        store.register(mirror)
-        mirror.start()
-        #expect(await waitUntil { connection.state == .attached })
-        // The first size report also fetches the layout, which is what
-        // `%layout-change` later folds onto.
-        store.reportTestGrid(columns: 80, rows: 24, tabID: tab.id, leafID: leafID)
-        #expect(await waitUntil { mirror.cellLayout != nil })
-        return MirrorHarness(server: server, session: session, store: store, mirror: mirror, tabID: tab.id, windowID: windowID)
     }
 
     var tab: Tab? {
@@ -206,9 +207,10 @@ struct TmuxMirrorVerbsIntegrationTests {
 
         harness.mirror.resize(paneID: first, direction: .horizontal, cells: 30)
         #expect(await waitUntil { harness.server.panes().first?.contains(" 30x") == true })
-        // A second request while the first is unanswered replaces it, so
-        // the last value is the one that lands.
-        harness.mirror.resize(paneID: first, direction: .horizontal, cells: 20)
+        // A second request lands at its own value rather than on top of the
+        // first. Replacing an unanswered request is covered without a
+        // server, where no reply can arrive in between
+        // (`TmuxWindowMirrorResizeTests`).
         harness.mirror.resize(paneID: first, direction: .horizontal, cells: 25)
         #expect(await waitUntil { harness.server.panes().first?.contains(" 25x") == true })
         #expect(await waitUntil { harness.mirror.cellLayout?.root.paneIDs.count == 2 })
