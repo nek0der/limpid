@@ -21,10 +21,17 @@ enum AgentResumeCommandBuilder<S: AgentSpec> {
     ///    `tab.agentResumeCandidates[paneID]`. Which provider yields when
     ///    two have a hint for one pane is a rule, and the rules live on the
     ///    other side of the boundary; this side only reads the answer.
+    ///
+    /// A pane that was inside tmux is not asked about here. Whether the
+    /// conversation is already being had in a tmux Limpid can still reach is
+    /// a rule, and the rules answer it: a run whose endpoint is live holds
+    /// its conversation out of `agentResumeCandidates` altogether
+    /// (`resume_candidates`). The binding used to stand in for that answer,
+    /// which cost a pane its resume for good whenever the binding outlived
+    /// the server it named. A pane that both has a binding and may resume
+    /// reattaches instead, because `PaneHostRepresentable.resolveInitialCommand`
+    /// asks `TmuxReattachCommandBuilder` first.
     static func initialCommand(for tab: Tab, paneID: UUID) -> String? {
-        // An unresolved tmux restore hint is not permission to create a
-        // duplicate native invocation while its original runtime survives.
-        guard tab.tmuxBindings[paneID] == nil else { return nil }
         guard let info = tab.agentSessions[S.kind]?[paneID],
               !info.sessionId.isEmpty
         else {

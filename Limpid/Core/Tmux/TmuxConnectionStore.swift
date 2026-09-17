@@ -18,11 +18,12 @@ private let log = Logger.limpid("tmux.store")
 /// "one per server", which holds for the first version's scope of one
 /// window per tab.
 ///
-/// Observable only for `mirrors`, `tabConnections`, and `tabIssues`: the
-/// pane area draws a mirror tab from its mirror and says how the tab stands
-/// with its server, the tab's row marks both that and what its mirror warns
-/// about, and all of it can change after the tab is on screen. Everything
-/// else is bookkeeping the view never reads.
+/// Observable only for `mirrors`, `tabConnections`, `tabIssues`, and
+/// `panesAwaitingRestoreCheck`: the pane area draws a mirror tab from its
+/// mirror, holds back the leaves whose binding is still being checked, and
+/// says how the tab stands with its server, the tab's row marks both that
+/// and what its mirror warns about, and all of it can change after the tab
+/// is on screen. Everything else is bookkeeping the view never reads.
 @MainActor
 @Observable
 final class TmuxConnectionStore {
@@ -115,6 +116,32 @@ final class TmuxConnectionStore {
         self.secureInput = secureInput
         self.tmuxExecutable = tmuxExecutable
         self.sessionPresence = sessionPresence
+    }
+
+    /// Leaves whose restored tmux binding is being checked against its
+    /// server, from the moment the session is restored until the answer is
+    /// in (`TmuxMirrorActions.reconcileRestoredBindings`). None of them can
+    /// be given a surface yet: the answer decides whether the leaf becomes
+    /// a mirror pane, which never starts a process, or a shell, and whether
+    /// an attach is typed into that shell. A surface made in the meantime
+    /// would be the wrong one either way.
+    private(set) var panesAwaitingRestoreCheck: Set<UUID> = []
+
+    /// Whether `paneID` is one of them. Read while a pane area is laid out,
+    /// so the leaf gets its surface as soon as the check ends.
+    func isAwaitingRestoreCheck(_ paneID: UUID) -> Bool {
+        panesAwaitingRestoreCheck.contains(paneID)
+    }
+
+    func beginRestoreCheck(panes: Set<UUID>) {
+        panesAwaitingRestoreCheck = panes
+    }
+
+    /// Idempotent: the check ends when its answer has been written, and
+    /// again if the task that carried it was cancelled first.
+    func endRestoreCheck() {
+        guard !panesAwaitingRestoreCheck.isEmpty else { return }
+        panesAwaitingRestoreCheck = []
     }
 
     /// The channel of leaf `paneID`, opened on first use. `nil` only when

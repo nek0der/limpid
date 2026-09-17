@@ -352,7 +352,10 @@ final class AppState {
         // Once per launch, after the restore above and after libghostty has
         // announced the colors a new control client takes. The tabs' notices
         // reach `toastCenter`, wired above, whenever the server answers.
-        TmuxMirrorActions.reconnectAtLaunch(session: session, store: tmuxStore)
+        // Settles the restored bindings first — an agent Limpid hosted in
+        // tmux becomes a mirror tab here — and reconnects every mirror tab
+        // after that.
+        TmuxMirrorActions.reconcileRestoredBindings(session: session, store: tmuxStore)
         // After the restore, so a request whose tab was saved is recognized
         // as served rather than opened twice.
         agentMirrorRequests = Self.startAgentMirrorRequests(session: session, store: tmuxStore)

@@ -122,6 +122,12 @@ enum PaneShellEnvironment {
         name.hasPrefix(agentSocketPrefix + releaseBundleID)
     }
 
+    /// The same question asked of a whole socket path, which is how every
+    /// binding and every pane reference records a server.
+    static func isAgentSocketPath(_ path: String) -> Bool {
+        isAgentSocketName(URL(fileURLWithPath: path).lastPathComponent)
+    }
+
     private static let agentSocketPrefix = "limpid-"
     private static let releaseBundleID = "dev.limpid.Limpid"
 

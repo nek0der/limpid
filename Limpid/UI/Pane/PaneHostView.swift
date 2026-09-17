@@ -312,6 +312,14 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         if let existing = registry.view(for: paneID) {
             return existing
         }
+        // A leaf whose restored tmux binding is still being checked has no
+        // surface yet: the answer decides whether it becomes a mirror pane
+        // or a shell, and which command that shell is given
+        // (`TmuxMirrorActions.reconcileRestoredBindings`). The layout keeps
+        // the leaf's place, and the check ends a moment after launch.
+        if tmuxStore?.isAwaitingRestoreCheck(paneID) == true {
+            return nil
+        }
         let owningTab = session.tab(containing: paneID)
         let backing = owningTab.map {
             surfaceBacking(for: $0.ioSource(for: paneID), paneID: paneID, tmuxStore: tmuxStore)

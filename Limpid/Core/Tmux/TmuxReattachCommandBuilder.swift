@@ -21,6 +21,15 @@ enum TmuxReattachCommandBuilder {
         guard let binding = tab.tmuxBindings[paneID], !binding.socketPath.isEmpty else {
             return nil
         }
+        // An agent Limpid hosts in its own tmux server is shown as a mirror
+        // tab, never by typing an attach into a pane's shell: that pane's
+        // scrollback would stay inside tmux, and the tab the agent already
+        // has would hold the same session a second time. A binding of that
+        // server is either turned into a mirror tab at launch or dropped
+        // (`TmuxBindingMigration`), so one reaching here is a leftover.
+        guard !PaneShellEnvironment.isAgentSocketPath(binding.socketPath) else {
+            return nil
+        }
         if let staged = tab.initialCommands[paneID], !staged.isEmpty {
             return nil
         }
