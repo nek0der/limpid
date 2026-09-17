@@ -81,6 +81,16 @@ pub(crate) fn has_session_ended(record: &RunRecord) -> bool {
         .is_some_and(|event| SESSION_ENDED_EVENTS.contains(&event))
 }
 
+/// Whether the record describes a run in tmux whose session is still going.
+///
+/// Such a run outlives every pane, so the rules cannot ask a pane about it:
+/// its side files are kept while it goes on, and its conversation is not
+/// offered for resume anywhere, because tmux already holds it.
+#[must_use]
+pub(crate) fn is_live_tmux_run(record: &RunRecord) -> bool {
+    record.tmux_socket_path.is_some() && !has_session_ended(record)
+}
+
 /// What the runtime must write after one event.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct RecordWrites {

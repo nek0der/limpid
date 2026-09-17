@@ -1,0 +1,47 @@
+{
+  "description": "A conversation started in a native pane is reopened in a run Limpid hosts in tmux, and neither pane offers it for resume while tmux holds it.",
+  "runs": [
+    {
+      "provider": "claude",
+      "pane": "11111111-1111-4111-8111-111111111111",
+      "run": "BBBBBBBB-2222-4222-8222-BBBBBBBBBBB2",
+      "pid": "4242",
+      "replay": [
+        {
+          "case": "session-end-reasons",
+          "payload": "0004-SessionStart.json",
+          "now": "2026-09-14T12:00:00Z"
+        },
+        {
+          "case": "session-end-reasons",
+          "payload": "0005-UserPromptSubmit.json",
+          "now": "2026-09-14T12:01:00Z"
+        },
+        {
+          "case": "session-end-reasons",
+          "payload": "0006-Stop.json",
+          "now": "2026-09-14T12:02:00Z"
+        },
+        {
+          "case": "session-end-reasons",
+          "payload": "0007-SessionEnd.json",
+          "now": "2026-09-14T12:03:00Z"
+        }
+      ]
+    },
+    {
+      "provider": "claude",
+      "pane": "33333333-3333-4333-8333-333333333333",
+      "run": "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+      "tmux": true,
+      "tmuxHostMode": "limpidHosted",
+      "replay": [
+        {
+          "case": "tmux-hosted",
+          "payload": "0000-SessionStart.json",
+          "now": "2026-09-14T12:05:00Z"
+        }
+      ]
+    }
+  ]
+}

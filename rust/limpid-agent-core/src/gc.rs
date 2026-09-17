@@ -85,8 +85,8 @@ pub(crate) fn sweep(
 /// report before the application has built that pane. Sweeping by open panes
 /// alone would take the run's resume hint in that window.
 ///
-/// A session end is the test for "not over" because it is the only one a run
-/// in tmux has: its record names no pid of ours, and it is never retired.
+/// Which runs count is `is_live_tmux_run`'s to say, so this and the resume
+/// rules cannot disagree about whether a run is still going.
 fn pane_store_keep(
     accepted: &BTreeMap<String, AcceptedRun>,
     alive: &BTreeSet<Uuid>,
@@ -96,8 +96,7 @@ fn pane_store_keep(
         accepted
             .values()
             .map(|run| &run.record)
-            .filter(|record| record.tmux_socket_path.is_some())
-            .filter(|record| !crate::lifecycle::has_session_ended(record))
+            .filter(|record| crate::lifecycle::is_live_tmux_run(record))
             .filter_map(|record| Uuid::parse_str(&record.pane_id).ok()),
     );
     keep

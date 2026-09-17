@@ -67,7 +67,7 @@ pub fn project(
         now,
     ));
     commands.extend(seen_where_the_user_is_looking(&runtimes, input));
-    let resume_candidates = resume_candidates(input, &sessions);
+    let resume_candidates = resume_candidates(input, &sessions, &state.accepted);
 
     state.episodes = runtimes
         .iter()
@@ -597,13 +597,28 @@ fn surviving_marks(marks: &AttentionMarks, runtimes: &[RuntimePresentation]) -> 
 /// A provider that defers steps aside when another provider already has a
 /// session on the same pane. Two agents resuming into one terminal would fight
 /// over it, and the one that got there first keeps it.
+///
+/// A conversation a run in tmux is still holding is not offered anywhere.
+/// tmux keeps that run alive across a relaunch, so resuming the same session
+/// in a pane would run it twice. This covers the hint the hosted run wrote
+/// itself and one a native run left before the conversation was reopened in
+/// tmux.
 fn resume_candidates(
     input: &ProjectionInput,
     sessions: &BTreeMap<Uuid, BTreeMap<ProviderId, SessionInfo>>,
+    accepted: &BTreeMap<String, AcceptedRun>,
 ) -> BTreeMap<Uuid, BTreeSet<ProviderId>> {
+    let held_in_tmux: BTreeSet<(&ProviderId, &str)> = accepted
+        .values()
+        .filter(|run| crate::lifecycle::is_live_tmux_run(&run.record))
+        .filter_map(|run| Some((&run.provider, run.record.session_id.as_deref()?)))
+        .collect();
     let mut candidates: BTreeMap<Uuid, BTreeSet<ProviderId>> = BTreeMap::new();
     for (pane, providers) in sessions {
-        for provider in providers.keys() {
+        for (provider, session) in providers {
+            if held_in_tmux.contains(&(provider, session.session_id.as_str())) {
+                continue;
+            }
             let Some(descriptor) = input.providers.get(provider) else {
                 continue;
             };
@@ -884,6 +899,67 @@ mod tests {
         let mut misnamed = file(Some(record(Some(1), "2026-09-14T12:00:00Z", "running")));
         misnamed.name = "SOMETHING-ELSE".to_owned();
         assert!(accept(&ProjectionState::default(), vec![misnamed]).is_empty());
+    }
+
+    #[test]
+    fn a_conversation_held_in_tmux_is_not_offered_for_resume() {
+        let pane: Uuid = PANE.parse().expect("pane");
+        let mut descriptor = descriptor();
+        descriptor.capabilities.insert(Capability::Resume);
+        let hint = format!(r#"{{"schemaVersion":1,"paneId":"{PANE}","sessionId":"S"}}"#);
+        let sessions = session_infos(
+            &ProjectionInput {
+                session_records: vec![file(Some(hint))],
+                ..ProjectionInput::default()
+            },
+            &[pane].into_iter().collect(),
+        );
+        let input = ProjectionInput {
+            providers: [(claude(), descriptor)].into_iter().collect(),
+            ..ProjectionInput::default()
+        };
+        let mut record =
+            RunRecord::decode(record(Some(1), "2026-09-14T12:00:00Z", "running").as_bytes())
+                .expect("record");
+        record.session_id = Some("S".to_owned());
+        record.tmux_socket_path = Some("/tmp/socket".to_owned());
+        record.last_hook_event = Some("session_started".to_owned());
+        let accepted = |record: &RunRecord| {
+            [(
+                RUN.to_owned(),
+                AcceptedRun {
+                    provider: claude(),
+                    record: record.clone(),
+                },
+            )]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>()
+        };
+
+        // Still running in tmux: resuming would start it a second time.
+        assert!(resume_candidates(&input, &sessions, &accepted(&record)).is_empty());
+
+        // Once its session has ended, the hint is an ordinary resume again.
+        let mut ended = record.clone();
+        ended.last_hook_event = Some("session_ended".to_owned());
+        assert_eq!(
+            resume_candidates(&input, &sessions, &accepted(&ended))[&pane].len(),
+            1
+        );
+
+        // A different conversation, or one held outside tmux, is not held.
+        let mut other = record.clone();
+        other.session_id = Some("T".to_owned());
+        assert_eq!(
+            resume_candidates(&input, &sessions, &accepted(&other)).len(),
+            1
+        );
+        let mut native = record;
+        native.tmux_socket_path = None;
+        assert_eq!(
+            resume_candidates(&input, &sessions, &accepted(&native)).len(),
+            1
+        );
     }
 
     #[test]
