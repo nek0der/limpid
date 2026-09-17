@@ -64,7 +64,8 @@ private final class EndHarness {
             binding: binding,
             windowID: window,
             windowName: server.format("#{window_name}", target: window),
-            activePaneID: server.paneID(inWindow: window)
+            activePaneID: server.paneID(inWindow: window),
+            serverVersion: TmuxProtocol.parseVersion(server.format("#{version}", target: window))
         )
         #expect(TmuxMirrorActions.open(target, session: session, store: store, registry: registry, secureInput: nil))
         let mirror = try #require(store.liveMirror(showing: window, of: binding))

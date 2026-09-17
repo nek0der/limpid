@@ -98,7 +98,8 @@ enum TmuxMirrorActions {
                 binding: ref.binding,
                 windowID: windowID,
                 windowName: sourceTab.title,
-                activePaneID: ref.paneID
+                activePaneID: ref.paneID,
+                serverVersion: mirror.connection.version
             )
             open(target, session: session, store: store, registry: registry, secureInput: secureInput, toastCenter: toastCenter)
         }

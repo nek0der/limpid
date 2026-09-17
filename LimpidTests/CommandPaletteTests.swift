@@ -300,17 +300,20 @@ struct CommandPaletteTests {
 
     // MARK: - tmux windows
 
+    private static let supportedVersion = TmuxProtocol.parseVersion("3.7c")
     private static let editorTarget = TmuxMirrorTarget(
         binding: TmuxBinding(socketPath: "/tmp/limpid-test/default", sessionID: "$0", sessionName: "work"),
         windowID: "@1",
         windowName: "editor",
-        activePaneID: "%1"
+        activePaneID: "%1",
+        serverVersion: supportedVersion
     )
     private static let shellTarget = TmuxMirrorTarget(
         binding: TmuxBinding(socketPath: "/tmp/limpid-test/default", sessionID: "$0", sessionName: "work"),
         windowID: "@2",
         windowName: "shell",
-        activePaneID: "%2"
+        activePaneID: "%2",
+        serverVersion: supportedVersion
     )
 
     private func tmuxState(settingsDirectory: URL) -> CommandPaletteState {

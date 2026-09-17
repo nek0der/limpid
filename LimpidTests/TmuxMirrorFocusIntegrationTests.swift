@@ -70,7 +70,13 @@ private final class FocusHarness {
             sessionID: server.format("#{session_id}", target: "t:"),
             sessionName: "t"
         )
-        let target = TmuxMirrorTarget(binding: binding, windowID: windowID, windowName: "w", activePaneID: activePane)
+        let target = try TmuxMirrorTarget(
+            binding: binding,
+            windowID: windowID,
+            windowName: "w",
+            activePaneID: activePane,
+            serverVersion: TmuxProtocol.parseVersion(server.format("#{version}", target: "t:"))
+        )
         #expect(TmuxMirrorActions.open(target, session: session, store: store, registry: registry, secureInput: nil))
         let mirror = try #require(store.liveMirror(showing: windowID, of: binding))
         #expect(await waitUntil { mirror.connection.state == .attached })

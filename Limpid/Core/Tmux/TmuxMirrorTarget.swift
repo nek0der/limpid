@@ -11,6 +11,10 @@ struct TmuxMirrorTarget: Equatable {
     let windowID: String
     let windowName: String
     let activePaneID: String
+    /// The server's own version, or nil when it left `#{version}` empty or
+    /// reported something we cannot read. The palette gates on this, so a
+    /// server we cannot place is shown as unavailable rather than guessed at.
+    let serverVersion: TmuxVersion?
 
     var displayName: String {
         "\(binding.sessionName):\(windowName)"
@@ -42,22 +46,40 @@ enum TmuxMirrorTargetLister {
         return targets
     }
 
-    /// Tab-separated because names may contain spaces. The ids come first
-    /// and the window name last, so a tab inside a window name survives
-    /// as the remainder of the line; a tab inside a session name does not.
-    static let listFormat = "#{session_id}\t#{window_id}\t#{pane_id}\t#{session_name}\t#{window_name}"
+    /// Tab-separated because names may contain spaces. The ids and server
+    /// fields come first and the window name last, so a tab inside a window
+    /// name survives as the remainder of the line; a tab inside a session
+    /// name does not.
+    ///
+    /// `version`, `pid`, and `start_time` are server-wide. tmux expands a
+    /// variable it does not know to an empty string, so a server too old to
+    /// have one still lists its windows with that field empty.
+    static let listFormat = [
+        "#{session_id}", "#{window_id}", "#{pane_id}",
+        "#{version}", "#{pid}", "#{start_time}",
+        "#{session_name}", "#{window_name}"
+    ].joined(separator: "\t")
 
     static func parse(_ output: String, socketPath: String) -> [TmuxMirrorTarget] {
         output.split(separator: "\n").compactMap { line in
-            let fields = line.split(separator: "\t", maxSplits: 4, omittingEmptySubsequences: false)
-            guard fields.count == 5, fields[0].hasPrefix("$"), fields[1].hasPrefix("@"), fields[2].hasPrefix("%") else {
+            let fields = line.split(separator: "\t", maxSplits: 7, omittingEmptySubsequences: false)
+            guard fields.count == 8, fields[0].hasPrefix("$"), fields[1].hasPrefix("@"), fields[2].hasPrefix("%") else {
                 return nil
             }
+            var binding = TmuxBinding(socketPath: socketPath, sessionID: String(fields[0]), sessionName: String(fields[6]))
+            // Recorded only as a pair of numbers: the reattach condition
+            // splices both into a tmux format, and half a generation
+            // authenticates nothing.
+            if UInt64(fields[4]) != nil, UInt64(fields[5]) != nil {
+                binding.serverPID = String(fields[4])
+                binding.serverStartedAt = String(fields[5])
+            }
             return TmuxMirrorTarget(
-                binding: TmuxBinding(socketPath: socketPath, sessionID: String(fields[0]), sessionName: String(fields[3])),
+                binding: binding,
                 windowID: String(fields[1]),
-                windowName: String(fields[4]),
-                activePaneID: String(fields[2])
+                windowName: String(fields[7]),
+                activePaneID: String(fields[2]),
+                serverVersion: TmuxProtocol.parseVersion(String(fields[3]))
             )
         }
     }
