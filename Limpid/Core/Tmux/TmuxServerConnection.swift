@@ -41,6 +41,7 @@ final class TmuxServerConnection {
     /// Every notification that is not a reply marker or pane output:
     /// `%layout-change`, `%window-pane-changed`, `%exit`, and the rest.
     var onNotification: ((TmuxControlLine) -> Void)?
+    /// Every change of `state`, including the exit our own `stop()` causes.
     var onStateChange: ((State) -> Void)?
 
     private let executable: String
@@ -194,8 +195,13 @@ final class TmuxServerConnection {
     }
 
     /// Tell tmux the colors `pane`'s programs should see, once both the
-    /// server's version and the colors are known.
+    /// server's version and the colors are known. An ended connection has
+    /// nobody to tell; sending would only fail and log a refusal tmux never
+    /// made.
     private func reportColors(toPane pane: String) {
+        if case .exited = state {
+            return
+        }
         guard let version, TmuxColorReport.isSupported(by: version), let terminalColors else { return }
         for command in TmuxColorReport.commands(pane: pane, colors: terminalColors) {
             send(command) { lines, isError in

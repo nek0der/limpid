@@ -51,6 +51,8 @@ enum TmuxMirrorActions {
         let mirror = TmuxWindowMirror(
             tabID: tab.id,
             windowID: target.windowID,
+            sessionName: target.binding.sessionName,
+            windowName: target.windowName,
             connection: connection,
             session: session,
             registry: registry,
@@ -107,7 +109,8 @@ enum TmuxMirrorActions {
     /// Merge a pane into another tab. Two mirror tabs on the same tmux
     /// session use `join-pane`; a tmux pane cannot leave tmux, and a mirror
     /// tab stays pure (design §1), so every other pairing that involves a
-    /// mirror is refused with a word to the user.
+    /// mirror is refused with a word to the user. Two mirror tabs of which
+    /// either is disconnected cannot ask tmux, and say so.
     static func mergePaneIntoTab(
         _ session: WindowSession,
         paneID: UUID,
@@ -124,11 +127,15 @@ enum TmuxMirrorActions {
             TabActions.mergePaneIntoTab(session, paneID: paneID, into: targetTabID)
             return
         }
-        if sourceIsMirror, let source = store?.mirror(for: sourceTab.id), let target = store?.mirror(for: targetTabID),
-           source.connection.target == target.connection.target
-        {
-            source.joinPane(paneID: paneID, into: target.windowID)
-            return
+        if sourceIsMirror, targetTab.kind == .tmuxMirror {
+            guard let source = store?.liveMirror(for: sourceTab.id), let target = store?.liveMirror(for: targetTabID) else {
+                toastCenter?.show(ToastItem(message: String(localized: "Not connected to tmux"), undo: nil))
+                return
+            }
+            if source.connection.target == target.connection.target {
+                source.joinPane(paneID: paneID, into: target.windowID)
+                return
+            }
         }
         toastCenter?.show(ToastItem(message: String(localized: "A tmux pane can only move between windows of its own session"), undo: nil))
     }

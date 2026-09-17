@@ -10,6 +10,7 @@ struct PaneAreaView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.tmuxConnectionStore) private var tmuxStore
+    @Environment(ToastCenter.self) private var toastCenter: ToastCenter?
     let ghosttyApp: GhosttyApp
     /// The pane area's size, kept as state so a tab that comes on screen
     /// at the same size as the last one still gets told what it is.
@@ -155,7 +156,8 @@ struct PaneAreaView: View {
                             // A mirror tab only swaps, and tmux does it.
                             if liveTab.kind == .tmuxMirror {
                                 guard zone == .center, liveTab.capabilities.canSwap else { return }
-                                tmuxStore?.mirror(for: tab.id)?.swap(source, target)
+                                PaneActions.liveMirror(for: liveTab, in: tmuxStore, toastCenter: toastCenter)?
+                                    .swap(source, target)
                                 return
                             }
                             guard isPaneDropSizeFeasible(source: source, target: target, zone: zone) else { return }
@@ -443,8 +445,11 @@ struct PaneAreaView: View {
     /// Turn a divider drag on a mirror tab into `resize-pane`. The delta is
     /// relative to the layout on screen, so it converts to whole cells on
     /// top of the extent tmux reported for the first side of the split.
+    /// A drag on a disconnected tab does nothing and says nothing: it
+    /// arrives once per pointer move, like typing, and a notice per move
+    /// would replay the toast's entrance on every frame.
     private func resizeMirrorPane(tab: Tab, splitPath: PaneSplitPath, delta: Double) {
-        guard let mirror = tmuxStore?.mirror(for: tab.id),
+        guard let mirror = tmuxStore?.liveMirror(for: tab.id),
               let geometry = mirrorGeometry(for: tab),
               let target = PaneLayout.mirrorResizeTarget(in: geometry.layout, path: splitPath),
               let paneID = geometry.leafIDs[target.pane]

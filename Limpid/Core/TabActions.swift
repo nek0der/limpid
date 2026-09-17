@@ -67,15 +67,17 @@ enum TabActions {
         tabID: UUID,
         source: CloseConfirmer.Source = .keyboard,
         confirm: Bool = true,
+        isReopenable: Bool = true,
         attention: AttentionState? = nil,
         agentProjection: AgentProjectionAdapter? = nil
     ) {
         guard let tab = session.tab(tabID) else { return }
         let leafIDs = tab.splitTree.allLeafIDs()
-        // `confirm: false` is reserved for batch callers (e.g.
-        // `closeAllTabsInActiveContainer`) that already showed an
-        // aggregate prompt — without the opt-out we'd nag the user
-        // once per tab inside the loop.
+        // `confirm: false` is for callers with nothing left to ask:
+        // batch callers (e.g. `closeAllTabsInActiveContainer`) that
+        // already showed an aggregate prompt, and a tmux mirror whose
+        // window or session tmux has ended, whose panes are gone
+        // whatever the user would answer.
         if confirm,
            !CloseConfirmer.allow(.tab, source: source, paneIDs: leafIDs)
         {
@@ -86,16 +88,22 @@ enum TabActions {
         // split layout, not just the focused leaf. Routes through the
         // shared helper so ⌘Q and per-tab close stay in lock-step on
         // filename / permissions / directory creation.
-        var snapshot = tab
-        var paths: [UUID: String] = [:]
-        for pid in leafIDs {
-            guard let view = registry.view(for: pid),
-                  let url = WindowSession.captureScrollback(paneID: pid, view: view)
-            else { continue }
-            paths[pid] = url.path
+        //
+        // `isReopenable: false` is for a tab whose content no longer
+        // exists anywhere: a tmux mirror whose window or session tmux
+        // ended. Reopening it could only show a mirror of nothing.
+        if isReopenable {
+            var snapshot = tab
+            var paths: [UUID: String] = [:]
+            for pid in leafIDs {
+                guard let view = registry.view(for: pid),
+                      let url = WindowSession.captureScrollback(paneID: pid, view: view)
+                else { continue }
+                paths[pid] = url.path
+            }
+            snapshot.scrollbackPaths = paths
+            session.recordClosedTab(snapshot)
         }
-        snapshot.scrollbackPaths = paths
-        session.recordClosedTab(snapshot)
 
         session.closeTab(tabID)
         for leafID in leafIDs {
@@ -130,6 +138,7 @@ enum TabActions {
 
         var revived = Tab(
             id: UUID(),
+            kind: closed.tab.kind,
             title: closed.tab.title,
             titleOverride: closed.tab.titleOverride,
             workingDirectory: closed.tab.workingDirectory,
@@ -149,6 +158,11 @@ enum TabActions {
         // signature, so assign them after construction.
         revived.scrollbackPaths = remapKeys(closed.tab.scrollbackPaths, using: idMap)
         revived.initialCommands = remapKeys(closed.tab.initialCommands, using: idMap)
+        // A mirror tab comes back as a mirror: its panes read tmux, never a
+        // shell of their own (design §9 D14). The new tab id has no mirror
+        // behind it, so its panes get dormant descriptors until it is
+        // connected again.
+        revived.paneSources = remapKeys(closed.tab.paneSources, using: idMap)
         // The projection answered which of those hints may resume while the
         // pane was open. The hint file went with the pane, so the next pass
         // cannot answer again; carrying the answer here gives the revived

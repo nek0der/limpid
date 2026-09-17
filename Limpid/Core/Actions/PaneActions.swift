@@ -362,13 +362,14 @@ enum PaneActions {
 
     /// The mirror behind a tmux tab, if it is connected. A verb on a
     /// disconnected mirror has nowhere to go, so the user is told instead
-    /// of the tree being edited under tmux's feet.
+    /// of the tree being edited under tmux's feet. Every user-initiated
+    /// verb shares this one message, whichever verb it was.
     static func liveMirror(
         for tab: Tab,
         in tmuxStore: TmuxConnectionStore?,
         toastCenter: ToastCenter?
     ) -> TmuxWindowMirror? {
-        if let mirror = tmuxStore?.mirror(for: tab.id) {
+        if let mirror = tmuxStore?.liveMirror(for: tab.id) {
             return mirror
         }
         toastCenter?.show(ToastItem(message: String(localized: "Not connected to tmux"), undo: nil))

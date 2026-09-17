@@ -5305,6 +5305,26 @@
         }
       }
     },
+    "The tmux session “%@” ended": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux のセッション「%@」が終了しました"
+          }
+        }
+      }
+    },
+    "The tmux window “%@” was closed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux のウィンドウ「%@」が閉じられました"
+          }
+        }
+      }
+    },
     "The terminal is requesting to read the contents of your clipboard. Only allow this if you recognise the program that issued the request.": {
       "localizations": {
         "ja": {

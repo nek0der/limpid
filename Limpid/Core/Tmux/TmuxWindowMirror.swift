@@ -13,14 +13,33 @@ private let log = Logger.limpid("tmux.mirror")
 /// search state survive. Limpid only ever sends the window size and, later,
 /// the verbs the user performs; it never writes the tree on its own.
 ///
-/// Observable for the two values the pane area draws from: the cell layout
-/// and the cell size. Everything else is bookkeeping the view never reads.
+/// Observable for the values the pane area draws from: the cell layout, the
+/// cell size, and whether the connection still carries commands. Everything
+/// else is bookkeeping the view never reads.
 @MainActor
 @Observable
 final class TmuxWindowMirror {
     let tabID: UUID
     let windowID: String
     let connection: TmuxServerConnection
+    /// Names for what the user reads when tmux ends the window or the
+    /// session. Kept here because the tab's title follows the focused
+    /// pane's terminal title, and the window is gone by the time it is
+    /// named.
+    let sessionName: String
+    let windowName: String
+
+    enum ConnectionState: Equatable {
+        /// Commands reach tmux, or are held until the attach completes.
+        case connected
+        /// The client ended. Nothing is sent from here on; the panes keep
+        /// what they last showed. Final for this mirror.
+        case disconnected
+    }
+
+    /// Set by `TmuxConnectionStore`, which observes the connection's
+    /// state in one place for every mirror on it.
+    private(set) var connectionState: ConnectionState
 
     /// The window as tmux last described it, in cells. `nil` until tmux has
     /// answered once; the tab is drawn from its stored ratios until then.
@@ -102,6 +121,8 @@ final class TmuxWindowMirror {
     init(
         tabID: UUID,
         windowID: String,
+        sessionName: String,
+        windowName: String,
         connection: TmuxServerConnection,
         session: WindowSession,
         registry: any SurfaceViewProviding,
@@ -109,7 +130,14 @@ final class TmuxWindowMirror {
     ) {
         self.tabID = tabID
         self.windowID = windowID
+        self.sessionName = sessionName
+        self.windowName = windowName
         self.connection = connection
+        if case .exited = connection.state {
+            connectionState = .disconnected
+        } else {
+            connectionState = .connected
+        }
         self.session = session
         self.registry = registry
         self.secureInput = secureInput
@@ -138,8 +166,17 @@ final class TmuxWindowMirror {
         panes[paneID]?.tmuxPane
     }
 
+    /// Whether a command may be sent. Every outbound path checks it, so a
+    /// verb that reaches a disconnected mirror by a delayed route (a paste
+    /// confirmed later, a queued resize) is not sent either.
+    var canSend: Bool {
+        !isStopped && connectionState == .connected
+    }
+
+    /// Typed input to a disconnected mirror is dropped without a word:
+    /// telling the user once per keystroke would bury the screen.
     func sendInput(_ inputs: [TmuxInput], paneID: UUID) {
-        guard !isStopped, let pane = panes[paneID] else { return }
+        guard canSend, let pane = panes[paneID] else { return }
         connection.sendInput(inputs, pane: pane.tmuxPane)
     }
 
@@ -154,6 +191,25 @@ final class TmuxWindowMirror {
         registry.unregister(paneID)
         guard let tab = session.tab(tabID), tab.splitTree.contains(leafID: paneID) else { return }
         session.removePane(paneID, fromTab: tabID)
+    }
+
+    /// The connection ended. The panes stay as they are until tmux is
+    /// asked whether the session survived (`TmuxConnectionStore`); there is
+    /// no automatic reconnect (design §9 D14).
+    func connectionEnded() {
+        guard connectionState == .connected else { return }
+        connectionState = .disconnected
+        queuedResize = nil
+        log.notice("mirror window \(self.windowID, privacy: .public) lost its connection")
+    }
+
+    /// tmux ended what this tab shows, so the tab closes without asking:
+    /// the panes are already gone on tmux's side and there is nothing left
+    /// to confirm (stage 11 decision 3). Nor is it kept for reopening: the
+    /// window it would mirror is gone. Closing the tab is what releases
+    /// this mirror and, through `reconcile`, its connection.
+    func closeTab() {
+        TabActions.closeTab(session, registry: registry, tabID: tabID, confirm: false, isReopenable: false)
     }
 
     func stop() {
@@ -197,7 +253,7 @@ final class TmuxWindowMirror {
     /// `%layout-change` → padding → `CELL_SIZE` → report would otherwise
     /// close a loop.
     private func reportGridIfChanged() {
-        guard !isStopped, let cellSize else { return }
+        guard canSend, let cellSize else { return }
         let grid = PaneLayout.mirrorGrid(areaSize: areaSize, cellSize: cellSize, padding: .pinned)
         guard grid.columns > 0, grid.rows > 0,
               reportedGrid?.columns != grid.columns || reportedGrid?.rows != grid.rows
@@ -212,7 +268,7 @@ final class TmuxWindowMirror {
     /// on a server doing so for a window that already had this size, which
     /// would otherwise never show its other panes.
     func reportGrid(columns: Int, rows: Int) {
-        guard !isStopped, columns > 0, rows > 0 else { return }
+        guard canSend, columns > 0, rows > 0 else { return }
         log.debug("refresh-client -C \(self.windowID, privacy: .public):\(columns, privacy: .public)x\(rows, privacy: .public)")
         connection.send("refresh-client -C '\(windowID):\(columns)x\(rows)'") { [weak self] _, _ in
             guard let self, self.cellLayout == nil else { return }
@@ -249,10 +305,6 @@ final class TmuxWindowMirror {
         case let .windowPaneChanged(window, pane) where window == windowID:
             pendingActivePane = pane
             applyActivePane()
-        case .exit:
-            // The connection is gone; the panes stay as dormant surfaces
-            // until the user reconnects (no automatic reconnect by design).
-            log.notice("mirror window \(self.windowID, privacy: .public) lost its connection")
         default:
             break
         }

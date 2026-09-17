@@ -19,6 +19,8 @@ struct TmuxServerFixture {
     /// `LIMPID_REQUIRE_TMUX_TESTS=1`, so a missing tmux there fails the
     /// fixture's `#require` instead of skipping the suite silently, as
     /// `TmuxClientProbeSmokeTests` does.
+    static let commandTimeout: TimeInterval = 10
+
     static var isUnavailable: Bool {
         TmuxClientProbe.locateTmux() == nil
             && ProcessInfo.processInfo.environment["LIMPID_REQUIRE_TMUX_TESTS"] != "1"
@@ -39,20 +41,27 @@ struct TmuxServerFixture {
             directory: directory,
             socketPath: directory.appendingPathComponent("sock").path
         )
-        fixture.run(["new-session", "-d", "-s", "t", "-x", "80", "-y", "24", "sh", "-c", "PS1='$ ' exec sh"])
-        fixture.run(["set-option", "-g", "status", "off"])
+        // Setup must not fail quietly: a window missing here surfaces later
+        // as an index out of range in whichever test asked for it.
+        try #require(fixture.run(["new-session", "-d", "-s", "t", "-x", "80", "-y", "24", "sh", "-c", "PS1='$ ' exec sh"]) != nil)
+        try #require(fixture.run(["set-option", "-g", "status", "off"]) != nil)
         for _ in 1..<max(windows, 1) {
-            fixture.run(["new-window", "-t", "t", "sh", "-c", "PS1='$ ' exec sh"])
+            try #require(fixture.run(["new-window", "-t", "t", "sh", "-c", "PS1='$ ' exec sh"]) != nil)
         }
         return fixture
     }
 
     /// `-f` only matters when this call starts the server; passing it on
     /// every call keeps that true whichever command comes first.
+    ///
+    /// The timeout is the fixture's, not the app's half-second query
+    /// budget: under a full parallel test run, starting a server alone can
+    /// take longer than that.
     @discardableResult
     func run(_ arguments: [String]) -> String? {
         let prefix = ["-S", socketPath, "-f", "/dev/null"]
-        if case let .success(output) = TmuxCommand().run(executable: executable, arguments: prefix + arguments) {
+        let result = TmuxCommand().run(executable: executable, arguments: prefix + arguments, timeout: Self.commandTimeout)
+        if case let .success(output) = result {
             return output.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return nil

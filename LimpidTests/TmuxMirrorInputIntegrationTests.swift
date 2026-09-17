@@ -396,6 +396,8 @@ private struct PasteHarness {
         let mirror = TmuxWindowMirror(
             tabID: tab.id,
             windowID: windowID,
+            sessionName: "t",
+            windowName: "w",
             connection: connection,
             session: session,
             registry: RecordingSurfaceRegistry(),

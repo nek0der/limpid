@@ -44,9 +44,23 @@ final class TmuxConnectionStore {
     /// config libghostty resolved, which is where a light or dark switch
     /// shows up. The first arrives while libghostty starts.
     private(set) var terminalColors: TerminalColors?
+    /// What the user is told when tmux ends a mirrored window or session.
+    /// Set by whoever owns the toast center.
+    var onNotice: ((String) -> Void)?
 
-    init(tmuxExecutable: String? = TmuxClientProbe.locateTmux()) {
+    typealias SessionPresenceCheck = @Sendable (
+        _ tmuxPath: String,
+        _ socketPath: String,
+        _ sessionID: String
+    ) async -> TmuxSessionPresence
+    private let sessionPresence: SessionPresenceCheck
+
+    init(
+        tmuxExecutable: String? = TmuxClientProbe.locateTmux(),
+        sessionPresence: @escaping SessionPresenceCheck = TmuxSessionProbe.check
+    ) {
         self.tmuxExecutable = tmuxExecutable
+        self.sessionPresence = sessionPresence
     }
 
     func dormantSink(paneID: UUID) -> TmuxPaneSink? {
@@ -87,6 +101,10 @@ final class TmuxConnectionStore {
         connection.onNotification = { [weak self, weak connection] line in
             guard let self, let connection else { return }
             dispatch(line, from: key, connection: connection)
+        }
+        connection.onStateChange = { [weak self, weak connection] state in
+            guard let self, let connection, case .exited = state else { return }
+            connectionEnded(connection)
         }
         connection.terminalColors = terminalColors
         try connection.start()
@@ -145,8 +163,17 @@ final class TmuxConnectionStore {
         }
     }
 
+    /// The mirror behind `tabID`, connected or not. For what the tab
+    /// shows (its layout, its size, its connection state); an action that
+    /// sends something to tmux asks `liveMirror(for:)` instead.
     func mirror(for tabID: UUID) -> TmuxWindowMirror? {
         mirrors[tabID]
+    }
+
+    /// The mirror behind `tabID` while its connection carries commands.
+    func liveMirror(for tabID: UUID) -> TmuxWindowMirror? {
+        guard let mirror = mirrors[tabID], mirror.connectionState == .connected else { return nil }
+        return mirror
     }
 
     /// The sink feeding `paneID` of `tabID`, if that tab mirrors and the
@@ -160,11 +187,9 @@ final class TmuxConnectionStore {
     /// so a second tab on the same window is never opened (design §4).
     func liveMirror(showing windowID: String, of binding: TmuxBinding) -> TmuxWindowMirror? {
         let key = Key(socketPath: binding.socketPath, sessionID: binding.sessionID)
-        guard let connection = connections[key] else { return nil }
-        if case .exited = connection.state {
-            return nil
+        return mirrors.values.first {
+            $0.connectionState == .connected && Self.key(of: $0) == key && $0.windowID == windowID
         }
-        return mirrors.values.first { $0.connection === connection && $0.windowID == windowID }
     }
 
     func register(_ mirror: TmuxWindowMirror) {
@@ -230,10 +255,79 @@ final class TmuxConnectionStore {
     /// server numbers its windows from `@0` again.
     private func dispatch(_ line: TmuxControlLine, from key: Key, connection: TmuxServerConnection) {
         guard connections[key] === connection else { return }
-        for mirror in mirrors.values where mirror.connection === connection {
+        let onConnection = mirrors.values.filter { $0.connection === connection }
+        for mirror in onConnection {
             mirror.handle(line)
         }
+        if let window = Self.closedWindow(line) {
+            for mirror in onConnection where mirror.windowID == window {
+                closeAfterWindowEnd(mirror)
+            }
+        }
         trackPanes(line, from: key)
+    }
+
+    /// tmux ends a session by closing each of its windows and only then
+    /// sending `%exit`, so a closed window alone does not say whether the
+    /// session went with it. A command sent now is answered only if the
+    /// session outlived the window: tmux reads it after everything it has
+    /// announced, and a session that ended takes this client with it,
+    /// which fails the command after the store has marked the mirror
+    /// disconnected. That case is left to `sessionChecked`, which closes
+    /// every tab of the session with one notice.
+    private func closeAfterWindowEnd(_ mirror: TmuxWindowMirror) {
+        mirror.connection.send("display-message -p ''") { [weak self, weak mirror] _, _ in
+            guard let self, let mirror, mirrors[mirror.tabID] === mirror, mirror.connectionState == .connected else { return }
+            mirror.closeTab()
+            let name = "\(mirror.sessionName):\(mirror.windowName)"
+            onNotice?(String(localized: "The tmux window “\(name)” was closed"))
+        }
+    }
+
+    /// A closed window arrives under either name. tmux 3.7c decides between
+    /// them after the window has left the session, so killing one of the
+    /// session's own windows, or exiting its last pane, is announced as
+    /// `%unlinked-window-close`.
+    private static func closedWindow(_ line: TmuxControlLine) -> String? {
+        guard case let .notification(name, window) = line,
+              name == "window-close" || name == "unlinked-window-close"
+        else { return nil }
+        return window
+    }
+
+    // MARK: - Connection end
+
+    /// The connection ended. Its mirrors stop sending at once; whether
+    /// their tabs close depends on the session, which only the server can
+    /// say. A connection no mirror uses ended because we stopped it, after
+    /// its tabs had already gone, and needs nothing more.
+    private func connectionEnded(_ connection: TmuxServerConnection) {
+        let affected = mirrors.values.filter { $0.connection === connection }
+        for mirror in affected {
+            mirror.connectionEnded()
+        }
+        guard !affected.isEmpty, let tmuxExecutable else { return }
+        let target = connection.target
+        Task { [weak self, sessionPresence] in
+            let presence = await sessionPresence(tmuxExecutable, target.socketPath, target.sessionID)
+            self?.sessionChecked(presence, connection: connection)
+        }
+    }
+
+    /// A session tmux confirms gone closes every tab that mirrored it, with
+    /// one notice. Anything else leaves the tabs disconnected: a session
+    /// that still exists can be mirrored again, and one we could not ask
+    /// about may still exist (stage 11 decision 2). Tabs closed while the
+    /// check ran are no longer among the mirrors.
+    private func sessionChecked(_ presence: TmuxSessionPresence, connection: TmuxServerConnection) {
+        let affected = mirrors.values.filter { $0.connection === connection }
+        let session = connection.target.sessionID
+        log.notice("session \(session, privacy: .public) after exit: \(String(describing: presence), privacy: .public)")
+        guard presence == .gone, let first = affected.first else { return }
+        for mirror in affected {
+            mirror.closeTab()
+        }
+        onNotice?(String(localized: "The tmux session “\(first.sessionName)” ended"))
     }
 
     // MARK: - Output gate
@@ -242,12 +336,13 @@ final class TmuxConnectionStore {
     /// lists every pane of its window, so a pane created or killed anywhere
     /// in the session shows up here; a new window is asked for its panes
     /// because its first layout may have arrived before it was announced.
-    ///
-    /// A closed window arrives under either name. tmux 3.7c decides between
-    /// them after the window has left the session, so killing one of the
-    /// session's own windows is announced as `%unlinked-window-close`.
     /// Forgetting a window the gate never knew changes nothing.
     private func trackPanes(_ line: TmuxControlLine, from key: Key) {
+        if let window = Self.closedWindow(line) {
+            outputGates[key]?.removeWindow(window)
+            gateOutput(for: key)
+            return
+        }
         switch line {
         case let .layoutChange(window, layout, _, _):
             guard let parsed = TmuxLayout.parse(layout) else { return }
@@ -261,8 +356,6 @@ final class TmuxConnectionStore {
                 self.gateOutput(for: key)
             }
             return
-        case let .notification(name, arguments) where name == "window-close" || name == "unlinked-window-close":
-            outputGates[key]?.removeWindow(arguments)
         default:
             return
         }

@@ -58,6 +58,67 @@ struct TabActionsTests {
         #expect(revived.container == .loose)
     }
 
+    @Test("a closed tmux mirror tab reopens as a mirror whose panes read dormant descriptors, not shells")
+    func reopenClosedTab_mirrorTab_restoresKindAndSources() throws {
+        let (session, tab, leafID) = WindowSessionFixture.withLooseTab()
+        let ref = TmuxPaneRef(
+            binding: TmuxBinding(socketPath: "/tmp/tmux-501/default", sessionID: "$3", sessionName: "work"),
+            windowID: "@2",
+            paneID: "%7"
+        )
+        session.update(tab.id) { t in
+            t.kind = .tmuxMirror
+            t.paneSources = [leafID: .tmux(ref)]
+        }
+        TabActions.closeTab(session, registry: NoopSurfaceRegistry(), tabID: tab.id)
+
+        TabActions.reopenClosedTab(session)
+
+        let revived = try #require(session.activeTab)
+        let revivedLeaf = try #require(revived.splitTree.allLeafIDs().first)
+        #expect(revived.kind == .tmuxMirror)
+        #expect(revivedLeaf != leafID)
+        #expect(revived.paneSources == [revivedLeaf: .tmux(ref)])
+
+        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        defer { store.reconcile(tabs: []) }
+        store.reconcile(tabs: session.tabs)
+        #expect(store.mirror(for: revived.id) == nil)
+        #expect(store.liveMirror(for: revived.id) == nil)
+        let backing = PaneHostRepresentable.surfaceBacking(
+            for: revived.ioSource(for: revivedLeaf),
+            paneID: revivedLeaf,
+            tabID: revived.id,
+            tmuxStore: store
+        )
+        let dormant = try #require(store.dormantSink(paneID: revivedLeaf))
+        #expect(backing == .descriptor(dormant.surfaceFd))
+    }
+
+    @Test("an ordinary tab reopens as an ordinary tab with local panes")
+    func reopenClosedTab_ordinaryTab_staysLocal() throws {
+        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+        TabActions.closeTab(session, registry: NoopSurfaceRegistry(), tabID: tab.id)
+
+        TabActions.reopenClosedTab(session)
+
+        let revived = try #require(session.activeTab)
+        let leaf = try #require(revived.splitTree.allLeafIDs().first)
+        #expect(revived.kind == .terminal)
+        #expect(revived.paneSources.isEmpty)
+        #expect(revived.ioSource(for: leaf) == .local)
+    }
+
+    @Test("a tab closed as not reopenable leaves the closed-tab stack alone")
+    func closeTab_notReopenable_skipsStack() {
+        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+
+        TabActions.closeTab(session, registry: NoopSurfaceRegistry(), tabID: tab.id, confirm: false, isReopenable: false)
+
+        #expect(session.tab(tab.id) == nil)
+        #expect(session.closedTabStack.isEmpty)
+    }
+
     @Test("reopenClosedTab rebuilds the split tree with remapped pane IDs")
     func reopenClosedTab_splitTab_restoresLayout() throws {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()

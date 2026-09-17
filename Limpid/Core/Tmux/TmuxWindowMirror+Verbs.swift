@@ -14,6 +14,10 @@ private let log = Logger.limpid("tmux.mirror")
 /// Each verb names its own localized failure message. tmux's `%error`
 /// text is terse, version-dependent English that does not say which
 /// operation it refers to, so it goes to the log only.
+///
+/// Nothing is sent while the mirror is disconnected (`canSend`). The
+/// caller that looked the mirror up tells the user; a verb that arrives
+/// here anyway came by a delayed route and is dropped.
 extension TmuxWindowMirror {
     /// `split-window` next to `paneID`. `-c` is left off on purpose so
     /// tmux's own default for the new pane's directory applies.
@@ -62,7 +66,7 @@ extension TmuxWindowMirror {
     /// `break-pane` moves the pane into a new window of its session and
     /// reports that window's id, so the caller can open a mirror for it.
     func breakPane(paneID: UUID, completion: @escaping (String?) -> Void) {
-        guard let pane = tmuxPane(for: paneID) else {
+        guard canSend, let pane = tmuxPane(for: paneID) else {
             completion(nil)
             return
         }
@@ -93,7 +97,7 @@ extension TmuxWindowMirror {
     /// when the load failed too there is no buffer, and tmux's refusal of
     /// the delete is not read.
     func paste(_ text: String, paneID: UUID, directory: URL = TmuxPasteBuffer.defaultDirectory) {
-        guard let pane = tmuxPane(for: paneID) else { return }
+        guard canSend, let pane = tmuxPane(for: paneID) else { return }
         let failure = String(localized: "Couldn't paste into the pane")
         let bufferName = TmuxPasteBuffer.bufferName()
         let file: URL
@@ -122,6 +126,7 @@ extension TmuxWindowMirror {
     // MARK: - Plumbing
 
     private func run(_ command: String, failure: String) {
+        guard canSend else { return }
         log.debug("verb: \(command, privacy: .public)")
         connection.send(command) { [weak self] lines, isError in
             if isError {
@@ -131,7 +136,7 @@ extension TmuxWindowMirror {
     }
 
     func sendQueuedResize() {
-        guard !isResizeInFlight, let next = queuedResize, let pane = tmuxPane(for: next.paneID) else { return }
+        guard canSend, !isResizeInFlight, let next = queuedResize, let pane = tmuxPane(for: next.paneID) else { return }
         queuedResize = nil
         isResizeInFlight = true
         let flag = next.direction == .horizontal ? "-x" : "-y"
@@ -148,7 +153,16 @@ extension TmuxWindowMirror {
     /// `message` is what the user reads. `lines` is tmux's own reply, which
     /// can quote session names, window names or paths, so it is logged
     /// as private.
+    ///
+    /// A connection that ends fails every command still waiting, with the
+    /// same error flag as a `%error`. Those failures arrive after the store
+    /// marked this mirror disconnected, and they are not tmux refusing the
+    /// verb, so the user is not told the verb failed.
     private func reportFailure(_ lines: [String], message: String) {
+        guard connectionState == .connected else {
+            log.notice("verb ended with the connection: \(lines.joined(separator: " "), privacy: .private)")
+            return
+        }
         log.error("tmux refused: \(lines.joined(separator: " "), privacy: .private)")
         onCommandFailed?(message)
     }

@@ -241,7 +241,13 @@ final class AppState {
 
         self.historyPresentation = NotificationHistoryPresentation()
         self.dragState = LimpidDragState()
-        self.toastCenter = ToastCenter()
+        let toastCenter = ToastCenter()
+        self.toastCenter = toastCenter
+        // tmux ending a mirrored window or session closes its tabs from
+        // the store, away from any view; the user reads why here.
+        tmuxStore.onNotice = { [weak toastCenter] message in
+            toastCenter?.show(ToastItem(message: message, undo: nil))
+        }
         let delegate = LimpidNotificationDelegate()
         self.notificationDelegate = delegate
         // Hand the registry to the delegate so `willPresent` can

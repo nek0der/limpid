@@ -52,6 +52,8 @@ struct TmuxWindowMirrorLayoutTests {
         let mirror = TmuxWindowMirror(
             tabID: tab.id,
             windowID: "@1",
+            sessionName: "t",
+            windowName: "w",
             connection: connection,
             session: session,
             registry: registry,
