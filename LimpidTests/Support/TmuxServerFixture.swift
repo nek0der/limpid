@@ -41,14 +41,48 @@ struct TmuxServerFixture {
             directory: directory,
             socketPath: directory.appendingPathComponent("sock").path
         )
-        // Setup must not fail quietly: a window missing here surfaces later
-        // as an index out of range in whichever test asked for it.
-        try #require(fixture.run(["new-session", "-d", "-s", "t", "-x", "80", "-y", "24", "sh", "-c", "PS1='$ ' exec sh"]) != nil)
-        try #require(fixture.run(["set-option", "-g", "status", "off"]) != nil)
-        for _ in 1..<max(windows, 1) {
-            try #require(fixture.run(["new-window", "-t", "t", "sh", "-c", "PS1='$ ' exec sh"]) != nil)
-        }
+        try fixture.startServer(windows: windows)
         return fixture
+    }
+
+    /// Setup must not fail quietly: a window missing here surfaces later
+    /// as an index out of range in whichever test asked for it.
+    private func startServer(windows: Int) throws {
+        try #require(run(["new-session", "-d", "-s", "t", "-x", "80", "-y", "24", "sh", "-c", "PS1='$ ' exec sh"]) != nil)
+        try #require(run(["set-option", "-g", "status", "off"]) != nil)
+        for _ in 1..<max(windows, 1) {
+            try #require(run(["new-window", "-t", "t", "sh", "-c", "PS1='$ ' exec sh"]) != nil)
+        }
+    }
+
+    /// The server run now on the socket, as a binding records it.
+    func generation() throws -> TmuxServerGeneration.Recorded {
+        try TmuxServerGeneration.Recorded(pid: format("#{pid}"), startedAt: format("#{start_time}"))
+    }
+
+    /// Stop the server and wait until its process is gone, leaving the
+    /// socket file behind as tmux does. `kill-server` returns before the
+    /// server has exited, and a command sent meanwhile can still reach it.
+    /// The server is not our child; the kernel reports it gone once it has
+    /// exited.
+    func killServer() async throws {
+        let pid = try #require(Int32(format("#{pid}")))
+        run(["kill-server"])
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(Self.commandTimeout)
+        while kill(pid, 0) == 0, clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(kill(pid, 0) != 0)
+    }
+
+    /// Replace the server with a new one on the same socket, set up as
+    /// `launch` sets it up: session `t` again, most likely with the same
+    /// session and window ids, which is what makes a restart dangerous to
+    /// a binding that trusts ids alone.
+    func restartServer(windows: Int = 1) async throws {
+        try await killServer()
+        try startServer(windows: windows)
     }
 
     /// `-f` only matters when this call starts the server; passing it on
