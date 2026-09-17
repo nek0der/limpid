@@ -53,26 +53,56 @@ enum TmuxMirrorActions {
             store.onNotice?(TmuxConnectionStore.openFailureNotice(name: target.displayName, reason: nil))
             return false
         }
-        let mirror = TmuxWindowMirror(
+        let mirror = makeMirror(
             tabID: tab.id,
             windowID: target.windowID,
-            sessionName: target.binding.sessionName,
-            windowName: target.windowName,
+            names: (target.binding.sessionName, target.windowName),
             connection: connection,
-            session: session,
-            registry: registry,
-            secureInput: secureInput,
+            context: MirrorContext(session: session, store: store, registry: registry, secureInput: secureInput, toastCenter: toastCenter)
+        )
+        store.register(mirror)
+        mirror.start()
+        return true
+    }
+
+    /// What every mirror of a window session is built with.
+    struct MirrorContext {
+        let session: WindowSession
+        let store: TmuxConnectionStore
+        let registry: any SurfaceViewProviding
+        let secureInput: (any TmuxSecureInputSwitching)?
+        let toastCenter: ToastCenter?
+    }
+
+    /// A mirror for tab `tabID`, fed through the leaves' channels and
+    /// started from the store's reports, whether the tab is new or had a
+    /// mirror before.
+    static func makeMirror(
+        tabID: UUID,
+        windowID: String,
+        names: (session: String, window: String),
+        connection: TmuxServerConnection,
+        context: MirrorContext
+    ) -> TmuxWindowMirror {
+        let store = context.store
+        let mirror = TmuxWindowMirror(
+            tabID: tabID,
+            windowID: windowID,
+            sessionName: names.session,
+            windowName: names.window,
+            connection: connection,
+            session: context.session,
+            registry: context.registry,
+            secureInput: context.secureInput,
             channelForPane: { [weak store] in store?.channel(paneID: $0) },
             surfaceReports: { [weak store] in store?.surfaceReports ?? TmuxSurfaceReports() }
         )
         // tmux refused a verb (`%error`): the picture stays as it was and
         // the user reads which operation failed (design §12).
-        mirror.onCommandFailed = { [weak toastCenter] message in
+        mirror.onCommandFailed = { [weak toastCenter = context.toastCenter] message in
             toastCenter?.show(ToastItem(message: message, undo: nil))
         }
-        store.register(mirror)
-        mirror.start()
-        return true
+        return mirror
     }
 
     /// What the user chose about clients another app has attached.
@@ -118,31 +148,60 @@ enum TmuxMirrorActions {
             finish()
             return nil
         }
-        let ttys = limpidTTYs ?? paneTTYs(session: session, registry: registry)
-        let ownPIDs = store.ownControlPIDs
-        let binding = target.binding
+        let admit = otherClientsGate(
+            tmuxPath: tmuxPath,
+            session: session,
+            store: store,
+            registry: registry,
+            limpidTTYs: limpidTTYs,
+            confirm: confirm
+        )
         return Task {
-            let found = await findClientsDetachingLimpidPanes(
-                tmuxPath: tmuxPath,
-                binding: binding,
-                ownControlPIDs: ownPIDs,
-                limpidTTYs: ttys
-            )
-            if !found.otherApps.isEmpty {
-                switch confirm(target, found.otherApps) {
-                case .cancel:
-                    return
-                case .openWithoutDetaching:
-                    break
-                case .detachAndOpen:
-                    await detach(found.otherApps, tmuxPath: tmuxPath, socketPath: binding.socketPath)
-                }
-            }
+            guard await admit(target) else { return }
             finish()
         }
     }
 
     // swiftlint:enable function_parameter_count
+
+    /// Decides, before a client attaches to `target`'s session, whether it
+    /// goes ahead. Returns false only when the user cancelled.
+    typealias OtherClientsGate = @MainActor (_ target: TmuxMirrorTarget) async -> Bool
+
+    /// The gate that deals with the clients already attached (design D7):
+    /// those running in a Limpid pane are detached without asking, and for
+    /// any other app's the user chooses through `confirm`. The Limpid panes
+    /// and this app's own control clients are read when the gate runs, so
+    /// a gate made early still sees the clients of that moment.
+    static func otherClientsGate(
+        tmuxPath: String,
+        session: WindowSession,
+        store: TmuxConnectionStore,
+        registry: any SurfaceViewProviding,
+        limpidTTYs: Set<String>? = nil,
+        confirm: @escaping @MainActor (TmuxMirrorTarget, [TmuxAttachedClient]) -> OtherClientsChoice = askAboutOtherClients
+    ) -> OtherClientsGate {
+        { [weak session, weak store] target in
+            guard let session, let store else { return false }
+            let binding = target.binding
+            let found = await findClientsDetachingLimpidPanes(
+                tmuxPath: tmuxPath,
+                binding: binding,
+                ownControlPIDs: store.ownControlPIDs,
+                limpidTTYs: limpidTTYs ?? paneTTYs(session: session, registry: registry)
+            )
+            guard !found.otherApps.isEmpty else { return true }
+            switch confirm(target, found.otherApps) {
+            case .cancel:
+                return false
+            case .openWithoutDetaching:
+                return true
+            case .detachAndOpen:
+                await detach(found.otherApps, tmuxPath: tmuxPath, socketPath: binding.socketPath)
+                return true
+            }
+        }
+    }
 
     /// The alert behind `openFromPalette`'s `confirm`.
     static func askAboutOtherClients(_ target: TmuxMirrorTarget, _: [TmuxAttachedClient]) -> OtherClientsChoice {

@@ -163,6 +163,16 @@
         }
       }
     },
+    "Reconnect to tmux": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux に再接続"
+          }
+        }
+      }
+    },
     "Sending approval": {
       "localizations": {
         "en": {

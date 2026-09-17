@@ -28,6 +28,29 @@ final class TmuxConnectionStore {
     struct Key: Hashable {
         let socketPath: String
         let sessionID: String
+
+        init(socketPath: String, sessionID: String) {
+            self.socketPath = socketPath
+            self.sessionID = sessionID
+        }
+
+        init(_ binding: TmuxBinding) {
+            self.init(socketPath: binding.socketPath, sessionID: binding.sessionID)
+        }
+    }
+
+    /// What a connection that tmux never attached says about its tabs.
+    /// Chosen by whoever asks for the connection, because the same refusal
+    /// means different things to a tab that has never shown the session
+    /// and to one that has.
+    private enum AttachRefusal {
+        /// The tabs were opened for this attach and show nothing, so they
+        /// close (`attachFailed`).
+        case closesTabs
+        /// The tabs show what an earlier connection drew. A refusal alone
+        /// does not say the session is gone, so the server is asked, as it
+        /// is after a connection that did attach (stage 11 decision 9).
+        case checksSession
     }
 
     /// Absolute path of the tmux executable, or `nil` when none is
@@ -112,9 +135,23 @@ final class TmuxConnectionStore {
     /// server on the same socket, and a new tab must not inherit a client
     /// that will never deliver. The ended one is only forgotten, not
     /// stopped. The mirrors of tabs that lost it still hold it and its
-    /// sinks, and they release them when their tabs close.
+    /// sinks, and they release them when their tabs close or are
+    /// reconnected.
     func connection(for binding: TmuxBinding) throws -> TmuxServerConnection {
-        let key = Key(socketPath: binding.socketPath, sessionID: binding.sessionID)
+        try connection(for: binding, refusal: .closesTabs)
+    }
+
+    /// The connection for tabs that lost `binding`'s session and are being
+    /// connected to it again, after the server was confirmed to be the one
+    /// they showed. A connection that still delivers is shared, as
+    /// `connection(for:)` shares it; a new one does not close its tabs if
+    /// tmux refuses the attach.
+    func connectionForReconnect(to binding: TmuxBinding) throws -> TmuxServerConnection {
+        try connection(for: binding, refusal: .checksSession)
+    }
+
+    private func connection(for binding: TmuxBinding, refusal: AttachRefusal) throws -> TmuxServerConnection {
+        let key = Key(binding)
         if let existing = connections[key] {
             guard case .exited = existing.state else { return existing }
             connections.removeValue(forKey: key)
@@ -132,7 +169,7 @@ final class TmuxConnectionStore {
         }
         connection.onStateChange = { [weak self, weak connection] state in
             guard let self, let connection, case .exited = state else { return }
-            connectionEnded(connection)
+            connectionEnded(connection, refusal: refusal)
         }
         connection.terminalColors = terminalColors
         try connection.start()
@@ -221,7 +258,7 @@ final class TmuxConnectionStore {
     /// connection that still delivers. A tmux pane feeds exactly one sink,
     /// so a second tab on the same window is never opened (design §4).
     func liveMirror(showing windowID: String, of binding: TmuxBinding) -> TmuxWindowMirror? {
-        let key = Key(socketPath: binding.socketPath, sessionID: binding.sessionID)
+        let key = Key(binding)
         return mirrors.values.first {
             $0.connectionState == .connected && Self.key(of: $0) == key && $0.windowID == windowID
         }
@@ -233,10 +270,73 @@ final class TmuxConnectionStore {
         Set(connections.values.compactMap(\.clientPID))
     }
 
+    /// Make `mirror` the one behind its tab. A mirror the tab had before,
+    /// one that lost its connection, is stopped first: its sinks are
+    /// closed and whatever they still held is dropped, and from here on
+    /// only `mirror` is matched by identity, so a late reply to the old
+    /// one reaches nobody. The leaves' channels stay as they are, so the
+    /// surfaces keep their screens and scrollback for `mirror` to feed.
     func register(_ mirror: TmuxWindowMirror) {
+        if let previous = mirrors[mirror.tabID], previous !== mirror {
+            previous.stop()
+        }
         mirrors[mirror.tabID] = mirror
         tabConnections[mirror.tabID] = mirror.connectionState == .connected ? .live : .disconnected
         gateOutput(for: Self.key(of: mirror))
+    }
+
+    // MARK: - Reconnect
+
+    /// Whether tab `tabID` can be connected to its session again: its
+    /// connection ended, or its server did not answer, or it is a mirror
+    /// tab that never had a mirror in this run (restored, or reopened).
+    /// A tab on its way, a live one, and one whose server was replaced
+    /// cannot.
+    func canReconnect(tabID: UUID) -> Bool {
+        switch tabConnections[tabID] {
+        case .disconnected, .unreachable:
+            true
+        case nil:
+            mirrors[tabID] == nil
+        case .connecting, .live, .serverReplaced:
+            false
+        }
+    }
+
+    /// Record how tab `tabID` stands while a reconnect decides, or when it
+    /// has decided without a mirror to register. `nil` forgets the tab's
+    /// state, as a tab that never had one.
+    func setTabConnection(_ state: TmuxTabConnection?, tabID: UUID) {
+        tabConnections[tabID] = state
+    }
+
+    /// Close the tabs whose window the session no longer has, once the
+    /// reconnected client answers. The listing runs after the attach, so it
+    /// describes the session the mirrors now show. A mirror that has been
+    /// replaced or lost its connection meanwhile is left alone.
+    func closeMirrorsOfMissingWindows(_ started: [TmuxWindowMirror], on connection: TmuxServerConnection) {
+        guard !started.isEmpty else { return }
+        let target = TmuxProtocol.quote(connection.target.sessionID)
+        connection.send("list-windows -t \(target) -F '#{window_id}'") { [weak self] lines, isError in
+            guard let self, !isError else { return }
+            let present = Set(lines)
+            for mirror in started where !present.contains(mirror.windowID) {
+                guard mirrors[mirror.tabID] === mirror, mirror.connectionState == .connected else { continue }
+                mirror.closeTab()
+                onNotice?(Self.windowClosedNotice(name: "\(mirror.sessionName):\(mirror.windowName)"))
+            }
+        }
+    }
+
+    /// What the user reads when tmux closed a mirrored window. `name` is
+    /// `session:window`.
+    static func windowClosedNotice(name: String) -> String {
+        String(localized: "The tmux window “\(name)” was closed")
+    }
+
+    /// What the user reads when tmux ended a mirrored session.
+    static func sessionEndedNotice(sessionName: String) -> String {
+        String(localized: "The tmux session “\(sessionName)” ended")
     }
 
     /// Drop mirrors whose tab is gone, then connections no mirror uses,
@@ -331,8 +431,7 @@ final class TmuxConnectionStore {
         mirror.connection.send("display-message -p ''") { [weak self, weak mirror] _, _ in
             guard let self, let mirror, mirrors[mirror.tabID] === mirror, mirror.connectionState == .connected else { return }
             mirror.closeTab()
-            let name = "\(mirror.sessionName):\(mirror.windowName)"
-            onNotice?(String(localized: "The tmux window “\(name)” was closed"))
+            onNotice?(Self.windowClosedNotice(name: "\(mirror.sessionName):\(mirror.windowName)"))
         }
     }
 
@@ -354,18 +453,20 @@ final class TmuxConnectionStore {
     /// say. A connection no mirror uses ended because we stopped it, after
     /// its tabs had already gone, and needs nothing more.
     ///
-    /// A connection tmux never attached did not lose a session, so it
-    /// skips the session check: a session that was never reached cannot
-    /// be reported as ended, and one that exists under another id would
-    /// leave the tabs disconnected with nothing ever shown in them.
-    private func connectionEnded(_ connection: TmuxServerConnection) {
+    /// A connection tmux never attached for newly opened tabs did not lose
+    /// a session, so it skips the session check: a session that was never
+    /// reached cannot be reported as ended, and one that exists under
+    /// another id would leave the tabs disconnected with nothing ever shown
+    /// in them. Tabs being reconnected already show the session, and go
+    /// through the check either way (`AttachRefusal`).
+    private func connectionEnded(_ connection: TmuxServerConnection, refusal: AttachRefusal) {
         let affected = mirrors.values.filter { $0.connection === connection }
         for mirror in affected {
             mirror.connectionEnded()
             tabConnections[mirror.tabID] = .disconnected
         }
         guard !affected.isEmpty else { return }
-        guard connection.hasAttached else {
+        if !connection.hasAttached, refusal == .closesTabs {
             attachFailed(affected, connection: connection)
             return
         }
@@ -390,12 +491,12 @@ final class TmuxConnectionStore {
         for mirror in affected {
             mirror.closeTab()
         }
-        onNotice?(String(localized: "The tmux session “\(first.sessionName)” ended"))
+        onNotice?(Self.sessionEndedNotice(sessionName: first.sessionName))
     }
 
     /// The tabs waiting on a connection tmux refused close, with one
-    /// notice: they never showed anything, and a mirror has no reconnect
-    /// that could fill them later. They are not kept for reopening, which
+    /// notice: they never showed anything, so a reconnect would have no
+    /// screen to keep for them. They are not kept for reopening, which
     /// would only repeat the refusal. tmux states its reason in the attach
     /// block's `%error`; a client that could not reach the server at all
     /// ends without one.

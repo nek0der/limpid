@@ -92,6 +92,14 @@ struct PaneCommands: Commands {
             .limpidShortcut(.previousTab, in: state.settingsStore)
             .disabled(state.session.tabs(in: state.session.activeContainerID).count <= 1)
 
+            Divider()
+            Button {
+                reconnectActiveMirror()
+            } label: {
+                Label("Reconnect to tmux", systemImage: "arrow.clockwise")
+            }
+            .disabled(!canReconnectActiveMirror)
+
             // Font size lives here rather than in libghostty's keybind table
             // so Limpid decides which surfaces the change applies to; a
             // mirror tab must keep one cell size across all of its panes.
@@ -106,6 +114,33 @@ struct PaneCommands: Commands {
     /// which disables the same items an unsupported verb would.
     private var capabilities: TabCapabilities? {
         state.session.activeTab?.capabilities
+    }
+
+    /// Enabled for a mirror tab whose connection ended or whose server did
+    /// not answer; the store says which tabs those are.
+    private var canReconnectActiveMirror: Bool {
+        guard let tab = state.session.activeTab, TmuxMirrorActions.mirrorRef(of: tab) != nil else { return false }
+        return state.tmuxStore.canReconnect(tabID: tab.id)
+    }
+
+    /// Asks about other apps' clients before attaching, as opening from the
+    /// palette does: the user chose to connect now.
+    private func reconnectActiveMirror() {
+        guard let tabID = state.session.activeTabID, let tmuxPath = state.tmuxStore.tmuxExecutable else { return }
+        TmuxMirrorActions.reconnect(
+            tabID: tabID,
+            session: state.session,
+            store: state.tmuxStore,
+            registry: state.registry,
+            secureInput: state.registry.secureInputManager,
+            toastCenter: state.toastCenter,
+            otherClients: TmuxMirrorActions.otherClientsGate(
+                tmuxPath: tmuxPath,
+                session: state.session,
+                store: state.tmuxStore,
+                registry: state.registry
+            )
+        )
     }
 
     private var isSplit: Bool {
