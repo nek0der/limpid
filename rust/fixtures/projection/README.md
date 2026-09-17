@@ -25,6 +25,8 @@ projection/<case>/
   agent-states/*.state.json      generated (Claude keeps the legacy directory names)
   codex-agent-states/*.state.json
   sessions/*.json                generated resume hints
+  sessions/tmux-hosted/*.json    generated resume hints of runs Limpid hosts in tmux,
+                                 kept where a build from before mirror tabs does not read them
   codex-sessions/*.json
   cwd-events/*.cwd.json          generated
   worktree-events/*.json         hand-written; the intercept creates real worktrees, so it is not replayed

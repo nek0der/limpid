@@ -87,7 +87,17 @@ impl Scratch {
     }
 
     fn hint(&self) -> Option<Value> {
-        let bytes = fs::read(self.root.join("sessions").join(format!("{PANE}.json"))).ok()?;
+        self.hint_in("sessions")
+    }
+
+    /// The hint of a run Limpid hosts in tmux, which is kept where a build
+    /// from before mirror tabs does not look for it.
+    fn hosted_hint(&self) -> Option<Value> {
+        self.hint_in("sessions/tmux-hosted")
+    }
+
+    fn hint_in(&self, directory: &str) -> Option<Value> {
+        let bytes = fs::read(self.root.join(directory).join(format!("{PANE}.json"))).ok()?;
         Some(serde_json::from_slice(&bytes).expect("hint decodes"))
     }
 
@@ -254,7 +264,11 @@ fn a_run_limpid_hosts_in_tmux_writes_the_hint_and_drops_it_at_exit() {
     for payload in &payloads[..2] {
         assert_eq!(run_hook("claude", payload, &runtime), HookOutcome::Applied);
     }
-    let hint = scratch.hint().expect("hint");
+    let hint = scratch.hosted_hint().expect("hint");
+    // Not beside the native hints: a build from before mirror tabs lists that
+    // directory without descending, and a hint it could read would have it
+    // resume, in a plain shell, the conversation the agent still holds here.
+    assert_eq!(scratch.hint(), None, "the hosted hint is kept apart");
     assert_eq!(hint["paneId"], PANE);
     assert_eq!(hint["runId"], RUN);
     assert_eq!(hint["sessionId"], "00000000-0000-4000-8000-000000000001");
@@ -280,7 +294,11 @@ fn a_run_limpid_hosts_in_tmux_writes_the_hint_and_drops_it_at_exit() {
     for payload in &payloads[2..] {
         assert_eq!(run_hook("claude", payload, &runtime), HookOutcome::Applied);
     }
-    assert_eq!(scratch.hint(), None, "the user's exit drops the hint");
+    assert_eq!(
+        scratch.hosted_hint(),
+        None,
+        "the user's exit drops the hint"
+    );
     assert_eq!(scratch.log(), "");
 }
 

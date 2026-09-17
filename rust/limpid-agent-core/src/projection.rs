@@ -15,9 +15,9 @@
 use crate::title::{TitleCandidates, resolve_title};
 use limpid_agent_model::{
     AcceptedRun, AttachmentResolution, AttentionMarks, Badge, Capability, Command, CommandOp,
-    EpisodeStamp, Instants, Precondition, Projection, ProjectionInput, ProjectionState,
-    ProviderDescriptor, ProviderId, RecordFile, RunRecord, RunState, RuntimePresentation,
-    SessionInfo, Target, VIEWED_FINISHED_RETENTION_SECS, seconds_between,
+    EpisodeStamp, Instants, PanePresence, Precondition, Projection, ProjectionInput,
+    ProjectionState, ProviderDescriptor, ProviderId, RecordFile, RunRecord, RunState,
+    RuntimePresentation, SessionInfo, Target, VIEWED_FINISHED_RETENTION_SECS, seconds_between,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -68,7 +68,7 @@ pub fn project(
     ));
     commands.extend(seen_where_the_user_is_looking(&runtimes, input));
     let resume_candidates = resume_candidates(input, &sessions, &state.accepted);
-    let ended_tmux_panes = ended_tmux_panes(&state.accepted);
+    let ended_tmux_panes = ended_tmux_panes(&state.accepted, input);
 
     state.episodes = runtimes
         .iter()
@@ -194,7 +194,7 @@ fn build_runtimes(
             let event_token = event_token(&run.record);
             let episode_token = episode_token(state, &id, &run.record);
             RuntimePresentation {
-                badge: badge_from(&run.record, capabilities),
+                badge: badge_from(&run.record, capabilities, &input.presence),
                 provider: run.provider.clone(),
                 run_id: run.record.run_id.clone(),
                 revision: run.record.revision,
@@ -278,15 +278,25 @@ fn episode_token(state: &ProjectionState, id: &str, record: &RunRecord) -> Strin
 /// Turns a record into what a badge shows. The session title fields only reach
 /// the badge for providers that have session titles; carrying them for one that
 /// does not would let a stale value name a tab.
-fn badge_from(record: &RunRecord, descriptor: Option<&ProviderDescriptor>) -> Badge {
+fn badge_from(
+    record: &RunRecord,
+    descriptor: Option<&ProviderDescriptor>,
+    presence: &PanePresence,
+) -> Badge {
     let titled = descriptor.is_some_and(|it| it.has(Capability::SessionTitle));
     let present = |value: &Option<String>| value.clone().filter(|it| !it.is_empty());
+    // Once the host has said the endpoint is gone, the run is not in tmux any
+    // more, whatever its record still says. The tab that was showing it has
+    // become an ordinary one, and a badge that kept the flag would go on
+    // marking it as running in tmux for the rest of the launch.
+    let gone = crate::lifecycle::endpoint_key(record)
+        .is_some_and(|key| presence.gone_endpoints.contains(&key));
     Badge {
         state: record.state,
         detail: present(&record.detail),
         run_started_at: present(&record.run_started_at),
         context_tokens: record.context_tokens,
-        is_tmux_hosted: record.is_tmux_hosted,
+        is_tmux_hosted: record.is_tmux_hosted.map(|hosted| hosted && !gone),
         updated_at: record.updated_at.clone(),
         last_prompt: present(&record.last_prompt),
         first_prompt: present(&record.first_prompt),
@@ -588,7 +598,10 @@ fn surviving_marks(marks: &AttentionMarks, runtimes: &[RuntimePresentation]) -> 
 /// Read by the host when tmux drops the window showing an agent, to tell a
 /// session the agent ended from a server that went away. The record is the
 /// only thing that can say which, and reading records is the rules' job.
-fn ended_tmux_panes(accepted: &BTreeMap<String, AcceptedRun>) -> BTreeSet<Uuid> {
+fn ended_tmux_panes(
+    accepted: &BTreeMap<String, AcceptedRun>,
+    input: &ProjectionInput,
+) -> BTreeSet<Uuid> {
     let mut ended: BTreeSet<Uuid> = BTreeSet::new();
     let mut going: BTreeSet<Uuid> = BTreeSet::new();
     for run in accepted.values() {
@@ -598,7 +611,7 @@ fn ended_tmux_panes(accepted: &BTreeMap<String, AcceptedRun>) -> BTreeSet<Uuid> 
         let Ok(pane) = Uuid::parse_str(&run.record.pane_id) else {
             continue;
         };
-        if crate::lifecycle::has_session_ended(&run.record) {
+        if crate::lifecycle::has_session_ended(&run.record, input.providers.get(&run.provider)) {
             ended.insert(pane);
         } else {
             going.insert(pane);
@@ -626,7 +639,13 @@ fn resume_candidates(
 ) -> BTreeMap<Uuid, BTreeSet<ProviderId>> {
     let held_in_tmux: BTreeSet<(&ProviderId, &str)> = accepted
         .values()
-        .filter(|run| crate::lifecycle::is_live_tmux_run(&run.record, &input.presence))
+        .filter(|run| {
+            crate::lifecycle::is_live_tmux_run(
+                &run.record,
+                input.providers.get(&run.provider),
+                &input.presence,
+            )
+        })
         .filter_map(|run| Some((&run.provider, run.record.session_id.as_deref()?)))
         .collect();
     let mut candidates: BTreeMap<Uuid, BTreeSet<ProviderId>> = BTreeMap::new();
@@ -732,6 +751,7 @@ mod tests {
             cwd_events_directory: None,
             process_names: Vec::new(),
             session_end_drop_reasons: Vec::new(),
+            session_end_restart_reasons: Vec::new(),
         }
     }
 
@@ -939,6 +959,7 @@ mod tests {
                 .expect("record");
         record.session_id = Some("S".to_owned());
         record.tmux_socket_path = Some("/tmp/socket".to_owned());
+        record.tmux_pane_id = Some("%3".to_owned());
         record.last_hook_event = Some("session_started".to_owned());
         let accepted = |record: &RunRecord| {
             [(
@@ -1053,26 +1074,91 @@ mod tests {
                 .collect::<BTreeMap<_, _>>()
         };
 
-        assert!(ended_tmux_panes(&accepted(vec![(RUN, record.clone())])).is_empty());
+        let mut descriptor = descriptor();
+        descriptor.session_end_restart_reasons = vec!["clear".to_owned()];
+        let input = ProjectionInput {
+            providers: [(claude(), descriptor)].into_iter().collect(),
+            ..ProjectionInput::default()
+        };
+
+        assert!(ended_tmux_panes(&accepted(vec![(RUN, record.clone())]), &input).is_empty());
 
         let mut ended = record.clone();
         ended.last_hook_event = Some("SessionEnd".to_owned());
         assert_eq!(
-            ended_tmux_panes(&accepted(vec![(RUN, ended.clone())])),
+            ended_tmux_panes(&accepted(vec![(RUN, ended.clone())]), &input),
             [pane].into_iter().collect::<BTreeSet<_>>()
         );
+
+        // `/clear` ends the session and keeps the agent, so the tab it is
+        // running in must not be named as one whose agent has gone.
+        let mut cleared = ended.clone();
+        cleared.session_end_reason = Some("clear".to_owned());
+        assert!(ended_tmux_panes(&accepted(vec![(RUN, cleared)]), &input).is_empty());
 
         // A second agent started in the same leaf is still going there.
         let second = "BBBBBBBB-2222-4222-8222-BBBBBBBBBBB2";
         assert!(
-            ended_tmux_panes(&accepted(vec![(RUN, ended), (second, record.clone())])).is_empty()
+            ended_tmux_panes(
+                &accepted(vec![(RUN, ended), (second, record.clone())]),
+                &input
+            )
+            .is_empty()
         );
 
         // A run outside tmux ends by its pid, and this is not about it.
         let mut native = record;
         native.tmux_socket_path = None;
         native.last_hook_event = Some("session_ended".to_owned());
-        assert!(ended_tmux_panes(&accepted(vec![(RUN, native)])).is_empty());
+        assert!(ended_tmux_panes(&accepted(vec![(RUN, native)]), &input).is_empty());
+    }
+
+    /// The tab of a run whose server went away becomes an ordinary terminal,
+    /// and its badge has to stop saying the run is in tmux with it. The
+    /// record still says it is — nothing ran to write otherwise — so the
+    /// host's evidence is what clears the flag.
+    #[test]
+    fn a_badge_stops_saying_tmux_once_the_endpoint_is_gone() {
+        let mut record =
+            RunRecord::decode(record(Some(1), "2026-09-14T12:00:00Z", "running").as_bytes())
+                .expect("record");
+        record.is_tmux_hosted = Some(true);
+        record.tmux_socket_path = Some("/tmp/socket".to_owned());
+        record.tmux_pane_id = Some("%3".to_owned());
+        let presence = |gone: &[&str]| PanePresence {
+            gone_endpoints: gone.iter().map(|it| (*it).to_owned()).collect(),
+            ..PanePresence::default()
+        };
+        assert_eq!(
+            badge_from(&record, None, &presence(&[])).is_tmux_hosted,
+            Some(true)
+        );
+        assert_eq!(
+            badge_from(&record, None, &presence(&["/tmp/socket|%9"])).is_tmux_hosted,
+            Some(true)
+        );
+        assert_eq!(
+            badge_from(&record, None, &presence(&["/tmp/socket|%3"])).is_tmux_hosted,
+            Some(false)
+        );
+    }
+
+    /// A record that names a server but no pane cannot be told its endpoint
+    /// is gone, so reading it as live would hold its conversation out of
+    /// resume for the rest of the install.
+    #[test]
+    fn a_tmux_run_without_a_pane_is_not_live() {
+        let mut record =
+            RunRecord::decode(record(Some(1), "2026-09-14T12:00:00Z", "running").as_bytes())
+                .expect("record");
+        record.tmux_socket_path = Some("/tmp/socket".to_owned());
+        record.tmux_pane_id = Some("%3".to_owned());
+        let presence = PanePresence::default();
+        assert!(crate::lifecycle::is_live_tmux_run(&record, None, &presence));
+        record.tmux_pane_id = None;
+        assert!(!crate::lifecycle::is_live_tmux_run(
+            &record, None, &presence
+        ));
     }
 
     #[test]

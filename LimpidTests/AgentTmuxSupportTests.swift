@@ -16,7 +16,11 @@ struct AgentTmuxSupportTests {
     }
 
     /// The variables a pane gets for `support` with the setting on.
-    private static func environment(for support: AgentTmuxSupport, isRequested: Bool = true) -> [String: String] {
+    private static func environment(
+        for support: AgentTmuxSupport,
+        isRequested: Bool = true,
+        intake: AgentMirrorIntake = .watching(directory: URL(fileURLWithPath: "/private/tmp/requests", isDirectory: true))
+    ) -> [String: String] {
         PaneShellEnvironment.variables(
             paneID: nil,
             shimDirectories: [],
@@ -25,6 +29,7 @@ struct AgentTmuxSupportTests {
             agentTmux: PaneShellEnvironment.agentTmuxHost(
                 hostsAgentsInTmux: isRequested,
                 support: support,
+                intake: intake,
                 socketName: "limpid-test"
             )
         )
@@ -76,6 +81,18 @@ struct AgentTmuxSupportTests {
         let env = Self.environment(for: .pending)
         #expect(env["LIMPID_AGENT_TMUX"] == nil)
         #expect(env["LIMPID_AGENT_TMUX_SOCKET"] == nil)
+    }
+
+    /// The same rule for the other half of the promise: a tmux a mirror
+    /// could attach to is no use while nothing is reading the requests. Demo
+    /// mode is the launch that reaches this, and an agent started there has
+    /// to run in the pane rather than ask for a tab nobody opens.
+    @Test(arguments: [AgentMirrorIntake.pending, .unavailable])
+    func withoutAnIntake_injectsNothing(intake: AgentMirrorIntake) {
+        let env = Self.environment(for: Self.version("tmux 3.5"), intake: intake)
+        #expect(env["LIMPID_AGENT_TMUX"] == nil)
+        #expect(env["LIMPID_AGENT_TMUX_SOCKET"] == nil)
+        #expect(env[AgentMirrorRequest.directoryVariable] == nil)
     }
 
     @Test func settingOff_injectsNothingEvenWhenSupported() {

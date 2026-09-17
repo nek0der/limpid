@@ -222,6 +222,10 @@ struct TmuxBindingMigrationTests {
         #expect(migrated.kind == .tmuxMirror)
         #expect(migrated.mirrorOrigin == .agent)
         #expect(migrated.mirroredAgent == .claude)
+        // Named as a tab opened from a request is. Until the conversion the
+        // tab was showing a shell that typed `tmux attach`, so its title was
+        // that shell's.
+        #expect(migrated.title == AgentProviderRegistry.displayName(for: .claude))
         #expect(migrated.splitTree.allLeafIDs() == [paneID])
         #expect(migrated.ioSource(for: paneID) == .tmux(TmuxPaneRef(
             binding: binding(socketPath: Sockets.agent),

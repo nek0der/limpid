@@ -533,7 +533,8 @@ struct PaneAreaView: View {
             session: session,
             agentTmux: PaneShellEnvironment.agentTmuxHost(
                 hostsAgentsInTmux: settings.settings.advanced.hostsAgentsInTmux,
-                support: settings.agentTmuxSupport
+                support: settings.agentTmuxSupport,
+                intake: settings.agentMirrorIntake
             ),
             tmuxStore: tmuxStore
         )

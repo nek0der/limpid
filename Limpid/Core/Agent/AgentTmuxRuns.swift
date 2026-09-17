@@ -28,6 +28,14 @@ final class AgentTmuxRuns {
     /// window the answer is on disk — while the pass that would have read it
     /// is only scheduled by a file event that may not have arrived. A pass
     /// re-reads everything and is safe to ask for at any moment.
+    ///
+    /// The pass runs inside the caller, which is a tmux notification handler,
+    /// and it writes to the session — every tab's badges and titles. That is
+    /// the same re-entry every hook file event already makes on the main
+    /// actor, and it reaches this store only through `session.tabs` changing,
+    /// which releases connections no mirror uses. The tab being asked about
+    /// is still a mirror at this point, so its connection is not among them,
+    /// and the caller decides what becomes of it after the answer.
     func hasEndedRun(inPane paneID: UUID) -> Bool {
         guard let projection else { return false }
         if projection.endedTmuxPanes.contains(paneID) {

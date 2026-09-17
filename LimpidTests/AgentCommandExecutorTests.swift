@@ -242,6 +242,66 @@ struct AgentCommandExecutorTests {
         }
     }
 
+    /// The hint of a run Limpid hosts in tmux is kept in a subdirectory an
+    /// older build does not list, and it is the same store: one sweep, one
+    /// keep set. Without this the hosted hints would be the only files
+    /// nothing ever removed.
+    @Test("a pane store sweeps the hosted hints with the plain ones")
+    func cleanupPaneStore_reachesTheHostedHints() throws {
+        try withTempDir { root in
+            let fixture = try fixture(in: root)
+            let hosted = fixture.sessions.appendingPathComponent("tmux-hosted", isDirectory: true)
+            try FileManager.default.createDirectory(at: hosted, withIntermediateDirectories: true)
+            let closed = UUID().uuidString
+            for pane in [Self.pane, closed] {
+                try Data("{}".utf8).write(to: hosted.appendingPathComponent("\(pane).json"))
+            }
+
+            let json = """
+            [{
+              "op": {"op": "cleanupPaneStore", "keep": ["\(Self.pane)"], "max": 200},
+              "target": {"target": "paneStore", "provider": "claude", "store": "sessions"},
+              "expect": {"expect": "none"},
+              "onMismatch": "continue"
+            }]
+            """
+            try fixture.executor.run(commands(json))
+
+            #expect(FileManager.default.fileExists(atPath: hosted.appendingPathComponent("\(Self.pane).json").path))
+            #expect(!FileManager.default.fileExists(atPath: hosted.appendingPathComponent("\(closed).json").path))
+        }
+    }
+
+    /// A run that has both — a conversation that ran natively before it was
+    /// reopened in tmux — is addressed at the hosted hint, which it wrote
+    /// last.
+    @Test("a hint command addresses the hosted file when there is one")
+    func sessionHint_prefersTheHostedFile() throws {
+        try withTempDir { root in
+            let fixture = try fixture(in: root)
+            let hosted = fixture.sessions.appendingPathComponent("tmux-hosted", isDirectory: true)
+            try FileManager.default.createDirectory(at: hosted, withIntermediateDirectories: true)
+            try writeHint(fixture, runID: Self.run)
+            let hostedFile = hosted.appendingPathComponent("\(Self.pane).json")
+            try JSONSerialization
+                .data(withJSONObject: ["schemaVersion": 1, "paneId": Self.pane, "runId": Self.run, "sessionId": "S"])
+                .write(to: hostedFile)
+
+            let json = """
+            [{
+              "op": {"op": "delete"},
+              "target": {"target": "sessionHint", "provider": "claude", "pane": "\(Self.pane)"},
+              "expect": {"expect": "none"},
+              "onMismatch": "continue"
+            }]
+            """
+            try fixture.executor.run(commands(json))
+
+            #expect(!FileManager.default.fileExists(atPath: hostedFile.path))
+            #expect(FileManager.default.fileExists(atPath: fixture.sessions.appendingPathComponent("\(Self.pane).json").path))
+        }
+    }
+
     @Test("an operation this build does not know is skipped, not guessed at")
     func unknownOperation_isSkipped() throws {
         try withTempDir { root in

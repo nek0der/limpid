@@ -96,9 +96,14 @@ fn pane_store_keep(
     keep.extend(
         accepted
             .values()
-            .map(|run| &run.record)
-            .filter(|record| crate::lifecycle::is_live_tmux_run(record, &input.presence))
-            .filter_map(|record| Uuid::parse_str(&record.pane_id).ok()),
+            .filter(|run| {
+                crate::lifecycle::is_live_tmux_run(
+                    &run.record,
+                    input.providers.get(&run.provider),
+                    &input.presence,
+                )
+            })
+            .filter_map(|run| Uuid::parse_str(&run.record.pane_id).ok()),
     );
     keep
 }
@@ -418,6 +423,7 @@ mod tests {
             cwd_events_directory: Some("cwd-events".to_owned()),
             process_names: Vec::new(),
             session_end_drop_reasons: Vec::new(),
+            session_end_restart_reasons: Vec::new(),
         };
         input.providers.insert(claude(), descriptor.clone());
         let commands = sweep(&BTreeMap::new(), &input, &BTreeSet::new(), &now());
@@ -458,6 +464,7 @@ mod tests {
             cwd_events_directory: Some("cwd-events".to_owned()),
             process_names: Vec::new(),
             session_end_drop_reasons: Vec::new(),
+            session_end_restart_reasons: Vec::new(),
         };
         descriptor.capabilities.insert(Capability::Resume);
         input.providers.insert(claude(), descriptor);
@@ -469,6 +476,7 @@ mod tests {
 
         let mut hosted = run(Some(RUN), None);
         hosted.record.tmux_socket_path = Some("/tmp/socket".to_owned());
+        hosted.record.tmux_pane_id = Some("%3".to_owned());
         hosted.record.last_hook_event = Some("session_started".to_owned());
         let entries = records(vec![(RUN, hosted.clone())]);
         let commands = sweep(&entries, &input, &alive, &now());
@@ -487,8 +495,7 @@ mod tests {
         // A server that went away ends the run as surely as a session-end
         // hook does, and the host is what knows it, so the files of a run at
         // a gone endpoint are kept only while its pane is open.
-        let mut killed = hosted.clone();
-        killed.record.tmux_pane_id = Some("%3".to_owned());
+        let killed = hosted.clone();
         let mut gone = input.clone();
         gone.presence.gone_endpoints = ["/tmp/socket|%3".to_owned()].into_iter().collect();
         let entries = records(vec![(RUN, killed.clone())]);

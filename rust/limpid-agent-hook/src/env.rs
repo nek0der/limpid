@@ -21,11 +21,32 @@ pub struct ResolvedDirectories {
 }
 
 impl ResolvedDirectories {
+    /// Where the resume hint of a run Limpid hosts in tmux is kept: a
+    /// subdirectory of the session directory, because a build from before
+    /// mirror tabs existed lists that directory without descending into it
+    /// (`SideWrite::SessionHint`). Such a build therefore never offers the
+    /// conversation the agent is still having in tmux.
+    pub const HOSTED_SESSION_DIRECTORY: &'static str = "tmux-hosted";
+
+    /// The directory a hint belongs in, by whether Limpid hosts the run.
+    #[must_use]
+    pub fn session_hints(&self, hosted_in_tmux: bool) -> PathBuf {
+        if hosted_in_tmux {
+            self.session.join(Self::HOSTED_SESSION_DIRECTORY)
+        } else {
+            self.session.clone()
+        }
+    }
+
     /// Every directory that must exist before writing.
     #[must_use]
-    pub fn all(&self) -> Vec<&PathBuf> {
-        let mut all = vec![&self.state, &self.session];
-        all.extend(self.cwd_events.as_ref());
+    pub fn all(&self) -> Vec<PathBuf> {
+        let mut all = vec![
+            self.state.clone(),
+            self.session.clone(),
+            self.session_hints(true),
+        ];
+        all.extend(self.cwd_events.clone());
         all
     }
 }

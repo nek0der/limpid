@@ -49,9 +49,12 @@ Set by Limpid before spawning the pty:
 |---|---|
 | `PATH` | Original `PATH` with this directory prepended |
 | `ZDOTDIR` | Redirected to `zdotdir/` so the `PATH` edit survives the user's rc |
-| `LIMPID_PANE_ID` | UUID of the launching split-tree leaf; not current ownership inside tmux |
+| `LIMPID_PANE_ID` | UUID of the split-tree leaf the agent belongs to. For a hosted launch the shim replaces it with the id of the mirror tab's leaf before starting the agent, and carries the launching pane in the request instead |
+| `LIMPID_AGENT_TMUX` | The tmux binary a hosted agent runs under. Set only when the user asked for hosting, the tmux found at launch is new enough for a mirror, and a watcher is reading the request directory |
+| `LIMPID_AGENT_TMUX_SOCKET` | `tmux -L` name of this build's agent server |
+| `LIMPID_AGENT_MIRROR_REQUESTS_DIR` | Where the shim writes the request that asks Limpid to open a tab on the session it just created (`AgentMirrorRequest`) |
 | `LIMPID_AGENT_RUN_ID` | UUID of this Claude invocation; lifecycle-state filename key |
-| `LIMPID_AGENT_TMUX_HOST_MODE` | `limpidHosted` for automatic hosting, `manual` inside user tmux |
+| `LIMPID_AGENT_TMUX_HOST_MODE` | Exported by the shim to the agent: `limpidHosted` when Limpid started it in a detached session of its own, `manual` inside the user's tmux |
 | `LIMPID_SHIM_DIR` | This directory, so `zdotdir/.zshrc` can re-prepend it |
 | `LIMPID_CLAUDE_HOOK_NAMESPACE` | Bundle identity used to keep the no-space hook link separate between Dev and Release builds |
 | `LIMPID_AGENT_HOOK_BACKEND` | `rust` (default) runs hooks through the Hook Helper's Rust runtime; `shell` selects the previous receivers (`*.legacy`) for one release; set by `AgentHookBackend` |
@@ -71,8 +74,15 @@ and joins it to the tmux client's outer tty. This lets
 a detached session move to another Limpid pane without moving or overwriting
 the agent record.
 
-Each shim entry mints a new run ID, including nested agent launches. Native
-resume hints are written only outside tmux and include the owning run ID.
+Each shim entry mints a new run ID, including nested agent launches. Resume
+hints include the owning run ID and are written for every run whose pane owns
+its session: one outside tmux, and one Limpid hosts in tmux. A hosted run's
+hint goes in the `tmux-hosted` subdirectory of the session directory, where a
+build from before mirror tabs does not look for it — such a build shows a
+converted tab as a plain shell, and a hint it could read would have it resume
+the conversation the agent is still having in tmux. A run inside the user's
+own tmux writes no hint: there `LIMPID_PANE_ID` names the pane showing a
+client, not the pane that owns the session.
 Records without enough tmux identity remain unresolved instead of attaching
 to the inherited launch pane. Existing pre-upgrade runs may need a new hook
 event before their attachment becomes visible. Manual tmux requires this shim

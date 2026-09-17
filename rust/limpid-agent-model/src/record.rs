@@ -74,6 +74,13 @@ pub struct RunRecord {
     pub updated_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_hook_event: Option<String>,
+    /// The reason the last session end gave, when it gave one. Kept because
+    /// the reason says whether the agent is going or only its conversation
+    /// is (`ProviderDescriptor::session_end_restart_reasons`), and a tab is
+    /// closed on the answer. Cleared by every event that is not a session
+    /// end, so it never outlives the end it describes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_end_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_tokens: Option<u64>,
     /// Decimal process id as the shell wrote it.
@@ -234,6 +241,9 @@ impl From<RunRecordV2> for RunRecord {
             run_started_at: record.run_started_at.filter(|value| !value.is_empty()),
             updated_at: record.updated_at,
             last_hook_event: record.last_hook_event,
+            // Version 2 never wrote one; a session end from such a record
+            // reads as the agent having gone, as it did before.
+            session_end_reason: None,
             context_tokens: record.context_tokens,
             pid: record.pid,
             is_tmux_hosted: record.is_tmux_hosted,

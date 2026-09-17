@@ -180,7 +180,15 @@ struct AgentMirrorEndIntegrationTests {
             #expect(tab.paneSources.isEmpty)
             #expect(tab.mirrorOrigin == .user)
             #expect(tab.mirroredAgent == nil)
-            #expect(harness.notices.isEmpty)
+            // Told, unlike the close above: what the user sees is the
+            // conversation they were reading replaced, in an instant and
+            // with no input of theirs, by a shell starting a resume. The
+            // notice names the agent the tab was opened for.
+            #expect(harness.notices == [
+                TmuxConnectionStore.agentServerGoneNotice(
+                    name: AgentProviderRegistry.displayName(for: .codex)
+                )
+            ])
             #expect(harness.store.mirror(for: tabID) == nil)
             #expect(harness.store.tabConnections[tabID] == nil)
             // The surface that read tmux was let go, so the leaf's next one

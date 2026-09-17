@@ -48,6 +48,10 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
             .into_iter()
             .map(str::to_owned)
             .collect(),
+        // `/clear` ends the conversation and starts another in the same
+        // process: the hint goes, the agent stays. Every other reason above
+        // is Claude on its way out.
+        session_end_restart_reasons: vec!["clear".to_owned()],
     })
 }
 

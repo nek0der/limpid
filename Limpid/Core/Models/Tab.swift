@@ -287,7 +287,10 @@ struct Tab: Codable, Equatable, Identifiable {
             [UUID: PaneIOSource].self,
             forKey: .paneSources
         ) ?? [:]
-        self.mirrorOrigin = try c.decodeIfPresent(MirrorOrigin.self, forKey: .mirrorOrigin) ?? .user
+        // `try?` for the same reason as the provider below: a value that is
+        // not even a string — a snapshot from a build that wrote the origin
+        // differently — costs this tab its origin, not the whole restore.
+        self.mirrorOrigin = (try? c.decodeIfPresent(MirrorOrigin.self, forKey: .mirrorOrigin)) ?? .user
         // `try?`: a provider this build does not know leaves the tab an agent
         // tab without a provider rather than failing the whole snapshot.
         self.mirroredAgent = try? c.decodeIfPresent(AgentKind.self, forKey: .mirroredAgent)

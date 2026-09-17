@@ -5597,6 +5597,16 @@
         }
       }
     },
+    "The tmux server for “%@” is gone. Resuming the agent here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」の tmux サーバーが失われました。このタブでエージェントを再開します。"
+          }
+        }
+      }
+    },
     "The tmux session “%@” ended": {
       "localizations": {
         "ja": {

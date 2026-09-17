@@ -85,6 +85,7 @@ fn descriptors() -> BTreeMap<ProviderId, ProviderDescriptor> {
             cwd_events_directory: Some("cwd-events".to_owned()),
             process_names: vec!["claude".to_owned()],
             session_end_drop_reasons: Vec::new(),
+            session_end_restart_reasons: Vec::new(),
             id: claude,
         },
     );
@@ -108,6 +109,7 @@ fn descriptors() -> BTreeMap<ProviderId, ProviderDescriptor> {
             cwd_events_directory: None,
             process_names: vec!["codex".to_owned()],
             session_end_drop_reasons: Vec::new(),
+            session_end_restart_reasons: Vec::new(),
             id: codex,
         },
     );
@@ -176,6 +178,18 @@ fn build_input(case: &Path) -> (ProjectionInput, Instants) {
     ));
     let mut session_records = read_records(case, "sessions", ".json", &claude);
     session_records.extend(read_records(case, "codex-sessions", ".json", &codex));
+    // The hints of runs Limpid hosts in tmux, which the writer keeps in a
+    // subdirectory an older build does not descend into
+    // (`ResolvedDirectories::HOSTED_SESSION_DIRECTORY`). After the plain ones,
+    // as the host reads them, so a pane that has both is read from the hosted
+    // one.
+    session_records.extend(read_records(case, "sessions/tmux-hosted", ".json", &claude));
+    session_records.extend(read_records(
+        case,
+        "codex-sessions/tmux-hosted",
+        ".json",
+        &codex,
+    ));
     let mut worktree_events = read_worktree_events(case, &claude);
     worktree_events.sort_by(|left, right| left.file_name.cmp(&right.file_name));
 

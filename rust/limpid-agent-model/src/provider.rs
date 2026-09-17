@@ -135,6 +135,17 @@ pub struct ProviderDescriptor {
     /// than in the rules.
     #[serde(default)]
     pub session_end_drop_reasons: Vec<String>,
+    /// The `SessionEnd` reasons the agent process survives, starting a new
+    /// session in place — Claude's `/clear` is the one that matters.
+    ///
+    /// Apart from the drop reasons above because the two answer different
+    /// questions: that one is whether the conversation is over, this one is
+    /// whether the agent is. Only this one may close a mirror tab, and a
+    /// reason listed here means the tab is still showing a running agent.
+    /// Empty for a provider whose session end always means the process is
+    /// leaving, which is how every session end read before this existed.
+    #[serde(default)]
+    pub session_end_restart_reasons: Vec<String>,
 }
 
 impl ProviderDescriptor {

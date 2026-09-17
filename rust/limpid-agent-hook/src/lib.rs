@@ -163,7 +163,7 @@ pub fn run_hook(provider: &str, stdin: &[u8], runtime: &HookRuntime<'_>) -> Hook
         return HookOutcome::NotInLimpid;
     };
     for directory in directories.all() {
-        ensure_user_only_directory(directory);
+        ensure_user_only_directory(&directory);
     }
     if let Some(record_dir) = runtime.env.record_dir() {
         records::record_raw_payload(&record_dir, stdin);
@@ -340,8 +340,14 @@ fn perform_side_write(
     log: &HookLog,
 ) {
     match side {
-        SideWrite::SessionHint { session_id, cwd } => {
-            let path = directories.session.join(format!("{pane_id}.json"));
+        SideWrite::SessionHint {
+            session_id,
+            cwd,
+            hosted_in_tmux,
+        } => {
+            let path = directories
+                .session_hints(*hosted_in_tmux)
+                .join(format!("{pane_id}.json"));
             let body = json!({
                 "schemaVersion": 1,
                 "paneId": pane_id,
@@ -360,11 +366,16 @@ fn perform_side_write(
                 log.line(&format!("session hint lock busy for {}", path.display()));
             }
         }
-        SideWrite::DeleteSessionHint { session_id } => {
+        SideWrite::DeleteSessionHint {
+            session_id,
+            hosted_in_tmux,
+        } => {
             if !drops_session {
                 return;
             }
-            let path = directories.session.join(format!("{pane_id}.json"));
+            let path = directories
+                .session_hints(*hosted_in_tmux)
+                .join(format!("{pane_id}.json"));
             let deleted = with_record_lock(&path, || {
                 if records::hint_is_owned(&path, session_id, run_id, pane_id, &directories.state) {
                     std::fs::remove_file(&path).is_ok()

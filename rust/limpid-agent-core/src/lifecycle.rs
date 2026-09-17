@@ -69,16 +69,40 @@ impl TmuxHostMode {
 /// name and the raw hook name the shell receivers still write.
 const SESSION_ENDED_EVENTS: [&str; 2] = ["session_ended", "SessionEnd"];
 
-/// Whether the record's last hook call ended the session.
+/// Whether the record's last hook call ended the agent.
 ///
 /// For a run in tmux this is the only sign on disk that it is over: its record
-/// carries no pid of ours to ask about, and the sweep never retires it.
+/// carries no pid of ours to ask about, and the sweep never retires it. A tab
+/// is closed on this answer, so it is about the agent and not only about the
+/// conversation: Claude's `/clear` ends a session and keeps running, and
+/// between that end and the start that follows it the tab is still showing a
+/// live agent. The reasons that mean as much are the provider's to name
+/// (`ProviderDescriptor::session_end_restart_reasons`).
+///
+/// A record with no reason — one an older build wrote, or an end that stated
+/// none — reads as the agent having gone, which is how every session end read
+/// before the reason was kept.
 #[must_use]
-pub(crate) fn has_session_ended(record: &RunRecord) -> bool {
-    record
+pub(crate) fn has_session_ended(
+    record: &RunRecord,
+    descriptor: Option<&ProviderDescriptor>,
+) -> bool {
+    if !record
         .last_hook_event
         .as_deref()
         .is_some_and(|event| SESSION_ENDED_EVENTS.contains(&event))
+    {
+        return false;
+    }
+    let Some(reason) = record.session_end_reason.as_deref() else {
+        return true;
+    };
+    !descriptor.is_some_and(|descriptor| {
+        descriptor
+            .session_end_restart_reasons
+            .iter()
+            .any(|it| it == reason)
+    })
 }
 
 /// Whether the record describes a run in tmux whose session is still going.
@@ -91,13 +115,24 @@ pub(crate) fn has_session_ended(record: &RunRecord) -> bool {
 /// ending its session leaves a session-end hook behind; a server that was
 /// killed leaves nothing at all, so the host's evidence that the endpoint is
 /// gone counts as the other. Without it a killed run would hold its
-/// conversation out of resume for good.
+/// conversation out of resume for good, which is also why a record that names
+/// no endpoint is not read as live: nothing could ever say it had ended.
 #[must_use]
-pub(crate) fn is_live_tmux_run(record: &RunRecord, presence: &PanePresence) -> bool {
-    if record.tmux_socket_path.is_none() || has_session_ended(record) {
+pub(crate) fn is_live_tmux_run(
+    record: &RunRecord,
+    descriptor: Option<&ProviderDescriptor>,
+    presence: &PanePresence,
+) -> bool {
+    if record.tmux_socket_path.is_none() || has_session_ended(record, descriptor) {
         return false;
     }
-    !endpoint_key(record).is_some_and(|key| presence.gone_endpoints.contains(&key))
+    // No endpoint, no way of ever being told it is gone: such a record would
+    // hold its conversation out of resume for the rest of the install. A run
+    // we cannot place is not one we can call live.
+    let Some(key) = endpoint_key(record) else {
+        return false;
+    };
+    !presence.gone_endpoints.contains(&key)
 }
 
 /// The key the host indexes tmux endpoints by, for the attachments it reports
@@ -138,15 +173,28 @@ pub enum SideWrite {
     /// outside tmux and for agents Limpid hosts in tmux. Inside the user's own
     /// tmux the pane is only showing a client, not the pane that owns the
     /// session.
+    ///
+    /// `hosted_in_tmux` decides where the runtime keeps it, and the reason is
+    /// version skew rather than tidiness: a build from before mirror tabs
+    /// existed shows a converted tab as a plain shell, and a hint it can read
+    /// would have it resume, in that shell, the conversation the agent is
+    /// still having in tmux. Such a hint therefore goes somewhere that build
+    /// does not look, and this build reads both places.
     SessionHint {
         session_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        hosted_in_tmux: bool,
     },
     /// Forget the resume hint when the session ended on the user's terms.
     /// The runtime deletes only when the stored hint names this session and
     /// this run.
-    DeleteSessionHint { session_id: String },
+    DeleteSessionHint {
+        session_id: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        hosted_in_tmux: bool,
+    },
     /// The agent changed its working directory.
     CwdEvent {
         new_cwd: String,
@@ -303,12 +351,14 @@ fn session_transition(
                 writes.side.push(SideWrite::SessionHint {
                     session_id: session_id.to_owned(),
                     cwd: cwd.clone(),
+                    hosted_in_tmux: is_hosted_in_tmux(context),
                 });
             }
         }
         AgentEvent::SessionEnded { reason, session_id } => {
             next.state = RunState::Unknown;
             next.run_started_at = None;
+            next.session_end_reason = reason.as_deref().and_then(text_field);
             // Only a provider that takes snapshots has one to remove; the
             // removal runs git, so it is not issued for the others.
             if descriptor.has(Capability::TurnSnapshot) {
@@ -330,6 +380,7 @@ fn session_transition(
             if let Some(session_id) = hint.filter(|_| drops) {
                 writes.side.push(SideWrite::DeleteSessionHint {
                     session_id: session_id.to_owned(),
+                    hosted_in_tmux: is_hosted_in_tmux(context),
                 });
             }
         }
@@ -344,6 +395,12 @@ fn session_transition(
 /// the hint, because resuming is how such a run comes back.
 fn owns_resume_hint(context: &ApplyContext) -> bool {
     !context.is_tmux_hosted || context.tmux_host_mode == Some(TmuxHostMode::LimpidHosted)
+}
+
+/// Whether the run this hint belongs to is one Limpid put in tmux, which is
+/// what decides where the hint is kept (`SideWrite::SessionHint`).
+fn is_hosted_in_tmux(context: &ApplyContext) -> bool {
+    context.is_tmux_hosted && context.tmux_host_mode == Some(TmuxHostMode::LimpidHosted)
 }
 
 /// Everything between session start and end: the state machine of one turn.
@@ -433,6 +490,9 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
         run_started_at: prev.and_then(|record| record.run_started_at.clone()),
         updated_at: now.to_owned(),
         last_hook_event: None,
+        // Written by the session-end rule alone, so every other event clears
+        // the reason along with the end it described.
+        session_end_reason: None,
         // The shell wrote the token count only on the event that carried it.
         context_tokens: None,
         pid: context.pid.map(|pid| pid.to_string()),
@@ -601,6 +661,7 @@ mod tests {
             cwd_events_directory: None,
             process_names: Vec::new(),
             session_end_drop_reasons: Vec::new(),
+            session_end_restart_reasons: Vec::new(),
             id,
         }
     }
@@ -620,6 +681,7 @@ mod tests {
             .into_iter()
             .map(str::to_owned)
             .collect();
+        claude.session_end_restart_reasons = vec!["clear".to_owned()];
         claude
     }
 
@@ -690,7 +752,8 @@ mod tests {
             writes.side,
             vec![SideWrite::SessionHint {
                 session_id: "session-1".into(),
-                cwd: Some("/repo".into())
+                cwd: Some("/repo".into()),
+                hosted_in_tmux: false,
             }]
         );
         assert_eq!(writes.snapshot, None);
@@ -818,7 +881,8 @@ mod tests {
         assert_eq!(
             writes.side,
             vec![SideWrite::DeleteSessionHint {
-                session_id: "session-1".into()
+                session_id: "session-1".into(),
+                hosted_in_tmux: false,
             }]
         );
 
@@ -1027,6 +1091,10 @@ mod tests {
             vec![SideWrite::SessionHint {
                 session_id: "session-1".into(),
                 cwd: Some("/repo".into()),
+                // Somewhere a build from before mirror tabs does not read,
+                // or it would resume this conversation in a plain shell
+                // while the agent is still having it in tmux.
+                hosted_in_tmux: true,
             }]
         );
         let record = writes.run.expect("record");
@@ -1038,10 +1106,14 @@ mod tests {
         assert_eq!(
             writes.side,
             vec![SideWrite::DeleteSessionHint {
-                session_id: "session-1".into()
+                session_id: "session-1".into(),
+                hosted_in_tmux: true,
             }]
         );
-        assert!(has_session_ended(&writes.run.expect("record")));
+        assert!(has_session_ended(
+            &writes.run.expect("record"),
+            Some(&claude())
+        ));
 
         // An end the user did not ask for keeps it, so the run can come back.
         let writes = apply(Some(&record), &ended("other"), &context, &claude(), LATER);
@@ -1051,13 +1123,47 @@ mod tests {
     #[test]
     fn a_session_end_is_recognized_from_either_writer() {
         let (mut record, _, _) = run(&claude(), &[started(None)]);
-        assert!(!has_session_ended(&record));
+        assert!(!has_session_ended(&record, Some(&claude())));
         record.last_hook_event = Some("SessionEnd".into());
-        assert!(has_session_ended(&record));
+        assert!(has_session_ended(&record, Some(&claude())));
         record.last_hook_event = Some("session_ended".into());
-        assert!(has_session_ended(&record));
+        assert!(has_session_ended(&record, Some(&claude())));
         record.last_hook_event = None;
-        assert!(!has_session_ended(&record));
+        assert!(!has_session_ended(&record, Some(&claude())));
+    }
+
+    /// `/clear` ends the conversation and keeps the agent, so the window
+    /// between that end and the start that follows it must not read as an
+    /// agent that has gone: a tab is closed on that answer.
+    #[test]
+    fn a_session_end_the_agent_survives_is_not_an_ended_agent() {
+        let (record, _, _) = run(&claude(), &[started(None), ended("clear")]);
+        assert_eq!(record.session_end_reason.as_deref(), Some("clear"));
+        assert!(!has_session_ended(&record, Some(&claude())));
+        // The same end from a provider that never restarts in place, and the
+        // same record read without a descriptor, are both an agent that left.
+        assert!(has_session_ended(&record, Some(&codex_like())));
+        assert!(has_session_ended(&record, None));
+
+        // Every other reason Claude gives is Claude on its way out.
+        let (leaving, _, _) = run(&claude(), &[started(None), ended("prompt_input_exit")]);
+        assert!(has_session_ended(&leaving, Some(&claude())));
+
+        // And the start that follows clears the reason with the end.
+        let (restarted, _, _) = run(
+            &claude(),
+            &[started(None), ended("clear"), started(Some("session-2"))],
+        );
+        assert_eq!(restarted.session_end_reason, None);
+        assert!(!has_session_ended(&restarted, Some(&claude())));
+    }
+
+    /// A provider that states no reason it survives, which is every provider
+    /// but Claude today.
+    fn codex_like() -> ProviderDescriptor {
+        let mut descriptor = claude();
+        descriptor.session_end_restart_reasons = Vec::new();
+        descriptor
     }
 
     #[test]

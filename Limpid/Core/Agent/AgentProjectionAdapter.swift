@@ -248,6 +248,7 @@ final class AgentProjectionAdapter {
             [
                 directory.state,
                 directory.sessions,
+                directory.hostedSessions,
                 directory.state.appendingPathComponent("worktree-events", isDirectory: true)
             ] + (directory.cwdEvents.map { [$0] } ?? [])
         }
@@ -320,6 +321,10 @@ final class AgentProjectionAdapter {
         for (provider, directory) in directories {
             input.records += files(in: directory.state, suffix: ".state.json", provider: provider)
             input.sessionRecords += files(in: directory.sessions, suffix: ".json", provider: provider)
+            // After the plain hints, so a pane that has both — a conversation
+            // that ran natively before it was reopened in tmux — is read from
+            // the hosted one, which is the later truth.
+            input.sessionRecords += files(in: directory.hostedSessions, suffix: ".json", provider: provider)
         }
         input.resumeIntents = intents()
         input.pidStatus = pidStatus(for: input.records)
@@ -348,6 +353,10 @@ final class AgentProjectionAdapter {
         for (provider, directory) in directories {
             input.records += files(in: directory.state, suffix: ".state.json", provider: provider)
             input.sessionRecords += files(in: directory.sessions, suffix: ".json", provider: provider)
+            // After the plain hints, so a pane that has both — a conversation
+            // that ran natively before it was reopened in tmux — is read from
+            // the hosted one, which is the later truth.
+            input.sessionRecords += files(in: directory.hostedSessions, suffix: ".json", provider: provider)
             if let cwd = directory.cwdEvents {
                 input.cwdEvents += files(in: cwd, suffix: ".cwd.json", provider: provider)
             }

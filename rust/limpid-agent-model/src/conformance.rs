@@ -294,6 +294,7 @@ mod tests {
                     pid_sweep_interval_ms: 1000,
                     process_names: vec!["fake".into()],
                     session_end_drop_reasons: Vec::new(),
+                    session_end_restart_reasons: Vec::new(),
                 },
             }
         }

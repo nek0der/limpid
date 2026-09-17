@@ -64,8 +64,11 @@ extension TmuxMirrorActions {
         store.beginRestoreCheck(panes: Set(claims.map(\.leafID)))
         let tabs = session.tabs
         return Task {
-            // The store is released from the check whichever way the body
-            // ends, so a pane can never be left without a surface.
+            // The one release, and it runs whichever way the body ends, so a
+            // pane can never be left without a surface. The panes stay held
+            // through the reconnect below, which is nothing they wait on:
+            // every converted leaf is a mirror pane by then and starts no
+            // process of its own.
             defer { store.endRestoreCheck() }
             // One socket's answer says nothing about another's, and a
             // server that has stopped answering costs the query its whole
@@ -84,9 +87,9 @@ extension TmuxMirrorActions {
                 return collected
             }
             var panes: [String: TmuxSessionPane] = [:]
-            for session in TmuxBindingMigration.liveAgentSessions(claims, answers: answers) {
-                if let pane = await probe.panes(session.socketPath, session.sessionID) {
-                    panes[TmuxBindingMigration.paneKey(socketPath: session.socketPath, sessionID: session.sessionID)] = pane
+            for agent in TmuxBindingMigration.liveAgentSessions(claims, answers: answers) {
+                if let pane = await probe.panes(agent.socketPath, agent.sessionID) {
+                    panes[TmuxBindingMigration.paneKey(socketPath: agent.socketPath, sessionID: agent.sessionID)] = pane
                 }
             }
             apply(
@@ -94,7 +97,6 @@ extension TmuxMirrorActions {
                 session: session,
                 store: store
             )
-            store.endRestoreCheck()
             reconnectAtLaunch(session: session, store: store)
         }
     }
@@ -146,6 +148,7 @@ extension TmuxMirrorActions {
             tab.kind = .tmuxMirror
             tab.mirrorOrigin = .agent
             tab.mirroredAgent = agentProvider(of: tab, leafID: conversion.leafID)
+            nameAfterAgent(&tab)
             tab.paneSources[conversion.leafID] = .tmux(conversion.ref)
             finish(&tab, leafID: conversion.leafID)
         }
@@ -177,6 +180,7 @@ extension TmuxMirrorActions {
             t.kind = .tmuxMirror
             t.mirrorOrigin = .agent
             t.mirroredAgent = carried.provider
+            nameAfterAgent(&t)
             t.paneSources[leafID] = .tmux(conversion.ref)
             carried.write(into: &t)
         }
@@ -188,6 +192,16 @@ extension TmuxMirrorActions {
         if session.tab(source.id)?.splitTree.allLeafIDs().isEmpty == true {
             session.closeTab(source.id)
         }
+    }
+
+    /// Names a converted tab after the agent in it, as a tab opened from a
+    /// request is named (`openAgentMirror`). Before the conversion the tab
+    /// was showing a shell that typed `tmux attach`, so its title is that
+    /// shell's; the agent's own title reaches the tab later, from its record.
+    /// A name the user typed is theirs and is left alone.
+    private nonisolated static func nameAfterAgent(_ tab: inout Tab) {
+        guard let provider = tab.mirroredAgent, tab.titleOverride == nil else { return }
+        tab.title = AgentProviderRegistry.displayName(for: provider)
     }
 
     /// What a converted leaf leaves behind in its tab, whichever tab that

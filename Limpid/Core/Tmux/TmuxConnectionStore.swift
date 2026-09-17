@@ -686,6 +686,11 @@ final class TmuxConnectionStore {
     /// rules stop holding the conversation back from resume, and the leaves'
     /// surfaces are let go, because a surface reading a mirror channel never
     /// starts a process of its own.
+    ///
+    /// The user is told, unlike the close above. What they see here is the
+    /// conversation they were reading replaced, in an instant and with no
+    /// input of theirs, by a shell starting a resume — so the notice is what
+    /// says the tmux went away rather than that something in the tab broke.
     private func becomeTerminalTab(_ tab: Tab, session: WindowSession) {
         for endpoint in tab.mirroredEndpoints(aliases: [:]).keys {
             agentRuns?.reportGone(endpoint)
@@ -708,6 +713,7 @@ final class TmuxConnectionStore {
         if let mirror {
             gateOutput(for: Self.key(of: mirror))
         }
+        onNotice?(Self.agentServerGoneNotice(name: Self.agentName(of: tab)))
         log.notice("agent tab \(tab.id, privacy: .public) became a terminal: its tmux is gone")
     }
 
@@ -728,6 +734,20 @@ final class TmuxConnectionStore {
             mirror.closeTab()
         }
         onNotice?(Self.openFailureNotice(name: first.displayName, reason: reason))
+    }
+
+    /// What the user reads when the tmux behind an agent's tab is gone and
+    /// the tab becomes a terminal that resumes it.
+    static func agentServerGoneNotice(name: String) -> String {
+        String(localized: "The tmux server for “\(name)” is gone. Resuming the agent here.")
+    }
+
+    /// What to call an agent's tab in a notice: the provider the tab was
+    /// opened for, which is what the tab is named after and what the user
+    /// typed, and the tab's own title when this build does not know the
+    /// provider.
+    private static func agentName(of tab: Tab) -> String {
+        tab.mirroredAgent.map(AgentProviderRegistry.displayName(for:)) ?? tab.displayTitle
     }
 
     /// What the user reads when a mirror tab could not be opened. `name`

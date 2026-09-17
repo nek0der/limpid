@@ -21,7 +21,7 @@ import Foundation
 ///   "version": 1,
 ///   "socket": "/private/tmp/tmux-501/limpid-dev.limpid.Limpid",
 ///   "sessionID": "$3",
-///   "sessionName": "limpid-1a2b3c4d-4242",
+///   "sessionName": "limpid-1A2B3C4D-6F1C2B3A",
 ///   "windowID": "@3",
 ///   "paneID": "%3",
 ///   "serverPID": "4100",
@@ -42,7 +42,8 @@ import Foundation
 /// `LIMPID_PANE_ID` of the pane the user typed the command in. `provider` is
 /// a provider id (`AgentKind`). Unknown keys are ignored.
 struct AgentMirrorRequest: Equatable {
-    /// Normalized (`TmuxClientProbe.normalizeSocketPath`), as every binding's
+    /// The physical path (`TmuxSocketPath`, which is what
+    /// `TmuxClientProbe.normalizeSocketPath` returns), as every binding's
     /// path is, so the tab keys its connection the way the palette and the
     /// presence probe do.
     let socketPath: String
@@ -66,6 +67,9 @@ struct AgentMirrorRequest: Equatable {
     static let formatVersion = 1
     /// A request larger than this is not one a shim wrote.
     static let byteLimit = 16 * 1024
+    /// Comfortably above the name a shim builds, and far below anything that
+    /// would fill a notice.
+    static let sessionNameByteLimit = 128
 
     /// Under the build's own support directory, whose name already differs
     /// between a Release and a Debug build, so each build only ever reads
@@ -109,15 +113,18 @@ struct AgentMirrorRequest: Equatable {
         let provider: String
     }
 
-    /// Reads and checks one request. `ownSocketName` is this build's agent
-    /// socket name; a request naming any other socket is refused, because
-    /// the file only says where to attach, and attaching a tab to a server
-    /// the user did not choose is what the palette's other-clients check
-    /// exists to prevent. Every id is checked for the shape tmux gives it,
-    /// since they are spliced into tmux commands, and the server run for
-    /// being numbers, since the reattach condition splices those into a
-    /// format.
-    static func parse(_ data: Data, ownSocketName: String) throws(Rejection) -> AgentMirrorRequest {
+    /// Reads and checks one request. `ownSocketPath` is the whole path of
+    /// this build's agent socket, normalized; a request naming any other
+    /// socket is refused, because the file only says where to attach, and
+    /// attaching a tab to a server the user did not choose is what the
+    /// palette's other-clients check exists to prevent. The whole path
+    /// rather than its last component: a shim runs with a `TMUX_TMPDIR` of
+    /// the user's, and a socket of the same name in a directory of their
+    /// choosing is a different server. Every id is checked for the shape
+    /// tmux gives it, since they are spliced into tmux commands, and the
+    /// server run for being numbers, since the reattach condition splices
+    /// those into a format.
+    static func parse(_ data: Data, ownSocketPath: String) throws(Rejection) -> AgentMirrorRequest {
         let wire: Wire
         do {
             wire = try JSONDecoder().decode(Wire.self, from: data)
@@ -126,16 +133,17 @@ struct AgentMirrorRequest: Equatable {
         }
         guard wire.version == formatVersion else { throw .unsupportedVersion(wire.version) }
         guard let socket = TmuxSocketPath(wire.socket)?.value else { throw .malformedField("socket") }
-        let socketName = URL(fileURLWithPath: socket).lastPathComponent
-        guard PaneShellEnvironment.isAgentSocketName(socketName), socketName == ownSocketName else {
-            throw .foreignSocket
-        }
+        guard socket == ownSocketPath else { throw .foreignSocket }
         try requireID(wire.sessionID, sigil: "$", field: "sessionID")
         try requireID(wire.windowID, sigil: "@", field: "windowID")
         try requireID(wire.paneID, sigil: "%", field: "paneID")
         try requireNumber(wire.serverPID, field: "serverPID")
         try requireNumber(wire.serverStartedAt, field: "serverStartedAt")
+        // The name is the shim's own (`limpid-<pane>-<leaf>`), so the limit
+        // is only there to keep a file that is not one of ours from reaching
+        // a tmux target or a notice with something unbounded in it.
         guard !wire.sessionName.isEmpty,
+              wire.sessionName.utf8.count <= sessionNameByteLimit,
               !wire.sessionName.unicodeScalars.contains(where: { $0.properties.generalCategory == .control })
         else { throw .malformedField("sessionName") }
         guard let leafID = UUID(uuidString: wire.leafID) else { throw .malformedField("leafID") }

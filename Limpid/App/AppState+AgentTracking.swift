@@ -71,23 +71,36 @@ extension AppState {
     }
 
     /// Watches for the tabs shims ask for when they start an agent in our
-    /// tmux server. Demo mode reads no request: its session is a fixture,
-    /// and a tab opened into it would be neither kept nor wanted.
+    /// tmux server, and records in `settings` whether anything is reading
+    /// them: a pane is only told to host an agent once one is
+    /// (`PaneShellEnvironment.agentTmuxHost`).
+    ///
+    /// Demo mode reads no request: its session is a fixture, and a tab opened
+    /// into it would be neither kept nor wanted. It therefore hosts no agent
+    /// either, which is what keeps `claude` and `codex` working in a demo
+    /// pane rather than writing a request nobody answers.
     static func startAgentMirrorRequests(
         session: WindowSession,
-        store: TmuxConnectionStore
+        store: TmuxConnectionStore,
+        settings: SettingsStore
     ) -> AgentMirrorRequestWatcher? {
-        guard !DemoFixture.isDemoActive else { return nil }
+        guard !DemoFixture.isDemoActive else {
+            settings.agentMirrorIntake = .unavailable
+            return nil
+        }
         let watcher = AgentMirrorRequestWatcher(
             hasLeaf: { [weak session] leafID in
                 session?.tab(containing: leafID) != nil
             },
+            confirmGeneration: AgentMirrorRequestWatcher.generationConfirmation(
+                tmuxPath: store.tmuxExecutable
+            ),
             open: { [weak session, weak store] request in
                 guard let session, let store else { return }
                 TmuxMirrorActions.openAgentMirror(request, session: session, store: store)
             }
         )
-        watcher.start()
+        settings.agentMirrorIntake = watcher.start()
         return watcher
     }
 

@@ -16,6 +16,17 @@ struct AgentDirectories {
     var retired: URL {
         state.appendingPathComponent("retired", isDirectory: true)
     }
+
+    /// Where the resume hint of an agent Limpid hosts in tmux is kept. A
+    /// subdirectory rather than another name in `sessions`, because what has
+    /// to stop reading these hints is a build from before mirror tabs
+    /// existed: it lists `sessions` without descending, so the subdirectory
+    /// is invisible to it, and it cannot resume in a plain shell the
+    /// conversation the agent is still having in tmux. The name is the
+    /// writer's (`ResolvedDirectories::HOSTED_SESSION_DIRECTORY`).
+    var hostedSessions: URL {
+        sessions.appendingPathComponent("tmux-hosted", isDirectory: true)
+    }
 }
 
 /// Runs the file commands a projection pass returned.
@@ -237,14 +248,22 @@ struct AgentCommandExecutor {
         keep: Set<UUID>,
         max: Int
     ) -> RecordMutationOutcome {
-        guard case let .paneStore(provider, store) = target,
-              let directory = paneStoreURL(provider: provider, store: store),
-              let urls = try? FileManager.default.contentsOfDirectory(
-                  at: directory,
-                  includingPropertiesForKeys: [.contentModificationDateKey]
-              )
-        else {
-            return .applied
+        guard case let .paneStore(provider, store) = target else { return .applied }
+        for directory in paneStoreURLs(provider: provider, store: store) {
+            cleanupPaneStore(directory, keep: keep, max: max)
+        }
+        return .applied
+    }
+
+    /// One directory of one pane store. The hosted hints are swept with the
+    /// same keep set and the same cap as the plain ones: they are the same
+    /// store, kept apart only so an older build does not read them.
+    private func cleanupPaneStore(_ directory: URL, keep: Set<UUID>, max: Int) {
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else {
+            return
         }
         var survivors: [(URL, Date)] = []
         // Files a writer is holding. Kept apart so the cap below cannot undo
@@ -283,7 +302,6 @@ struct AgentCommandExecutor {
         if !busy.isEmpty {
             log.debug("pane store sweep deferred \(busy.count, privacy: .public) locked files")
         }
-        return .applied
     }
 
     /// Whether the target is a single file another writer could be holding.
@@ -313,8 +331,7 @@ struct AgentCommandExecutor {
                 ? directories[provider]?.state.appendingPathComponent("\(storageID).state.json")
                 : nil
         case let .sessionHint(provider, pane):
-            directories[provider]?.sessions
-                .appendingPathComponent("\(pane.uuidString).json")
+            sessionHintURL(provider: provider, pane: pane)
         case let .resumeIntent(runID):
             isIdentifier(runID)
                 ? resumeIntents.directory.appendingPathComponent("\(runID).json")
@@ -328,7 +345,7 @@ struct AgentCommandExecutor {
         case let .retiredRecords(provider):
             directories[provider]?.retired
         case let .paneStore(provider, store):
-            paneStoreURL(provider: provider, store: store)
+            paneStoreURLs(provider: provider, store: store).first
         case .host, .unknown:
             nil
         }
@@ -348,10 +365,26 @@ struct AgentCommandExecutor {
         !value.isEmpty && value != "." && value != ".." && !value.contains("/")
     }
 
-    private func paneStoreURL(provider: String, store: AgentPaneStoreKind) -> URL? {
+    /// The file holding one pane's resume hint: the hosted one when there is
+    /// one, since a run that has both wrote that one last and it is the later
+    /// truth about the pane.
+    private func sessionHintURL(provider: String, pane: UUID) -> URL? {
+        guard let directory = directories[provider] else { return nil }
+        let name = "\(pane.uuidString).json"
+        let hosted = directory.hostedSessions.appendingPathComponent(name)
+        return FileManager.default.fileExists(atPath: hosted.path)
+            ? hosted
+            : directory.sessions.appendingPathComponent(name)
+    }
+
+    /// The directories one pane store keeps its files in. Sessions have two:
+    /// the hints an older build may read, and the hosted ones it may not
+    /// (`AgentDirectories.hostedSessions`).
+    private func paneStoreURLs(provider: String, store: AgentPaneStoreKind) -> [URL] {
+        guard let directory = directories[provider] else { return [] }
         switch store {
-        case .sessions: directories[provider]?.sessions
-        case .cwdEvents: directories[provider]?.cwdEvents
+        case .sessions: return [directory.sessions, directory.hostedSessions]
+        case .cwdEvents: return directory.cwdEvents.map { [$0] } ?? []
         }
     }
 

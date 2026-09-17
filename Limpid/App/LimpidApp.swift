@@ -361,7 +361,7 @@ final class AppState {
         TmuxMirrorActions.reconcileRestoredBindings(session: session, store: tmuxStore)
         // After the restore, so a request whose tab was saved is recognized
         // as served rather than opened twice.
-        agentMirrorRequests = Self.startAgentMirrorRequests(session: session, store: tmuxStore)
+        agentMirrorRequests = Self.startAgentMirrorRequests(session: session, store: tmuxStore, settings: settingsStore)
     }
 
     private func configureTurnReview() {

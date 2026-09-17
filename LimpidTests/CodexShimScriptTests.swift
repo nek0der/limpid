@@ -163,6 +163,9 @@ struct CodexShimScriptTests {
 
     /// The socket name `TmuxStub.reports` names, as this build's own.
     private static let ownSocketName = "limpid-dev.limpid.Limpid"
+    /// The whole socket path the stub reports, which is what a request is
+    /// compared against.
+    private static let ownSocketPath = "/private/tmp/tmux-501/" + ownSocketName
 
     /// Runs the shim under a pty. The hosting decision asks whether stdin
     /// and stdout are terminals, and a `Process` pipe is not one, so the
@@ -366,7 +369,7 @@ struct CodexShimScriptTests {
             Issue.record("expected one request file, found \(run.leftBehind)")
             return nil
         }
-        return try AgentMirrorRequest.parse(data, ownSocketName: ownSocketName)
+        return try AgentMirrorRequest.parse(data, ownSocketPath: ownSocketPath)
     }
 
     /// The request is the whole of the handover to Limpid, so it has to
@@ -415,6 +418,34 @@ struct CodexShimScriptTests {
         #expect(run.errors.contains("limpid:"))
         #expect(run.leftBehind.isEmpty)
         #expect(run.codexArgv == nil)
+    }
+
+    /// `new-session` without `-A` creates nothing when the name is taken, so
+    /// a failure can mean the name belongs to an agent that is running. The
+    /// cleanup is armed only once tmux says it made the session, or it would
+    /// kill that agent's session. The stub records the arguments of the last
+    /// call it was given, so a `kill-session` here would be what we see.
+    @Test("kills nothing when the session could not be created")
+    func hostedInvocation_tmuxFailure_killsNothing() throws {
+        let run = try runShimHosted([], tmux: .fails)
+        guard case let .tmux(argv) = run.handover else {
+            Issue.record("expected a tmux handover, got \(run.handover)")
+            return
+        }
+        #expect(argv.contains("new-session"))
+        #expect(!argv.contains("kill-session"))
+    }
+
+    /// The name carries the leaf id rather than the shim's pid: a pid
+    /// repeats after a wrap, and two agents from one pane would then ask for
+    /// the same name — where the second launch fails and the first agent is
+    /// the one at risk.
+    @Test("names the session after the tab it asks for")
+    func hostedInvocation_sessionName_isUniquePerInvocation() throws {
+        let run = try runShimHosted([])
+        let request = try #require(try Self.parseRequest(run))
+        let leaf = request.leafID.uuidString.prefix(8)
+        #expect(request.sessionName == "limpid-547D688D-\(leaf)")
     }
 
     @Test("fails loudly when there is nowhere to ask for a tab")

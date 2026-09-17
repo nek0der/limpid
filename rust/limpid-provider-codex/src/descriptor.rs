@@ -55,6 +55,7 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
             // has no `SessionEndDropsSession` capability and its hint always
             // survives for the next launch to resume from.
             session_end_drop_reasons: Vec::new(),
+            session_end_restart_reasons: Vec::new(),
             id,
         }
     })

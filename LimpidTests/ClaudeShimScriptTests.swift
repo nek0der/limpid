@@ -207,6 +207,9 @@ struct ClaudeShimScriptTests {
 
     /// The socket name the tmux stub reports, as this build's own.
     private static let ownSocketName = "limpid-dev.limpid.Limpid"
+    /// The whole socket path the stub reports, which is what a request is
+    /// compared against.
+    private static let ownSocketPath = "/private/tmp/tmux-501/" + ownSocketName
 
     /// Runs the shim under a pty with tmux hosting switched on. The hosting
     /// decision asks whether stdin and stdout are terminals, and a `Process`
@@ -329,7 +332,7 @@ struct ClaudeShimScriptTests {
         #expect(handover.status == 0)
         #expect(handover.output.trimmingCharacters(in: .whitespacesAndNewlines) == "Opened in a Limpid tab.")
         let data = try #require(handover.request)
-        let request = try AgentMirrorRequest.parse(data, ownSocketName: Self.ownSocketName)
+        let request = try AgentMirrorRequest.parse(data, ownSocketPath: Self.ownSocketPath)
         #expect(request.provider == .claude)
         #expect(request.launchPaneID == UUID(uuidString: "547D688D-39DF-4A06-BD6F-316C3385532C"))
         // The agent is given the mirror leaf's id, not the launching pane's.

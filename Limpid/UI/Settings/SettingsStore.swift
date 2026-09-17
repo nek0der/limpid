@@ -40,6 +40,11 @@ final class SettingsStore {
     /// diagnostics above. `AppState` sets it once, when the probe answers.
     var agentTmuxSupport: AgentTmuxSupport = .pending
 
+    /// Whether the requests a hosted agent's shim writes are being read, and
+    /// where. Found out rather than chosen, like the probe above: `AppState`
+    /// sets it once, when the watcher has started or refused to.
+    var agentMirrorIntake: AgentMirrorIntake = .pending
+
     // MARK: - Language (UserDefaults / AppKit-visible)
 
     /// User-facing app language. `.system` reads OS Region prefs.

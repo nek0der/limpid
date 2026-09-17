@@ -13,9 +13,11 @@ import Foundation
 ///
 /// Everything here is pure: the claims are read off the tabs, the answers
 /// come from `TmuxServerSessions`, and the plan is applied by
-/// `TmuxMirrorActions.reconcileRestoredBindings`. The migration runs once
-/// — every claim ends the pass either converted or dropped, so the next
-/// launch finds no agent binding to migrate.
+/// `TmuxMirrorActions.reconcileRestoredBindings`. Every agent binding ends
+/// the pass converted or dropped, so the next launch finds none of them to
+/// migrate. A user's own binding is never converted and is kept unless its
+/// session is gone, which is the point of #21: it is how their pane
+/// reattaches at the launch after this one too.
 enum TmuxBindingMigration {
     /// One restored binding, and the leaf that carries it.
     struct Claim: Equatable {

@@ -84,6 +84,23 @@ struct AgentMirrorTabOriginTests {
         #expect(decoded.mirroredAgent == nil)
     }
 
+    /// A value that is not even a string — a snapshot from a build that
+    /// wrote either field differently — costs the tab its origin, not the
+    /// whole restore. The session is one file: a tab that cannot be decoded
+    /// takes every other tab and every project with it.
+    @Test func valuesOfAnotherType_decodeToDefaults() throws {
+        let session = WindowSession()
+        let agent = try mirrorTab(in: session, origin: .agent)
+        let tab = try #require(session.tab(agent.tab))
+        var object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(tab)) as? [String: Any])
+        object["mirrorOrigin"] = ["kind": "agent"]
+        object["mirroredAgent"] = 3
+
+        let decoded = try JSONDecoder().decode(Tab.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(decoded.mirrorOrigin == .user)
+        #expect(decoded.mirroredAgent == nil)
+    }
+
     /// ⌘⇧T brings an agent's tab back with its origin, so it still cannot
     /// be split.
     @Test func reopenedAgentTab_keepsItsOrigin() throws {

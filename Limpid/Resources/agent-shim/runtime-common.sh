@@ -61,11 +61,15 @@ limpid_is_decimal() {
 # the whole of `limpid_host_agent_in_tmux`, so an interrupt or a failure
 # part way through leaves neither a hidden temporary file in the request
 # directory nor a session no tab will ever be opened for.
+#
+# `limpid_host_session` is only ever set to a session this invocation made
+# (see where it is armed), because killing by a name we merely intended to
+# use would kill whatever else answers to it — another agent of the user's.
 limpid_host_abort() {
   [ -z "${limpid_host_tmp:-}" ] || rm -f "$limpid_host_tmp"
   limpid_host_tmp=""
   if [ -n "${limpid_host_session:-}" ]; then
-    "$LIMPID_AGENT_TMUX" -L "${LIMPID_AGENT_TMUX_SOCKET:-limpid}" \
+    "$LIMPID_AGENT_TMUX" -L "${LIMPID_AGENT_TMUX_SOCKET:-limpid}" -f /dev/null \
       kill-session -t "$limpid_host_session" 2>/dev/null || :
     limpid_host_session=""
   fi
@@ -108,11 +112,15 @@ limpid_host_agent_in_tmux() {
     return 1
   fi
 
-  # Unique per invocation. `-A` is deliberately absent: with the name
-  # already taken it attaches and silently drops the command, handing
-  # back the running agent instead of starting the one that was asked
-  # for.
-  lha_session="limpid-$(printf '%s' "$lha_launch_pane" | tr -cd 'A-Za-z0-9' | cut -c1-8)-$$"
+  # Unique per invocation, because the leaf id is: a process id repeats
+  # after a wrap, and two agents from one pane would then ask for the same
+  # name. `-A` is deliberately absent: with the name already taken it
+  # attaches and silently drops the command, handing back the running agent
+  # instead of starting the one that was asked for. A name that collides
+  # all the same fails the launch and kills nothing, since cleanup is armed
+  # only once tmux says it made the session.
+  lha_session="limpid-$(printf '%s' "$lha_launch_pane" | tr -cd 'A-Za-z0-9' | cut -c1-8)"
+  lha_session="$lha_session-$(printf '%s' "$lha_leaf" | tr -cd 'A-Za-z0-9' | cut -c1-8)"
   lha_tab=$(printf '\t')
   # `stty` reads the terminal we were started on. A session sized here
   # opens at the size of the pane the command was typed in, so the agent
@@ -159,10 +167,10 @@ limpid_host_agent_in_tmux() {
     lha_count=$((lha_count - 1))
   done
 
-  # Armed before the call rather than from what tmux reports: a session
-  # that was created but not described is exactly the one we could not
-  # otherwise clean up, and the name is ours alone.
-  limpid_host_session="$lha_session"
+  # Nothing is armed before the call. `new-session` without `-A` creates
+  # nothing when the name is taken, and a cleanup armed with a name we had
+  # only planned to use would then kill the session already answering to
+  # it — an agent of the user's that is still running.
   if ! lha_report=$("$LIMPID_AGENT_TMUX" "$@"); then
     printf 'limpid: not starting the agent: tmux could not create its session\n' >&2
     return 1
@@ -171,6 +179,18 @@ limpid_host_agent_in_tmux() {
     lha_server_pid lha_started <<LIMPID_TMUX_REPORT
 $lha_report
 LIMPID_TMUX_REPORT
+  # A session exists from here on, so cleanup is armed before anything else
+  # can fail. By id when tmux gave us one, since an id names one session
+  # and nothing else; by the name we passed otherwise, which is ours
+  # because the creation succeeded under it.
+  limpid_host_session="$lha_session"
+  case "${lha_session_id:-}" in
+    '$'[0-9]*)
+      if limpid_is_decimal "${lha_session_id#?}"; then
+        limpid_host_session="$lha_session_id"
+      fi
+      ;;
+  esac
   if ! limpid_host_report_is_whole; then
     printf 'limpid: not starting the agent: tmux did not say where it put the session\n' >&2
     return 1

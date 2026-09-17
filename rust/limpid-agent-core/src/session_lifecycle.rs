@@ -345,6 +345,7 @@ mod tests {
             cwd_events_directory: None,
             process_names: Vec::new(),
             session_end_drop_reasons: Vec::new(),
+            session_end_restart_reasons: Vec::new(),
             id,
         }
     }

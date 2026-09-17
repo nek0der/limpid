@@ -9,7 +9,7 @@
         "badge": {
           "state": "running",
           "runStartedAt": "2026-09-14T12:01:00Z",
-          "isTmuxHosted": true,
+          "isTmuxHosted": false,
           "updatedAt": "2026-09-14T12:01:00Z",
           "lastPrompt": "<prompt for tmux-hosted>",
           "firstPrompt": "<prompt for tmux-hosted>",

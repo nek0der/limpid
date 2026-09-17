@@ -61,25 +61,33 @@ enum PaneShellEnvironment {
     /// The tmux host to announce to a new pane, or `nil` when its agents
     /// must run directly.
     ///
-    /// Hosting needs both the user's opt-in and a tmux a mirror tab can
-    /// attach to, as the launch probe found it. A pane created before the
-    /// probe answers is not told to host: a shim that is told must be able
-    /// to rely on a tab opening for its agent, and until the probe answers
-    /// nothing says one can. Such a pane runs its agents directly, which is
-    /// what the setting being off looks like, and panes created afterwards
-    /// pick hosting up. Reading a cached answer rather than probing here
-    /// keeps surface creation from starting a process per pane.
+    /// Hosting needs three things, and every one of them is what makes a
+    /// shim's request reach a tab: the user's opt-in, a tmux a mirror tab can
+    /// attach to as the launch probe found it, and a watcher actually reading
+    /// the request directory. A pane created before either answer is in is
+    /// not told to host: a shim that is told must be able to rely on a tab
+    /// opening for its agent, and until then nothing says one would. Such a
+    /// pane runs its agents directly, which is what the setting being off
+    /// looks like, and panes created afterwards pick hosting up. Reading
+    /// cached answers rather than probing here keeps surface creation from
+    /// starting a process per pane.
+    ///
+    /// The directory comes from the intake rather than from a default, so the
+    /// one a pane names is by construction the one being read.
     static func agentTmuxHost(
         hostsAgentsInTmux: Bool,
         support: AgentTmuxSupport,
-        socketName: @autoclosure () -> String = defaultAgentSocketName(),
-        mirrorRequestsDirectory: @autoclosure () -> URL = AgentMirrorRequest.defaultDirectory()
+        intake: AgentMirrorIntake,
+        socketName: @autoclosure () -> String = defaultAgentSocketName()
     ) -> AgentTmuxHost? {
-        guard hostsAgentsInTmux, let binary = support.hostBinary else { return nil }
+        guard hostsAgentsInTmux,
+              let binary = support.hostBinary,
+              let requests = intake.directoryPath
+        else { return nil }
         return AgentTmuxHost(
             binary: binary,
             socketName: socketName(),
-            mirrorRequestsDirectory: mirrorRequestsDirectory().path
+            mirrorRequestsDirectory: requests
         )
     }
 
@@ -113,6 +121,23 @@ enum PaneShellEnvironment {
     /// would land on their sessions.
     static func defaultAgentSocketName() -> String {
         agentSocketPrefix + LimpidPaths.bundleID
+    }
+
+    /// The whole path `tmux -L <name>` would use for this build's agent
+    /// server, physically resolved, which is what a request's socket is
+    /// compared against (`AgentMirrorRequest.parse`).
+    ///
+    /// `TmuxClientProbe.defaultServerDirectory` reads our own `TMUX_TMPDIR`,
+    /// and a pane inherits our environment, so the shim's tmux resolves the
+    /// name under the same directory. A value the user exports from their
+    /// shell rc is the documented blind spot of that lookup, and here it
+    /// costs the request rather than pointing us at another server.
+    static func defaultAgentSocketPath() -> String {
+        TmuxClientProbe.normalizeSocketPath(
+            TmuxClientProbe.defaultServerDirectory()
+                .appendingPathComponent(defaultAgentSocketName(), isDirectory: false)
+                .path
+        )
     }
 
     /// Whether `name` is the agent server of any Limpid build, this one or
