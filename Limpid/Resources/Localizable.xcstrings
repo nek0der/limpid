@@ -173,6 +173,106 @@
         }
       }
     },
+    "Can't reach the tmux server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux サーバーに接続できません"
+          }
+        }
+      }
+    },
+    "Connecting to tmux…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux に接続しています…"
+          }
+        }
+      }
+    },
+    "Disconnected from tmux": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux から切断されました"
+          }
+        }
+      }
+    },
+    "It was saved in a form this version of Limpid can't read, so nothing runs in it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このバージョンの Limpid では読めない形式で保存されているため、このペインでは何も実行されません。"
+          }
+        }
+      }
+    },
+    "Reconnect": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再接続"
+          }
+        }
+      }
+    },
+    "Start the server again, then reconnect.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーを起動し直してから再接続してください。"
+          }
+        }
+      }
+    },
+    "The session “%@” may still be running.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッション「%@」は動き続けている可能性があります。"
+          }
+        }
+      }
+    },
+    "The tmux server is no longer the one this tab was showing. What it showed stays here to read.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このタブが表示していた tmux サーバーではなくなりました。表示されていた内容は読むためにここに残ります。"
+          }
+        }
+      }
+    },
+    "This pane can't be shown": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペインは表示できません"
+          }
+        }
+      }
+    },
+    "This tab can't reconnect": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このタブは再接続できません"
+          }
+        }
+      }
+    },
     "Sending approval": {
       "localizations": {
         "en": {

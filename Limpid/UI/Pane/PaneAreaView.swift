@@ -250,6 +250,15 @@ struct PaneAreaView: View {
                         },
                         minPaneSize: settings.settings.terminal.minPaneSize
                     )
+                    // Floated over the panes rather than laid out above them;
+                    // `TmuxConnectionBanner` says why. One banner per tab, so
+                    // switching tabs neither animates nor announces a change.
+                    .overlay(alignment: .top) {
+                        if tab.kind == .tmuxMirror {
+                            TmuxConnectionBanner(tabID: tab.id)
+                                .id(tab.id)
+                        }
+                    }
                 }
             }
             // If `ResolvedSplitNode.build` returned nil every leaf failed

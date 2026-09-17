@@ -112,6 +112,28 @@ extension TmuxMirrorActions {
 
     // swiftlint:enable function_parameter_count
 
+    /// Reconnect tab `tabID` because the user asked for it, from the menu or
+    /// from the tab's card. Other apps' clients are asked about (decision
+    /// 10), as they are when a window is opened from the palette.
+    @discardableResult
+    static func reconnectAsked(tabID: UUID, context: MirrorContext) -> Task<Void, Never>? {
+        guard let tmuxPath = context.store.tmuxExecutable else { return nil }
+        return reconnect(
+            tabID: tabID,
+            session: context.session,
+            store: context.store,
+            registry: context.registry,
+            secureInput: context.secureInput,
+            toastCenter: context.toastCenter,
+            otherClients: otherClientsGate(
+                tmuxPath: tmuxPath,
+                session: context.session,
+                store: context.store,
+                registry: context.registry
+            )
+        )
+    }
+
     // MARK: - Automatic reconnect
 
     /// Connect every mirror tab of `context.session` again, once, after the

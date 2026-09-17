@@ -126,21 +126,8 @@ struct PaneCommands: Commands {
     /// Asks about other apps' clients before attaching, as opening from the
     /// palette does: the user chose to connect now.
     private func reconnectActiveMirror() {
-        guard let tabID = state.session.activeTabID, let tmuxPath = state.tmuxStore.tmuxExecutable else { return }
-        TmuxMirrorActions.reconnect(
-            tabID: tabID,
-            session: state.session,
-            store: state.tmuxStore,
-            registry: state.registry,
-            secureInput: state.registry.secureInputManager,
-            toastCenter: state.toastCenter,
-            otherClients: TmuxMirrorActions.otherClientsGate(
-                tmuxPath: tmuxPath,
-                session: state.session,
-                store: state.tmuxStore,
-                registry: state.registry
-            )
-        )
+        guard let tabID = state.session.activeTabID else { return }
+        TmuxMirrorActions.reconnectAsked(tabID: tabID, context: state.tmuxMirrorContext)
     }
 
     private var isSplit: Bool {

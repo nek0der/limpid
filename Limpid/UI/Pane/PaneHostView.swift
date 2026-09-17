@@ -44,6 +44,12 @@ struct PaneHostView: View {
     @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(\.tmuxConnectionStore) private var tmuxStore
 
+    /// A pane whose source this build cannot read runs nothing, so it says
+    /// so instead of sitting empty.
+    private var hasUnavailableSource: Bool {
+        session.tab(containing: paneID)?.paneSources[paneID] == .unavailable
+    }
+
     private var isBeingDragged: Bool {
         dragState.current == .pane && dragState.currentSourceID == paneID.uuidString
     }
@@ -67,6 +73,10 @@ struct PaneHostView: View {
                 )
                 if surfaceView.creationFailed {
                     PaneCreationFailureCard(surfaceView: surfaceView)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.black.opacity(0.55))
+                } else if hasUnavailableSource {
+                    UnavailablePaneCard()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color.black.opacity(0.55))
                 }
