@@ -85,7 +85,7 @@ final class TmuxWindowMirror {
 
     @ObservationIgnored private let session: WindowSession
     @ObservationIgnored private let registry: any SurfaceViewProviding
-    @ObservationIgnored private let secureInput: SecureInputManager?
+    @ObservationIgnored private let secureInput: (any TmuxSecureInputSwitching)?
     /// The channel of a leaf, which outlives this mirror: the store opens
     /// it for the leaf, the surface reads it, and a sink of ours only
     /// writes into it while we feed the pane.
@@ -139,7 +139,7 @@ final class TmuxWindowMirror {
         connection: TmuxServerConnection,
         session: WindowSession,
         registry: any SurfaceViewProviding,
-        secureInput: SecureInputManager?,
+        secureInput: (any TmuxSecureInputSwitching)?,
         channelForPane: @escaping (UUID) -> TmuxPaneChannel?,
         surfaceReports: @escaping () -> TmuxSurfaceReports
     ) {
@@ -251,10 +251,15 @@ final class TmuxWindowMirror {
     /// The connection ended. The panes stay as they are until tmux is
     /// asked whether the session survived (`TmuxConnectionStore`); there is
     /// no automatic reconnect (design §9 D14).
+    ///
+    /// A pane that was taking a password when the connection went keeps
+    /// no Secure Input: nothing re-checks its tty from here on, so the
+    /// state could only ever be stale.
     func connectionEnded() {
         guard connectionState == .connected else { return }
         connectionState = .disconnected
         queuedResize = nil
+        releaseSecureInput()
         log.notice("mirror window \(self.windowID, privacy: .public) lost its connection")
     }
 
@@ -270,6 +275,9 @@ final class TmuxWindowMirror {
     func stop() {
         guard !isStopped else { return }
         isStopped = true
+        // The surfaces outlive this mirror when a later one takes the tab
+        // over, and no check of ours runs after this.
+        releaseSecureInput()
         for pane in panes.values {
             connection.detachPane(pane.tmuxPane)
         }
@@ -698,12 +706,22 @@ final class TmuxWindowMirror {
     /// discipline.
     private func probeSecureInput(paneID: UUID, tty: String) {
         guard let secureInput, let pane = panes[paneID],
-              let view = registry.view(for: paneID),
               let isSecure = TmuxPaneTTYProbe.isSecureInput(tty: tty),
-              isSecure != pane.isSecureInput
+              isSecure != pane.isSecureInput,
+              secureInput.setSecureInput(isSecure, paneID: paneID, registry: registry)
         else { return }
         panes[paneID]?.isSecureInput = isSecure
-        secureInput.set(isSecure ? .on : .off, for: view)
         log.debug("secure input \(isSecure ? "on" : "off", privacy: .public) for \(pane.tmuxPane, privacy: .public)")
+    }
+
+    /// Turn Secure Input off for every pane this mirror turned it on for.
+    /// A surface that is already gone took its scope with it, so the
+    /// record is cleared whether or not the request found one.
+    private func releaseSecureInput() {
+        for (paneID, pane) in panes where pane.isSecureInput {
+            panes[paneID]?.isSecureInput = false
+            _ = secureInput?.setSecureInput(false, paneID: paneID, registry: registry)
+            log.debug("secure input off for \(pane.tmuxPane, privacy: .public): mirror ended")
+        }
     }
 }

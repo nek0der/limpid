@@ -27,7 +27,7 @@ enum TmuxMirrorActions {
         session: WindowSession,
         store: TmuxConnectionStore,
         registry: any SurfaceViewProviding,
-        secureInput: SecureInputManager?,
+        secureInput: (any TmuxSecureInputSwitching)?,
         toastCenter: ToastCenter? = nil
     ) -> Bool {
         if let existing = store.liveMirror(showing: target.windowID, of: target.binding) {

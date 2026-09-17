@@ -18,9 +18,10 @@ private let log = Logger.limpid("tmux.store")
 /// "one per server", which holds for the first version's scope of one
 /// window per tab.
 ///
-/// Observable only for `mirrors`: the pane area draws a mirror tab from its
-/// mirror, and a mirror registered or replaced after the tab is on screen
-/// must reach the view. Everything else is bookkeeping the view never reads.
+/// Observable only for `mirrors` and `tabConnections`: the pane area draws a
+/// mirror tab from its mirror and says how the tab stands with its server,
+/// and either can change after the tab is on screen. Everything else is
+/// bookkeeping the view never reads.
 @MainActor
 @Observable
 final class TmuxConnectionStore {
@@ -35,6 +36,10 @@ final class TmuxConnectionStore {
 
     @ObservationIgnored private(set) var connections: [Key: TmuxServerConnection] = [:]
     private(set) var mirrors: [UUID: TmuxWindowMirror] = [:]
+    /// How each mirror tab stands with its server, by tab id. Set when a
+    /// mirror is registered and when its connection ends; released on
+    /// `reconcile` once the tab is gone.
+    private(set) var tabConnections: [UUID: TmuxTabConnection] = [:]
     /// Which panes of each connection have their output paused. A control
     /// client is fed every pane of the session; the ones no tab shows are
     /// switched off so a build in a hidden window cannot fill the pipe
@@ -230,6 +235,7 @@ final class TmuxConnectionStore {
 
     func register(_ mirror: TmuxWindowMirror) {
         mirrors[mirror.tabID] = mirror
+        tabConnections[mirror.tabID] = mirror.connectionState == .connected ? .live : .disconnected
         gateOutput(for: Self.key(of: mirror))
     }
 
@@ -266,6 +272,9 @@ final class TmuxConnectionStore {
         let channelLeaves = Set(tabs.flatMap { tab in
             tab.splitTree.allLeafIDs().filter { tab.ioSource(for: $0) != .local }
         })
+        for tabID in tabConnections.keys where !liveTabs.contains(tabID) {
+            tabConnections.removeValue(forKey: tabID)
+        }
         for paneID in channels.keys where !channelLeaves.contains(paneID) {
             channels.removeValue(forKey: paneID)
         }
@@ -279,6 +288,7 @@ final class TmuxConnectionStore {
             mirror.stop()
         }
         mirrors.removeAll()
+        tabConnections.removeAll()
         for connection in connections.values {
             connection.stop()
         }
@@ -352,6 +362,7 @@ final class TmuxConnectionStore {
         let affected = mirrors.values.filter { $0.connection === connection }
         for mirror in affected {
             mirror.connectionEnded()
+            tabConnections[mirror.tabID] = .disconnected
         }
         guard !affected.isEmpty else { return }
         guard connection.hasAttached else {
