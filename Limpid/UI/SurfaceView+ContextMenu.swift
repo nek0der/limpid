@@ -192,6 +192,25 @@ extension SurfaceView {
 /// `selectAll:`). Without this, AppKit would leave every item enabled
 /// even when the surface is gone or there's no selection.
 extension SurfaceView: NSMenuItemValidation {
+    /// Whether the tab's capability table allows the item `action` runs, and
+    /// `nil` for an action the table has no say over. A view no tab has
+    /// claimed yet allows none of them.
+    ///
+    /// Apart from `validateMenuItem` so which row each item reads is pinned
+    /// by a test: a test of `TabCapabilities` alone would not notice an item
+    /// that stopped asking, or asked the wrong row.
+    static func capabilityAllows(_ action: Selector?, capabilities: TabCapabilities?) -> Bool? {
+        guard let action else { return nil }
+        switch action {
+        case #selector(splitRight(_:)), #selector(splitDown(_:)):
+            return capabilities?.canSplit == true
+        case #selector(clearScreen(_:)):
+            return capabilities?.canClearScreen == true
+        default:
+            return nil
+        }
+    }
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case #selector(copy(_:)):
@@ -203,10 +222,9 @@ extension SurfaceView: NSMenuItemValidation {
         case #selector(closePaneFromMenu(_:)):
             return surface != nil && canClosePaneOrTab?() == true
         case #selector(splitRight(_:)),
-             #selector(splitDown(_:)):
-            return surface != nil && tabCapabilities?()?.canSplit == true
-        case #selector(clearScreen(_:)):
-            return surface != nil && tabCapabilities?()?.canClearScreen == true
+             #selector(splitDown(_:)),
+             #selector(clearScreen(_:)):
+            return surface != nil && Self.capabilityAllows(item.action, capabilities: tabCapabilities?()) == true
         // Paste stays enabled on every tab; `paste(_:)` picks the route
         // from `TabCapabilities.sendsInputThroughTmux`.
         case #selector(paste(_:)),

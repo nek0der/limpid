@@ -5,6 +5,39 @@ import Foundation
 import Testing
 @testable import Limpid
 
+/// Every suite that replays a recording takes `TmuxRecording.all(_:)` as its
+/// arguments, and a case with no recording would run zero of them — a pass
+/// that says nothing. This is the one test that fails instead: it runs once,
+/// takes no arguments, and reads each case the suites replay.
+@Suite("tmux recordings", .tags(.smoke), .disabled(if: !RepoFixture.hasLocalRepo))
+struct TmuxRecordingTests {
+    /// Both kinds the suites replay: the session transcript
+    /// (`TmuxProtocolTests`, `TmuxControlTransportTests`) and the bulk
+    /// stream.
+    @Test(arguments: ["session-basic", "bulk-output"])
+    func everyRecordedCase_isFoundAndReadable(fixtureCase: String) throws {
+        let recordings = TmuxRecording.all(fixtureCase)
+        #expect(!recordings.isEmpty, "no recording of \(fixtureCase) under LimpidTests/Fixtures/tmux")
+        for recording in recordings {
+            #expect(try !recording.lines().isEmpty, "\(recording.name) holds no lines")
+            // The version every replay reads for its expectations; a
+            // manifest that does not decode would otherwise surface as a
+            // failure in whichever test happened to read it first.
+            #expect(try !recording.manifest().version.isEmpty, "\(recording.name) names no tmux version")
+        }
+    }
+
+    /// `bulk-output`'s counts come from the manifest rather than the tests,
+    /// so a manifest without them would leave those expectations unchecked.
+    @Test func bulkOutputManifest_carriesTheCountsTheTestsCompare() throws {
+        for recording in TmuxRecording.all("bulk-output") {
+            let manifest = try recording.manifest()
+            #expect((manifest.outputLines ?? 0) > 0, "\(recording.name) counts no %output lines")
+            #expect((manifest.decodedBytes ?? 0) > 0, "\(recording.name) counts no decoded bytes")
+        }
+    }
+}
+
 @Suite("tmux control-mode protocol")
 struct TmuxProtocolTests {
     // What these tests pin follows from the commands `record_tmux.py`

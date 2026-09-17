@@ -145,7 +145,7 @@ private final class FocusHarness {
 
 @Suite(
     "tmux mirror focus",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

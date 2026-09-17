@@ -231,7 +231,7 @@ private final class ReconnectHarness {
 
 @Suite(
     "tmux mirror reconnect",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )
@@ -495,7 +495,7 @@ struct TmuxMirrorReconnectIntegrationTests {
         harness.server.run(["send-keys", "-t", window, "read -s secret", "Enter"])
         #expect(await waitUntil(.seconds(5)) { harness.secureInput.history(for: tab.leaf) == [true] })
         // Let the checks that output schedules run out first.
-        try? await Task.sleep(for: TmuxPaneSink.activityInterval * 3)
+        try? await Task.sleep(for: TmuxPaneSink.defaultActivityInterval * 3)
         #expect(harness.secureInput.history(for: tab.leaf) == [true])
 
         harness.secureInput.replaceSurface(for: tab.leaf)
@@ -693,7 +693,7 @@ extension ReconnectHarness {
 
 @Suite(
     "tmux mirror reconnect at launch and on reopen",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

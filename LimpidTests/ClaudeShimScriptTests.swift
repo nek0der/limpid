@@ -209,7 +209,7 @@ struct ClaudeShimScriptTests {
     private static let ownSocketName = "limpid-dev.limpid.Limpid"
     /// The whole socket path the stub reports, which is what a request is
     /// compared against.
-    private static let ownSocketPath = "/private/tmp/tmux-501/" + ownSocketName
+    private static let ownSocketPath = "/private/tmp/tmux-\(getuid())/" + ownSocketName
 
     /// Runs the shim under a pty with tmux hosting switched on. The hosting
     /// decision asks whether stdin and stdout are terminals, and a `Process`
@@ -225,7 +225,7 @@ struct ClaudeShimScriptTests {
             let errorFile = dir.appendingPathComponent("stderr")
             let requests = dir.appendingPathComponent("requests", isDirectory: true)
             try FileManager.default.createDirectory(at: requests, withIntermediateDirectories: true)
-            let report = #"printf '/private/tmp/tmux-501/limpid-dev.limpid.Limpid\t$3\t@4\t%%5\t4100\t1758130000\n'"#
+            let report = #"printf '/private/tmp/tmux-\#(getuid())/limpid-dev.limpid.Limpid\t$3\t@4\t%%5\t4100\t1758130000\n'"#
             for (name, argvFile, tail) in [
                 ("fake-claude", claudeArgv, "exit 0"),
                 ("fake-tmux", tmuxArgv, tmuxFails ? "exit 1" : report)

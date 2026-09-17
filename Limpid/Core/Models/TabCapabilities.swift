@@ -8,6 +8,15 @@ import Foundation
 /// testing `tab.kind` on their own, so enabling one verb for a kind later
 /// is one row here rather than a hunt through the UI.
 ///
+/// The table answers what a tab *lets the user do*. It is not the place to
+/// ask what a mirror tab *is*: how a mirror pane is drawn, how its geometry
+/// is derived from the tmux layout, and how a resize is reported all belong
+/// to the mirror itself and read `kind == .tmuxMirror` directly, because
+/// there is no verb to enable or refuse there and a row would only be a
+/// second name for the kind. A verb the user invokes — a menu item, a drop,
+/// a shortcut, a palette command — asks the table instead, and a test pins
+/// which row it asks (`TabCapabilitiesTests`).
+///
 /// A tmux mirror tab translates the verbs it allows into tmux commands and
 /// waits for `%layout-change` to draw the result (design §10). What it
 /// disallows either has no tmux counterpart (inserting a pane at an edge

@@ -299,6 +299,18 @@ struct TmuxClientProbeLocateTests {
         #expect(TmuxClientProbe.locateTmux(candidates: ["/nonexistent/tmux"]) == nil)
     }
 
+    /// CI asks for the real-tmux suites by setting
+    /// `TEST_RUNNER_LIMPID_REQUIRE_TMUX_TESTS=1`, so a runner that lost its
+    /// tmux cannot pass by skipping them. This test is what says so out
+    /// loud: without it the demand would be visible only as whichever
+    /// fixture happened to fail first, and a workflow that stopped passing
+    /// the variable — a renamed prefix, a dropped `env:` — would leave every
+    /// one of those suites skipped and the job green.
+    @Test("when the run demands tmux, tmux is there")
+    func requiredTmux_isInstalled() {
+        #expect(!TmuxServerFixture.isTmuxRequired || TmuxClientProbe.locateTmux() != nil)
+    }
+
     /// A GUI app launched from Finder inherits launchd's `PATH`
     /// (`/usr/bin:/bin:/usr/sbin:/sbin`), which has no Homebrew in it,
     /// so resolving by name would find nothing on most Macs.
@@ -311,7 +323,7 @@ struct TmuxClientProbeLocateTests {
 
 @Suite(
     "TmuxClientProbe smoke",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .disabled(if: installedTmux == nil && !TmuxServerFixture.isTmuxRequired, "no tmux installed")
 )
 struct TmuxClientProbeSmokeTests {

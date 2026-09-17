@@ -102,7 +102,7 @@ struct TmuxServerGenerationTests {
 
 @Suite(
     "tmux server generation",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

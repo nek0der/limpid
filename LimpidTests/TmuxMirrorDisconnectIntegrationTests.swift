@@ -109,7 +109,7 @@ private final class DisconnectHarness {
 
 @Suite(
     "tmux mirror disconnect",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

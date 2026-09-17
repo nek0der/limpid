@@ -64,7 +64,7 @@ private final class AgentOpenHarness {
 
 @Suite(
     "Agent mirror tab opening",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

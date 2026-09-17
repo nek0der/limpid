@@ -44,6 +44,10 @@ final class TmuxPaneSink: @unchecked Sendable {
 
     private let queue: DispatchQueue
     private let limit: Int
+    /// How far apart the output-activity reports are spaced
+    /// (`setOnOutputActivity`). Per sink so a test can measure the trailing
+    /// report over an interval a busy machine cannot blur.
+    let activityInterval: Duration
     private var pending = Data()
     private var isPaused = false
     /// Counts pauses. An overflow pauses without counting: what it drops
@@ -57,11 +61,13 @@ final class TmuxPaneSink: @unchecked Sendable {
         channel: TmuxPaneChannel,
         queue: DispatchQueue,
         limit: Int = TmuxPaneSink.defaultLimit,
+        activityInterval: Duration = TmuxPaneSink.defaultActivityInterval,
         onOverflow: @escaping @MainActor () -> Void
     ) {
         self.channel = channel
         self.queue = queue
         self.limit = limit
+        self.activityInterval = activityInterval
         self.onOverflow = onOverflow
         log.debug("sink attached host=\(channel.hostFd, privacy: .public)")
     }
@@ -173,7 +179,10 @@ final class TmuxPaneSink: @unchecked Sendable {
         queue.async { [self] in activityHandler = handler }
     }
 
-    static let activityInterval: Duration = .milliseconds(250)
+    /// What a mirror's sink spaces its activity reports by. A test that
+    /// measures the trailing report injects a longer one, so a scheduled
+    /// wake-up cannot land inside the margin a loaded machine adds.
+    static let defaultActivityInterval: Duration = .milliseconds(250)
     private var activityHandler: (@MainActor () -> Void)?
     /// When the handler last ran, which spaces out the calls during a burst.
     private var lastActivityCall: ContinuousClock.Instant?
@@ -186,11 +195,11 @@ final class TmuxPaneSink: @unchecked Sendable {
         guard activityHandler != nil else { return }
         let now = ContinuousClock.now
         lastOutput = now
-        if lastActivityCall.map({ now - $0 >= Self.activityInterval }) ?? true {
+        if lastActivityCall.map({ now - $0 >= activityInterval }) ?? true {
             lastActivityCall = now
             fireActivity()
         }
-        scheduleTrailingActivity(after: Self.activityInterval)
+        scheduleTrailingActivity(after: activityInterval)
     }
 
     /// One wake-up is pending at a time. It fires once the output has been
@@ -206,8 +215,8 @@ final class TmuxPaneSink: @unchecked Sendable {
             guard !isClosed, let lastOutput else { return }
             let now = ContinuousClock.now
             let quiet = now - lastOutput
-            guard quiet >= Self.activityInterval else {
-                scheduleTrailingActivity(after: Self.activityInterval - quiet)
+            guard quiet >= activityInterval else {
+                scheduleTrailingActivity(after: activityInterval - quiet)
                 return
             }
             lastActivityCall = now

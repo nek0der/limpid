@@ -110,7 +110,7 @@ private final class MigrationHarness {
 
 @Suite(
     "restored agent bindings migrate against a real tmux",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

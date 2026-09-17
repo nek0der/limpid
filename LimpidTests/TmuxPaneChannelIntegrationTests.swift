@@ -8,7 +8,7 @@ import Testing
 
 @Suite(
     "tmux pane channel with a mirror",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

@@ -12,7 +12,7 @@ private func contains(_ data: Data, _ marker: String) -> Bool {
 
 @Suite(
     "tmux output gate and window sizing",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

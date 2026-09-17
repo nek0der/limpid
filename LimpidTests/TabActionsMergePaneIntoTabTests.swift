@@ -133,7 +133,7 @@ struct TabActionsMergePaneIntoTabTests {
             lastPrompt: "codex prompt"
         )
         let tmuxBinding = TmuxBinding(
-            socketPath: "/private/tmp/tmux-501/default",
+            socketPath: "/private/tmp/tmux-\(getuid())/default",
             sessionID: "$4",
             sessionName: "moved"
         )

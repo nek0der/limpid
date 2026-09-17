@@ -62,7 +62,7 @@ struct TabActionsTests {
     func reopenClosedTab_mirrorTab_restoresKindAndSources() throws {
         let (session, tab, leafID) = WindowSessionFixture.withLooseTab()
         let ref = TmuxPaneRef(
-            binding: TmuxBinding(socketPath: "/tmp/tmux-501/default", sessionID: "$3", sessionName: "work"),
+            binding: TmuxBinding(socketPath: "/tmp/tmux-\(getuid())/default", sessionID: "$3", sessionName: "work"),
             windowID: "@2",
             paneID: "%7"
         )

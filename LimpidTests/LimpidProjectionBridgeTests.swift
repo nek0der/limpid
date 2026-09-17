@@ -39,7 +39,7 @@ struct LimpidProjectionBridgeTests {
     @Test("a tmux-hosted run reaches the pane the host says its endpoint is in")
     func tmuxEndpointKey_matchesWhatTheRulesBuild() throws {
         let pane = UUID()
-        let socket = "/tmp/tmux-501/default"
+        let socket = "/tmp/tmux-\(getuid())/default"
         let record: [String: Any] = [
             "schemaVersion": 3,
             "paneId": UUID().uuidString,

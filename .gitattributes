@@ -19,6 +19,10 @@
 # xcstrings is JSON — let GitHub diff/highlight it as such.
 *.xcstrings linguist-language=JSON
 
+# Recorded tmux control-mode traffic: bytes as the control client received
+# them. A future recording may hold a CR, which normalization would drop.
+LimpidTests/Fixtures/**/*.raw -text
+
 # Binaries.
 *.xcframework binary
 *.png       binary

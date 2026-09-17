@@ -230,7 +230,7 @@ struct TmuxPaneChannelTests {
 @Suite("tmux pane channels in the store")
 struct TmuxPaneChannelStoreTests {
     private static let ref = TmuxPaneRef(
-        binding: TmuxBinding(socketPath: "/tmp/tmux-501/default", sessionID: "$3", sessionName: "work"),
+        binding: TmuxBinding(socketPath: "/tmp/tmux-\(getuid())/default", sessionID: "$3", sessionName: "work"),
         windowID: "@2",
         paneID: "%7"
     )

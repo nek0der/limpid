@@ -135,7 +135,7 @@ struct AgentMirrorPresenceTests {
     @Test func mirrorLeafAndClientPane_bothShowTheRun() throws {
         try withTempDir { directory in
             let (session, clientTab, clientPane) = WindowSessionFixture.withLooseTab()
-            let socket = "/private/tmp/tmux-501/limpid-test"
+            let socket = "/private/tmp/tmux-\(getuid())/limpid-test"
             let mirror = try mirrorTab(in: session, socketPath: socket, paneID: "%4", generation: Self.generation)
             let presence = TmuxPanePresence(
                 bindingsByPaneID: [clientPane: TmuxBinding(socketPath: socket, sessionID: "$2", sessionName: "agent")],
@@ -164,7 +164,7 @@ struct AgentMirrorPresenceTests {
 @MainActor
 @Suite(
     "Agent presence in mirror tabs against a real server",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

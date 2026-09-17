@@ -84,7 +84,7 @@ struct TmuxSessionProbeTests {
 
 @Suite(
     "tmux session probe",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

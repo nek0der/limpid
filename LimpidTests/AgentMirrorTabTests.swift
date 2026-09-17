@@ -16,7 +16,7 @@ private func mirrorTab(
     let tab = session.openTab(container: .loose, title: title)
     let leaf = try #require(tab.splitTree.allLeafIDs().first)
     let binding = TmuxBinding(
-        socketPath: "/private/tmp/tmux-501/limpid-dev.limpid.Limpid",
+        socketPath: "/private/tmp/tmux-\(getuid())/limpid-dev.limpid.Limpid",
         sessionID: "$2",
         sessionName: "limpid-agent",
         serverPID: "42",

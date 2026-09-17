@@ -200,6 +200,40 @@ struct AgentMirrorRequestTests {
 
 // MARK: - Watcher
 
+/// A file a watcher must remove without opening it, one reason each, so a
+/// case that stops being refused is named by the failure.
+/// Internal rather than private: a private argument type would force the
+/// test method that takes it to be `fileprivate`.
+enum AgentMirrorInvalidRequest: String, CaseIterable, CustomTestStringConvertible {
+    case truncatedJSON
+    case foreignSocket
+    case malformedLeafID
+    case empty
+    /// Not a file a shim with `umask 077` wrote.
+    case readableByOthers
+    case overByteLimit
+
+    var testDescription: String {
+        rawValue
+    }
+
+    /// `0o600` unless the case is about the mode itself.
+    var mode: Int {
+        self == .readableByOthers ? 0o644 : 0o600
+    }
+
+    func bytes() throws -> Data {
+        switch self {
+        case .truncatedJSON: Data("{".utf8)
+        case .foreignSocket: try requestJSON(["socket": "\(serverDirectory)/default"])
+        case .malformedLeafID: try requestJSON(["leafID": "nope"])
+        case .empty: Data()
+        case .readableByOthers: try requestJSON()
+        case .overByteLimit: Data(count: AgentMirrorRequest.byteLimit + 1)
+        }
+    }
+}
+
 /// A watcher over a scratch directory that records what it was asked to open.
 @MainActor
 private final class WatcherHarness {
@@ -223,7 +257,7 @@ private final class WatcherHarness {
         record.opened
     }
 
-    init(root: URL, isServerCurrent: Bool = true) {
+    init(root: URL, ownSocketPath: String = ownSocketPath, isServerCurrent: Bool = true) {
         directory = root.appendingPathComponent("requests", isDirectory: true)
         record.isServerCurrent = isServerCurrent
         let record = record
@@ -377,17 +411,12 @@ struct AgentMirrorRequestWatcherTests {
         }
     }
 
-    @Test func invalidRequests_areRemovedUnopened() throws {
+    @Test(arguments: AgentMirrorInvalidRequest.allCases)
+    func invalidRequest_isRemovedUnopened(invalid: AgentMirrorInvalidRequest) throws {
         try withTempDir { root in
             let harness = WatcherHarness(root: root)
             defer { harness.watcher.stop() }
-            try harness.write(Data("{".utf8), name: "1.json")
-            try harness.write(requestJSON(["socket": "\(serverDirectory)/default"]), name: "2.json")
-            try harness.write(requestJSON(["leafID": "nope"]), name: "3.json")
-            try harness.write(Data(), name: "4.json")
-            // Readable by others: not a file a shim with umask 077 wrote.
-            try harness.write(requestJSON(), name: "5.json", mode: 0o644)
-            try harness.write(Data(count: AgentMirrorRequest.byteLimit + 1), name: "6.json")
+            try harness.write(invalid.bytes(), name: "a.json", mode: invalid.mode)
 
             harness.watcher.start()
 
@@ -475,6 +504,86 @@ struct AgentMirrorRequestWatcherTests {
 
             #expect(harness.contents() == [".fresh.json.tmp"])
             #expect(harness.opened.isEmpty)
+        }
+    }
+}
+
+// MARK: - Startup order
+
+@Suite("Agent mirror requests at launch", .tags(.smoke))
+@MainActor
+struct AgentMirrorRequestStartupTests {
+    /// The launch settles the restored session first and starts watching
+    /// after it (`LimpidApp`: `reconcileRestoredBindings` then
+    /// `startAgentMirrorRequests`). In the other order the catch-up scan
+    /// would read a request whose tab the restore is about to bring back,
+    /// and every relaunch would leave the same agent with a second tab.
+    ///
+    /// The request here is the real thing: it names the socket this build
+    /// starts its agents on, and the second half shows a watcher does open
+    /// it when no tab holds its leaf. So the silence in the first half is
+    /// the restored tab, not a request the watcher refused for some other
+    /// reason.
+    @Test func watchingStartedAfterTheRestore_leavesARestoredTabAlone() async throws {
+        try await withTempDir { root in
+            let (session, _, leaf) = WindowSessionFixture.withLooseTab()
+            let socketPath = PaneShellEnvironment.defaultAgentSocketPath()
+            let json = try requestJSON(["socket": socketPath, "leafID": leaf.uuidString])
+            let requests = root.appendingPathComponent("requests", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: requests,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            #expect(FileManager.default.createFile(
+                atPath: requests.appendingPathComponent("a.json").path,
+                contents: json,
+                attributes: [.posixPermissions: 0o600]
+            ))
+
+            // A tmux that records having been run and then answers nothing.
+            // Nothing should run it: the tab is the answer, and asking the
+            // server is what a watcher started before the restore would do.
+            let asked = root.appendingPathComponent("asked")
+            let tmux = root.appendingPathComponent("tmux-stub")
+            try "#!/bin/sh\n: >> '\(asked.path)'\nexit 1\n".write(to: tmux, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmux.path)
+
+            let settings = SettingsStore(directory: root)
+            let watcher = AppState.startAgentMirrorRequests(
+                session: session,
+                store: TmuxConnectionStore(
+                    registry: RecordingSurfaceRegistry(),
+                    secureInput: nil,
+                    tmuxExecutable: tmux.path
+                ),
+                settings: settings,
+                directory: requests
+            )
+            defer { watcher?.stop() }
+
+            #expect(settings.agentMirrorIntake == .watching(directory: requests))
+            #expect(session.tabs.count == 1)
+            #expect((try? FileManager.default.contentsOfDirectory(atPath: requests.path)) == [])
+
+            // The same request, read by a watcher whose session holds no
+            // such leaf: this one takes it up, so the silence above is the
+            // restored tab rather than a request that would be refused
+            // anyway.
+            let harness = WatcherHarness(
+                root: root.appendingPathComponent("second", isDirectory: true),
+                ownSocketPath: socketPath
+            )
+            defer { harness.watcher.stop() }
+            try harness.write(json, name: "a.json")
+            harness.watcher.start()
+            #expect(await waitUntil { harness.opened.map(\.leafID) == [leaf] })
+
+            // Long enough for a confirmation, which runs in a task of its
+            // own, to have reached the stub if one had been made.
+            #expect(await waitUntil(.milliseconds(500)) {
+                FileManager.default.fileExists(atPath: asked.path)
+            } == false)
         }
     }
 }

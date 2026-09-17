@@ -46,3 +46,16 @@ per run is not: reply timestamps and numbers and the pane's tty are checked by
 shape, the version comes from the manifest, and so do the `%output` line and
 byte counts of `bulk-output`, since how tmux splits that stream into lines
 differs from run to run.
+
+## How long a recording is kept
+
+A dated directory costs about 1.2 MB, most of it `bulk-output`, and every
+tmux release that changes the wire format adds one. Drop a dated directory
+once the oldest tmux we support has passed the release it was recorded on:
+after that nothing a user can run speaks that older wire format, and keeping
+it only pins a shape no version still sends. `record_tmux.py` and
+`record_bulk.py` produce the directory again from any tmux, so a version
+dropped here is not lost — it is re-recordable from that tmux.
+
+Removing one is a commit of its own, with the tmux version that made it
+obsolete named in the message, so the reason survives in the log.

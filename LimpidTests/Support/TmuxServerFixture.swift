@@ -195,8 +195,11 @@ struct TmuxServerFixture {
 
 /// Polls `condition` on the main actor, where the connection delivers,
 /// until it holds or `timeout` passes. Returns the final answer.
+/// The default is generous on purpose: these suites run in parallel with
+/// the rest of the target, each with a tmux server of its own, and a wait
+/// that only covers an idle machine turns a slow moment into a failure.
 @MainActor
-func waitUntil(_ timeout: Duration = .seconds(3), _ condition: () -> Bool) async -> Bool {
+func waitUntil(_ timeout: Duration = .seconds(5), _ condition: () -> Bool) async -> Bool {
     let clock = ContinuousClock()
     let deadline = clock.now + timeout
     while clock.now < deadline {

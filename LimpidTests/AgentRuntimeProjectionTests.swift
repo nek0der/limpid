@@ -31,7 +31,7 @@ struct AgentRuntimeProjectionTests {
             sessionStartedAt: "2026-09-09T00:00:00Z",
             killedByLimpidAt: nil,
             isTmuxHosted: true,
-            tmuxSocketPath: "/private/tmp/tmux-501/default",
+            tmuxSocketPath: "/private/tmp/tmux-\(getuid())/default",
             tmuxSessionId: "$2",
             tmuxPaneId: "%4",
             tmuxServerPID: "42",
@@ -53,7 +53,7 @@ struct AgentRuntimeProjectionTests {
             ), to: states)
             let presence = TmuxPanePresence(bindingsByPaneID: [
                 displayPaneID: TmuxBinding(
-                    socketPath: "/tmp/tmux-501/default",
+                    socketPath: "/tmp/tmux-\(getuid())/default",
                     sessionID: "$2",
                     sessionName: "work"
                 )
@@ -65,7 +65,7 @@ struct AgentRuntimeProjectionTests {
 
             #expect(AgentRecordFixtures.records(in: states).count == 1)
             #expect(presence.paneIDs(
-                socketPath: "/private/tmp/tmux-501/default",
+                socketPath: "/private/tmp/tmux-\(getuid())/default",
                 sessionID: "$2"
             ) == [displayPaneID])
 
@@ -95,7 +95,7 @@ struct AgentRuntimeProjectionTests {
             ), to: states)
             let presence = TmuxPanePresence(bindingsByPaneID: [
                 displayPaneID: TmuxBinding(
-                    socketPath: "/tmp/tmux-501/default",
+                    socketPath: "/tmp/tmux-\(getuid())/default",
                     sessionID: "$2",
                     sessionName: "work"
                 )
@@ -107,7 +107,7 @@ struct AgentRuntimeProjectionTests {
 
             #expect(AgentRecordFixtures.records(in: states).count == 2)
             #expect(presence.paneIDs(
-                socketPath: "/private/tmp/tmux-501/default",
+                socketPath: "/private/tmp/tmux-\(getuid())/default",
                 sessionID: "$2"
             ) == [displayPaneID])
 
@@ -120,8 +120,8 @@ struct AgentRuntimeProjectionTests {
     private func topology(sessionID: String = "$2", start: String = "100") -> TmuxTopology {
         TmuxTopology(panes: TmuxTopology.parsePanes(
             "42\t\(start)\t\(sessionID)\t@3\t%4\t1\t1\n",
-            socketPath: "/private/tmp/tmux-501/default"
-        ), socketAliases: ["/tmp/tmux-501/default": "/private/tmp/tmux-501/default"])
+            socketPath: "/private/tmp/tmux-\(getuid())/default"
+        ), socketAliases: ["/tmp/tmux-\(getuid())/default": "/private/tmp/tmux-\(getuid())/default"])
     }
 
     @Test func unresolvedTmux_doesNotUseLaunchPaneOrSavedBinding() throws {
@@ -133,7 +133,7 @@ struct AgentRuntimeProjectionTests {
             runtime.tmuxPaneId = nil
             try AgentRecordFixtures.write(runtime, to: states)
             session.update(tab.id) {
-                $0.tmuxBindings[paneID] = TmuxBinding(socketPath: "/tmp/tmux-501/default", sessionID: "$2", sessionName: "old")
+                $0.tmuxBindings[paneID] = TmuxBinding(socketPath: "/tmp/tmux-\(getuid())/default", sessionID: "$2", sessionName: "old")
             }
             let projection = ProjectionFixture.adapter(
                 state: states,
@@ -263,7 +263,7 @@ struct AgentRuntimeProjectionTests {
             try AgentRecordFixtures.write(first, to: states)
             try AgentRecordFixtures.write(second, to: states)
             let presence = TmuxPanePresence(bindingsByPaneID: [paneID: TmuxBinding(
-                socketPath: "/tmp/tmux-501/default", sessionID: "$2", sessionName: "work"
+                socketPath: "/tmp/tmux-\(getuid())/default", sessionID: "$2", sessionName: "work"
             )], topology: topology())
             let projection = ProjectionFixture.adapter(
                 state: states,

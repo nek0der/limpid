@@ -13,7 +13,10 @@ describing records no hook writes any more. Deriving them means one regeneration
 updates both.
 
 Regenerate with `scripts/derive-projection-corpus.sh` and review the diff. The
-generated records are goldens, reviewed like `expected.json`.
+generated records are goldens, reviewed like `expected.json`. CI regenerates
+them too and fails on any diff, so a record edited by hand, or left behind by
+a hook change, is caught rather than trusted: every step's clock comes from
+its `scenario.json`, which is what makes the output reproducible.
 
 ## Layout
 

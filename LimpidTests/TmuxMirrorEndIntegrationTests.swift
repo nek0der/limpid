@@ -125,7 +125,7 @@ private final class EndHarness {
 
 @Suite(
     "tmux mirror end",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

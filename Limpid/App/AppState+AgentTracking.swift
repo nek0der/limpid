@@ -79,16 +79,23 @@ extension AppState {
     /// into it would be neither kept nor wanted. It therefore hosts no agent
     /// either, which is what keeps `claude` and `codex` working in a demo
     /// pane rather than writing a request nobody answers.
+    ///
+    /// Started after the session has been restored and its bindings settled,
+    /// so a request whose tab the restore brought back is recognized as
+    /// served rather than opened a second time. `directory` is injectable
+    /// for the test that pins that order; the application takes the default.
     static func startAgentMirrorRequests(
         session: WindowSession,
         store: TmuxConnectionStore,
-        settings: SettingsStore
+        settings: SettingsStore,
+        directory: URL = AgentMirrorRequest.defaultDirectory()
     ) -> AgentMirrorRequestWatcher? {
         guard !DemoFixture.isDemoActive else {
             settings.agentMirrorIntake = .unavailable
             return nil
         }
         let watcher = AgentMirrorRequestWatcher(
+            directory: directory,
             hasLeaf: { [weak session] leafID in
                 session?.tab(containing: leafID) != nil
             },

@@ -34,6 +34,18 @@ jobs:
         run: |
           cargo build --locked --package limpid-rust-bridge
           git diff --exit-code -- rust/limpid-rust-bridge/include/limpid_rust_bridge.h
+      # The projection corpus is derived from the hook fixtures, never
+      # written by hand, so a hand-edited record or a hook change that moves
+      # what a record holds shows up as a diff rather than as a reader test
+      # that passes against a record no hook writes. One runner is enough:
+      # every step's clock comes from its scenario and the records carry no
+      # path or platform value.
+      - name: Check the derived projection corpus
+        if: runner.os == 'Linux'
+        run: |
+          cargo run --locked --quiet --package limpid-agent-hook --example derive-projection-corpus
+          git diff --exit-code -- rust/fixtures/projection
+
       - name: Run Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Run tests
@@ -87,6 +99,13 @@ jobs:
 
       - name: Install xcbeautify
         run: brew install xcbeautify
+
+      # In the log for whoever reads a failure of the `tmuxBehavior` tests,
+      # which record how tmux itself behaves: after a tmux upgrade the
+      # version is the first thing that tells a changed premise from a
+      # regression of ours.
+      - name: Show the tmux version under test
+        run: tmux -V
 
       # xcodebuild passes the test process only the variables prefixed
       # TEST_RUNNER_, with the prefix removed, so the tests read

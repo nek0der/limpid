@@ -99,6 +99,14 @@ final class TmuxPaneChannel: @unchecked Sendable {
         let descriptors = Descriptors(surfaceFd: fds[0], hostFd: fds[1])
         let hostFd = descriptors.hostFd
         _ = fcntl(hostFd, F_SETFL, fcntl(hostFd, F_GETFL) | O_NONBLOCK)
+        // Writing to a socket whose far end is closed raises SIGPIPE, which
+        // ends the process by default. The channel holds both ends for its
+        // own lifetime, so a sink cannot meet that end today; we ask for
+        // EPIPE instead of the signal anyway, because `TmuxPaneSink` already
+        // treats any errno it cannot retry as the end of its writing, and a
+        // signal would take the application down before it could.
+        var wantsEPIPE: Int32 = 1
+        _ = setsockopt(hostFd, SOL_SOCKET, SO_NOSIGPIPE, &wantsEPIPE, socklen_t(MemoryLayout<Int32>.size))
         self.descriptors = descriptors
 
         let source = DispatchSource.makeReadSource(fileDescriptor: hostFd, queue: Self.readQueue)

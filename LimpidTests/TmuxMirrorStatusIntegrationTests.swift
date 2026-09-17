@@ -85,7 +85,7 @@ private final class StatusHarness {
 
 @Suite(
     "tmux mirror names and row status",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )
@@ -220,7 +220,7 @@ struct TmuxMirrorStatusIntegrationTests {
     /// Nothing reads the leaf's channel here, so a long burst fills it and
     /// the sink drops what it holds. The repaint after the drop clears the
     /// mark once the burst has ended.
-    @Test("dropped output is marked until a capture taken after the drop repaints the pane")
+    @Test("dropped output is marked until a capture taken after the drop repaints the pane", .tags(.slow))
     func droppedOutput_isMarkedUntilRepainted() async throws {
         let harness = try StatusHarness()
         defer { harness.tearDown() }
@@ -238,7 +238,10 @@ struct TmuxMirrorStatusIntegrationTests {
         harness.store.mirrorGridResized(columns: 80, rows: 24, paneID: leaf)
         let pane = try harness.server.paneID(inWindow: window)
 
-        harness.server.run(["send-keys", "-t", pane, "head -c 12000000 /dev/zero | tr '\\0' x; echo; echo DO\"\"NE", "Enter"])
+        // Comfortably past what the sink holds, so it gives up rather than
+        // waiting for a reader that never comes.
+        let burst = TmuxPaneSink.defaultLimit * 3
+        harness.server.run(["send-keys", "-t", pane, "head -c \(burst) /dev/zero | tr '\\0' x; echo; echo DO\"\"NE", "Enter"])
 
         #expect(await waitUntil(.seconds(30)) { history.contains { $0.hasDroppedOutput } })
         #expect(await waitUntil(.seconds(30)) {

@@ -17,7 +17,7 @@ struct TmuxBindingPersistenceTests {
 
     private func binding() -> TmuxBinding {
         TmuxBinding(
-            socketPath: "/private/tmp/tmux-501/default",
+            socketPath: "/private/tmp/tmux-\(getuid())/default",
             sessionID: "$3",
             sessionName: "limpid"
         )

@@ -125,7 +125,7 @@ private final class AgentEndHarness {
 
 @Suite(
     "Agent mirror tabs when tmux ends",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

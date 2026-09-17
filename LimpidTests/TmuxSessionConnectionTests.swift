@@ -42,7 +42,7 @@ private func exitReply(_ state: TmuxSessionConnection.State) -> [String]? {
 
 @Suite(
     "tmux server connection",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

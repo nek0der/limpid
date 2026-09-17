@@ -1,4 +1,4 @@
-.PHONY: build build-release run dev test rust-test review-core fmt rust-fmt lint rust-lint rust-header dmg xcodegen ghostty screenshot clean help
+.PHONY: build build-release run dev test rust-test review-core fmt rust-fmt lint rust-lint rust-header dmg xcodegen ghostty screenshot clean clean-tmux help
 
 SCHEME  := Limpid
 PROJECT := Limpid.xcodeproj
@@ -27,6 +27,7 @@ help:
 	@echo "  make ghostty     Build vendored libghostty"
 	@echo "  make screenshot  Regenerate .github/assets/hero.png (demo mode)"
 	@echo "  make clean       Remove DerivedData for this project"
+	@echo "  make clean-tmux  Kill the throwaway tmux servers a failed test run left"
 
 # Regenerate the Xcode project when project.yml is newer (or .pbxproj
 # is missing entirely). Anything that depends on `$(PBXPROJ)` picks up
@@ -99,3 +100,20 @@ screenshot: build-release
 
 clean:
 	rm -rf $(HOME)/Library/Developer/Xcode/DerivedData/Limpid-*
+
+# A test run that is interrupted or crashes never reaches
+# `TmuxServerFixture.tearDown`, leaving a tmux server on a socket under
+# `$$TMPDIR/lt-*` and the directory with it. Each one holds a few processes
+# and its own socket, so they accumulate across runs. Only the fixture's own
+# directories are touched; the user's server lives elsewhere.
+clean-tmux:
+	@tmux=$$(command -v tmux || true); \
+	tmpdir=$${TMPDIR:-/tmp}; \
+	for dir in "$${tmpdir%/}"/lt-*; do \
+		[ -d "$$dir" ] || continue; \
+		if [ -n "$$tmux" ] && [ -S "$$dir/sock" ]; then \
+			$$tmux -S "$$dir/sock" kill-server >/dev/null 2>&1 || true; \
+		fi; \
+		rm -rf "$$dir"; \
+		echo "removed $$dir"; \
+	done

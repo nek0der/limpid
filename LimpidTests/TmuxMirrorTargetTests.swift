@@ -12,7 +12,7 @@ struct TmuxMirrorTargetTests {
         $0\t@1\t%3\t3.7c\t4242\t1789000000\t1\tmain\tvim
         $1\t@2\t%5\t3.7c\t4242\t1789000000\t0\twork space\tname with\ttab
         """
-        let targets = TmuxMirrorTargetLister.parse(output, socketPath: "/tmp/tmux-501/default")
+        let targets = TmuxMirrorTargetLister.parse(output, socketPath: "/tmp/tmux-\(getuid())/default")
 
         #expect(targets.count == 3)
         #expect(targets[0].binding.sessionID == "$0")
@@ -24,7 +24,7 @@ struct TmuxMirrorTargetTests {
         // The window name is the last field, so a tab inside it is kept.
         #expect(targets[2].windowName == "name with\ttab")
         #expect(targets[2].binding.sessionName == "work space")
-        #expect(targets[2].binding.socketPath == "/tmp/tmux-501/default")
+        #expect(targets[2].binding.socketPath == "/tmp/tmux-\(getuid())/default")
     }
 
     @Test func parse_recordsTheServerGenerationAndVersion() throws {
@@ -133,7 +133,7 @@ struct TmuxMirrorTargetTests {
 /// hand-written input can see either.
 @Suite(
     "tmux window listing",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )
 struct TmuxMirrorTargetListingTests {

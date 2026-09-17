@@ -9,8 +9,13 @@ extension Tag {
     /// `RepoFixture.hasLocalRepo`; the rest gate on their own binary.
     @Tag static var smoke: Self
 
-    /// Wall-clock > 1s. CI runs them; locally consider
-    /// `xcodebuild ... -skip-test-tags slow`.
+    /// Wall-clock > 1s. Every suite that launches a real tmux server
+    /// (`TmuxServerFixture`) carries it, since starting a server, attaching
+    /// a control client, and waiting for tmux to answer costs more than a
+    /// second on its own, as do the few unit tests that measure an interval.
+    /// CI runs them; locally consider
+    /// `xcodebuild ... -skip-test-tags slow`, which then leaves the tmux
+    /// integration suites out.
     @Tag static var slow: Self
 
     /// Touches the embedded libghostty FFI layer. Mocked at the

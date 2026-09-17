@@ -436,7 +436,7 @@ private struct PasteHarness {
 
 @Suite(
     "tmux mirror paste",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

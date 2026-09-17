@@ -19,7 +19,7 @@ struct TmuxReattachCommandBuilderTests {
     }
 
     private func binding(
-        socket: String = "/private/tmp/tmux-501/default",
+        socket: String = "/private/tmp/tmux-\(getuid())/default",
         id: String = "$3",
         name: String = "work"
     ) -> TmuxBinding {
@@ -33,7 +33,7 @@ struct TmuxReattachCommandBuilderTests {
         let command = try #require(
             TmuxReattachCommandBuilder.initialCommand(for: tab(binding()), paneID: pane)
         )
-        #expect(command == "tmux -S '/private/tmp/tmux-501/default' attach -t '=work'")
+        #expect(command == "tmux -S '/private/tmp/tmux-\(getuid())/default' attach -t '=work'")
     }
 
     @Test("declines when the pane has no binding")
@@ -70,7 +70,7 @@ struct TmuxReattachCommandBuilderTests {
                 for: tab(binding(id: "")), paneID: pane
             )
         )
-        #expect(command == "tmux -S '/private/tmp/tmux-501/default' attach -t '=work'")
+        #expect(command == "tmux -S '/private/tmp/tmux-\(getuid())/default' attach -t '=work'")
     }
 
     @Test("a binding kept after a failed observation still attempts the verified restore targets")
@@ -105,7 +105,7 @@ struct TmuxReattachCommandBuilderTests {
         let command = try #require(
             TmuxReattachCommandBuilder.initialCommand(for: tab(invalid), paneID: pane)
         )
-        #expect(command == "tmux -S '/private/tmp/tmux-501/default' attach -t '=work'")
+        #expect(command == "tmux -S '/private/tmp/tmux-\(getuid())/default' attach -t '=work'")
         #expect(!command.contains("$3"))
     }
 
@@ -117,7 +117,7 @@ struct TmuxReattachCommandBuilderTests {
         let command = try #require(
             TmuxReattachCommandBuilder.initialCommand(for: tab(verified), paneID: pane)
         )
-        let expected = "tmux -S '/private/tmp/tmux-501/default' if-shell -F "
+        let expected = "tmux -S '/private/tmp/tmux-\(getuid())/default' if-shell -F "
             + "'#{&&:#{==:#{pid},42},#{==:#{start_time},100}}' "
             + "'attach-session -t '\\''$3'\\''' "
             + "'attach-session -t '\\''=it'\\''\\'\\'''\\''s here; display-message unsafe'\\'''"

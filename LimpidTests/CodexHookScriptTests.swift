@@ -438,7 +438,7 @@ struct CodexHookScriptTests {
             midTurn(),
             extraEnvironment: [
                 "LIMPID_CODEX_PID": "424242",
-                "TMUX": "/tmp/tmux-501/default,4242,0"
+                "TMUX": "/tmp/tmux-\(getuid())/default,4242,0"
             ]
         )
         #expect(record?["pid"] == nil)
@@ -514,7 +514,7 @@ struct CodexHookScriptTests {
     func insideTmux_recordsTheHostedFlag() throws {
         let record = try runHooks(
             midTurn(),
-            extraEnvironment: ["TMUX": "/tmp/tmux-501/limpid,4242,0"]
+            extraEnvironment: ["TMUX": "/tmp/tmux-\(getuid())/limpid,4242,0"]
         )
         #expect(record?["isTmuxHosted"] as? Bool == true)
     }

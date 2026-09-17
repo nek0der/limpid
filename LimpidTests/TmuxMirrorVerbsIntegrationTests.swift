@@ -98,7 +98,7 @@ private struct MirrorHarness {
 
 @Suite(
     "tmux mirror verbs",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )
@@ -327,7 +327,7 @@ struct TmuxMirrorVerbsIntegrationTests {
 /// socket where libghostty would.
 @Suite(
     "tmux mirror rebuild",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )

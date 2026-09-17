@@ -27,13 +27,14 @@ private struct SinkHarness {
         sink.channel.surfaceFd
     }
 
-    init(limit: Int = TmuxPaneSink.defaultLimit) throws {
+    init(limit: Int = TmuxPaneSink.defaultLimit, activityInterval: Duration = TmuxPaneSink.defaultActivityInterval) throws {
         let log = CallbackLog()
         let queue = DispatchQueue(label: "dev.limpid.tests.sink")
         sink = try TmuxPaneSink(
             channel: TmuxPaneChannel { _ in },
             queue: queue,
             limit: limit,
+            activityInterval: activityInterval,
             onOverflow: { log.overflows += 1 }
         )
         self.queue = queue
@@ -218,14 +219,19 @@ struct TmuxPaneSinkTests {
         #expect(await eventually { await log.activity == 1 })
 
         harness.flood(512 * 1024)
-        try? await Task.sleep(for: TmuxPaneSink.activityInterval * 2)
+        try? await Task.sleep(for: harness.sink.activityInterval * 2)
         #expect(await log.activity == 1)
         #expect(await log.overflows == 0)
     }
 
-    @Test("the trailing activity report waits for the output to be quiet since its last write, not since its first")
+    /// The interval is the sink's own, and longer than the default: the
+    /// test writes inside it and then measures how long the trailing report
+    /// waited, and under a full parallel run a 250 ms window is not wide
+    /// enough to tell a late write from a leading report.
+    @Test("the trailing activity report waits for the output to be quiet since its last write, not since its first", .tags(.slow))
     func trailingActivity_followsTheLastWrite() async throws {
-        let harness = try SinkHarness()
+        let interval = Duration.seconds(1)
+        let harness = try SinkHarness(activityInterval: interval)
         let log = harness.log
         harness.sink.setOnOutputActivity {
             log.activity += 1
@@ -236,15 +242,15 @@ struct TmuxPaneSinkTests {
         harness.write("A")
         #expect(await eventually { await log.activity == 1 })
         // Inside the interval: no leading report, and the quiet starts again.
-        try? await Task.sleep(for: TmuxPaneSink.activityInterval * 0.6)
+        try? await Task.sleep(for: interval * 0.4)
         harness.write("B")
         let lastWrite = ContinuousClock.now
 
         #expect(await eventually { await log.activity == 2 })
         let trailing = try #require(await log.activityTimes.last)
         // Dispatch never fires early; the margin only absorbs clock reads.
-        #expect(trailing - lastWrite >= TmuxPaneSink.activityInterval - .milliseconds(10))
-        try? await Task.sleep(for: TmuxPaneSink.activityInterval * 2)
+        #expect(trailing - lastWrite >= interval - .milliseconds(10))
+        try? await Task.sleep(for: interval * 2)
         #expect(await log.activity == 2)
         harness.sink.close()
     }

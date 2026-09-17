@@ -7,8 +7,8 @@ import Testing
 
 /// A socket path on this build's agent server, and one of the user's own.
 private enum Sockets {
-    static let agent = "/private/tmp/tmux-501/" + PaneShellEnvironment.defaultAgentSocketName()
-    static let user = "/private/tmp/tmux-501/default"
+    static let agent = "/private/tmp/tmux-\(getuid())/" + PaneShellEnvironment.defaultAgentSocketName()
+    static let user = "/private/tmp/tmux-\(getuid())/default"
 }
 
 private func binding(

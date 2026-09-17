@@ -1,6 +1,7 @@
 // TabCapabilitiesTests.swift
 // Limpid — checks that a tab reads what it allows from its kind, and that review honors it.
 
+import AppKit
 import Foundation
 import Testing
 @testable import Limpid
@@ -64,6 +65,54 @@ struct TabCapabilitiesTests {
         custom.canInsert = false
         #expect(!custom.allowsPaneDrop(on: .center))
         #expect(!edges.contains { custom.allowsPaneDrop(on: $0) })
+    }
+
+    /// The table is only worth having if the UI asks it. `canDropFile` and
+    /// `sendsInputThroughTmux` are read one level under `performDragOperation`,
+    /// where a `TabCapabilities` value alone decides whether a drop is taken
+    /// and which route types it — so a row that changes value changes the
+    /// answer, and a drop handler that stopped asking fails here.
+    @MainActor
+    @Test("a file drop is refused, typed, or pasted through tmux by what the table says")
+    func fileDropRoute_followsTheTable() {
+        #expect(SurfaceView.fileDropRoute(TabCapabilities.of(.terminal)) == .surfaceText)
+        #expect(SurfaceView.fileDropRoute(TabCapabilities.of(.tmuxMirror)) == .tmuxPaste)
+        // No tab claims the view yet.
+        #expect(SurfaceView.fileDropRoute(nil) == nil)
+
+        var refuses = TabCapabilities.of(.tmuxMirror)
+        refuses.canDropFile = false
+        #expect(SurfaceView.fileDropRoute(refuses) == nil)
+
+        var typed = TabCapabilities.of(.tmuxMirror)
+        typed.sendsInputThroughTmux = false
+        #expect(SurfaceView.fileDropRoute(typed) == .surfaceText)
+    }
+
+    /// The same for the right-click menu: `validateMenuItem` asks this for
+    /// the items the tab may refuse, so flipping a row flips the item. A
+    /// mirror tab's Clear Screen is the one that matters — libghostty would
+    /// clear only its own copy — and it is off because of the row, not
+    /// because of the kind.
+    @MainActor
+    @Test("the right-click items a tab may refuse read their rows")
+    func menuValidation_followsTheTable() {
+        let clear = #selector(SurfaceView.clearScreen(_:))
+        let split = #selector(SurfaceView.splitRight(_:))
+        #expect(SurfaceView.capabilityAllows(clear, capabilities: TabCapabilities.of(.terminal)) == true)
+        #expect(SurfaceView.capabilityAllows(clear, capabilities: TabCapabilities.of(.tmuxMirror)) == false)
+        #expect(SurfaceView.capabilityAllows(split, capabilities: TabCapabilities.of(.tmuxMirror, origin: .user)) == true)
+        #expect(SurfaceView.capabilityAllows(split, capabilities: TabCapabilities.of(.tmuxMirror, origin: .agent)) == false)
+        #expect(SurfaceView.capabilityAllows(clear, capabilities: nil) == false)
+
+        var mirror = TabCapabilities.of(.tmuxMirror)
+        mirror.canClearScreen = true
+        mirror.canSplit = false
+        #expect(SurfaceView.capabilityAllows(clear, capabilities: mirror) == true)
+        #expect(SurfaceView.capabilityAllows(split, capabilities: mirror) == false)
+
+        // Items the table has no say over are left to `validateMenuItem`.
+        #expect(SurfaceView.capabilityAllows(#selector(SurfaceView.scrollToTop(_:)), capabilities: mirror) == nil)
     }
 
     /// Review takes a pane implicitly when it follows the user, and a mirror

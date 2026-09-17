@@ -154,7 +154,7 @@ private final class PaletteHarness {
 
 @Suite(
     "tmux clients attached before a mirror opens",
-    .tags(.smoke),
+    .tags(.smoke, .slow),
     .serialized,
     .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
 )
