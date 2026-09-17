@@ -207,7 +207,7 @@ struct ThreePaneLayout: View {
             guard let view = notification.object as? SurfaceView,
                   state.registry.id(for: view) != nil else { return }
             toastCenter.show(ToastItem(
-                message: String(localized: "Paste is not available in a tmux mirror pane"),
+                message: String(localized: "Paste is not available in a pane opened from tmux"),
                 undo: nil
             ))
         }

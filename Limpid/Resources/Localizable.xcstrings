@@ -3435,22 +3435,6 @@
         }
       }
     },
-    "Mirror tmux Window": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mirror tmux Window"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "tmux ウィンドウをミラー"
-          }
-        }
-      }
-    },
     "Move": {
       "comment": "Accept the worktree-move suggestion",
       "localizations": {
@@ -3960,6 +3944,16 @@
         }
       }
     },
+    "Open tmux Window in Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux ウィンドウをタブで開く"
+          }
+        }
+      }
+    },
     "Open settings": {
       "localizations": {
         "ja": {
@@ -4020,12 +4014,12 @@
         }
       }
     },
-    "Paste is not available in a tmux mirror pane": {
+    "Paste is not available in a pane opened from tmux": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "tmux ミラーのペインには貼り付けできません"
+            "value": "tmux から開いたペインには貼り付けできません"
           }
         }
       }

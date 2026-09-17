@@ -66,12 +66,13 @@ enum CommandPaletteCatalog {
 
     // MARK: - tmux windows
 
-    /// One row per tmux window found on a reachable server. The window
-    /// is the row's subject; the verb is the same on every row, so it
-    /// stays in the title and the window name goes in the subtitle.
+    /// One row per tmux window found on a reachable server. The row is an
+    /// action like the shortcut rows, so its second line is the English
+    /// alias and there is no subtitle; the window name follows the verb in
+    /// the title so typing part of it finds the row.
     private static func appendTmuxTargets(to items: inout [CommandPaletteItem], targets: [TmuxMirrorTarget]) {
         guard !targets.isEmpty else { return }
-        let resource: LocalizedStringResource = "Mirror tmux Window"
+        let resource: LocalizedStringResource = "Open tmux Window in Tab"
         let localizedTitle = String(localized: resource)
         var englishResource = resource
         englishResource.locale = Locale(identifier: "en")
@@ -83,7 +84,7 @@ enum CommandPaletteCatalog {
                 category: .actions,
                 title: "\(localizedTitle) \(target.displayName)",
                 searchAlias: localizedTitle != englishTitle ? "\(englishTitle) \(target.displayName)" : nil,
-                subtitle: target.binding.socketPath,
+                subtitle: nil,
                 icon: "rectangle.split.2x1",
                 shortcutDisplay: nil,
                 action: action
