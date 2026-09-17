@@ -6,13 +6,15 @@ import Foundation
 enum CommandPaletteCategory: Int, CaseIterable, Comparable {
     case navigate = 0
     case actions = 1
-    case reopen = 2
-    case settings = 3
+    case tmux = 2
+    case reopen = 3
+    case settings = 4
 
     var localizedTitle: LocalizedStringResource {
         switch self {
         case .navigate: "Navigate"
         case .actions: "Actions"
+        case .tmux: "tmux"
         case .reopen: "Reopen"
         case .settings: "Settings"
         }
@@ -33,6 +35,7 @@ enum PalettePrefix: CaseIterable {
     case tabs // @
     case projects // #
     case settings // :
+    case tmux // $
     case help // ?
 
     var character: Character {
@@ -41,6 +44,7 @@ enum PalettePrefix: CaseIterable {
         case .tabs: "@"
         case .projects: "#"
         case .settings: ":"
+        case .tmux: "$"
         case .help: "?"
         }
     }
@@ -51,6 +55,7 @@ enum PalettePrefix: CaseIterable {
         case .tabs: [.navigate]
         case .projects: [.navigate]
         case .settings: [.settings]
+        case .tmux: [.tmux]
         case .help: []
         }
     }
@@ -61,6 +66,7 @@ enum PalettePrefix: CaseIterable {
         case .tabs: "Type a tab name..."
         case .projects: "Type a project or worktree name..."
         case .settings: "Type a setting name..."
+        case .tmux: "Type a tmux window name..."
         case .help: "Select a mode..."
         }
     }
@@ -71,6 +77,7 @@ enum PalettePrefix: CaseIterable {
         case .tabs: "Go to tab"
         case .projects: "Go to project or worktree"
         case .settings: "Open settings"
+        case .tmux: "Open a tmux window"
         case .help: "Show all prefix modes"
         }
     }

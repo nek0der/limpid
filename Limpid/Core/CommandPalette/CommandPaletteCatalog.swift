@@ -40,7 +40,7 @@ enum CommandPaletteCatalog {
         attention: AttentionState,
         registry: (any SurfaceViewProviding)? = nil,
         reviewPresentation: ReviewPresentation? = nil,
-        tmuxTargets: [TmuxMirrorTarget] = []
+        isTmuxAvailable: Bool = false
     ) -> [CommandPaletteItem] {
         var items: [CommandPaletteItem] = []
         items.reserveCapacity(80)
@@ -54,41 +54,65 @@ enum CommandPaletteCatalog {
                 reviewPresentation: reviewPresentation
             )
         )
+        if isTmuxAvailable {
+            appendTmuxEntry(to: &items)
+        }
         appendTabs(to: &items, session: session)
         appendGroups(to: &items, session: session)
         appendProjects(to: &items, session: session)
         appendClosedTabs(to: &items, session: session)
         appendRecentProjects(to: &items, session: session)
-        appendTmuxTargets(to: &items, targets: tmuxTargets)
         appendSettings(to: &items)
         return items
     }
 
     // MARK: - tmux windows
 
-    /// One row per tmux window found on a reachable server. The row is an
-    /// action like the shortcut rows, so its second line is the English
-    /// alias and there is no subtitle; the window name follows the verb in
-    /// the title so typing part of it finds the row.
-    private static func appendTmuxTargets(to items: inout [CommandPaletteItem], targets: [TmuxMirrorTarget]) {
-        guard !targets.isEmpty else { return }
-        let resource: LocalizedStringResource = "Open tmux Window in Tab"
+    /// The row that switches the field to `$`. Listed whenever tmux is
+    /// installed, before any window is known, so the mode can be found
+    /// from the actions even when no server is running.
+    private static func appendTmuxEntry(to items: inout [CommandPaletteItem]) {
+        let resource: LocalizedStringResource = "Open tmux Window…"
         let localizedTitle = String(localized: resource)
-        var englishResource = resource
-        englishResource.locale = Locale(identifier: "en")
-        let englishTitle = String(localized: englishResource)
-        for target in targets {
+        let englishTitle = englishString(resource)
+        let action = CommandPaletteAction.insertPrefix(.tmux)
+        items.append(CommandPaletteItem(
+            id: action.frecencyKey,
+            category: .actions,
+            title: localizedTitle,
+            searchAlias: localizedTitle != englishTitle ? englishTitle : nil,
+            subtitle: nil,
+            icon: "rectangle.split.2x1",
+            shortcutDisplay: nil,
+            action: action
+        ))
+    }
+
+    /// One row per tmux window found on a reachable server, titled with
+    /// the bare `session:window` name: the section header already says
+    /// these are tmux windows. The verb stays searchable through hidden
+    /// keywords, in English and in the UI language, so typing "tmux" or the
+    /// localized verb still finds every window.
+    static func tmuxWindowItems(
+        targets: [TmuxMirrorTarget],
+        isOpen: (TmuxMirrorTarget) -> Bool
+    ) -> [CommandPaletteItem] {
+        let verb: LocalizedStringResource = "Open tmux Window in Tab"
+        let verbs = Array(Set([englishString(verb), String(localized: verb)])).sorted()
+        let openLabel = String(localized: LocalizedStringResource("palette.tmux.windowOpen", defaultValue: "Open"))
+        return targets.map { target in
             let action = CommandPaletteAction.mirrorTmuxWindow(target)
-            items.append(CommandPaletteItem(
+            return CommandPaletteItem(
                 id: action.frecencyKey,
-                category: .actions,
-                title: "\(localizedTitle) \(target.displayName)",
-                searchAlias: localizedTitle != englishTitle ? "\(englishTitle) \(target.displayName)" : nil,
+                category: .tmux,
+                title: target.displayName,
+                searchKeywords: verbs.map { "tmux \($0) \(target.displayName)" },
                 subtitle: nil,
                 icon: "rectangle.split.2x1",
                 shortcutDisplay: nil,
+                statusLabel: isOpen(target) ? openLabel : nil,
                 action: action
-            ))
+            )
         }
     }
 
@@ -333,6 +357,12 @@ enum CommandPaletteCatalog {
     }
 
     // MARK: - Helpers
+
+    private static func englishString(_ resource: LocalizedStringResource) -> String {
+        var english = resource
+        english.locale = Locale(identifier: "en")
+        return String(localized: english)
+    }
 
     private static func shortenPath(_ path: String) -> String {
         guard let home = ProcessInfo.processInfo.environment["HOME"] else { return path }

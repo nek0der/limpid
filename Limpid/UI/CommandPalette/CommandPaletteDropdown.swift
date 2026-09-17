@@ -110,6 +110,12 @@ struct CommandPaletteDropdown: View {
     }
 
     private func execute(_ action: CommandPaletteAction) {
+        // A prefix row swaps the query instead of dismissing, as Enter does
+        // in `ToolbarPaletteField`; the execute path would only close us.
+        if case let .insertPrefix(mode) = action {
+            state.query = String(mode.character)
+            return
+        }
         NotificationCenter.default.post(
             name: .limpidCommandPaletteExecute,
             object: action

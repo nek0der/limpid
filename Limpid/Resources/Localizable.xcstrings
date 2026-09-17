@@ -3944,12 +3944,32 @@
         }
       }
     },
+    "Open a tmux window": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux ウィンドウを開く"
+          }
+        }
+      }
+    },
     "Open tmux Window in Tab": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "tmux ウィンドウをタブで開く"
+          }
+        }
+      }
+    },
+    "Open tmux Window…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux ウィンドウを開く…"
           }
         }
       }
@@ -5421,6 +5441,16 @@
         }
       }
     },
+    "Type a tmux window name...": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux ウィンドウ名を入力..."
+          }
+        }
+      }
+    },
     "Type an action name...": {
       "localizations": {
         "ja": {
@@ -6161,6 +6191,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "クローズ済み"
+          }
+        }
+      }
+    },
+    "palette.tmux.windowOpen": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開いています"
           }
         }
       }

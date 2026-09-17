@@ -55,11 +55,53 @@ enum CommandPaletteActions {
             attention: attention,
             registry: registry,
             reviewPresentation: reviewPresentation,
-            tmuxTargets: tmuxStore?.availableTargets() ?? []
+            isTmuxAvailable: tmuxStore?.tmuxExecutable != nil
         )
         state.initialQuery = initialQuery.isEmpty ? nil : initialQuery
         state.applyFilter(query: "", frecencyStore: frecencyStore)
         session.commandPaletteState = state
+        if let tmuxStore {
+            loadTmuxWindows(into: state, session: session, store: tmuxStore, frecencyStore: frecencyStore)
+        }
+    }
+
+    /// List the tmux windows after the palette is already up and merge
+    /// them into it. Listing runs one client per server socket, and a
+    /// socket whose server hangs costs a full timeout, so the palette never
+    /// waits for it. Rows that arrive after the palette closed, or after it
+    /// was reopened, are dropped.
+    ///
+    /// Returns the loading task so a caller can wait for the merge.
+    @discardableResult
+    static func loadTmuxWindows(
+        into state: CommandPaletteState,
+        session: WindowSession,
+        store: TmuxConnectionStore,
+        frecencyStore: FrecencyStore?,
+        listWindows: @escaping @Sendable (String) async -> [TmuxMirrorTarget] = listTmuxWindows(tmuxPath:)
+    ) -> Task<Void, Never>? {
+        guard let tmuxPath = store.tmuxExecutable else { return nil }
+        return Task {
+            let targets = await listWindows(tmuxPath)
+            guard session.commandPaletteState === state else { return }
+            let items = CommandPaletteCatalog.tmuxWindowItems(targets: targets) {
+                store.liveMirror(showing: $0.windowID, of: $0.binding) != nil
+            }
+            state.mergeItems(items, frecencyStore: frecencyStore)
+        }
+    }
+
+    /// A dispatch queue rather than `Task.detached`: listing blocks on
+    /// child processes, and blocking a cooperative-pool thread for a slow
+    /// socket starves the concurrency runtime. The closure is formed in
+    /// this nonisolated function so Dispatch never runs a closure that
+    /// carries main-actor isolation.
+    nonisolated static func listTmuxWindows(tmuxPath: String) async -> [TmuxMirrorTarget] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: TmuxMirrorTargetLister.targets(tmuxPath: tmuxPath))
+            }
+        }
     }
 
     /// Dismiss the palette overlay. Routine — used by Esc, the

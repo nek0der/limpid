@@ -39,6 +39,12 @@ struct CommandPaletteRow: View {
 
             Spacer(minLength: 4)
 
+            if let status = item.statusLabel {
+                Text(status)
+                    .font(LimpidFont.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             if let shortcut = item.shortcutDisplay {
                 Text(shortcut)
                     .font(LimpidFont.caption)

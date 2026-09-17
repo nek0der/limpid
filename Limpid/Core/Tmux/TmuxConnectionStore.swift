@@ -45,13 +45,6 @@ final class TmuxConnectionStore {
         self.tmuxExecutable = tmuxExecutable
     }
 
-    /// The windows the palette can offer right now. Synchronous: one
-    /// `list-windows` per socket, each bounded by `TmuxCommand`'s timeout.
-    func availableTargets() -> [TmuxMirrorTarget] {
-        guard let tmuxExecutable else { return [] }
-        return TmuxMirrorTargetLister.targets(tmuxPath: tmuxExecutable)
-    }
-
     func dormantSink(paneID: UUID) -> TmuxPaneSink? {
         if let existing = dormantSinks[paneID] {
             return existing
