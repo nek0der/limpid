@@ -197,8 +197,9 @@ final class TmuxConnectionStore {
         gateOutput(for: Self.key(of: mirror))
     }
 
-    /// Drop mirrors whose tab is gone, then connections no mirror uses.
-    /// Called whenever the tab list changes; idempotent.
+    /// Drop mirrors whose tab is gone, then connections no mirror uses,
+    /// and hand every remaining mirror its tab. Called whenever the tab
+    /// list changes; idempotent.
     func reconcile(tabs: [Tab]) {
         let liveTabs = Set(tabs.map(\.id))
         var touchedKeys: Set<Key> = []
@@ -220,6 +221,11 @@ final class TmuxConnectionStore {
         }
         for key in touchedKeys where usedKeys.contains(key) {
             gateOutput(for: key)
+        }
+        // A focus move reaches a mirror only here: the focus lives in the
+        // tab, and every write to it passes through this call.
+        for tab in tabs {
+            mirrors[tab.id]?.tabChanged(tab)
         }
         let livePanes = Set(tabs.flatMap { $0.splitTree.allLeafIDs() })
         for (paneID, sink) in dormantSinks where !livePanes.contains(paneID) {

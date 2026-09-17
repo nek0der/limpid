@@ -66,7 +66,6 @@ final class TmuxWindowMirror {
     private struct Pane {
         let tmuxPane: String
         let sink: TmuxPaneSink
-        var tty: String?
         var isSecureInput = false
         /// The pane's size in tmux: its layout cell, or the whole window
         /// while tmux has it zoomed. `nil` until a layout names the pane.
@@ -111,6 +110,14 @@ final class TmuxWindowMirror {
     /// arrive before the `%layout-change` that gives the pane a leaf, so
     /// the report waits here until the leaf exists (design §4 D6).
     @ObservationIgnored private var pendingActivePane: String?
+    /// The tmux pane the tab's focus already stands for: the active pane
+    /// tmux reported and the tab took, or the pane we asked tmux to
+    /// select. A focused leaf that maps to another pane was chosen in
+    /// Limpid, and only that is sent (`tabChanged`). Every write of ours
+    /// that moves the tab's focus sets this first, so the `reconcile` the
+    /// write triggers finds nothing to send, and tmux's announcement of
+    /// our own `select-pane` finds the focus already there.
+    @ObservationIgnored private var activePane: String?
 
     struct PendingResize {
         let paneID: UUID
@@ -152,6 +159,14 @@ final class TmuxWindowMirror {
             guard case let .tmux(ref) = source, ref.windowID == windowID else { continue }
             attach(paneID: paneID, tmuxPane: ref.paneID)
         }
+        activePane = tab.splitTree.focusedLeafID.flatMap { tmuxPane(ofLeaf: $0, in: tab) }
+        // The palette listed the window a while ago, so tmux is asked which
+        // pane is active now. The answer is a report like any other.
+        guard canSend else { return }
+        connection.send("display-message -p -t \(TmuxProtocol.quote(windowID)) '#{pane_id}'") { [weak self] lines, isError in
+            guard let self, !isError, let pane = lines.first else { return }
+            handle(.windowPaneChanged(window: windowID, pane: pane))
+        }
     }
 
     func sink(for paneID: UUID) -> TmuxPaneSink? {
@@ -190,7 +205,28 @@ final class TmuxWindowMirror {
         detach(paneID: paneID)
         registry.unregister(paneID)
         guard let tab = session.tab(tabID), tab.splitTree.contains(leafID: paneID) else { return }
+        // The neighbor the tab focuses next is not the user's choice; tmux
+        // names this window's active pane after the move, and that report
+        // is what the focus follows.
+        activePane = tab.splitTree.remove(paneID).tree.focusedLeafID.flatMap { tmuxPane(ofLeaf: $0, in: tab) }
         session.removePane(paneID, fromTab: tabID)
+    }
+
+    /// The tab changed. A focus that moved to a pane tmux does not have
+    /// active was chosen in Limpid (a click, a keyboard move, a jump), so
+    /// tmux is told; its keys, copy-mode, and `#{pane_active}` follow the
+    /// pane the user is looking at (design §4 D6). Nothing is sent for a
+    /// change that left the focus alone, and nothing while disconnected.
+    func tabChanged(_ tab: Tab) {
+        guard canSend, let leafID = tab.splitTree.focusedLeafID,
+              let pane = tmuxPane(ofLeaf: leafID, in: tab), pane != activePane
+        else { return }
+        activePane = pane
+        // A report still waiting for its leaf predates this command, which
+        // tmux runs after it.
+        pendingActivePane = nil
+        connection.send("select-pane -t \(TmuxProtocol.quote(pane))")
+        refreshSecureInput(paneID: leafID)
     }
 
     /// The connection ended. The panes stay as they are until tmux is
@@ -321,12 +357,8 @@ final class TmuxWindowMirror {
             }
             panes[paneID] = Pane(tmuxPane: tmuxPane, sink: sink)
             markStale(paneID: paneID)
-            sink.setOnOutputActivity { [weak self] in self?.probeSecureInput(paneID: paneID) }
-            let target = TmuxProtocol.quote(tmuxPane)
-            connection.send("display-message -p -t \(target) '#{pane_tty}'") { [weak self] lines, isError in
-                guard !isError, let tty = lines.first, tty.hasPrefix("/dev/") else { return }
-                self?.panes[paneID]?.tty = tty
-            }
+            sink.setOnOutputActivity { [weak self] in self?.refreshSecureInput(paneID: paneID) }
+            refreshSecureInput(paneID: paneID)
         } catch {
             log.error("attach pane \(tmuxPane, privacy: .public) failed: \(String(describing: error), privacy: .public)")
         }
@@ -450,7 +482,7 @@ final class TmuxWindowMirror {
         switch outcome {
         case let .painted(rowCount):
             log.notice("bootstrapped \(tmuxPane, privacy: .public) rows=\(rowCount, privacy: .public)")
-            probeSecureInput(paneID: paneID)
+            refreshSecureInput(paneID: paneID)
         case .liveOnly:
             // A connection that ended fails every pending capture; only a
             // capture tmux itself refused is a fault.
@@ -505,6 +537,16 @@ final class TmuxWindowMirror {
             return fresh
         }
         let present = Set(layout.root.paneIDs)
+        // A pane that left took the focus with it. tmux names the pane that
+        // takes over only after this layout (measured on 3.7c), so the tab
+        // focuses the first pane meanwhile, and that is not the user's
+        // choice to send.
+        var focus = tab.splitTree.focusedLeafID
+        if let focused = focus, let pane = tmuxPane(ofLeaf: focused, in: tab), !present.contains(pane) {
+            let successor = layout.root.paneIDs.first
+            focus = successor.flatMap { leafIDs[$0] }
+            activePane = successor
+        }
 
         guard let binding = tab.paneSources.values.lazy.compactMap({ source -> TmuxBinding? in
             if case let .tmux(ref) = source {
@@ -514,7 +556,7 @@ final class TmuxWindowMirror {
         }).first else { return }
 
         let removed = session.removePanes(fromTab: tabID) { t in
-            t.splitTree = SplitTree(root: tree, focusedLeafID: t.splitTree.focusedLeafID)
+            t.splitTree = SplitTree(root: tree, focusedLeafID: focus)
             for (leafID, tmuxPane) in added {
                 t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: tmuxPane))
             }
@@ -545,7 +587,9 @@ final class TmuxWindowMirror {
 
     /// Focus follows tmux's active pane once per change, the way an
     /// ordinary split focuses the pane it creates. A later focus move the
-    /// user makes in Limpid stands until tmux changes its active pane again.
+    /// user makes in Limpid is sent to tmux instead (`tabChanged`), so the
+    /// two agree again. A report is never sent back: `activePane` is set
+    /// before the focus is written.
     private func applyActivePane() {
         guard let tmuxPane = pendingActivePane, let tab = session.tab(tabID),
               let leafID = tab.paneSources.first(where: { _, source in
@@ -556,8 +600,10 @@ final class TmuxWindowMirror {
               })?.key
         else { return }
         pendingActivePane = nil
+        activePane = tmuxPane
         guard tab.splitTree.focusedLeafID != leafID else { return }
         session.update(tabID) { $0.splitTree.focusedLeafID = leafID }
+        refreshSecureInput(paneID: leafID)
         // The keyboard moves only from one of this tab's panes (or from
         // nowhere): the change may come from another tmux client, and must
         // not take it from a search field, review, or the palette. A
@@ -587,14 +633,39 @@ final class TmuxWindowMirror {
         session.update(tabID) { $0.zoomedLeafID = zoomedLeaf }
     }
 
+    /// The pane of this window that `leafID` shows, read from the tab
+    /// rather than from `panes`: a leaf the layout just added is in the tab
+    /// before it is attached.
+    private func tmuxPane(ofLeaf leafID: UUID, in tab: Tab) -> String? {
+        guard case let .tmux(ref) = tab.ioSource(for: leafID), ref.windowID == windowID else { return nil }
+        return ref.paneID
+    }
+
     // MARK: - Secure input
 
+    /// Read the pane's tty, then check it. tmux announces nothing when
+    /// `respawn-pane` gives a pane a new pty (measured on 3.7c), and the
+    /// old pty may already belong to another pane, so no tty is kept: each
+    /// check asks for it first. The sink asks on output (at the start of a
+    /// burst and once more when it ends), and the pane is also checked when
+    /// attached, repainted, or focused (design §11 D16). A reply for a pane
+    /// that has since left, or was replaced, is dropped.
+    private func refreshSecureInput(paneID: UUID) {
+        guard canSend, let tmuxPane = panes[paneID]?.tmuxPane else { return }
+        connection.send("display-message -p -t \(TmuxProtocol.quote(tmuxPane)) '#{pane_tty}'") { [weak self] lines, isError in
+            guard let self, !isError, let tty = lines.first, tty.hasPrefix("/dev/"),
+                  panes[paneID]?.tmuxPane == tmuxPane
+            else { return }
+            probeSecureInput(paneID: paneID, tty: tty)
+        }
+    }
+
     /// libghostty cannot see a mirror pane's pty, so the password-prompt
-    /// check reads the pane's tty directly. The sink calls this on output
-    /// and once more when a burst ends, which is when `read -s` and
-    /// `sudo` have switched the line discipline.
-    private func probeSecureInput(paneID: UUID) {
-        guard let secureInput, let pane = panes[paneID], let tty = pane.tty,
+    /// check reads the pane's tty directly. The check after a burst ends
+    /// is the one that sees `read -s` and `sudo` switch the line
+    /// discipline.
+    private func probeSecureInput(paneID: UUID, tty: String) {
+        guard let secureInput, let pane = panes[paneID],
               let view = registry.view(for: paneID),
               let isSecure = TmuxPaneTTYProbe.isSecureInput(tty: tty),
               isSecure != pane.isSecureInput
