@@ -33,10 +33,6 @@ enum TmuxServerGeneration {
         case unreachable
     }
 
-    /// One row per session. Every row carries the server's own pid and
-    /// start time, so any row answers for the server.
-    static let listFormat = "#{pid}\t#{start_time}\t#{session_id}"
-
     /// The generation `binding` recorded, or `nil` when it has none. A
     /// binding restored from an agent record carries empty strings where
     /// the record had no values.
@@ -48,44 +44,42 @@ enum TmuxServerGeneration {
     }
 
     /// Blocks on a child process; `check` runs it off the caller's thread.
+    ///
+    /// One listing answers both questions asked of a socket — which server
+    /// is on it, and which sessions it has — so it is asked for in one
+    /// format (`TmuxServerSessions`) and read twice, rather than by two
+    /// listings that could disagree about the same server.
     static func verdict(tmuxPath: String, binding: TmuxBinding) -> Verdict {
         guard let recorded = recorded(in: binding) else { return .unrecorded }
-        let result = TmuxCommand().run(
-            executable: tmuxPath,
-            arguments: TmuxCommand.clientArguments(socketPath: binding.socketPath, ["list-sessions", "-F", listFormat])
+        return verdict(
+            for: TmuxServerSessions.list(tmuxPath: tmuxPath, socketPath: binding.socketPath),
+            recorded: recorded,
+            sessionID: binding.sessionID
         )
-        return classify(result, recorded: recorded, sessionID: binding.sessionID) {
-            TmuxSessionProbe.connectError(socketPath: binding.socketPath)
-        }
     }
 
-    /// A client that failed is split the way the session check after a
-    /// connection ended splits it, so a stopped server ends the tabs on
-    /// either path.
+    /// A listing that failed is split the way the session check after a
+    /// connection ended splits it (`TmuxServerSessions`), so a stopped
+    /// server ends the tabs on either path.
     ///
     /// A server that answers with no sessions at all (`exit-empty off`)
     /// states no generation. It cannot hold the binding's session either
     /// way, and it is taken as replaced so the tab keeps what it showed
     /// rather than being closed as a session that ended.
-    static func classify(
-        _ result: TmuxCommandResult,
-        recorded: Recorded,
-        sessionID: String,
-        connectError: () -> Int32?
-    ) -> Verdict {
-        guard case let .success(output) = result else {
-            return TmuxSessionProbe.isServerAbsent(after: result, connectError: connectError) ? .serverGone : .unreachable
+    static func verdict(for sessions: TmuxServerSessions, recorded: Recorded, sessionID: String) -> Verdict {
+        switch sessions {
+        case .serverGone:
+            return .serverGone
+        case .unreachable:
+            return .unreachable
+        case let .sessions(rows):
+            // Every row carries the server's own run, so the first one
+            // answers for the server.
+            guard let first = rows.first,
+                  Recorded(pid: first.serverPID, startedAt: first.serverStartedAt) == recorded
+            else { return .replaced }
+            return .matches(hasSession: rows.contains { $0.sessionID == sessionID })
         }
-        var server: Recorded?
-        var hasSession = false
-        for line in output.split(whereSeparator: \.isNewline) {
-            let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
-            guard fields.count == 3 else { return .unreachable }
-            server = server ?? Recorded(pid: String(fields[0]), startedAt: String(fields[1]))
-            hasSession = hasSession || fields[2] == sessionID
-        }
-        guard server == recorded else { return .replaced }
-        return .matches(hasSession: hasSession)
     }
 
     /// A dispatch queue for the same reason as `TmuxSessionProbe.check`:

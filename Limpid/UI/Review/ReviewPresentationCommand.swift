@@ -9,18 +9,32 @@ import SwiftUI
 /// able to close what it opened.
 @MainActor
 enum ReviewPresentationCommand {
+    /// Said out loud when a tab review cannot dock over is asked to show it.
+    /// The menu item and the palette are already disabled there; a bound
+    /// shortcut reaches this anyway, and silence reads as a broken key.
+    private static func refuse(toastCenter: ToastCenter?) {
+        toastCenter?.show(ToastItem(
+            message: String(localized: "Reviewing isn't available in a tmux tab yet"),
+            undo: nil
+        ))
+    }
+
     static func toggle(
         session: WindowSession,
         attention: AttentionState,
         presentation: ReviewPresentation,
-        registry: (any SurfaceViewProviding)? = nil
+        registry: (any SurfaceViewProviding)? = nil,
+        toastCenter: ToastCenter? = nil
     ) {
         if presentation.isPresented {
             reveal(session: session, registry: registry)
             presentation.close()
             return
         }
-        guard ReviewAgents.allowsReviewSurface(session: session) else { return }
+        guard ReviewAgents.allowsReviewSurface(session: session) else {
+            refuse(toastCenter: toastCenter)
+            return
+        }
         let paneID = session.activeTab?.splitTree.effectiveFocusedLeafID
         if let directory = ReviewAgents.directory(session: session) {
             presentation.open(directory, originPaneID: paneID)
@@ -45,9 +59,13 @@ enum ReviewPresentationCommand {
     static func openTurn(
         session: WindowSession,
         attention: AttentionState,
-        presentation: ReviewPresentation
+        presentation: ReviewPresentation,
+        toastCenter: ToastCenter? = nil
     ) {
-        guard ReviewAgents.allowsReviewSurface(session: session) else { return }
+        guard ReviewAgents.allowsReviewSurface(session: session) else {
+            refuse(toastCenter: toastCenter)
+            return
+        }
         let paneID = session.activeTab?.splitTree.effectiveFocusedLeafID
         guard let target = ReviewAgents.turnTarget(
             session: session,
@@ -132,10 +150,10 @@ struct ReviewThisTurnMenuItem: View {
         }
         .accessibilityLabel(Text("Review This Turn"))
         .limpidShortcut(.reviewTurn, in: state.settingsStore)
-        .disabled(ReviewAgents.turnScope(
+        .disabled(!ReviewAgents.canReviewTurn(
             session: state.session,
             attention: state.attention,
             paneID: paneID
-        ) == nil)
+        ))
     }
 }

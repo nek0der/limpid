@@ -5148,6 +5148,16 @@
         }
       }
     },
+    "Reviewing isn't available in a tmux tab yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux のタブではレビューをまだ使えません"
+          }
+        }
+      }
+    },
     "Review was not delivered. The comments stay in this review.": {
       "extractionState": "manual",
       "localizations": {

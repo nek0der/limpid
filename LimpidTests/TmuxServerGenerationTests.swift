@@ -8,27 +8,30 @@ import Testing
 struct TmuxServerGenerationTests {
     private let recorded = TmuxServerGeneration.Recorded(pid: "4242", startedAt: "1789000000")
 
-    /// For a listing that was answered: nothing may connect.
+    /// Read from the one listing both questions about a socket are asked
+    /// with (`TmuxServerSessions`). For a listing that was answered:
+    /// nothing may connect.
     private func classify(_ result: TmuxCommandResult, sessionID: String) -> TmuxServerGeneration.Verdict {
-        TmuxServerGeneration.classify(result, recorded: recorded, sessionID: sessionID) {
+        let sessions = TmuxServerSessions.classify(result) {
             Issue.record("an answered listing must not connect")
             return nil
         }
+        return TmuxServerGeneration.verdict(for: sessions, recorded: recorded, sessionID: sessionID)
     }
 
     @Test("a listing from the recorded server matches, with or without the session", arguments: [
-        ("4242\t1789000000\t$0\n4242\t1789000000\t$3\n", "$3", TmuxServerGeneration.Verdict.matches(hasSession: true)),
-        ("4242\t1789000000\t$0\n", "$3", .matches(hasSession: false)),
-        ("4242\t1789000000\t$30\n", "$3", .matches(hasSession: false))
+        ("4242\t1789000000\t$0\tone\n4242\t1789000000\t$3\ttwo\n", "$3", TmuxServerGeneration.Verdict.matches(hasSession: true)),
+        ("4242\t1789000000\t$0\tone\n", "$3", .matches(hasSession: false)),
+        ("4242\t1789000000\t$30\tone\n", "$3", .matches(hasSession: false))
     ])
     func classify_sameServer(output: String, sessionID: String, expected: TmuxServerGeneration.Verdict) {
         #expect(classify(.success(output), sessionID: sessionID) == expected)
     }
 
     @Test("a listing from another server is replaced, even when it names the session", arguments: [
-        "4243\t1789000000\t$0\n",
-        "4242\t1789000001\t$0\n",
-        "1\t2\t$0\n",
+        "4243\t1789000000\t$0\tone\n",
+        "4242\t1789000001\t$0\tone\n",
+        "1\t2\t$0\tone\n",
     ])
     func classify_otherServer(output: String) {
         #expect(classify(.success(output), sessionID: "$0") == .replaced)
@@ -40,9 +43,9 @@ struct TmuxServerGenerationTests {
     }
 
     @Test("a listing that cannot be read is unreachable", arguments: [
-        "4242 1789000000 $0\n",
-        "4242\t1789000000\n",
-        "4242\t1789000000\t$0\textra\n",
+        "4242 1789000000 $0 one\n",
+        "4242\t1789000000\t$0\n",
+        "4242\t1789000000\t$0\tone\textra\n",
     ])
     func classify_unreadableListing(output: String) {
         #expect(classify(.success(output), sessionID: "$0") == .unreachable)
@@ -52,11 +55,11 @@ struct TmuxServerGenerationTests {
         TmuxCommandResult.timedOut, .launchFailed, .cancelled, .invalidOutput, .outputLimit,
     ])
     func classify_noAnswer(_ result: TmuxCommandResult) {
-        let verdict = TmuxServerGeneration.classify(result, recorded: recorded, sessionID: "$0") {
+        let sessions = TmuxServerSessions.classify(result) {
             Issue.record("a client that gave no answer must not connect")
             return ENOENT
         }
-        #expect(verdict == .unreachable)
+        #expect(TmuxServerGeneration.verdict(for: sessions, recorded: recorded, sessionID: "$0") == .unreachable)
     }
 
     @Test("a failed client means no server when the socket is missing or refuses, and unreachable otherwise", arguments: [
@@ -66,7 +69,8 @@ struct TmuxServerGenerationTests {
         (Int32?.none, .unreachable),
     ])
     func classify_failedClient(connectError: Int32?, expected: TmuxServerGeneration.Verdict) {
-        #expect(TmuxServerGeneration.classify(.failed(1), recorded: recorded, sessionID: "$0") { connectError } == expected)
+        let sessions = TmuxServerSessions.classify(.failed(1)) { connectError }
+        #expect(TmuxServerGeneration.verdict(for: sessions, recorded: recorded, sessionID: "$0") == expected)
     }
 
     @Test("a binding records a generation only with both values present and non-empty", arguments: [

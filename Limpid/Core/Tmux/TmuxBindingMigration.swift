@@ -170,11 +170,6 @@ enum TmuxBindingMigration {
                 continue
             }
             var binding = claim.binding
-            // The binding is written into the reference, so what a
-            // failed observation left behind must not travel with it: a
-            // provisional binding whose server answered for it is as
-            // observed as any other.
-            binding.isProvisional = nil
             binding.sessionID = sessionID
             plan.conversions.append(Conversion(
                 tabID: claim.tabID,

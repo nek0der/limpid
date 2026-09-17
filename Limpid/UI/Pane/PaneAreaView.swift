@@ -70,9 +70,19 @@ struct PaneAreaView: View {
     /// The origin pane only while the strip actually renders it. Collapsed
     /// keeps the header — it is the control that brings the pane back — but
     /// mounts no surface, so libghostty is never handed a new size.
+    ///
+    /// A pane whose tab does not allow review (`canOpenReview`) is not
+    /// mounted either, whichever way review came to hold it: a mirror pane
+    /// placed in the strip is sized by the strip while tmux keeps sizing it
+    /// from the whole pane area, and the two authorities leave the mirror
+    /// waiting for a grid that never matches. The header stays, so the
+    /// destination can be pointed back at a pane that does allow it.
     private var reviewStripPaneID: UUID? {
-        guard !reviewPresentation.isStripCollapsed else { return nil }
-        return reviewOriginPaneID
+        guard !reviewPresentation.isStripCollapsed,
+              let paneID = reviewOriginPaneID,
+              ReviewAgents.allowsReviewSurface(session: session, paneID: paneID)
+        else { return nil }
+        return paneID
     }
 
     /// A stable task identity for validating only transient turn review. An

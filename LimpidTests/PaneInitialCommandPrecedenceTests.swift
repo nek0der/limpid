@@ -43,14 +43,13 @@ struct PaneInitialCommandPrecedenceTests {
         #expect(command.hasPrefix("tmux -S "))
     }
 
-    @Test("a provisional tmux binding still blocks duplicate agent resume")
-    func provisionalTmux_beatsAgentResume() throws {
+    @Test("a binding that records its server still blocks duplicate agent resume")
+    func generationBinding_beatsAgentResume() throws {
         var tab = tab()
-        var provisional = binding()
-        provisional.serverPID = "42"
-        provisional.serverStartedAt = "100"
-        provisional.isProvisional = true
-        tab.tmuxBindings[pane] = provisional
+        var recorded = binding()
+        recorded.serverPID = "42"
+        recorded.serverStartedAt = "100"
+        tab.tmuxBindings[pane] = recorded
         tab.agentSessions[.claude, default: [:]][pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
         tab.agentSessions[.codex, default: [:]][pane] = CodexSessionInfo(sessionId: "x1", cwd: nil)
 

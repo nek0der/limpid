@@ -78,6 +78,26 @@ enum ReviewAgents {
         session.activeTab?.capabilities.canOpenReview ?? true
     }
 
+    /// The same question asked of the tab that holds one pane, for the paths
+    /// that name a pane rather than follow the active tab — the turn a
+    /// finished agent focuses (⌘J, the Waiting list), and the pane the strip
+    /// docks. A pane no tab holds keeps the older answer.
+    static func allowsReviewSurface(session: WindowSession, paneID: UUID) -> Bool {
+        session.tab(containing: paneID)?.capabilities.canOpenReview ?? true
+    }
+
+    /// Whether Review This Turn has something to open. Asked by the menu item
+    /// and the palette so a tab review cannot dock over shows the item
+    /// disabled rather than enabled and inert.
+    static func canReviewTurn(
+        session: WindowSession,
+        attention: AttentionState,
+        paneID: UUID?
+    ) -> Bool {
+        guard allowsReviewSurface(session: session) else { return false }
+        return turnScope(session: session, attention: attention, paneID: paneID) != nil
+    }
+
     /// The pane review may take when it follows the user onto `tab`: the
     /// tab's focused pane, or `nil` when the tab does not let review dock over
     /// it. Review takes panes implicitly (following focus, following a
@@ -143,10 +163,13 @@ enum ReviewAgents {
             .max { $0.updatedAt < $1.updatedAt }
         guard let tree = match?.turnBaseTree, let path = match?.turnRoot else { return nil }
         let turnRoot = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-        // A restored tmux client reports the outer shell's OSC 7 directory,
-        // not the hosted pane's current directory. The hook ran inside that
-        // pane, so its turn root remains the usable evidence for opening; the
-        // insertion path performs its own repository check before delivery.
+        // A pane showing a tmux client reports the outer shell's OSC 7
+        // directory, not the directory of the tmux pane the agent runs in —
+        // an agent the user started inside their own tmux (`manual`), since
+        // an agent Limpid hosts has a mirror tab review does not open over.
+        // The hook ran inside that pane, so its turn root remains the usable
+        // evidence for opening; the insertion path performs its own
+        // repository check before delivery.
         if tab.container.projectID == nil,
            let workingDirectory = session.workingDirectory(paneID: paneID),
            !isInside(
@@ -234,9 +257,10 @@ enum ReviewAgents {
 
     /// The directory of the terminal that will receive an insertion.
     ///
-    /// A restored tmux client keeps reporting the launcher shell's OSC 7
-    /// directory on its surface. For a tmux-hosted turn, resolve the active
-    /// server pane instead; all other panes use their per-pane OSC 7 value.
+    /// A pane running a tmux client keeps reporting the launcher shell's OSC 7
+    /// directory on its surface. For a turn had inside tmux, resolve the
+    /// active server pane instead; all other panes use their per-pane OSC 7
+    /// value.
     static func insertionWorkingDirectory(
         session: WindowSession,
         paneID: UUID,
@@ -245,6 +269,11 @@ enum ReviewAgents {
     ) async -> String? {
         guard isTmuxHosted else { return session.workingDirectory(paneID: paneID) }
         guard let surfaceTTY = registry.view(for: paneID)?.ttyName else { return nil }
+        // The socket the poll saw this pane attached to, so a server outside
+        // the default directory is asked as well. Only a pane running a tmux
+        // client of its own has one: an agent Limpid hosts is shown by a
+        // mirror tab, whose leaves hold no binding and which review does not
+        // open over at all (`TabCapabilities.canOpenReview`).
         let knownBinding = session.tab(containing: paneID)?.tmuxBindings[paneID]
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {

@@ -130,9 +130,16 @@ final class ClipboardConfirmationCoordinator {
 
     /// Ask before a tmux mirror pane pastes `contents`. Same one-at-a-time
     /// rule as a libghostty request; a paste that arrives while a sheet is
-    /// up is dropped, and there is nothing to answer for it.
-    func enqueueMirrorPaste(contents: String, view: SurfaceView, paste: @escaping @MainActor () -> Void) {
-        guard reviewPasteLedger.enqueue(receipt: nil) else {
+    /// up is dropped, and the ledger reports it for a review paste that was
+    /// waiting on this answer. `receipt` is absent for every paste but
+    /// review's, which are the only ones anything is owed for.
+    func enqueueMirrorPaste(
+        contents: String,
+        view: SurfaceView,
+        receipt: ReviewPasteReceipt? = nil,
+        paste: @escaping @MainActor () -> Void
+    ) {
+        guard reviewPasteLedger.enqueue(receipt: receipt) else {
             log.notice("mirror paste dropped: another prompt is already up")
             return
         }

@@ -16,13 +16,11 @@ private func binding(
     sessionID: String = "$1",
     sessionName: String = "limpid-1a2b3c4d-4242",
     pid: String? = "4100",
-    startedAt: String? = "1758130000",
-    isProvisional: Bool? = nil
+    startedAt: String? = "1758130000"
 ) -> TmuxBinding {
     var binding = TmuxBinding(socketPath: socketPath, sessionID: sessionID, sessionName: sessionName)
     binding.serverPID = pid
     binding.serverStartedAt = startedAt
-    binding.isProvisional = isProvisional
     return binding
 }
 
@@ -136,13 +134,6 @@ struct TmuxBindingMigrationTests {
         let plan = planFor(session: session, answers: [Sockets.agent: rows()])
         #expect(plan.conversions.map(\.needsOwnTab) == [true])
         #expect(plan.conversions.map(\.leafID) == [paneID])
-    }
-
-    @Test func plan_provisionalBindingOnALiveServer_convertsWithoutTheProvisionalMark() throws {
-        let (session, tab, paneID) = WindowSessionFixture.withLooseTab()
-        session.update(tab.id) { $0.tmuxBindings[paneID] = binding(socketPath: Sockets.agent, isProvisional: true) }
-        let conversion = try #require(planFor(session: session, answers: [Sockets.agent: rows()]).conversions.first)
-        #expect(conversion.ref.binding.isProvisional == nil)
     }
 
     @Test func plan_agentServerGone_dropsTheBindingInsteadOfConverting() {

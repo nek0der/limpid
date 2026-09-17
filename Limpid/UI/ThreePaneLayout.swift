@@ -173,7 +173,8 @@ struct ThreePaneLayout: View {
                 session: state.session,
                 attention: state.attention,
                 presentation: state.reviewPresentation,
-                registry: state.registry
+                registry: state.registry,
+                toastCenter: toastCenter
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: .limpidReviewTurn)) { notification in
@@ -181,7 +182,8 @@ struct ThreePaneLayout: View {
             ReviewPresentationCommand.openTurn(
                 session: state.session,
                 attention: state.attention,
-                presentation: state.reviewPresentation
+                presentation: state.reviewPresentation,
+                toastCenter: toastCenter
             )
         }
         // A paste the user refused at the confirmation sheet delivered nothing.
@@ -224,6 +226,24 @@ struct ThreePaneLayout: View {
             else { return }
             TmuxMirrorActions.dropFiles(
                 urls,
+                into: paneID,
+                view: view,
+                session: state.session,
+                store: state.tmuxStore,
+                toastCenter: toastCenter
+            )
+        }
+        // Review's text for a mirror pane, raised in AppKit for the same
+        // reason as the two above. A pane in another window's registry is
+        // left to that window.
+        .onReceive(NotificationCenter.default.publisher(for: .limpidMirrorReviewPasteRequested)) { notification in
+            guard let view = notification.object as? SurfaceView,
+                  let paneID = state.registry.id(for: view),
+                  let text = notification.userInfo?[SurfaceView.reviewPromptTextKey] as? String
+            else { return }
+            TmuxMirrorActions.deliverReview(
+                text,
+                receipt: notification.userInfo?[SurfaceView.reviewPasteReceiptKey] as? ReviewPasteReceipt,
                 into: paneID,
                 view: view,
                 session: state.session,

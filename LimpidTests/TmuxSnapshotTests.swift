@@ -10,7 +10,7 @@ import Testing
 struct TmuxSnapshotTests {
     private let path = "/private/tmp/custom socket,one"
     private var binding: TmuxBinding {
-        TmuxBinding(socketPath: path, sessionID: "$1", sessionName: "work", serverPID: "42", serverStartedAt: "100", isProvisional: false)
+        TmuxBinding(socketPath: path, sessionID: "$1", sessionName: "work", serverPID: "42", serverStartedAt: "100")
     }
 
     @Test func failedObservation_isNotEmptySuccess() {
@@ -42,7 +42,8 @@ struct TmuxSnapshotTests {
         #expect(command.contains("#{pid},42"))
         #expect(command.contains(path))
         session.captureTmuxBindings(surfaces: [frame], bindings: [:], observedAt: [:], now: 2)
-        #expect(session.tab(tab.id)?.tmuxBindings[pane]?.isProvisional == true)
+        // An observation too old to trust keeps the hint it had.
+        #expect(session.tab(tab.id)?.tmuxBindings[pane] == binding)
         let unresolved = try #require(session.tab(tab.id))
         #expect(TmuxReattachCommandBuilder.initialCommand(for: unresolved, paneID: pane) != nil)
         session.captureTmuxBindings(
@@ -54,12 +55,13 @@ struct TmuxSnapshotTests {
         #expect(session.tab(tab.id)?.tmuxBindings[pane] == nil)
     }
 
-    @Test func provisionalBinding_neverFallsThroughToNativeResume() throws {
+    /// Whether a conversation is already being had somewhere Limpid can
+    /// reach is the projection's answer, not the binding's: a pane the rules
+    /// named no candidate for does not resume, binding or no binding.
+    @Test func bindingWithoutAResumeCandidate_neverFallsThroughToNativeResume() throws {
         let (session, tab, pane) = WindowSessionFixture.withLooseTab()
-        var provisional = binding
-        provisional.isProvisional = true
         session.update(tab.id) {
-            $0.tmuxBindings[pane] = provisional
+            $0.tmuxBindings[pane] = binding
             $0.agentSessions[.codex, default: [:]][pane] = AgentSessionInfo(sessionId: UUID().uuidString, cwd: "/tmp")
         }
         let updated = try #require(session.tab(tab.id))

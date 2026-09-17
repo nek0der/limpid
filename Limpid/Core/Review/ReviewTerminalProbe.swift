@@ -16,10 +16,14 @@ import Foundation
 enum ReviewTerminalProbe {
     /// The terminal that text written to a pane's surface reaches.
     ///
-    /// An agent hosted in tmux does not run on the surface's pty: that one
-    /// carries the tmux client, and the agent sits on a pane pty inside the
-    /// server. Asking the surface tty what is in front would always answer
-    /// "the tmux client", so the client's session is resolved first.
+    /// A program run inside a tmux the pane is attached to does not sit on
+    /// the surface's pty: that one carries the tmux client, and the program
+    /// sits on a pane pty inside the server. Asking the surface tty what is
+    /// in front would always answer "the tmux client", so the client's
+    /// session is resolved first. This is the user's own tmux, and an agent
+    /// they started inside one (`manual`); an agent Limpid puts in tmux is
+    /// shown by a mirror tab, which review does not open over
+    /// (`TabCapabilities.canOpenReview`).
     ///
     /// Every failure falls back to the surface tty. Nothing is refused on that
     /// basis; the worst case is a chip that names the client.

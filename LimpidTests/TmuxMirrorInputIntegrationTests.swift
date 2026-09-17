@@ -540,6 +540,55 @@ struct TmuxMirrorPasteIntegrationTests {
         #expect(harness.failures.messages.isEmpty)
     }
 
+    /// Review's text takes the same route as any other paste into a mirror
+    /// pane — never libghostty's, which would reach a surface nothing runs
+    /// on — and the comments are marked as sent only because it arrived.
+    @Test("review's text reaches the tmux pane as a paste, and nothing is taken back")
+    func deliverReview_pastesThroughTmux() async throws {
+        let root = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bracketed = root.appendingPathComponent("bracketed")
+        let harness = try await PasteHarness.make(paneCommands: [
+            rawCommand(modes: #"\033[?2004h"#, output: bracketed)
+        ])
+        defer { harness.tearDown() }
+        let panes = harness.server.panes().map { String($0.split(separator: " ")[0]) }
+        #expect(await waitUntil { (try? harness.server.format("#{pane_current_command}", target: panes[0])) == "cat" })
+        let leaf = try #require(harness.leaf(of: panes[0]))
+        let receipt = ReviewPasteReceipt(root: root, commentIDs: [UUID()])
+        var refused: [[UUID]] = []
+        let observer = NotificationCenter.default.addObserver(
+            forName: .limpidReviewPasteDenied,
+            object: nil,
+            queue: .main
+        ) { note in
+            guard let denied = note.object as? ReviewPasteReceipt, denied.root == root else { return }
+            MainActor.assumeIsolated { refused.append(denied.commentIDs) }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        TmuxMirrorActions.deliverReview(
+            "Fix the comment above",
+            receipt: receipt,
+            into: leaf,
+            view: nil,
+            session: harness.session,
+            store: harness.store,
+            toastCenter: nil,
+            confirmation: nil
+        )
+
+        let expected = Data("\u{1B}[200~Fix the comment above\u{1B}[201~".utf8)
+        var got = Data()
+        _ = await waitUntil(.seconds(5)) {
+            got = (try? Data(contentsOf: bracketed)) ?? Data()
+            return got.count >= expected.count
+        }
+        #expect(got == expected)
+        #expect(refused.isEmpty)
+        #expect(harness.failures.messages.isEmpty)
+    }
+
     /// A pane tmux no longer has fails the paste after the buffer loaded;
     /// the buffer is deleted and the user is told.
     @Test("a paste tmux refuses deletes its buffer and its file, and is reported")

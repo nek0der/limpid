@@ -73,14 +73,13 @@ struct TmuxReattachCommandBuilderTests {
         #expect(command == "tmux -S '/private/tmp/tmux-501/default' attach -t '=work'")
     }
 
-    @Test("a provisional binding still attempts the verified restore targets")
-    func initialCommand_provisionalBinding_attemptsRestore() throws {
-        var provisional = binding()
-        provisional.serverPID = "42"
-        provisional.serverStartedAt = "100"
-        provisional.isProvisional = true
+    @Test("a binding kept after a failed observation still attempts the verified restore targets")
+    func initialCommand_staleBinding_attemptsRestore() throws {
+        var stale = binding()
+        stale.serverPID = "42"
+        stale.serverStartedAt = "100"
         let command = try #require(
-            TmuxReattachCommandBuilder.initialCommand(for: tab(provisional), paneID: pane)
+            TmuxReattachCommandBuilder.initialCommand(for: tab(stale), paneID: pane)
         )
         #expect(command.contains("if-shell -F"))
         #expect(command.contains("attach-session -t"))

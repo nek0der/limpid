@@ -209,7 +209,6 @@ enum TmuxClientProbe {
         for tty in Array(clients.keys) {
             clients[tty]?.serverPID = panes.first?.serverPID
             clients[tty]?.serverStartedAt = panes.first?.serverStartedAt
-            clients[tty]?.isProvisional = false
         }
         // Every pane answered with the same pid and start time above, so the
         // first names the server run this listing describes.

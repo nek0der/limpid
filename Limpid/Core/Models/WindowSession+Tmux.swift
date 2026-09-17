@@ -23,7 +23,7 @@ extension WindowSession {
                     continue
                 }
                 guard surface.isTmuxClient else {
-                    // A newly mounted shell after a skipped/provisional
+                    // A newly mounted shell after a skipped or stale
                     // restore is not a user detach. Only a witnessed exit
                     // from tmux grants authority to erase that restore hint.
                     if let detachedPaneIDs, !detachedPaneIDs.contains(pane) {
@@ -35,8 +35,10 @@ extension WindowSession {
                    now - stamp <= TmuxTiming.snapshotLifetime
                 {
                     next[pane] = binding
-                } else if var prior = tabs[index].tmuxBindings[pane] {
-                    prior.isProvisional = true
+                } else if let prior = tabs[index].tmuxBindings[pane] {
+                    // An observation too old to trust says nothing about
+                    // where the pane is; the hint it had is kept until a
+                    // fresh one replaces it or the pane leaves tmux.
                     next[pane] = prior
                 }
             }

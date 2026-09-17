@@ -403,6 +403,45 @@ enum TmuxMirrorActions {
         paste(text, into: paneID, view: view, session: session, store: store, toastCenter: toastCenter, confirmation: confirmation)
     }
 
+    /// Hand review's text to a mirror pane, as a tmux paste.
+    ///
+    /// The same route and the same confirmation rule as any other paste into
+    /// a mirror; what it adds is the answer review is owed. A paste that goes
+    /// straight through has landed, one the sheet takes over is answered by
+    /// the sheet, and every other way out reports a delivery that did not
+    /// happen, so the comments do not stay marked as sent.
+    static func deliverReview(
+        _ text: String,
+        receipt: ReviewPasteReceipt?,
+        into paneID: UUID,
+        view: SurfaceView?,
+        session: WindowSession,
+        store: TmuxConnectionStore?,
+        toastCenter: ToastCenter?,
+        confirmation: ClipboardConfirmationCoordinator? = ClipboardConfirmationCoordinator.shared
+    ) {
+        let delivery = ReviewPasteDelivery(receipt: receipt)
+        defer { delivery.failIfUnsettled() }
+        guard let tab = session.tab(containing: paneID),
+              let mirror = PaneActions.liveMirrorOrNotify(for: tab, in: store, toastCenter: toastCenter)
+        else { return }
+        guard TmuxPasteBuffer.needsConfirmation(text) else {
+            mirror.paste(text, paneID: paneID)
+            delivery.landed()
+            return
+        }
+        // The sheet is anchored to the pane's view; without one there is
+        // nowhere to ask, and the text is not sent.
+        guard let view, let confirmation else { return }
+        confirmation.enqueueMirrorPaste(
+            contents: text,
+            view: view,
+            receipt: delivery.handedOn()
+        ) { [weak mirror] in
+            mirror?.paste(text, paneID: paneID)
+        }
+    }
+
     private static func paste(
         _ text: String,
         into paneID: UUID,

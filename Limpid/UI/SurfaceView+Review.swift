@@ -5,6 +5,13 @@ import AppKit
 import GhosttyKit
 
 extension SurfaceView: ReviewTextDelivering, ReviewPasteStaging {
+    /// `userInfo` key of `limpidMirrorReviewPasteRequested`: the prompt text.
+    static let reviewPromptTextKey = "text"
+    /// `userInfo` key of `limpidMirrorReviewPasteRequested`: the
+    /// `ReviewPasteReceipt` the delivery answers with, absent when review
+    /// asked for none.
+    static let reviewPasteReceiptKey = "receipt"
+
     /// Deliver assembled feedback to this surface as a paste.
     ///
     /// Through libghostty's paste action rather than as typed text.
@@ -26,7 +33,24 @@ extension SurfaceView: ReviewTextDelivering, ReviewPasteStaging {
     ///
     /// The text is staged on this surface rather than on `NSPasteboard`, so
     /// review never overwrites what the user has on their clipboard.
+    ///
+    /// A pane whose tab sends its input through tmux
+    /// (`TabCapabilities.sendsInputThroughTmux`) takes neither route here:
+    /// libghostty's paste would reach the mirror surface, which is a picture
+    /// of the tmux pane and not a terminal anything is running on. It goes as
+    /// a tmux paste buffer instead, under the same confirmation rule
+    /// (`TmuxPasteBuffer`), through the window that holds the tmux store.
     func deliverReviewText(_ prompt: ReviewPrompt, receipt: ReviewPasteReceipt?) throws {
+        if tabCapabilities?()?.sendsInputThroughTmux == true {
+            var userInfo: [String: Any] = [Self.reviewPromptTextKey: prompt.text]
+            userInfo[Self.reviewPasteReceiptKey] = receipt
+            NotificationCenter.default.post(
+                name: .limpidMirrorReviewPasteRequested,
+                object: self,
+                userInfo: userInfo
+            )
+            return
+        }
         guard let surface else { throw ReviewError.targetUnavailable }
         try ReviewPasteAttempt.deliver(prompt, receipt: receipt, staging: self) {
             let action = "paste_from_clipboard"

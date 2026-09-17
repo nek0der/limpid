@@ -172,11 +172,11 @@ enum CommandPaletteCatalog {
                 attention: dependencies.attention,
                 presentation: dependencies.reviewPresentation
             ),
-            canReviewTurn: ReviewAgents.turnScope(
+            canReviewTurn: ReviewAgents.canReviewTurn(
                 session: session,
                 attention: dependencies.attention,
                 paneID: focusedPaneID
-            ) != nil
+            )
         )
 
         for action in LimpidShortcutAction.allCases {

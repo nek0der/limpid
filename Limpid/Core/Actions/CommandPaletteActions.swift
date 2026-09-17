@@ -29,6 +29,13 @@ extension Notification.Name {
     /// for the same reason as `limpidMirrorPasteRequested`.
     static let limpidMirrorFileDropRequested = Notification.Name("dev.limpid.mirrorFileDropRequested")
 
+    /// Posted when review hands its text to a pane whose tab sends its input
+    /// through tmux. `object` is the `SurfaceView`; the text is under
+    /// `SurfaceView.reviewPromptTextKey` and the receipt that answers for it
+    /// under `SurfaceView.reviewPasteReceiptKey`. Answered by the window for
+    /// the same reason as `limpidMirrorPasteRequested`.
+    static let limpidMirrorReviewPasteRequested = Notification.Name("dev.limpid.mirrorReviewPasteRequested")
+
     /// Posted when the command palette opens so the overlay grabs focus.
     static let limpidCommandPaletteFocus = Notification.Name("dev.limpid.commandPaletteFocus")
 

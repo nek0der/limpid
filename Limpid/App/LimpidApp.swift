@@ -367,6 +367,12 @@ final class AppState {
         }
         attention.onFinishedTurnFocused = { [weak self] paneID, tree, root in
             guard let self,
+                  // Asked of the pane's own tab, not the active one: this
+                  // arrives from the Waiting list and from ⌘J, which reach a
+                  // pane in a tab that is not on screen. An agent's mirror tab
+                  // does not let review dock over it, and the turn is simply
+                  // not opened there.
+                  ReviewAgents.allowsReviewSurface(session: session, paneID: paneID),
                   let target = ReviewAgents.turnTarget(
                       session: session,
                       attention: attention,

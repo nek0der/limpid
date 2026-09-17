@@ -24,7 +24,4 @@ struct TmuxBinding: Codable, Equatable {
     /// Absent on legacy snapshots, whose restore target is the session name.
     var serverPID: String?
     var serverStartedAt: String?
-    /// A failed observation preserves the hint for a conservative restore
-    /// attempt. It still blocks native agent resume until tmux resolves it.
-    var isProvisional: Bool?
 }
