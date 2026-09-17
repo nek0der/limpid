@@ -137,7 +137,7 @@ final class TmuxPTYClient {
     let tty: String
     private let process = Process()
     private let secondary: Int32
-    private let reader: DispatchSourceRead
+    private let reader: any DispatchSourceRead
 
     init(fixture: TmuxServerFixture, session: String = "t") throws {
         var primary: Int32 = -1
