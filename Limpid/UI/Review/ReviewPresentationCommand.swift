@@ -12,9 +12,13 @@ enum ReviewPresentationCommand {
     /// Said out loud when a tab review cannot dock over is asked to show it.
     /// The menu item and the palette are already disabled there; a bound
     /// shortcut reaches this anyway, and silence reads as a broken key.
+    ///
+    /// What is unavailable is the review surface itself, not one of its
+    /// scopes: a mirror tab lets nothing dock over it, so Review Changes and
+    /// Review This Turn are refused alike and say the same thing.
     private static func refuse(toastCenter: ToastCenter?) {
         toastCenter?.show(ToastItem(
-            message: String(localized: "Reviewing isn't available in a tmux tab yet"),
+            message: String(localized: "Review can't open over a tmux tab yet"),
             undo: nil
         ))
     }

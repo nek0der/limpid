@@ -270,7 +270,7 @@ struct TabRow: View {
                 // warns about. Ahead of the activity mark: it says whether
                 // the picture that mark describes is current at all.
                 if tab.kind == .tmuxMirror {
-                    TmuxTabRowMarkView(tabID: tab.id)
+                    TmuxTabRowMarkView(tab: tab)
                 }
                 if let summary = aggregateAgentStateSummary,
                    let iconName = summary.state.iconName(isViewedFinished: summary.isViewedFinished),

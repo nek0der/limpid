@@ -18,6 +18,7 @@ struct TmuxConnectionBanner: View {
     let tabID: UUID
     @Environment(WindowSession.self) private var session
     @Environment(AttentionState.self) private var attention
+    @Environment(SettingsStore.self) private var settings
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.tmuxConnectionStore) private var tmuxStore
     @Environment(\.agentProjection) private var agentProjection
@@ -34,8 +35,17 @@ struct TmuxConnectionBanner: View {
             connection: tmuxStore.tabConnections[tabID],
             hasMirror: tmuxStore.mirror(for: tabID) != nil,
             canReconnect: tmuxStore.tmuxExecutable != nil && tmuxStore.canReconnect(tabID: tabID),
+            tmuxSupport: settings.agentTmuxSupport,
             sessionName: ref.binding.sessionName
         )
+    }
+
+    /// What VoiceOver hears when the banner changes. Heading and body
+    /// together: the heading alone says a reconnect ended without saying how.
+    private func announcement(_ content: TmuxConnectionCardContent) -> String {
+        let title = String(localized: content.title)
+        guard let message = content.message else { return title }
+        return "\(title) \(String(localized: message))"
     }
 
     var body: some View {
@@ -51,10 +61,17 @@ struct TmuxConnectionBanner: View {
         .frame(maxWidth: .infinity, alignment: .top)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: content?.kind)
         // The banner stays up across the change, so VoiceOver would not
-        // otherwise hear that a reconnect began or how it ended.
-        .onChange(of: content?.kind) { _, kind in
-            guard kind != nil, let content = self.content else { return }
-            AccessibilityNotification.Announcement(String(localized: content.title)).post()
+        // otherwise hear that a reconnect began or how it ended. A reconnect
+        // that worked takes the banner away entirely, which is the one
+        // outcome nothing on screen is left to announce.
+        .onChange(of: content?.kind) { old, kind in
+            guard kind != nil else {
+                guard old != nil, session.tab(tabID) != nil else { return }
+                AccessibilityNotification.Announcement(String(localized: "Connected to tmux")).post()
+                return
+            }
+            guard let content = self.content else { return }
+            AccessibilityNotification.Announcement(announcement(content)).post()
         }
     }
 
@@ -99,7 +116,7 @@ private struct TmuxConnectionCard: View {
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             ForEach(content.actions, id: \.self) { action in
-                button(for: action, isDefault: action == content.actions.last)
+                button(for: action, isProminent: action == content.primaryAction)
             }
         }
         .padding(.horizontal, 14)
@@ -119,29 +136,41 @@ private struct TmuxConnectionCard: View {
     }
 
     @ViewBuilder private var leadingMark: some View {
-        switch content.kind {
-        case .connecting:
+        if content.showsProgress {
             ProgressView()
                 .controlSize(.small)
-        case .disconnected:
-            Image(systemName: "bolt.horizontal.circle")
-                .foregroundStyle(LimpidColor.secondaryText)
-        case .unreachable:
-            Image(systemName: "exclamationmark.triangle")
-                .foregroundStyle(LimpidColor.warning)
-        case .serverReplaced:
-            Image(systemName: "clock.arrow.circlepath")
-                .foregroundStyle(LimpidColor.secondaryText)
+        } else {
+            Image(systemName: symbol)
+                .foregroundStyle(isWarning ? LimpidColor.warning : LimpidColor.secondaryText)
         }
     }
 
+    private var symbol: String {
+        switch content.kind {
+        case .connecting: "arrow.triangle.2.circlepath"
+        case .disconnected: "bolt.horizontal.circle"
+        case .unreachable: "exclamationmark.triangle"
+        case .serverReplaced: "clock.arrow.circlepath"
+        case .tmuxUnavailable: "questionmark.circle"
+        }
+    }
+
+    private var isWarning: Bool {
+        content.kind == .unreachable
+    }
+
+    /// Reconnecting is the only action the card emphasizes, and it is
+    /// emphasized by weight alone: the banner floats over panes whose
+    /// surface holds first responder, so Return goes to the terminal and a
+    /// button marked as the window's default action would promise a key that
+    /// never reaches it.
     @ViewBuilder
-    private func button(for action: TmuxConnectionCardContent.Action, isDefault: Bool) -> some View {
+    private func button(for action: TmuxConnectionCardContent.Action, isProminent: Bool) -> some View {
         let label: LocalizedStringKey = switch action {
         case .reconnect: "Reconnect"
         case .closeTab: "Close Tab"
         }
-        if isDefault {
+        if isProminent {
             Button(label) { perform(action) }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)

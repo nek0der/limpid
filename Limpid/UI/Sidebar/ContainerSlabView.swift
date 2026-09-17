@@ -327,6 +327,9 @@ struct ContainerSlabView: View {
                                 }
                             }
                         }
+                        if !detached.isEmpty {
+                            DetachedAgentHeader(count: detached.count)
+                        }
                         ForEach(detached, id: \.id) { runtime in
                             if let run = runtime.tmuxRun {
                                 DetachedAgentRow(

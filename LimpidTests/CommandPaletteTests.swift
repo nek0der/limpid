@@ -432,7 +432,7 @@ struct CommandPaletteTests {
         let items = CommandPaletteCatalog.tmuxWindowItems(targets: [Self.target(version: "3.2a")]) { _ in false }
         let item = items[0]
         #expect(!item.isEnabled)
-        #expect(item.statusLabel == String(localized: "Needs tmux \("3.3") or later"))
+        #expect(item.statusLabel == String(localized: "Needs tmux \("3.3") or newer"))
     }
 
     /// An empty `#{version}` is what a server too old to have the variable
@@ -456,7 +456,7 @@ struct CommandPaletteTests {
     @Test func tmuxWindowItems_alreadyShownOnAnOldServer_staySelectable() {
         let item = CommandPaletteCatalog.tmuxWindowItems(targets: [Self.target(version: "3.2a")]) { _ in true }[0]
         #expect(item.isEnabled)
-        #expect(item.statusLabel == String(localized: LocalizedStringResource("palette.tmux.windowOpen", defaultValue: "Open")))
+        #expect(item.statusLabel == String(localized: LocalizedStringResource("palette.tmux.windowOpen", defaultValue: "Showing")))
     }
 
     @Test func applyFilter_findsTmuxWindowsThroughHiddenKeywords() throws {
@@ -508,11 +508,96 @@ struct CommandPaletteTests {
 
     @Test func helpList_offersTheTmuxPrefix() {
         let state = CommandPaletteState()
+        state.isTmuxAvailable = true
         state.applyFilter(query: "?", frecencyStore: nil)
         let row = state.results.first { $0.item.action == .insertPrefix(.tmux) }
         #expect(row?.item.title == "$")
         #expect(PalettePrefix.from("$edi").prefix == .tmux)
         #expect(PalettePrefix.from("$edi").filterQuery == "edi")
+    }
+
+    /// The same condition the `$` action row is listed under: a mode that
+    /// could list nothing is not offered.
+    @Test func helpList_withoutTmux_leavesTheTmuxPrefixOut() {
+        let state = CommandPaletteState()
+        state.applyFilter(query: "?", frecencyStore: nil)
+        #expect(!state.results.contains { $0.item.action == .insertPrefix(.tmux) })
+        #expect(!state.results.isEmpty)
+    }
+
+    // MARK: - Listing tmux windows
+
+    /// `$` is filled in after the palette is already up, so until the
+    /// listing answers the mode says it is looking rather than "No results".
+    @Test func loadingRow_showsOnlyInTmuxModeWhileTheListingRuns() {
+        let state = CommandPaletteState()
+        state.isTmuxAvailable = true
+        state.isListingTmuxWindows = true
+        state.query = "$"
+        #expect(state.showsTmuxLoadingRow)
+        state.query = ">"
+        #expect(!state.showsTmuxLoadingRow)
+        state.query = "$ed"
+        #expect(state.showsTmuxLoadingRow)
+    }
+
+    /// Including the listing that found nothing: the row has to come down
+    /// either way, or `$` sits looking forever on a Mac with no server.
+    @Test func mergeItems_endsTheListing_evenWithNothingToAdd() {
+        let state = CommandPaletteState()
+        state.isListingTmuxWindows = true
+        state.mergeItems([], frecencyStore: nil)
+        #expect(!state.isListingTmuxWindows)
+    }
+
+    @Test func loadTmuxWindows_marksTheStateAsListingUntilTheRowsArrive() async throws {
+        let session = WindowSession()
+        let state = CommandPaletteState()
+        session.commandPaletteState = state
+        let task = CommandPaletteActions.loadTmuxWindows(
+            into: state,
+            session: session,
+            store: TmuxConnectionStore(registry: RecordingSurfaceRegistry(), secureInput: nil, tmuxExecutable: "/nonexistent/tmux"),
+            frecencyStore: nil,
+            listWindows: { _ in [] }
+        )
+        #expect(state.isListingTmuxWindows)
+        let loading = try #require(task)
+        await loading.value
+        #expect(!state.isListingTmuxWindows)
+    }
+
+    // MARK: - Selection
+
+    /// A window on a server too old to mirror stays listed, because the row
+    /// is what says why it cannot be opened — but Return must never land on
+    /// it and do nothing.
+    @Test func selection_skipsRowsThatCannotBeRun() {
+        let state = CommandPaletteState()
+        state.allItems = CommandPaletteCatalog.tmuxWindowItems(
+            targets: [Self.target(version: "3.2a", windowID: "@8"), Self.editorTarget, Self.target(version: nil, windowID: "@9")]
+        ) { _ in false }
+        state.applyFilter(query: "$", frecencyStore: nil)
+        let enabled = state.results.map(\.item.isEnabled)
+        #expect(enabled.contains(false))
+        #expect(state.results[state.selectedIndex].item.isEnabled)
+        state.moveSelection(up: false)
+        #expect(state.results[state.selectedIndex].item.isEnabled)
+        state.moveSelection(up: true)
+        #expect(state.results[state.selectedIndex].item.isEnabled)
+    }
+
+    /// Nothing runnable leaves the highlight where it was rather than
+    /// running off the end of the list.
+    @Test func selection_withNothingRunnable_staysAtTheTop() {
+        let state = CommandPaletteState()
+        state.allItems = CommandPaletteCatalog.tmuxWindowItems(
+            targets: [Self.target(version: "3.2a", windowID: "@8"), Self.target(version: nil, windowID: "@9")]
+        ) { _ in false }
+        state.applyFilter(query: "$", frecencyStore: nil)
+        #expect(state.selectedIndex == 0)
+        state.moveSelection(up: false)
+        #expect(state.selectedIndex == 0)
     }
 
     @Test func tmuxEntryRow_insertsThePrefixWhenTmuxIsInstalled() throws {

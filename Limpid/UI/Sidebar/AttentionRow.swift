@@ -292,8 +292,46 @@ struct DetachedAgentRow: View {
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(Text("Open \(agentName) in a tab"))
-        .accessibilityHint(Text("Shows the agent that is running in tmux"))
+        // No label of its own: one would replace what `combine` gathered —
+        // the agent's name and its last prompt — with a sentence that names
+        // neither. What activating the row does belongs in the hint.
+        .accessibilityHint(Text("Opens a tab showing this agent"))
+    }
+}
+
+/// The Waiting region's subheading for the detached rows, with how many
+/// there are. The rows below it are not waiting on anybody and ⌘J does not
+/// walk them (they have no pane to walk to), so the region says out loud
+/// where the Waiting list ends rather than letting the two run together.
+struct DetachedAgentHeader: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 4) {
+            // English in every locale, like the "Waiting" header above it:
+            // the two label one lane of the same workflow and would read as
+            // two unrelated regions if only one were translated.
+            Text("Detached")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .tracking(0.6)
+                .foregroundStyle(Color.primary.opacity(0.55))
+                .lineLimit(1)
+                .fixedSize()
+            Text(verbatim: "\(count)")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Color.primary.opacity(0.4))
+            Spacer(minLength: 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, LimpidLayout.containerColumnIndentTop)
+        .padding(.trailing, LimpidLayout.rowPillInset)
+        .padding(.top, 12)
+        .padding(.bottom, 6)
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityLabel(Text("Detached"))
+        .accessibilityValue(Text(verbatim: "\(count)"))
     }
 }
 

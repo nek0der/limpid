@@ -374,7 +374,9 @@ final class AppState {
                   // arrives from the Waiting list and from ⌘J, which reach a
                   // pane in a tab that is not on screen. An agent's mirror tab
                   // does not let review dock over it, and the turn is simply
-                  // not opened there.
+                  // not opened there, silently: the jump the user asked for
+                  // did happen, and the turn is a convenience on top of it.
+                  // ⌘⌥R and Review This Turn refuse out loud instead.
                   ReviewAgents.allowsReviewSurface(session: session, paneID: paneID),
                   let target = ReviewAgents.turnTarget(
                       session: session,

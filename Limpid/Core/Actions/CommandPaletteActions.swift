@@ -71,13 +71,14 @@ enum CommandPaletteActions {
             return
         }
         let state = CommandPaletteState()
+        state.isTmuxAvailable = tmuxStore?.tmuxExecutable != nil
         state.allItems = CommandPaletteCatalog.buildItems(
             session: session,
             settings: settings,
             attention: attention,
             registry: registry,
             reviewPresentation: reviewPresentation,
-            isTmuxAvailable: tmuxStore?.tmuxExecutable != nil
+            isTmuxAvailable: state.isTmuxAvailable
         )
         state.initialQuery = initialQuery.isEmpty ? nil : initialQuery
         state.applyFilter(query: "", frecencyStore: frecencyStore)
@@ -105,6 +106,7 @@ enum CommandPaletteActions {
         listWindows: @escaping @Sendable (String) async -> [TmuxMirrorTarget] = listTmuxWindows(tmuxPath:)
     ) -> Task<Void, Never>? {
         guard let tmuxPath = store.tmuxExecutable else { return nil }
+        state.isListingTmuxWindows = true
         return Task {
             let targets = await listWindows(tmuxPath)
             guard session.commandPaletteState === state else { return }

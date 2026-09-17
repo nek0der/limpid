@@ -47,9 +47,11 @@ extension SurfaceView {
         // (`sendsInputThroughTmux`). We branch here because AppKit hands
         // Command-V straight to the focused surface; the tmux side needs a
         // store and a toast center this view cannot reach, so it goes out
-        // as a notification. A view no tab has claimed pastes nowhere.
-        guard let capabilities = tabCapabilities?() else { return }
-        guard !capabilities.sendsInputThroughTmux else {
+        // as a notification. Only that one answer takes the branch: a view
+        // whose tab cannot be asked (a preview, a surface between owners)
+        // pastes the way every surface did before mirrors existed, rather
+        // than swallowing the keystroke.
+        if tabCapabilities?()?.sendsInputThroughTmux == true {
             NotificationCenter.default.post(name: .limpidMirrorPasteRequested, object: self)
             return
         }

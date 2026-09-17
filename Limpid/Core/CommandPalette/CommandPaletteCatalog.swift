@@ -106,8 +106,11 @@ enum CommandPaletteCatalog {
     ) -> [CommandPaletteItem] {
         let verb: LocalizedStringResource = "Open tmux Window in Tab"
         let verbs = Array(Set([englishString(verb), String(localized: verb)])).sorted()
-        let openLabel = String(localized: LocalizedStringResource("palette.tmux.windowOpen", defaultValue: "Open"))
-        let unsupportedLabel = String(localized: "Needs tmux \(TmuxMirrorTarget.minimumVersion.description) or later")
+        // "Showing", not "Open": the label states what the window is doing
+        // right now, and "Open" beside a row the user is about to press
+        // reads as the verb that row would run.
+        let openLabel = String(localized: LocalizedStringResource("palette.tmux.windowOpen", defaultValue: "Showing"))
+        let unsupportedLabel = String(localized: "Needs tmux \(TmuxMirrorTarget.minimumVersion.description) or newer")
         let labels = TmuxMirrorTarget.distinguishingLabels(for: targets)
         return zip(targets, labels).map { target, label in
             let action = CommandPaletteAction.mirrorTmuxWindow(target)

@@ -632,3 +632,43 @@ struct AttentionStateTests {
         #expect(session.activeTab?.splitTree.focusedLeafID == otherPane)
     }
 }
+
+/// What the Waiting region says, in both languages. Here rather than in a
+/// file of its own because these strings only make sense beside the rows
+/// this suite already covers.
+@Suite("Waiting region text")
+struct WaitingRegionTextTests {
+    private func resolved(_ resource: LocalizedStringResource, in identifier: String) -> String {
+        var resource = resource
+        resource.locale = Locale(identifier: identifier)
+        return String(localized: resource)
+    }
+
+    /// The subheading over the agents with no tab. English in both locales,
+    /// like the "Waiting" header it sits under.
+    @Test func detachedHeader_readsTheSameInEveryLocale() {
+        #expect(resolved("Detached", in: "en") == "Detached")
+        #expect(resolved("Detached", in: "ja") == "Detached")
+    }
+
+    /// The row's own text carries the agent and its prompt; the hint says
+    /// what activating it does, which is all the label used to say.
+    @Test func detachedRow_textsResolveInJapanese() {
+        #expect(resolved("Opens a tab showing this agent", in: "ja") == "このエージェントを表示するタブを開きます")
+        #expect(resolved("Running in tmux without a tab", in: "ja") == "tmux で実行中（タブなし）")
+    }
+
+    /// What is refused in a mirror tab is the review surface, not one of its
+    /// scopes.
+    @Test func reviewRefusal_namesTheSurface() {
+        #expect(resolved("Review can't open over a tmux tab yet", in: "en") == "Review can't open over a tmux tab yet")
+        #expect(resolved("Review can't open over a tmux tab yet", in: "ja") == "tmux のタブでは、まだレビューを開けません")
+    }
+
+    @Test func detachedRunThatCannotBeReopened_saysItStopped() {
+        #expect(
+            resolved("That agent is no longer running in tmux", in: "ja")
+                == "そのエージェントは tmux で実行されなくなりました"
+        )
+    }
+}

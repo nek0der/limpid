@@ -33,7 +33,9 @@ struct CommandPaletteDropdown: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     let grouped = groupedResults()
-                    if grouped.isEmpty, !state.query.isEmpty {
+                    if state.showsTmuxLoadingRow, grouped.isEmpty {
+                        loadingState
+                    } else if grouped.isEmpty, !state.query.isEmpty {
                         emptyState
                     } else {
                         ForEach(grouped, id: \.category) { section in
@@ -65,6 +67,23 @@ struct CommandPaletteDropdown: View {
                 }
             }
         }
+    }
+
+    /// Shown in `$` mode while the windows are still being listed. Listing
+    /// asks one client per server socket and a hung socket costs a full
+    /// timeout, so the alternative is "No results" on a Mac that has windows
+    /// to offer.
+    private var loadingState: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Looking for tmux windows…")
+                .font(LimpidFont.bodySecondary)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .accessibilityElement(children: .combine)
     }
 
     private var emptyState: some View {

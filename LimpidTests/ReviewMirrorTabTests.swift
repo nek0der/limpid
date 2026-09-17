@@ -102,7 +102,7 @@ struct ReviewMirrorTabTests {
         )
 
         #expect(!presentation.isPresented)
-        #expect(toasts.current?.message == String(localized: "Reviewing isn't available in a tmux tab yet"))
+        #expect(toasts.current?.message == String(localized: "Review can't open over a tmux tab yet"))
     }
 
     /// Review's text never reaches a mirror pane through libghostty. With no

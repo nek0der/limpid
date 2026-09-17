@@ -232,9 +232,11 @@ extension TmuxMirrorActions {
 
     /// The window name a reconnected tab starts from: the one its last
     /// mirror had, or else the one inside its saved title. The new mirror
-    /// asks tmux for the current name once it connects.
-    private static func windowName(of tab: Tab, binding: TmuxBinding, store: TmuxConnectionStore) -> String {
-        store.mirror(for: tab.id)?.windowName
+    /// asks tmux for the current name once it connects. The tab's row names
+    /// the same window in its mark, and reads it from here so the two never
+    /// disagree.
+    static func windowName(of tab: Tab, binding: TmuxBinding, store: TmuxConnectionStore?) -> String {
+        store?.mirror(for: tab.id)?.windowName
             ?? TmuxMirrorTarget.windowName(inTitle: tab.title, sessionName: binding.sessionName)
     }
 

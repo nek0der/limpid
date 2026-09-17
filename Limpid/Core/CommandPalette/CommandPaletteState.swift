@@ -16,6 +16,20 @@ final class CommandPaletteState {
     var initialQuery: String?
     var results: [ScoredItem] = []
     var allItems: [CommandPaletteItem] = []
+    /// Whether this Mac has a tmux the palette can open windows from. Decides
+    /// the `$` row in the help list exactly as it decides the `$` entry in the
+    /// action list, so the mode is never offered where it lists nothing.
+    var isTmuxAvailable: Bool = false
+    /// Whether the tmux windows are still being listed. Listing runs after
+    /// the palette is already up, so `$` would otherwise read as "no results"
+    /// for as long as a slow socket takes to answer.
+    var isListingTmuxWindows: Bool = false
+
+    /// Whether `$` should show that it is still looking. Only in that mode:
+    /// every other mode is complete the moment the palette opens.
+    var showsTmuxLoadingRow: Bool {
+        isListingTmuxWindows && activePrefix == .tmux
+    }
 
     struct ScoredItem: Identifiable, Equatable {
         let item: CommandPaletteItem
@@ -42,9 +56,9 @@ final class CommandPaletteState {
     func applyFilter(query: String, frecencyStore: FrecencyStore?) {
         let (prefix, filterQuery) = PalettePrefix.from(query)
 
-        // Help mode: show all available prefixes.
+        // Help mode: show the prefixes this Mac can actually use.
         if prefix == .help {
-            results = PalettePrefix.allCases.map { mode in
+            results = PalettePrefix.allCases.filter { $0 != .tmux || isTmuxAvailable }.map { mode in
                 ScoredItem(
                     item: CommandPaletteItem(
                         id: "help.\(mode.character)",
@@ -59,7 +73,7 @@ final class CommandPaletteState {
                     score: 0
                 )
             }
-            selectedIndex = 0
+            selectSomethingUsable()
             return
         }
 
@@ -105,14 +119,18 @@ final class CommandPaletteState {
             }
             .sorted(by: Self.displayOrder)
         }
-        selectedIndex = 0
+        selectSomethingUsable()
     }
 
     /// Add rows that were listed after the palette opened, and rank them
     /// against the query the field holds now. The highlighted row stays
     /// highlighted when it is still listed, so a late arrival does not move
     /// the selection under the user.
+    ///
+    /// This is also what ends the tmux listing, including the listing that
+    /// found nothing: the loading row must come down either way.
     func mergeItems(_ items: [CommandPaletteItem], frecencyStore: FrecencyStore?) {
+        isListingTmuxWindows = false
         guard !items.isEmpty else { return }
         let selectedID = results.indices.contains(selectedIndex) ? results[selectedIndex].id : nil
         allItems.append(contentsOf: items)
@@ -137,11 +155,31 @@ final class CommandPaletteState {
         }
     }
 
+    /// Arrow keys walk past the rows that cannot be run, so Return always
+    /// has something to run. A disabled row stays listed and says on its own
+    /// trailing label why it is out (a tmux window on a server too old to
+    /// mirror), which is what it is there for; landing on one and hearing
+    /// nothing from Return is not.
     func moveSelection(up: Bool) {
-        if up {
-            selectedIndex = max(0, selectedIndex - 1)
-        } else {
-            selectedIndex = min(results.count - 1, selectedIndex + 1)
+        let step = up ? -1 : 1
+        guard let next = nextUsableIndex(from: selectedIndex + step, step: step) else { return }
+        selectedIndex = next
+    }
+
+    /// Put the highlight on the first row that can be run. Nothing runnable
+    /// leaves it at the top, where the list itself still reads normally.
+    private func selectSomethingUsable() {
+        selectedIndex = nextUsableIndex(from: 0, step: 1) ?? 0
+    }
+
+    private func nextUsableIndex(from start: Int, step: Int) -> Int? {
+        var index = start
+        while results.indices.contains(index) {
+            if results[index].item.isEnabled {
+                return index
+            }
+            index += step
         }
+        return nil
     }
 }

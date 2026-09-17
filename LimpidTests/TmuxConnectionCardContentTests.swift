@@ -10,12 +10,14 @@ struct TmuxConnectionCardContentTests {
     private func card(
         _ connection: TmuxTabConnection?,
         hasMirror: Bool = true,
-        canReconnect: Bool = true
+        canReconnect: Bool = true,
+        tmuxSupport: AgentTmuxSupport = .supported(binary: "/opt/homebrew/bin/tmux", version: TmuxMirrorTarget.minimumVersion)
     ) -> TmuxConnectionCardContent? {
         TmuxConnectionCardContent.make(
             connection: connection,
             hasMirror: hasMirror,
             canReconnect: canReconnect,
+            tmuxSupport: tmuxSupport,
             sessionName: "work"
         )
     }
@@ -49,22 +51,28 @@ struct TmuxConnectionCardContentTests {
         #expect(content.actions.isEmpty)
     }
 
-    @Test func make_disconnected_offersReconnectAsDefault() throws {
+    @Test func make_disconnected_offersReconnectAsTheEmphasizedAction() throws {
         let content = try #require(card(.disconnected))
         #expect(content.kind == .disconnected)
         #expect(!content.showsProgress)
         #expect(content.actions == [.closeTab, .reconnect])
+        #expect(content.primaryAction == .reconnect)
     }
 
-    @Test func make_unreachable_offersReconnectAsDefault() throws {
+    @Test func make_unreachable_offersReconnectAsTheEmphasizedAction() throws {
         let content = try #require(card(.unreachable))
         #expect(content.kind == .unreachable)
         #expect(content.actions == [.closeTab, .reconnect])
+        #expect(content.primaryAction == .reconnect)
     }
 
+    /// Closing a tab happens with no confirmation, so a card that can only
+    /// close must not emphasize the button that does it.
     @Test(arguments: [TmuxTabConnection.disconnected, .unreachable])
-    func make_cannotReconnect_offersOnlyClose(connection: TmuxTabConnection) {
-        #expect(card(connection, canReconnect: false)?.actions == [.closeTab])
+    func make_cannotReconnect_offersOnlyCloseAndEmphasizesNothing(connection: TmuxTabConnection) throws {
+        let content = try #require(card(connection, canReconnect: false))
+        #expect(content.actions == [.closeTab])
+        #expect(content.primaryAction == nil)
     }
 
     @Test(arguments: [true, false])
@@ -72,6 +80,56 @@ struct TmuxConnectionCardContentTests {
         let content = try #require(card(.serverReplaced, canReconnect: canReconnect))
         #expect(content.kind == .serverReplaced)
         #expect(content.actions == [.closeTab])
+        #expect(content.primaryAction == nil)
+    }
+
+    // MARK: - A Mac with no tmux to reconnect with
+
+    @Test(arguments: [TmuxTabConnection.disconnected, .unreachable])
+    func make_withoutTmux_saysSoInsteadOfOfferingAClose(connection: TmuxTabConnection) throws {
+        let content = try #require(card(connection, canReconnect: false, tmuxSupport: .notInstalled))
+        #expect(content.kind == .tmuxUnavailable)
+        #expect(content.actions == [.closeTab])
+        #expect(content.primaryAction == nil)
+        #expect(resolved(content.title, in: "en") == "Can't reconnect without tmux")
+        #expect(
+            resolved(content.message, in: "en")
+                == "No tmux found. Reconnecting needs tmux \(TmuxMirrorTarget.minimumVersion.description) or newer."
+        )
+    }
+
+    @Test func make_withTmuxTooOld_namesTheVersionFound() throws {
+        let version = try #require(TmuxProtocol.parseVersion("3.2a"))
+        let content = try #require(card(.disconnected, tmuxSupport: .unsupported(binary: "/usr/bin/tmux", version: version)))
+        #expect(content.kind == .tmuxUnavailable)
+        #expect(
+            resolved(content.message, in: "en")
+                == "The tmux found is version 3.2a. Reconnecting needs \(TmuxMirrorTarget.minimumVersion.description) or newer."
+        )
+        #expect(
+            resolved(content.message, in: "ja")
+                == "見つかった tmux のバージョンは 3.2a です。再接続するには \(TmuxMirrorTarget.minimumVersion.description) 以降が必要です。"
+        )
+    }
+
+    @Test func make_withAnUnreadableTmuxVersion_saysThat() throws {
+        let content = try #require(card(.disconnected, tmuxSupport: .unreadableVersion(binary: "/usr/bin/tmux")))
+        #expect(content.kind == .tmuxUnavailable)
+        #expect(resolved(content.message, in: "en")?.hasPrefix("Limpid couldn't read the version") == true)
+    }
+
+    /// The probe answers a moment after launch. Until it does, the card must
+    /// not blame tmux for a tab that is about to reconnect on its own.
+    @Test func make_whileTheProbeIsPending_readsAsAnOrdinaryDisconnection() throws {
+        let content = try #require(card(.disconnected, tmuxSupport: .pending))
+        #expect(content.kind == .disconnected)
+    }
+
+    /// Only a tab that could otherwise be brought back speaks of tmux: a tab
+    /// whose server was replaced has nothing to reconnect to either way.
+    @Test func make_serverReplaced_withoutTmux_keepsItsOwnCard() {
+        #expect(card(.serverReplaced, tmuxSupport: .notInstalled)?.kind == .serverReplaced)
+        #expect(card(.connecting, tmuxSupport: .notInstalled)?.kind == .connecting)
     }
 
     @Test func make_texts_resolveInEnglish() throws {
@@ -95,8 +153,15 @@ struct TmuxConnectionCardContentTests {
         #expect(resolved(replaced.title, in: "ja") == "このタブは再接続できません")
         #expect(
             resolved(replaced.message, in: "ja")
-                == "このタブが表示していた tmux サーバーではなくなりました。表示されていた内容は読むためにここに残ります。"
+                == "このタブが表示していた tmux サーバーではなくなりました。表示されていた内容は、読み返せるようにそのまま残ります。"
         )
+    }
+
+    /// The banner announces this when a reconnect succeeds and it goes away.
+    @Test func connectedAnnouncement_resolvesInBothLanguages() {
+        let connected: LocalizedStringResource = "Connected to tmux"
+        #expect(resolved(connected, in: "en") == "Connected to tmux")
+        #expect(resolved(connected, in: "ja") == "tmux に接続しました")
     }
 
     @Test func buttonTitles_resolveInJapanese() {

@@ -21,7 +21,7 @@
         }
       }
     },
-    "Limpid could not read the version of the tmux it found. Showing agents in a tab needs tmux %@ or newer.": {
+    "Limpid couldn't read the version of the tmux it found. Showing agents in a tab needs tmux %@ or newer.": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -248,17 +248,17 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "出力の一部を取りこぼしました。tmux から描き直しています"
+            "value": "出力の一部を取りこぼしたため tmux から描き直しています"
           }
         }
       }
     },
-    "Starts each agent in a tmux session of its own and shows that session as its own tab. The agent keeps running after Limpid quits, including the relaunch after an update, and the tab reconnects to it on the next launch. The command you typed returns to the prompt as soon as the tab opens.\n\nApplies to panes opened after the change. The agent's scrollback is Limpid's, not tmux's. Reviewing a turn is not available in these tabs yet. A command that prints and exits, such as `claude --version`, runs outside tmux.": {
+    "Starts each agent in a tmux session of its own and shows that session as its own tab. The agent keeps running after Limpid quits, including the relaunch after an update, and the tab reconnects to it on the next launch. The shell you started it from returns to its prompt as soon as the tab opens.\n\nApplies to panes opened after the change. The agent's scrollback is Limpid's, not tmux's. Review can't open over these tabs yet. A command that prints and exits, such as `claude --version`, runs outside tmux.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "エージェントを専用の tmux セッションで起動し、そのセッションを 1 つのタブとして表示します。Limpid を終了してもエージェントは動作を継続し、更新後の再起動でも同様です。次回起動時に、タブは同じセッションへ再接続します。入力したコマンドは、タブが開くとすぐにプロンプトへ戻ります。\n\nこの設定は、変更後に開いたペインから有効になります。エージェントのスクロールバックは tmux ではなく Limpid に入ります。これらのタブでは、ターンのレビューはまだ利用できません。`claude --version` のように結果を表示して終了するコマンドは、tmux を経由しません。"
+            "value": "エージェントを専用の tmux セッションで起動し、そのセッションを 1 つのタブとして表示します。Limpid を終了してもエージェントは動作を継続し、更新後の再起動でも同様です。次回起動時に、タブは同じセッションへ再接続します。コマンドを実行したシェルは、タブが開くとすぐにプロンプトへ戻ります。\n\nこの設定は、変更後に開いたペインから有効になります。エージェントのスクロールバックは tmux ではなく Limpid に入ります。これらのタブでは、まだレビューを開けません。`claude --version` のように結果を表示して終了するコマンドは、tmux を経由しません。"
           }
         }
       }
@@ -350,7 +350,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このタブが表示していた tmux サーバーではなくなりました。表示されていた内容は読むためにここに残ります。"
+            "value": "このタブが表示していた tmux サーバーではなくなりました。表示されていた内容は、読み返せるようにそのまま残ります。"
           }
         }
       }
@@ -5148,16 +5148,6 @@
         }
       }
     },
-    "Reviewing isn't available in a tmux tab yet": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "tmux のタブではレビューをまだ使えません"
-          }
-        }
-      }
-    },
     "Review was not delivered. The comments stay in this review.": {
       "extractionState": "manual",
       "localizations": {
@@ -5587,7 +5577,7 @@
         }
       }
     },
-    "Needs tmux %@ or later": {
+    "Needs tmux %@ or newer": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -6452,29 +6442,109 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "タブのない tmux で実行中"
+            "value": "tmux で実行中（タブなし）"
           }
         }
       }
     },
-    "Open %@ in a tab": {
-      "comment": "Waiting row accessibility label for a detached agent run",
+    "The tmux found is version %@. Reconnecting needs %@ or newer.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ をタブで開く"
+            "value": "見つかった tmux のバージョンは %1$@ です。再接続するには %2$@ 以降が必要です。"
           }
         }
       }
     },
-    "Shows the agent that is running in tmux": {
+    "Limpid couldn't read the version of the tmux it found. Reconnecting needs tmux %@ or newer.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見つかった tmux のバージョンを読み取れませんでした。再接続するには tmux %@ 以降が必要です。"
+          }
+        }
+      }
+    },
+    "No tmux found. Reconnecting needs tmux %@ or newer.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux が見つかりません。再接続するには tmux %@ 以降が必要です。"
+          }
+        }
+      }
+    },
+    "Can't reconnect without tmux": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux がないため再接続できません"
+          }
+        }
+      }
+    },
+    "Looking for tmux windows…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux のウィンドウを探しています"
+          }
+        }
+      }
+    },
+    "Connected to tmux": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux に接続しました"
+          }
+        }
+      }
+    },
+    "Mirroring the tmux window “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux のウィンドウ「%@」を表示しています"
+          }
+        }
+      }
+    },
+    "Detached": {
+      "comment": "Sidebar Waiting subsection header, above the agents that have no tab. Stays English in every locale for the same reason as \"Waiting\" — do not translate.",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detached"
+          }
+        }
+      }
+    },
+    "Opens a tab showing this agent": {
       "comment": "Waiting row accessibility hint for a detached agent run",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "tmux で実行中のエージェントを表示します"
+            "value": "このエージェントを表示するタブを開きます"
+          }
+        }
+      }
+    },
+    "Review can't open over a tmux tab yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux のタブでは、まだレビューを開けません"
           }
         }
       }
@@ -6485,7 +6555,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "そのエージェントは tmux で実行されていません"
+            "value": "そのエージェントは tmux で実行されなくなりました"
           }
         }
       }
@@ -6576,13 +6646,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open"
+            "value": "Showing"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "開いています"
+            "value": "表示中"
           }
         }
       }
@@ -6888,7 +6958,7 @@
         }
       }
     },
-    "libghostty could not allocate this pane. Retry to try again.": {
+    "libghostty couldn't allocate this pane. Retry to try again.": {
       "comment": "Pane surface NULL recovery body",
       "localizations": {
         "ja": {

@@ -6,11 +6,29 @@ import Testing
 @testable import Limpid
 
 struct TmuxTabRowMarkTests {
-    @Test func liveTab_withNothingToWarnAbout_hasNoMark() {
-        #expect(TmuxTabRowMark.make(connection: .live, hasMirror: true, issues: nil) == nil)
-        #expect(TmuxTabRowMark.make(connection: .live, hasMirror: true, issues: TmuxTabIssues()) == nil)
+    /// A tab opened for a hosted agent carries no mark of its own when
+    /// nothing is wrong: its identity glyph already shows the tmux dot.
+    @Test func liveAgentTab_withNothingToWarnAbout_hasNoMark() {
+        #expect(TmuxTabRowMark.make(connection: .live, hasMirror: true, issues: nil, origin: .agent) == nil)
+        #expect(TmuxTabRowMark.make(connection: .live, hasMirror: true, issues: TmuxTabIssues(), origin: .agent) == nil)
         // Registered, not yet recorded: the mirror is there and says nothing.
-        #expect(TmuxTabRowMark.make(connection: nil, hasMirror: true, issues: nil) == nil)
+        #expect(TmuxTabRowMark.make(connection: nil, hasMirror: true, issues: nil, origin: .agent) == nil)
+    }
+
+    /// A tab the user opened says it is a mirror even when all is well, so
+    /// the row does not read as an ordinary terminal.
+    @Test func liveUserTab_withNothingToWarnAbout_carriesTheNeutralMark() throws {
+        let mark = try #require(TmuxTabRowMark.make(
+            connection: .live,
+            hasMirror: true,
+            issues: TmuxTabIssues(),
+            origin: .user,
+            windowName: "editor"
+        ))
+        #expect(mark.reasons == [.mirroring])
+        #expect(!mark.primary.isWarning)
+        // The tooltip names the window, in whatever language it resolves to.
+        #expect(mark.help.contains("editor"))
     }
 
     @Test(arguments: [
@@ -50,8 +68,8 @@ struct TmuxTabRowMarkTests {
         // The tooltip, which is also the accessibility label, names both.
         let lines = both.help.split(separator: "\n").map(String.init)
         #expect(lines == [
-            String(localized: TmuxTabRowMark.Reason.droppedOutput.text),
-            String(localized: TmuxTabRowMark.Reason.windowLargerThanTab.text)
+            String(localized: TmuxTabRowMark.Reason.droppedOutput.text(windowName: "")),
+            String(localized: TmuxTabRowMark.Reason.windowLargerThanTab.text(windowName: ""))
         ])
     }
 
@@ -59,8 +77,8 @@ struct TmuxTabRowMarkTests {
     @Test func everyReason_hasItsOwnSymbolAndText() {
         let reasons = TmuxTabRowMark.Reason.allCases
         #expect(Set(reasons.map(\.symbol)).count == reasons.count)
-        #expect(Set(reasons.map { String(localized: $0.text) }).count == reasons.count)
-        #expect(reasons.filter { !$0.isWarning } == [.connecting])
+        #expect(Set(reasons.map { String(localized: $0.text(windowName: "w")) }).count == reasons.count)
+        #expect(reasons.filter { !$0.isWarning } == [.connecting, .mirroring])
     }
 
     /// The row speaks of a connection state in the words the card over the
@@ -75,5 +93,14 @@ struct TmuxTabRowMarkTests {
             sessionName: "t"
         ))
         #expect(mark.help == String(localized: card.title))
+    }
+
+    @Test func neutralMarkText_resolvesInBothLanguages() {
+        var english = TmuxTabRowMark.Reason.mirroring.text(windowName: "editor")
+        english.locale = Locale(identifier: "en")
+        #expect(String(localized: english) == "Mirroring the tmux window “editor”")
+        var japanese = TmuxTabRowMark.Reason.mirroring.text(windowName: "editor")
+        japanese.locale = Locale(identifier: "ja")
+        #expect(String(localized: japanese) == "tmux のウィンドウ「editor」を表示しています")
     }
 }

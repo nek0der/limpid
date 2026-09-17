@@ -92,13 +92,18 @@ struct PaneCommands: Commands {
             .limpidShortcut(.previousTab, in: state.settingsStore)
             .disabled(state.session.tabs(in: state.session.activeContainerID).count <= 1)
 
-            Divider()
-            Button {
-                reconnectActiveMirror()
-            } label: {
-                Label("Reconnect to tmux", systemImage: "arrow.clockwise")
+            // Only where it means something: every other tab would carry a
+            // permanently grey item, and a separator above it, for a verb
+            // that has nothing to do with it.
+            if isMirrorTab {
+                Divider()
+                Button {
+                    reconnectActiveMirror()
+                } label: {
+                    Label("Reconnect to tmux", systemImage: "arrow.clockwise")
+                }
+                .disabled(!canReconnectActiveMirror)
             }
-            .disabled(!canReconnectActiveMirror)
 
             // Font size lives here rather than in libghostty's keybind table
             // so Limpid decides which surfaces the change applies to; a
@@ -114,6 +119,11 @@ struct PaneCommands: Commands {
     /// which disables the same items an unsupported verb would.
     private var capabilities: TabCapabilities? {
         state.session.activeTab?.capabilities
+    }
+
+    /// Whether the active tab is one a reconnect could apply to at all.
+    private var isMirrorTab: Bool {
+        state.session.activeTab.map { TmuxMirrorActions.mirrorRef(of: $0) != nil } ?? false
     }
 
     /// Enabled for a mirror tab whose connection ended or whose server did

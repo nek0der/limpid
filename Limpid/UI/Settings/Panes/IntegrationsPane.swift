@@ -98,13 +98,12 @@ struct IntegrationsPane: View {
                     Starts each agent in a tmux session of its own and shows that session as \
                     its own tab. The agent keeps running after Limpid quits, including the \
                     relaunch after an update, and the tab reconnects to it on the next \
-                    launch. The command you typed returns to the prompt as soon as the tab \
-                    opens.
+                    launch. The shell you started it from returns to its prompt as soon as \
+                    the tab opens.
 
                     Applies to panes opened after the change. The agent's scrollback is \
-                    Limpid's, not tmux's. Reviewing a turn is not available in these tabs \
-                    yet. A command that prints and exits, such as `claude --version`, runs \
-                    outside tmux.
+                    Limpid's, not tmux's. Review can't open over these tabs yet. A command \
+                    that prints and exits, such as `claude --version`, runs outside tmux.
                     """
                 )
             }
@@ -125,7 +124,7 @@ struct IntegrationsPane: View {
         case .unreadableVersion:
             return Text(
                 """
-                Limpid could not read the version of the tmux it found. Showing agents in a \
+                Limpid couldn't read the version of the tmux it found. Showing agents in a \
                 tab needs tmux \(minimum) or newer.
                 """
             )

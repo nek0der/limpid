@@ -106,18 +106,21 @@ private struct PaneCreationFailureCard: View {
     let surfaceView: SurfaceView
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 24))
-                .foregroundStyle(.yellow)
+                .font(.system(size: 22))
+                .foregroundStyle(LimpidColor.warning)
+                .accessibilityHidden(true)
             Text("Terminal failed to start", comment: "Pane surface NULL recovery title")
-                .font(.system(size: 14, weight: .semibold))
+                .font(LimpidFont.headline)
+                .foregroundStyle(LimpidColor.primaryText)
+                .accessibilityAddTraits(.isHeader)
             Text(
-                "libghostty could not allocate this pane. Retry to try again.",
+                "libghostty couldn't allocate this pane. Retry to try again.",
                 comment: "Pane surface NULL recovery body"
             )
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
+            .font(LimpidFont.bodySecondary)
+            .foregroundStyle(LimpidColor.secondaryText)
             .multilineTextAlignment(.center)
             .frame(maxWidth: 280)
             Button {
@@ -126,9 +129,20 @@ private struct PaneCreationFailureCard: View {
                 Text("Retry", comment: "Pane surface NULL recovery retry button")
             }
             .controlSize(.small)
+            .padding(.top, 4)
         }
-        .padding(20)
+        .padding(.vertical, 16)
+        .padding(.horizontal, 24)
+        // The same treatment `UnavailablePaneCard` carries: both are laid
+        // over a pane that shows nothing, and two cards in the same place
+        // reading as two different surfaces was the older of the two
+        // drifting, not a distinction.
+        .background(
+            .regularMaterial,
+            in: RoundedRectangle(cornerRadius: LimpidLayout.paneBannerCornerRadius, style: .continuous)
+        )
         .pointerStyle(.default)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -261,8 +275,11 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         /// The leaf's stream, read in place of a pty. Compared by identity:
         /// two channels are the same stream only if they are one object.
         case channel(TmuxPaneChannel)
-        /// Nothing can drive the pane, so the leaf is left out of the
-        /// render (see `ResolvedSplitNode.build`).
+        /// Nothing can drive the pane, so no surface is made for it. The
+        /// leaf keeps its place in the tree and the container draws an empty
+        /// placeholder there: transparent, focusable by a click, and hidden
+        /// from VoiceOver, since it has nothing to read out
+        /// (`SplitContainerView.leaf`, `ResolvedSplitNode.build`).
         case noSurface
 
         static func == (lhs: Self, rhs: Self) -> Bool {

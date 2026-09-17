@@ -116,7 +116,7 @@ struct AgentTmuxSupportTests {
     /// key, so a missing `ja` is what an untranslated reason looks like.
     @Test(arguments: [
         "No tmux found. Showing agents in a tab needs tmux %@ or newer.",
-        "Limpid could not read the version of the tmux it found. Showing agents in a tab needs tmux %@ or newer.",
+        "Limpid couldn't read the version of the tmux it found. Showing agents in a tab needs tmux %@ or newer.",
         "The tmux found is version %@. Showing agents in a tab needs %@ or newer.",
         "Show agents in a tmux tab"
     ])

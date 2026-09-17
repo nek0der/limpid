@@ -21,8 +21,10 @@ indirect enum ResolvedSplitNode {
     /// is normally `registry.view(for:)` or a create-on-miss wrapper.
     ///
     /// A leaf the closure cannot resolve stays in the tree without a view,
-    /// and the container draws a placeholder in its place
-    /// (`PaneHostRepresentable.SurfaceBacking.noSurface`). Collapsing its
+    /// and the container draws an empty placeholder in its place — one that
+    /// takes focus like a pane and is hidden from VoiceOver
+    /// (`SplitContainerView.leaf`,
+    /// `PaneHostRepresentable.SurfaceBacking.noSurface`). Collapsing its
     /// split instead would number the dividers over a tree other than the
     /// stored one, while a divider drag or double-click resizes the stored
     /// tree by that number and would move another split.

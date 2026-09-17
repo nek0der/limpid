@@ -157,10 +157,11 @@ private struct PaneMergeDropArea: View {
     }
 
     /// Whether this row takes the dragged pane. A row that would refuse it
-    /// is not lit, so the refusal shows before the drop; the drop is still
-    /// caught, so a pane dropped anyway gets the word that says why rather
-    /// than landing in a new tab behind the row. A drag without a known
-    /// source is lit as before, and the drop decides.
+    /// is not lit and shows the "no drop" cursor, so the refusal is legible
+    /// while the pane is still in the air; the drop is still caught, so a
+    /// pane dropped anyway gets the word that says why rather than landing
+    /// in a new tab behind the row. A drag without a known source is lit as
+    /// before, and the drop decides.
     private var acceptsDraggedPane: Bool {
         guard let sourceTabID,
               let sourceTab = session.tab(sourceTabID),
@@ -169,33 +170,44 @@ private struct PaneMergeDropArea: View {
         return TmuxMirrorActions.acceptsPane(from: sourceTab, into: targetTab)
     }
 
+    /// Routed through the mirror-aware action rather than `TabActions`
+    /// directly: two mirrors of one tmux session merge with `join-pane`, and
+    /// any other pairing that involves a mirror is refused with a word to
+    /// the user.
+    private func merge(_ paneID: UUID) {
+        paneDropLog.debug(
+            "merge target=\(targetTabID.uuidString, privacy: .public) pane=\(paneID.uuidString, privacy: .public)"
+        )
+        TmuxMirrorActions.mergePaneIntoTab(
+            session,
+            paneID: paneID,
+            into: targetTabID,
+            store: tmuxStore,
+            toastCenter: toastCenter
+        )
+    }
+
     var body: some View {
         ZStack {
-            Color.clear
-                .contentShape(Rectangle())
-                .paneStringDropCatcher(
-                    key: key,
-                    dragState: dragState
-                ) { paneID in
-                    paneDropLog.debug(
-                        "merge target=\(targetTabID.uuidString, privacy: .public) pane=\(paneID.uuidString, privacy: .public)"
+            if acceptsDraggedPane {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .paneStringDropCatcher(key: key, dragState: dragState, perform: merge)
+            } else {
+                // The same delegate route the source row uses, so the cursor
+                // says no before the drop instead of offering the green `+`
+                // and taking it back with a toast afterwards.
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onDrop(
+                        of: [UTType.text],
+                        delegate: RefusePaneDropDelegate(key: key, dragState: dragState, perform: merge)
                     )
-                    // Routed through the mirror-aware action rather than
-                    // `TabActions` directly: two mirrors of one tmux session
-                    // merge with `join-pane`, and any other pairing that
-                    // involves a mirror is refused with a word to the user.
-                    TmuxMirrorActions.mergePaneIntoTab(
-                        session,
-                        paneID: paneID,
-                        into: targetTabID,
-                        store: tmuxStore,
-                        toastCenter: toastCenter
-                    )
-                }
+            }
             // Single accent rectangle slides between rows via a shared
             // `matchedGeometryEffect` id, mirroring AppKit's drop
             // indicator glide.
-            if dragState.hoverTargetID == key, acceptsDraggedPane {
+            if dragState.hoverTargetID == key {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(accent.opacity(0.20))
                     .padding(.horizontal, pillHorizontalPadding)
@@ -240,6 +252,44 @@ private struct PaneDetachDropArea: View {
                     toastCenter: toastCenter
                 )
             }
+    }
+}
+
+/// Shows the macOS "no drop" cursor over a row that would refuse the pane,
+/// and still hands a drop that arrives anyway to `perform`, which says why.
+/// AppKit withholds the drop while the proposal is `.forbidden`, so in
+/// practice the drag simply ends over the row; `perform` is kept for the
+/// case where it is delivered, so the refusal is never silent twice.
+@MainActor
+private struct RefusePaneDropDelegate: DropDelegate {
+    let key: String
+    let dragState: LimpidDragState
+    let perform: (UUID) -> Void
+
+    /// The highlight is a single rectangle shared between rows, so a row
+    /// that will not take the pane has to clear it as it takes the cursor —
+    /// otherwise it stays lit on whichever row the pointer left.
+    func dropEntered(info: DropInfo) {
+        if dragState.hoverTargetID == key || dragState.current == .pane {
+            dragState.hoverTargetID = nil
+        }
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .forbidden)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let provider = info.itemProviders(for: [UTType.text]).first else { return false }
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let wire = object as? String, let paneID = paneIDFromWire(wire) else { return }
+            Task { @MainActor in perform(paneID) }
+        }
+        return true
     }
 }
 
