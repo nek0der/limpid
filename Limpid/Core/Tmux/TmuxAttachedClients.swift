@@ -79,7 +79,10 @@ struct TmuxAttachedClients: Equatable {
     static func probe(tmuxPath: String, binding: TmuxBinding) -> [TmuxAttachedClient]? {
         let result = TmuxCommand().run(
             executable: tmuxPath,
-            arguments: ["-S", binding.socketPath, "list-clients", "-t", binding.sessionID, "-F", listFormat]
+            arguments: TmuxCommand.clientArguments(
+                socketPath: binding.socketPath,
+                ["list-clients", "-t", binding.sessionID, "-F", listFormat]
+            )
         )
         guard case let .success(output) = result else { return nil }
         return parse(output)
@@ -92,7 +95,7 @@ struct TmuxAttachedClients: Equatable {
         for client in clients {
             let result = TmuxCommand().run(
                 executable: tmuxPath,
-                arguments: ["-S", socketPath, "detach-client", "-t", client.name]
+                arguments: TmuxCommand.clientArguments(socketPath: socketPath, ["detach-client", "-t", client.name])
             )
             if case .success = result {
                 continue

@@ -169,7 +169,11 @@ enum TmuxClientProbe {
         func query(_ arguments: [String]) -> TmuxCommandResult {
             let available = deadline - ProcessInfo.processInfo.systemUptime - TmuxTiming.terminationGrace - TmuxTiming.drainGrace
             guard available > 0 else { return .timedOut }
-            return TmuxCommand().run(executable: tmuxPath, arguments: ["-S", socketPath] + arguments, timeout: min(timeout, available))
+            return TmuxCommand().run(
+                executable: tmuxPath,
+                arguments: TmuxCommand.clientArguments(socketPath: socketPath, arguments),
+                timeout: min(timeout, available)
+            )
         }
         let paneResult = query(TmuxTopology.paneArguments)
         guard case let .success(paneText) = paneResult else { return ServerResult(outcome: paneResult) }
@@ -277,7 +281,11 @@ enum TmuxClientProbe {
         arguments: [String],
         timeout: TimeInterval
     ) -> String? {
-        let result = TmuxCommand().run(executable: tmuxPath, arguments: ["-S", socketPath] + arguments, timeout: timeout)
+        let result = TmuxCommand().run(
+            executable: tmuxPath,
+            arguments: TmuxCommand.clientArguments(socketPath: socketPath, arguments),
+            timeout: timeout
+        )
         guard case let .success(output) = result else { return nil }
         return output
     }

@@ -32,6 +32,17 @@ final class TmuxCommand: @unchecked Sendable {
     private var isCancelled = false
     private var hasStarted = false
 
+    /// The command line of every tmux client we start against `socketPath`.
+    ///
+    /// Without a UTF-8 locale in LC_ALL, LC_CTYPE, or LANG, tmux 3.7c
+    /// replaces each tab in format output with `_`, and the lists we parse
+    /// are tab-separated. `-u` makes the client UTF-8 regardless of the
+    /// environment, so we do not depend on libghostty having set LANG for
+    /// our process before the first client starts.
+    static func clientArguments(socketPath: String, _ command: [String]) -> [String] {
+        ["-u", "-S", socketPath] + command
+    }
+
     func cancel() {
         lock.withLock { isCancelled = true }
     }

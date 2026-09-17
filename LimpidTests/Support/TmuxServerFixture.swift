@@ -93,6 +93,19 @@ struct TmuxServerFixture {
             .split(separator: "\n").map(String.init)
     }
 
+    /// A `tmux` that runs the real one with LC_ALL, LC_CTYPE, and LANG
+    /// removed, for passing as the app's `tmuxPath`. The test host inherits
+    /// the LANG libghostty sets, so only a separate environment shows what a
+    /// client does without a UTF-8 locale.
+    func localeFreeExecutable() throws -> String {
+        let script = directory.appendingPathComponent("tmux-no-locale")
+        let quoted = "'" + executable.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        try "#!/bin/sh\nunset LC_ALL LC_CTYPE LANG\nexec \(quoted) \"$@\"\n"
+            .write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        return script.path
+    }
+
     func tearDown() {
         run(["kill-server"])
         try? FileManager.default.removeItem(at: directory)

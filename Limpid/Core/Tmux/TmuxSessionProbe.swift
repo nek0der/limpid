@@ -27,7 +27,7 @@ enum TmuxSessionProbe {
     static func presence(tmuxPath: String, socketPath: String, sessionID: String) -> TmuxSessionPresence {
         let result = TmuxCommand().run(
             executable: tmuxPath,
-            arguments: ["-S", socketPath, "list-sessions", "-F", "#{session_id}"]
+            arguments: TmuxCommand.clientArguments(socketPath: socketPath, ["list-sessions", "-F", "#{session_id}"])
         )
         return classify(result, sessionID: sessionID) { connectError(socketPath: socketPath) }
     }

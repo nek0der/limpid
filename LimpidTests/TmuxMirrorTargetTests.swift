@@ -117,4 +117,19 @@ struct TmuxMirrorTargetListingTests {
             #expect(target.binding.serverStartedAt == startedAt)
         }
     }
+
+    /// Without a UTF-8 locale, a client that is not told `-u` gets every tab
+    /// of the format back as `_`, and no line parses.
+    @Test func targets_fromAClientWithoutAUTF8Locale_stillParse() throws {
+        let server = try TmuxServerFixture.launch(windows: 2)
+        defer { server.tearDown() }
+
+        let targets = try TmuxMirrorTargetLister.targets(
+            tmuxPath: server.localeFreeExecutable(),
+            socketPaths: [URL(fileURLWithPath: server.socketPath)]
+        )
+
+        #expect(try targets.map(\.windowID) == server.windowIDs())
+        #expect(targets.allSatisfy { $0.binding.sessionName == "t" && $0.serverVersion != nil })
+    }
 }

@@ -99,7 +99,7 @@ final class TmuxServerConnection {
     func start() throws {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: executable)
-        proc.arguments = ["-S", target.socketPath, "-C", "attach", "-t", target.sessionID]
+        proc.arguments = TmuxCommand.clientArguments(socketPath: target.socketPath, ["-C", "attach", "-t", target.sessionID])
         let stdin = Pipe()
         let stdout = Pipe()
         proc.standardInput = stdin

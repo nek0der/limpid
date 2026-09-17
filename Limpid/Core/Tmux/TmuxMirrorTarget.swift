@@ -50,7 +50,7 @@ enum TmuxMirrorTargetLister {
             let path = TmuxClientProbe.normalizeSocketPath(socket.path)
             let result = TmuxCommand().run(
                 executable: tmuxPath,
-                arguments: ["-S", path, "list-windows", "-a", "-F", listFormat]
+                arguments: TmuxCommand.clientArguments(socketPath: path, ["list-windows", "-a", "-F", listFormat])
             )
             guard case let .success(output) = result else { continue }
             targets.append(contentsOf: parse(output, socketPath: path))

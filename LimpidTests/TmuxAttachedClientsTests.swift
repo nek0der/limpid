@@ -180,6 +180,19 @@ struct TmuxAttachedClientsIntegrationTests {
         #expect(await waitUntil { !client.isRunning })
     }
 
+    @Test func probe_fromAClientWithoutAUTF8Locale_stillListsTheTerminal() async throws {
+        let harness = try PaletteHarness()
+        defer { harness.tearDown() }
+        let client = try await harness.attachTerminal()
+
+        let clients = try TmuxAttachedClients.probe(
+            tmuxPath: harness.server.localeFreeExecutable(),
+            binding: harness.binding
+        )
+
+        #expect(clients?.contains { $0.tty == client.tty && !$0.isControlMode } == true)
+    }
+
     @Test func openFromPalette_detachesALimpidPaneWithoutAsking() async throws {
         let harness = try PaletteHarness()
         defer { harness.tearDown() }
