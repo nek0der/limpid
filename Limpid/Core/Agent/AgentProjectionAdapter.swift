@@ -351,7 +351,7 @@ final class AgentProjectionAdapter {
         }
         input.pidStatus = pidStatus(for: input.records)
         input.marks = marks()
-        input.presence = presence(for: input.records)
+        input.presence = presence(for: input.records, in: session)
         input.focus = focus(in: session)
         return input
     }
@@ -426,14 +426,34 @@ final class AgentProjectionAdapter {
     /// because the topology probe answers that question and only that
     /// question. An endpoint with no answer is left out of the map entirely,
     /// which is how the rules tell "nobody is attached" from "not known yet".
-    private func presence(for records: [AgentProjectionFile]) -> AgentProjectionPresence {
+    ///
+    /// Two kinds of pane can show an endpoint: a mirror leaf bound to that
+    /// tmux pane, and a pane whose own tty drives a tmux client attached to
+    /// the session. Both are listed, since both put the run in front of the
+    /// user. Only the second kind gets a location: a mirror shows every pane
+    /// of its window at once, so "not the active pane" does not mean out of
+    /// sight there, and there is no client of ours to `select-pane` for.
+    ///
+    /// The key stays the record's own spelling of the socket, because that
+    /// is what the rules build from the record; the canonical form is only
+    /// for matching the mirror leaves.
+    private func presence(
+        for records: [AgentProjectionFile],
+        in session: WindowSession
+    ) -> AgentProjectionPresence {
         var presence = AgentProjectionPresence()
         // Collected even when no probe is running, because the probe asks for
         // its candidates before it starts and would otherwise have nowhere to
         // look for a session this process did not spawn.
         socketPaths = Set(records.compactMap { endpoint(in: $0)?.socketPath })
         paneLocations = [:]
-        guard let tmuxPresence else { return presence }
+        let aliases = tmuxPresence?.topology.socketAliases ?? [:]
+        var mirrored: [TmuxRuntimeEndpoint: [UUID]] = [:]
+        for tab in session.tabs {
+            for (endpoint, leaf) in tab.mirroredEndpoints(aliases: aliases) {
+                mirrored[endpoint, default: []].append(leaf)
+            }
+        }
         for record in records {
             guard let endpoint = endpoint(in: record) else { continue }
             let key = AgentProjectionPresence.key(
@@ -441,11 +461,12 @@ final class AgentProjectionAdapter {
                 pane: endpoint.paneID
             )
             guard presence.attachments[key] == nil else { continue }
-            let attachments = tmuxPresence.attachments(for: endpoint)
-            guard !attachments.isEmpty || tmuxPresence.resolution(for: endpoint) == .detached else {
-                continue
-            }
-            presence.attachments[key] = Array(attachments.keys)
+            let leaves = mirrored[endpoint.canonical(aliases: aliases)] ?? []
+            let attachments = tmuxPresence?.attachments(for: endpoint) ?? [:]
+            guard !leaves.isEmpty || !attachments.isEmpty
+                || tmuxPresence?.resolution(for: endpoint) == .detached
+            else { continue }
+            presence.attachments[key] = leaves + attachments.keys.filter { !leaves.contains($0) }
             for (pane, location) in attachments {
                 presence.locations[pane.uuidString] = .init(isActive: location.isActive)
                 paneLocations[pane] = location

@@ -8,6 +8,21 @@ struct TmuxRuntimeEndpoint: Hashable {
     let serverPID: String
     let serverStartedAt: String
     let paneID: String
+
+    /// The same endpoint with its socket in the one spelling we compare.
+    ///
+    /// The probe's aliases come first because they were resolved off the
+    /// main actor; a socket the probe has not seen yet, such as one only a
+    /// mirror tab names, is resolved here. Both sides of any comparison go
+    /// through this, so `/tmp` and `/private/tmp` meet in one key.
+    func canonical(aliases: [String: String]) -> TmuxRuntimeEndpoint {
+        TmuxRuntimeEndpoint(
+            socketPath: aliases[socketPath] ?? TmuxClientProbe.normalizeSocketPath(socketPath),
+            serverPID: serverPID,
+            serverStartedAt: serverStartedAt,
+            paneID: paneID
+        )
+    }
 }
 
 struct TmuxPaneLocation: Equatable {
