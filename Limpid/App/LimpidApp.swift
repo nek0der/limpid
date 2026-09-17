@@ -111,6 +111,8 @@ final class AppState {
     /// Retires agent history rows the Waiting side already handled. Observer-only, like `dockBadgeSync`.
     private var notificationReadSync: NotificationReadSync?
     private var gitSync: GitSyncCoordinator?
+    /// Opens the mirror tabs shims ask for (`AppState+AgentTracking`).
+    private var agentMirrorRequests: AgentMirrorRequestWatcher?
     /// Sidebar pull-request status: data, hover state, and the
     /// scheduler that fills them. See each type for its own contract.
     let prStatusStore = PRStatusStore()
@@ -342,6 +344,9 @@ final class AppState {
         // announced the colors a new control client takes. The tabs' notices
         // reach `toastCenter`, wired above, whenever the server answers.
         TmuxMirrorActions.reconnectAtLaunch(session: session, store: tmuxStore)
+        // After the restore, so a request whose tab was saved is recognized
+        // as served rather than opened twice.
+        agentMirrorRequests = Self.startAgentMirrorRequests(session: session, store: tmuxStore)
     }
 
     private func configureTurnReview() {

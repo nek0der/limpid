@@ -26,6 +26,24 @@ struct Tab: Codable, Equatable, Identifiable {
         }
     }
 
+    /// Who asked for a mirror tab. The kind says what a tab shows; this says
+    /// what it is for, which changes what the user may do to it
+    /// (`TabCapabilities`) and, later, what becomes of it when tmux ends its
+    /// session. Unknown raw values read as `.user`, the origin every mirror
+    /// tab had before this field existed.
+    enum MirrorOrigin: String, Codable, Equatable {
+        /// Opened by the user from the palette, or by `break-pane`.
+        case user
+        /// Opened for an agent a shim started in Limpid's own tmux server.
+        /// The tab's only leaf carries the agent's `LIMPID_PANE_ID`.
+        case agent
+
+        init(from decoder: any Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = MirrorOrigin(rawValue: raw) ?? .user
+        }
+    }
+
     let id: UUID
 
     /// Wire-level kind tag. Today every tab is `.terminal`; the field
@@ -120,6 +138,17 @@ struct Tab: Codable, Equatable, Identifiable {
     /// the other per-pane dictionaries so `SplitTree` stays a tree of ids.
     var paneSources: [UUID: PaneIOSource] = [:]
 
+    /// Meaningful only for a `.tmuxMirror` tab; every other tab keeps the
+    /// default.
+    var mirrorOrigin: MirrorOrigin = .user
+
+    /// The provider an agent mirror tab was opened for, as its request named
+    /// it. `nil` on every other tab, and on an agent tab whose provider this
+    /// build does not know. Kept so the tab can be named before the agent's
+    /// first record arrives and, later, so its end can be judged from that
+    /// provider's run record.
+    var mirroredAgent: AgentKind?
+
     func ioSource(for paneID: UUID) -> PaneIOSource {
         paneSources[paneID] ?? .local
     }
@@ -163,6 +192,7 @@ struct Tab: Codable, Equatable, Identifiable {
         case id, kind, title, titleOverride, workingDirectory, pwd, splitTree
         case zoomedLeafID, paneStates, scrollbackPaths, initialCommands, container
         case agentSessions, agentBadges, tmuxBindings, paneSources
+        case mirrorOrigin, mirroredAgent
         case claudeSessions, claudeAgentBadges, codexSessions, codexAgentBadges
     }
 
@@ -257,6 +287,10 @@ struct Tab: Codable, Equatable, Identifiable {
             [UUID: PaneIOSource].self,
             forKey: .paneSources
         ) ?? [:]
+        self.mirrorOrigin = try c.decodeIfPresent(MirrorOrigin.self, forKey: .mirrorOrigin) ?? .user
+        // `try?`: a provider this build does not know leaves the tab an agent
+        // tab without a provider rather than failing the whole snapshot.
+        self.mirroredAgent = try? c.decodeIfPresent(AgentKind.self, forKey: .mirroredAgent)
     }
 
     /// Title actually rendered in the UI. Honors a manual override; falls
@@ -285,6 +319,12 @@ struct Tab: Codable, Equatable, Identifiable {
         if !paneSources.isEmpty {
             try c.encode(paneSources, forKey: .paneSources)
         }
+        // Likewise only for an agent tab, so a user's mirror tab and every
+        // ordinary tab are written as before.
+        if mirrorOrigin != .user {
+            try c.encode(mirrorOrigin, forKey: .mirrorOrigin)
+        }
+        try c.encodeIfPresent(mirroredAgent, forKey: .mirroredAgent)
         try c.encodeIfPresent(zoomedLeafID, forKey: .zoomedLeafID)
         try c.encode(paneStates, forKey: .paneStates)
         try c.encode(scrollbackPaths, forKey: .scrollbackPaths)
@@ -317,12 +357,16 @@ struct Tab: Codable, Equatable, Identifiable {
     }
 
     /// Convenience: tab containing a single empty pane.
+    ///
+    /// `paneID` is fresh unless the caller already owns the leaf's
+    /// identity, as an agent mirror tab does: its leaf must carry the id
+    /// the agent's records name.
     static func newWithSinglePane(
         title: String,
         workingDirectory: String? = nil,
-        container: ContainerID
+        container: ContainerID,
+        paneID: UUID = UUID()
     ) -> (tab: Tab, paneID: UUID) {
-        let paneID = UUID()
         let tab = Tab(
             title: title,
             workingDirectory: workingDirectory,

@@ -28,12 +28,26 @@ enum TmuxMirrorActions {
             return true
         }
         let tab = session.openTabInActiveScope()
+        return startMirror(target, inNewTab: tab, session: session, store: store) { $0.title = target.displayName }
+    }
+
+    /// Turn `tab`, just opened with one leaf, into a mirror of `target` and
+    /// connect it: the part of opening every entry shares. `describe` sets
+    /// what differs between entries (the title, the origin) in the same
+    /// write that makes the tab a mirror, so nothing observes it half made.
+    private static func startMirror(
+        _ target: TmuxMirrorTarget,
+        inNewTab tab: Tab,
+        session: WindowSession,
+        store: TmuxConnectionStore,
+        describe: (inout Tab) -> Void
+    ) -> Bool {
         guard let paneID = tab.splitTree.allLeafIDs().first else { return false }
         let ref = TmuxPaneRef(binding: target.binding, windowID: target.windowID, paneID: target.activePaneID)
         session.update(tab.id) { t in
             t.kind = .tmuxMirror
-            t.title = target.displayName
             t.paneSources[paneID] = .tmux(ref)
+            describe(&t)
         }
         let connection: TmuxSessionConnection
         do {
@@ -57,6 +71,56 @@ enum TmuxMirrorActions {
         store.register(mirror)
         mirror.start()
         return true
+    }
+
+    /// Open the tab a shim asked for when it started an agent in our tmux
+    /// server (design §2.2 and §6). Returns false when nothing was opened:
+    /// a tab already holds the request's leaf, or the mirror could not be
+    /// started (which closes the tab again with a notice, as `open` does).
+    ///
+    /// - The tab's only leaf takes the request's `leafID`, the
+    ///   `LIMPID_PANE_ID` the agent runs under, so its records, badges, and
+    ///   approval cards name this leaf with nothing to translate.
+    /// - It goes right after the tab the agent was started from, in that
+    ///   tab's container, whichever container the user is looking at. When
+    ///   that tab is gone, it goes to the end of the active container.
+    /// - It becomes the active tab only when the tab it was started from is
+    ///   the active one (design §5 decision 4): a command started in a tab the user has
+    ///   since left must not pull them back. The session is the one every
+    ///   window of the app shows, so there is no other window's selection to
+    ///   keep apart (§6 decision 13).
+    /// - Other clients are not asked about: the session was created a moment
+    ///   ago, detached, by the shim. The server's version is not checked
+    ///   here either, as none is for a tab `break-pane` opens: the shim is
+    ///   only told to host when the tmux it runs passed the launch probe
+    ///   (`AgentTmuxSupport`).
+    @discardableResult
+    static func openAgentMirror(_ request: AgentMirrorRequest, session: WindowSession, store: TmuxConnectionStore) -> Bool {
+        guard session.tab(containing: request.leafID) == nil else { return false }
+        let launchTab = session.tab(containing: request.launchPaneID)
+        let workingDirectory = (launchTab?.pwd ?? launchTab?.workingDirectory).map { URL(fileURLWithPath: $0) }
+        let name = AgentProviderRegistry.displayName(for: request.provider)
+        let tab = session.openTab(
+            container: launchTab?.container ?? session.activeContainerID,
+            title: name,
+            workingDirectory: workingDirectory,
+            paneID: request.leafID,
+            after: launchTab?.id,
+            activates: launchTab.map { $0.id == session.activeTabID } ?? false
+        )
+        // The window's name is tmux's to give; until the mirror asks, the
+        // notices name the window after the agent.
+        let target = TmuxMirrorTarget(
+            binding: request.binding,
+            windowID: request.windowID,
+            windowName: name,
+            activePaneID: request.paneID,
+            serverVersion: nil
+        )
+        return startMirror(target, inNewTab: tab, session: session, store: store) { t in
+            t.mirrorOrigin = .agent
+            t.mirroredAgent = request.provider
+        }
     }
 
     /// What the user chose about clients another app has attached.
@@ -279,8 +343,14 @@ enum TmuxMirrorActions {
     /// The tab row a pane is dragged over lights up only when this holds,
     /// and the drop decides by it too. Whether both mirrors are connected
     /// is left to the drop, which says so; the tabs cannot tell.
+    ///
+    /// An agent's tab takes no pane and gives none: its one pane is the
+    /// agent's, under the leaf id the agent's records name, and any other
+    /// pane of the agent's session inherited that same id from the
+    /// session's environment.
     static func acceptsPane(from sourceTab: Tab, into targetTab: Tab) -> Bool {
         guard sourceTab.kind == .tmuxMirror else { return targetTab.capabilities.canAcceptForeignPane }
+        guard sourceTab.mirrorOrigin == .user, targetTab.mirrorOrigin == .user else { return false }
         guard let source = mirrorRef(of: sourceTab), let target = mirrorRef(of: targetTab) else { return false }
         return TmuxConnectionStore.Key(source.binding) == TmuxConnectionStore.Key(target.binding)
     }

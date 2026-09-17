@@ -63,17 +63,18 @@ struct PaneShellEnvironmentTests {
     /// ours alone: a session created on an existing server inherits that
     /// server's environment, so a Debug build sharing a Release build's
     /// server would write its records into the Release directories.
-    @Test("carries the tmux binary and socket when the agent is hosted")
+    @Test("carries the tmux binary, socket, and request directory when the agent is hosted")
     func variables_carriesAgentTmuxHost() {
         let env = PaneShellEnvironment.variables(
             paneID: nil,
             shimDirectories: [],
             zdotdir: nil,
             basePath: base,
-            agentTmux: .init(binary: "/opt/homebrew/bin/tmux", socketName: "limpid-x")
+            agentTmux: .init(binary: "/opt/homebrew/bin/tmux", socketName: "limpid-x", mirrorRequestsDirectory: "/requests")
         )
         #expect(env["LIMPID_AGENT_TMUX"] == "/opt/homebrew/bin/tmux")
         #expect(env["LIMPID_AGENT_TMUX_SOCKET"] == "limpid-x")
+        #expect(env["LIMPID_AGENT_MIRROR_REQUESTS_DIR"] == "/requests")
     }
 
     @Test("omits both tmux variables when the agent is not hosted")
@@ -83,6 +84,7 @@ struct PaneShellEnvironmentTests {
         )
         #expect(env["LIMPID_AGENT_TMUX"] == nil)
         #expect(env["LIMPID_AGENT_TMUX_SOCKET"] == nil)
+        #expect(env["LIMPID_AGENT_MIRROR_REQUESTS_DIR"] == nil)
     }
 
     /// Namespaced so two builds never share a server; see above.

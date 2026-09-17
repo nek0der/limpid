@@ -564,16 +564,35 @@ final class TmuxConnectionStore {
     /// left on tmux's side to confirm, and is not kept for reopening; the
     /// user reads one notice. A tab that is already gone is skipped.
     ///
-    /// The decision is made per tab, from the tab, so a tab of another
-    /// origin can be given another outcome here.
+    /// The decision is made per tab, from the tab (`outcome(ofEnded:)`).
     func sessionEnded(_ tabs: [EndedTab], sessionName: String) {
         var hasClosed = false
-        for ended in tabs where ended.session.tab(ended.tabID) != nil {
-            TabActions.closeTab(ended.session, registry: registry, tabID: ended.tabID, confirm: false, isReopenable: false)
-            hasClosed = true
+        for ended in tabs {
+            guard let tab = ended.session.tab(ended.tabID) else { continue }
+            switch Self.outcome(ofEnded: tab) {
+            case .close:
+                TabActions.closeTab(ended.session, registry: registry, tabID: ended.tabID, confirm: false, isReopenable: false)
+                hasClosed = true
+            }
         }
         guard hasClosed else { return }
         onNotice?(Self.sessionEndedNotice(sessionName: sessionName))
+    }
+
+    /// What becomes of one tab whose session tmux no longer has.
+    enum EndedTabOutcome: Equatable {
+        /// Closed without asking, and not kept for reopening.
+        case close
+    }
+
+    /// Decided by who opened the tab. An agent's tab closes as a user's
+    /// does for now; telling an agent that finished from a server that went
+    /// away is the next stage's (design §6 decision 2), and belongs here.
+    static func outcome(ofEnded tab: Tab) -> EndedTabOutcome {
+        switch tab.mirrorOrigin {
+        case .user, .agent:
+            .close
+        }
     }
 
     /// The tabs waiting on a connection tmux refused close, with one

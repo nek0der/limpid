@@ -168,6 +168,9 @@ enum TabActions {
         // behind it yet, so its panes read channels nothing feeds until
         // `TmuxMirrorActions.reopenClosedTab` connects it.
         revived.paneSources = remapKeys(closed.tab.paneSources, using: idMap)
+        // So is an agent's tab, with the rows its origin gives it.
+        revived.mirrorOrigin = closed.tab.mirrorOrigin
+        revived.mirroredAgent = closed.tab.mirroredAgent
         // The projection answered which of those hints may resume while the
         // pane was open. The hint file went with the pane, so the next pass
         // cannot answer again; carrying the answer here gives the revived

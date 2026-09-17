@@ -50,13 +50,29 @@ struct TabCapabilities: Equatable {
     /// Font shortcuts change every pane of the tab, not only the focused
     /// one: the panes share one cell grid.
     var appliesFontToEveryPane: Bool
-    /// The tab's title follows the title its focused pane's program sets
-    /// (OSC 0/2). A mirror tab is named after its tmux window instead, the
-    /// name the palette lists it by, and tmux announces that name when it
-    /// changes (`%window-renamed`).
+    /// The tab's title follows the title its agent or its focused pane's
+    /// program sets (the projection's `tab_titles`, OSC 0/2). A user's
+    /// mirror tab is named after its tmux window instead, the name the
+    /// palette lists it by. An agent's mirror tab is named after the agent,
+    /// as the same agent's tab would be without tmux (design §6 decision
+    /// 12): its window is one Limpid made, and the name tmux gives it says
+    /// nothing the user chose.
     var titleFollowsPaneTitle: Bool
+    /// The tab's title follows its tmux window's name, which tmux announces
+    /// when it changes (`%window-renamed`). Never true together with
+    /// `titleFollowsPaneTitle`, so one tab has one source for its name.
+    var titleFollowsWindowName: Bool
 
-    static func of(_ kind: Tab.Kind) -> TabCapabilities {
+    /// The table. A mirror tab's rows also depend on who opened it.
+    ///
+    /// An agent's mirror tab does not split: the shim hands the agent its
+    /// leaf id through `new-session -e LIMPID_PANE_ID`, which tmux keeps in
+    /// the session's environment, so a pane `split-window` made would start
+    /// a shell under the same id and anything it ran would be taken for the
+    /// agent (design §6 decision 4). With one pane, Close Pane is the tab's
+    /// close (`PaneActions.canClosePaneOrTab`), and `break-pane` has nothing
+    /// to move.
+    static func of(_ kind: Tab.Kind, origin: Tab.MirrorOrigin = .user) -> TabCapabilities {
         switch kind {
         case .terminal:
             TabCapabilities(
@@ -72,11 +88,12 @@ struct TabCapabilities: Equatable {
                 canAcceptForeignPane: true,
                 canOpenReview: true,
                 appliesFontToEveryPane: false,
-                titleFollowsPaneTitle: true
+                titleFollowsPaneTitle: true,
+                titleFollowsWindowName: false
             )
         case .tmuxMirror:
             TabCapabilities(
-                canSplit: true,
+                canSplit: origin == .user,
                 canSwap: true,
                 canInsert: false,
                 canEqualize: true,
@@ -88,7 +105,8 @@ struct TabCapabilities: Equatable {
                 canAcceptForeignPane: false,
                 canOpenReview: false,
                 appliesFontToEveryPane: true,
-                titleFollowsPaneTitle: false
+                titleFollowsPaneTitle: origin == .agent,
+                titleFollowsWindowName: origin == .user
             )
         }
     }
@@ -96,6 +114,6 @@ struct TabCapabilities: Equatable {
 
 extension Tab {
     var capabilities: TabCapabilities {
-        TabCapabilities.of(kind)
+        TabCapabilities.of(kind, origin: mirrorOrigin)
     }
 }

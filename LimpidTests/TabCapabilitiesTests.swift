@@ -31,6 +31,7 @@ struct TabCapabilitiesTests {
         #expect(terminal.canEqualizeSubtree)
         #expect(terminal.canSplit)
         #expect(terminal.titleFollowsPaneTitle)
+        #expect(!terminal.titleFollowsWindowName)
 
         // A mirror pane takes a drop too, typed through tmux's paste.
         let mirror = TabCapabilities.of(.tmuxMirror)
@@ -42,6 +43,7 @@ struct TabCapabilitiesTests {
         #expect(mirror.canSplit)
         // Named after its tmux window, never after a pane's OSC title.
         #expect(!mirror.titleFollowsPaneTitle)
+        #expect(mirror.titleFollowsWindowName)
     }
 
     /// The drop overlay's highlight and the drop handler both ask this, so

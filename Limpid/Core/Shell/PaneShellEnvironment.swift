@@ -7,12 +7,14 @@
 import Foundation
 
 enum PaneShellEnvironment {
-    /// The tmux a hosted agent runs under: which binary, and the socket
-    /// name that keeps our server apart from the user's own and from
-    /// another Limpid build's.
+    /// The tmux a hosted agent runs under: which binary, the socket name
+    /// that keeps our server apart from the user's own and from another
+    /// Limpid build's, and where the shim asks this build to open a tab for
+    /// the agent (`AgentMirrorRequest`).
     struct AgentTmuxHost: Equatable {
         let binary: String
         let socketName: String
+        let mirrorRequestsDirectory: String
     }
 
     /// Variables shared by every pane: the shim directories that have to
@@ -51,6 +53,7 @@ enum PaneShellEnvironment {
         if let agentTmux {
             env["LIMPID_AGENT_TMUX"] = agentTmux.binary
             env["LIMPID_AGENT_TMUX_SOCKET"] = agentTmux.socketName
+            env[AgentMirrorRequest.directoryVariable] = agentTmux.mirrorRequestsDirectory
         }
         return env
     }
@@ -69,10 +72,15 @@ enum PaneShellEnvironment {
     static func agentTmuxHost(
         hostsAgentsInTmux: Bool,
         support: AgentTmuxSupport,
-        socketName: @autoclosure () -> String = defaultAgentSocketName()
+        socketName: @autoclosure () -> String = defaultAgentSocketName(),
+        mirrorRequestsDirectory: @autoclosure () -> URL = AgentMirrorRequest.defaultDirectory()
     ) -> AgentTmuxHost? {
         guard hostsAgentsInTmux, let binary = support.hostBinary else { return nil }
-        return AgentTmuxHost(binary: binary, socketName: socketName())
+        return AgentTmuxHost(
+            binary: binary,
+            socketName: socketName(),
+            mirrorRequestsDirectory: mirrorRequestsDirectory().path
+        )
     }
 
     /// Production assembly, with the shim directories resolved from the

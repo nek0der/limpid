@@ -70,6 +70,27 @@ extension AppState {
         })
     }
 
+    /// Watches for the tabs shims ask for when they start an agent in our
+    /// tmux server. Demo mode reads no request: its session is a fixture,
+    /// and a tab opened into it would be neither kept nor wanted.
+    static func startAgentMirrorRequests(
+        session: WindowSession,
+        store: TmuxConnectionStore
+    ) -> AgentMirrorRequestWatcher? {
+        guard !DemoFixture.isDemoActive else { return nil }
+        let watcher = AgentMirrorRequestWatcher(
+            hasLeaf: { [weak session] leafID in
+                session?.tab(containing: leafID) != nil
+            },
+            open: { [weak session, weak store] request in
+                guard let session, let store else { return }
+                TmuxMirrorActions.openAgentMirror(request, session: session, store: store)
+            }
+        )
+        watcher.start()
+        return watcher
+    }
+
     /// Asks GitSync to refetch the repository a worktree was just created in.
     ///
     /// The projection reports the repository root and nothing else, because

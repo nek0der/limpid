@@ -12,8 +12,23 @@ extension WindowSession {
     // MARK: - Tab CRUD
 
     /// Open a tab in a specific container.
+    ///
+    /// By default the tab goes to the end of the list and becomes active,
+    /// which is what every command the user gives means. A tab opened on
+    /// something else's behalf says where it belongs instead: `anchorTabID`
+    /// places it right after that tab (at the end when the tab is gone),
+    /// and `activates` false leaves the active tab as it is. The anchor must
+    /// be in `container`, or the new tab would not sit beside it in the
+    /// list the user sees. `paneID` names the tab's only leaf.
     @discardableResult
-    func openTab(container: ContainerID, title: String? = nil, workingDirectory: URL? = nil) -> Tab {
+    func openTab(
+        container: ContainerID,
+        title: String? = nil,
+        workingDirectory: URL? = nil,
+        paneID: UUID = UUID(),
+        after anchorTabID: UUID? = nil,
+        activates: Bool = true
+    ) -> Tab {
         let resolvedWD: URL?
         switch container {
         case .loose:
@@ -42,10 +57,17 @@ extension WindowSession {
         let (tab, _) = Tab.newWithSinglePane(
             title: resolvedTitle,
             workingDirectory: resolvedWD?.path,
-            container: container
+            container: container,
+            paneID: paneID
         )
-        tabs.append(tab)
-        setActiveTab(tab.id)
+        if let anchorTabID, let anchor = tabs.firstIndex(where: { $0.id == anchorTabID }) {
+            tabs.insert(tab, at: anchor + 1)
+        } else {
+            tabs.append(tab)
+        }
+        if activates {
+            setActiveTab(tab.id)
+        }
         return tab
     }
 

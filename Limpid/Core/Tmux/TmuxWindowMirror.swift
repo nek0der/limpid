@@ -38,8 +38,9 @@ final class TmuxWindowMirror {
     /// Names for what the user reads when tmux ends the window or the
     /// session, kept here because the window is gone by the time it is
     /// named. The window's name follows tmux (`%window-renamed`, and the
-    /// name tmux gives when the mirror starts), and the tab's title follows
-    /// it; a name the user gave the tab overrides the title only.
+    /// name tmux gives when the mirror starts), and so does the title of a
+    /// tab named after its window (`TabCapabilities.titleFollowsWindowName`);
+    /// a name the user gave the tab overrides the title only.
     let sessionName: String
     @ObservationIgnored private(set) var windowName: String
 
@@ -469,12 +470,13 @@ final class TmuxWindowMirror {
         }
     }
 
-    /// The tab's title is the window's `session:window` name, whatever the
-    /// panes' programs call themselves.
+    /// A tab named after its window takes the window's `session:window`
+    /// name, whatever the panes' programs call themselves. The name is kept
+    /// either way, for the notices.
     private func rename(to name: String) {
         windowName = name
         let title = displayName
-        guard let tab = session.tab(tabID), tab.title != title else { return }
+        guard let tab = session.tab(tabID), tab.capabilities.titleFollowsWindowName, tab.title != title else { return }
         session.update(tabID) { $0.title = title }
     }
 
