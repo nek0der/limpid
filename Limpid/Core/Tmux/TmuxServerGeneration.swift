@@ -24,8 +24,12 @@ enum TmuxServerGeneration {
         /// The binding does not say which server it was showing, so no
         /// answer could tell. Nothing is asked of tmux.
         case unrecorded
-        /// No answer we can read: nothing listens on the socket, the socket
-        /// is missing, the server hangs, or tmux could not be run.
+        /// No server is on the socket (`TmuxSessionProbe.isServerAbsent`),
+        /// so none of its sessions exists any more.
+        case serverGone
+        /// No answer that says whether a server runs: the server hangs, the
+        /// socket refuses us for another reason, the listing cannot be
+        /// read, or tmux could not be run.
         case unreachable
     }
 
@@ -50,19 +54,28 @@ enum TmuxServerGeneration {
             executable: tmuxPath,
             arguments: TmuxCommand.clientArguments(socketPath: binding.socketPath, ["list-sessions", "-F", listFormat])
         )
-        return classify(result, recorded: recorded, sessionID: binding.sessionID)
+        return classify(result, recorded: recorded, sessionID: binding.sessionID) {
+            TmuxSessionProbe.connectError(socketPath: binding.socketPath)
+        }
     }
 
-    /// Unlike `TmuxSessionProbe`, a client that failed is not split by
-    /// whether anything listens: a server that is not running and one we
-    /// cannot reach both leave the tab waiting for the user to try again.
+    /// A client that failed is split the way the session check after a
+    /// connection ended splits it, so a stopped server ends the tabs on
+    /// either path.
     ///
     /// A server that answers with no sessions at all (`exit-empty off`)
     /// states no generation. It cannot hold the binding's session either
     /// way, and it is taken as replaced so the tab keeps what it showed
     /// rather than being closed as a session that ended.
-    static func classify(_ result: TmuxCommandResult, recorded: Recorded, sessionID: String) -> Verdict {
-        guard case let .success(output) = result else { return .unreachable }
+    static func classify(
+        _ result: TmuxCommandResult,
+        recorded: Recorded,
+        sessionID: String,
+        connectError: () -> Int32?
+    ) -> Verdict {
+        guard case let .success(output) = result else {
+            return TmuxSessionProbe.isServerAbsent(after: result, connectError: connectError) ? .serverGone : .unreachable
+        }
         var server: Recorded?
         var hasSession = false
         for line in output.split(whereSeparator: \.isNewline) {

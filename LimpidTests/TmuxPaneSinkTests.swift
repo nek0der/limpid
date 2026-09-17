@@ -11,6 +11,7 @@ import Testing
 private final class CallbackLog {
     var overflows = 0
     var activity = 0
+    var activityTimes: [ContinuousClock.Instant] = []
 }
 
 /// A sink on a private queue writing into its own channel, fed the way the
@@ -220,6 +221,32 @@ struct TmuxPaneSinkTests {
         try? await Task.sleep(for: TmuxPaneSink.activityInterval * 2)
         #expect(await log.activity == 1)
         #expect(await log.overflows == 0)
+    }
+
+    @Test("the trailing activity report waits for the output to be quiet since its last write, not since its first")
+    func trailingActivity_followsTheLastWrite() async throws {
+        let harness = try SinkHarness()
+        let log = harness.log
+        harness.sink.setOnOutputActivity {
+            log.activity += 1
+            log.activityTimes.append(ContinuousClock.now)
+        }
+        harness.settle()
+
+        harness.write("A")
+        #expect(await eventually { await log.activity == 1 })
+        // Inside the interval: no leading report, and the quiet starts again.
+        try? await Task.sleep(for: TmuxPaneSink.activityInterval * 0.6)
+        harness.write("B")
+        let lastWrite = ContinuousClock.now
+
+        #expect(await eventually { await log.activity == 2 })
+        let trailing = try #require(await log.activityTimes.last)
+        // Dispatch never fires early; the margin only absorbs clock reads.
+        #expect(trailing - lastWrite >= TmuxPaneSink.activityInterval - .milliseconds(10))
+        try? await Task.sleep(for: TmuxPaneSink.activityInterval * 2)
+        #expect(await log.activity == 2)
+        harness.sink.close()
     }
 
     @Test("held output keeps bounded storage after several MiB pass through a slow reader")

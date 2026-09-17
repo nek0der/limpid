@@ -1,14 +1,17 @@
 // TmuxServerConnection.swift
-// Limpid — one `tmux -C attach` client per server: the process, its replies, and the panes it feeds.
+// Limpid — one `tmux -C attach` client per tmux session: the process, its replies, and the panes it feeds.
 
 import Foundation
 import OSLog
 
 private let log = Logger.limpid("tmux.connection")
 
-/// A control-mode client attached to one tmux server. The protocol carries
-/// every window and pane of the session over this single pipe, so the
-/// connection belongs to the server, not to a pane; panes plug in as sinks.
+/// A control-mode client attached to one session of a tmux server. The
+/// protocol carries every window and pane of that session over this single
+/// pipe, so the connection belongs to the session, not to a pane; panes
+/// plug in as sinks. Mirroring another session of the same server takes
+/// another connection (`TmuxConnectionStore` keys them by socket and
+/// session).
 ///
 /// Lifecycle and state run on the main actor. The bytes do not: the
 /// transport splits lines, pairs replies, and feeds pane sinks on its own
@@ -135,7 +138,15 @@ final class TmuxServerConnection {
         try? writeHandle.close()
         log.notice("spawned socket=\(self.target.socketPath, privacy: .private) session=\(self.target.sessionID, privacy: .public)")
         send("display-message -p '#{version}'") { [weak self] lines, isError in
-            guard let self, !isError, let version = lines.first.flatMap(TmuxProtocol.parseVersion) else { return }
+            // A connection that ended fails this with its reason, which
+            // the state change has already logged.
+            guard let self, !isError else { return }
+            guard let version = lines.first.flatMap(TmuxProtocol.parseVersion) else {
+                log.error("server version unreadable: \(lines.joined(separator: " "), privacy: .private)")
+                return
+            }
+            // A bug report names the tmux it ran against only if the log does.
+            log.notice("server version \(version.description, privacy: .public) session=\(self.target.sessionID, privacy: .public)")
             self.version = version
             for pane in sinks.keys {
                 reportColors(toPane: pane)

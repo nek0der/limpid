@@ -8,13 +8,21 @@ import Testing
 struct TmuxServerGenerationTests {
     private let recorded = TmuxServerGeneration.Recorded(pid: "4242", startedAt: "1789000000")
 
+    /// For a listing that was answered: nothing may connect.
+    private func classify(_ result: TmuxCommandResult, sessionID: String) -> TmuxServerGeneration.Verdict {
+        TmuxServerGeneration.classify(result, recorded: recorded, sessionID: sessionID) {
+            Issue.record("an answered listing must not connect")
+            return nil
+        }
+    }
+
     @Test("a listing from the recorded server matches, with or without the session", arguments: [
         ("4242\t1789000000\t$0\n4242\t1789000000\t$3\n", "$3", TmuxServerGeneration.Verdict.matches(hasSession: true)),
         ("4242\t1789000000\t$0\n", "$3", .matches(hasSession: false)),
         ("4242\t1789000000\t$30\n", "$3", .matches(hasSession: false))
     ])
     func classify_sameServer(output: String, sessionID: String, expected: TmuxServerGeneration.Verdict) {
-        #expect(TmuxServerGeneration.classify(.success(output), recorded: recorded, sessionID: sessionID) == expected)
+        #expect(classify(.success(output), sessionID: sessionID) == expected)
     }
 
     @Test("a listing from another server is replaced, even when it names the session", arguments: [
@@ -23,12 +31,12 @@ struct TmuxServerGenerationTests {
         "1\t2\t$0\n",
     ])
     func classify_otherServer(output: String) {
-        #expect(TmuxServerGeneration.classify(.success(output), recorded: recorded, sessionID: "$0") == .replaced)
+        #expect(classify(.success(output), sessionID: "$0") == .replaced)
     }
 
     @Test("a server with no sessions states no generation and is taken as replaced")
     func classify_emptyListing() {
-        #expect(TmuxServerGeneration.classify(.success(""), recorded: recorded, sessionID: "$0") == .replaced)
+        #expect(classify(.success(""), sessionID: "$0") == .replaced)
     }
 
     @Test("a listing that cannot be read is unreachable", arguments: [
@@ -37,14 +45,28 @@ struct TmuxServerGenerationTests {
         "4242\t1789000000\t$0\textra\n",
     ])
     func classify_unreadableListing(output: String) {
-        #expect(TmuxServerGeneration.classify(.success(output), recorded: recorded, sessionID: "$0") == .unreachable)
+        #expect(classify(.success(output), sessionID: "$0") == .unreachable)
     }
 
-    @Test("a client without an answer is unreachable", arguments: [
-        TmuxCommandResult.failed(1), .timedOut, .launchFailed, .cancelled, .invalidOutput, .outputLimit,
+    @Test("a client without an answer is unreachable without connecting", arguments: [
+        TmuxCommandResult.timedOut, .launchFailed, .cancelled, .invalidOutput, .outputLimit,
     ])
     func classify_noAnswer(_ result: TmuxCommandResult) {
-        #expect(TmuxServerGeneration.classify(result, recorded: recorded, sessionID: "$0") == .unreachable)
+        let verdict = TmuxServerGeneration.classify(result, recorded: recorded, sessionID: "$0") {
+            Issue.record("a client that gave no answer must not connect")
+            return ENOENT
+        }
+        #expect(verdict == .unreachable)
+    }
+
+    @Test("a failed client means no server when the socket is missing or refuses, and unreachable otherwise", arguments: [
+        (Int32?.some(ENOENT), TmuxServerGeneration.Verdict.serverGone),
+        (Int32?.some(ECONNREFUSED), .serverGone),
+        (Int32?.some(EACCES), .unreachable),
+        (Int32?.none, .unreachable),
+    ])
+    func classify_failedClient(connectError: Int32?, expected: TmuxServerGeneration.Verdict) {
+        #expect(TmuxServerGeneration.classify(.failed(1), recorded: recorded, sessionID: "$0") { connectError } == expected)
     }
 
     @Test("a binding records a generation only with both values present and non-empty", arguments: [
@@ -131,7 +153,7 @@ struct TmuxServerGenerationSmokeTests {
         #expect(verdict == .replaced)
     }
 
-    @Test("a server whose socket file was removed is unreachable")
+    @Test("a server whose socket file was removed is gone")
     func check_missingSocket() async throws {
         let server = try TmuxServerFixture.launch()
         defer { server.tearDown() }
@@ -147,10 +169,10 @@ struct TmuxServerGenerationSmokeTests {
             tmuxPath: server.executable,
             binding: binding(server, sessionID: sessionID, generation: generation)
         )
-        #expect(verdict == .unreachable)
+        #expect(verdict == .serverGone)
     }
 
-    @Test("a socket nobody listens on is unreachable")
+    @Test("a socket nobody listens on is gone")
     func check_killedServer() async throws {
         let server = try TmuxServerFixture.launch()
         defer { server.tearDown() }
@@ -160,6 +182,22 @@ struct TmuxServerGenerationSmokeTests {
         try await server.killServer()
 
         #expect(FileManager.default.fileExists(atPath: server.socketPath))
+        let verdict = await TmuxServerGeneration.check(
+            tmuxPath: server.executable,
+            binding: binding(server, sessionID: sessionID, generation: generation)
+        )
+        #expect(verdict == .serverGone)
+    }
+
+    @Test("a server that does not answer is unreachable")
+    func check_hungServer() async throws {
+        let server = try TmuxServerFixture.launch()
+        defer { server.tearDown() }
+        let generation = try server.generation()
+        let sessionID = try server.format("#{session_id}")
+        let pid = try server.suspendServer()
+        defer { server.resumeServer(pid) }
+
         let verdict = await TmuxServerGeneration.check(
             tmuxPath: server.executable,
             binding: binding(server, sessionID: sessionID, generation: generation)

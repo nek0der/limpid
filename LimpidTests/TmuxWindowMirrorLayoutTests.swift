@@ -55,6 +55,7 @@ struct TmuxWindowMirrorLayoutTests {
             sessionName: "t",
             windowName: "w",
             connection: connection,
+            isNewTab: true,
             session: session,
             registry: registry,
             secureInput: nil,

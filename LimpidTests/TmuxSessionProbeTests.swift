@@ -18,12 +18,27 @@ struct TmuxSessionProbeTests {
         #expect(TmuxSessionProbe.classify(.success(""), sessionID: "$0", connectError: noConnect) == .gone)
     }
 
-    @Test("a failed client means the session is gone only when nobody listens on the socket")
+    @Test("a failed client means the session is gone only when no server is there: no socket, or nobody listening")
     func classify_failedClient() {
         #expect(TmuxSessionProbe.classify(.failed(1), sessionID: "$0") { ECONNREFUSED } == .gone)
-        #expect(TmuxSessionProbe.classify(.failed(1), sessionID: "$0") { ENOENT } == .unknown)
+        #expect(TmuxSessionProbe.classify(.failed(1), sessionID: "$0") { ENOENT } == .gone)
         #expect(TmuxSessionProbe.classify(.failed(1), sessionID: "$0") { EACCES } == .unknown)
+        #expect(TmuxSessionProbe.classify(.failed(1), sessionID: "$0") { ETIMEDOUT } == .unknown)
         #expect(TmuxSessionProbe.classify(.failed(1), sessionID: "$0") { nil } == .unknown)
+    }
+
+    @Test("only a failed client is asked whether a server is there, and only a missing or refusing socket says none is")
+    func isServerAbsent_readsOnlyFailedClients() {
+        #expect(TmuxSessionProbe.isServerAbsent(after: .failed(1)) { ENOENT })
+        #expect(TmuxSessionProbe.isServerAbsent(after: .failed(1)) { ECONNREFUSED })
+        #expect(!TmuxSessionProbe.isServerAbsent(after: .failed(1)) { EACCES })
+        #expect(!TmuxSessionProbe.isServerAbsent(after: .failed(1)) { nil })
+        for result in [TmuxCommandResult.success(""), .timedOut, .launchFailed, .cancelled, .invalidOutput, .outputLimit] {
+            #expect(!TmuxSessionProbe.isServerAbsent(after: result) {
+                Issue.record("\(result) must not connect")
+                return ENOENT
+            })
+        }
     }
 
     @Test("no answer at all leaves the session unknown without connecting", arguments: [
@@ -91,10 +106,10 @@ struct TmuxSessionProbeSmokeTests {
         #expect(probe(sessionID) == .gone)
     }
 
-    /// A temporary-directory sweep can remove the socket file of a server
-    /// that keeps running; its sessions are then unreachable, not gone.
-    @Test("a server whose socket file was removed is unknown, not gone")
-    func presence_missingSocketOfRunningServer_isUnknown() throws {
+    /// Nobody can reach a server whose socket file was removed, so its
+    /// sessions count as gone with it (stage 11, "decided in this stage").
+    @Test("a server whose socket file was removed counts as gone")
+    func presence_missingSocketOfRunningServer_isGone() throws {
         let server = try TmuxServerFixture.launch()
         defer { server.tearDown() }
         let sessionID = try server.format("#{session_id}")
@@ -102,6 +117,21 @@ struct TmuxSessionProbeSmokeTests {
         defer { kill(pid, SIGTERM) }
 
         try FileManager.default.removeItem(atPath: server.socketPath)
+
+        #expect(TmuxSessionProbe.presence(
+            tmuxPath: server.executable,
+            socketPath: server.socketPath,
+            sessionID: sessionID
+        ) == .gone)
+    }
+
+    @Test("a server that does not answer leaves the session unknown")
+    func presence_hungServer_isUnknown() throws {
+        let server = try TmuxServerFixture.launch()
+        defer { server.tearDown() }
+        let sessionID = try server.format("#{session_id}")
+        let pid = try server.suspendServer()
+        defer { server.resumeServer(pid) }
 
         #expect(TmuxSessionProbe.presence(
             tmuxPath: server.executable,

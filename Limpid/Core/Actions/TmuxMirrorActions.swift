@@ -58,6 +58,7 @@ enum TmuxMirrorActions {
             windowID: target.windowID,
             names: (target.binding.sessionName, target.windowName),
             connection: connection,
+            isNewTab: true,
             context: MirrorContext(session: session, store: store, registry: registry, secureInput: secureInput, toastCenter: toastCenter)
         )
         store.register(mirror)
@@ -74,14 +75,16 @@ enum TmuxMirrorActions {
         let toastCenter: ToastCenter?
     }
 
+    // swiftlint:disable function_parameter_count
     /// A mirror for tab `tabID`, fed through the leaves' channels and
     /// started from the store's reports, whether the tab is new or had a
-    /// mirror before.
+    /// mirror before. `isNewTab` says which (`TmuxWindowMirror.isNewTab`).
     static func makeMirror(
         tabID: UUID,
         windowID: String,
         names: (session: String, window: String),
         connection: TmuxServerConnection,
+        isNewTab: Bool,
         context: MirrorContext
     ) -> TmuxWindowMirror {
         let store = context.store
@@ -91,6 +94,7 @@ enum TmuxMirrorActions {
             sessionName: names.session,
             windowName: names.window,
             connection: connection,
+            isNewTab: isNewTab,
             session: context.session,
             registry: context.registry,
             secureInput: context.secureInput,
@@ -104,6 +108,8 @@ enum TmuxMirrorActions {
         }
         return mirror
     }
+
+    // swiftlint:enable function_parameter_count
 
     /// What the user chose about clients another app has attached.
     enum OtherClientsChoice: Equatable {

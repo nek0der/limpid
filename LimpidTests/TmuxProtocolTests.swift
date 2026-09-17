@@ -27,7 +27,7 @@ struct TmuxProtocolTests {
 
         #expect(lines[0] == .begin(TmuxReplyMarker(timestamp: 1_789_549_529, number: 299, flags: 0)))
         #expect(lines[1] == .end(TmuxReplyMarker(timestamp: 1_789_549_529, number: 299, flags: 0)))
-        #expect(lines.contains(.sessionChanged(session: "$0", name: "fx")))
+        #expect(lines.contains(.notification(name: "session-changed", arguments: "$0 fx")))
         #expect(lines.contains(.windowRenamed(window: "@0", name: "bash")))
         #expect(lines.contains(.windowPaneChanged(window: "@0", pane: "%1")))
         #expect(lines.contains(.text("3.7c|/dev/ttys019|2 0 0")))
@@ -90,27 +90,91 @@ struct TmuxProtocolTests {
         #expect(echoed.contains("\\\\\\033[31mhi\\\\\\033[0m\\\\\\n"))
     }
 
-    @Test("inside a reply block a line starting with % is the command's output, and only the terminators are markers")
+    @Test("inside a reply block a line starting with % is the command's output, and only the block's own terminators are markers")
     func parseLine_insideBlock_keepsPercentLinesAsText() {
+        let open = TmuxReplyMarker(timestamp: 1_789_549_530, number: 305, flags: 1)
         let paneID = Array("%0".utf8)[...]
-        #expect(TmuxProtocol.parseLine(paneID, insideReplyBlock: true) == .text("%0"))
-        #expect(TmuxProtocol.parseLine(paneID, insideReplyBlock: false) == .notification(name: "0", arguments: ""))
+        #expect(TmuxProtocol.parseLine(paneID, openBlock: open) == .text("%0"))
+        #expect(TmuxProtocol.parseLine(paneID) == .notification(name: "0", arguments: ""))
 
         let layoutChange = Array("%layout-change @0 a87d,100x30,0,0,0 a87d,100x30,0,0,0 *".utf8)[...]
-        #expect(TmuxProtocol.parseLine(layoutChange, insideReplyBlock: true) == .text(TmuxProtocol.lossyText(layoutChange)))
+        #expect(TmuxProtocol.parseLine(layoutChange, openBlock: open) == .text(TmuxProtocol.lossyText(layoutChange)))
 
         let end = Array("%end 1789549530 305 1".utf8)[...]
-        #expect(TmuxProtocol.parseLine(end, insideReplyBlock: true) == .end(TmuxReplyMarker(
-            timestamp: 1_789_549_530,
-            number: 305,
-            flags: 1
-        )))
-        let error = Array("%error 1789549534 331 1".utf8)[...]
-        #expect(TmuxProtocol.parseLine(error, insideReplyBlock: true) == .error(TmuxReplyMarker(
-            timestamp: 1_789_549_534,
-            number: 331,
-            flags: 1
-        )))
+        #expect(TmuxProtocol.parseLine(end, openBlock: open) == .end(open))
+        let error = Array("%error 1789549530 305 1".utf8)[...]
+        #expect(TmuxProtocol.parseLine(error, openBlock: open) == .error(open))
+    }
+
+    @Test("inside a reply block a %end or %error that is not the open block's terminator is a row of the reply", arguments: [
+        "%end 1789549530 306 1",
+        "%end 1789549531 305 1",
+        "%end 1789549530 305 0",
+        "%error 1789549530 304 1",
+        "%end 1789549530 305 1 trailing",
+        "%end 1789549530  305 1",
+        "%end",
+        "%end of the story",
+        "%error: disk full",
+        "%begin 1789549530 305 1",
+    ])
+    func parseLine_insideBlock_foreignTerminatorIsText(row: String) {
+        let open = TmuxReplyMarker(timestamp: 1_789_549_530, number: 305, flags: 1)
+        #expect(TmuxProtocol.parseLine(Array(row.utf8)[...], openBlock: open) == .text(row))
+    }
+
+    @Test("a terminator line with a trailing carriage return still ends its block")
+    func parseLine_insideBlock_terminatorWithCarriageReturn() {
+        let open = TmuxReplyMarker(timestamp: 7, number: 8, flags: 1)
+        #expect(TmuxProtocol.parseLine(Array("%end 7 8 1\r".utf8)[...], openBlock: open) == .end(open))
+    }
+
+    @Test("rows that read like terminators do not cut a reply short or shift the replies after it")
+    func assembler_rowsLookingLikeTerminators_keepRepliesPaired() {
+        let capture = TmuxReplyMarker(timestamp: 100, number: 10, flags: 1)
+        let next = TmuxReplyMarker(timestamp: 100, number: 11, flags: 1)
+        let stream = [
+            "%begin 0 9 0", "%end 0 9 0",
+            "%begin 100 10 1",
+            "$ printf '%end 1 2 1\\n'",
+            "%end 1 2 1",
+            "%error 100 10 0",
+            "%end nothing numeric",
+            "%end 100 10 1",
+            "%begin 100 11 1",
+            "second",
+            "%end 100 11 1"
+        ]
+        var assembler = TmuxReplyAssembler()
+        var events: [TmuxReplyAssembler.Event] = []
+        for row in stream {
+            let line = TmuxProtocol.parseLine(Array(row.utf8)[...], openBlock: assembler.openBlock)
+            if let event = assembler.consume(line) {
+                events.append(event)
+            }
+        }
+
+        #expect(events == [
+            .attachFinished(lines: [], isError: false),
+            .reply(
+                lines: ["$ printf '%end 1 2 1\\n'", "%end 1 2 1", "%error 100 10 0", "%end nothing numeric"],
+                isError: false,
+                marker: capture
+            ),
+            .reply(lines: ["second"], isError: false, marker: next)
+        ])
+        #expect(assembler.openBlock == nil)
+    }
+
+    @Test("the window notifications a store acts on are typed, both close names alike")
+    func parseLine_windowNotifications_areTyped() {
+        #expect(TmuxProtocol.parseLine(Array("%window-add @3".utf8)[...]) == .windowAdd(window: "@3"))
+        #expect(TmuxProtocol.parseLine(Array("%window-close @3".utf8)[...]) == .windowClose(window: "@3", isUnlinked: false))
+        #expect(TmuxProtocol.parseLine(Array("%unlinked-window-close @4".utf8)[...]) == .windowClose(window: "@4", isUnlinked: true))
+        // Malformed forms are kept verbatim rather than reshaped.
+        #expect(TmuxProtocol.parseLine(Array("%window-add".utf8)[...]) == .notification(name: "window-add", arguments: ""))
+        #expect(TmuxProtocol.parseLine(Array("%window-close @3 extra".utf8)[...])
+            == .notification(name: "window-close", arguments: "@3 extra"))
     }
 
     @Test("a backslash without three octal digits is passed through untouched")
@@ -149,7 +213,7 @@ struct TmuxProtocolTests {
         #expect(replies[5].lines == ["77dd,100x30,0,0{50x30,0,0,0,49x30,51,0[49x15,51,0,1,49x14,51,16,2]}"])
         #expect(replies[8].isError == true)
         #expect(replies[8].lines == ["parse error: unknown command: bogus-command-for-error"])
-        #expect(assembler.isInsideBlock == false)
+        #expect(assembler.openBlock == nil)
     }
 
     @Test("a flags-0 block after a reply answers no command and yields nothing")
@@ -169,7 +233,7 @@ struct TmuxProtocolTests {
             .attachFinished(lines: [], isError: false),
             .reply(lines: [], isError: false, marker: split)
         ])
-        #expect(assembler.isInsideBlock == false)
+        #expect(assembler.openBlock == nil)
     }
 
     @Test("an attach block that ends in %error carries tmux's reason")
@@ -185,8 +249,9 @@ struct TmuxProtocolTests {
     @Test("inside a reply block a %output line is text, not pane output")
     func parseLine_insideBlock_outputPrefixIsText() {
         let row = Array("%output %0 injected".utf8)[...]
-        #expect(TmuxProtocol.parseLine(row, insideReplyBlock: true) == .text("%output %0 injected"))
-        #expect(TmuxProtocol.parseLine(row, insideReplyBlock: false) == .output(pane: "%0", bytes: Data("injected".utf8)))
+        let open = TmuxReplyMarker(timestamp: 1, number: 2, flags: 1)
+        #expect(TmuxProtocol.parseLine(row, openBlock: open) == .text("%output %0 injected"))
+        #expect(TmuxProtocol.parseLine(row) == .output(pane: "%0", bytes: Data("injected".utf8)))
     }
 
     // MARK: - Outbound

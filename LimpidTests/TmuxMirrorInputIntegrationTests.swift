@@ -400,6 +400,7 @@ private struct PasteHarness {
             sessionName: "t",
             windowName: "w",
             connection: connection,
+            isNewTab: true,
             session: session,
             registry: RecordingSurfaceRegistry(),
             secureInput: nil,

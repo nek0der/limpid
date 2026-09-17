@@ -19,8 +19,9 @@ enum TmuxTabConnection: Equatable {
     /// tab never recorded which one that was. What the panes show is
     /// history; the tab can only be closed.
     case serverReplaced
-    /// Nothing answered on the socket. The tab can be connected again once
-    /// the server is back, or closed.
+    /// The server did not give an answer that says whether it runs: it
+    /// hangs, or the socket refuses us for a reason other than a missing
+    /// server. The tab can be connected again once it answers, or closed.
     case unreachable
 }
 

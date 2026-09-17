@@ -85,6 +85,21 @@ struct TmuxServerFixture {
         try startServer(windows: windows)
     }
 
+    /// Freeze the server process (`SIGSTOP`) without ending it: a client
+    /// still connects, since the kernel accepts on the listening socket,
+    /// but never hears back, which is how a hung server looks. Returns the
+    /// server's pid; the caller hands it to `resumeServer` before
+    /// `tearDown`, which cannot reach a frozen server.
+    func suspendServer() throws -> pid_t {
+        let pid = try #require(Int32(format("#{pid}")))
+        try #require(kill(pid, SIGSTOP) == 0)
+        return pid
+    }
+
+    func resumeServer(_ pid: pid_t) {
+        kill(pid, SIGCONT)
+    }
+
     /// `-f` only matters when this call starts the server; passing it on
     /// every call keeps that true whichever command comes first.
     ///

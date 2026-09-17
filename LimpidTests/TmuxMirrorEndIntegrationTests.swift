@@ -192,8 +192,8 @@ struct TmuxMirrorEndIntegrationTests {
         let windows = try harness.server.windowIDs()
         let mirror = try await harness.open(window: windows[0])
 
-        mirror.connection.onNotification?(.notification(name: "window-close", arguments: windows[1]))
-        mirror.connection.onNotification?(.notification(name: "window-close", arguments: windows[0]))
+        mirror.connection.onNotification?(.windowClose(window: windows[1], isUnlinked: false))
+        mirror.connection.onNotification?(.windowClose(window: windows[0], isUnlinked: false))
 
         #expect(await waitUntil { harness.session.tab(mirror.tabID) == nil })
         #expect(harness.notices == [harness.windowNotice(mirror)])
@@ -239,6 +239,44 @@ struct TmuxMirrorEndIntegrationTests {
         #expect(harness.notices == [harness.sessionNotice("t")])
         #expect(harness.store.connections.isEmpty)
         #expect(mirror.connection.sinks.isEmpty)
+    }
+
+    /// The server stops without leaving a socket behind, as when its
+    /// directory was swept first: nobody can reach its sessions any more.
+    @Test("a server that stopped with its socket gone counts as the session gone and closes the tab")
+    func serverWithoutSocket_closesTab() async throws {
+        let harness = try EndHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let mirror = try await harness.open(window: window)
+        let pid = try #require(Int32(harness.server.format("#{pid}")))
+
+        try FileManager.default.removeItem(atPath: harness.server.socketPath)
+        kill(pid, SIGTERM)
+
+        #expect(await waitUntil(.seconds(5)) { harness.session.tab(mirror.tabID) == nil })
+        #expect(harness.presences.answers == [.gone])
+        #expect(harness.notices == [harness.sessionNotice("t")])
+        #expect(harness.session.closedTabStack.isEmpty)
+    }
+
+    @Test("a server that stopped answering leaves the tab disconnected after its client ends")
+    func hungServer_leavesTabDisconnected() async throws {
+        let harness = try EndHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let mirror = try await harness.open(window: window)
+        let pid = try harness.server.suspendServer()
+        defer { harness.server.resumeServer(pid) }
+
+        // The client ends while the server cannot answer the check.
+        mirror.connection.stop()
+
+        #expect(await waitUntil(.seconds(5)) { !harness.presences.answers.isEmpty })
+        #expect(harness.presences.answers == [.unknown])
+        #expect(harness.session.tab(mirror.tabID) != nil)
+        #expect(harness.store.tabConnections[mirror.tabID] == .disconnected)
+        #expect(harness.notices.isEmpty)
     }
 
     @Test("a client detached elsewhere leaves its tab disconnected: verbs are refused with one message, typing is dropped silently")

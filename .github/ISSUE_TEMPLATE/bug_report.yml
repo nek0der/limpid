@@ -46,6 +46,13 @@ body:
       required: true
 
   - type: input
+    id: tmux-version
+    attributes:
+      label: tmux version (only if this involves tmux)
+      description: The output of `tmux -V`.
+      placeholder: e.g. tmux 3.5a
+
+  - type: input
     id: xcode-version
     attributes:
       label: Xcode version (only if this is a build-from-source issue)

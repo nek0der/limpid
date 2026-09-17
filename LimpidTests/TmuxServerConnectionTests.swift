@@ -86,6 +86,44 @@ struct TmuxServerConnectionTests {
         #expect(failed?.isError == true)
     }
 
+    /// A captured screen is printed verbatim inside the reply block, so a
+    /// row a program printed can read like a terminator. Taken for one, it
+    /// would cut the capture short and hand the rest of the block to the
+    /// next command.
+    @Test("screen rows that read like %end and %error stay in the capture, and the next reply is still its own")
+    func captureOfTerminatorLookalikes_keepsRepliesPaired() async throws {
+        let server = try TmuxServerFixture.launch()
+        defer { server.tearDown() }
+        let paneID = try server.format("#{pane_id}")
+        let sessionID = try server.format("#{session_id}")
+        let rows = ["%end 1 2 1", "%error 1789549534 331 1", "%end", "%begin 5 6 1", "after"]
+        let printf = "printf '" + rows.map { $0.replacingOccurrences(of: "%", with: "%%") }.joined(separator: "\\n") + "\\n'"
+        server.run(["send-keys", "-t", paneID, printf, "Enter"])
+        #expect(await waitUntil(.seconds(5)) {
+            (server.run(["capture-pane", "-p", "-t", paneID]) ?? "").contains("\nafter")
+        })
+
+        let connection = TmuxServerConnection(
+            executable: server.executable,
+            target: .init(socketPath: server.socketPath, sessionID: sessionID)
+        )
+        defer { connection.stop() }
+        try connection.start()
+        #expect(await waitUntil { connection.state == .attached })
+
+        var capture: [String]?
+        var next: [String]?
+        connection.send("capture-pane -p -t \(paneID)") { lines, _ in capture = lines }
+        connection.send("display-message -p next") { lines, _ in next = lines }
+
+        #expect(await waitUntil { next != nil })
+        let captured = try #require(capture)
+        let start = try #require(captured.firstIndex(of: rows[0]))
+        #expect(Array(captured[start..<(start + rows.count)]) == rows)
+        #expect(next == ["next"])
+        #expect(connection.state == .attached)
+    }
+
     /// tmux runs an `after-<command>` hook as its own command and wraps its
     /// output in a flags-0 block right after our reply. Pairing by arrival
     /// order alone would hand that block to the next command waiting.

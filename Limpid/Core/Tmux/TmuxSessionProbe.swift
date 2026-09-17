@@ -9,12 +9,12 @@ enum TmuxSessionPresence: Equatable {
     /// The server answered and lists the session: the client was detached
     /// (for example by `detach-client` elsewhere), the session runs on.
     case exists
-    /// The server answered without the session, or nothing listens on the
-    /// socket any more, so no session can be running there.
+    /// The server answered without the session, or no server is there
+    /// (`TmuxSessionProbe.isServerAbsent`), so no session can be running.
     case gone
-    /// No answer we can read: the server hangs, the socket is missing or
-    /// refuses us for another reason, or tmux could not be run. The session
-    /// may still exist.
+    /// No answer that says either: the server hangs, the socket refuses us
+    /// for a reason other than a missing server, or tmux could not be run.
+    /// The session may still exist.
     case unknown
 }
 
@@ -32,26 +32,35 @@ enum TmuxSessionProbe {
         return classify(result, sessionID: sessionID) { connectError(socketPath: socketPath) }
     }
 
-    /// A tmux client that exits non-zero without an answer either found
-    /// nobody listening (`ECONNREFUSED`, tmux prints "no server running")
-    /// or could not reach the socket at all (tmux prints "error connecting"
-    /// with the reason). Only the first says the server is gone: a socket
-    /// file removed under a running server, as a temporary-directory sweep
-    /// does, leaves its sessions alive. `connectError` repeats tmux's
-    /// connect to learn which, and runs only on that path.
     static func classify(
         _ result: TmuxCommandResult,
         sessionID: String,
         connectError: () -> Int32?
     ) -> TmuxSessionPresence {
-        switch result {
-        case let .success(output):
-            output.split(whereSeparator: \.isNewline).contains { $0 == sessionID } ? .exists : .gone
-        case .failed:
-            connectError() == ECONNREFUSED ? .gone : .unknown
-        case .launchFailed, .timedOut, .cancelled, .invalidOutput, .outputLimit:
-            .unknown
+        if case let .success(output) = result {
+            return output.split(whereSeparator: \.isNewline).contains { $0 == sessionID } ? .exists : .gone
         }
+        return isServerAbsent(after: result, connectError: connectError) ? .gone : .unknown
+    }
+
+    /// Whether a tmux client that got no answer found no server at all.
+    /// The one place that tells a stopped server from one we could not
+    /// reach; the session check after a connection ended and the check
+    /// before a reconnect (`TmuxServerGeneration`) both read it.
+    ///
+    /// A client that exits non-zero without an answer either found no
+    /// server or could not reach one (tmux prints "no server running" or
+    /// "error connecting" with the reason). `connectError` repeats tmux's
+    /// connect to learn which, and runs only on that path. A missing socket
+    /// file and a socket nobody listens on (`ECONNREFUSED`) mean no server:
+    /// a refused unix-socket connect is not a passing state, and a server
+    /// whose socket file was removed can no longer be reached by anyone, so
+    /// its sessions are treated as gone with it (stage 11, "decided in this
+    /// stage"). Anything else, such as a permission error or a timeout,
+    /// says nothing about whether a server runs.
+    static func isServerAbsent(after result: TmuxCommandResult, connectError: () -> Int32?) -> Bool {
+        guard case .failed = result, let code = connectError() else { return false }
+        return code == ENOENT || code == ECONNREFUSED
     }
 
     /// A dispatch queue for the same reason as the palette's listing: the

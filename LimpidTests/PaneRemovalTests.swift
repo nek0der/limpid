@@ -117,6 +117,7 @@ struct PaneRemovalTests {
             sessionName: "t",
             windowName: "w",
             connection: connection,
+            isNewTab: true,
             session: session,
             registry: NoopSurfaceRegistry(),
             secureInput: nil,

@@ -196,13 +196,13 @@ struct TmuxControlTransportTests {
         if lines.last?.isEmpty == true {
             lines.removeLast()
         }
-        var isInsideBlock = false
+        var openBlock: TmuxReplyMarker?
         var delivered: [TmuxControlLine] = []
         for raw in lines {
-            let line = TmuxProtocol.parseLine(raw, insideReplyBlock: isInsideBlock)
+            let line = TmuxProtocol.parseLine(raw, openBlock: openBlock)
             switch line {
-            case .begin: isInsideBlock = true
-            case .end, .error: isInsideBlock = false
+            case let .begin(marker): openBlock = marker
+            case .end, .error: openBlock = nil
             default: break
             }
             switch line {
@@ -368,6 +368,42 @@ struct TmuxControlTransportTests {
         piped.feed("still ours\n")
         let seen = await readUntil(fd: piped.input[0], contains: "still ours\n", timeout: .seconds(2))
         #expect(seen == Data("still ours\n".utf8))
+    }
+
+    // MARK: - Input bound
+
+    @Test("a line that grows past the limit ends the stream after the lines before it, and nothing after it is read")
+    func overlongLine_endsTheStream() async throws {
+        let piped = try PipedTransport()
+        defer { piped.tearDown() }
+        let log = piped.log
+        piped.feed("%window-add @1\n")
+        #expect(await waitUntil { log.lines.count == 1 })
+
+        let endless = [UInt8](repeating: UInt8(ascii: "x"), count: TmuxControlTransport.lineLimit + 1)
+        await writeChunked(endless, to: piped.input[1], chunkSize: 1 << 16)
+
+        #expect(await waitUntil(.seconds(5)) { log.linesAtEOF != nil })
+        #expect(log.linesAtEOF == 1)
+        piped.feed("\n%window-add @2\n")
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(log.lines == [.windowAdd(window: "@1")])
+    }
+
+    @Test("a long line that stays under the limit arrives whole across many reads, with the stream still open")
+    func longLineInPieces_isDeliveredWhole() async throws {
+        let piped = try PipedTransport()
+        defer { piped.tearDown() }
+        let log = piped.log
+        let name = String(repeating: "n", count: 1 << 20)
+        let line = Array("%window-renamed @1 \(name)\n".utf8)
+
+        await writeChunked(line, to: piped.input[1], chunkSize: 4096)
+        piped.feed("%window-add @2\n")
+
+        #expect(await waitUntil(.seconds(5)) { log.lines.count == 2 })
+        #expect(log.lines == [.windowRenamed(window: "@1", name: name), .windowAdd(window: "@2")])
+        #expect(log.linesAtEOF == nil)
     }
 
     // MARK: - Layout pauses

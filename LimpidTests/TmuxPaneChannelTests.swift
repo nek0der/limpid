@@ -179,6 +179,42 @@ struct TmuxPaneChannelTests {
         #expect(await waitUntil { log.received == Data("one|two|three".utf8) })
     }
 
+    @Test("one read of the host end tells bytes, nothing yet, a failure, and the end apart")
+    func readSurfaceOutput_classifiesEachOutcome() throws {
+        var fds: [Int32] = [-1, -1]
+        try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+        defer { Darwin.close(fds[0]) }
+        _ = fcntl(fds[0], F_SETFL, fcntl(fds[0], F_GETFL) | O_NONBLOCK)
+
+        #expect(TmuxPaneChannel.readSurfaceOutput(from: fds[0]) == .wouldBlock)
+        _ = Data("hi".utf8).withUnsafeBytes { Darwin.write(fds[1], $0.baseAddress, $0.count) }
+        #expect(TmuxPaneChannel.readSurfaceOutput(from: fds[0]) == .delivered(Data("hi".utf8)))
+        Darwin.close(fds[1])
+        #expect(TmuxPaneChannel.readSurfaceOutput(from: fds[0]) == .ended)
+        #expect(TmuxPaneChannel.readSurfaceOutput(from: -1) == .failed(errno: EBADF))
+    }
+
+    /// `shutdown` makes every later read of the host end end at once, the
+    /// way a failing descriptor keeps failing. Reading stops; the
+    /// descriptors stay the channel's.
+    @Test("after its reads end, the channel still carries output to the surface and closes only when released")
+    func readsEnded_channelStaysWritableUntilReleased() async throws {
+        var channel: TmuxPaneChannel? = try TmuxPaneChannel { _ in }
+        let surface = try surfaceDuplicate(of: #require(channel))
+        defer { Darwin.close(surface) }
+        let hostFd = try #require(channel?.hostFd)
+        let hostIdentity = SocketIdentity(hostFd)
+        try #require(shutdown(hostFd, SHUT_RD) == 0)
+        try? await Task.sleep(for: .milliseconds(100))
+
+        _ = Data("LIVE".utf8).withUnsafeBytes { Darwin.write(hostFd, $0.baseAddress, $0.count) }
+        #expect(readOnce(surface) == .bytes(Data("LIVE".utf8)))
+        #expect(!isClosed(hostFd, wasOpenAs: hostIdentity))
+
+        channel = nil
+        #expect(await eventually { isClosed(hostFd, wasOpenAs: hostIdentity) })
+    }
+
     /// A shell an ordinary pane forks must not inherit either end.
     @Test("both ends are close-on-exec, and the host end does not block")
     func descriptors_areCloseOnExec() throws {
@@ -242,6 +278,50 @@ struct TmuxPaneChannelStoreTests {
 
         held = nil
         #expect(await eventually { readOnce(surface, timeout: .zero) == .endOfStream })
+    }
+
+    /// `reconcile` returns at once for a store that holds nothing; each of
+    /// these holds only one kind of state, which must still be released.
+    @Test("a store holding only a tab's connection state forgets it once the tab is gone")
+    func reconcile_onlyTabConnection_isReleased() {
+        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        let tabID = UUID()
+        store.setTabConnection(.unreachable, tabID: tabID)
+
+        store.reconcile(tabs: [])
+
+        #expect(store.tabConnections.isEmpty)
+    }
+
+    @Test("a store holding only a pane area's report forgets it once the tab is gone")
+    func reconcile_onlyAreaReport_isReleased() {
+        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        store.areaSizeChanged(CGSize(width: 640, height: 400), tabID: UUID())
+
+        store.reconcile(tabs: [])
+
+        #expect(store.surfaceReports.isEmpty)
+    }
+
+    @Test("a store that holds nothing stays empty through reconcile of mirror and ordinary tabs")
+    func reconcile_emptyStore_staysEmpty() {
+        let (session, tab, leafID) = WindowSessionFixture.withLooseTab()
+        session.update(tab.id) { $0.paneSources[leafID] = .tmux(Self.ref) }
+        let store = TmuxConnectionStore(tmuxExecutable: nil)
+
+        store.reconcile(tabs: session.tabs)
+
+        #expect(store.tabConnections.isEmpty)
+        #expect(store.mirrors.isEmpty)
+        #expect(store.connections.isEmpty)
+        #expect(store.surfaceReports.isEmpty)
+        // A restored tab's leaf still gets its channel when its surface
+        // mounts, and keeps it through the next reconcile.
+        let channel = store.channel(paneID: leafID)
+        store.reconcile(tabs: session.tabs)
+        #expect(channel != nil)
+        #expect(store.channel(paneID: leafID) === channel)
+        store.reconcile(tabs: [])
     }
 
     @Test("a surface writing with no mirror behind its leaf is ignored")

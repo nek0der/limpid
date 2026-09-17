@@ -19,12 +19,18 @@ private let log = Logger.limpid("tmux.channel")
 /// as actions instead) arrives on `onSurfaceOutput`, whichever connection
 /// feeds the pane, or none.
 ///
-/// Closed by being released, never by a call. Both descriptors are closed
-/// in the read source's cancel handler, which `deinit` triggers, so
-/// nothing that still holds the channel can see its descriptor numbers
-/// reused. A sink holds the channel until its own write source has been
-/// cancelled (see `TmuxPaneSink`), which keeps the host end open for as
-/// long as Dispatch watches it there too.
+/// Closed by being released, never by a call. Both descriptors belong to a
+/// `Descriptors` that the channel and the read source's cancel handler
+/// share, and close when the later of the two lets go, so nothing that
+/// still holds the channel can see its descriptor numbers reused, and the
+/// read source never watches a closed one. A sink holds the channel until
+/// its own write source has been cancelled (see `TmuxPaneSink`), which
+/// keeps the host end open for as long as Dispatch watches it there too.
+///
+/// A read that fails stops the reading, and only the reading: the source
+/// is cancelled, which leaves the descriptors to the channel, so sinks keep
+/// writing the surface's output. The failure would otherwise repeat on
+/// every wake-up of a source that stays readable.
 ///
 /// Deliberately **not** `@MainActor`, for the same reason as
 /// `TmuxPaneSink`: the Dispatch closures are formed here, in a nonisolated
@@ -32,17 +38,50 @@ private let log = Logger.limpid("tmux.channel")
 final class TmuxPaneChannel: @unchecked Sendable {
     /// Descriptor for `ghostty_surface_config_s.mirror_io_fd`. Valid for
     /// the life of this object.
-    let surfaceFd: Int32
+    var surfaceFd: Int32 {
+        descriptors.surfaceFd
+    }
+
     /// Our end. Non-blocking: sinks write it without waiting, and a stalled
     /// surface shows up as a full socket rather than a stuck thread. Valid
     /// for the life of this object.
-    let hostFd: Int32
+    var hostFd: Int32 {
+        descriptors.hostFd
+    }
+
+    /// Both ends of the socketpair, closed when the last owner lets go.
+    private final class Descriptors: Sendable {
+        let surfaceFd: Int32
+        let hostFd: Int32
+
+        init(surfaceFd: Int32, hostFd: Int32) {
+            self.surfaceFd = surfaceFd
+            self.hostFd = hostFd
+        }
+
+        deinit {
+            Darwin.close(hostFd)
+            Darwin.close(surfaceFd)
+            log.debug("channel closed host=\(self.hostFd, privacy: .public) surface=\(self.surfaceFd, privacy: .public)")
+        }
+    }
+
+    /// What one read of the host end came to.
+    enum ReadResult: Equatable {
+        case delivered(Data)
+        /// Nothing to read now; the source reports the next bytes.
+        case wouldBlock
+        /// The read failed for good, or the stream ended; reading stops.
+        case failed(errno: Int32)
+        case ended
+    }
 
     /// One queue for every channel's reads. The work per read is a copy and
     /// a hop to the main actor, and a serial queue per descriptor keeps each
     /// surface's output in order.
     private static let readQueue = DispatchQueue(label: "dev.limpid.tmux.channel")
 
+    private let descriptors: Descriptors
     private let readSource: any DispatchSourceRead
 
     init(onSurfaceOutput: @escaping @MainActor (Data) -> Void) throws {
@@ -57,43 +96,58 @@ final class TmuxPaneChannel: @unchecked Sendable {
         for fd in fds {
             _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
         }
-        let surfaceFd = fds[0]
-        let hostFd = fds[1]
+        let descriptors = Descriptors(surfaceFd: fds[0], hostFd: fds[1])
+        let hostFd = descriptors.hostFd
         _ = fcntl(hostFd, F_SETFL, fcntl(hostFd, F_GETFL) | O_NONBLOCK)
-        self.surfaceFd = surfaceFd
-        self.hostFd = hostFd
+        self.descriptors = descriptors
 
         let source = DispatchSource.makeReadSource(fileDescriptor: hostFd, queue: Self.readQueue)
         // Captures the descriptor, not `self`: the source outlives the
         // channel by the time it takes its cancel handler to run. We hold
-        // `surfaceFd` open until then, so the host end never reads EOF and
-        // the handler cannot spin on a closed stream.
-        source.setEventHandler {
-            Self.readSurfaceOutput(from: hostFd, deliver: onSurfaceOutput)
+        // `surfaceFd` open until then, so the host end never reads EOF
+        // while the channel exists. The source is captured weakly: it owns
+        // this handler until it is cancelled.
+        source.setEventHandler { [weak source] in
+            switch Self.readSurfaceOutput(from: hostFd) {
+            case let .delivered(data):
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { onSurfaceOutput(data) }
+                }
+            case .wouldBlock:
+                break
+            case let .failed(code):
+                log.error("channel read failed host=\(hostFd, privacy: .public) errno=\(code, privacy: .public); reading stops")
+                source?.cancel()
+            case .ended:
+                log.error("channel read reached EOF host=\(hostFd, privacy: .public); reading stops")
+                source?.cancel()
+            }
         }
-        // The documented place to close a source's descriptor: the source
-        // no longer watches it once this runs.
-        source.setCancelHandler {
-            Darwin.close(hostFd)
-            Darwin.close(surfaceFd)
-            log.debug("channel closed host=\(hostFd, privacy: .public) surface=\(surfaceFd, privacy: .public)")
-        }
+        // The descriptors stay open until this has run: the source no
+        // longer watches them once it does.
+        source.setCancelHandler { withExtendedLifetime(descriptors) {} }
         source.resume()
         readSource = source
-        log.debug("channel opened host=\(hostFd, privacy: .public) surface=\(surfaceFd, privacy: .public)")
+        log.debug("channel opened host=\(hostFd, privacy: .public) surface=\(descriptors.surfaceFd, privacy: .public)")
     }
 
     deinit {
         readSource.cancel()
     }
 
-    private static func readSurfaceOutput(from fd: Int32, deliver: @escaping @MainActor (Data) -> Void) {
+    /// Read what the surface wrote to `fd` once. Interrupted and empty reads
+    /// are retried by the source's next wake-up; anything else ends the
+    /// reading.
+    static func readSurfaceOutput(from fd: Int32) -> ReadResult {
         var buffer = [UInt8](repeating: 0, count: 16384)
         let n = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
-        guard n > 0 else { return }
-        let data = Data(buffer[0..<n])
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated { deliver(data) }
+        if n > 0 {
+            return .delivered(Data(buffer[0..<n]))
         }
+        if n == 0 {
+            return .ended
+        }
+        let code = errno
+        return code == EAGAIN || code == EINTR ? .wouldBlock : .failed(errno: code)
     }
 }

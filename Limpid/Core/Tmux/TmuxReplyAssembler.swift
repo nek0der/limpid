@@ -22,12 +22,21 @@ struct TmuxReplyAssembler: Equatable {
         case reply(lines: [String], isError: Bool, marker: TmuxReplyMarker)
     }
 
-    private var pending: [String]?
+    /// The `%begin` of the block being read, and the lines read so far.
+    private struct Block: Equatable {
+        let begin: TmuxReplyMarker
+        var lines: [String] = []
+    }
+
+    private var pending: Block?
     private var hasSeenAttachBlock = false
 
-    /// True between a `%begin` and its closing marker.
-    var isInsideBlock: Bool {
-        pending != nil
+    /// The marker of the block between its `%begin` and its terminator, or
+    /// `nil` outside a block. The line parser needs it to tell the
+    /// terminator from a row of the reply that reads like one
+    /// (`TmuxProtocol.parseLine`).
+    var openBlock: TmuxReplyMarker? {
+        pending?.begin
     }
 
     /// Feed one classified line. Returns an event when a block closes; body
@@ -36,11 +45,11 @@ struct TmuxReplyAssembler: Equatable {
     /// caller's to route.
     mutating func consume(_ line: TmuxControlLine) -> Event? {
         switch line {
-        case .begin:
-            pending = []
+        case let .begin(marker):
+            pending = Block(begin: marker)
             return nil
         case let .end(marker), let .error(marker):
-            let lines = pending ?? []
+            let lines = pending?.lines ?? []
             pending = nil
             var isError = false
             if case .error = line {
@@ -53,7 +62,7 @@ struct TmuxReplyAssembler: Equatable {
             hasSeenAttachBlock = true
             return .attachFinished(lines: lines, isError: isError)
         case let .text(text):
-            pending?.append(text)
+            pending?.lines.append(text)
             return nil
         default:
             return nil

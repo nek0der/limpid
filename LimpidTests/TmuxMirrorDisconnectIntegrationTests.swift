@@ -6,14 +6,31 @@ import Testing
 @testable import Limpid
 
 /// Every Secure Input request a mirror made, by leaf, in order. Takes
-/// effect for every leaf, as a surface that exists would.
+/// effect for every leaf, on one surface that stays the leaf's for the
+/// whole test, as a surface that exists would.
 @MainActor
 private final class RecordingSecureInput: TmuxSecureInputSwitching {
-    private(set) var requests: [(paneID: UUID, isOn: Bool)] = []
+    private final class Surface {}
 
-    func setSecureInput(_ isOn: Bool, paneID: UUID, registry _: any SurfaceViewProviding) -> Bool {
+    private(set) var requests: [(paneID: UUID, isOn: Bool)] = []
+    private var surfaces: [UUID: Surface] = [:]
+
+    func secureInputTarget(paneID: UUID, registry _: any SurfaceViewProviding) -> AnyObject? {
+        surface(for: paneID)
+    }
+
+    func setSecureInput(_ isOn: Bool, paneID: UUID, registry _: any SurfaceViewProviding) -> AnyObject? {
         requests.append((paneID, isOn))
-        return true
+        return surface(for: paneID)
+    }
+
+    private func surface(for paneID: UUID) -> Surface {
+        if let existing = surfaces[paneID] {
+            return existing
+        }
+        let created = Surface()
+        surfaces[paneID] = created
+        return created
     }
 
     func lastRequest(for paneID: UUID) -> Bool? {

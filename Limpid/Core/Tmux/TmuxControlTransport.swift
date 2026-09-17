@@ -78,9 +78,24 @@ final class TmuxControlTransport: @unchecked Sendable {
     /// on its own never reach this queue (see `TmuxReplyAssembler`).
     private var waiting: [Completion?] = []
     private var assembler = TmuxReplyAssembler()
+    /// Bytes read after the last whole line: the start of a line whose
+    /// newline has not arrived.
     private var pendingBytes: [UInt8] = []
+    /// How many leading bytes of `pendingBytes` are known to hold no
+    /// newline, so a long line arriving in many reads is searched once
+    /// rather than from its start on every read.
+    private var scannedCount = 0
     private var sinks: [String: TmuxPaneSink] = [:]
     private var source: (any DispatchSourceRead)?
+
+    /// The longest line we wait for. The longest line tmux sends a mirror is
+    /// a `capture-pane -e` row: tmux caps a window at 10000 columns, and a
+    /// cell whose colors and attributes all differ from its neighbor's
+    /// takes well under 100 bytes, so a row stays under 1 MiB. The rest is
+    /// headroom for what that estimate leaves out, such as hyperlinks. A
+    /// stream past this is not tmux speaking the protocol, and holding it
+    /// would only grow without bound, so the connection ends there.
+    static let lineLimit = 8 * 1024 * 1024
 
     /// Start reading `readFd` and writing `writeFd`. Both are duplicated
     /// before this returns, so the caller closes its own copies whenever
@@ -192,11 +207,15 @@ final class TmuxControlTransport: @unchecked Sendable {
                     guard let base = raw.baseAddress else { return -1 }
                     return Darwin.write(fd, base.advanced(by: offset), raw.count - offset)
                 }
+                // The descriptor blocks: nothing on either side sets
+                // `O_NONBLOCK` on our end of the pipe, and tmux's own flags
+                // live on its end, a separate open file. A slow reader
+                // makes the write wait rather than fail, so only a signal
+                // interrupts it.
                 if n > 0 {
                     offset += n
-                } else if n < 0, errno == EAGAIN || errno == EINTR {
-                    // The reader is behind. Yield instead of spinning.
-                    usleep(1000)
+                } else if n < 0, errno == EINTR {
+                    continue
                 } else {
                     log.error("control write failed errno=\(errno, privacy: .public)")
                     return
@@ -211,25 +230,38 @@ final class TmuxControlTransport: @unchecked Sendable {
         if n > 0 {
             pendingBytes.append(contentsOf: buffer[0..<n])
             routeCompleteLines()
-        } else if n == 0 {
-            // EOF. The source keeps reporting a closed descriptor as
-            // readable, so it has to be torn down here or the handler spins.
-            source?.cancel()
-            source = nil
-            guard let finish = events?.endOfStream else { return }
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { finish() }
+            if pendingBytes.count > Self.lineLimit {
+                log.error("control line longer than \(Self.lineLimit, privacy: .public) bytes; ending the connection")
+                pendingBytes = []
+                scannedCount = 0
+                endStream()
             }
+        } else if n == 0 {
+            endStream()
         } else if errno != EAGAIN, errno != EINTR {
             log.error("control read failed errno=\(errno, privacy: .public)")
         }
     }
 
+    /// Stop reading and report the end after every line already routed.
+    /// The source keeps reporting a closed descriptor as readable, so at
+    /// EOF it has to be torn down here or the handler spins.
+    private func endStream() {
+        source?.cancel()
+        source = nil
+        guard let finish = events?.endOfStream else { return }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { finish() }
+        }
+    }
+
     private func routeCompleteLines() {
-        var start = pendingBytes.startIndex
-        while let newline = pendingBytes[start...].firstIndex(of: 0x0A) {
-            let line = TmuxProtocol.parseLine(pendingBytes[start..<newline], insideReplyBlock: assembler.isInsideBlock)
+        var start = 0
+        var searchFrom = scannedCount
+        while let newline = pendingBytes[searchFrom...].firstIndex(of: 0x0A) {
+            let line = TmuxProtocol.parseLine(pendingBytes[start..<newline], openBlock: assembler.openBlock)
             start = newline + 1
+            searchFrom = start
             if case let .output(pane, bytes) = line {
                 sinks[pane]?.write(bytes)
                 continue
@@ -259,9 +291,10 @@ final class TmuxControlTransport: @unchecked Sendable {
                 }
             }
         }
-        if start > pendingBytes.startIndex {
-            pendingBytes.removeFirst(start - pendingBytes.startIndex)
+        if start > 0 {
+            pendingBytes.removeFirst(start)
         }
+        scannedCount = pendingBytes.count
     }
 
     private func handle(_ event: TmuxReplyAssembler.Event) {

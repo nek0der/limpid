@@ -23,11 +23,13 @@ extension TmuxMirrorActions {
     ///   mirror feeds the leaves' existing channels, so each surface keeps
     ///   its scrollback and is repainted in place. A tab whose window the
     ///   session no longer has closes with a notice (decision 3).
-    /// - the recorded server, without the session: the tabs close with one
-    ///   notice (decision 2).
+    /// - the recorded server, without the session, or no server at all on
+    ///   the socket: the session is gone (decision 2, and stage 11's
+    ///   "decided in this stage"), and `TmuxConnectionStore.sessionEnded`
+    ///   decides what becomes of the tabs.
     /// - another server, or no record of which one: `serverReplaced`. The
     ///   panes keep what they show as history (decisions 4 and 7).
-    /// - no answer: `unreachable`.
+    /// - no answer that says whether a server runs: `unreachable`.
     ///
     /// A new mirror rather than the old one resumed: a mirror's
     /// disconnection is final, and the store tells mirrors apart by
@@ -91,13 +93,12 @@ extension TmuxMirrorActions {
                     return
                 }
                 attachAgain(waiting(tabIDs, store: store, session: session), binding: binding, context: context)
-            case .matches(hasSession: false):
-                let closing = waiting(tabIDs, store: store, session: session)
-                guard !closing.isEmpty else { return }
-                for tabID in closing {
-                    TabActions.closeTab(session, registry: registry, tabID: tabID, confirm: false, isReopenable: false)
+            case .matches(hasSession: false), .serverGone:
+                var ended: [TmuxConnectionStore.EndedTab] = []
+                for tabID in waiting(tabIDs, store: store, session: session) {
+                    ended.append(TmuxConnectionStore.EndedTab(tabID: tabID, session: session, registry: registry))
                 }
-                store.onNotice?(TmuxConnectionStore.sessionEndedNotice(sessionName: binding.sessionName))
+                store.sessionEnded(ended, sessionName: binding.sessionName)
             case .replaced, .unrecorded:
                 for tabID in waiting(tabIDs, store: store, session: session) {
                     store.setTabConnection(.serverReplaced, tabID: tabID)
@@ -257,7 +258,7 @@ extension TmuxMirrorActions {
         let store = context.store
         let connection: TmuxServerConnection
         do {
-            connection = try store.connectionForReconnect(to: binding)
+            connection = try store.connection(for: binding)
         } catch {
             log.error("cannot reconnect session=\(binding.sessionID, privacy: .public): \(String(describing: error), privacy: .public)")
             for tabID in tabIDs {
@@ -277,6 +278,7 @@ extension TmuxMirrorActions {
                 windowID: ref.windowID,
                 names: (binding.sessionName, windowName(of: tab, binding: binding, store: store)),
                 connection: connection,
+                isNewTab: false,
                 context: context
             )
             store.register(mirror)

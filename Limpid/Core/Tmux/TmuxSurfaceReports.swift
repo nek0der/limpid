@@ -21,6 +21,11 @@ struct TmuxSurfaceReports: Equatable {
     /// one; it keeps the last size while the tab is in the background.
     private(set) var areaSizes: [UUID: CGSize] = [:]
 
+    /// Nothing is recorded, so there is nothing to forget either.
+    var isEmpty: Bool {
+        cellSizes.isEmpty && grids.isEmpty && areaSizes.isEmpty
+    }
+
     mutating func setCellSize(_ size: CellSize, paneID: UUID) {
         cellSizes[paneID] = size
     }

@@ -30,7 +30,12 @@ enum TmuxControlLine: Equatable {
     case layoutChange(window: String, layout: String, visibleLayout: String?, flags: String?)
     case windowPaneChanged(window: String, pane: String)
     case windowRenamed(window: String, name: String)
-    case sessionChanged(session: String, name: String)
+    case windowAdd(window: String)
+    /// A window left the session. tmux 3.7c decides between the two names
+    /// after the window has gone, so killing one of the session's own
+    /// windows, or exiting its last pane, arrives as the unlinked form;
+    /// both mean the same to a mirror.
+    case windowClose(window: String, isUnlinked: Bool)
     case exit(reason: String?)
     /// Any other `%name arguments` notification, kept verbatim so a caller
     /// can log what it does not handle instead of dropping it silently.
@@ -78,20 +83,25 @@ enum TmuxProtocol {
     /// terminal output, not UTF-8.
     ///
     /// Inside a reply block tmux prints the command's output verbatim, so a
-    /// line there is text even when it starts with `%` — a pane id is the
-    /// everyday case, and a `capture-pane` row can read `%output …` — and
-    /// only the block's own terminators are markers. That rule is applied
+    /// line there is text even when it starts with `%`: a pane id is the
+    /// everyday case, and a `capture-pane` row can read `%output …`, or
+    /// `%end …` when a program prints that. Only the terminator of the
+    /// block that is open ends it. tmux prints it with the same timestamp,
+    /// number, and flags as the `%begin`, and nothing else, so any other
+    /// line that starts with `%end` or `%error` is a row of the reply;
+    /// taking one for the terminator would cut the reply short and pair
+    /// every later reply with the wrong command. That rule is applied
     /// before the `%output` match, or such a row would be routed to a pane
-    /// as if the program had printed it. The caller tracks the block state;
-    /// this function has none.
-    static func parseLine(_ raw: ArraySlice<UInt8>, insideReplyBlock: Bool = false) -> TmuxControlLine {
+    /// as if the program had printed it. The caller tracks which block is
+    /// open (`TmuxReplyAssembler.openBlock`); this function has no state.
+    static func parseLine(_ raw: ArraySlice<UInt8>, openBlock: TmuxReplyMarker? = nil) -> TmuxControlLine {
         var line = raw
         if line.last == 0x0D {
             line = line.dropLast()
         }
 
         let outputPrefix = Array("%output ".utf8)
-        if !insideReplyBlock, line.starts(with: outputPrefix) {
+        if openBlock == nil, line.starts(with: outputPrefix) {
             let rest = line.dropFirst(outputPrefix.count)
             let paneEnd = rest.firstIndex(of: 0x20) ?? rest.endIndex
             let payload = paneEnd < rest.endIndex ? rest[(paneEnd + 1)...] : rest[rest.endIndex...]
@@ -103,8 +113,12 @@ enum TmuxProtocol {
         let parts = text.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
         let name = String(parts[0].dropFirst())
         let arguments = parts.count > 1 ? String(parts[1]) : ""
-        if insideReplyBlock, name != "end", name != "error" {
-            return .text(text)
+        if let openBlock {
+            let fields = arguments.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+            guard name == "end" || name == "error", fields.count == 3,
+                  parseReplyMarker(fields) == openBlock
+            else { return .text(text) }
+            return replyLine(name, openBlock)
         }
         return parseNotification(name: name, arguments: arguments)
     }
@@ -133,8 +147,10 @@ enum TmuxProtocol {
         case "window-renamed":
             // The name may contain spaces, so split off the id only.
             splitFirstField(arguments).map { .windowRenamed(window: $0.0, name: $0.1) }
-        case "session-changed":
-            splitFirstField(arguments).map { .sessionChanged(session: $0.0, name: $0.1) }
+        case "window-add":
+            fields.count == 1 ? .windowAdd(window: fields[0]) : nil
+        case "window-close", "unlinked-window-close":
+            fields.count == 1 ? .windowClose(window: fields[0], isUnlinked: name == "unlinked-window-close") : nil
         case "exit":
             .exit(reason: arguments.isEmpty ? nil : arguments)
         default:

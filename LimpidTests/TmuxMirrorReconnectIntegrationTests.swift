@@ -6,14 +6,41 @@ import Foundation
 import Testing
 @testable import Limpid
 
-/// Every Secure Input request a mirror made, by leaf, in order.
+/// Every Secure Input request a mirror made, by leaf, in order. Each leaf
+/// has a stand-in surface, which `replaceSurface` swaps the way the
+/// registry swaps a leaf's view, dropping the old one's scope. The old one
+/// stays alive, as a view SwiftUI still holds does.
 @MainActor
 private final class SecureInputLog: TmuxSecureInputSwitching {
-    private(set) var requests: [(paneID: UUID, isOn: Bool)] = []
+    private final class Surface {}
 
-    func setSecureInput(_ isOn: Bool, paneID: UUID, registry _: any SurfaceViewProviding) -> Bool {
+    private(set) var requests: [(paneID: UUID, isOn: Bool)] = []
+    private var surfaces: [UUID: Surface] = [:]
+    private var retired: [Surface] = []
+
+    func secureInputTarget(paneID: UUID, registry _: any SurfaceViewProviding) -> AnyObject? {
+        surface(for: paneID)
+    }
+
+    func setSecureInput(_ isOn: Bool, paneID: UUID, registry _: any SurfaceViewProviding) -> AnyObject? {
         requests.append((paneID, isOn))
-        return true
+        return surface(for: paneID)
+    }
+
+    func replaceSurface(for paneID: UUID) {
+        if let previous = surfaces[paneID] {
+            retired.append(previous)
+        }
+        surfaces[paneID] = Surface()
+    }
+
+    private func surface(for paneID: UUID) -> Surface {
+        if let existing = surfaces[paneID] {
+            return existing
+        }
+        let created = Surface()
+        surfaces[paneID] = created
+        return created
     }
 
     func history(for paneID: UUID) -> [Bool] {
@@ -355,24 +382,58 @@ struct TmuxMirrorReconnectIntegrationTests {
         #expect(harness.reconnect(tab.tabID) == nil)
     }
 
-    @Test("a socket that is gone leaves the tab unreachable, and it can be tried again")
-    func missingSocket_marksTheTabUnreachable() async throws {
+    @Test("a socket that is gone means the server is gone: the tab closes with one notice")
+    func missingSocket_closesTheTab() async throws {
         let harness = try ReconnectHarness()
         defer { harness.tearDown() }
         let window = try #require(harness.server.windowIDs().first)
         let tab = try await harness.open(window: window)
         #expect(await harness.detachControlClients([tab.tabID]))
         let pid = try #require(Int32(harness.server.format("#{pid}")))
+        // Without its socket `kill-server` cannot reach the server.
+        defer { kill(pid, SIGTERM) }
         try FileManager.default.removeItem(atPath: harness.server.socketPath)
+
+        await harness.reconnect(tab.tabID)?.value
+
+        #expect(harness.session.tab(tab.tabID) == nil)
+        #expect(harness.notices == [TmuxConnectionStore.sessionEndedNotice(sessionName: "t")])
+        #expect(harness.session.closedTabStack.isEmpty)
+    }
+
+    @Test("a killed server closes the disconnected tab with one notice")
+    func killedServer_closesTheTab() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let tab = try await harness.open(window: window)
+        #expect(await harness.detachControlClients([tab.tabID]))
+        try await harness.server.killServer()
+
+        await harness.reconnect(tab.tabID)?.value
+
+        #expect(harness.session.tab(tab.tabID) == nil)
+        #expect(harness.notices == [TmuxConnectionStore.sessionEndedNotice(sessionName: "t")])
+    }
+
+    @Test("a server that does not answer leaves the tab unreachable, and it can be tried again")
+    func hungServer_marksTheTabUnreachable() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let tab = try await harness.open(window: window)
+        #expect(await harness.detachControlClients([tab.tabID]))
+        let pid = try harness.server.suspendServer()
+        defer { harness.server.resumeServer(pid) }
 
         await harness.reconnect(tab.tabID)?.value
 
         #expect(harness.store.tabConnections[tab.tabID] == .unreachable)
         #expect(harness.session.tab(tab.tabID) != nil)
-        // tmux recreates its socket on SIGUSR1; the tab comes back from
-        // unreachable the same way it does from disconnected.
-        kill(pid, SIGUSR1)
-        #expect(await waitUntil { FileManager.default.fileExists(atPath: harness.server.socketPath) })
+        #expect(harness.notices.isEmpty)
+        // The tab comes back from unreachable the same way it does from
+        // disconnected.
+        harness.server.resumeServer(pid)
         await harness.reconnect(tab.tabID)?.value
         #expect(harness.store.tabConnections[tab.tabID] == .live)
     }
@@ -457,6 +518,132 @@ struct TmuxMirrorReconnectIntegrationTests {
         await harness.reconnect(tab.tabID)?.value
 
         #expect(await waitUntil(.seconds(5)) { harness.secureInput.history(for: tab.leaf) == [true, false, true] })
+    }
+
+    /// The registry drops the scope of a view it replaces. The mirror must
+    /// not go on taking Secure Input as on for the leaf, or the new
+    /// surface would never get it.
+    @Test("a password prompt gets Secure Input again on a surface that replaced the one it was set on")
+    func passwordPrompt_replacedSurface_getsSecureInputAgain() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let tab = try await harness.open(window: window)
+        harness.server.run(["send-keys", "-t", window, "read -s secret", "Enter"])
+        #expect(await waitUntil(.seconds(5)) { harness.secureInput.history(for: tab.leaf) == [true] })
+        // Let the checks that output schedules run out first.
+        try? await Task.sleep(for: TmuxPaneSink.activityInterval * 3)
+        #expect(harness.secureInput.history(for: tab.leaf) == [true])
+
+        harness.secureInput.replaceSurface(for: tab.leaf)
+        // What a newly mounted surface reports when its IO starts. The
+        // prompt prints nothing more, so only this can trigger the check.
+        harness.store.mirrorGridResized(columns: 80, rows: 24, paneID: tab.leaf)
+
+        #expect(await waitUntil(.seconds(5)) { harness.secureInput.history(for: tab.leaf) == [true, true] })
+        // Ending the prompt switches the new surface's scope off, once.
+        harness.server.run(["send-keys", "-t", window, "x", "Enter"])
+        #expect(await waitUntil(.seconds(5)) { harness.secureInput.history(for: tab.leaf) == [true, true, false] })
+    }
+
+    @Test("with a replaced surface, the mirror ending asks nothing: the old scope went with its surface")
+    func replacedSurface_mirrorEnd_asksNothing() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let tab = try await harness.open(window: window)
+        harness.server.run(["send-keys", "-t", window, "read -s secret", "Enter"])
+        #expect(await waitUntil(.seconds(5)) { harness.secureInput.history(for: tab.leaf) == [true] })
+
+        harness.secureInput.replaceSurface(for: tab.leaf)
+        #expect(await harness.detachControlClients([tab.tabID]))
+
+        #expect(harness.secureInput.history(for: tab.leaf) == [true])
+    }
+
+    /// A tab being opened and a tab being reconnected share one connection
+    /// that tmux has not attached yet. Its refusal is judged per tab: the
+    /// new tab closes as unopened, the reconnected one asks about its
+    /// session, whichever of the two created the connection. The server is
+    /// frozen while both take the connection, so the refusal cannot arrive
+    /// before they share it.
+    @Test("an attach refused on a shared connection closes the new tab and checks the session for the reconnected one", arguments: [
+        true, false
+    ])
+    func sharedConnection_refusal_isJudgedPerTab(isOpenedFirst: Bool) async throws {
+        let harness = try ReconnectHarness(keepServer: true) { _, _, _ in .exists }
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let kept = try await harness.open(window: window)
+        #expect(await harness.detachControlClients([kept.tabID]))
+        let binding = try harness.binding
+        let newWindow = try #require(harness.server.run(["new-window", "-P", "-F", "#{window_id}", "-t", "t"]))
+        let newTarget = try TmuxMirrorTarget(
+            binding: binding,
+            windowID: newWindow,
+            windowName: harness.server.format("#{window_name}", target: newWindow),
+            activePaneID: harness.server.paneID(inWindow: newWindow),
+            serverVersion: nil
+        )
+        let opened = OpenedTabID()
+        let server = harness.server
+        let frozen = FrozenServer()
+        defer { frozen.pid.map(server.resumeServer) }
+
+        let task = harness.reconnect(kept.tabID) { _ in
+            server.run(["kill-session", "-t", "t"])
+            frozen.pid = try? server.suspendServer()
+            if isOpenedFirst {
+                opened.id = harness.openTab(newTarget)
+            }
+            return true
+        }
+        await task?.value
+        if !isOpenedFirst {
+            opened.id = harness.openTab(newTarget)
+        }
+        let newID = try #require(opened.id)
+        let keptMirror = try #require(harness.store.mirror(for: kept.tabID))
+        let newMirror = try #require(harness.store.mirror(for: newID))
+        #expect(keptMirror.connection === newMirror.connection)
+        #expect(keptMirror.connection.state == .connecting)
+
+        try #require(frozen.pid != nil)
+        frozen.pid.map(server.resumeServer)
+        frozen.pid = nil
+
+        #expect(await waitUntil(.seconds(5)) { harness.session.tab(newID) == nil })
+        #expect(await waitUntil(.seconds(5)) { harness.store.tabConnections[kept.tabID] == .disconnected })
+        // The kept tab went through the session check, whose injected
+        // answer found the session, so it stays.
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(harness.session.tab(kept.tabID) != nil)
+        #expect(harness.notices.count == 1)
+        let unopened = TmuxConnectionStore.openFailureNotice(name: "t:\(newTarget.windowName)", reason: nil)
+        #expect(harness.notices.first?.hasPrefix(unopened) == true)
+        #expect(harness.session.closedTabStack.isEmpty)
+    }
+}
+
+/// The tab an open created, set from inside a gate.
+@MainActor
+private final class OpenedTabID {
+    var id: UUID?
+}
+
+/// The pid of a server a test froze, so a failing test still thaws it.
+@MainActor
+private final class FrozenServer {
+    var pid: pid_t?
+}
+
+extension ReconnectHarness {
+    /// Open `target` the way the palette's last step does and return the
+    /// tab it created.
+    func openTab(_ target: TmuxMirrorTarget) -> UUID? {
+        let before = Set(session.tabs.map(\.id))
+        #expect(TmuxMirrorActions.open(target, session: session, store: store, registry: registry, secureInput: secureInput))
+        return session.tabs.map(\.id).first { !before.contains($0) }
     }
 }
 
@@ -643,8 +830,8 @@ struct TmuxMirrorAutoReconnectIntegrationTests {
         #expect(harness.controlClientCount() == 0)
     }
 
-    @Test("a socket that is gone leaves the restored tab unreachable")
-    func missingSocket_isUnreachableAtLaunch() async throws {
+    @Test("a socket that is gone closes the restored tab with one notice")
+    func missingSocket_closesTheTabAtLaunch() async throws {
         let harness = try ReconnectHarness()
         defer { harness.tearDown() }
         let window = try #require(harness.server.windowIDs().first)
@@ -657,10 +844,27 @@ struct TmuxMirrorAutoReconnectIntegrationTests {
 
         #expect(await harness.reconnectAtLaunch() == 1)
 
+        #expect(harness.session.tab(tab.tabID) == nil)
+        #expect(harness.notices == [TmuxConnectionStore.sessionEndedNotice(sessionName: "t")])
+        #expect(harness.session.closedTabStack.isEmpty)
+        #expect(harness.store.mirror(for: tab.tabID) == nil)
+    }
+
+    @Test("a server that does not answer leaves the restored tab unreachable")
+    func hungServer_isUnreachableAtLaunch() async throws {
+        let harness = try ReconnectHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let tab = try #require(harness.restoreTabs([harness.paneRef(window: window)]).first)
+        let pid = try harness.server.suspendServer()
+        defer { harness.server.resumeServer(pid) }
+
+        #expect(await harness.reconnectAtLaunch() == 1)
+
         #expect(harness.store.tabConnections[tab.tabID] == .unreachable)
         #expect(harness.store.mirror(for: tab.tabID) == nil)
         #expect(harness.session.tab(tab.tabID) != nil)
-        #expect(harness.controlClientCount() == 0)
+        #expect(harness.notices.isEmpty)
     }
 
     @Test("a session that ended since the snapshot closes its tab with one notice")

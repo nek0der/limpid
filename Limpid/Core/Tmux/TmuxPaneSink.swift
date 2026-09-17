@@ -158,35 +158,53 @@ final class TmuxPaneSink: @unchecked Sendable {
     }
 
     /// `handler` runs on the main actor when output arrives, at most once
-    /// per `activityInterval`, and once more after a burst has been quiet
-    /// for that long. A mirror uses it to re-check the pane's tty for a
-    /// password prompt: the prompt's own output arrives first, and the
-    /// program switches the line discipline just after, so the trailing
-    /// call is the one that sees the change.
+    /// per `activityInterval`, and once more when the output has been
+    /// quiet for that long since its last write. A mirror uses it to
+    /// re-check the pane's tty for a password prompt: the prompt's own
+    /// output arrives first, and the program switches the line discipline
+    /// just after, so the trailing call is the one that sees the change.
     func setOnOutputActivity(_ handler: (@MainActor () -> Void)?) {
         queue.async { [self] in activityHandler = handler }
     }
 
     static let activityInterval: Duration = .milliseconds(250)
     private var activityHandler: (@MainActor () -> Void)?
-    private var lastActivity: ContinuousClock.Instant?
+    /// When the handler last ran, which spaces out the calls during a burst.
+    private var lastActivityCall: ContinuousClock.Instant?
+    /// When output last arrived, which the trailing call waits to be
+    /// `activityInterval` behind.
+    private var lastOutput: ContinuousClock.Instant?
     private var hasTrailingActivityScheduled = false
 
     private func noteActivity() {
         guard activityHandler != nil else { return }
         let now = ContinuousClock.now
-        if lastActivity.map({ now - $0 >= Self.activityInterval }) ?? true {
-            lastActivity = now
+        lastOutput = now
+        if lastActivityCall.map({ now - $0 >= Self.activityInterval }) ?? true {
+            lastActivityCall = now
             fireActivity()
         }
+        scheduleTrailingActivity(after: Self.activityInterval)
+    }
+
+    /// One wake-up is pending at a time. It fires once the output has been
+    /// quiet for `activityInterval`; output that arrived meanwhile moves it
+    /// to that interval after the latest write.
+    private func scheduleTrailingActivity(after delay: Duration) {
         guard !hasTrailingActivityScheduled else { return }
         hasTrailingActivityScheduled = true
-        let delay = DispatchTimeInterval.milliseconds(Int(Self.activityInterval / .milliseconds(1)))
-        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+        let milliseconds = Int((delay / .milliseconds(1)).rounded(.up))
+        queue.asyncAfter(deadline: .now() + .milliseconds(milliseconds)) { [weak self] in
             guard let self else { return }
             hasTrailingActivityScheduled = false
-            guard !isClosed else { return }
-            lastActivity = ContinuousClock.now
+            guard !isClosed, let lastOutput else { return }
+            let now = ContinuousClock.now
+            let quiet = now - lastOutput
+            guard quiet >= Self.activityInterval else {
+                scheduleTrailingActivity(after: Self.activityInterval - quiet)
+                return
+            }
+            lastActivityCall = now
             fireActivity()
         }
     }
@@ -238,9 +256,10 @@ final class TmuxPaneSink: @unchecked Sendable {
         writeSource = nil
     }
 
-    private func writeNow(_ bytes: some DataProtocol) -> Int {
-        let data = Data(bytes)
-        return data.withUnsafeBytes { raw -> Int in
+    /// Takes `Data` rather than any `DataProtocol`, so the held output is
+    /// written from its own storage instead of a copy of all of it.
+    private func writeNow(_ data: Data) -> Int {
+        data.withUnsafeBytes { raw -> Int in
             guard let base = raw.baseAddress, !raw.isEmpty else { return 0 }
             let n = Darwin.write(channel.hostFd, base, raw.count)
             if n < 0 {
