@@ -90,8 +90,18 @@ enum PaneShellEnvironment {
     /// have started under a plainer name, where our global options
     /// would land on their sessions.
     static func defaultAgentSocketName() -> String {
-        "limpid-" + LimpidPaths.bundleID
+        agentSocketPrefix + LimpidPaths.bundleID
     }
+
+    /// Whether `name` is the agent server of any Limpid build, this one or
+    /// another. Every build's name starts with the Release id, since a
+    /// Debug id only appends to it.
+    static func isAgentSocketName(_ name: String) -> Bool {
+        name.hasPrefix(agentSocketPrefix + releaseBundleID)
+    }
+
+    private static let agentSocketPrefix = "limpid-"
+    private static let releaseBundleID = "dev.limpid.Limpid"
 
     /// Used when the app was launched without inheriting a `PATH` at all,
     /// which happens under `open(1)` and from Finder.

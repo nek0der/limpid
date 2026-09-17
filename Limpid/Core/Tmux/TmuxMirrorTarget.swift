@@ -21,12 +21,16 @@ enum TmuxMirrorTargetLister {
     /// `list-windows -a` across the sockets in tmux's server directory.
     /// One short-lived client per socket, bounded by `TmuxCommand`'s
     /// timeout, so a dead socket costs a few milliseconds and nothing more.
+    ///
+    /// Limpid's own agent servers are skipped: each of their sessions is
+    /// already on screen as the pane that started the agent, and opening
+    /// it again as a tab would show the same agent twice.
     static func targets(
         tmuxPath: String,
         socketPaths: [URL] = TmuxClientProbe.socketPaths(inServerDirectory: TmuxClientProbe.defaultServerDirectory())
     ) -> [TmuxMirrorTarget] {
         var targets: [TmuxMirrorTarget] = []
-        for socket in socketPaths {
+        for socket in socketPaths where !PaneShellEnvironment.isAgentSocketName(socket.lastPathComponent) {
             let path = TmuxClientProbe.normalizeSocketPath(socket.path)
             let result = TmuxCommand().run(
                 executable: tmuxPath,

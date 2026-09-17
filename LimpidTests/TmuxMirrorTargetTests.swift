@@ -31,6 +31,14 @@ struct TmuxMirrorTargetTests {
         #expect(TmuxMirrorTargetLister.parse(output, socketPath: "/tmp/s").isEmpty)
     }
 
+    @Test func agentSockets_ofEveryBuild_areRecognized() {
+        #expect(PaneShellEnvironment.isAgentSocketName("limpid-dev.limpid.Limpid"))
+        #expect(PaneShellEnvironment.isAgentSocketName("limpid-dev.limpid.Limpid.dev"))
+        #expect(PaneShellEnvironment.isAgentSocketName(PaneShellEnvironment.defaultAgentSocketName()))
+        #expect(!PaneShellEnvironment.isAgentSocketName("default"))
+        #expect(!PaneShellEnvironment.isAgentSocketName("limpid-verify"))
+    }
+
     @Test func frecencyKey_isStablePerWindow() {
         let binding = TmuxBinding(socketPath: "/tmp/s", sessionID: "$0", sessionName: "main")
         let target = TmuxMirrorTarget(binding: binding, windowID: "@4", windowName: "w", activePaneID: "%9")
