@@ -49,6 +49,25 @@ final class TmuxServerConnection {
     /// the attach block closes.
     private let transport = TmuxControlTransport()
     private(set) var sinks: [String: TmuxPaneSink] = [:]
+    /// The server's version, once it has answered. Gates the commands an
+    /// older server would refuse.
+    private(set) var version: TmuxVersion?
+    /// The colors the attached panes' programs are told about. Reported to
+    /// every attached pane when it changes, and to each pane on attach.
+    var terminalColors: TerminalColors? {
+        didSet {
+            guard terminalColors != oldValue else { return }
+            for pane in sinks.keys {
+                reportColors(toPane: pane)
+            }
+        }
+    }
+
+    /// Keystrokes waiting for the end of this main-actor turn, and whether
+    /// that end has been scheduled. Every other command flushes them first,
+    /// so nothing overtakes a key typed before it.
+    private var pendingInput = TmuxInputBatch()
+    private var isInputFlushScheduled = false
 
     init(executable: String, target: Target) {
         self.executable = executable
@@ -98,6 +117,13 @@ final class TmuxServerConnection {
         try? readHandle.close()
         try? writeHandle.close()
         log.notice("spawned socket=\(self.target.socketPath, privacy: .private) session=\(self.target.sessionID, privacy: .public)")
+        send("display-message -p '#{version}'") { [weak self] lines, isError in
+            guard let self, !isError, let version = lines.first.flatMap(TmuxProtocol.parseVersion) else { return }
+            self.version = version
+            for pane in sinks.keys {
+                reportColors(toPane: pane)
+            }
+        }
     }
 
     /// Built outside the main actor on purpose: `Process` calls it on its
@@ -124,6 +150,7 @@ final class TmuxServerConnection {
 
     /// Send one command whose reply nobody reads.
     func send(_ command: String) {
+        flushInput()
         transport.send(command, completion: nil)
     }
 
@@ -131,6 +158,7 @@ final class TmuxServerConnection {
     /// whether tmux answered with `%error`, on the main actor. On a closed
     /// connection it receives the exit reason as an error.
     func send(_ command: String, completion: @escaping ReplyHandler) {
+        flushInput()
         transport.send(command, completion: .onMain(completion))
     }
 
@@ -138,22 +166,51 @@ final class TmuxServerConnection {
     /// stream: `completion` runs on the routing queue before the next line
     /// is routed. It must be formed outside the main actor.
     func sendInStream(_ command: String, completion: @escaping @Sendable (_ lines: [String], _ isError: Bool) -> Void) {
+        flushInput()
         transport.send(command, completion: .inStream(completion))
     }
 
-    /// Type bytes into a pane. Hex avoids every quoting problem the raw
-    /// bytes would have on tmux's command parser.
-    func sendKeys(pane: String, bytes: Data) {
-        guard !bytes.isEmpty else { return }
-        send("send-keys -t \(pane) -H \(TmuxProtocol.hexKeyArguments(bytes))")
+    /// Type into a pane. Input from one main-actor turn goes out together
+    /// when the turn ends; there is no timer, so a lone keystroke is not
+    /// held back either (design m4).
+    func sendInput(_ inputs: [TmuxInput], pane: String) {
+        guard !inputs.isEmpty else { return }
+        for input in inputs {
+            pendingInput.append(input, pane: pane)
+        }
+        guard !isInputFlushScheduled else { return }
+        isInputFlushScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.flushInput()
+        }
     }
 
-    /// Create the sink for `pane` and route its `%output` there. The
-    /// surface's own output comes back as keystrokes for the pane, and
-    /// `onOverflow` goes to whoever attached it, the only party that can
-    /// repaint that pane. A pane already attached is refused: tmux feeds
-    /// one sink per pane, and two owners of it would close it under each
-    /// other.
+    private func flushInput() {
+        isInputFlushScheduled = false
+        guard !pendingInput.isEmpty else { return }
+        for command in pendingInput.drain() {
+            transport.send(command, completion: nil)
+        }
+    }
+
+    /// Tell tmux the colors `pane`'s programs should see, once both the
+    /// server's version and the colors are known.
+    private func reportColors(toPane pane: String) {
+        guard let version, TmuxColorReport.isSupported(by: version), let terminalColors else { return }
+        for command in TmuxColorReport.commands(pane: pane, colors: terminalColors) {
+            send(command) { lines, isError in
+                guard isError else { return }
+                log.error("color report refused: \(lines.joined(separator: " "), privacy: .private)")
+            }
+        }
+    }
+
+    /// Create the sink for `pane` and route its `%output` there. What the
+    /// surface still writes (mouse and focus reports; keys arrive through
+    /// `sendInput`) goes to the pane as bytes, and `onOverflow` goes to
+    /// whoever attached it, the only party that can repaint that pane. A
+    /// pane already attached is refused: tmux feeds one sink per pane, and
+    /// two owners of it would close it under each other.
     func attachPane(
         _ pane: String,
         limit: Int = TmuxPaneSink.defaultLimit,
@@ -164,11 +221,12 @@ final class TmuxServerConnection {
         let sink = try TmuxPaneSink(
             queue: transport.queue,
             limit: limit,
-            onSurfaceOutput: { [weak self] data in self?.sendKeys(pane: pane, bytes: data) },
+            onSurfaceOutput: { [weak self] data in self?.sendInput([.bytes(Array(data))], pane: pane) },
             onOverflow: onOverflow
         )
         sinks[pane] = sink
         transport.setSink(sink, forPane: pane)
+        reportColors(toPane: pane)
         return sink
     }
 

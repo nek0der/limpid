@@ -138,6 +138,11 @@ final class TmuxWindowMirror {
         panes[paneID]?.tmuxPane
     }
 
+    func sendInput(_ inputs: [TmuxInput], paneID: UUID) {
+        guard !isStopped, let pane = panes[paneID] else { return }
+        connection.sendInput(inputs, pane: pane.tmuxPane)
+    }
+
     /// Let go of a pane tmux has moved out of this window, before another
     /// mirror on the same connection attaches it. tmux answers `break-pane`
     /// before it announces our `%layout-change`, and the connection refuses

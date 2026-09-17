@@ -231,6 +231,21 @@ final class GhosttyApp {
         return String(cString: value)
     }
 
+    /// The default foreground and background `config` resolves to. A
+    /// config libghostty hands to the apprt has the light or dark theme
+    /// applied; the base config we load has the light one.
+    static func terminalColors(in config: ghostty_config_t) -> TerminalColors? {
+        func color(_ key: String) -> TerminalColors.RGB? {
+            var value = ghostty_config_color_s()
+            let didRead = key.withCString { pointer in
+                ghostty_config_get(config, &value, pointer, UInt(key.utf8.count))
+            }
+            return didRead ? TerminalColors.RGB(red: value.r, green: value.g, blue: value.b) : nil
+        }
+        guard let foreground = color("foreground"), let background = color("background") else { return nil }
+        return TerminalColors(foreground: foreground, background: background)
+    }
+
     static func scrollbarEnabled(in config: ghostty_config_t) -> Bool {
         configString(config, key: "scrollbar", defaultValue: "system") != "never"
     }

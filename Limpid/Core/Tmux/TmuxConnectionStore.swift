@@ -40,6 +40,10 @@ final class TmuxConnectionStore {
     /// nothing instead of spawning a shell. Released on `reconcile`.
     private var dormantSinks: [UUID: TmuxPaneSink] = [:]
     private let dormantQueue = DispatchQueue(label: "dev.limpid.tmux.dormant")
+    /// The colors every connection reports to its panes: those of the last
+    /// config libghostty resolved, which is where a light or dark switch
+    /// shows up. The first arrives while libghostty starts.
+    private(set) var terminalColors: TerminalColors?
 
     init(tmuxExecutable: String? = TmuxClientProbe.locateTmux()) {
         self.tmuxExecutable = tmuxExecutable
@@ -84,6 +88,7 @@ final class TmuxConnectionStore {
             guard let self, let connection else { return }
             dispatch(line, from: key, connection: connection)
         }
+        connection.terminalColors = terminalColors
         try connection.start()
         connections[key] = connection
         outputGates[key] = TmuxOutputGate()
@@ -114,6 +119,30 @@ final class TmuxConnectionStore {
     func mirrorGridResized(columns: Int, rows: Int, paneID: UUID) {
         guard let mirror = mirrors.values.first(where: { $0.shows(paneID: paneID) }) else { return }
         mirror.surfaceGridChanged(columns: columns, rows: rows, paneID: paneID)
+    }
+
+    /// A key typed into a mirror pane. A pane with no live mirror (dormant,
+    /// or its connection gone) has nowhere to send it.
+    func sendKey(_ event: TmuxKeyEvent, paneID: UUID) {
+        sendInput(TmuxKeyTranslator.inputs(for: event), paneID: paneID)
+    }
+
+    /// Text a binding or the surface's text entry point sent to a mirror pane.
+    func sendText(_ bytes: [UInt8], paneID: UUID) {
+        sendInput(TmuxKeyTranslator.inputs(forText: bytes), paneID: paneID)
+    }
+
+    private func sendInput(_ inputs: [TmuxInput], paneID: UUID) {
+        guard !inputs.isEmpty, let mirror = mirrors.values.first(where: { $0.shows(paneID: paneID) }) else { return }
+        mirror.sendInput(inputs, paneID: paneID)
+    }
+
+    func setTerminalColors(_ colors: TerminalColors) {
+        guard colors != terminalColors else { return }
+        terminalColors = colors
+        for connection in connections.values {
+            connection.terminalColors = colors
+        }
     }
 
     func mirror(for tabID: UUID) -> TmuxWindowMirror? {

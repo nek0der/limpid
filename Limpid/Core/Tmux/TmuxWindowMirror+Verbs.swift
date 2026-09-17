@@ -86,6 +86,39 @@ extension TmuxWindowMirror {
         )
     }
 
+    /// Paste `text` into the pane as a tmux buffer (`TmuxPasteBuffer`).
+    /// The file is removed as soon as tmux has read it, or when the
+    /// command fails, which includes the connection ending first. A failed
+    /// paste deletes the buffer, since `-d` only deletes it on success;
+    /// when the load failed too there is no buffer, and tmux's refusal of
+    /// the delete is not read.
+    func paste(_ text: String, paneID: UUID, directory: URL = TmuxPasteBuffer.defaultDirectory) {
+        guard let pane = tmuxPane(for: paneID) else { return }
+        let failure = String(localized: "Couldn't paste into the pane")
+        let bufferName = TmuxPasteBuffer.bufferName()
+        let file: URL
+        do {
+            file = try TmuxPasteBuffer.writeFile(text, in: directory, name: bufferName)
+        } catch {
+            log.error("paste file not written: \(String(describing: error), privacy: .public)")
+            onCommandFailed?(failure)
+            return
+        }
+        let commands = TmuxPasteBuffer.commands(bufferName: bufferName, file: file, pane: pane)
+        connection.send(commands.load) { lines, isError in
+            // Already read, or never going to be: the file has no further use.
+            try? FileManager.default.removeItem(at: file)
+            if isError {
+                log.error("load-buffer refused: \(lines.joined(separator: " "), privacy: .private)")
+            }
+        }
+        connection.send(commands.paste) { [weak self] lines, isError in
+            guard isError, let self else { return }
+            connection.send(TmuxPasteBuffer.deleteCommand(bufferName: bufferName))
+            reportFailure(lines, message: failure)
+        }
+    }
+
     // MARK: - Plumbing
 
     private func run(_ command: String, failure: String) {

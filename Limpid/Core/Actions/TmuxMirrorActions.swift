@@ -1,7 +1,7 @@
 // TmuxMirrorActions.swift
-// Limpid — opens a tab that mirrors one tmux window.
+// Limpid — opens a tab that mirrors one tmux window, and the actions on its panes that need more than the mirror.
 
-import Foundation
+import AppKit
 import OSLog
 
 private let log = Logger.limpid("tmux.mirror")
@@ -131,5 +131,35 @@ enum TmuxMirrorActions {
             return
         }
         toastCenter?.show(ToastItem(message: String(localized: "A tmux pane can only move between windows of its own session"), undo: nil))
+    }
+
+    /// Paste the clipboard into a mirror pane through tmux. A paste that
+    /// could run lines as commands asks first, on the sheet an ordinary
+    /// pane uses; the rule is stricter here (`TmuxPasteBuffer`). Without a
+    /// sheet to ask on, such a paste is not sent.
+    static func paste(
+        into paneID: UUID,
+        view: SurfaceView,
+        session: WindowSession,
+        store: TmuxConnectionStore?,
+        toastCenter: ToastCenter?,
+        pasteboard: NSPasteboard = .general,
+        confirmation: ClipboardConfirmationCoordinator? = ClipboardConfirmationCoordinator.shared
+    ) {
+        guard let text = pasteboard.string(forType: .string), !text.isEmpty,
+              let tab = session.tab(containing: paneID)
+        else { return }
+        guard text.utf8.count <= TmuxPasteBuffer.byteLimit else {
+            toastCenter?.show(ToastItem(message: String(localized: "The clipboard is too large to paste into a tmux pane"), undo: nil))
+            return
+        }
+        guard let mirror = PaneActions.liveMirror(for: tab, in: store, toastCenter: toastCenter) else { return }
+        guard TmuxPasteBuffer.needsConfirmation(text) else {
+            mirror.paste(text, paneID: paneID)
+            return
+        }
+        confirmation?.enqueueMirrorPaste(contents: text, view: view) { [weak mirror] in
+            mirror?.paste(text, paneID: paneID)
+        }
     }
 }

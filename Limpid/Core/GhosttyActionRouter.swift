@@ -51,6 +51,13 @@ enum GhosttyEvent {
     /// only for a surface created with a descriptor, after the resize has
     /// been applied, so bytes written from then on are parsed at this size.
     case mirrorResized(SurfaceView, columns: Int, rows: Int)
+    /// A key a mirror surface handed over instead of encoding it.
+    case mirrorKey(SurfaceView, TmuxKeyEvent)
+    /// Text a mirror surface handed over instead of writing it.
+    case mirrorText(SurfaceView, bytes: [UInt8])
+    /// libghostty resolved a config for the app or a surface, with the
+    /// light or dark theme applied; these are its default colors.
+    case terminalColorsChanged(TerminalColors)
     /// Fired from `GhosttyApp.closeSurfaceCallback` (not the action
     /// callback). Lives in the same enum so all libghostty-driven
     /// session mutations flow through a single dispatch point.
@@ -201,6 +208,36 @@ enum GhosttyActionRouter {
             guard let view = surfaceView(from: target) else { return nil }
             let payload = action.action.mirror_resized
             return .mirrorResized(view, columns: Int(payload.columns), rows: Int(payload.rows))
+
+        case GHOSTTY_ACTION_MIRROR_KEY:
+            guard let view = surfaceView(from: target) else { return nil }
+            let payload = action.action.mirror_key
+            // Copied here: the text is only valid during this callback.
+            return .mirrorKey(view, TmuxKeyEvent(
+                key: payload.key,
+                mods: payload.mods.rawValue,
+                text: payload.utf8.map { String(cString: $0) } ?? "",
+                unshiftedCodepoint: payload.unshifted_codepoint,
+                isAltAlt: payload.alt_is_alt,
+                isComposing: payload.composing
+            ))
+
+        case GHOSTTY_ACTION_MIRROR_TEXT:
+            guard let view = surfaceView(from: target) else { return nil }
+            let payload = action.action.mirror_text
+            let bytes: [UInt8] = if let text = payload.text, payload.len > 0 {
+                Array(UnsafeRawBufferPointer(start: text, count: Int(payload.len)))
+            } else {
+                []
+            }
+            return .mirrorText(view, bytes: bytes)
+
+        case GHOSTTY_ACTION_CONFIG_CHANGE:
+            // Read here: the config is only valid during this callback.
+            guard let config = action.action.config_change.config,
+                  let colors = GhosttyApp.terminalColors(in: config)
+            else { return nil }
+            return .terminalColorsChanged(colors)
 
         case GHOSTTY_ACTION_COMMAND_FINISHED:
             guard let view = surfaceView(from: target) else { return nil }

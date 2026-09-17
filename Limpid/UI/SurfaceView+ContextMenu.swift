@@ -199,8 +199,7 @@ extension SurfaceView: NSMenuItemValidation {
             return ghostty_surface_has_selection(surface)
         // A mirror tab does not close panes (`TabCapabilities.canClosePane`);
         // the item stays in the menu, disabled, so the list keeps its shape.
-        // Paste stays enabled on purpose: `paste(_:)` refuses it with a toast,
-        // and a disabled Edit-menu item would swallow Command-V before that.
+        // Paste stays enabled: `paste(_:)` sends a mirror pane's paste to tmux.
         case #selector(closePaneFromMenu(_:)):
             return surface != nil && !isMirror
         case #selector(paste(_:)),

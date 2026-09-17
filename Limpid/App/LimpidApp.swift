@@ -171,15 +171,6 @@ final class AppState {
         // render under the OS appearance and then snap.
         Self.applyColorScheme(settingsStore.settings.appearance.colorScheme)
 
-        do {
-            let ghosttyApp = try GhosttyApp(settings: settingsStore.settings)
-            self.ghosttyApp = ghosttyApp
-            settingsStore.ghosttyConfigDiagnostics = ghosttyApp.userConfigDiagnostics
-        } catch {
-            log.fault("GhosttyApp init failed: \(String(describing: error), privacy: .public)")
-            self.ghosttyApp = nil
-        }
-
         let store = SessionStore()
         self.store = store
 
@@ -269,13 +260,34 @@ final class AppState {
         }
         delegate.install()
 
-        let coordinator = makeGhosttyEventCoordinator()
+        // The event sink goes in before libghostty starts: `GhosttyApp`
+        // resolves the config for the launch appearance while it boots and
+        // announces it once, and the tmux store takes its colors from that.
+        let coordinator = GhosttyEventCoordinator(
+            session: session,
+            registry: registry,
+            notificationManager: notificationManager,
+            bellFeaturesProvider: { [settingsStore] in
+                BellFeatures.forAction(settingsStore.settings.terminal.bellAction)
+            },
+            secureInputManager: registry.secureInputManager,
+            attention: attention
+        )
         coordinator.tmuxStore = tmuxStore
-        syncSecureInputPreference(from: ghosttyApp)
         self.eventCoordinator = coordinator
         GhosttyActionRouter.sink = { [weak coordinator] event in
             coordinator?.dispatch(event)
         }
+        do {
+            let ghosttyApp = try GhosttyApp(settings: settingsStore.settings)
+            self.ghosttyApp = ghosttyApp
+            coordinator.ghosttyApp = ghosttyApp
+            settingsStore.ghosttyConfigDiagnostics = ghosttyApp.userConfigDiagnostics
+        } catch {
+            log.fault("GhosttyApp init failed: \(String(describing: error), privacy: .public)")
+            self.ghosttyApp = nil
+        }
+        syncSecureInputPreference(from: ghosttyApp)
         self.dockBadgeSync = DockBadgeSync(
             historyStore: historyStore,
             notificationManager: notificationManager

@@ -51,6 +51,16 @@
         }
       }
     },
+    "Couldn't paste into the pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインに貼り付けできませんでした"
+          }
+        }
+      }
+    },
     "Couldn't resize the pane": {
       "localizations": {
         "ja": {
@@ -4034,16 +4044,6 @@
         }
       }
     },
-    "Paste is not available in a pane opened from tmux": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "tmux から開いたペインには貼り付けできません"
-          }
-        }
-      }
-    },
     "Paste this text?": {
       "localizations": {
         "ja": {
@@ -5257,6 +5257,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ターミナル"
+          }
+        }
+      }
+    },
+    "The clipboard is too large to paste into a tmux pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリップボードの内容が大きすぎるため、tmux のペインに貼り付けできません"
           }
         }
       }

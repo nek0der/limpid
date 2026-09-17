@@ -27,8 +27,6 @@ struct TabCapabilities: Equatable {
     var canEqualizeSubtree: Bool
     /// Close the focused pane (Command-W).
     var canClosePane: Bool
-    /// Paste from the clipboard into a pane.
-    var canPaste: Bool
     /// Drop a file onto a pane to type its path.
     var canDropFile: Bool
     /// Receive a pane dragged out of another tab.
@@ -49,7 +47,6 @@ struct TabCapabilities: Equatable {
                 canEqualize: true,
                 canEqualizeSubtree: true,
                 canClosePane: true,
-                canPaste: true,
                 canDropFile: true,
                 canAcceptForeignPane: true,
                 canOpenReview: true,
@@ -63,7 +60,6 @@ struct TabCapabilities: Equatable {
                 canEqualize: true,
                 canEqualizeSubtree: false,
                 canClosePane: false,
-                canPaste: false,
                 canDropFile: false,
                 canAcceptForeignPane: false,
                 canOpenReview: false,

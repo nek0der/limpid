@@ -13,7 +13,10 @@ private let log = Logger.limpid("ghostty.events")
 
 @MainActor
 final class GhosttyEventCoordinator {
-    private weak var ghosttyApp: GhosttyApp?
+    /// Installed by `AppState` once libghostty has started. The coordinator
+    /// exists first so it receives the config libghostty announces while
+    /// starting; the soft reloads that need the app cannot arrive before.
+    weak var ghosttyApp: GhosttyApp?
     private weak var session: WindowSession?
     private let registry: any SurfaceViewProviding
     private let notificationManager: LimpidNotificationManager
@@ -40,7 +43,6 @@ final class GhosttyEventCoordinator {
     private var pendingBellFlashes: [UUID: Task<Void, Never>] = [:]
 
     init(
-        ghosttyApp: GhosttyApp?,
         session: WindowSession,
         registry: any SurfaceViewProviding,
         notificationManager: LimpidNotificationManager,
@@ -48,7 +50,6 @@ final class GhosttyEventCoordinator {
         secureInputManager: SecureInputManager,
         attention: AttentionState? = nil
     ) {
-        self.ghosttyApp = ghosttyApp
         self.session = session
         self.registry = registry
         self.notificationManager = notificationManager
@@ -94,6 +95,16 @@ final class GhosttyEventCoordinator {
             if let paneID = registry.id(for: view) {
                 tmuxStore?.mirrorGridResized(columns: columns, rows: rows, paneID: paneID)
             }
+        case let .mirrorKey(view, event):
+            if let paneID = registry.id(for: view) {
+                tmuxStore?.sendKey(event, paneID: paneID)
+            }
+        case let .mirrorText(view, bytes):
+            if let paneID = registry.id(for: view) {
+                tmuxStore?.sendText(bytes, paneID: paneID)
+            }
+        case let .terminalColorsChanged(colors):
+            tmuxStore?.setTerminalColors(colors)
         case let .closeSurface(view, _):
             handleCloseSurface(view: view)
         case let .mouseOverLink(view, url):

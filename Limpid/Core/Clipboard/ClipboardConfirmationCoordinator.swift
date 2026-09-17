@@ -51,6 +51,9 @@ struct PendingClipboardRequest: Identifiable {
     /// Opaque libghostty request state. `nonisolated(unsafe)` because it
     /// crosses the C ABI — passed straight back to the completion call.
     nonisolated(unsafe) let state: UnsafeMutableRawPointer?
+    /// A tmux mirror pane's paste, which libghostty never sees and so has
+    /// no request state: Allow runs this instead of completing a request.
+    var mirrorPaste: (@MainActor () -> Void)?
 
 }
 
@@ -125,6 +128,23 @@ final class ClipboardConfirmationCoordinator {
         )
     }
 
+    /// Ask before a tmux mirror pane pastes `contents`. Same one-at-a-time
+    /// rule as a libghostty request; a paste that arrives while a sheet is
+    /// up is dropped, and there is nothing to answer for it.
+    func enqueueMirrorPaste(contents: String, view: SurfaceView, paste: @escaping @MainActor () -> Void) {
+        guard reviewPasteLedger.enqueue(receipt: nil) else {
+            log.notice("mirror paste dropped: another prompt is already up")
+            return
+        }
+        pending = PendingClipboardRequest(
+            kind: .unsafePaste,
+            contents: contents,
+            view: view,
+            state: nil,
+            mirrorPaste: paste
+        )
+    }
+
     /// Tell review that a paste it started never reached the terminal.
     ///
     /// The paste action answers as soon as the request begins, so review has
@@ -155,7 +175,13 @@ final class ClipboardConfirmationCoordinator {
         pending = nil
         let surface = req.view?.surface
         reviewPasteLedger.allow(paneIsAlive: surface != nil || (req.kind == .osc52Write && req.state == nil))
-        if req.kind == .osc52Write, req.state == nil {
+        if let mirrorPaste = req.mirrorPaste {
+            if surface != nil {
+                mirrorPaste()
+            } else {
+                log.notice("mirror paste skipped: the pane closed before the user answered")
+            }
+        } else if req.kind == .osc52Write, req.state == nil {
             NSPasteboard.general.declareTypes([.string], owner: nil)
             NSPasteboard.general.setString(req.contents, forType: .string)
         } else if let surface {

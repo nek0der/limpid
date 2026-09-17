@@ -18,11 +18,12 @@ import AppKit
 import GhosttyKit
 
 extension Notification.Name {
-    /// Posted when a paste is refused because the pane mirrors a tmux pane.
-    /// `object` is the refusing `SurfaceView`, so the window whose registry
-    /// owns it is the one that says so. Defined here rather than beside the
-    /// other Limpid names because nothing outside this file posts it.
-    static let limpidMirrorPasteRefused = Notification.Name("dev.limpid.mirrorPasteRefused")
+    /// Posted when the user pastes into a pane that mirrors a tmux pane.
+    /// `object` is the `SurfaceView`, so the window whose registry owns it
+    /// is the one that pastes: it holds the tmux store and the toast center
+    /// this view cannot reach. Defined here rather than beside the other
+    /// Limpid names because nothing outside this file posts it.
+    static let limpidMirrorPasteRequested = Notification.Name("dev.limpid.mirrorPasteRequested")
 }
 
 extension SurfaceView {
@@ -51,12 +52,12 @@ extension SurfaceView {
     /// so libghostty's clipboard plumbing — including its prompt for
     /// suspicious paste content — still runs.
     @objc func paste(_ sender: Any?) {
-        // Paste is one of the verbs a mirror tab does not carry
-        // (`TabCapabilities.canPaste`). We refuse here rather than in the
-        // SwiftUI layer because AppKit hands Command-V straight to the focused
+        // A mirror pane pastes through tmux, not libghostty: only tmux knows
+        // whether the program there wants the paste bracketed. We branch
+        // here because AppKit hands Command-V straight to the focused
         // surface, which knows it mirrors tmux but not which tab it sits in.
         guard !isMirror else {
-            NotificationCenter.default.post(name: .limpidMirrorPasteRefused, object: self)
+            NotificationCenter.default.post(name: .limpidMirrorPasteRequested, object: self)
             return
         }
         guard let surface else { return }

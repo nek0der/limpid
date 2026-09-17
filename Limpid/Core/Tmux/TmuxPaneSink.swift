@@ -9,8 +9,8 @@ private let log = Logger.limpid("tmux.sink")
 
 /// The host side of one pane's `socketpair(2)`. `surfaceFd` is handed to
 /// libghostty's mirror backend at surface creation; everything written
-/// here appears as terminal output there, and everything the surface would
-/// have written to a pty — key encodings, the VT parser's own replies —
+/// here appears as terminal output there, and what the surface still writes
+/// back — mouse and focus reports; keys reach tmux as actions instead —
 /// arrives on `onSurfaceOutput`.
 ///
 /// Output is only ever the newest state of the pane. Whenever the screen is
