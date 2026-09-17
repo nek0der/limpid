@@ -5345,6 +5345,26 @@
         }
       }
     },
+    "Couldn't open “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」を開けませんでした"
+          }
+        }
+      }
+    },
+    "Couldn't open “%@”: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」を開けませんでした: %2$@"
+          }
+        }
+      }
+    },
     "Needs tmux %@ or later": {
       "localizations": {
         "ja": {

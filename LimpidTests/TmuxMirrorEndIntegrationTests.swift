@@ -75,6 +75,22 @@ private final class EndHarness {
         return mirror
     }
 
+    /// Open `window` as a tab over `binding`, which tmux is expected to
+    /// refuse, and return the tab the open created. Nothing waits for the
+    /// attach: it never succeeds.
+    func openRefused(window: String, binding: TmuxBinding) throws -> UUID {
+        let target = try TmuxMirrorTarget(
+            binding: binding,
+            windowID: window,
+            windowName: server.format("#{window_name}", target: window),
+            activePaneID: server.paneID(inWindow: window),
+            serverVersion: TmuxProtocol.parseVersion(server.format("#{version}", target: window))
+        )
+        let before = Set(session.tabs.map(\.id))
+        #expect(TmuxMirrorActions.open(target, session: session, store: store, registry: registry, secureInput: nil))
+        return try #require(session.tabs.map(\.id).first { !before.contains($0) })
+    }
+
     func windowNotice(_ mirror: TmuxWindowMirror) -> String {
         let name = "\(mirror.sessionName):\(mirror.windowName)"
         return String(localized: "The tmux window “\(name)” was closed")
@@ -275,6 +291,93 @@ struct TmuxMirrorEndIntegrationTests {
         #expect(connection.sinks.isEmpty)
         #expect(harness.store.liveMirror(for: other.tabID) === other)
         #expect(await waitUntil { harness.controlClientCount() == 1 })
+    }
+
+    /// tmux 3.7c answers an attach to a missing session with an attach
+    /// block ending in `%error`, then `%exit`.
+    @Test("an attach tmux refuses closes the new tab with one open-failure notice, not a session-ended one")
+    func refusedAttach_closesTabWithOpenFailureNotice() async throws {
+        let harness = try EndHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let binding = TmuxBinding(socketPath: harness.server.socketPath, sessionID: "$99", sessionName: "t")
+
+        let tabID = try harness.openRefused(window: window, binding: binding)
+
+        #expect(await waitUntil { harness.session.tab(tabID) == nil })
+        let name = try "t:\(harness.server.format("#{window_name}", target: window))"
+        #expect(harness.notices == [
+            TmuxConnectionStore.openFailureNotice(name: name, reason: "can't find session: $99")
+        ])
+        #expect(!harness.notices.contains(harness.sessionNotice("t")))
+        // Nothing was shown, so there is nothing to reopen.
+        #expect(harness.session.closedTabStack.isEmpty)
+        #expect(harness.store.mirrors.isEmpty)
+        #expect(harness.store.connections.isEmpty)
+        // A refusal is not a session end: the session was never asked about.
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(harness.presences.answers.isEmpty)
+        #expect(harness.notices.count == 1)
+    }
+
+    /// A socket path that is not a socket makes the client give up on
+    /// stderr before speaking the protocol, so the connection ends at EOF
+    /// with no reason of tmux's.
+    @Test("a client that ends before any attach block closes the new tab with the notice that carries no reason")
+    func unreachableServer_closesTabWithOpenFailureNotice() async throws {
+        let harness = try EndHarness()
+        defer { harness.tearDown() }
+        let window = try #require(harness.server.windowIDs().first)
+        let notSocket = harness.server.directory.appendingPathComponent("plain")
+        try Data().write(to: notSocket)
+        let binding = TmuxBinding(socketPath: notSocket.path, sessionID: "$0", sessionName: "t")
+
+        let tabID = try harness.openRefused(window: window, binding: binding)
+
+        #expect(await waitUntil { harness.session.tab(tabID) == nil })
+        let name = try "t:\(harness.server.format("#{window_name}", target: window))"
+        #expect(harness.notices == [TmuxConnectionStore.openFailureNotice(name: name, reason: nil)])
+        #expect(harness.session.closedTabStack.isEmpty)
+        #expect(harness.store.connections.isEmpty)
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(harness.presences.answers.isEmpty)
+        #expect(harness.notices.count == 1)
+    }
+
+    @Test("a client that cannot be started closes the new tab, says so once, and reports the open as failed")
+    func unstartableClient_closesTabAndReturnsFalse() {
+        let session = WindowSession()
+        let store = TmuxConnectionStore(tmuxExecutable: nil)
+        session.onTabsChanged = { [weak session, store] in
+            guard let session else { return }
+            store.reconcile(tabs: session.tabs)
+        }
+        var notices: [String] = []
+        store.onNotice = { notices.append($0) }
+        let binding = TmuxBinding(socketPath: "/nonexistent/sock", sessionID: "$0", sessionName: "t")
+        let target = TmuxMirrorTarget(
+            binding: binding,
+            windowID: "@0",
+            windowName: "sh",
+            activePaneID: "%0",
+            serverVersion: nil
+        )
+        let before = session.tabs.map(\.id)
+
+        let isOpened = TmuxMirrorActions.open(
+            target,
+            session: session,
+            store: store,
+            registry: RecordingSurfaceRegistry(),
+            secureInput: nil
+        )
+
+        #expect(!isOpened)
+        #expect(session.tabs.map(\.id) == before)
+        #expect(notices == [TmuxConnectionStore.openFailureNotice(name: "t:sh", reason: nil)])
+        #expect(session.closedTabStack.isEmpty)
+        #expect(store.mirrors.isEmpty)
+        #expect(store.connections.isEmpty)
     }
 
     private static func binding(of mirror: TmuxWindowMirror, in harness: EndHarness) -> TmuxBinding? {

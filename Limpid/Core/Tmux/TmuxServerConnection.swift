@@ -38,6 +38,11 @@ final class TmuxServerConnection {
 
     let target: Target
     private(set) var state: State = .connecting
+    /// Whether tmux ever accepted the attach. `.exited` alone cannot tell
+    /// a refused attach from a session that ended later, and only the
+    /// latter means the session may be gone; a refusal says nothing about
+    /// the session beyond that we never reached it.
+    private(set) var hasAttached = false
     /// Every notification that is not a reply marker or pane output:
     /// `%layout-change`, `%window-pane-changed`, `%exit`, and the rest.
     var onNotification: ((TmuxControlLine) -> Void)?
@@ -322,6 +327,9 @@ final class TmuxServerConnection {
         }
         guard new != state else { return }
         state = new
+        if new == .attached {
+            hasAttached = true
+        }
         switch new {
         case .connecting, .attached:
             log.notice("state \(String(describing: new), privacy: .public)")

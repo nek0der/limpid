@@ -15,8 +15,9 @@ enum TmuxMirrorActions {
     /// The tab is written before the connection is taken: every write to
     /// `session.tabs` has the store release connections no mirror uses,
     /// and the mirror can only be registered once its tab id exists. A
-    /// server that refuses us leaves a mirror tab with a dormant pane,
-    /// which is the state a lost connection produces too.
+    /// client that cannot be started, or that tmux refuses later, closes
+    /// that tab again with one notice (`TmuxConnectionStore`): nothing
+    /// would ever fill it.
     ///
     /// A window a live tab already mirrors is not opened twice; that tab is
     /// brought forward instead, because each tmux pane feeds one sink.
@@ -46,6 +47,10 @@ enum TmuxMirrorActions {
             connection = try store.connection(for: target.binding)
         } catch {
             log.error("cannot mirror \(target.displayName, privacy: .private): \(String(describing: error), privacy: .public)")
+            // No tmux spoke here, so there is no reason of tmux's to show;
+            // the log keeps the system's.
+            TabActions.closeTab(session, registry: registry, tabID: tab.id, confirm: false, isReopenable: false)
+            store.onNotice?(TmuxConnectionStore.openFailureNotice(name: target.displayName, reason: nil))
             return false
         }
         let mirror = TmuxWindowMirror(

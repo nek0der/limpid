@@ -313,12 +313,22 @@ final class TmuxConnectionStore {
     /// their tabs close depends on the session, which only the server can
     /// say. A connection no mirror uses ended because we stopped it, after
     /// its tabs had already gone, and needs nothing more.
+    ///
+    /// A connection tmux never attached did not lose a session, so it
+    /// skips the session check: a session that was never reached cannot
+    /// be reported as ended, and one that exists under another id would
+    /// leave the tabs disconnected with nothing ever shown in them.
     private func connectionEnded(_ connection: TmuxServerConnection) {
         let affected = mirrors.values.filter { $0.connection === connection }
         for mirror in affected {
             mirror.connectionEnded()
         }
-        guard !affected.isEmpty, let tmuxExecutable else { return }
+        guard !affected.isEmpty else { return }
+        guard connection.hasAttached else {
+            attachFailed(affected, connection: connection)
+            return
+        }
+        guard let tmuxExecutable else { return }
         let target = connection.target
         Task { [weak self, sessionPresence] in
             let presence = await sessionPresence(tmuxExecutable, target.socketPath, target.sessionID)
@@ -340,6 +350,34 @@ final class TmuxConnectionStore {
             mirror.closeTab()
         }
         onNotice?(String(localized: "The tmux session “\(first.sessionName)” ended"))
+    }
+
+    /// The tabs waiting on a connection tmux refused close, with one
+    /// notice: they never showed anything, and a mirror has no reconnect
+    /// that could fill them later. They are not kept for reopening, which
+    /// would only repeat the refusal. tmux states its reason in the attach
+    /// block's `%error`; a client that could not reach the server at all
+    /// ends without one.
+    private func attachFailed(_ affected: [TmuxWindowMirror], connection: TmuxServerConnection) {
+        guard let first = affected.first else { return }
+        var reason: String?
+        if case let .exited(exitReason) = connection.state {
+            reason = exitReason
+        }
+        log.notice("attach failed session=\(connection.target.sessionID, privacy: .public)")
+        for mirror in affected {
+            mirror.closeTab()
+        }
+        onNotice?(Self.openFailureNotice(name: "\(first.sessionName):\(first.windowName)", reason: reason))
+    }
+
+    /// What the user reads when a mirror tab could not be opened. `name`
+    /// is `session:window`; `reason` is tmux's own words, left untranslated.
+    static func openFailureNotice(name: String, reason: String?) -> String {
+        guard let reason, !reason.isEmpty else {
+            return String(localized: "Couldn't open “\(name)”")
+        }
+        return String(localized: "Couldn't open “\(name)”: \(reason)")
     }
 
     // MARK: - Output gate
