@@ -68,6 +68,127 @@ enum TmuxMirrorActions {
         return true
     }
 
+    /// What the user chose about clients another app has attached.
+    enum OtherClientsChoice: Equatable {
+        case detachAndOpen
+        case openWithoutDetaching
+        case cancel
+    }
+
+    // swiftlint:disable function_parameter_count
+    /// Open `target` the way the palette does (design D7). The clients
+    /// already attached to its session are found first. Those running in a
+    /// Limpid pane are detached, which returns the pane to its shell with
+    /// its scrollback; for any other app's, the user chooses, because tmux
+    /// fits a window to every client showing it and one left attached can
+    /// shrink the tab's picture.
+    ///
+    /// A window a tab already shows is brought forward at once, with
+    /// nothing asked of tmux. `limpidTTYs` and `confirm` default to this
+    /// app's panes and an alert; tests pass their own.
+    ///
+    /// Returns the task that finishes opening, or nil when the tab was
+    /// handled without waiting.
+    @discardableResult
+    static func openFromPalette(
+        _ target: TmuxMirrorTarget,
+        session: WindowSession,
+        store: TmuxConnectionStore,
+        registry: any SurfaceViewProviding,
+        secureInput: SecureInputManager?,
+        toastCenter: ToastCenter?,
+        limpidTTYs: Set<String>? = nil,
+        confirm: @escaping @MainActor (TmuxMirrorTarget, [TmuxAttachedClient]) -> OtherClientsChoice = askAboutOtherClients
+    ) -> Task<Void, Never>? {
+        let finish: () -> Void = {
+            open(target, session: session, store: store, registry: registry, secureInput: secureInput, toastCenter: toastCenter)
+        }
+        // `open` makes the same check; answering here keeps a window that is
+        // already on screen from waiting on a child process.
+        guard store.liveMirror(showing: target.windowID, of: target.binding) == nil,
+              let tmuxPath = store.tmuxExecutable
+        else {
+            finish()
+            return nil
+        }
+        let ttys = limpidTTYs ?? paneTTYs(session: session, registry: registry)
+        let ownPIDs = store.ownControlPIDs
+        let binding = target.binding
+        return Task {
+            let found = await findClientsDetachingLimpidPanes(
+                tmuxPath: tmuxPath,
+                binding: binding,
+                ownControlPIDs: ownPIDs,
+                limpidTTYs: ttys
+            )
+            if !found.otherApps.isEmpty {
+                switch confirm(target, found.otherApps) {
+                case .cancel:
+                    return
+                case .openWithoutDetaching:
+                    break
+                case .detachAndOpen:
+                    await detach(found.otherApps, tmuxPath: tmuxPath, socketPath: binding.socketPath)
+                }
+            }
+            finish()
+        }
+    }
+
+    // swiftlint:enable function_parameter_count
+
+    /// The alert behind `openFromPalette`'s `confirm`.
+    static func askAboutOtherClients(_ target: TmuxMirrorTarget, _: [TmuxAttachedClient]) -> OtherClientsChoice {
+        let name = target.binding.sessionName
+        let choice = LimpidConfirm.runThreeWay(
+            title: String(localized: "“\(name)” is already attached elsewhere"),
+            message: String(localized: """
+            tmux fits a window to every client that shows it. While the others stay attached, \
+            this tab may show the window smaller. Detaching them ends what they show of this session.
+            """),
+            primaryLabel: String(localized: "Detach and Open"),
+            alternateLabel: String(localized: "Open Without Detaching")
+        )
+        switch choice {
+        case .primary: return .detachAndOpen
+        case .alternate: return .openWithoutDetaching
+        case .cancel: return .cancel
+        }
+    }
+
+    private static func paneTTYs(session: WindowSession, registry: any SurfaceViewProviding) -> Set<String> {
+        Set(session.tabs.flatMap { $0.splitTree.allLeafIDs() }.compactMap { registry.view(for: $0)?.ttyName })
+    }
+
+    /// Dispatch rather than a detached task: these block on child
+    /// processes, and a blocked cooperative-pool thread starves the
+    /// runtime. The closures are formed in these nonisolated functions so
+    /// Dispatch never runs one that carries main-actor isolation.
+    private nonisolated static func findClientsDetachingLimpidPanes(
+        tmuxPath: String,
+        binding: TmuxBinding,
+        ownControlPIDs: Set<pid_t>,
+        limpidTTYs: Set<String>
+    ) async -> TmuxAttachedClients {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let clients = TmuxAttachedClients.probe(tmuxPath: tmuxPath, binding: binding) ?? []
+                let found = TmuxAttachedClients.classify(clients, ownControlPIDs: ownControlPIDs, limpidTTYs: limpidTTYs)
+                TmuxAttachedClients.detach(found.limpidPanes, tmuxPath: tmuxPath, socketPath: binding.socketPath)
+                continuation.resume(returning: found)
+            }
+        }
+    }
+
+    private nonisolated static func detach(_ clients: [TmuxAttachedClient], tmuxPath: String, socketPath: String) async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                TmuxAttachedClients.detach(clients, tmuxPath: tmuxPath, socketPath: socketPath)
+                continuation.resume()
+            }
+        }
+    }
+
     // swiftlint:disable function_parameter_count
     /// Move a pane into a tab of its own. For a mirror tab this is
     /// `break-pane`: tmux gives the pane a new window, and a mirror tab is

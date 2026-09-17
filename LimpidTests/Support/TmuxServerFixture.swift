@@ -113,3 +113,58 @@ func waitUntil(_ timeout: Duration = .seconds(3), _ condition: () -> Bool) async
     }
     return condition()
 }
+
+/// A terminal client attached to a fixture's session through a pty, the way
+/// a shell in a terminal app attaches. `tty` is what tmux lists as
+/// `#{client_tty}` and `#{client_name}`.
+///
+/// No controlling terminal is set up: `tmux attach` only needs its standard
+/// streams to be a terminal, which the pty's secondary side is.
+final class TmuxPTYClient {
+    let tty: String
+    private let process = Process()
+    private let secondary: Int32
+    private let reader: DispatchSourceRead
+
+    init(fixture: TmuxServerFixture, session: String = "t") throws {
+        var primary: Int32 = -1
+        var secondary: Int32 = -1
+        try #require(openpty(&primary, &secondary, nil, nil, nil) == 0)
+        self.secondary = secondary
+        tty = try String(cString: #require(ttyname(secondary)))
+        // tmux writes a full screen on attach and redraws after that. Nobody
+        // reading the primary side would fill the pty and stall the client.
+        reader = DispatchSource.makeReadSource(fileDescriptor: primary, queue: .global())
+        reader.setEventHandler {
+            var buffer = [UInt8](repeating: 0, count: 16384)
+            _ = read(primary, &buffer, buffer.count)
+        }
+        reader.setCancelHandler { close(primary) }
+        reader.resume()
+
+        let stream = FileHandle(fileDescriptor: secondary, closeOnDealloc: false)
+        process.executableURL = URL(fileURLWithPath: fixture.executable)
+        process.arguments = ["-S", fixture.socketPath, "attach", "-t", session]
+        process.standardInput = stream
+        process.standardOutput = stream
+        process.standardError = stream
+        var environment = ProcessInfo.processInfo.environment
+        // Without a terminal type tmux refuses to open the terminal.
+        environment["TERM"] = "xterm-256color"
+        process.environment = environment
+        try process.run()
+    }
+
+    var isRunning: Bool {
+        process.isRunning
+    }
+
+    func stop() {
+        if process.isRunning {
+            process.terminate()
+            process.waitUntilExit()
+        }
+        reader.cancel()
+        close(secondary)
+    }
+}

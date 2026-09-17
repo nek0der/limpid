@@ -168,7 +168,7 @@ enum CommandPaletteActions {
             // The row is only listed when a store exists; a missing one
             // here is a wiring error, not a user-facing state.
             guard let tmuxStore else { break }
-            TmuxMirrorActions.open(
+            TmuxMirrorActions.openFromPalette(
                 target,
                 session: session,
                 store: tmuxStore,

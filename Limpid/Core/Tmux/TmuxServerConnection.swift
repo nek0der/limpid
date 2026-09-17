@@ -46,6 +46,17 @@ final class TmuxServerConnection {
 
     private let executable: String
     private var process: Process?
+
+    /// The pid tmux reports for this client as `#{client_pid}`, so a listing
+    /// of a session's clients can tell this connection apart from another
+    /// app's. Nil until `start` has spawned the client and once it has
+    /// exited: the system can hand a finished client's pid to another
+    /// process, whose client would then pass for ours.
+    var clientPID: pid_t? {
+        guard let process, process.isRunning else { return nil }
+        return process.processIdentifier
+    }
+
     /// Exists before `start` so commands sent early are held by it until
     /// the attach block closes.
     private let transport = TmuxControlTransport()

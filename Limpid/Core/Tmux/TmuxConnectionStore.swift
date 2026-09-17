@@ -192,6 +192,12 @@ final class TmuxConnectionStore {
         }
     }
 
+    /// The control clients this app started, as tmux lists them. A mirror
+    /// about to attach leaves these alone: they are this app's own.
+    var ownControlPIDs: Set<pid_t> {
+        Set(connections.values.compactMap(\.clientPID))
+    }
+
     func register(_ mirror: TmuxWindowMirror) {
         mirrors[mirror.tabID] = mirror
         gateOutput(for: Self.key(of: mirror))

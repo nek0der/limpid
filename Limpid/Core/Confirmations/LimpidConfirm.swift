@@ -41,4 +41,39 @@ enum LimpidConfirm {
         alert.window.level = .modalPanel
         return alert.runModal() == .alertFirstButtonReturn
     }
+
+    /// Which of three buttons the user picked.
+    enum ThreeWayChoice: Equatable {
+        case primary
+        case alternate
+        case cancel
+    }
+
+    /// Like `runDestructive`, with a second way to go ahead. `primaryLabel`
+    /// is the default (⏎); the cancel button takes Esc. Raised to the
+    /// modal-panel level for the same reason.
+    @MainActor
+    static func runThreeWay(
+        title: String,
+        message: String?,
+        primaryLabel: String,
+        alternateLabel: String,
+        cancelLabel: String = String(localized: "Cancel")
+    ) -> ThreeWayChoice {
+        let alert = NSAlert()
+        alert.messageText = title
+        if let message {
+            alert.informativeText = message
+        }
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: primaryLabel)
+        alert.addButton(withTitle: alternateLabel)
+        alert.addButton(withTitle: cancelLabel)
+        alert.window.level = .modalPanel
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return .primary
+        case .alertSecondButtonReturn: return .alternate
+        default: return .cancel
+        }
+    }
 }

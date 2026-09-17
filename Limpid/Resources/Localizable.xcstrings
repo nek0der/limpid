@@ -5305,6 +5305,46 @@
         }
       }
     },
+    "“%@” is already attached elsewhere": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」は既に他の場所で接続されています"
+          }
+        }
+      }
+    },
+    "tmux fits a window to every client that shows it. While the others stay attached, this tab may show the window smaller. Detaching them ends what they show of this session.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux はウィンドウを、それを表示しているすべてのクライアントに合わせます。他のクライアントが接続している間は、このタブでウィンドウが小さく表示されることがあります。外すと、それらでのこのセッションの表示は終わります。"
+          }
+        }
+      }
+    },
+    "Detach and Open": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外して開く"
+          }
+        }
+      }
+    },
+    "Open Without Detaching": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのまま開く"
+          }
+        }
+      }
+    },
     "Needs tmux %@ or later": {
       "localizations": {
         "ja": {
