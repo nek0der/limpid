@@ -352,6 +352,47 @@ struct CommandPaletteTests {
         #expect(items[1].statusLabel != nil)
     }
 
+    private static func target(version: String?, windowID: String = "@7") -> TmuxMirrorTarget {
+        TmuxMirrorTarget(
+            binding: TmuxBinding(socketPath: "/tmp/limpid-test/old", sessionID: "$3", sessionName: "old"),
+            windowID: windowID,
+            windowName: "w",
+            activePaneID: "%7",
+            serverVersion: version.flatMap(TmuxProtocol.parseVersion)
+        )
+    }
+
+    @Test func tmuxWindowItems_fromAServerTooOldToMirror_areListedDisabledWithTheVersionNeeded() {
+        let items = CommandPaletteCatalog.tmuxWindowItems(targets: [Self.target(version: "3.2a")]) { _ in false }
+        let item = items[0]
+        #expect(!item.isEnabled)
+        #expect(item.statusLabel == String(localized: "Needs tmux \("3.3") or later"))
+    }
+
+    /// An empty `#{version}` is what a server too old to have the variable
+    /// prints, so an unknown version is gated the same way.
+    @Test func tmuxWindowItems_withAnUnknownVersion_areDisabled() {
+        let item = CommandPaletteCatalog.tmuxWindowItems(targets: [Self.target(version: nil)]) { _ in false }[0]
+        #expect(!item.isEnabled)
+        #expect(item.statusLabel != nil)
+    }
+
+    @Test func tmuxWindowItems_atAndAboveTheMinimum_areEnabled() {
+        for version in ["3.3", "3.3a", "3.7c", "next-3.3", "4.0"] {
+            let item = CommandPaletteCatalog.tmuxWindowItems(targets: [Self.target(version: version)]) { _ in false }[0]
+            #expect(item.isEnabled, "version \(version)")
+            #expect(item.statusLabel == nil, "version \(version)")
+        }
+    }
+
+    /// Choosing a window a tab already shows brings that tab forward and
+    /// attaches nothing, so the version gate does not apply to it.
+    @Test func tmuxWindowItems_alreadyShownOnAnOldServer_staySelectable() {
+        let item = CommandPaletteCatalog.tmuxWindowItems(targets: [Self.target(version: "3.2a")]) { _ in true }[0]
+        #expect(item.isEnabled)
+        #expect(item.statusLabel == String(localized: LocalizedStringResource("palette.tmux.windowOpen", defaultValue: "Open")))
+    }
+
     @Test func applyFilter_findsTmuxWindowsThroughHiddenKeywords() throws {
         try withTempDir { dir in
             let state = tmuxState(settingsDirectory: dir)

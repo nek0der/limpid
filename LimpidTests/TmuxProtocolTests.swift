@@ -208,6 +208,15 @@ struct TmuxProtocolTests {
 
     // MARK: - Version
 
+    @Test("a version prints in the form tmux prints and parses back to itself")
+    func versionDescription_roundTripsThroughTheParser() throws {
+        for text in ["3.3", "3.3a", "3.7c", "next-3.4", "4.0"] {
+            let version = try #require(TmuxProtocol.parseVersion(text))
+            #expect(version.description == text)
+            #expect(TmuxProtocol.parseVersion(version.description) == version)
+        }
+    }
+
     @Test("release, patch-letter, and development version strings all parse and order correctly")
     func parseVersion_handlesTheThreeForms() throws {
         let v33a = try #require(TmuxProtocol.parseVersion("3.3a"))

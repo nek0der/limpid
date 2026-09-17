@@ -5305,6 +5305,16 @@
         }
       }
     },
+    "Needs tmux %@ or later": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux %@ 以降が必要"
+          }
+        }
+      }
+    },
     "The tmux session “%@” ended": {
       "localizations": {
         "ja": {

@@ -19,6 +19,18 @@ struct TmuxMirrorTarget: Equatable {
     var displayName: String {
         "\(binding.sessionName):\(windowName)"
     }
+
+    /// tmux 3.3 added the per-window form of `refresh-client -C`
+    /// (`@window:WxH`), which a mirror sends to size the window to its tab.
+    /// An older server rejects that form, so its windows are listed but
+    /// cannot be opened.
+    static let minimumVersion = TmuxVersion(major: 3, minor: 3, patch: nil, isDevelopment: false)
+
+    /// False for an unknown version as well as an old one: a server we
+    /// cannot place is not assumed to be new enough.
+    var isSupported: Bool {
+        serverVersion.map { $0 >= Self.minimumVersion } ?? false
+    }
 }
 
 enum TmuxMirrorTargetLister {

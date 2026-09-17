@@ -93,6 +93,11 @@ enum CommandPaletteCatalog {
     /// these are tmux windows. The verb stays searchable through hidden
     /// keywords, in English and in the UI language, so typing "tmux" or the
     /// localized verb still finds every window.
+    ///
+    /// A window on a server older than `TmuxMirrorTarget.minimumVersion`, or
+    /// one whose version is unknown, is still listed, disabled and labeled
+    /// with the version it needs, so the user learns why it will not open
+    /// instead of wondering where it went.
     static func tmuxWindowItems(
         targets: [TmuxMirrorTarget],
         isOpen: (TmuxMirrorTarget) -> Bool
@@ -100,8 +105,10 @@ enum CommandPaletteCatalog {
         let verb: LocalizedStringResource = "Open tmux Window in Tab"
         let verbs = Array(Set([englishString(verb), String(localized: verb)])).sorted()
         let openLabel = String(localized: LocalizedStringResource("palette.tmux.windowOpen", defaultValue: "Open"))
+        let unsupportedLabel = String(localized: "Needs tmux \(TmuxMirrorTarget.minimumVersion.description) or later")
         return targets.map { target in
             let action = CommandPaletteAction.mirrorTmuxWindow(target)
+            let isShown = isOpen(target)
             return CommandPaletteItem(
                 id: action.frecencyKey,
                 category: .tmux,
@@ -110,8 +117,12 @@ enum CommandPaletteCatalog {
                 subtitle: nil,
                 icon: "rectangle.split.2x1",
                 shortcutDisplay: nil,
-                statusLabel: isOpen(target) ? openLabel : nil,
-                action: action
+                statusLabel: isShown ? openLabel : (target.isSupported ? nil : unsupportedLabel),
+                action: action,
+                // A window a tab already shows stays selectable whatever its
+                // server's version: choosing it brings that tab forward and
+                // attaches nothing.
+                isEnabled: isShown || target.isSupported
             )
         }
     }

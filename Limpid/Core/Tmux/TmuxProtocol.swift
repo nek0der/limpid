@@ -65,6 +65,13 @@ struct TmuxVersion: Equatable, Comparable {
     }
 }
 
+extension TmuxVersion: CustomStringConvertible {
+    /// The form tmux prints and `TmuxProtocol.parseVersion` reads back.
+    var description: String {
+        (isDevelopment ? "next-" : "") + "\(major).\(minor)" + (patch.map { String($0) } ?? "")
+    }
+}
+
 enum TmuxProtocol {
     /// Classify one line, without its trailing newline. `%output` is matched
     /// on bytes before any text decoding because its payload is arbitrary
