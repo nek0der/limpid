@@ -120,7 +120,8 @@ struct PaneRemovalTests {
             session: session,
             registry: NoopSurfaceRegistry(),
             secureInput: nil,
-            channelForPane: { _ in try? TmuxPaneChannel { _ in } }
+            channelForPane: { _ in try? TmuxPaneChannel { _ in } },
+            surfaceReports: { TmuxSurfaceReports() }
         )
 
         // Recorded from tmux 3.7c: one pane, `%0`, over a 100x30 window.

@@ -57,7 +57,8 @@ private struct MirrorHarness {
             session: session,
             registry: RecordingSurfaceRegistry(),
             secureInput: nil,
-            channelForPane: { store.channel(paneID: $0) }
+            channelForPane: { store.channel(paneID: $0) },
+            surfaceReports: { store.surfaceReports }
         )
         store.register(mirror)
         mirror.start()
@@ -119,7 +120,7 @@ struct TmuxMirrorVerbsIntegrationTests {
         #expect(sink.channel === harness.store.channel(paneID: leaf))
         // There is no surface; report the grid libghostty would, which is
         // the pane's size in the 80x24 window, so the capture is taken.
-        harness.mirror.surfaceGridChanged(columns: 80, rows: 24, paneID: leaf)
+        harness.store.mirrorGridResized(columns: 80, rows: 24, paneID: leaf)
 
         let seen = await readUntil(fd: sink.channel.surfaceFd, contains: "DONE", timeout: .seconds(30))
         #expect(seen.range(of: Data("DONE".utf8)) != nil)
@@ -380,7 +381,7 @@ struct TmuxMirrorRebuildIntegrationTests {
     private func paintOnce(_ harness: MirrorHarness, _ leaf: UUID) async throws -> TmuxPaneSink {
         let sink = try #require(harness.mirror.sink(for: leaf))
         let rect = try tmuxGrid(harness, leaf)
-        harness.mirror.surfaceGridChanged(columns: rect.width, rows: rect.height, paneID: leaf)
+        harness.store.mirrorGridResized(columns: rect.width, rows: rect.height, paneID: leaf)
         let seen = await readUntil(fd: sink.channel.surfaceFd, contains: Self.repaint, timeout: .seconds(5))
         #expect(repaints(in: seen) == 1)
         await settle(harness)
@@ -413,7 +414,7 @@ struct TmuxMirrorRebuildIntegrationTests {
         await settle(harness)
         #expect(available(sink.channel.surfaceFd).isEmpty)
 
-        harness.mirror.surfaceGridChanged(columns: 80, rows: 24, paneID: leaf)
+        harness.store.mirrorGridResized(columns: 80, rows: 24, paneID: leaf)
         let seen = await readUntil(fd: sink.channel.surfaceFd, contains: "MARK", timeout: .seconds(5))
         #expect(seen.starts(with: Self.repaint))
         #expect(seen.range(of: Data("MARK".utf8)) != nil)
@@ -452,12 +453,12 @@ struct TmuxMirrorRebuildIntegrationTests {
         #expect(repaints(in: available(sink.channel.surfaceFd)) == 0)
 
         // The old grid again, and one that is off by a column.
-        harness.mirror.surfaceGridChanged(columns: before.width, rows: before.height, paneID: second)
-        harness.mirror.surfaceGridChanged(columns: after.width - 1, rows: after.height, paneID: second)
+        harness.store.mirrorGridResized(columns: before.width, rows: before.height, paneID: second)
+        harness.store.mirrorGridResized(columns: after.width - 1, rows: after.height, paneID: second)
         await settle(harness)
         #expect(repaints(in: available(sink.channel.surfaceFd)) == 0)
 
-        harness.mirror.surfaceGridChanged(columns: after.width, rows: after.height, paneID: second)
+        harness.store.mirrorGridResized(columns: after.width, rows: after.height, paneID: second)
         let seen = await readUntil(fd: sink.channel.surfaceFd, contains: Self.repaint, timeout: .seconds(5))
         await settle(harness)
         #expect(repaints(in: seen + available(sink.channel.surfaceFd)) == 1)
@@ -475,7 +476,7 @@ struct TmuxMirrorRebuildIntegrationTests {
         let sink = try #require(harness.mirror.sink(for: leaf))
         let layout = try harness.server.format("#{window_layout}", target: harness.windowID)
 
-        harness.mirror.surfaceGridChanged(columns: 80, rows: 24, paneID: leaf)
+        harness.store.mirrorGridResized(columns: 80, rows: 24, paneID: leaf)
         harness.mirror.handle(.layoutChange(window: harness.windowID, layout: layout, visibleLayout: layout, flags: "*"))
 
         let seen = await readUntil(fd: sink.channel.surfaceFd, contains: Self.repaint, timeout: .seconds(5))
@@ -497,7 +498,7 @@ struct TmuxMirrorRebuildIntegrationTests {
         await settle(harness)
         #expect(repaints(in: available(sink.channel.surfaceFd)) == 0, "the surface still has the split size")
 
-        harness.mirror.surfaceGridChanged(columns: 80, rows: 24, paneID: first)
+        harness.store.mirrorGridResized(columns: 80, rows: 24, paneID: first)
         var seen = await readUntil(fd: sink.channel.surfaceFd, contains: Self.repaint, timeout: .seconds(5))
         #expect(repaints(in: seen) == 1)
         await settle(harness)
@@ -508,7 +509,7 @@ struct TmuxMirrorRebuildIntegrationTests {
         await settle(harness)
         #expect(repaints(in: available(sink.channel.surfaceFd)) == 0, "the surface still has the zoomed size")
 
-        harness.mirror.surfaceGridChanged(columns: split.width, rows: split.height, paneID: first)
+        harness.store.mirrorGridResized(columns: split.width, rows: split.height, paneID: first)
         seen = await readUntil(fd: sink.channel.surfaceFd, contains: Self.repaint, timeout: .seconds(5))
         #expect(repaints(in: seen) == 1)
     }
@@ -531,7 +532,7 @@ struct TmuxMirrorRebuildIntegrationTests {
         await settle(harness)
         let sink = try #require(harness.mirror.sink(for: leaf))
 
-        harness.mirror.surfaceGridChanged(columns: 80, rows: 24, paneID: leaf)
+        harness.store.mirrorGridResized(columns: 80, rows: 24, paneID: leaf)
         let seen = await readUntil(fd: sink.channel.surfaceFd, contains: Self.repaint, timeout: .seconds(5))
         await settle(harness)
         #expect(repaints(in: seen + available(sink.channel.surfaceFd)) == 1)
@@ -554,7 +555,7 @@ struct TmuxMirrorRebuildIntegrationTests {
         #expect(!harness.mirror.shows(paneID: second))
         #expect(harness.mirror.sink(for: second) == nil)
         #expect(connection.sinks[pane] == nil)
-        harness.mirror.surfaceGridChanged(columns: 80, rows: 24, paneID: second)
+        harness.store.mirrorGridResized(columns: 80, rows: 24, paneID: second)
         #expect(!harness.mirror.shows(paneID: second))
     }
 }

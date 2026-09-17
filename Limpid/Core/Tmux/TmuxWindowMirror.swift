@@ -44,7 +44,8 @@ final class TmuxWindowMirror {
     /// The window as tmux last described it, in cells. `nil` until tmux has
     /// answered once; the tab is drawn from its stored ratios until then.
     private(set) var cellLayout: TmuxLayout?
-    /// One cell in points, as this tab's surfaces report it. Every pane of a
+    /// One cell in points for the whole tab, chosen from its surfaces'
+    /// reports (`TmuxSurfaceReports` keeps each leaf's). Every pane of a
     /// mirror tab shares one grid (design §2 D2), so one report stands for
     /// all of them; a pane that disagrees is logged, not honored.
     private(set) var cellSize: CellSize?
@@ -70,10 +71,6 @@ final class TmuxWindowMirror {
         /// The pane's size in tmux: its layout cell, or the whole window
         /// while tmux has it zoomed. `nil` until a layout names the pane.
         var tmuxGrid: Grid?
-        /// The grid libghostty last reported for the pane's surface. `nil`
-        /// until the surface exists and has started its IO; a pane of a tab
-        /// that is not on screen can stay there, paused, until it is shown.
-        var surfaceGrid: Grid?
         /// The sink is paused and the screen waits for a capture.
         var isStale = false
         /// A capture is on its way. At most one is, so a pane resized
@@ -93,11 +90,16 @@ final class TmuxWindowMirror {
     /// it for the leaf, the surface reads it, and a sink of ours only
     /// writes into it while we feed the pane.
     @ObservationIgnored private let channelForPane: (UUID) -> TmuxPaneChannel?
+    /// What the surfaces and the pane area last reported, read from the
+    /// store rather than copied here: a surface's grid and the area size
+    /// may be reported before this mirror exists, and the store is the one
+    /// place that hears them either way. A surface grid is absent until the
+    /// surface has started its IO; a pane of a tab that is not on screen can
+    /// stay paused until it is shown. The area size is absent until the tab
+    /// has been on screen.
+    @ObservationIgnored private let surfaceReports: () -> TmuxSurfaceReports
     @ObservationIgnored private var panes: [UUID: Pane] = [:]
     @ObservationIgnored private var isStopped = false
-    /// The pane area in points, from the view showing this tab. Zero while
-    /// the tab is not on screen, which is also when nothing is reported.
-    @ObservationIgnored private var areaSize: CGSize = .zero
     /// The grid last sent with `refresh-client -C`, so a layout pass that
     /// changes nothing sends nothing (design §8 D11).
     @ObservationIgnored private var reportedGrid: (columns: Int, rows: Int)?
@@ -138,7 +140,8 @@ final class TmuxWindowMirror {
         session: WindowSession,
         registry: any SurfaceViewProviding,
         secureInput: SecureInputManager?,
-        channelForPane: @escaping (UUID) -> TmuxPaneChannel?
+        channelForPane: @escaping (UUID) -> TmuxPaneChannel?,
+        surfaceReports: @escaping () -> TmuxSurfaceReports
     ) {
         self.tabID = tabID
         self.windowID = windowID
@@ -154,11 +157,19 @@ final class TmuxWindowMirror {
         self.registry = registry
         self.secureInput = secureInput
         self.channelForPane = channelForPane
+        self.surfaceReports = surfaceReports
     }
 
     /// Attach a sink for every tmux pane the tab already lists. The sinks
     /// write into the leaves' channels, which the surfaces read whether
     /// they were created before this or are created later.
+    ///
+    /// Surfaces that already exist reported their cell size and grid before
+    /// this mirror did, and will not report them again until they change,
+    /// so the tab's cell size is taken from the store's reports here. With
+    /// the area size also known, the window size goes out at once; tmux
+    /// answers with the layout, and each pane whose surface already has
+    /// that grid is repainted without waiting for another report.
     func start() {
         guard let tab = session.tab(tabID) else { return }
         for (paneID, source) in tab.paneSources {
@@ -166,6 +177,8 @@ final class TmuxWindowMirror {
             attach(paneID: paneID, tmuxPane: ref.paneID)
         }
         activePane = tab.splitTree.focusedLeafID.flatMap { tmuxPane(ofLeaf: $0, in: tab) }
+        adoptReportedCellSize(tab: tab)
+        reportGridIfChanged()
         // The palette listed the window a while ago, so tmux is asked which
         // pane is active now. The answer is a report like any other.
         guard canSend else { return }
@@ -265,11 +278,21 @@ final class TmuxWindowMirror {
 
     // MARK: - Window size
 
-    /// The pane area showing this tab changed size, or came on screen.
-    func areaSizeChanged(_ size: CGSize) {
-        guard size != areaSize else { return }
-        areaSize = size
+    /// The pane area showing this tab changed size, or came on screen. The
+    /// store has recorded the new size.
+    func areaSizeChanged() {
         reportGridIfChanged()
+    }
+
+    /// The focused pane's reported cell size, or else the first reported
+    /// one in tree order, the same preference `cellSizeChanged` applies to
+    /// reports that arrive one at a time.
+    private func adoptReportedCellSize(tab: Tab) {
+        guard cellSize == nil else { return }
+        let cellSizes = surfaceReports().cellSizes
+        let leaves = tab.splitTree.allLeafIDs().filter { panes[$0] != nil }
+        let focused = tab.splitTree.effectiveFocusedLeafID.flatMap { panes[$0] != nil ? cellSizes[$0] : nil }
+        cellSize = focused ?? leaves.lazy.compactMap { cellSizes[$0] }.first
     }
 
     /// A surface of this tab reported its cell size. The first report seeds
@@ -295,7 +318,7 @@ final class TmuxWindowMirror {
     /// `%layout-change` → padding → `CELL_SIZE` → report would otherwise
     /// close a loop.
     private func reportGridIfChanged() {
-        guard canSend, let cellSize else { return }
+        guard canSend, let cellSize, let areaSize = surfaceReports().areaSizes[tabID] else { return }
         let grid = PaneLayout.mirrorGrid(areaSize: areaSize, cellSize: cellSize, padding: .pinned)
         guard grid.columns > 0, grid.rows > 0,
               reportedGrid?.columns != grid.columns || reportedGrid?.rows != grid.rows
@@ -379,13 +402,12 @@ final class TmuxWindowMirror {
         connection.detachPane(pane.tmuxPane)
     }
 
-    /// libghostty resized the surface of `paneID` to `columns` x `rows`.
-    /// Bytes written to the surface from now on are parsed at that size.
-    func surfaceGridChanged(columns: Int, rows: Int, paneID: UUID) {
-        guard !isStopped, let pane = panes[paneID] else { return }
-        let grid = Grid(columns: columns, rows: rows)
-        panes[paneID]?.surfaceGrid = grid
-        let drawn = "\(columns)x\(rows)"
+    /// libghostty resized the surface of `paneID`, and the store has
+    /// recorded the new grid. Bytes written to the surface from now on are
+    /// parsed at that size.
+    func surfaceGridChanged(paneID: UUID) {
+        guard !isStopped, let pane = panes[paneID], let grid = surfaceReports().grids[paneID] else { return }
+        let drawn = "\(grid.columns)x\(grid.rows)"
         let tmux = pane.tmuxGrid.map { "\($0.columns)x\($0.rows)" } ?? "?"
         log.debug("pane \(pane.tmuxPane, privacy: .public) surface \(drawn, privacy: .public); tmux \(tmux, privacy: .public)")
         rebuildIfReady(paneID: paneID)
@@ -403,7 +425,7 @@ final class TmuxWindowMirror {
 
     private func rebuildIfReady(paneID: UUID) {
         guard var pane = panes[paneID], pane.isStale, !pane.isRebuilding,
-              let grid = pane.surfaceGrid, grid == pane.tmuxGrid
+              let grid = surfaceReports().grids[paneID], grid == pane.tmuxGrid
         else { return }
         pane.isStale = false
         pane.isRebuilding = true

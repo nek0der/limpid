@@ -1,6 +1,7 @@
 // TmuxConnectionStore.swift
 // Limpid — the control-mode connections the app holds, one per tmux session, and the tabs mirroring through them.
 
+import CoreGraphics
 import Foundation
 import OSLog
 
@@ -16,7 +17,12 @@ private let log = Logger.limpid("tmux.store")
 /// session on the same server is a second client. The design speaks of
 /// "one per server", which holds for the first version's scope of one
 /// window per tab.
+///
+/// Observable only for `mirrors`: the pane area draws a mirror tab from its
+/// mirror, and a mirror registered or replaced after the tab is on screen
+/// must reach the view. Everything else is bookkeeping the view never reads.
 @MainActor
+@Observable
 final class TmuxConnectionStore {
     struct Key: Hashable {
         let socketPath: String
@@ -27,13 +33,13 @@ final class TmuxConnectionStore {
     /// installed where a GUI app can see it.
     let tmuxExecutable: String?
 
-    private(set) var connections: [Key: TmuxServerConnection] = [:]
+    @ObservationIgnored private(set) var connections: [Key: TmuxServerConnection] = [:]
     private(set) var mirrors: [UUID: TmuxWindowMirror] = [:]
     /// Which panes of each connection have their output paused. A control
     /// client is fed every pane of the session; the ones no tab shows are
     /// switched off so a build in a hidden window cannot fill the pipe
     /// (design §8 D12).
-    private(set) var outputGates: [Key: TmuxOutputGate] = [:]
+    @ObservationIgnored private(set) var outputGates: [Key: TmuxOutputGate] = [:]
     /// The stream each `.tmux` or `.unavailable` leaf's surface reads, with
     /// or without a mirror feeding it: a restored tab before adoption, a
     /// tab whose server went away, and a live mirror's pane all read their
@@ -41,21 +47,26 @@ final class TmuxConnectionStore {
     /// a later connection. A leaf without a feeding mirror shows nothing
     /// instead of spawning a shell. Released on `reconcile` once the leaf
     /// is gone; a surface or a sink still holding one keeps it open.
-    private var channels: [UUID: TmuxPaneChannel] = [:]
+    @ObservationIgnored private var channels: [UUID: TmuxPaneChannel] = [:]
+    /// What the surfaces of the leaves above and the pane areas of mirror
+    /// tabs last reported, mirror or not. The only copy: a mirror reads it
+    /// when it starts and when a report is forwarded to it. Released on
+    /// `reconcile` together with the channels.
+    @ObservationIgnored private(set) var surfaceReports = TmuxSurfaceReports()
     /// The colors every connection reports to its panes: those of the last
     /// config libghostty resolved, which is where a light or dark switch
     /// shows up. The first arrives while libghostty starts.
-    private(set) var terminalColors: TerminalColors?
+    @ObservationIgnored private(set) var terminalColors: TerminalColors?
     /// What the user is told when tmux ends a mirrored window or session.
     /// Set by whoever owns the toast center.
-    var onNotice: ((String) -> Void)?
+    @ObservationIgnored var onNotice: ((String) -> Void)?
 
     typealias SessionPresenceCheck = @Sendable (
         _ tmuxPath: String,
         _ socketPath: String,
         _ sessionID: String
     ) async -> TmuxSessionPresence
-    private let sessionPresence: SessionPresenceCheck
+    @ObservationIgnored private let sessionPresence: SessionPresenceCheck
 
     init(
         tmuxExecutable: String? = TmuxClientProbe.locateTmux(),
@@ -138,8 +149,11 @@ final class TmuxConnectionStore {
     }
 
     /// A surface reported its cell size; the mirror showing that pane lays
-    /// its panes out from it.
+    /// its panes out from it. Recorded only for a leaf with a channel, the
+    /// only surfaces a mirror can ever feed; a local pane reports too.
     func cellSizeChanged(_ size: CellSize, paneID: UUID) {
+        guard channels[paneID] != nil else { return }
+        surfaceReports.setCellSize(size, paneID: paneID)
         guard let mirror = mirrors.values.first(where: { $0.shows(paneID: paneID) }) else { return }
         mirror.cellSizeChanged(size, from: paneID)
     }
@@ -147,8 +161,18 @@ final class TmuxConnectionStore {
     /// A mirror surface's terminal took a new grid; the mirror showing that
     /// pane repaints it from tmux once the grid is the one tmux gave it.
     func mirrorGridResized(columns: Int, rows: Int, paneID: UUID) {
+        guard channels[paneID] != nil else { return }
+        surfaceReports.setGrid(TmuxWindowMirror.Grid(columns: columns, rows: rows), paneID: paneID)
         guard let mirror = mirrors.values.first(where: { $0.shows(paneID: paneID) }) else { return }
-        mirror.surfaceGridChanged(columns: columns, rows: rows, paneID: paneID)
+        mirror.surfaceGridChanged(paneID: paneID)
+    }
+
+    /// The pane area showing mirror tab `tabID` has `size`, having changed
+    /// or come on screen; its mirror sizes the tmux window from it.
+    func areaSizeChanged(_ size: CGSize, tabID: UUID) {
+        guard surfaceReports.areaSizes[tabID] != size else { return }
+        surfaceReports.setAreaSize(size, tabID: tabID)
+        mirrors[tabID]?.areaSizeChanged()
     }
 
     /// A key typed into a mirror pane. A pane with no live mirror (dormant,
@@ -245,6 +269,7 @@ final class TmuxConnectionStore {
         for paneID in channels.keys where !channelLeaves.contains(paneID) {
             channels.removeValue(forKey: paneID)
         }
+        surfaceReports.retain(leaves: channelLeaves, tabs: liveTabs)
     }
 
     /// Termination: detach every client so tmux does not keep serving a
@@ -260,6 +285,7 @@ final class TmuxConnectionStore {
         connections.removeAll()
         outputGates.removeAll()
         channels.removeAll()
+        surfaceReports = TmuxSurfaceReports()
     }
 
     private static func key(of mirror: TmuxWindowMirror) -> Key {

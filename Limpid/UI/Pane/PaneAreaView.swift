@@ -278,11 +278,13 @@ struct PaneAreaView: View {
             registry.updateOcclusion(visibleIDs: visiblePaneIDs)
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { areaSize = $0 }
-        // A mirror tab sizes its tmux window from the area it has; the
-        // mirror itself compares and sends only real changes.
+        // A mirror tab sizes its tmux window from the area it has. The
+        // store records the size whether or not the tab has a mirror yet,
+        // so one attached later starts from it; the mirror sends only real
+        // changes.
         .onChange(of: mirrorAreaKey, initial: true) { _, key in
             guard let tabID = key.tabID, key.size != .zero else { return }
-            tmuxStore?.mirror(for: tabID)?.areaSizeChanged(key.size)
+            tmuxStore?.areaSizeChanged(key.size, tabID: tabID)
         }
         // Only whether the pane is on screen, never how tall it is: driving
         // this from the height ran an occlusion pass on every frame of a

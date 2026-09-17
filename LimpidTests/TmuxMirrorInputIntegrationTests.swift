@@ -403,7 +403,8 @@ private struct PasteHarness {
             session: session,
             registry: RecordingSurfaceRegistry(),
             secureInput: nil,
-            channelForPane: { store.channel(paneID: $0) }
+            channelForPane: { store.channel(paneID: $0) },
+            surfaceReports: { store.surfaceReports }
         )
         let failures = FailureLog()
         mirror.onCommandFailed = { failures.messages.append($0) }
