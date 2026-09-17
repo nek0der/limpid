@@ -33,12 +33,12 @@ struct ReviewContinuityTests {
 
         presentation.open(directory, originPaneID: opened)
         #expect(!presentation.isDestinationPinned)
-        presentation.focusedPaneChanged(to: focused)
+        presentation.focusedPaneChanged(to: focused, isDockable: true)
         #expect(presentation.originPaneID == focused)
 
         presentation.pinDestination(to: chosen)
         #expect(presentation.isDestinationPinned)
-        presentation.focusedPaneChanged(to: focused)
+        presentation.focusedPaneChanged(to: focused, isDockable: true)
         // The pin is the whole of what a pin does: focus moved and the
         // destination did not.
         #expect(presentation.originPaneID == chosen)
@@ -146,11 +146,11 @@ struct ReviewContinuityTests {
             initialScope: .turn(baseTree: String(repeating: "a", count: 40), paneID: owner),
             transientOwnerPaneID: owner
         )
-        presentation.focusedPaneChanged(to: owner)
+        presentation.focusedPaneChanged(to: owner, isDockable: true)
         presentation.transientOwnerRepositoryChanged(to: root)
         #expect(presentation.isPresented)
 
-        presentation.focusedPaneChanged(to: UUID())
+        presentation.focusedPaneChanged(to: UUID(), isDockable: true)
         #expect(!presentation.isPresented)
         #expect(presentation.transientOwnerPaneID == nil)
 

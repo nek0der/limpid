@@ -166,19 +166,58 @@ struct TmuxClientProbeServerDirectoryTests {
 
 @Suite("TmuxClientProbe socket discovery")
 struct TmuxClientProbeSocketTests {
-    @Test("lists the sockets a tmux server would create")
-    func socketPaths_serverDirectory_listsItsSockets() throws {
-        try withTempDir { dir in
-            let home = dir.appendingPathComponent("tmux-501", isDirectory: true)
-            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-            for name in ["default", "work"] {
-                FileManager.default.createFile(
-                    atPath: home.appendingPathComponent(name).path, contents: Data()
-                )
-            }
+    @Test("lists only the user's own sockets, skipping files, directories, and symlinks")
+    func socketPaths_serverDirectory_listsOnlyOwnSockets() throws {
+        try withShortServerDirectory { home in
+            try bindSocket(at: home.appendingPathComponent("default").path)
+            try bindSocket(at: home.appendingPathComponent("work").path)
+            FileManager.default.createFile(atPath: home.appendingPathComponent("lock").path, contents: Data())
+            try FileManager.default.createDirectory(
+                at: home.appendingPathComponent("nested"), withIntermediateDirectories: false
+            )
+            try FileManager.default.createSymbolicLink(
+                atPath: home.appendingPathComponent("alias").path,
+                withDestinationPath: home.appendingPathComponent("default").path
+            )
+
             let found = TmuxClientProbe.socketPaths(inServerDirectory: home)
                 .map(\.lastPathComponent).sorted()
             #expect(found == ["default", "work"])
+        }
+    }
+
+    /// `-S` skips tmux's own check of the server directory, so a
+    /// directory others can reach must not hand us any socket to talk to.
+    @Test("lists nothing from a directory other accounts can reach", arguments: [0o705, 0o701, 0o777])
+    func socketPaths_openDirectory_isEmpty(mode: Int) throws {
+        try withShortServerDirectory { home in
+            try bindSocket(at: home.appendingPathComponent("default").path)
+            try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: home.path)
+
+            #expect(TmuxClientProbe.socketPaths(inServerDirectory: home).isEmpty)
+        }
+    }
+
+    /// tmux itself accepts group bits, so a server it runs from such a
+    /// directory must still be offered.
+    @Test("lists sockets from a directory only its group can reach")
+    func socketPaths_groupReadableDirectory_isListed() throws {
+        try withShortServerDirectory { home in
+            try bindSocket(at: home.appendingPathComponent("default").path)
+            try FileManager.default.setAttributes([.posixPermissions: 0o750], ofItemAtPath: home.path)
+
+            #expect(TmuxClientProbe.socketPaths(inServerDirectory: home).map(\.lastPathComponent) == ["default"])
+        }
+    }
+
+    @Test("lists nothing when the server directory is a symlink")
+    func socketPaths_symlinkedDirectory_isEmpty() throws {
+        try withShortServerDirectory { home in
+            try bindSocket(at: home.appendingPathComponent("default").path)
+            let link = home.deletingLastPathComponent().appendingPathComponent("link")
+            try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: home.path)
+
+            #expect(TmuxClientProbe.socketPaths(inServerDirectory: link).isEmpty)
         }
     }
 
@@ -188,6 +227,42 @@ struct TmuxClientProbeSocketTests {
             let absent = dir.appendingPathComponent("tmux-501", isDirectory: true)
             #expect(TmuxClientProbe.socketPaths(inServerDirectory: absent).isEmpty)
         }
+    }
+
+    /// A `0700` server directory inside a scratch directory that is removed
+    /// afterwards. It lives under `/private/tmp` rather than the test's temp
+    /// directory because `sun_path` caps a unix socket path at 104 bytes on
+    /// macOS, which the per-user temp directory plus a UUID already exceeds.
+    private func withShortServerDirectory(_ body: (URL) throws -> Void) throws {
+        let scratch = URL(fileURLWithPath: "/private/tmp/limpid-sp-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let home = scratch.appendingPathComponent("tmux-\(getuid())", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: home, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
+        try body(home)
+    }
+
+    /// Leave a unix socket file at `path`. The descriptor is closed right
+    /// away; the file stays until it is removed, which is all a listing sees.
+    private func bindSocket(at path: String) throws {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        try #require(fd >= 0)
+        defer { close(fd) }
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8)
+        let capacity = MemoryLayout.size(ofValue: address.sun_path)
+        try #require(bytes.count < capacity)
+        withUnsafeMutableBytes(of: &address.sun_path) { raw in
+            raw.copyBytes(from: bytes)
+        }
+        let result = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        try #require(result == 0, "bind failed errno=\(errno)")
     }
 }
 
@@ -352,7 +427,10 @@ struct TmuxClientProbeSmokeTests {
             fileURLWithPath: "/tmp/limpid-srv-\(ProcessInfo.processInfo.processIdentifier)",
             isDirectory: true
         )
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // 0700 like the directory tmux creates; discovery skips any other.
+        try FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
         let socket = dir.appendingPathComponent("default").path
         defer {
             _ = try? run(tmux, ["-S", socket, "kill-server"])

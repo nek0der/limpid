@@ -27,43 +27,56 @@ struct TmuxLayoutTests {
         #expect(layout.root == .pane(id: "%0", rect: TmuxCellRect(width: 100, height: 30, x: 0, y: 0)))
     }
 
-    @Test("side-by-side panes leave tmux's one-cell border between them")
+    @Test("side-by-side panes parse to one split whose gap is tmux's one-cell border")
     func parse_sideBySide() throws {
         let layout = try #require(TmuxLayout.parse(sideBySide))
-        #expect(layout.root == .sideBySide(
+        #expect(layout.root == .split(
+            direction: .horizontal,
             rect: TmuxCellRect(width: 100, height: 30, x: 0, y: 0),
-            children: [
-                .pane(id: "%0", rect: TmuxCellRect(width: 50, height: 30, x: 0, y: 0)),
-                .pane(id: "%1", rect: TmuxCellRect(width: 49, height: 30, x: 51, y: 0))
-            ]
+            gap: TmuxCellRect(width: 1, height: 30, x: 50, y: 0),
+            first: .pane(id: "%0", rect: TmuxCellRect(width: 50, height: 30, x: 0, y: 0)),
+            second: .pane(id: "%1", rect: TmuxCellRect(width: 49, height: 30, x: 51, y: 0))
         ))
         #expect(layout.root.paneIDs == ["%0", "%1"])
     }
 
-    @Test("main-vertical nests a stacked container inside a side-by-side one")
+    @Test("main-vertical nests a vertical split inside a horizontal one")
     func parse_mainVertical() throws {
         let layout = try #require(TmuxLayout.parse(mainVertical))
-        guard case let .sideBySide(_, children) = layout.root, children.count == 2,
-              case let .stacked(rect, stackedChildren) = children[1]
+        guard case let .split(.horizontal, _, _, _, second) = layout.root,
+              case let .split(.vertical, rect, gap, first, last) = second
         else {
             Issue.record("expected {pane, [pane, pane]}")
             return
         }
         #expect(rect == TmuxCellRect(width: 49, height: 30, x: 51, y: 0))
-        #expect(stackedChildren.map(\.rect.height) == [15, 14])
+        #expect(gap == TmuxCellRect(width: 49, height: 1, x: 51, y: 15))
+        #expect(first.rect.height == 15)
+        #expect(last.rect.height == 14)
         #expect(layout.root.paneIDs == ["%0", "%1", "%2"])
     }
 
-    @Test("tmux flattens same-axis splits, so a container can hold three siblings")
-    func parse_threeSiblings() throws {
+    @Test("tmux flattens same-axis splits; three siblings fold right into a remainder box that starts at the second")
+    func parse_threeSiblings_foldsRight() throws {
         let layout = try #require(TmuxLayout.parse(threeSiblings))
-        guard case let .sideBySide(_, children) = layout.root else {
-            Issue.record("expected a side-by-side container")
-            return
-        }
-        #expect(children.count == 3)
-        #expect(children.map(\.rect.x) == [0, 34, 68])
-        #expect(children.map(\.rect.width) == [33, 33, 32])
+        #expect(layout.root == .split(
+            direction: .horizontal,
+            rect: TmuxCellRect(width: 100, height: 30, x: 0, y: 0),
+            gap: TmuxCellRect(width: 1, height: 30, x: 33, y: 0),
+            first: .pane(id: "%0", rect: TmuxCellRect(width: 33, height: 30, x: 0, y: 0)),
+            second: .split(
+                direction: .horizontal,
+                rect: TmuxCellRect(width: 66, height: 30, x: 34, y: 0),
+                gap: TmuxCellRect(width: 1, height: 30, x: 67, y: 0),
+                first: .pane(id: "%1", rect: TmuxCellRect(width: 33, height: 30, x: 34, y: 0)),
+                second: .pane(id: "%2", rect: TmuxCellRect(width: 32, height: 30, x: 68, y: 0))
+            )
+        ))
+        #expect(layout.root.node(at: [.second, .first]) == .pane(
+            id: "%1",
+            rect: TmuxCellRect(width: 33, height: 30, x: 34, y: 0)
+        ))
+        #expect(layout.root.node(at: [.first, .first]) == nil)
     }
 
     @Test("malformed layout strings are rejected rather than partially accepted")

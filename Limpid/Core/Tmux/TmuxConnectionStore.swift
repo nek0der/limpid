@@ -67,18 +67,29 @@ final class TmuxConnectionStore {
     }
 
     /// The connection for `binding`'s session, started on first use.
+    ///
+    /// A connection tmux has ended is replaced rather than handed out: the
+    /// palette lists what `list-windows` reaches now, which may be a new
+    /// server on the same socket, and a new tab must not inherit a client
+    /// that will never deliver. The ended one is only forgotten, not
+    /// stopped. The mirrors of tabs that lost it still hold it and its
+    /// sinks, and they release them when their tabs close.
     func connection(for binding: TmuxBinding) throws -> TmuxServerConnection {
         let key = Key(socketPath: binding.socketPath, sessionID: binding.sessionID)
         if let existing = connections[key] {
-            return existing
+            guard case .exited = existing.state else { return existing }
+            connections.removeValue(forKey: key)
+            outputGates.removeValue(forKey: key)
+            log.notice("replacing ended connection session=\(key.sessionID, privacy: .public)")
         }
         guard let tmuxExecutable else { throw TmuxStoreError.tmuxNotInstalled }
         let connection = TmuxServerConnection(
             executable: tmuxExecutable,
             target: .init(socketPath: binding.socketPath, sessionID: binding.sessionID)
         )
-        connection.onNotification = { [weak self] line in
-            self?.dispatch(line, from: key)
+        connection.onNotification = { [weak self, weak connection] line in
+            guard let self, let connection else { return }
+            dispatch(line, from: key, connection: connection)
         }
         try connection.start()
         connections[key] = connection
@@ -105,6 +116,13 @@ final class TmuxConnectionStore {
         mirror.cellSizeChanged(size, from: paneID)
     }
 
+    /// A mirror surface's terminal took a new grid; the mirror showing that
+    /// pane repaints it from tmux once the grid is the one tmux gave it.
+    func mirrorGridResized(columns: Int, rows: Int, paneID: UUID) {
+        guard let mirror = mirrors.values.first(where: { $0.shows(paneID: paneID) }) else { return }
+        mirror.surfaceGridChanged(columns: columns, rows: rows, paneID: paneID)
+    }
+
     func mirror(for tabID: UUID) -> TmuxWindowMirror? {
         mirrors[tabID]
     }
@@ -113,6 +131,18 @@ final class TmuxConnectionStore {
     /// pane is attached. `PaneHostView` hands its descriptor to the surface.
     func sink(tabID: UUID, paneID: UUID) -> TmuxPaneSink? {
         mirrors[tabID]?.sink(for: paneID)
+    }
+
+    /// The mirror already showing `windowID` of `binding`'s session over a
+    /// connection that still delivers. A tmux pane feeds exactly one sink,
+    /// so a second tab on the same window is never opened (design §4).
+    func liveMirror(showing windowID: String, of binding: TmuxBinding) -> TmuxWindowMirror? {
+        let key = Key(socketPath: binding.socketPath, sessionID: binding.sessionID)
+        guard let connection = connections[key] else { return nil }
+        if case .exited = connection.state {
+            return nil
+        }
+        return mirrors.values.first { $0.connection === connection && $0.windowID == windowID }
     }
 
     func register(_ mirror: TmuxWindowMirror) {
@@ -130,7 +160,11 @@ final class TmuxConnectionStore {
             mirrors.removeValue(forKey: tabID)
             touchedKeys.insert(Self.key(of: mirror))
         }
-        let usedKeys = Set(mirrors.values.map(Self.key(of:)))
+        // By identity, not by key: a tab that lost its connection keeps a
+        // mirror under the same key as the connection that replaced it.
+        let usedKeys = Set(connections.compactMap { key, connection in
+            mirrors.values.contains { $0.connection === connection } ? key : nil
+        })
         for (key, connection) in connections where !usedKeys.contains(key) {
             connection.stop()
             connections.removeValue(forKey: key)
@@ -169,8 +203,12 @@ final class TmuxConnectionStore {
         Key(socketPath: mirror.connection.target.socketPath, sessionID: mirror.connection.target.sessionID)
     }
 
-    private func dispatch(_ line: TmuxControlLine, from key: Key) {
-        for mirror in mirrors.values where Self.key(of: mirror) == key {
+    /// Mirrors are matched by connection, not by key, so a tab that lost
+    /// its connection never reacts to the server that replaced it; a new
+    /// server numbers its windows from `@0` again.
+    private func dispatch(_ line: TmuxControlLine, from key: Key, connection: TmuxServerConnection) {
+        guard connections[key] === connection else { return }
+        for mirror in mirrors.values where mirror.connection === connection {
             mirror.handle(line)
         }
         trackPanes(line, from: key)
@@ -182,6 +220,11 @@ final class TmuxConnectionStore {
     /// lists every pane of its window, so a pane created or killed anywhere
     /// in the session shows up here; a new window is asked for its panes
     /// because its first layout may have arrived before it was announced.
+    ///
+    /// A closed window arrives under either name. tmux 3.7c decides between
+    /// them after the window has left the session, so killing one of the
+    /// session's own windows is announced as `%unlinked-window-close`.
+    /// Forgetting a window the gate never knew changes nothing.
     private func trackPanes(_ line: TmuxControlLine, from key: Key) {
         switch line {
         case let .layoutChange(window, layout, _, _):
@@ -196,7 +239,7 @@ final class TmuxConnectionStore {
                 self.gateOutput(for: key)
             }
             return
-        case let .notification(name, arguments) where name == "window-close":
+        case let .notification(name, arguments) where name == "window-close" || name == "unlinked-window-close":
             outputGates[key]?.removeWindow(arguments)
         default:
             return
@@ -208,7 +251,7 @@ final class TmuxConnectionStore {
     /// ones a mirror now shows. Only the difference is sent.
     private func gateOutput(for key: Key) {
         guard let connection = connections[key], outputGates[key] != nil else { return }
-        let shown = Set(mirrors.values.filter { Self.key(of: $0) == key }.map(\.windowID))
+        let shown = Set(mirrors.values.filter { $0.connection === connection }.map(\.windowID))
         for command in outputGates[key]?.reconcile(shownWindows: shown) ?? [] {
             connection.send(command)
             log.debug("output gate session=\(key.sessionID, privacy: .public): \(command, privacy: .public)")

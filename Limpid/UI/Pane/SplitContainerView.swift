@@ -132,28 +132,13 @@ struct SplitContainerView: View {
             }
     }
 
-    /// The drag reads its location in the container's space and converts
-    /// it to the owning split's space through `divider.origin`; from there
-    /// the ratio delta is the same arithmetic each split used when it
-    /// measured itself.
+    /// The drag reads its location in the container's space, which is the
+    /// space the layout was resolved in; `PaneLayout.Divider.dragDelta`
+    /// converts it to the owning split's space.
     private func dragGesture(_ divider: PaneLayout.Divider) -> some Gesture {
         DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.coordinateSpace))
             .onChanged { gesture in
-                let local = CGPoint(
-                    x: gesture.location.x - divider.origin.x,
-                    y: gesture.location.y - divider.origin.y
-                )
-                let newRatio = switch divider.direction {
-                case .horizontal:
-                    Double(local.x / max(divider.bounds.width, 1))
-                case .vertical:
-                    Double(local.y / max(divider.bounds.height, 1))
-                }
-                let extent = divider.direction == .horizontal
-                    ? Double(divider.bounds.width)
-                    : Double(divider.bounds.height)
-                let delta = (newRatio - divider.ratio) * extent
-                onResize(divider.path, delta, divider.bounds)
+                onResize(divider.path, divider.dragDelta(to: gesture.location), divider.bounds)
             }
     }
 }

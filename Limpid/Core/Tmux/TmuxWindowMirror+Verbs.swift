@@ -10,19 +10,26 @@ private let log = Logger.limpid("tmux.mirror")
 /// `%layout-change` tmux answers with and draw that (design §10). The tree
 /// is never edited here; a failure comes back as `%error`, is reported,
 /// and leaves the picture as it was.
+///
+/// Each verb names its own localized failure message. tmux's `%error`
+/// text is terse, version-dependent English that does not say which
+/// operation it refers to, so it goes to the log only.
 extension TmuxWindowMirror {
     /// `split-window` next to `paneID`. `-c` is left off on purpose so
     /// tmux's own default for the new pane's directory applies.
     func split(paneID: UUID, direction: SplitDirection) {
         guard let pane = tmuxPane(for: paneID) else { return }
         let flag = direction == .horizontal ? "-h" : "-v"
-        run("split-window \(flag) -t \(TmuxProtocol.quote(pane))")
+        run("split-window \(flag) -t \(TmuxProtocol.quote(pane))", failure: String(localized: "Couldn't split the pane"))
     }
 
     /// `swap-pane`: the two panes trade places, the layout keeps its shape.
     func swap(_ first: UUID, _ second: UUID) {
         guard let source = tmuxPane(for: first), let target = tmuxPane(for: second) else { return }
-        run("swap-pane -s \(TmuxProtocol.quote(source)) -t \(TmuxProtocol.quote(target))")
+        run(
+            "swap-pane -s \(TmuxProtocol.quote(source)) -t \(TmuxProtocol.quote(target))",
+            failure: String(localized: "Couldn't swap the panes")
+        )
     }
 
     /// `select-layout -E` spreads the pane and its neighbors evenly. The
@@ -30,7 +37,7 @@ extension TmuxWindowMirror {
     /// the nesting, so `main-vertical` would come back as a single row.
     func equalize(from paneID: UUID) {
         guard let pane = tmuxPane(for: paneID) else { return }
-        run("select-layout -E -t \(TmuxProtocol.quote(pane))")
+        run("select-layout -E -t \(TmuxProtocol.quote(pane))", failure: String(localized: "Couldn't equalize the splits"))
     }
 
     /// `resize-pane -Z`. Zoom state is read back from the window flags on
@@ -38,7 +45,7 @@ extension TmuxWindowMirror {
     /// pane over the whole area while tmux still thinks it is small.
     func toggleZoom(paneID: UUID) {
         guard let pane = tmuxPane(for: paneID) else { return }
-        run("resize-pane -Z -t \(TmuxProtocol.quote(pane))")
+        run("resize-pane -Z -t \(TmuxProtocol.quote(pane))", failure: String(localized: "Couldn't toggle the pane zoom"))
     }
 
     /// `resize-pane -x` / `-y` with an absolute size, for a divider drag.
@@ -61,7 +68,7 @@ extension TmuxWindowMirror {
         }
         connection.send("break-pane -d -s \(TmuxProtocol.quote(pane)) -P -F '#{window_id}'") { [weak self] lines, isError in
             if isError {
-                self?.reportFailure(lines)
+                self?.reportFailure(lines, message: String(localized: "Couldn't move the pane to a new tab"))
                 completion(nil)
             } else {
                 completion(lines.first)
@@ -73,16 +80,19 @@ extension TmuxWindowMirror {
     /// session, split against that window's active pane.
     func joinPane(paneID: UUID, into window: String) {
         guard let pane = tmuxPane(for: paneID) else { return }
-        run("join-pane -s \(TmuxProtocol.quote(pane)) -t \(TmuxProtocol.quote(window))")
+        run(
+            "join-pane -s \(TmuxProtocol.quote(pane)) -t \(TmuxProtocol.quote(window))",
+            failure: String(localized: "Couldn't move the pane to that tab")
+        )
     }
 
     // MARK: - Plumbing
 
-    private func run(_ command: String) {
+    private func run(_ command: String, failure: String) {
         log.debug("verb: \(command, privacy: .public)")
         connection.send(command) { [weak self] lines, isError in
             if isError {
-                self?.reportFailure(lines)
+                self?.reportFailure(lines, message: failure)
             }
         }
     }
@@ -96,15 +106,17 @@ extension TmuxWindowMirror {
             guard let self else { return }
             self.isResizeInFlight = false
             if isError {
-                self.reportFailure(lines)
+                self.reportFailure(lines, message: String(localized: "Couldn't resize the pane"))
             }
             self.sendQueuedResize()
         }
     }
 
-    private func reportFailure(_ lines: [String]) {
-        let message = lines.joined(separator: " ")
-        log.error("tmux refused: \(message, privacy: .public)")
+    /// `message` is what the user reads. `lines` is tmux's own reply, which
+    /// can quote session names, window names or paths, so it is logged
+    /// as private.
+    private func reportFailure(_ lines: [String], message: String) {
+        log.error("tmux refused: \(lines.joined(separator: " "), privacy: .private)")
         onCommandFailed?(message)
     }
 }

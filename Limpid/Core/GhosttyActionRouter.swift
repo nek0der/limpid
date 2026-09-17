@@ -47,6 +47,10 @@ enum GhosttyEvent {
     /// layout). Reported in device pixels; `SurfaceView` converts to
     /// points against its window's backing scale.
     case cellSize(SurfaceView, devicePixelWidth: UInt32, devicePixelHeight: UInt32)
+    /// A mirror surface's terminal now has this grid. libghostty sends it
+    /// only for a surface created with a descriptor, after the resize has
+    /// been applied, so bytes written from then on are parsed at this size.
+    case mirrorResized(SurfaceView, columns: Int, rows: Int)
     /// Fired from `GhosttyApp.closeSurfaceCallback` (not the action
     /// callback). Lives in the same enum so all libghostty-driven
     /// session mutations flow through a single dispatch point.
@@ -192,6 +196,11 @@ enum GhosttyActionRouter {
             let payload = action.action.cell_size
             log.debug("CELL_SIZE px=\(payload.width, privacy: .public)x\(payload.height, privacy: .public)")
             return .cellSize(view, devicePixelWidth: payload.width, devicePixelHeight: payload.height)
+
+        case GHOSTTY_ACTION_MIRROR_RESIZED:
+            guard let view = surfaceView(from: target) else { return nil }
+            let payload = action.action.mirror_resized
+            return .mirrorResized(view, columns: Int(payload.columns), rows: Int(payload.rows))
 
         case GHOSTTY_ACTION_COMMAND_FINISHED:
             guard let view = surfaceView(from: target) else { return nil }

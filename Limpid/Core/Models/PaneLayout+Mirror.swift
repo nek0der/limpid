@@ -20,15 +20,17 @@ struct OuterPadding: Equatable {
 
 /// Everything the pane area needs to draw a mirror tab from tmux's layout
 /// rather than from stored ratios: the layout, the cell it is measured in,
-/// and which leaf shows which tmux pane. Built by the view from the mirror
-/// and the tab, so the producer itself stays a pure function.
+/// which leaf shows which tmux pane, and the pane tmux has zoomed. Built by
+/// the view from the mirror and the tab, so the producer itself stays a
+/// pure function.
 struct TmuxMirrorGeometry: Equatable {
     let layout: TmuxLayout
     let cellSize: CellSize
     let leafIDs: [String: UUID]
+    let zoomedPane: String?
 
     func resolve() -> PaneLayout {
-        PaneLayout.resolve(mirror: layout, cellSize: cellSize, padding: .pinned) { leafIDs[$0] }
+        PaneLayout.resolve(mirror: layout, cellSize: cellSize, padding: .pinned, zoomedPane: zoomedPane) { leafIDs[$0] }
     }
 }
 
@@ -51,20 +53,30 @@ extension PaneLayout {
     /// A leaf that touches the window's edge carries `padding` on that
     /// edge, so its surface is `cells × cellSize + padding` and
     /// `ghostty_surface_size()` returns the cell count by construction.
-    /// Siblings fold to the right exactly as `TmuxLayout.paneNode` folds
-    /// them, so the divider paths are the ones the ratio producer assigns
-    /// to the same tree. A pane without a leaf id is skipped: the tab is
-    /// rewritten from the same layout before this runs, so that only
-    /// happens mid-update, and drawing nothing there is the safe choice.
+    /// The layout is the tree `TmuxLayout.paneNode` projects, so the
+    /// divider paths are the ones the ratio producer assigns to the same
+    /// tree. A pane without a leaf id is skipped: the tab is rewritten
+    /// from the same layout before this runs, so that only happens
+    /// mid-update, and drawing nothing there is the safe choice.
+    ///
+    /// While tmux zooms `zoomedPane`, that pane is drawn alone over the
+    /// whole window with every edge outer, which is the size tmux gave
+    /// it. Its layout keeps the unzoomed rectangles, so we take the
+    /// window's rather than the pane's.
     static func resolve(
         mirror layout: TmuxLayout,
         cellSize: CellSize,
         padding: OuterPadding,
+        zoomedPane: String? = nil,
         leafID: (String) -> UUID?
     ) -> PaneLayout {
         withoutActuallyEscaping(leafID) { leafID in
             var builder = MirrorBuilder(window: layout.root.rect, cellSize: cellSize, padding: padding, leafID: leafID)
-            builder.place(layout.root, path: [])
+            if let zoomedPane {
+                builder.place(.pane(id: zoomedPane, rect: layout.root.rect), path: [])
+            } else {
+                builder.place(layout.root, path: [])
+            }
             return PaneLayout(leaves: builder.leaves, dividers: builder.dividers)
         }
     }
@@ -75,49 +87,20 @@ extension PaneLayout {
     /// resizes a pane's enclosing cell along the axis, so any leaf of that
     /// side names it, and the first one is taken.
     static func mirrorResizeTarget(in layout: TmuxLayout, path: PaneSplitPath) -> MirrorResizeTarget? {
-        var node = layout.root
-        var remaining = path[...]
-        while true {
-            let direction: SplitDirection
-            let children: [TmuxLayoutNode]
-            let rect = node.rect
-            switch node {
-            case .pane:
-                return nil
-            case let .sideBySide(_, kids):
-                direction = .horizontal
-                children = kids
-            case let .stacked(_, kids):
-                direction = .vertical
-                children = kids
-            }
-            guard let first = children.first, children.count > 1 else { return nil }
-            guard let step = remaining.first else {
-                let extent = direction == .horizontal ? first.rect.width : first.rect.height
-                guard let pane = first.paneIDs.first else { return nil }
-                return MirrorResizeTarget(pane: pane, direction: direction, extent: extent)
-            }
-            remaining = remaining.dropFirst()
-            switch step {
-            case .first:
-                node = first
-            case .second:
-                // The right fold: the rest of the siblings form one box that
-                // starts where the second sibling starts.
-                let rest = Array(children.dropFirst())
-                if rest.count == 1 {
-                    node = rest[0]
-                } else if direction == .horizontal {
-                    let restX = rest[0].rect.x
-                    let box = TmuxCellRect(width: rect.x + rect.width - restX, height: rect.height, x: restX, y: rect.y)
-                    node = .sideBySide(rect: box, children: rest)
-                } else {
-                    let restY = rest[0].rect.y
-                    let box = TmuxCellRect(width: rect.width, height: rect.y + rect.height - restY, x: rect.x, y: restY)
-                    node = .stacked(rect: box, children: rest)
-                }
-            }
-        }
+        guard case let .split(direction, _, _, first, _) = layout.root.node(at: path),
+              let pane = first.paneIDs.first
+        else { return nil }
+        let extent = direction == .horizontal ? first.rect.width : first.rect.height
+        return MirrorResizeTarget(pane: pane, direction: direction, extent: extent)
+    }
+
+    /// The cell count a divider drag asks for: the first side's current
+    /// extent plus the drag in whole cells. The drag is measured from the
+    /// divider's `ratio × bounds`, which the mirror producer sets to the
+    /// band's center, so a pointer anywhere on the band asks for no change.
+    static func mirrorResizeCells(target: MirrorResizeTarget, delta: Double, cellSize: CellSize) -> Int {
+        let cell = target.direction == .horizontal ? cellSize.width : cellSize.height
+        return target.extent + Int((delta / cell).rounded())
     }
 
     /// The grid a mirror tab asks tmux for: whole cells that fit inside
@@ -152,64 +135,30 @@ private struct MirrorBuilder {
         case let .pane(id, rect):
             guard let leaf = leafID(id) else { return }
             leaves.append(PaneLayout.Leaf(id: leaf, rect: points(of: rect), edges: edges(of: rect)))
-        case let .sideBySide(rect, children):
-            placeSiblings(children, of: rect, direction: .horizontal, path: path)
-        case let .stacked(rect, children):
-            placeSiblings(children, of: rect, direction: .vertical, path: path)
-        }
-    }
-
-    /// The right fold of `TmuxLayout.foldSiblings`, with rectangles: the
-    /// first sibling takes `.first`, everything after it is one box that
-    /// starts where the second sibling starts and takes `.second`. The
-    /// cell tmux left between them is the divider.
-    private mutating func placeSiblings(
-        _ children: [TmuxLayoutNode],
-        of rect: TmuxCellRect,
-        direction: SplitDirection,
-        path: PaneSplitPath
-    ) {
-        guard let first = children.first else { return }
-        guard children.count > 1 else {
-            place(first, path: path)
-            return
-        }
-        let rest = Array(children.dropFirst())
-        let firstEnd: Int
-        let restStart: Int
-        let restRect: TmuxCellRect
-        let gap: TmuxCellRect
-        switch direction {
-        case .horizontal:
-            firstEnd = first.rect.x + first.rect.width
-            restStart = rest[0].rect.x
-            restRect = TmuxCellRect(width: rect.x + rect.width - restStart, height: rect.height, x: restStart, y: rect.y)
-            gap = TmuxCellRect(width: restStart - firstEnd, height: rect.height, x: firstEnd, y: rect.y)
-        case .vertical:
-            firstEnd = first.rect.y + first.rect.height
-            restStart = rest[0].rect.y
-            restRect = TmuxCellRect(width: rect.width, height: rect.y + rect.height - restStart, x: rect.x, y: restStart)
-            gap = TmuxCellRect(width: rect.width, height: restStart - firstEnd, x: rect.x, y: firstEnd)
-        }
-        let firstExtent = direction == .horizontal ? first.rect.width : first.rect.height
-        let restExtent = direction == .horizontal ? restRect.width : restRect.height
-        let total = firstExtent + restExtent
-        let ratio = total > 0 ? Double(firstExtent) / Double(total) : 0.5
-        let box = points(of: rect)
-
-        place(first, path: path + [.first])
-        dividers.append(PaneLayout.Divider(
-            path: path,
-            direction: direction,
-            rect: dividerRect(of: gap, within: box, direction: direction),
-            ratio: ratio,
-            bounds: box.size,
-            origin: box.origin
-        ))
-        if rest.count == 1 {
-            place(rest[0], path: path + [.second])
-        } else {
-            placeSiblings(rest, of: restRect, direction: direction, path: path + [.second])
+        case let .split(direction, rect, gap, first, second):
+            let box = points(of: rect)
+            let band = dividerRect(of: gap, within: box, direction: direction)
+            // The drag measures the pointer against `ratio × bounds`, so
+            // the ratio places that point at the band's center. The cell
+            // ratio `TmuxLayout.paneNode` stores excludes the border and
+            // the padding, and would put it up to a cell and a half off
+            // the band near the window's edges.
+            let ratio = switch direction {
+            case .horizontal:
+                box.width > 0 ? Double((band.midX - box.minX) / box.width) : 0.5
+            case .vertical:
+                box.height > 0 ? Double((band.midY - box.minY) / box.height) : 0.5
+            }
+            place(first, path: path + [.first])
+            dividers.append(PaneLayout.Divider(
+                path: path,
+                direction: direction,
+                rect: band,
+                ratio: ratio,
+                bounds: box.size,
+                origin: box.origin
+            ))
+            place(second, path: path + [.second])
         }
     }
 

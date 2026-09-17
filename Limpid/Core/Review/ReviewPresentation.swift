@@ -240,15 +240,17 @@ final class ReviewPresentation {
     }
 
     /// The focus moved. Ignored while the destination is pinned, which is the
-    /// whole of what a pin does.
-    func focusedPaneChanged(to paneID: UUID?) {
+    /// whole of what a pin does, and when the focused pane sits on a tab review
+    /// may not dock (`isDockable`, see `ReviewAgents.dockablePaneID`): the strip
+    /// keeps the pane it has rather than taking one it would resize.
+    func focusedPaneChanged(to paneID: UUID?, isDockable: Bool) {
         if let transientOwnerPaneID {
             if paneID != transientOwnerPaneID {
                 close()
             }
             return
         }
-        guard !isDestinationPinned else { return }
+        guard !isDestinationPinned, isDockable else { return }
         originPaneID = paneID
     }
 

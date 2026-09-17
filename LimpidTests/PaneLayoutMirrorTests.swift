@@ -59,8 +59,8 @@ struct PaneLayoutMirrorTests {
         switch node {
         case let .pane(id, rect):
             [id: rect]
-        case let .sideBySide(_, children), let .stacked(_, children):
-            children.reduce(into: [:]) { $0.merge(paneRects($1)) { first, _ in first } }
+        case let .split(_, _, _, first, second):
+            paneRects(first).merging(paneRects(second)) { first, _ in first }
         }
     }
 
@@ -98,12 +98,16 @@ struct PaneLayoutMirrorTests {
                 edges: [.bottom, .right]
             )
         ])
+        // The band's center over the split's extent: 8 + 50 × 6.5 + 6.5 / 2
+        // across 666, and 2 + 15 × 15 + 15 / 2 down 454 from a box at 0.
+        let outerRatio = 336.25 / 666
+        let innerRatio = 234.5 / 454
         #expect(layout.dividers == [
             .init(
                 path: [],
                 direction: .horizontal,
                 rect: CGRect(x: 8 + 50 * 6.5, y: 0, width: 6.5, height: 454),
-                ratio: 50.0 / 99.0,
+                ratio: outerRatio,
                 bounds: CGSize(width: 666, height: 454),
                 origin: .zero
             ),
@@ -111,7 +115,7 @@ struct PaneLayoutMirrorTests {
                 path: [.second],
                 direction: .vertical,
                 rect: CGRect(x: 8 + 51 * 6.5, y: 2 + 15 * 15, width: 49 * 6.5 + 8, height: 15),
-                ratio: 15.0 / 29.0,
+                ratio: innerRatio,
                 bounds: CGSize(width: 49 * 6.5 + 8, height: 454),
                 origin: CGPoint(x: 8 + 51 * 6.5, y: 0)
             )
@@ -195,6 +199,54 @@ struct PaneLayoutMirrorTests {
         #expect(PaneLayout.mirrorResizeTarget(in: three, path: []) == MirrorResizeTarget(pane: "%0", direction: .horizontal, extent: 33))
         let second = MirrorResizeTarget(pane: "%1", direction: .horizontal, extent: 33)
         #expect(PaneLayout.mirrorResizeTarget(in: three, path: [.second]) == second)
+    }
+
+    @Test("a zoomed pane is drawn alone over the whole window with every edge outer")
+    func zoomed_isOneFullWindowLeaf() throws {
+        let tmux = try #require(TmuxLayout.parse(mainVertical))
+        let layout = PaneLayout.resolve(mirror: tmux, cellSize: cell, padding: padding, zoomedPane: "%2", leafID: leafID)
+
+        #expect(try layout.leaves == [
+            .init(
+                id: #require(ids["%2"]),
+                rect: CGRect(x: 0, y: 0, width: 8 + 100 * 6.5 + 8, height: 2 + 30 * 15 + 2),
+                edges: .all
+            )
+        ])
+        #expect(layout.dividers.isEmpty)
+    }
+
+    /// The drag measures the pointer against `ratio × bounds`, so that point
+    /// has to be the band: near an edge the cell ratio put it more than half
+    /// a cell away, and the first 1pt of a drag resized the pane.
+    @Test("a drag to the band's center asks for no change and a one-cell drag for one cell", arguments: [
+        "0000,92x40,0,0{10x40,0,0,0,81x40,11,0,1}",
+        "0000,92x40,0,0{45x40,0,0,0,46x40,46,0,1}",
+        "0000,92x40,0,0{80x40,0,0,0,11x40,81,0,1}",
+        "0000,92x40,0,0[92x3,0,0,0,92x36,0,4,1]",
+        "0000,92x40,0,0[92x19,0,0,0,92x20,0,20,1]",
+        "0000,92x40,0,0[92x36,0,0,0,92x3,0,37,1]"
+    ])
+    func dividerDrag_isMeasuredFromTheBand(text: String) throws {
+        let cell = CellSize(width: 6.5, height: 14.5)
+        let tmux = try #require(TmuxLayout.parse(text))
+        let layout = PaneLayout.resolve(mirror: tmux, cellSize: cell, padding: padding, leafID: leafID)
+        let divider = try #require(layout.dividers.first)
+        let target = try #require(PaneLayout.mirrorResizeTarget(in: tmux, path: divider.path))
+        let step = divider.direction == .horizontal ? CGFloat(cell.width) : CGFloat(cell.height)
+        let center = CGPoint(x: divider.rect.midX, y: divider.rect.midY)
+        func cells(at offset: CGFloat) -> Int {
+            let location = divider.direction == .horizontal
+                ? CGPoint(x: center.x + offset, y: center.y)
+                : CGPoint(x: center.x, y: center.y + offset)
+            return PaneLayout.mirrorResizeCells(target: target, delta: divider.dragDelta(to: location), cellSize: cell)
+        }
+
+        #expect(cells(at: 0) == target.extent)
+        #expect(cells(at: 1) == target.extent)
+        #expect(cells(at: -1) == target.extent)
+        #expect(cells(at: step) == target.extent + 1)
+        #expect(cells(at: -step) == target.extent - 1)
     }
 
     @Test("the window grid is the whole cells left once the outer padding is removed")

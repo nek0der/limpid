@@ -85,17 +85,18 @@ struct PaneAreaView: View {
             // the identity model used by other libghostty SwiftUI
             // consumers' split-tree renderers.
             else if let tab = renderableTab, let root = tab.splitTree.root {
-                if let zoomID = tab.zoomedLeafID,
+                // A mirror tab zooms inside `SplitContainerView`, where the
+                // zoomed leaf keeps its place and view identity; a separate
+                // branch would build a second host for the same surface, and
+                // the retiring one can write its padding pin over the new one.
+                if tab.kind != .tmuxMirror,
+                   let zoomID = tab.zoomedLeafID,
                    tab.splitTree.contains(leafID: zoomID),
                    let view = resolveSurfaceView(zoomID, in: tab)
                 {
                     // Zoomed, the leaf touches every edge of the pane area.
-                    PaneContainerView(
-                        paneID: zoomID,
-                        surfaceView: view,
-                        paddingOverride: PaddingOverride.forEdges(.all, isMirror: tab.kind == .tmuxMirror)
-                    )
-                } else if let resolved = ResolvedSplitNode.build(root, resolveOrCreate: { id in
+                    PaneContainerView(paneID: zoomID, surfaceView: view)
+                } else if let resolved = ResolvedSplitNode.build(renderedRoot(of: tab, root: root), resolveOrCreate: { id in
                     resolveSurfaceView(id, in: tab)
                 }) {
                     SplitContainerView(
@@ -294,7 +295,10 @@ struct PaneAreaView: View {
         // that receives the feedback is always the one they are looking at.
         .onChange(of: renderableTab?.splitTree.effectiveFocusedLeafID) { _, newValue in
             guard reviewPresentation.isPresented else { return }
-            reviewPresentation.focusedPaneChanged(to: newValue)
+            reviewPresentation.focusedPaneChanged(
+                to: newValue,
+                isDockable: renderableTab?.capabilities.canOpenReview ?? true
+            )
         }
         // The docked pane is the only one review leaves visible, so changing
         // which one it is has to hand libghostty a new visible set. Picking a
@@ -323,15 +327,17 @@ struct PaneAreaView: View {
         // move the user makes constantly.
         .onChange(of: session.activeContainerID) { _, _ in
             guard reviewPresentation.isPresented else { return }
-            let paneID = renderableTab?.splitTree.effectiveFocusedLeafID
             if reviewPresentation.transientOwnerPaneID != nil {
-                reviewPresentation.focusedPaneChanged(to: paneID)
+                reviewPresentation.focusedPaneChanged(
+                    to: renderableTab?.splitTree.effectiveFocusedLeafID,
+                    isDockable: renderableTab?.capabilities.canOpenReview ?? true
+                )
                 return
             }
             if let directory = ReviewAgents.directory(session: session) {
                 let current = reviewPresentation.directory?.resolvingSymlinksInPath()
                 if current != directory.resolvingSymlinksInPath() {
-                    reviewPresentation.retarget(directory, originPaneID: paneID)
+                    reviewPresentation.retarget(directory, originPaneID: ReviewAgents.dockablePaneID(in: renderableTab))
                 }
             } else {
                 reviewPresentation.close()
@@ -443,10 +449,20 @@ struct PaneAreaView: View {
               let target = PaneLayout.mirrorResizeTarget(in: geometry.layout, path: splitPath),
               let paneID = geometry.leafIDs[target.pane]
         else { return }
-        let cell = target.direction == .horizontal ? geometry.cellSize.width : geometry.cellSize.height
-        let cells = target.extent + Int((delta / cell).rounded())
+        let cells = PaneLayout.mirrorResizeCells(target: target, delta: delta, cellSize: geometry.cellSize)
         guard cells != target.extent else { return }
         mirror.resize(paneID: paneID, direction: target.direction, cells: max(1, cells))
+    }
+
+    /// What the split container places. A zoomed mirror tab renders its
+    /// zoomed leaf alone, the same one leaf the mirror producer emits, so a
+    /// mirror tmux has not described yet still shows only that pane.
+    private func renderedRoot(of tab: Tab, root: PaneNode) -> PaneNode {
+        guard tab.kind == .tmuxMirror,
+              let zoomID = tab.zoomedLeafID,
+              tab.splitTree.contains(leafID: zoomID)
+        else { return root }
+        return .leaf(id: zoomID)
     }
 
     /// tmux's layout for a connected mirror tab, once tmux has described
@@ -454,6 +470,8 @@ struct PaneAreaView: View {
     /// off the observable mirror here, in the body, so a new layout or a
     /// font change lays the tab out again. Until then, or when the tab is
     /// not a mirror, the stored ratios place the panes (design §2 D0).
+    /// The zoomed leaf is named by its tmux pane so the producer can draw
+    /// it alone.
     private func mirrorGeometry(for tab: Tab) -> TmuxMirrorGeometry? {
         guard tab.kind == .tmuxMirror,
               let mirror = tmuxStore?.mirror(for: tab.id),
@@ -466,7 +484,10 @@ struct PaneAreaView: View {
                 leafIDs[ref.paneID] = paneID
             }
         }
-        return TmuxMirrorGeometry(layout: layout, cellSize: cellSize, leafIDs: leafIDs)
+        let zoomedPane = tab.zoomedLeafID.flatMap { zoomed in
+            leafIDs.first { $0.value == zoomed }?.key
+        }
+        return TmuxMirrorGeometry(layout: layout, cellSize: cellSize, leafIDs: leafIDs, zoomedPane: zoomedPane)
     }
 
     /// Resolve or create the `SurfaceView` for one leaf so the resolved

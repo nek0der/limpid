@@ -19,13 +19,6 @@ extension SurfaceView {
         onScrollbarStateChange?(state)
     }
 
-    /// The grid libghostty is drawing right now, for checking a mirror
-    /// pane against the cells tmux gave it.
-    var drawnGrid: (columns: Int, rows: Int)? {
-        guard let surface else { return nil }
-        return GhosttyFFI.surfaceGrid(surface)
-    }
-
     /// Convert libghostty's device-pixel cell report into points. We divide
     /// by the window's scale, not `lastPushedScale`: the first report fires
     /// inside `ghostty_surface_new`, before any scale has been pushed.

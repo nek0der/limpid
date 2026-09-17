@@ -1,5 +1,5 @@
 // TmuxControlTransport.swift
-// Limpid — the byte pipes of one control-mode client: line splitting and pane routing off the main actor.
+// Limpid — the byte pipes of one control-mode client: line splitting, reply pairing, and pane routing off the main actor.
 
 import Darwin
 import Foundation
@@ -8,62 +8,141 @@ import OSLog
 private let log = Logger.limpid("tmux.transport")
 
 /// Owns the descriptors of a `tmux -C attach` child and the serial queue
-/// that reads them. The queue does exactly two things with what it reads:
-/// split lines, and route `%output` bytes to the pane's sink. Every other
-/// line is parsed and delivered to the main actor in arrival order.
+/// that reads them. It reads and writes only its own duplicates of the
+/// descriptors it is started with, and closes each one on the queue that
+/// uses it, so no command or read can reach a descriptor number that has
+/// been closed and handed to a different stream.
+///
+/// The queue splits lines, routes `%output` bytes to the pane's sink, and
+/// pairs every reply block with the command that asked for it, all in
+/// stream order. Notifications are parsed and delivered to the main actor
+/// in arrival order.
+///
+/// Pairing lives here rather than on the main actor so that a reply can be
+/// acted on at the exact position of its closing marker: an `.inStream`
+/// completion runs before the line after `%end` is routed, which is what
+/// lets a pane sink resume with a captured screen and lose none of the
+/// output tmux sent after the capture.
 ///
 /// Deliberately **not** `@MainActor`, for the same reason as
 /// `TmuxPaneSink`: the Dispatch closures have to be formed in a
 /// nonisolated context or Swift 6 pins them to the main actor and Dispatch
-/// traps on its own queue. Ordering is preserved because the receive queue
+/// traps on its own queue. Ordering is preserved because the routing queue
 /// is serial and `DispatchQueue.main.async` is FIFO.
 final class TmuxControlTransport: @unchecked Sendable {
-    /// Routing queue. Sinks are created on it so their writes need no hop.
-    let queue: DispatchQueue
+    /// Where a reply's completion runs.
+    enum Completion: Sendable {
+        /// On the main actor, after every line routed before the reply.
+        case onMain(@MainActor (_ lines: [String], _ isError: Bool) -> Void)
+        /// Synchronously on `queue`, before the next line is routed. Must
+        /// be formed in a nonisolated context and touch no main-actor state.
+        case inStream(@Sendable (_ lines: [String], _ isError: Bool) -> Void)
+    }
 
-    private let readFd: Int32
-    private let writeFd: Int32
-    private let writeQueue: DispatchQueue
-    private let onLine: @MainActor (TmuxControlLine) -> Void
-    private let onEOF: @MainActor () -> Void
+    /// What the connection learns from the stream, delivered on the main
+    /// actor in stream order.
+    struct Events: Sendable {
+        /// The attach block closed; with `isError` tmux refused the attach
+        /// and `lines` says why.
+        let attachFinished: @MainActor (_ lines: [String], _ isError: Bool) -> Void
+        /// Every line that is neither pane output nor part of a reply.
+        let notification: @MainActor (TmuxControlLine) -> Void
+        /// The read end reached EOF, after every line before it.
+        let endOfStream: @MainActor () -> Void
+    }
+
+    /// Routing queue. Sinks are created on it so their writes need no hop.
+    let queue = DispatchQueue(label: "dev.limpid.tmux.control")
+    /// A write that blocks (tmux busy flushing to us) must not stall the
+    /// reader that would relieve it.
+    private let writeQueue = DispatchQueue(label: "dev.limpid.tmux.control.write")
+
+    private enum Phase {
+        /// Commands are held unwritten, so a refused attach fails them with
+        /// tmux's reason instead of writing them into an exiting client.
+        case connecting
+        case attached
+        /// Every later command fails at once with `reply`.
+        case closed(reply: [String])
+    }
 
     // Queue-confined.
+    /// Our duplicate of the write end; `nil` before `start` and after
+    /// `close`, so nothing can be written once the connection has ended.
+    private var writeFd: Int32?
+    private var events: Events?
+    private var phase = Phase.connecting
+    private var held: [(line: String, completion: Completion?)] = []
+    /// Completions of written commands in the order they were written.
+    /// tmux answers in that order, one flags-1 block each; blocks it emits
+    /// on its own never reach this queue (see `TmuxReplyAssembler`).
+    private var waiting: [Completion?] = []
+    private var assembler = TmuxReplyAssembler()
     private var pendingBytes: [UInt8] = []
     private var sinks: [String: TmuxPaneSink] = [:]
-    /// Between a `%begin` and its `%end` / `%error`, where a line starting
-    /// with `%` is a command's output and not a notification.
-    private var insideReplyBlock = false
     private var source: (any DispatchSourceRead)?
-    private var isStopped = false
 
-    init(
-        readFd: Int32,
-        writeFd: Int32,
-        onLine: @escaping @MainActor (TmuxControlLine) -> Void,
-        onEOF: @escaping @MainActor () -> Void
-    ) {
-        self.readFd = readFd
-        self.writeFd = writeFd
-        self.onLine = onLine
-        self.onEOF = onEOF
-        queue = DispatchQueue(label: "dev.limpid.tmux.control")
-        writeQueue = DispatchQueue(label: "dev.limpid.tmux.control.write")
-    }
-
-    func start() {
-        let source = DispatchSource.makeReadSource(fileDescriptor: readFd, queue: queue)
-        source.setEventHandler { [weak self] in self?.drain() }
-        source.resume()
-        queue.async { [self] in self.source = source }
-    }
-
-    func stop() {
-        queue.async { [self] in
-            guard !isStopped else { return }
-            isStopped = true
-            source?.cancel()
-            source = nil
+    /// Start reading `readFd` and writing `writeFd`. Both are duplicated
+    /// before this returns, so the caller closes its own copies whenever
+    /// it likes; the duplicates are close-on-exec, because libghostty
+    /// forks shells without sweeping descriptors and an inherited write
+    /// end would keep tmux from ever seeing EOF.
+    func start(readFd: Int32, writeFd: Int32, events: Events) {
+        let ownRead = fcntl(readFd, F_DUPFD_CLOEXEC, 0)
+        let ownWrite = fcntl(writeFd, F_DUPFD_CLOEXEC, 0)
+        let isDuplicated = ownRead >= 0 && ownWrite >= 0
+        if !isDuplicated {
+            log.error("control descriptors not duplicated errno=\(errno, privacy: .public)")
         }
+        queue.async { [self] in
+            guard isDuplicated, case .connecting = phase, source == nil else {
+                for fd in [ownRead, ownWrite] where fd >= 0 {
+                    Darwin.close(fd)
+                }
+                // With nothing to read, the stream has already ended.
+                if !isDuplicated {
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated { events.endOfStream() }
+                    }
+                }
+                return
+            }
+            self.writeFd = ownWrite
+            self.events = events
+            let source = DispatchSource.makeReadSource(fileDescriptor: ownRead, queue: queue)
+            source.setEventHandler { [weak self] in self?.drain(ownRead) }
+            // The documented place to close a source's descriptor: the
+            // source no longer watches it once this runs.
+            source.setCancelHandler { Darwin.close(ownRead) }
+            source.resume()
+            self.source = source
+        }
+    }
+
+    /// Stop reading and fail every command still unanswered, and every one
+    /// sent later, with `reply`. The first call wins. The write end is
+    /// closed behind the writes already queued, which is also what tells
+    /// tmux the client is done.
+    func close(failingPendingWith reply: [String]) {
+        queue.async { [self] in
+            if case .closed = phase {
+                return
+            }
+            phase = .closed(reply: reply)
+            releaseDescriptors()
+            let failed = held.map(\.completion) + waiting
+            held.removeAll()
+            waiting.removeAll()
+            for completion in failed {
+                completion.map { Self.complete($0, lines: reply, isError: true) }
+            }
+        }
+    }
+
+    /// An owner that never called `close` still gives the descriptors back.
+    /// No block on `queue` can be pending here: each one holds `self`.
+    deinit {
+        releaseDescriptors()
     }
 
     /// Route a pane's `%output` bytes to `sink`, or stop routing them with
@@ -75,12 +154,37 @@ final class TmuxControlTransport: @unchecked Sendable {
         }
     }
 
-    /// Write one command line to tmux. A separate queue, because a write
-    /// that blocks (tmux busy flushing to us) must not stall the reader
-    /// that would relieve it.
-    func send(_ line: String) {
+    /// Write one command line to tmux. The completion is queued on the
+    /// routing queue before the line is handed to the writer, so it exists
+    /// before any byte of its reply can be read.
+    func send(_ line: String, completion: Completion?) {
+        queue.async { [self] in
+            switch phase {
+            case .connecting:
+                held.append((line, completion))
+            case .attached:
+                waiting.append(completion)
+                write(line)
+            case let .closed(reply):
+                completion.map { Self.complete($0, lines: reply, isError: true) }
+            }
+        }
+    }
+
+    // MARK: - Queue-confined
+
+    private func releaseDescriptors() {
+        source?.cancel()
+        source = nil
+        if let fd = writeFd {
+            writeFd = nil
+            writeQueue.async { Darwin.close(fd) }
+        }
+    }
+
+    private func write(_ line: String) {
+        guard let fd = writeFd else { return }
         let bytes = Array((line + "\n").utf8)
-        let fd = writeFd
         writeQueue.async {
             var offset = 0
             while offset < bytes.count {
@@ -101,9 +205,7 @@ final class TmuxControlTransport: @unchecked Sendable {
         }
     }
 
-    // MARK: - Queue-confined
-
-    private func drain() {
+    private func drain(_ readFd: Int32) {
         var buffer = [UInt8](repeating: 0, count: 65536)
         let n = buffer.withUnsafeMutableBytes { Darwin.read(readFd, $0.baseAddress, $0.count) }
         if n > 0 {
@@ -114,7 +216,7 @@ final class TmuxControlTransport: @unchecked Sendable {
             // readable, so it has to be torn down here or the handler spins.
             source?.cancel()
             source = nil
-            let finish = onEOF
+            guard let finish = events?.endOfStream else { return }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { finish() }
             }
@@ -126,24 +228,76 @@ final class TmuxControlTransport: @unchecked Sendable {
     private func routeCompleteLines() {
         var start = pendingBytes.startIndex
         while let newline = pendingBytes[start...].firstIndex(of: 0x0A) {
-            let line = TmuxProtocol.parseLine(pendingBytes[start..<newline], insideReplyBlock: insideReplyBlock)
+            let line = TmuxProtocol.parseLine(pendingBytes[start..<newline], insideReplyBlock: assembler.isInsideBlock)
             start = newline + 1
-            switch line {
-            case .begin: insideReplyBlock = true
-            case .end, .error: insideReplyBlock = false
-            default: break
-            }
             if case let .output(pane, bytes) = line {
                 sinks[pane]?.write(bytes)
                 continue
             }
-            let deliver = onLine
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { deliver(line) }
+            if let event = assembler.consume(line) {
+                handle(event)
+                continue
+            }
+            switch line {
+            case .begin, .end, .error, .text:
+                continue
+            case let .layoutChange(_, layout, _, _):
+                // tmux has resized these panes, and a capture it answers
+                // from here on is taken at the new size, which the surface
+                // may not have yet. Pausing here, in stream order, keeps
+                // such a capture from being painted; the mirror repaints
+                // once the surface has caught up. The layout lists every
+                // pane of the window; a pane with no sink is not shown.
+                for pane in TmuxLayout.parse(layout)?.root.paneIDs ?? [] {
+                    sinks[pane]?.pauseInOrder()
+                }
+                fallthrough
+            default:
+                guard let deliver = events?.notification else { continue }
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { deliver(line) }
+                }
             }
         }
         if start > pendingBytes.startIndex {
             pendingBytes.removeFirst(start - pendingBytes.startIndex)
+        }
+    }
+
+    private func handle(_ event: TmuxReplyAssembler.Event) {
+        switch event {
+        case let .attachFinished(lines, isError):
+            if !isError, case .connecting = phase {
+                phase = .attached
+                let queued = held
+                held.removeAll()
+                for entry in queued {
+                    waiting.append(entry.completion)
+                    write(entry.line)
+                }
+            }
+            guard let finish = events?.attachFinished else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { finish(lines, isError) }
+            }
+        case let .reply(lines, isError, marker):
+            if isError {
+                let reason = lines.joined(separator: " | ")
+                log.error("tmux command \(marker.number, privacy: .public) failed: \(reason, privacy: .private)")
+            }
+            guard !waiting.isEmpty, let completion = waiting.removeFirst() else { return }
+            Self.complete(completion, lines: lines, isError: isError)
+        }
+    }
+
+    private static func complete(_ completion: Completion, lines: [String], isError: Bool) {
+        switch completion {
+        case let .onMain(handler):
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { handler(lines, isError) }
+            }
+        case let .inStream(handler):
+            handler(lines, isError)
         }
     }
 }

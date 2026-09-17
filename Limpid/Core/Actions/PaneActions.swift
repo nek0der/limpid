@@ -138,30 +138,7 @@ enum PaneActions {
         guard let leafID = tab.splitTree.effectiveFocusedLeafID
         else { return }
         guard CloseConfirmer.allow(.pane, source: source, paneIDs: [leafID]) else { return }
-        session.update(tab.id) { t in
-            let result = t.splitTree.remove(leafID)
-            t.splitTree = result.tree
-            // Clear zoom if the zoomed pane just disappeared.
-            if let z = t.zoomedLeafID, !t.splitTree.contains(leafID: z) {
-                t.zoomedLeafID = nil
-            }
-            // Drop every per-pane dictionary entry for the closed leaf. All
-            // of them are persisted through `SessionSnapshot`, so a missed
-            // one accumulates on disk on every ⌘W against a multi-pane tab.
-            // `mergePaneIntoTab` sweeps the same set on its leaf-out path;
-            // keep the two close-leaf paths structurally identical.
-            for provider in AgentKind.allCases {
-                t.agentSessions[provider]?.removeValue(forKey: leafID)
-            }
-            t.paneStates.removeValue(forKey: leafID)
-            t.scrollbackPaths.removeValue(forKey: leafID)
-            t.initialCommands.removeValue(forKey: leafID)
-            for provider in AgentKind.allCases {
-                t.agentBadges[provider]?.removeValue(forKey: leafID)
-            }
-        }
-        session.paneSearchStates.removeValue(forKey: leafID)
-        session.paneTransients.removeValue(forKey: leafID)
+        session.removePane(leafID, fromTab: tab.id)
         registry.unregister(leafID)
         agentProjection?.didClosePane(leafID)
         // If the tab is now empty, close it altogether.

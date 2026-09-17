@@ -77,23 +77,9 @@ extension TabActions {
             }
         }
 
-        // Drop the pane from the source tab. zoom is per-tab so clear
-        // it if the moved pane was the zoomed one.
-        session.update(sourceTab.id) { t in
-            let result = t.splitTree.remove(paneID)
-            t.splitTree = result.tree
-            if t.zoomedLeafID == paneID {
-                t.zoomedLeafID = nil
-            }
-            t.paneStates.removeValue(forKey: paneID)
-            for provider in AgentKind.allCases {
-                t.agentSessions[provider]?.removeValue(forKey: paneID)
-                t.agentBadges[provider]?.removeValue(forKey: paneID)
-            }
-            t.scrollbackPaths.removeValue(forKey: paneID)
-            t.initialCommands.removeValue(forKey: paneID)
-            t.tmuxBindings.removeValue(forKey: paneID)
-        }
+        // Drop the pane from the source tab only. The session's state and
+        // unread count stay, because the pane is still open in the target.
+        session.update(sourceTab.id) { $0.removeLeaf(paneID) }
 
         // If the source tab held only the moved pane, it's empty now —
         // close it so it doesn't linger as a phantom row in tab column. We

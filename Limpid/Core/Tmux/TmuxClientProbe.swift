@@ -142,10 +142,11 @@ enum TmuxClientProbe {
             let path = ordered[(cursor + offset) % ordered.count]
             visited += 1
             snapshot.observedAt[path] = ProcessInfo.processInfo.systemUptime
-            var info = stat()
-            guard lstat(path, &info) == 0, info.st_uid == getuid(),
-                  (info.st_mode & S_IFMT) == S_IFSOCK
-            else { snapshot.outcomes[path] = .launchFailed
+            // Candidates also come from restored bindings and agent reports,
+            // which never passed through `socketPaths`, so each one is
+            // checked here as well.
+            guard isOwnSocket(atPath: path) else {
+                snapshot.outcomes[path] = .launchFailed
                 continue
             }
             let result = probeServer(tmuxPath: tmuxPath, socketPath: path, deadline: deadline, timeout: timeout)
@@ -281,20 +282,40 @@ enum TmuxClientProbe {
         return output
     }
 
-    /// Sockets inside one server directory.
+    /// Sockets inside one server directory that belong to us.
     ///
-    /// Every entry is handed on without checking its file type. tmux is
-    /// the authority on whether a path is a socket it can talk to, and
-    /// anything else — a directory, a leftover lock file — comes back as
-    /// an error we already treat as "no clients here". Filtering first
-    /// would only duplicate that judgement.
+    /// We address every server with `-S`, and `-S` skips the check tmux
+    /// applies to its own directory under `-L`: owned by the user and
+    /// closed to other accounts. We apply the same rule, no stricter, so
+    /// every server tmux itself would use is still listed. Without it, another local account that
+    /// created `tmux-<uid>` first could list a socket of its own here, and
+    /// a mirror opened on it would send the user's keystrokes to that
+    /// server. So we make the directory check ourselves, and keep only
+    /// entries that are sockets owned by the user.
     static func socketPaths(inServerDirectory directory: URL) -> [URL] {
+        var info = stat()
+        guard lstat(directory.path, &info) == 0,
+              (info.st_mode & S_IFMT) == S_IFDIR,
+              info.st_uid == getuid(),
+              info.st_mode & S_IRWXO == 0
+        else { return [] }
+        // `try?`: an unreadable directory lists no servers, which is the
+        // same answer as an empty one.
         let contents = try? FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         )
-        return contents ?? []
+        return (contents ?? []).filter { isOwnSocket(atPath: $0.path) }
+    }
+
+    /// A socket owned by the user, not followed through a symlink. The
+    /// only kind of path we hand to `tmux -S`.
+    static func isOwnSocket(atPath path: String) -> Bool {
+        var info = stat()
+        return lstat(path, &info) == 0
+            && info.st_uid == getuid()
+            && (info.st_mode & S_IFMT) == S_IFSOCK
     }
 
     /// `${TMUX_TMPDIR:-/tmp}/tmux-<uid>`, where tmux puts the default

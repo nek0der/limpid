@@ -189,4 +189,23 @@ struct TabActionsMergePaneIntoTabTests {
         // longer in this tree.
         #expect(session.tab(source.id)?.zoomedLeafID == nil)
     }
+
+    // MARK: - tmux mirror tabs
+
+    /// A tmux pane cannot leave tmux and a mirror tab takes no local pane
+    /// (design §1), so without two live mirrors on one session every
+    /// pairing that involves a mirror is refused and both trees stay put.
+    @Test("a merge into or out of a mirror tab with no tmux connection changes neither tab", arguments: [false, true])
+    func mirrorMerge_withoutStore_isRefused(sourceIsMirror: Bool) throws {
+        let (session, source, target, movedPane) = try Self.sessionWithSourceAndTarget()
+        let mirrorID = sourceIsMirror ? source.id : target.id
+        session.update(mirrorID) { $0.kind = .tmuxMirror }
+        let sourceBefore = try #require(session.tab(source.id)).splitTree
+        let targetBefore = try #require(session.tab(target.id)).splitTree
+
+        TmuxMirrorActions.mergePaneIntoTab(session, paneID: movedPane, into: target.id, store: nil, toastCenter: nil)
+
+        #expect(session.tab(source.id)?.splitTree == sourceBefore)
+        #expect(session.tab(target.id)?.splitTree == targetBefore)
+    }
 }

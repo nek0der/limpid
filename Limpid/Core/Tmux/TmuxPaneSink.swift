@@ -8,10 +8,15 @@ import OSLog
 private let log = Logger.limpid("tmux.sink")
 
 /// The host side of one pane's `socketpair(2)`. `surfaceFd` is handed to
-/// libghostty's mirror backend at surface creation and stays put for the
-/// surface's life; everything written here appears as terminal output
-/// there, and everything the surface would have written to a pty — key
-/// encodings, the VT parser's own replies — arrives on `onSurfaceOutput`.
+/// libghostty's mirror backend at surface creation; everything written
+/// here appears as terminal output there, and everything the surface would
+/// have written to a pty — key encodings, the VT parser's own replies —
+/// arrives on `onSurfaceOutput`.
+///
+/// Output is only ever the newest state of the pane. Whenever the screen is
+/// rebuilt from `capture-pane`, everything tmux sent before that capture is
+/// already in it, so it is discarded rather than painted again, whether it
+/// arrives during the pause or was still held for a slow reader.
 ///
 /// Deliberately **not** `@MainActor`. Every closure handed to Dispatch is
 /// built here, in a nonisolated context; under Swift 6 a `@Sendable`
@@ -28,13 +33,15 @@ final class TmuxPaneSink: @unchecked Sendable {
     static let defaultLimit = 4 * 1024 * 1024
 
     /// Descriptor for `ghostty_surface_config_s.mirror_io_fd`. The backend
-    /// borrows it and never closes it.
+    /// reads its own duplicate, taken at surface creation, so `close()` may
+    /// close ours while the surface lives: closing `hostFd` ends its stream.
     let surfaceFd: Int32
 
     /// Runs on the main actor with whatever the surface wrote.
     let onSurfaceOutput: @MainActor (Data) -> Void
-    /// Runs on the main actor once per overflow: the pending output was
-    /// dropped and the caller has to rebuild the screen from tmux.
+    /// Runs on the main actor when the held output passed `limit`. The sink
+    /// has dropped it and paused itself, so this happens at most once per
+    /// pause; the caller rebuilds the screen from tmux and resumes.
     let onOverflow: @MainActor () -> Void
 
     private let hostFd: Int32
@@ -42,7 +49,10 @@ final class TmuxPaneSink: @unchecked Sendable {
     private let limit: Int
     private var pending = Data()
     private var isPaused = false
-    private var hasReportedOverflow = false
+    /// Counts pauses. An overflow pauses without counting: what it drops
+    /// precedes any capture still on its way, so that capture shows it, and
+    /// the rebuild the overflow asks for pauses again anyway.
+    private var rebuild = 0
     private var isClosed = false
     private var readSource: (any DispatchSourceRead)?
     private var writeSource: (any DispatchSourceWrite)?
@@ -56,6 +66,13 @@ final class TmuxPaneSink: @unchecked Sendable {
         var fds: [Int32] = [-1, -1]
         guard socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0 else {
             throw TmuxSinkError.socketpairFailed(errno)
+        }
+        // Close-on-exec on both ends: libghostty forks a shell for every
+        // ordinary pane without sweeping descriptors, and an inherited copy
+        // would keep the stream open after we close ours and let that
+        // shell read or type into the mirrored pane.
+        for fd in fds {
+            _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
         }
         surfaceFd = fds[0]
         hostFd = fds[1]
@@ -74,7 +91,8 @@ final class TmuxPaneSink: @unchecked Sendable {
     /// Queue up output for the surface. Must run on `queue`; the transport
     /// calls this from its routing handler. Never blocks: what the socket
     /// will not take now is held in `pending` and drained when it becomes
-    /// writable, and past `limit` the held bytes are dropped instead.
+    /// writable, and past `limit` the held bytes are dropped and the sink
+    /// pauses until the screen is rebuilt.
     func write(_ bytes: Data) {
         dispatchPrecondition(condition: .onQueue(queue))
         dispatchPrecondition(condition: .notOnQueue(.main))
@@ -97,31 +115,62 @@ final class TmuxPaneSink: @unchecked Sendable {
         }
     }
 
-    /// Drop output until `resume()`. Used while the screen is being rebuilt
-    /// from `capture-pane`: what arrives meanwhile predates the capture, and
-    /// painting it again would duplicate it. Output that tmux emits after
-    /// the capture reply but before `resume` runs on this queue is lost as
-    /// well; that window is one hop through the main actor.
+    /// Drop output, including what is still held for a slow reader, until
+    /// a `resumeInOrder` that names this pause. Used while the screen is
+    /// being rebuilt from `capture-pane`. The pause is queued on `queue`,
+    /// and so is every command the connection writes, so a capture
+    /// requested after this call is written after the pause has taken
+    /// effect: everything dropped predates the capture and is already in it.
     func pause() {
-        queue.async { [self] in isPaused = true }
+        queue.async { [self] in pauseInOrder() }
     }
 
-    func resume() {
-        queue.async { [self] in
-            isPaused = false
-            drain()
-        }
+    /// `pause()` at the current position in the control stream, for the
+    /// transport when a line it routes makes the pane's screen stale.
+    ///
+    /// Every pause is a new rebuild. A capture taken before a later pause
+    /// may describe a screen the surface does not have yet, so only the
+    /// latest rebuild's capture may end the pause (see `latestRebuild`).
+    func pauseInOrder() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        isPaused = true
+        rebuild += 1
+        discardPending()
     }
 
-    /// Resume with `bytes` placed ahead of anything a stalled reader left
-    /// pending. This is how a rebuilt screen (`capture-pane`) lands as one
-    /// piece before live output starts flowing again.
-    func resume(afterInjecting bytes: Data) {
-        queue.async { [self] in
-            pending.insert(contentsOf: bytes, at: pending.startIndex)
-            isPaused = false
-            drain()
-        }
+    /// The rebuild the latest pause started. A caller reads it on `queue`
+    /// at a point in the stream after which it asks for the capture, and
+    /// hands it back to `resumeInOrder`; any pause routed in between makes
+    /// that capture stand aside.
+    var latestRebuild: Int {
+        dispatchPrecondition(condition: .onQueue(queue))
+        return rebuild
+    }
+
+    /// End a pause at the current position in the control stream. Called on
+    /// `queue` from the capture reply's in-stream completion, so the next
+    /// `%output` routed to this sink is the first byte tmux sent after the
+    /// capture, and it lands after `bytes`. `bytes` is the rebuilt screen,
+    /// or `nil` when the rebuild failed and live output is the best the
+    /// pane can show.
+    ///
+    /// Only valid after a pause (or an overflow, which pauses): the
+    /// injected screen replaces what was dropped, and on a sink that was
+    /// never paused it would land on top of output already shown.
+    ///
+    /// `rebuild` is the `latestRebuild` the caller read before asking for
+    /// the capture. Returns `false`, injecting nothing and staying paused,
+    /// when a pause has taken effect since.
+    @discardableResult
+    func resumeInOrder(injecting bytes: Data?, rebuild: Int) -> Bool {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard !isClosed else { return false }
+        precondition(isPaused, "resumeInOrder without a pause")
+        guard rebuild == self.rebuild else { return false }
+        pending = bytes ?? Data()
+        isPaused = false
+        drain()
+        return true
     }
 
     /// `handler` runs on the main actor when output arrives, at most once
@@ -165,9 +214,9 @@ final class TmuxPaneSink: @unchecked Sendable {
         }
     }
 
-    /// Stop reading the surface's output and close our end. `surfaceFd` is
-    /// closed too, because after this nothing legitimate can use it; the
-    /// surface must already be gone.
+    /// Stop reading the surface's output and close both descriptors. A
+    /// surface still showing the pane sees its stream end, since it reads
+    /// its own duplicate of `surfaceFd`; after this nothing is delivered.
     func close() {
         queue.async { [self] in
             guard !isClosed else { return }
@@ -186,20 +235,28 @@ final class TmuxPaneSink: @unchecked Sendable {
 
     private func append(_ bytes: some DataProtocol) {
         if pending.count + bytes.count > limit {
-            // Keep nothing: a partial escape sequence at the cut would
-            // corrupt whatever follows, and the caller repaints anyway.
-            pending.removeAll(keepingCapacity: false)
-            if !hasReportedOverflow {
-                hasReportedOverflow = true
-                let notify = onOverflow
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated { notify() }
-                }
+            // Keep nothing, and take nothing more until the repaint: a
+            // partial escape sequence at the cut would corrupt whatever
+            // follows, the capture included, and the capture shows all of
+            // this output anyway.
+            isPaused = true
+            discardPending()
+            let notify = onOverflow
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { notify() }
             }
             log.warning("pane output dropped (over \(self.limit, privacy: .public) bytes pending)")
             return
         }
         pending.append(contentsOf: bytes)
+    }
+
+    /// A fresh `Data` rather than `removeAll`, which keeps a slice's
+    /// storage around (see `drain`).
+    private func discardPending() {
+        pending = Data()
+        writeSource?.cancel()
+        writeSource = nil
     }
 
     private func writeNow(_ bytes: some DataProtocol) -> Int {
@@ -218,15 +275,21 @@ final class TmuxPaneSink: @unchecked Sendable {
         }
     }
 
+    /// `removeFirst` on `Data` only moves the start index over the same
+    /// storage, and appending keeps growing that storage, so what was
+    /// written would stay allocated for the life of the sink. An emptied
+    /// buffer is replaced, and one that never empties is copied once its
+    /// dead prefix passes `limit`, which keeps the storage under twice it.
     private func drain() {
         guard !isPaused, !pending.isEmpty else { return }
         let n = writeNow(pending)
         pending.removeFirst(n)
         if pending.isEmpty {
-            hasReportedOverflow = false
-            writeSource?.cancel()
-            writeSource = nil
+            discardPending()
         } else {
+            if pending.startIndex > limit {
+                pending = Data(pending)
+            }
             armWriteSource()
         }
     }

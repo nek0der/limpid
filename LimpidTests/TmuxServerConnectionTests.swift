@@ -6,83 +6,46 @@ import Foundation
 import Testing
 @testable import Limpid
 
-/// A throwaway tmux server on a socket under a temp directory, so the
-/// user's own server is never touched and two tests cannot share state.
-private struct TmuxServerFixture {
-    let executable: String
-    let directory: URL
-    let socketPath: String
-
-    static func launch() throws -> TmuxServerFixture {
-        let executable = try #require(TmuxClientProbe.locateTmux())
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("limpid-tmux-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let fixture = TmuxServerFixture(
-            executable: executable,
-            directory: directory,
-            socketPath: directory.appendingPathComponent("sock").path
-        )
-        _ = fixture.run(["new-session", "-d", "-s", "t", "-x", "80", "-y", "24", "sh", "-c", "PS1='$ ' exec sh"])
-        _ = fixture.run(["set-option", "-g", "status", "off"])
-        return fixture
-    }
-
-    @discardableResult
-    func run(_ arguments: [String]) -> String? {
-        if case let .success(output) = TmuxCommand().run(executable: executable, arguments: ["-S", socketPath] + arguments) {
-            return output.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return nil
-    }
-
-    func format(_ format: String) throws -> String {
-        try #require(run(["display-message", "-p", "-t", "t", format]))
-    }
-
-    func tearDown() {
-        _ = run(["kill-server"])
-        try? FileManager.default.removeItem(at: directory)
-    }
+/// A reply handler that resumes `sink` with `bytes` at the reply's place in
+/// the stream. Built outside the main actor so Dispatch can run it on the
+/// routing queue.
+private func resumeInStream(_ sink: TmuxPaneSink, injecting bytes: Data) -> @Sendable ([String], Bool) -> Void {
+    { _, _ in sink.resumeInOrder(injecting: bytes, rebuild: 1) }
 }
 
+/// Counts overflow reports; a class so the main-actor callback can bump it.
 @MainActor
-private func waitUntil(_ timeout: Duration = .seconds(3), _ condition: () -> Bool) async -> Bool {
-    let clock = ContinuousClock()
-    let deadline = clock.now + timeout
-    while clock.now < deadline {
-        if condition() {
-            return true
-        }
-        try? await Task.sleep(for: .milliseconds(20))
+private final class OverflowCount {
+    var value = 0
+}
+
+/// Every reply one command received, so a test can tell once from twice.
+@MainActor
+private final class ReplyRecord {
+    var replies: [(lines: [String], isError: Bool)] = []
+
+    func handler() -> TmuxServerConnection.ReplyHandler {
+        { lines, isError in self.replies.append((lines, isError)) }
     }
-    return condition()
 }
 
-/// Read from `fd` until `marker` shows up or `timeout` passes. Runs off the
-/// main actor so a blocked read never stalls the connection's deliveries.
-private func readUntil(fd: Int32, contains marker: String, timeout: Duration) async -> Data {
-    await Task.detached {
-        var collected = Data()
-        let needle = Data(marker.utf8)
-        let clock = ContinuousClock()
-        let deadline = clock.now + timeout
-        var buffer = [UInt8](repeating: 0, count: 65536)
-        while clock.now < deadline, collected.range(of: needle) == nil {
-            var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
-            guard poll(&descriptor, 1, 100) > 0 else { continue }
-            let n = buffer.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
-            if n > 0 {
-                collected.append(contentsOf: buffer[0..<n])
-            } else {
-                break
-            }
-        }
-        return collected
-    }.value
+/// `wait-for` on a channel nobody signals: tmux holds the reply until the
+/// client goes away, so the command is still pending when we stop it.
+private let neverAnswered = "wait-for limpid-tests-never-signaled"
+
+/// The text a pending command is failed with for `state`.
+@MainActor
+private func exitReply(_ state: TmuxServerConnection.State) -> [String]? {
+    guard case let .exited(reason) = state else { return nil }
+    return [reason ?? "connection closed"]
 }
 
-@Suite("tmux server connection", .serialized, .disabled(if: TmuxClientProbe.locateTmux() == nil, "tmux is not installed"))
+@Suite(
+    "tmux server connection",
+    .tags(.smoke),
+    .serialized,
+    .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
+)
 @MainActor
 struct TmuxServerConnectionTests {
     @Test("attaching closes the attach block, then a command gets exactly its own reply")
@@ -121,6 +84,83 @@ struct TmuxServerConnectionTests {
         connection.send("no-such-command") { lines, isError in failed = (lines, isError) }
         #expect(await waitUntil { failed != nil })
         #expect(failed?.isError == true)
+    }
+
+    /// tmux runs an `after-<command>` hook as its own command and wraps its
+    /// output in a flags-0 block right after our reply. Pairing by arrival
+    /// order alone would hand that block to the next command waiting.
+    @Test("a hook's block after split-window is not paired with the next command")
+    func afterSplitWindowHook_doesNotShiftReplies() async throws {
+        let server = try TmuxServerFixture.launch()
+        defer { server.tearDown() }
+        server.run(["set-hook", "-g", "after-split-window", "display-message -p hooked"])
+        let sessionID = try server.format("#{session_id}")
+
+        let connection = TmuxServerConnection(
+            executable: server.executable,
+            target: .init(socketPath: server.socketPath, sessionID: sessionID)
+        )
+        defer { connection.stop() }
+        try connection.start()
+        #expect(await waitUntil { connection.state == .attached })
+
+        // Both are written before either reply arrives, so the hook's block
+        // lands while `next` is still waiting.
+        var split: (lines: [String], isError: Bool)?
+        var next: (lines: [String], isError: Bool)?
+        connection.send("split-window -t \(sessionID)") { lines, isError in split = (lines, isError) }
+        connection.send("display-message -p next") { lines, isError in next = (lines, isError) }
+
+        #expect(await waitUntil { next != nil })
+        #expect(split?.lines == [])
+        #expect(split?.isError == false)
+        #expect(next?.lines == ["next"])
+        #expect(next?.isError == false)
+    }
+
+    @Test("a refused attach ends the connection with tmux's reason and fails the held commands with it")
+    func refusedAttach_exitsWithReason() async throws {
+        let server = try TmuxServerFixture.launch()
+        defer { server.tearDown() }
+
+        let connection = TmuxServerConnection(
+            executable: server.executable,
+            target: .init(socketPath: server.socketPath, sessionID: "$99")
+        )
+        defer { connection.stop() }
+        var held: (lines: [String], isError: Bool)?
+        connection.send("display-message -p held") { lines, isError in held = (lines, isError) }
+        try connection.start()
+
+        #expect(await waitUntil { held != nil })
+        #expect(connection.state == .exited(reason: "can't find session: $99"))
+        #expect(held?.lines == ["can't find session: $99"])
+        #expect(held?.isError == true)
+    }
+
+    /// A path that is not a socket fails before the protocol starts. The
+    /// client writes its reason to stderr, which we read when it exits; the
+    /// read must not hang and the handler must run off the main actor
+    /// without trapping.
+    @Test("a client that fails before speaking the protocol ends the connection and fails held commands")
+    func notASocket_exits() async throws {
+        let server = try TmuxServerFixture.launch()
+        defer { server.tearDown() }
+        let bogus = server.directory.appendingPathComponent("not-a-socket")
+        FileManager.default.createFile(atPath: bogus.path, contents: Data())
+
+        let connection = TmuxServerConnection(
+            executable: server.executable,
+            target: .init(socketPath: bogus.path, sessionID: "$0")
+        )
+        defer { connection.stop() }
+        var held: (lines: [String], isError: Bool)?
+        connection.send("display-message -p held") { lines, isError in held = (lines, isError) }
+        try connection.start()
+
+        #expect(await waitUntil { held != nil })
+        #expect(connection.state == .exited(reason: nil))
+        #expect(held?.isError == true)
     }
 
     @Test("a window resize comes back as a %layout-change notification with the new size")
@@ -162,7 +202,7 @@ struct TmuxServerConnectionTests {
         defer { connection.stop() }
         try connection.start()
         #expect(await waitUntil { connection.state == .attached })
-        let sink = try connection.attachPane(paneID)
+        let sink = try connection.attachPane(paneID) {}
 
         // Typed through the surface end, as libghostty would encode a
         // keystroke; tmux runs it in the pane and the echo comes back.
@@ -175,8 +215,8 @@ struct TmuxServerConnectionTests {
         #expect(connection.sinks[paneID] == nil)
     }
 
-    @Test("a stalled surface fills the sink to its limit, the overflow is reported once, and reading drains it")
-    func overflow_isReportedOnceAndDrains() async throws {
+    @Test("a stalled surface fills the sink to its limit, the overflow reaches the pane's owner once, and a repaint resumes it")
+    func overflow_isReportedOnceAndResumesWithRepaint() async throws {
         let server = try TmuxServerFixture.launch()
         defer { server.tearDown() }
         let paneID = try server.format("#{pane_id}")
@@ -190,20 +230,22 @@ struct TmuxServerConnectionTests {
             target: .init(socketPath: server.socketPath, sessionID: sessionID)
         )
         defer { connection.stop() }
-        var overflows = 0
-        connection.onPaneOverflow = { _ in overflows += 1 }
+        let overflows = OverflowCount()
         try connection.start()
         #expect(await waitUntil { connection.state == .attached })
-        let sink = try connection.attachPane(paneID, limit: 32 * 1024)
+        let sink = try connection.attachPane(paneID, limit: 32 * 1024) { overflows.value += 1 }
 
         // Nobody reads the surface end, so 400 KB has nowhere to go.
         connection.send("send-keys -t \(paneID) 'cat \(payload.path)' Enter")
-        #expect(await waitUntil(.seconds(5)) { overflows >= 1 })
-        #expect(overflows == 1)
+        #expect(await waitUntil(.seconds(5)) { overflows.value >= 1 })
+        #expect(overflows.value == 1)
 
-        // Reading the surface end lets the sink drain what it still holds.
-        let drained = await readUntil(fd: sink.surfaceFd, contains: "\u{1}never", timeout: .seconds(1))
-        #expect(!drained.isEmpty)
+        // The sink paused itself; the repaint the mirror asks for, under a
+        // pause of its own, is what gets it flowing again.
+        sink.pause()
+        connection.sendInStream("display-message -p repaint", completion: resumeInStream(sink, injecting: Data("REPAINT".utf8)))
+        let drained = await readUntil(fd: sink.surfaceFd, contains: "REPAINT", timeout: .seconds(2))
+        #expect(drained.range(of: Data("REPAINT".utf8)) != nil)
     }
 
     @Test("stop terminates the client process and flips the state")
@@ -219,10 +261,35 @@ struct TmuxServerConnectionTests {
         try connection.start()
         #expect(await waitUntil { connection.state == .attached })
         #expect(server.run(["list-clients"])?.isEmpty == false)
+        let pending = ReplyRecord()
+        connection.send(neverAnswered, completion: pending.handler())
 
         connection.stop()
         #expect(connection.state == .exited(reason: nil))
         #expect(await waitUntil { server.run(["list-clients"])?.isEmpty == true })
+        #expect(await waitUntil { !pending.replies.isEmpty })
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(pending.replies.count == 1)
+        #expect(pending.replies.first?.lines == ["connection closed"])
+        #expect(pending.replies.first?.isError == true)
+    }
+
+    @Test("a client that cannot be spawned throws and fails the commands sent before start once")
+    func failedSpawn_endsTheConnection() async throws {
+        let connection = TmuxServerConnection(
+            executable: "/nonexistent/limpid-tests/tmux",
+            target: .init(socketPath: "/nonexistent/limpid-tests/socket", sessionID: "$0")
+        )
+        let early = ReplyRecord()
+        connection.send("display-message -p early", completion: early.handler())
+
+        #expect(throws: (any Error).self) { try connection.start() }
+        let reply = try #require(exitReply(connection.state))
+        #expect(await waitUntil { !early.replies.isEmpty })
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(early.replies.count == 1)
+        #expect(early.replies.first?.lines == reply)
+        #expect(early.replies.first?.isError == true)
     }
 
     @Test("a killed server ends the connection with %exit")
@@ -240,11 +307,39 @@ struct TmuxServerConnectionTests {
         #expect(await waitUntil { connection.state == .attached })
 
         server.run(["kill-server"])
-        #expect(await waitUntil {
-            if case .exited = connection.state {
-                return true
-            }
-            return false
-        })
+        #expect(await waitUntil { exitReply(connection.state) != nil })
+    }
+
+    /// `kill-server` answers every queued command before the server goes,
+    /// so the server is stopped first: the command then reaches it and
+    /// stays unanswered until the server dies under it.
+    @Test("a command pending when the server dies fails once, with the exit reason")
+    func killedServer_failsPendingCommandOnce() async throws {
+        let server = try TmuxServerFixture.launch()
+        defer { server.tearDown() }
+        let sessionID = try server.format("#{session_id}")
+        let serverPID = try #require(pid_t(server.format("#{pid}")))
+
+        let connection = TmuxServerConnection(
+            executable: server.executable,
+            target: .init(socketPath: server.socketPath, sessionID: sessionID)
+        )
+        defer { connection.stop() }
+        try connection.start()
+        #expect(await waitUntil { connection.state == .attached })
+
+        try #require(kill(serverPID, SIGSTOP) == 0)
+        let pending = ReplyRecord()
+        connection.send("display-message -p unanswered", completion: pending.handler())
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(pending.replies.isEmpty)
+        try #require(kill(serverPID, SIGKILL) == 0)
+
+        #expect(await waitUntil { exitReply(connection.state) != nil })
+        #expect(await waitUntil { !pending.replies.isEmpty })
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(pending.replies.count == 1)
+        #expect(pending.replies.first?.lines == exitReply(connection.state))
+        #expect(pending.replies.first?.isError == true)
     }
 }

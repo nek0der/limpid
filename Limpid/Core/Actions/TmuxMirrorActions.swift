@@ -17,6 +17,9 @@ enum TmuxMirrorActions {
     /// and the mirror can only be registered once its tab id exists. A
     /// server that refuses us leaves a mirror tab with a dormant pane,
     /// which is the state a lost connection produces too.
+    ///
+    /// A window a live tab already mirrors is not opened twice; that tab is
+    /// brought forward instead, because each tmux pane feeds one sink.
     @discardableResult
     static func open(
         _ target: TmuxMirrorTarget,
@@ -26,6 +29,10 @@ enum TmuxMirrorActions {
         secureInput: SecureInputManager?,
         toastCenter: ToastCenter? = nil
     ) -> Bool {
+        if let existing = store.liveMirror(showing: target.windowID, of: target.binding) {
+            session.setActiveTab(existing.tabID)
+            return true
+        }
         let tab = session.openTabInActiveScope()
         guard let paneID = tab.splitTree.allLeafIDs().first else { return false }
         let ref = TmuxPaneRef(binding: target.binding, windowID: target.windowID, paneID: target.activePaneID)
@@ -50,7 +57,7 @@ enum TmuxMirrorActions {
             secureInput: secureInput
         )
         // tmux refused a verb (`%error`): the picture stays as it was and
-        // the user reads why (design §12).
+        // the user reads which operation failed (design §12).
         mirror.onCommandFailed = { [weak toastCenter] message in
             toastCenter?.show(ToastItem(message: message, undo: nil))
         }

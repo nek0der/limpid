@@ -2,8 +2,8 @@
 """Record a bulk %output stream: real tmux escaping of a large colored payload."""
 import os, select, subprocess, sys, time, json
 SOCK="limpid-fixture-bulk"; OUT=sys.argv[1]; os.makedirs(OUT, exist_ok=True)
-def tmux(*a): return subprocess.run(["tmux","-L",SOCK,*a],capture_output=True,text=True).stdout.strip()
-def kill(): subprocess.run(["tmux","-L",SOCK,"kill-server"],capture_output=True)
+def tmux(*a): return subprocess.run(["tmux","-L",SOCK,"-f","/dev/null",*a],capture_output=True,text=True).stdout.strip()
+def kill(): subprocess.run(["tmux","-L",SOCK,"-f","/dev/null","kill-server"],capture_output=True)
 kill()
 payload=os.path.join(OUT,"payload.txt")
 with open(payload,"w") as f:
@@ -13,7 +13,7 @@ size=os.path.getsize(payload)
 tmux("new-session","-d","-s","fx","-x","200","-y","50","sh","-c","PS1='$ ' exec sh")
 tmux("set-option","-g","status","off"); time.sleep(0.3)
 pane=tmux("display-message","-p","-t","fx","#{pane_id}")
-p=subprocess.Popen(["tmux","-L",SOCK,"-C","attach","-t","fx"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,bufsize=0)
+p=subprocess.Popen(["tmux","-L",SOCK,"-f","/dev/null","-C","attach","-t","fx"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,bufsize=0)
 raw=b""; end=time.time()+0.6
 while time.time()<end:
     r,_,_=select.select([p.stdout],[],[],0.05)

@@ -78,6 +78,16 @@ enum ReviewAgents {
         session.activeTab?.capabilities.canOpenReview ?? true
     }
 
+    /// The pane review may take when it follows the user onto `tab`: the
+    /// tab's focused pane, or `nil` when the tab does not let review dock over
+    /// it. Review takes panes implicitly (following focus, following a
+    /// container switch), not only when it opens, and a docked mirror pane
+    /// would be resized by the strip while tmux keeps sizing the window.
+    static func dockablePaneID(in tab: Tab?) -> UUID? {
+        guard let tab, tab.capabilities.canOpenReview else { return nil }
+        return tab.splitTree.effectiveFocusedLeafID
+    }
+
     static func isTransientTurnContainer(session: WindowSession, paneID: UUID?) -> Bool {
         guard let paneID, let tab = session.tab(containing: paneID) else { return false }
         return tab.container.projectID == nil

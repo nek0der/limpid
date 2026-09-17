@@ -50,6 +50,5 @@ struct PaneIOSourceTests {
         let decoded = try JSONDecoder().decode(Tab.self, from: JSONEncoder().encode(tab))
         #expect(decoded.kind == .tmuxMirror)
         #expect(decoded.ioSource(for: paneID) == .tmux(ref()))
-        #expect(decoded.ioSource(for: paneID).isMirror)
     }
 }

@@ -201,4 +201,44 @@ struct PaneActionsTests {
         PaneActions.focusPane(session, registry: registry, direction: .left)
         #expect(session.tab(tab.id)?.splitTree.focusedLeafID == beforeZoom)
     }
+
+    // MARK: - tmux mirror tab without a connection
+
+    /// The verbs a mirror tab routes to tmux, plus the one it refuses.
+    enum MirrorVerb: CaseIterable, Sendable {
+        case split, closePane, equalize, zoom
+    }
+
+    /// A mirror tab's tree belongs to tmux (design §10): a verb either goes
+    /// to a live mirror or is refused, and never edits the tree locally.
+    /// The tree carries an off-center ratio so a local equalize would show.
+    @Test("a verb on a mirror tab with no tmux connection leaves the tree and zoom alone", arguments: MirrorVerb.allCases)
+    func mirrorTab_withoutStore_verbLeavesTreeAlone(verb: MirrorVerb) throws {
+        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+        PaneActions.split(session, direction: .horizontal)
+        session.update(tab.id) { t in
+            t.splitTree = t.splitTree.resize(
+                splitAt: [],
+                by: 200,
+                bounds: CGSize(width: 800, height: 600),
+                minSize: 80
+            )
+            t.kind = .tmuxMirror
+        }
+        let before = try #require(session.tab(tab.id))
+        #expect(before.splitTree.allLeafIDs().count == 2)
+        let registry = RecordingSurfaceRegistry()
+
+        switch verb {
+        case .split: PaneActions.split(session, direction: .vertical)
+        case .closePane: PaneActions.closeActivePane(session, registry: registry)
+        case .equalize: PaneActions.equalizeSplits(session)
+        case .zoom: PaneActions.toggleZoom(session)
+        }
+
+        let after = try #require(session.tab(tab.id))
+        #expect(after.splitTree == before.splitTree)
+        #expect(after.zoomedLeafID == before.zoomedLeafID)
+        #expect(registry.unregisteredIDs.isEmpty)
+    }
 }

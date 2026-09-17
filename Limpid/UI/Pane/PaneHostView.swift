@@ -242,6 +242,45 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         }
     }
 
+    /// How a new surface for a leaf is driven. Only a local pane may start
+    /// a process of its own; any other source either gets a descriptor
+    /// that stands in for the pty or no surface at all, never a shell in a
+    /// place that promised something else.
+    enum SurfaceBacking: Equatable {
+        case ownProcess
+        case descriptor(Int32)
+        /// Nothing can drive the pane, so the leaf is left out of the
+        /// render (see `ResolvedSplitNode.build`).
+        case noSurface
+    }
+
+    /// Decided per source with an exhaustive switch, so a source added
+    /// later cannot fall through to a login shell until someone chooses
+    /// what it gets. A pane that is not local reads a live mirror's sink
+    /// when there is one, and otherwise the store's dormant descriptor
+    /// that never delivers (a restored tab, a source this build cannot
+    /// read). Without a store (Previews) or when the dormant pipe cannot
+    /// be opened there is no descriptor to hand over, and we mount
+    /// nothing rather than a shell.
+    @MainActor
+    static func surfaceBacking(
+        for source: PaneIOSource,
+        paneID: UUID,
+        tabID: UUID,
+        tmuxStore: TmuxConnectionStore?
+    ) -> SurfaceBacking {
+        switch source {
+        case .local:
+            return .ownProcess
+        case .tmux, .unavailable:
+            guard let tmuxStore else { return .noSurface }
+            if let sink = tmuxStore.sink(tabID: tabID, paneID: paneID) ?? tmuxStore.dormantSink(paneID: paneID) {
+                return .descriptor(sink.surfaceFd)
+            }
+            return .noSurface
+        }
+    }
+
     @MainActor
     static func resolveOrCreateSurfaceView(
         paneID: UUID,
@@ -250,18 +289,23 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         session: WindowSession,
         hostsAgentsInTmux: Bool,
         tmuxStore: TmuxConnectionStore? = nil
-    ) -> SurfaceView {
+    ) -> SurfaceView? {
         if let existing = registry.view(for: paneID) {
             return existing
         }
+        let owningTab = session.tab(containing: paneID)
+        let backing = owningTab.map {
+            surfaceBacking(for: $0.ioSource(for: paneID), paneID: paneID, tabID: $0.id, tmuxStore: tmuxStore)
+        } ?? .noSurface
+        if backing == .noSurface {
+            return nil
+        }
         let view = SurfaceView(ghosttyApp: ghosttyApp)
         view.isScrollbarEnabled = ghosttyApp.isScrollbarEnabled
-        let owningTab = session.tab(containing: paneID)
-        if let owningTab, owningTab.ioSource(for: paneID).isMirror {
-            // A mirror pane has no shell of its own: the sink's descriptor
-            // stands in for the pty, so no command, cwd, environment, or
-            // scrollback replay applies.
-            attachMirror(view, paneID: paneID, tabID: owningTab.id, tmuxStore: tmuxStore)
+        if case let .descriptor(fd) = backing {
+            // The descriptor stands in for the pty, so no command, cwd,
+            // environment, or scrollback replay applies.
+            view.mirrorIoFd = fd
             registry.register(view, for: paneID)
             return view
         }
@@ -302,26 +346,6 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         Self.stageScrollback(view: view, session: session, tab: owningTab, paneID: paneID)
         registry.register(view, for: paneID)
         return view
-    }
-
-    /// Hand the pane its output descriptor before the surface exists. A
-    /// live mirror supplies the sink tmux feeds; without one (a restored
-    /// tab, a store the Preview has no use for) the pane gets a dormant
-    /// descriptor that never delivers, so it shows nothing rather than a
-    /// login shell in a tab that promised to show a tmux window.
-    @MainActor
-    private static func attachMirror(
-        _ view: SurfaceView,
-        paneID: UUID,
-        tabID: UUID,
-        tmuxStore: TmuxConnectionStore?
-    ) {
-        guard let tmuxStore else { return }
-        if let sink = tmuxStore.sink(tabID: tabID, paneID: paneID) {
-            view.mirrorIoFd = sink.surfaceFd
-        } else if let sink = tmuxStore.dormantSink(paneID: paneID) {
-            view.mirrorIoFd = sink.surfaceFd
-        }
     }
 
     @MainActor

@@ -1,5 +1,5 @@
 // TmuxLayout.swift
-// Limpid — tmux's window layout string as a tree of cell rectangles, and its projection onto Limpid's split tree.
+// Limpid — tmux's window layout string as a binary tree of cell rectangles, and its projection onto Limpid's split tree.
 
 import Foundation
 
@@ -13,19 +13,32 @@ struct TmuxCellRect: Equatable {
     let y: Int
 }
 
-/// One node of a tmux layout. tmux flattens same-axis splits, so a container
-/// holds any number of children; Limpid's binary `PaneNode` is derived from
-/// it by `TmuxLayout.paneNode`.
+/// One node of a tmux layout, already folded to binary. tmux flattens
+/// same-axis splits, so its `{…}` and `[…]` containers hold any number of
+/// children; we fold them to the right once, while parsing, so `{a,b,c}`
+/// becomes `split(a, split(b, c))` and every consumer (the split tree, the
+/// mirror's rectangles, a divider drag) walks the same shape. The fold
+/// direction is fixed because the tree's shape is what `PaneSplitPath`
+/// identifies a divider by: the same layout must always produce the same
+/// paths.
 indirect enum TmuxLayoutNode: Equatable {
     case pane(id: String, rect: TmuxCellRect)
-    /// Children left to right: the `{…}` form.
-    case sideBySide(rect: TmuxCellRect, children: [TmuxLayoutNode])
-    /// Children top to bottom: the `[…]` form.
-    case stacked(rect: TmuxCellRect, children: [TmuxLayoutNode])
+    /// `first` ends where `gap` starts and `second` starts where it ends.
+    /// `gap` is the border cell tmux leaves between them, spanning the
+    /// split's full breadth. When the container had more than two
+    /// children, `second` is a split over the remaining ones whose
+    /// rectangle starts at the second child and ends with the container.
+    case split(
+        direction: SplitDirection,
+        rect: TmuxCellRect,
+        gap: TmuxCellRect,
+        first: TmuxLayoutNode,
+        second: TmuxLayoutNode
+    )
 
     var rect: TmuxCellRect {
         switch self {
-        case let .pane(_, rect), let .sideBySide(rect, _), let .stacked(rect, _):
+        case let .pane(_, rect), let .split(_, rect, _, _, _):
             rect
         }
     }
@@ -35,9 +48,57 @@ indirect enum TmuxLayoutNode: Equatable {
         switch self {
         case let .pane(id, _):
             [id]
-        case let .sideBySide(_, children), let .stacked(_, children):
-            children.flatMap(\.paneIDs)
+        case let .split(_, _, _, first, second):
+            first.paneIDs + second.paneIDs
         }
+    }
+
+    /// Each pane's rectangle, keyed by its `%N` id.
+    var paneRects: [String: TmuxCellRect] {
+        switch self {
+        case let .pane(id, rect):
+            [id: rect]
+        case let .split(_, _, _, first, second):
+            first.paneRects.merging(second.paneRects) { $1 }
+        }
+    }
+
+    /// The node at `path`, following `.first` / `.second` the way
+    /// `PaneLayout` assigns paths to the folded tree.
+    func node(at path: PaneSplitPath) -> TmuxLayoutNode? {
+        var node = self
+        for step in path {
+            guard case let .split(_, _, _, first, second) = node else { return nil }
+            node = step == .first ? first : second
+        }
+        return node
+    }
+
+    /// Fold one container's children to the right. `rect` is the box the
+    /// children share; the remainder after the first child is the same
+    /// box, started where the second child starts.
+    fileprivate static func fold(
+        _ first: TmuxLayoutNode,
+        _ rest: ArraySlice<TmuxLayoutNode>,
+        in rect: TmuxCellRect,
+        direction: SplitDirection
+    ) -> TmuxLayoutNode {
+        guard let next = rest.first else { return first }
+        let remainder = rest.dropFirst()
+        let gap: TmuxCellRect
+        let restRect: TmuxCellRect
+        switch direction {
+        case .horizontal:
+            let firstEnd = first.rect.x + first.rect.width
+            gap = TmuxCellRect(width: next.rect.x - firstEnd, height: rect.height, x: firstEnd, y: rect.y)
+            restRect = TmuxCellRect(width: rect.x + rect.width - next.rect.x, height: rect.height, x: next.rect.x, y: rect.y)
+        case .vertical:
+            let firstEnd = first.rect.y + first.rect.height
+            gap = TmuxCellRect(width: rect.width, height: next.rect.y - firstEnd, x: rect.x, y: firstEnd)
+            restRect = TmuxCellRect(width: rect.width, height: rect.y + rect.height - next.rect.y, x: rect.x, y: next.rect.y)
+        }
+        let second = remainder.isEmpty ? next : fold(next, remainder, in: restRect, direction: direction)
+        return .split(direction: direction, rect: rect, gap: gap, first: first, second: second)
     }
 }
 
@@ -57,65 +118,29 @@ struct TmuxLayout: Equatable {
         return TmuxLayout(checksum: checksum, root: root)
     }
 
-    /// Project onto Limpid's binary split tree. tmux lets any number of
-    /// siblings share one axis; we fold them to the right, so `{a,b,c}`
-    /// becomes `H(a, H(b, c))`. The fold direction is fixed because the
-    /// tree's shape is what `PaneSplitPath` identifies a divider by: the
-    /// same layout must always produce the same paths. Ratios exclude the
-    /// border cell so a cell count survives the round trip exactly.
+    /// Project onto Limpid's binary split tree, node for node. Ratios
+    /// exclude the border cell so a cell count survives the round trip
+    /// exactly.
     func paneNode(leafID: (String) -> UUID) -> PaneNode {
-        Self.fold(root, leafID: leafID)
+        Self.paneNode(root, leafID: leafID)
     }
 
-    private static func fold(_ node: TmuxLayoutNode, leafID: (String) -> UUID) -> PaneNode {
+    private static func paneNode(_ node: TmuxLayoutNode, leafID: (String) -> UUID) -> PaneNode {
         switch node {
         case let .pane(id, _):
-            .leaf(id: leafID(id))
-        case let .sideBySide(rect, children):
-            foldSiblings(children, of: rect, direction: .horizontal, leafID: leafID)
-        case let .stacked(rect, children):
-            foldSiblings(children, of: rect, direction: .vertical, leafID: leafID)
+            return .leaf(id: leafID(id))
+        case let .split(direction, _, _, first, second):
+            let firstExtent = direction == .horizontal ? first.rect.width : first.rect.height
+            let secondExtent = direction == .horizontal ? second.rect.width : second.rect.height
+            let total = firstExtent + secondExtent
+            let ratio = total > 0 ? Double(firstExtent) / Double(total) : 0.5
+            return .split(PaneSplit(
+                direction: direction,
+                ratio: ratio,
+                first: paneNode(first, leafID: leafID),
+                second: paneNode(second, leafID: leafID)
+            ))
         }
-    }
-
-    private static func foldSiblings(
-        _ children: [TmuxLayoutNode],
-        of rect: TmuxCellRect,
-        direction: SplitDirection,
-        leafID: (String) -> UUID
-    ) -> PaneNode {
-        guard let first = children.first else {
-            // tmux never emits an empty container; treating it as an empty
-            // pane keeps the projection total without inventing structure.
-            return .leaf(id: leafID(""))
-        }
-        guard children.count > 1 else { return fold(first, leafID: leafID) }
-        let rest = Array(children.dropFirst())
-
-        let firstExtent: Int
-        let restExtent: Int
-        let restRect: TmuxCellRect
-        switch direction {
-        case .horizontal:
-            firstExtent = first.rect.width
-            let restX = rest[0].rect.x
-            restRect = TmuxCellRect(width: rect.x + rect.width - restX, height: rect.height, x: restX, y: rect.y)
-            restExtent = restRect.width
-        case .vertical:
-            firstExtent = first.rect.height
-            let restY = rest[0].rect.y
-            restRect = TmuxCellRect(width: rect.width, height: rect.y + rect.height - restY, x: rect.x, y: restY)
-            restExtent = restRect.height
-        }
-        let total = firstExtent + restExtent
-        let ratio = total > 0 ? Double(firstExtent) / Double(total) : 0.5
-
-        let second: PaneNode = if rest.count == 1 {
-            fold(rest[0], leafID: leafID)
-        } else {
-            foldSiblings(rest, of: restRect, direction: direction, leafID: leafID)
-        }
-        return .split(PaneSplit(direction: direction, ratio: ratio, first: fold(first, leafID: leafID), second: second))
     }
 
     // MARK: - Parser
@@ -158,27 +183,35 @@ struct TmuxLayout: Equatable {
                 guard let pane = readInt() else { return nil }
                 return .pane(id: "%\(pane)", rect: rect)
             case 0x7B:
-                guard let children = readChildren(open: 0x7B, close: 0x7D) else { return nil }
-                return .sideBySide(rect: rect, children: children)
+                return readContainer(rect, direction: .horizontal, open: 0x7B, close: 0x7D)
             case 0x5B:
-                guard let children = readChildren(open: 0x5B, close: 0x5D) else { return nil }
-                return .stacked(rect: rect, children: children)
+                return readContainer(rect, direction: .vertical, open: 0x5B, close: 0x5D)
             default:
                 return nil
             }
         }
 
-        private mutating func readChildren(open: UInt8, close: UInt8) -> [TmuxLayoutNode]? {
+        /// A container holds at least one child, so the fold always has a
+        /// first node to start from; `{}` fails here like any other
+        /// malformed input.
+        private mutating func readContainer(
+            _ rect: TmuxCellRect,
+            direction: SplitDirection,
+            open: UInt8,
+            close: UInt8
+        ) -> TmuxLayoutNode? {
             guard consume(open) else { return nil }
             var children: [TmuxLayoutNode] = []
             while true {
                 guard let child = readNode() else { return nil }
                 children.append(child)
                 if consume(close) {
-                    return children
+                    break
                 }
                 guard consume(0x2C) else { return nil }
             }
+            guard let first = children.first else { return nil }
+            return TmuxLayoutNode.fold(first, children.dropFirst(), in: rect, direction: direction)
         }
 
         private mutating func readInt() -> Int? {

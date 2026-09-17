@@ -22,6 +22,7 @@ release changes the wire format, record a new dated directory and keep
 the old one: both must keep passing, because users update tmux and Limpid
 at different times.
 
-Both scripts use `tmux -L <private name>` so the user's own server is
-never touched. `bulk-output/control.raw` is trimmed to about 1.2 MB at a
+Both scripts use `tmux -L <private name> -f /dev/null` so the user's own
+server is never touched and the recording does not depend on the
+recording machine's `~/.tmux.conf`. `bulk-output/control.raw` is trimmed to about 1.2 MB at a
 line boundary; the script produces the full stream.

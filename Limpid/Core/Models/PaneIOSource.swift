@@ -24,16 +24,9 @@ struct TmuxPaneRef: Codable, Equatable {
 enum PaneIOSource: Equatable {
     case local
     case tmux(TmuxPaneRef)
-    /// A source this build cannot read. The pane gets no surface and no
-    /// process, only a card saying so.
+    /// A source this build cannot read. The pane never gets a process:
+    /// its surface reads a descriptor that delivers nothing.
     case unavailable
-
-    var isMirror: Bool {
-        if case .tmux = self {
-            return true
-        }
-        return false
-    }
 }
 
 extension PaneIOSource: Codable {

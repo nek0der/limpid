@@ -54,21 +54,9 @@ extension TabActions {
             newTab.initialCommands[paneID] = s
         }
 
-        session.update(sourceTab.id) { t in
-            let result = t.splitTree.remove(paneID)
-            t.splitTree = result.tree
-            if t.zoomedLeafID == paneID {
-                t.zoomedLeafID = nil
-            }
-            t.paneStates.removeValue(forKey: paneID)
-            for provider in AgentKind.allCases {
-                t.agentSessions[provider]?.removeValue(forKey: paneID)
-                t.agentBadges[provider]?.removeValue(forKey: paneID)
-            }
-            t.scrollbackPaths.removeValue(forKey: paneID)
-            t.initialCommands.removeValue(forKey: paneID)
-            t.tmuxBindings.removeValue(forKey: paneID)
-        }
+        // The pane lives on in the new tab, so only the source forgets it;
+        // the session state and the unread count travel with the leaf id.
+        session.update(sourceTab.id) { $0.removeLeaf(paneID) }
 
         session.tabs.append(newTab)
         session.setActiveTab(newTab.id)

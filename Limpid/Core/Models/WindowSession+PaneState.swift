@@ -121,6 +121,34 @@ extension WindowSession {
         paneTransients[paneID] = t
     }
 
+    // MARK: - Pane removal
+
+    /// Close one pane for good: its leaf, what its tab keeps about it, and
+    /// what the session keeps about it.
+    func removePane(_ leafID: UUID, fromTab tabID: UUID) {
+        removePanes(fromTab: tabID) { $0.splitTree = $0.splitTree.remove(leafID).tree }
+    }
+
+    /// Reshape a tab and close every pane that left its tree. A pane that
+    /// moves to another tab is not closed; that path calls
+    /// `Tab.removeLeaves` on the source alone, because the session state
+    /// and the unread count travel with the leaf id.
+    ///
+    /// - Returns: The leaf ids that were removed.
+    @discardableResult
+    func removePanes(fromTab tabID: UUID, reshaping reshape: (inout Tab) -> Void) -> Set<UUID> {
+        var removed = RemovedLeaves(ids: [], unreadCount: 0)
+        update(tabID) { removed = $0.removeLeaves(reshaping: reshape) }
+        for leafID in removed.ids {
+            paneSearchStates.removeValue(forKey: leafID)
+            paneTransients.removeValue(forKey: leafID)
+        }
+        if removed.unreadCount > 0 {
+            cachedWindowUnreadCount = max(0, cachedWindowUnreadCount - removed.unreadCount)
+        }
+        return removed.ids
+    }
+
     // MARK: - Transient accessors (UI side)
 
     /// Bell ring state for `paneID`. Defaults to `false`.

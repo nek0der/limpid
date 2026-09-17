@@ -35,9 +35,10 @@ struct TmuxOutputGate: Equatable {
         forgetVanishedPanes()
     }
 
-    /// Forget a window and its panes on `%window-close`. The panes are gone on
-    /// the tmux side, so we drop them from `silenced` rather than resuming
-    /// them: a command naming a closed pane would only draw an error.
+    /// Forget a window and its panes when tmux reports it closed. The panes
+    /// are gone on the tmux side, so we drop them from `silenced` rather
+    /// than resuming them: a command naming a closed pane would only draw
+    /// an error.
     mutating func removeWindow(_ window: String) {
         panesByWindow[window] = nil
         forgetVanishedPanes()

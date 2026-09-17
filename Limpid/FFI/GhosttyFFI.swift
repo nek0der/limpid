@@ -88,15 +88,6 @@ enum GhosttyFFI {
         ghostty_surface_set_padding(surface, sides[0], sides[1], sides[2], sides[3])
     }
 
-    /// The grid libghostty is actually drawing, in cells. This is what a
-    /// tmux window is told to be, rather than a value we compute from
-    /// points: the pixel-to-cell floor happens inside libghostty and the
-    /// report must match it exactly.
-    static func surfaceGrid(_ surface: ghostty_surface_t) -> (columns: Int, rows: Int) {
-        let size = ghostty_surface_size(surface)
-        return (Int(size.columns), Int(size.rows))
-    }
-
     /// Complete a clipboard read request with a single `text/plain`
     /// representation.
     ///

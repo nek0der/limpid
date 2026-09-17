@@ -33,22 +33,45 @@ final class TmuxWindowMirror {
     /// What the mirror knows about one leaf. Kept here rather than read
     /// back from the tab, because the tab is already gone by the time a
     /// closed mirror is stopped and its panes must still be detached.
+    ///
+    /// A pane's screen is rebuilt from `capture-pane` whenever the surface
+    /// holds a screen tmux did not draw at the surface's size: when the
+    /// pane is attached, whenever tmux announces a layout for its window
+    /// (the transport pauses the pane on that line; see
+    /// `TmuxControlTransport`), and when its sink overflowed. libghostty reflows a resized grid by its own rules, not
+    /// tmux's, and the shell's redraw after a resize reaches the surface
+    /// before the surface has taken the new size, so neither can be kept.
+    /// The capture waits until libghostty reports that the surface's grid
+    /// is the one tmux gave the pane; only then are both drawing the same
+    /// screen.
     private struct Pane {
         let tmuxPane: String
         let sink: TmuxPaneSink
         var tty: String?
         var isSecureInput = false
+        /// The pane's size in tmux: its layout cell, or the whole window
+        /// while tmux has it zoomed. `nil` until a layout names the pane.
+        var tmuxGrid: Grid?
+        /// The grid libghostty last reported for the pane's surface. `nil`
+        /// until the surface exists and has started its IO; a pane of a tab
+        /// that is not on screen can stay there, paused, until it is shown.
+        var surfaceGrid: Grid?
+        /// The sink is paused and the screen waits for a capture.
+        var isStale = false
+        /// A capture is on its way. At most one is, so a pane resized
+        /// again meanwhile starts its next capture from this one's reply.
+        var isRebuilding = false
+    }
+
+    struct Grid: Equatable {
+        let columns: Int
+        let rows: Int
     }
 
     @ObservationIgnored private let session: WindowSession
     @ObservationIgnored private let registry: any SurfaceViewProviding
     @ObservationIgnored private let secureInput: SecureInputManager?
     @ObservationIgnored private var panes: [UUID: Pane] = [:]
-    /// Panes attached before the window had a size. Their screens are
-    /// rebuilt once tmux has been told the size, so the capture is taken
-    /// at the size the surface will draw it in.
-    @ObservationIgnored private var awaitingGrid: Set<UUID> = []
-    @ObservationIgnored private var hasReportedGrid = false
     @ObservationIgnored private var isStopped = false
     /// The pane area in points, from the view showing this tab. Zero while
     /// the tab is not on screen, which is also when nothing is reported.
@@ -56,13 +79,19 @@ final class TmuxWindowMirror {
     /// The grid last sent with `refresh-client -C`, so a layout pass that
     /// changes nothing sends nothing (design §8 D11).
     @ObservationIgnored private var reportedGrid: (columns: Int, rows: Int)?
-    /// tmux answered a verb with `%error`; the UI shows the text. Set by
-    /// whoever opens the mirror and owns a toast center.
+    /// tmux answered a verb with `%error`; the argument is the verb's
+    /// localized failure message. Set by whoever opens the mirror and owns
+    /// a toast center.
     @ObservationIgnored var onCommandFailed: ((String) -> Void)?
     /// The divider drag in progress: only the newest request waits, and
     /// only one is ever outstanding (`TmuxWindowMirror+Verbs.swift`).
     @ObservationIgnored var queuedResize: PendingResize?
     @ObservationIgnored var isResizeInFlight = false
+    /// The pane tmux made active and the tab has not focused yet. tmux
+    /// reports a split's new pane with `%window-pane-changed`, which can
+    /// arrive before the `%layout-change` that gives the pane a leaf, so
+    /// the report waits here until the leaf exists (design §4 D6).
+    @ObservationIgnored private var pendingActivePane: String?
 
     struct PendingResize {
         let paneID: UUID
@@ -95,9 +124,6 @@ final class TmuxWindowMirror {
             guard case let .tmux(ref) = source, ref.windowID == windowID else { continue }
             attach(paneID: paneID, tmuxPane: ref.paneID)
         }
-        connection.onPaneOverflow = { [weak self] tmuxPane in
-            self?.rebuildScreen(tmuxPane: tmuxPane)
-        }
     }
 
     func sink(for paneID: UUID) -> TmuxPaneSink? {
@@ -113,24 +139,16 @@ final class TmuxWindowMirror {
     }
 
     /// Let go of a pane tmux has moved out of this window, before another
-    /// mirror on the same connection attaches it. The connection keys sinks
-    /// by tmux pane, so without this the newcomer would be handed our sink
-    /// and lose it when our `%layout-change` detached it. Idempotent: if
-    /// that notification already ran, there is nothing left to do.
+    /// mirror on the same connection attaches it. tmux answers `break-pane`
+    /// before it announces our `%layout-change`, and the connection refuses
+    /// a pane that still has a sink, so the newcomer could not attach it
+    /// until we detach it here. Idempotent: if that notification already
+    /// ran, there is nothing left to do.
     func release(paneID: UUID) {
         detach(paneID: paneID)
         registry.unregister(paneID)
         guard let tab = session.tab(tabID), tab.splitTree.contains(leafID: paneID) else { return }
-        session.update(tabID) { t in
-            t.splitTree = t.splitTree.remove(paneID).tree
-            t.paneSources.removeValue(forKey: paneID)
-            if t.zoomedLeafID == paneID {
-                t.zoomedLeafID = nil
-            }
-            if let focused = t.splitTree.focusedLeafID, !t.splitTree.contains(leafID: focused) {
-                t.splitTree.focusedLeafID = t.splitTree.allLeafIDs().first
-            }
-        }
+        session.removePane(paneID, fromTab: tabID)
     }
 
     func stop() {
@@ -140,7 +158,6 @@ final class TmuxWindowMirror {
             connection.detachPane(pane.tmuxPane)
         }
         panes.removeAll()
-        awaitingGrid.removeAll()
     }
 
     // MARK: - Window size
@@ -195,19 +212,13 @@ final class TmuxWindowMirror {
             guard let self, self.cellLayout == nil else { return }
             self.fetchLayout()
         }
-        hasReportedGrid = true
-        let pending = awaitingGrid
-        awaitingGrid.removeAll()
-        for paneID in pending {
-            bootstrap(paneID: paneID)
-        }
     }
 
     private func fetchLayout() {
         let target = TmuxProtocol.quote(windowID)
         connection.send("display-message -p -t \(target) '#{window_layout}'") { [weak self] lines, isError in
             guard let self, !isError, let text = lines.first else { return }
-            self.applyLayout(text)
+            self.applyLayout(text, visibleLayout: nil)
         }
     }
 
@@ -217,8 +228,12 @@ final class TmuxWindowMirror {
         guard !isStopped else { return }
         switch line {
         case let .layoutChange(window, layout, visibleLayout, flags) where window == windowID:
-            applyLayout(layout)
+            applyLayout(layout, visibleLayout: visibleLayout)
             applyZoom(visibleLayout: visibleLayout, flags: flags)
+            applyActivePane()
+        case let .windowPaneChanged(window, pane) where window == windowID:
+            pendingActivePane = pane
+            applyActivePane()
         case .exit:
             // The connection is gone; the panes stay as dormant surfaces
             // until the user reconnects (no automatic reconnect by design).
@@ -233,19 +248,17 @@ final class TmuxWindowMirror {
     private func attach(paneID: UUID, tmuxPane: String) {
         guard panes[paneID] == nil else { return }
         do {
-            let sink = try connection.attachPane(tmuxPane)
+            // A sink that dropped output is repainted from tmux.
+            let sink = try connection.attachPane(tmuxPane) { [weak self] in
+                self?.markStale(paneID: paneID)
+            }
             panes[paneID] = Pane(tmuxPane: tmuxPane, sink: sink)
-            sink.pause()
+            markStale(paneID: paneID)
             sink.setOnOutputActivity { [weak self] in self?.probeSecureInput(paneID: paneID) }
             let target = TmuxProtocol.quote(tmuxPane)
             connection.send("display-message -p -t \(target) '#{pane_tty}'") { [weak self] lines, isError in
                 guard !isError, let tty = lines.first, tty.hasPrefix("/dev/") else { return }
                 self?.panes[paneID]?.tty = tty
-            }
-            if hasReportedGrid {
-                bootstrap(paneID: paneID)
-            } else {
-                awaitingGrid.insert(paneID)
             }
         } catch {
             log.error("attach pane \(tmuxPane, privacy: .public) failed: \(String(describing: error), privacy: .public)")
@@ -255,51 +268,157 @@ final class TmuxWindowMirror {
     private func detach(paneID: UUID) {
         guard let pane = panes.removeValue(forKey: paneID) else { return }
         connection.detachPane(pane.tmuxPane)
-        awaitingGrid.remove(paneID)
     }
 
-    /// Reproduce the pane's visible screen and terminal modes in the fresh
-    /// surface. Output is held from attach until the rebuilt screen has
-    /// been injected, so live bytes cannot interleave with the paint.
-    private func bootstrap(paneID: UUID) {
+    /// libghostty resized the surface of `paneID` to `columns` x `rows`.
+    /// Bytes written to the surface from now on are parsed at that size.
+    func surfaceGridChanged(columns: Int, rows: Int, paneID: UUID) {
+        guard !isStopped, let pane = panes[paneID] else { return }
+        let grid = Grid(columns: columns, rows: rows)
+        panes[paneID]?.surfaceGrid = grid
+        let drawn = "\(columns)x\(rows)"
+        let tmux = pane.tmuxGrid.map { "\($0.columns)x\($0.rows)" } ?? "?"
+        log.debug("pane \(pane.tmuxPane, privacy: .public) surface \(drawn, privacy: .public); tmux \(tmux, privacy: .public)")
+        rebuildIfReady(paneID: paneID)
+    }
+
+    /// The surface's screen no longer matches tmux's: hold the pane's
+    /// output until a capture repaints it. Everything held back is output
+    /// tmux sent before that capture, so the capture already shows it.
+    private func markStale(paneID: UUID) {
         guard let pane = panes[paneID] else { return }
+        panes[paneID]?.isStale = true
+        pane.sink.pause()
+        rebuildIfReady(paneID: paneID)
+    }
+
+    private func rebuildIfReady(paneID: UUID) {
+        guard var pane = panes[paneID], pane.isStale, !pane.isRebuilding,
+              let grid = pane.surfaceGrid, grid == pane.tmuxGrid
+        else { return }
+        pane.isStale = false
+        pane.isRebuilding = true
+        panes[paneID] = pane
+        bootstrap(paneID: paneID, pane: pane)
+    }
+
+    /// Reproduce the pane's visible screen and terminal modes in the
+    /// surface. Output is held from the pause until the rebuilt screen has
+    /// been injected, so live bytes cannot interleave with the paint, and
+    /// the injection happens in stream order at the capture's `%end`, so
+    /// the output tmux sends after the capture follows it without a gap.
+    ///
+    /// The sink's rebuild number is read where the state reply sits in the
+    /// stream. Every line before it has reached us by the time the reply
+    /// does, so a pane made stale by one of them is not captured; a pause
+    /// routed after it makes the capture reply stand aside.
+    private func bootstrap(paneID: UUID, pane: Pane) {
         let tmuxPane = pane.tmuxPane
         let sink = pane.sink
         let target = TmuxProtocol.quote(tmuxPane)
-        connection.send("display-message -p -t \(target) '\(TmuxScreenRestore.stateFormat)'") { [weak self] lines, isError in
+        let stateArrived = Self.stateInStream(sink: sink) { [weak self] state, rebuild in
             guard let self else { return }
+            guard panes[paneID]?.isStale == false else {
+                finishRebuild(paneID: paneID, tmuxPane: tmuxPane, outcome: .superseded)
+                return
+            }
+            let restore = Self.restoreInStream(sink: sink, rebuild: rebuild, state: state) { [weak self] outcome in
+                self?.finishRebuild(paneID: paneID, tmuxPane: tmuxPane, outcome: outcome)
+            }
+            // `-N` keeps trailing spaces, so a cursor after them lands where
+            // tmux has it rather than past the end of a shortened row.
+            connection.sendInStream("capture-pane -p -e -N -t \(target)", completion: restore)
+        }
+        connection.sendInStream("display-message -p -t \(target) '\(TmuxScreenRestore.stateFormat)'", completion: stateArrived)
+    }
+
+    /// The state reply's handler, run on the routing queue (see
+    /// `restoreInStream`). `finished` gets the parsed state, or `nil` when
+    /// tmux refused, and the sink's rebuild at the reply.
+    private nonisolated static func stateInStream(
+        sink: TmuxPaneSink,
+        finished: @escaping @MainActor (TmuxScreenState?, _ rebuild: Int) -> Void
+    ) -> @Sendable (_ lines: [String], _ isError: Bool) -> Void {
+        { lines, isError in
+            let rebuild = sink.latestRebuild
             let state = isError ? nil : lines.first.flatMap(TmuxScreenRestore.parseState)
-            self.connection.send("capture-pane -p -e -t \(target)") { [weak self] rows, rowsError in
-                guard let self else { return }
-                guard !rowsError, let state else {
-                    sink.resume()
-                    log.error("screen bootstrap for \(tmuxPane, privacy: .public) fell back to live output")
-                    return
-                }
-                let bytes = TmuxScreenRestore.sequence(rows: rows, rowCount: rows.count, state: state)
-                sink.resume(afterInjecting: bytes)
-                log.notice("bootstrapped \(tmuxPane, privacy: .public) rows=\(rows.count, privacy: .public)")
-                self.probeSecureInput(paneID: paneID)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { finished(state, rebuild) }
             }
         }
     }
 
-    /// A sink dropped output: hold the pane and paint it again from tmux.
-    private func rebuildScreen(tmuxPane: String) {
-        guard let (paneID, pane) = panes.first(where: { $0.value.tmuxPane == tmuxPane }) else { return }
-        pane.sink.pause()
-        bootstrap(paneID: paneID)
+    private enum RebuildOutcome {
+        case painted(rowCount: Int)
+        /// The capture failed; the pane shows live output only.
+        case liveOnly
+        /// The pane went stale again before the reply; it stays paused.
+        case superseded
+    }
+
+    /// The capture reply's handler, run on the routing queue. Built here,
+    /// outside the main actor, so Dispatch can run it there (see
+    /// `TmuxPaneSink`).
+    private nonisolated static func restoreInStream(
+        sink: TmuxPaneSink,
+        rebuild: Int,
+        state: TmuxScreenState?,
+        finished: @escaping @MainActor (RebuildOutcome) -> Void
+    ) -> @Sendable (_ rows: [String], _ isError: Bool) -> Void {
+        { rows, isError in
+            let outcome: RebuildOutcome
+            if !isError, let state {
+                let bytes = TmuxScreenRestore.sequence(rows: rows, rowCount: rows.count, state: state)
+                outcome = sink.resumeInOrder(injecting: bytes, rebuild: rebuild) ? .painted(rowCount: rows.count) : .superseded
+            } else {
+                outcome = sink.resumeInOrder(injecting: nil, rebuild: rebuild) ? .liveOnly : .superseded
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { finished(outcome) }
+            }
+        }
+    }
+
+    private func finishRebuild(paneID: UUID, tmuxPane: String, outcome: RebuildOutcome) {
+        switch outcome {
+        case let .painted(rowCount):
+            log.notice("bootstrapped \(tmuxPane, privacy: .public) rows=\(rowCount, privacy: .public)")
+            probeSecureInput(paneID: paneID)
+        case .liveOnly:
+            // A connection that ended fails every pending capture; only a
+            // capture tmux itself refused is a fault.
+            if case .exited = connection.state {
+                log.notice("screen bootstrap for \(tmuxPane, privacy: .public) ended with the connection")
+            } else {
+                log.error("screen bootstrap for \(tmuxPane, privacy: .public) fell back to live output")
+            }
+        case .superseded:
+            log.debug("screen bootstrap for \(tmuxPane, privacy: .public) superseded by a newer pause")
+        }
+        guard panes[paneID] != nil else { return }
+        panes[paneID]?.isRebuilding = false
+        rebuildIfReady(paneID: paneID)
     }
 
     // MARK: - Layout
 
-    private func applyLayout(_ text: String) {
-        guard let layout = TmuxLayout.parse(text), let tab = session.tab(tabID) else {
+    /// `visibleLayout` is what tmux draws, which differs from `text` only
+    /// while a pane is zoomed; the zoomed pane's size comes from it.
+    private func applyLayout(_ text: String, visibleLayout: String?) {
+        guard let layout = TmuxLayout.parse(text) else {
             log.error("unparseable layout for \(self.windowID, privacy: .public)")
             return
         }
         // The same layout can arrive twice: once fetched, once announced.
-        guard layout != cellLayout else { return }
+        if layout != cellLayout {
+            foldLayout(layout)
+        }
+        let visible = visibleLayout.flatMap(TmuxLayout.parse)?.root.paneRects ?? [:]
+        applyPaneGrids(layout.root.paneRects.merging(visible) { $1 })
+    }
+
+    private func foldLayout(_ layout: TmuxLayout) {
+        guard let tab = session.tab(tabID) else { return }
         // Reverse map first, so a pane that is still here keeps its leaf id
         // and therefore its surface, scrollback, and search state.
         var leafIDs: [String: UUID] = [:]
@@ -319,7 +438,6 @@ final class TmuxWindowMirror {
             return fresh
         }
         let present = Set(layout.root.paneIDs)
-        let removed = leafIDs.filter { !present.contains($0.key) }
 
         guard let binding = tab.paneSources.values.lazy.compactMap({ source -> TmuxBinding? in
             if case let .tmux(ref) = source {
@@ -328,20 +446,13 @@ final class TmuxWindowMirror {
             return nil
         }).first else { return }
 
-        session.update(tabID) { t in
-            let focused = t.splitTree.focusedLeafID
-            t.splitTree = SplitTree(root: tree, focusedLeafID: focused)
+        let removed = session.removePanes(fromTab: tabID) { t in
+            t.splitTree = SplitTree(root: tree, focusedLeafID: t.splitTree.focusedLeafID)
             for (leafID, tmuxPane) in added {
                 t.paneSources[leafID] = .tmux(TmuxPaneRef(binding: binding, windowID: windowID, paneID: tmuxPane))
             }
-            for (_, leafID) in removed {
-                t.paneSources.removeValue(forKey: leafID)
-            }
-            if let focused, !t.splitTree.contains(leafID: focused) {
-                t.splitTree.focusedLeafID = t.splitTree.allLeafIDs().first
-            }
         }
-        for (_, leafID) in removed {
+        for leafID in removed {
             detach(paneID: leafID)
             registry.unregister(leafID)
         }
@@ -351,7 +462,46 @@ final class TmuxWindowMirror {
         cellLayout = layout
         let size = "\(layout.root.rect.width)x\(layout.root.rect.height)"
         log.debug("layout \(self.windowID, privacy: .public) \(size, privacy: .public) panes=\(present.count, privacy: .public)")
-        scheduleGridCheck(layout)
+    }
+
+    /// Every pane the layout names is repainted. The transport paused it
+    /// on the announcement and dropped its output, which the capture
+    /// restores; one whose size did not change is captured at once, one
+    /// that was resized waits until its surface reports the new grid.
+    private func applyPaneGrids(_ rects: [String: TmuxCellRect]) {
+        for (paneID, pane) in panes {
+            guard let rect = rects[pane.tmuxPane] else { continue }
+            panes[paneID]?.tmuxGrid = Grid(columns: rect.width, rows: rect.height)
+            markStale(paneID: paneID)
+        }
+    }
+
+    /// Focus follows tmux's active pane once per change, the way an
+    /// ordinary split focuses the pane it creates. A later focus move the
+    /// user makes in Limpid stands until tmux changes its active pane again.
+    private func applyActivePane() {
+        guard let tmuxPane = pendingActivePane, let tab = session.tab(tabID),
+              let leafID = tab.paneSources.first(where: { _, source in
+                  if case let .tmux(ref) = source {
+                      return ref.windowID == windowID && ref.paneID == tmuxPane
+                  }
+                  return false
+              })?.key
+        else { return }
+        pendingActivePane = nil
+        guard tab.splitTree.focusedLeafID != leafID else { return }
+        session.update(tabID) { $0.splitTree.focusedLeafID = leafID }
+        // The keyboard moves only from one of this tab's panes (or from
+        // nowhere): the change may come from another tmux client, and must
+        // not take it from a search field, review, or the palette. A
+        // background tab just remembers which pane to focus when shown.
+        guard session.activeTabID == tabID, let window = registry.view(for: leafID)?.window else { return }
+        let responder = window.firstResponder
+        let isKeyboardInTab = responder == nil || responder === window
+            || tab.paneSources.keys.contains { registry.view(for: $0) === responder }
+        if isKeyboardInTab {
+            PaneActions.pullKeyboardFocus(to: leafID, registry: registry)
+        }
     }
 
     /// Zoom follows tmux's window flag (`Z`), never a local toggle. The
@@ -368,41 +518,6 @@ final class TmuxWindowMirror {
         }
         guard let tab = session.tab(tabID), tab.zoomedLeafID != zoomedLeaf else { return }
         session.update(tabID) { $0.zoomedLeafID = zoomedLeaf }
-    }
-
-    /// Read each surface's grid back once the layout has had time to
-    /// land and compare it with the cells tmux gave the pane (design §8
-    /// D11). A mismatch is logged, not corrected: the arithmetic is meant
-    /// to make them agree by construction, so a difference is a bug to
-    /// find, not a state to patch over.
-    private func scheduleGridCheck(_ layout: TmuxLayout) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(300)) { [weak self] in
-            guard let self, !self.isStopped, self.cellLayout == layout else { return }
-            self.checkGrids(layout.root)
-        }
-    }
-
-    private func checkGrids(_ node: TmuxLayoutNode) {
-        switch node {
-        case let .pane(tmuxPane, rect):
-            // A surface off screen keeps its old frame until the tab comes
-            // back, so only a mounted one can be held to tmux's numbers.
-            guard let (paneID, _) = panes.first(where: { $0.value.tmuxPane == tmuxPane }),
-                  let view = registry.view(for: paneID), view.window != nil,
-                  let drawn = view.drawnGrid
-            else { return }
-            let drawnText = "\(drawn.columns)x\(drawn.rows)"
-            let tmuxText = "\(rect.width)x\(rect.height)"
-            if drawn.columns != rect.width || drawn.rows != rect.height {
-                log.notice("pane \(tmuxPane, privacy: .public) draws \(drawnText, privacy: .public); tmux \(tmuxText, privacy: .public)")
-            } else {
-                log.debug("pane \(tmuxPane, privacy: .public) grid matches \(tmuxText, privacy: .public)")
-            }
-        case let .sideBySide(_, children), let .stacked(_, children):
-            for child in children {
-                checkGrids(child)
-            }
-        }
     }
 
     // MARK: - Secure input

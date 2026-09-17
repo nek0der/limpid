@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Record real tmux control-mode traffic for Limpid's protocol fixtures.
 
-Everything runs on a private socket so the user's own tmux server is untouched.
+Everything runs on a private socket with no config file, so the user's own tmux
+server is untouched and their ~/.tmux.conf cannot shape the recording.
 Each case writes the raw bytes the control client received (control.raw) and
 the commands it sent (commands.txt), plus a small manifest of the pane ids
 tmux handed out so expectations can be written against real ids.
@@ -11,12 +12,12 @@ SOCK = "limpid-fixture"
 OUT = sys.argv[1]
 os.makedirs(OUT, exist_ok=True)
 
-def tmux(*a): return subprocess.run(["tmux", "-L", SOCK, *a], capture_output=True, text=True).stdout.strip()
-def kill(): subprocess.run(["tmux", "-L", SOCK, "kill-server"], capture_output=True)
+def tmux(*a): return subprocess.run(["tmux", "-L", SOCK, "-f", "/dev/null", *a], capture_output=True, text=True).stdout.strip()
+def kill(): subprocess.run(["tmux", "-L", SOCK, "-f", "/dev/null", "kill-server"], capture_output=True)
 
 class Client:
     def __init__(self):
-        self.p = subprocess.Popen(["tmux", "-L", SOCK, "-C", "attach", "-t", "fx"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
+        self.p = subprocess.Popen(["tmux", "-L", SOCK, "-f", "/dev/null", "-C", "attach", "-t", "fx"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
         self.raw = b""; self.sent = []
     def send(self, cmd):
         self.sent.append(cmd); self.p.stdin.write(cmd.encode() + b"\n"); self.p.stdin.flush()

@@ -487,3 +487,57 @@ extension Tab {
         container.groupID
     }
 }
+
+// MARK: - Leaf removal
+
+extension Tab {
+    /// Remove one leaf and everything this tab keeps about it.
+    @discardableResult
+    mutating func removeLeaf(_ leafID: UUID) -> RemovedLeaves {
+        removeLeaves { $0.splitTree = $0.splitTree.remove(leafID).tree }
+    }
+
+    /// Run `reshape` over the tab, then forget every leaf it took out of the
+    /// tree. The set is the tree's difference rather than a list the caller
+    /// passes, so a caller that rebuilds the whole tree (a tmux layout)
+    /// cannot sweep a different set from the one it removed. Every per-pane
+    /// dictionary is persisted except the resume candidates, so a missed one
+    /// accumulates on disk; the unread count also keeps the tab's dot lit,
+    /// since `hasUnread(in:)` reads the dictionary rather than the leaves.
+    @discardableResult
+    mutating func removeLeaves(reshaping reshape: (inout Tab) -> Void) -> RemovedLeaves {
+        let before = Set(splitTree.allLeafIDs())
+        reshape(&self)
+        let removed = before.subtracting(splitTree.allLeafIDs())
+        var unreadCount = 0
+        for leafID in removed {
+            unreadCount += paneStates.removeValue(forKey: leafID)?.unreadCount ?? 0
+            scrollbackPaths.removeValue(forKey: leafID)
+            initialCommands.removeValue(forKey: leafID)
+            for provider in AgentKind.allCases {
+                agentSessions[provider]?.removeValue(forKey: leafID)
+                agentBadges[provider]?.removeValue(forKey: leafID)
+            }
+            agentResumeCandidates.removeValue(forKey: leafID)
+            tmuxBindings.removeValue(forKey: leafID)
+            paneSources.removeValue(forKey: leafID)
+        }
+        if let zoomed = zoomedLeafID, !splitTree.contains(leafID: zoomed) {
+            zoomedLeafID = nil
+        }
+        // `SplitTree.remove` already hands focus to a neighbor; a rebuilt
+        // tree keeps whatever focus the caller gave it, which may be gone.
+        if let focused = splitTree.focusedLeafID, !splitTree.contains(leafID: focused) {
+            splitTree.focusedLeafID = splitTree.allLeafIDs().first
+        }
+        return RemovedLeaves(ids: removed, unreadCount: unreadCount)
+    }
+}
+
+/// What `Tab.removeLeaves` took out, for the state the session keeps
+/// outside the tab.
+struct RemovedLeaves {
+    let ids: Set<UUID>
+    /// Unread notifications the removed panes still held.
+    let unreadCount: Int
+}

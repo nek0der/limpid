@@ -90,6 +90,10 @@ final class GhosttyEventCoordinator {
             {
                 tmuxStore?.cellSizeChanged(size, paneID: paneID)
             }
+        case let .mirrorResized(view, columns, rows):
+            if let paneID = registry.id(for: view) {
+                tmuxStore?.mirrorGridResized(columns: columns, rows: rows, paneID: paneID)
+            }
         case let .closeSurface(view, _):
             handleCloseSurface(view: view)
         case let .mouseOverLink(view, url):
@@ -484,21 +488,15 @@ final class GhosttyEventCoordinator {
         pendingTitleApplies.removeValue(forKey: paneID)
         pendingBellFlashes[paneID]?.cancel()
         pendingBellFlashes.removeValue(forKey: paneID)
-        session.paneSearchStates.removeValue(forKey: paneID)
-        session.paneTransients.removeValue(forKey: paneID)
         guard let owningTab = session.tab(containing: paneID) else {
+            session.paneSearchStates.removeValue(forKey: paneID)
+            session.paneTransients.removeValue(forKey: paneID)
             registry.unregister(paneID)
             return
         }
 
         let oldLeafCount = owningTab.splitTree.allLeafIDs().count
-        let result = owningTab.splitTree.remove(paneID)
-        session.update(owningTab.id) { tab in
-            tab.splitTree = result.tree
-            if let focus = result.focusTarget {
-                tab.splitTree.focusedLeafID = focus
-            }
-        }
+        session.removePane(paneID, fromTab: owningTab.id)
         registry.unregister(paneID)
         if oldLeafCount == 1 {
             session.closeTab(owningTab.id)

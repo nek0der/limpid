@@ -220,7 +220,7 @@ struct ReviewAgentStripHeader: View {
                     reviewPresentation.pinDestination(to: paneID)
                     return
                 }
-                let focused = session.activeTab?.splitTree.effectiveFocusedLeafID
+                let focused = ReviewAgents.dockablePaneID(in: session.activeTab)
                 // Waking first, like every other path that mounts a pane
                 // review had told libghostty to stop drawing.
                 if let focused, focused != paneID {

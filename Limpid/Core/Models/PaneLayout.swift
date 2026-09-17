@@ -45,6 +45,21 @@ struct PaneLayout: Equatable {
         let ratio: Double
         let bounds: CGSize
         let origin: CGPoint
+
+        /// How far a drag at `location` (in the layout's space) has moved
+        /// the divider along its axis, in points: the pointer's offset from
+        /// `ratio × bounds` within the owning split. Both producers put that
+        /// point at the band's center.
+        func dragDelta(to location: CGPoint) -> Double {
+            switch direction {
+            case .horizontal:
+                let extent = Double(bounds.width)
+                return (Double(location.x - origin.x) / max(extent, 1) - ratio) * extent
+            case .vertical:
+                let extent = Double(bounds.height)
+                return (Double(location.y - origin.y) / max(extent, 1) - ratio) * extent
+            }
+        }
     }
 
     let leaves: [Leaf]

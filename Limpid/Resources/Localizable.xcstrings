@@ -21,6 +21,76 @@
         }
       }
     },
+    "Couldn't equalize the splits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スプリットを均等化できませんでした"
+          }
+        }
+      }
+    },
+    "Couldn't move the pane to a new tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを新規タブへ移動できませんでした"
+          }
+        }
+      }
+    },
+    "Couldn't move the pane to that tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインをそのタブへ移動できませんでした"
+          }
+        }
+      }
+    },
+    "Couldn't resize the pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインのサイズを変更できませんでした"
+          }
+        }
+      }
+    },
+    "Couldn't split the pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを分割できませんでした"
+          }
+        }
+      }
+    },
+    "Couldn't swap the panes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを入れ替えられませんでした"
+          }
+        }
+      }
+    },
+    "Couldn't toggle the pane zoom": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインのズームを切り替えられませんでした"
+          }
+        }
+      }
+    },
     "Agent responses and completed commands appear as notifications.": {
       "localizations": {
         "ja": {

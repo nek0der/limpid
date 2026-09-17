@@ -108,7 +108,7 @@ struct TmuxProtocolTests {
         var assembler = TmuxReplyAssembler()
         let events = lines.compactMap { assembler.consume($0) }
 
-        #expect(events.first == .attachFinished)
+        #expect(events.first == .attachFinished(lines: [], isError: false))
         struct Reply {
             let lines: [String]
             let isError: Bool
@@ -129,6 +129,43 @@ struct TmuxProtocolTests {
         #expect(replies[8].isError == true)
         #expect(replies[8].lines == ["parse error: unknown command: bogus-command-for-error"])
         #expect(assembler.isInsideBlock == false)
+    }
+
+    @Test("a flags-0 block after a reply answers no command and yields nothing")
+    func assembler_unsolicitedBlockAfterReply_isDropped() {
+        var assembler = TmuxReplyAssembler()
+        let attach = TmuxReplyMarker(timestamp: 1, number: 286, flags: 0)
+        let split = TmuxReplyMarker(timestamp: 1, number: 291, flags: 1)
+        let hook = TmuxReplyMarker(timestamp: 1, number: 292, flags: 0)
+        let stream: [TmuxControlLine] = [
+            .begin(attach), .end(attach),
+            .begin(split), .end(split),
+            .begin(hook), .text("hooked"), .end(hook)
+        ]
+        let events = stream.compactMap { assembler.consume($0) }
+
+        #expect(events == [
+            .attachFinished(lines: [], isError: false),
+            .reply(lines: [], isError: false, marker: split)
+        ])
+        #expect(assembler.isInsideBlock == false)
+    }
+
+    @Test("an attach block that ends in %error carries tmux's reason")
+    func assembler_refusedAttach_carriesItsLines() {
+        var assembler = TmuxReplyAssembler()
+        let attach = TmuxReplyMarker(timestamp: 1, number: 299, flags: 0)
+        let stream: [TmuxControlLine] = [.begin(attach), .text("can't find session: $99"), .error(attach)]
+        let events = stream.compactMap { assembler.consume($0) }
+
+        #expect(events == [.attachFinished(lines: ["can't find session: $99"], isError: true)])
+    }
+
+    @Test("inside a reply block a %output line is text, not pane output")
+    func parseLine_insideBlock_outputPrefixIsText() {
+        let row = Array("%output %0 injected".utf8)[...]
+        #expect(TmuxProtocol.parseLine(row, insideReplyBlock: true) == .text("%output %0 injected"))
+        #expect(TmuxProtocol.parseLine(row, insideReplyBlock: false) == .output(pane: "%0", bytes: Data("injected".utf8)))
     }
 
     // MARK: - Outbound
@@ -174,7 +211,19 @@ struct TmuxProtocolTests {
 
     // MARK: - Decode throughput (design §6)
 
-    @Test("decoding a recorded bulk stream is far faster than the end-to-end rate the spike measured")
+    /// Always a decode check: every `%output` line of the recording must
+    /// unescape to the byte count an independent decoder of `control.raw`
+    /// gives (902,195 bytes over 636 lines). The speed half is a
+    /// measurement, not a gate: wall-clock time in a shared, parallel Debug
+    /// test process depends on the machine and its load, so the floor is
+    /// asserted only when a measurement is asked for. xcodebuild forwards
+    /// only `TEST_RUNNER_`-prefixed variables to the test process, with the
+    /// prefix removed:
+    ///
+    ///     TEST_RUNNER_LIMPID_MEASURE_OUT=/tmp/decode.txt xcodebuild test \
+    ///       -project Limpid.xcodeproj -scheme Limpid -destination 'platform=macOS' \
+    ///       -only-testing:LimpidTests/TmuxProtocolTests/bulkOutput_decodeThroughput
+    @Test("a recorded bulk stream decodes to its exact byte count; its speed is checked only when measuring")
     func bulkOutput_decodeThroughput() throws {
         let lines = try recordedLines("bulk-output")
         let inputBytes = lines.reduce(0) { $0 + $1.count + 1 }
@@ -190,18 +239,16 @@ struct TmuxProtocolTests {
                 }
             }
         }
+        #expect(decodedBytes == 902_195 * passes)
+
+        guard let path = ProcessInfo.processInfo.environment["LIMPID_MEASURE_OUT"] else { return }
         let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
         let mebibytesPerSecond = Double(inputBytes * passes) / 1_048_576 / seconds
-
         // The spike moved 3.44 MiB/s end to end. If decoding alone were
-        // near that, moving it to Rust would be worth discussing; the
-        // floor here is well above it so a regression shows up, and the
-        // measured value is written out for the design log when asked.
-        #expect(decodedBytes > 0)
+        // near that, moving it to Rust would be worth discussing (design
+        // §6); the floor sits well above it.
         #expect(mebibytesPerSecond > 20, "decode ran at \(mebibytesPerSecond) MiB/s")
-        if let path = ProcessInfo.processInfo.environment["LIMPID_MEASURE_OUT"] {
-            let record = "tmux %output decode: \(String(format: "%.1f", mebibytesPerSecond)) MiB/s over \(inputBytes) bytes x \(passes)\n"
-            try? record.write(toFile: path, atomically: true, encoding: .utf8)
-        }
+        let record = "tmux %output decode: \(String(format: "%.1f", mebibytesPerSecond)) MiB/s over \(inputBytes) bytes x \(passes)\n"
+        try? record.write(toFile: path, atomically: true, encoding: .utf8)
     }
 }

@@ -4,12 +4,20 @@
 import Foundation
 
 /// One `%begin` / `%end` / `%error` marker: the fields tmux prints after the
-/// keyword. Replies are correlated by arrival order, but the number lets a
-/// log line name the block it belongs to.
+/// keyword. The number lets a log line name the block it belongs to; the
+/// flags tell a reply to our command from a block tmux emitted on its own
+/// (see `TmuxReplyAssembler`).
 struct TmuxReplyMarker: Equatable {
     let timestamp: Int
     let number: Int
     let flags: Int
+
+    /// The block answers a command this control client wrote. tmux 3.7c
+    /// prints 1 for those and 0 for the attach and for hooks; the manual
+    /// still calls the field unused, which recorded traffic contradicts.
+    var isClientCommand: Bool {
+        flags != 0
+    }
 }
 
 /// One line the control client received, classified. `%output` is the only
@@ -27,7 +35,8 @@ enum TmuxControlLine: Equatable {
     /// Any other `%name arguments` notification, kept verbatim so a caller
     /// can log what it does not handle instead of dropping it silently.
     case notification(name: String, arguments: String)
-    /// A line without a `%` prefix: the body of a reply block.
+    /// A line inside a reply block other than its terminator, or any
+    /// other line without a `%` prefix.
     case text(String)
 }
 
@@ -63,8 +72,11 @@ enum TmuxProtocol {
     ///
     /// Inside a reply block tmux prints the command's output verbatim, so a
     /// line there is text even when it starts with `%` — a pane id is the
-    /// everyday case — and only the block's own terminators are markers.
-    /// The caller tracks the block state; this function has none.
+    /// everyday case, and a `capture-pane` row can read `%output …` — and
+    /// only the block's own terminators are markers. That rule is applied
+    /// before the `%output` match, or such a row would be routed to a pane
+    /// as if the program had printed it. The caller tracks the block state;
+    /// this function has none.
     static func parseLine(_ raw: ArraySlice<UInt8>, insideReplyBlock: Bool = false) -> TmuxControlLine {
         var line = raw
         if line.last == 0x0D {
@@ -72,7 +84,7 @@ enum TmuxProtocol {
         }
 
         let outputPrefix = Array("%output ".utf8)
-        if line.starts(with: outputPrefix) {
+        if !insideReplyBlock, line.starts(with: outputPrefix) {
             let rest = line.dropFirst(outputPrefix.count)
             let paneEnd = rest.firstIndex(of: 0x20) ?? rest.endIndex
             let payload = paneEnd < rest.endIndex ? rest[(paneEnd + 1)...] : rest[rest.endIndex...]
