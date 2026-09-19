@@ -144,6 +144,30 @@ final class TmuxConnectionStore {
         panesAwaitingRestoreCheck = []
     }
 
+    /// Leaves that were an agent's mirror pane and became an ordinary
+    /// terminal because their tmux went away (`becomeTerminalTab`). Their
+    /// shells run agents directly rather than in tmux
+    /// (`PaneShellEnvironment.agentTmuxAnswer`), which is what keeps the
+    /// resume they start in the tab they are in.
+    ///
+    /// That holds for the leaf's whole life in this launch, so a `claude` the
+    /// user types there later also runs in place; a new tab hosts its agents
+    /// as usual. The set is not saved: a leaf restored after a relaunch is an
+    /// ordinary pane again, and its shell is told to host like any other.
+    /// Nor is it pruned when a leaf closes. Leaf ids are never reused, and a
+    /// closed tab reopened with the same leaf is still the one that came back
+    /// from tmux.
+    ///
+    /// Not observed: a leaf is added before the tab write that builds its
+    /// surface, and the pane area reads it while laying out that write.
+    @ObservationIgnored private(set) var leavesBackFromTmux: Set<UUID> = []
+
+    /// Whether the shell of leaf `paneID` runs agents directly because the
+    /// leaf came back from tmux.
+    func runsAgentsDirectly(inPane paneID: UUID) -> Bool {
+        leavesBackFromTmux.contains(paneID)
+    }
+
     /// The channel of leaf `paneID`, opened on first use. `nil` only when
     /// no socketpair could be opened.
     func channel(paneID: UUID) -> TmuxPaneChannel? {
@@ -689,7 +713,9 @@ final class TmuxConnectionStore {
     /// is what builds the surface: the endpoint is reported gone, so the
     /// rules stop holding the conversation back from resume, and the leaves'
     /// surfaces are let go, because a surface reading a mirror channel never
-    /// starts a process of its own.
+    /// starts a process of its own. The leaves are also marked as back from
+    /// tmux, so the shells built for them run the resume in this tab rather
+    /// than handing it to tmux and a new one (`leavesBackFromTmux`).
     ///
     /// The user is told, unlike the close above. What they see here is the
     /// conversation they were reading replaced, in an instant and with no
@@ -705,6 +731,7 @@ final class TmuxConnectionStore {
         tabIssues.removeValue(forKey: tab.id)
         for leafID in tab.splitTree.allLeafIDs() {
             registry.unregister(leafID)
+            leavesBackFromTmux.insert(leafID)
         }
         session.update(tab.id) { t in
             t.kind = .terminal

@@ -19,7 +19,8 @@ struct AgentTmuxSupportTests {
     private static func environment(
         for support: AgentTmuxSupport,
         isRequested: Bool = true,
-        intake: AgentMirrorIntake = .watching(directory: URL(fileURLWithPath: "/private/tmp/requests", isDirectory: true))
+        intake: AgentMirrorIntake = .watching(directory: URL(fileURLWithPath: "/private/tmp/requests", isDirectory: true)),
+        isBackFromTmux: Bool = false
     ) -> [String: String] {
         PaneShellEnvironment.variables(
             paneID: nil,
@@ -30,6 +31,7 @@ struct AgentTmuxSupportTests {
                 hostsAgentsInTmux: isRequested,
                 support: support,
                 intake: intake,
+                isBackFromTmux: isBackFromTmux,
                 socketName: "limpid-test"
             ).host
         )
@@ -98,6 +100,7 @@ struct AgentTmuxSupportTests {
                 hostsAgentsInTmux: isRequested,
                 support: support,
                 intake: intake,
+                isBackFromTmux: false,
                 socketName: "limpid-test"
             )
         }
@@ -114,6 +117,41 @@ struct AgentTmuxSupportTests {
         #expect(answer(Self.version("tmux 3.2")) == .direct)
         #expect(answer(.notInstalled) == .direct)
         #expect(answer(Self.version("tmux 3.5"), intake: .unavailable) == .direct)
+    }
+
+    /// A leaf whose agent's tmux went away became a terminal that resumes the
+    /// conversation, and the resume has to run there: told to host, the shim
+    /// would open a second tab for it and exit successfully, so the resume
+    /// command's fallback never ran and nothing was left (2026-09-19). The
+    /// leaf is not held back by a pending answer either.
+    @Test(arguments: [
+        AgentTmuxSupport.supported(
+            binary: "/opt/homebrew/bin/tmux",
+            version: TmuxVersion(major: 3, minor: 5, patch: nil, isDevelopment: false)
+        ),
+        .pending
+    ])
+    func aLeafBackFromTmux_runsItsAgentsDirectly(support: AgentTmuxSupport) {
+        let answer = PaneShellEnvironment.agentTmuxAnswer(
+            hostsAgentsInTmux: true,
+            support: support,
+            intake: .watching(directory: URL(fileURLWithPath: "/private/tmp/requests", isDirectory: true)),
+            isBackFromTmux: true,
+            socketName: "limpid-test"
+        )
+        #expect(answer == .direct)
+        let env = Self.environment(for: support, isBackFromTmux: true)
+        #expect(env["LIMPID_AGENT_TMUX"] == nil)
+        #expect(env["LIMPID_AGENT_TMUX_SOCKET"] == nil)
+        #expect(env[AgentMirrorRequest.directoryVariable] == nil)
+    }
+
+    /// Every other pane, new or old, is told to host as before.
+    @Test func aLeafNotBackFromTmux_isStillToldToHost() {
+        let env = Self.environment(for: Self.version("tmux 3.5"), isBackFromTmux: false)
+        #expect(env["LIMPID_AGENT_TMUX"] == Self.binary)
+        #expect(env["LIMPID_AGENT_TMUX_SOCKET"] == "limpid-test")
+        #expect(env[AgentMirrorRequest.directoryVariable] == "/private/tmp/requests")
     }
 
     /// Only a pane that starts a shell of its own has an environment to wait

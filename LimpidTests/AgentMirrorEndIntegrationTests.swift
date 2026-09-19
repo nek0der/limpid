@@ -263,6 +263,24 @@ struct AgentMirrorEndIntegrationTests {
 
             let command = try #require(CodexResumeCommandBuilder.initialCommand(for: tab, paneID: request.leafID))
             #expect(command.contains(AgentEndHarness.sessionID))
+            // And the shell that runs it hosts no agent in tmux, so the
+            // resume stays in this tab rather than opening another, and its
+            // fallback runs when there is nothing to resume. With the setting
+            // on, the launching tab's leaf is still told to host.
+            let shellAnswer = { (leaf: UUID) in
+                PaneShellEnvironment.agentTmuxAnswer(
+                    hostsAgentsInTmux: true,
+                    support: .supported(
+                        binary: harness.server.executable,
+                        version: TmuxVersion(major: 3, minor: 5, patch: nil, isDevelopment: false)
+                    ),
+                    intake: .watching(directory: directory),
+                    isBackFromTmux: harness.store.runsAgentsDirectly(inPane: leaf),
+                    socketName: "limpid-test"
+                )
+            }
+            #expect(shellAnswer(request.leafID) == .direct)
+            #expect(shellAnswer(leaf).host != nil)
         }
     }
 

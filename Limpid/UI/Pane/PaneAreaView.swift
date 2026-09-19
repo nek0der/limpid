@@ -534,7 +534,8 @@ struct PaneAreaView: View {
             agentTmux: PaneShellEnvironment.agentTmuxAnswer(
                 hostsAgentsInTmux: settings.settings.advanced.hostsAgentsInTmux,
                 support: settings.agentTmuxSupport,
-                intake: settings.agentMirrorIntake
+                intake: settings.agentMirrorIntake,
+                isBackFromTmux: tmuxStore?.runsAgentsDirectly(inPane: paneID) == true
             ),
             tmuxStore: tmuxStore
         )

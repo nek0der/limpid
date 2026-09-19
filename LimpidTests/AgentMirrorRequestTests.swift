@@ -154,6 +154,7 @@ struct AgentMirrorRequestTests {
                 version: TmuxVersion(major: 3, minor: 5, patch: nil, isDevelopment: false)
             ),
             intake: .watching(directory: URL(fileURLWithPath: "/private/tmp/requests", isDirectory: true)),
+            isBackFromTmux: false,
             socketName: ownSocketName
         ).host
         let hosted = PaneShellEnvironment.variables(paneID: nil, shimDirectories: [], zdotdir: nil, basePath: "/usr/bin", agentTmux: host)
@@ -176,6 +177,7 @@ struct AgentMirrorRequestTests {
                 version: TmuxVersion(major: 3, minor: 5, patch: nil, isDevelopment: false)
             ),
             intake: intake,
+            isBackFromTmux: false,
             socketName: ownSocketName
         ).host
         #expect(host == nil)

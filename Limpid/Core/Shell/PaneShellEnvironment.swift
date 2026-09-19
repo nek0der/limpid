@@ -98,13 +98,23 @@ enum PaneShellEnvironment {
     ///
     /// The directory comes from the intake rather than from a default, so the
     /// one a pane names is by construction the one being read.
+    ///
+    /// A leaf that came back from tmux runs its agents directly whatever the
+    /// setting says (`TmuxConnectionStore.runsAgentsDirectly(inPane:)`). Its
+    /// shell starts by resuming the conversation tmux lost (design §5
+    /// decision 3), and that resume belongs in the tab the user is looking
+    /// at: told to host, the shim would hand it to a second tab, and would
+    /// exit successfully as it did, so the resume command's fallback to a
+    /// fresh agent could never run when there is nothing to resume. Nor does
+    /// such a leaf wait for a pending answer, since none of them changes it.
     static func agentTmuxAnswer(
         hostsAgentsInTmux: Bool,
         support: AgentTmuxSupport,
         intake: AgentMirrorIntake,
+        isBackFromTmux: Bool,
         socketName: @autoclosure () -> String = defaultAgentSocketName()
     ) -> AgentTmuxAnswer {
-        guard hostsAgentsInTmux else { return .direct }
+        guard hostsAgentsInTmux, !isBackFromTmux else { return .direct }
         if support == .pending || intake == .pending {
             return .pending
         }
