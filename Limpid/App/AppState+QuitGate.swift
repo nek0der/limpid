@@ -14,7 +14,8 @@ extension AppState {
     @MainActor
     func shouldAllowQuit() -> Bool {
         let policy = settingsStore.settings.confirmations.quit
-        let hasAgent = session.hasLiveAgentAnywhere()
+        // Agents running in tmux are not counted: they outlive the quit.
+        let hasAgent = session.hasAgentThatQuitWouldStop()
         guard shouldConfirm(policy: policy, hasAgent: hasAgent) else { return true }
         return LimpidConfirm.runDestructive(
             title: String(localized: "Quit Limpid?"),

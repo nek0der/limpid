@@ -7,7 +7,7 @@ import Foundation
 ///
 /// Both questions here are about run records, and records are read by the
 /// rules alone, so this passes them on rather than answering them: whether the
-/// run in one leaf ended on its own terms, and that an endpoint's tmux is
+/// leaf has a conversation left to resume, and that an endpoint's tmux is
 /// gone. Held weakly, so a store that outlives a projection asks nobody rather
 /// than keeping one alive.
 @MainActor
@@ -20,14 +20,16 @@ final class AgentTmuxRuns {
         self.presence = presence
     }
 
-    /// Whether the run in `paneID` ended by its own session end, read from the
-    /// records as they stand now.
+    /// Whether `paneID` has a conversation to resume, read from the records
+    /// and hints as they stand now. With no projection to ask, the answer is
+    /// yes: keeping the tab as a terminal loses nothing, closing it might.
     ///
-    /// A fresh pass rather than the last one's answer: the hook writes the
-    /// record before the agent exits, so by the time tmux announces the closed
-    /// window the answer is on disk — while the pass that would have read it
-    /// is only scheduled by a file event that may not have arrived. A pass
-    /// re-reads everything and is safe to ask for at any moment.
+    /// Always a fresh pass rather than the last one's answer, which can be
+    /// stale either way: the hook writes a session end before the agent
+    /// exits, so by the time tmux announces the closed window a run the last
+    /// pass saw going may have ended on disk — while the pass that would have
+    /// read it is only scheduled by a file event that may not have arrived. A
+    /// pass re-reads everything and is safe to ask for at any moment.
     ///
     /// The pass runs inside the caller, which is a tmux notification handler,
     /// and it writes to the session — every tab's badges and titles. That is
@@ -36,13 +38,10 @@ final class AgentTmuxRuns {
     /// which releases connections no mirror uses. The tab being asked about
     /// is still a mirror at this point, so its connection is not among them,
     /// and the caller decides what becomes of it after the answer.
-    func hasEndedRun(inPane paneID: UUID) -> Bool {
-        guard let projection else { return false }
-        if projection.endedTmuxPanes.contains(paneID) {
-            return true
-        }
+    func hasResumableConversation(inPane paneID: UUID) -> Bool {
+        guard let projection else { return true }
         projection.refresh()
-        return projection.endedTmuxPanes.contains(paneID)
+        return projection.resumableTmuxPanes.contains(paneID)
     }
 
     /// Report that the tmux behind `endpoint` is gone, and read the records

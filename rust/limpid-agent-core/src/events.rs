@@ -199,6 +199,7 @@ mod tests {
                 r#"{{"schemaVersion":1,"paneId":"{PANE}","newCwd":"/tmp/after",
                    "oldCwd":"/tmp/before","updatedAt":"{updated_at}"}}"#
             )),
+            is_tmux_hosted: false,
         }
     }
 

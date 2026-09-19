@@ -72,6 +72,13 @@ pub struct RecordFile {
     pub name: String,
     #[serde(default)]
     pub content: Option<String>,
+    /// Whether a resume hint was found where the hook keeps the hints of runs
+    /// Limpid hosts in tmux. Only the directory says so — the hint's own
+    /// content is the same either way — and only a hosted hint names a
+    /// conversation an agent's mirror tab can resume. Records of every other
+    /// kind leave it unset.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_tmux_hosted: bool,
 }
 
 /// A worktree creation event, which is named rather than keyed by pane because
@@ -373,14 +380,16 @@ pub struct Projection {
     pub marks_to_keep: AttentionMarks,
     /// Panes where offering to resume makes sense, per provider.
     pub resume_candidates: BTreeMap<Uuid, BTreeSet<ProviderId>>,
-    /// Panes whose run in tmux ended on its own terms — a session-end hook —
-    /// with no other run of theirs still going in tmux.
+    /// Panes with a conversation to resume once tmux stops showing them: a
+    /// run of theirs in tmux is still going, or they have a resume hint and
+    /// no run of theirs in tmux ended its session.
     ///
-    /// The host reads it when tmux drops the window showing such a run, to
-    /// tell an agent that finished from a tmux that went away. Only the
-    /// record says which happened, and only the rules read records.
+    /// The host reads it when tmux drops the window showing an agent, to tell
+    /// a tmux that went away under a conversation from an agent that is
+    /// simply gone. Only the records and hints say which happened, and only
+    /// the rules read them.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub ended_tmux_panes: BTreeSet<Uuid>,
+    pub resumable_tmux_panes: BTreeSet<Uuid>,
 }
 
 impl RuntimePresentation {

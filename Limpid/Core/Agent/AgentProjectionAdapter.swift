@@ -62,10 +62,11 @@ final class AgentProjectionAdapter {
     /// tab again; built here because the endpoint is in the record and the
     /// runtimes the rules return name no record.
     private var tmuxRuns: [String: AgentTmuxRun] = [:]
-    /// The leaves whose run in tmux ended on its own terms, as of the last
-    /// pass. The rules decide it from the records; this is where the tmux
-    /// side reads their answer (`TmuxConnectionStore.outcome(ofEnded:)`).
-    private(set) var endedTmuxPanes: Set<UUID> = []
+    /// The leaves with a conversation to resume once tmux stops showing
+    /// them, as of the last pass. The rules decide it from the records and
+    /// hints; this is where the tmux side reads their answer
+    /// (`TmuxConnectionStore.outcome(ofEnded:)`).
+    private(set) var resumableTmuxPanes: Set<UUID> = []
 
     /// The one the application builds: every provider the registry declares,
     /// rooted at this build's own support directory. Tests inject their
@@ -324,7 +325,7 @@ final class AgentProjectionAdapter {
             // After the plain hints, so a pane that has both — a conversation
             // that ran natively before it was reopened in tmux — is read from
             // the hosted one, which is the later truth.
-            input.sessionRecords += files(in: directory.hostedSessions, suffix: ".json", provider: provider)
+            input.sessionRecords += files(in: directory.hostedSessions, suffix: ".json", provider: provider, isTmuxHosted: true)
         }
         input.resumeIntents = intents()
         input.pidStatus = pidStatus(for: input.records)
@@ -356,7 +357,7 @@ final class AgentProjectionAdapter {
             // After the plain hints, so a pane that has both — a conversation
             // that ran natively before it was reopened in tmux — is read from
             // the hosted one, which is the later truth.
-            input.sessionRecords += files(in: directory.hostedSessions, suffix: ".json", provider: provider)
+            input.sessionRecords += files(in: directory.hostedSessions, suffix: ".json", provider: provider, isTmuxHosted: true)
             if let cwd = directory.cwdEvents {
                 input.cwdEvents += files(in: cwd, suffix: ".cwd.json", provider: provider)
             }
@@ -374,7 +375,12 @@ final class AgentProjectionAdapter {
         return input
     }
 
-    private func files(in directory: URL, suffix: String, provider: String) -> [AgentProjectionFile] {
+    private func files(
+        in directory: URL,
+        suffix: String,
+        provider: String,
+        isTmuxHosted: Bool = false
+    ) -> [AgentProjectionFile] {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
             return []
         }
@@ -386,7 +392,8 @@ final class AgentProjectionAdapter {
                 name: String(name.dropLast(suffix.count)),
                 // A read that fails here is reported as present-but-unread so
                 // the rules keep the record they already accepted.
-                content: (try? Data(contentsOf: url)).flatMap { String(data: $0, encoding: .utf8) }
+                content: (try? Data(contentsOf: url)).flatMap { String(data: $0, encoding: .utf8) },
+                isTmuxHosted: isTmuxHosted
             )
         }
     }
@@ -583,7 +590,7 @@ final class AgentProjectionAdapter {
                 kind: kind
             )
         }
-        endedTmuxPanes = projection.endedTmuxPanes ?? []
+        resumableTmuxPanes = projection.resumableTmuxPanes ?? []
         // The rules trimmed the marks to the runs that still exist; what they
         // handed back is the whole of what the interface keeps.
         attention?.viewedRuntimeTokens = projection.marksToKeep.viewed

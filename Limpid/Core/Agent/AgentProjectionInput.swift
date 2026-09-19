@@ -34,6 +34,11 @@ struct AgentProjectionFile: Encodable {
     var provider: String
     var name: String
     var content: String?
+    /// Whether a resume hint came from the directory the hook keeps the
+    /// hints of runs Limpid hosts in tmux (`AgentDirectories.hostedSessions`).
+    /// The hint's content is the same either way, so only where it was found
+    /// can say.
+    var isTmuxHosted = false
 }
 
 struct AgentProjectionWorktreeFile: Encodable {
@@ -137,13 +142,14 @@ struct AgentProjection: Decodable {
     var tabTitles: [String: String] = [:]
     var marksToKeep = AgentProjectionMarks()
     var resumeCandidates: [String: [String]] = [:]
-    /// Panes whose run in tmux ended on its own terms. Read when tmux drops
-    /// the window showing an agent, to tell that from a server that went away
-    /// (`TmuxConnectionStore.outcome(ofEnded:)`).
+    /// Panes with a conversation to resume once tmux stops showing them: a
+    /// run of theirs in tmux is still going, or a hosted resume hint names
+    /// them and no run of theirs ended its session. Read when tmux drops the
+    /// window showing an agent (`TmuxConnectionStore.outcome(ofEnded:)`).
     ///
-    /// Optional because the rules leave the key out when no pane qualifies,
-    /// which is the usual pass; absent and empty mean the same thing here.
-    var endedTmuxPanes: Set<UUID>?
+    /// Optional because the rules leave the key out when no pane qualifies;
+    /// absent and empty mean the same thing here.
+    var resumableTmuxPanes: Set<UUID>?
 
     /// The pane-keyed maps, re-keyed by identifier rather than by the text of
     /// one. The two sides spell an identifier differently — lower case on the

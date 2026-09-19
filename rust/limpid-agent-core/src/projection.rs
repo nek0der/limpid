@@ -68,7 +68,7 @@ pub fn project(
     ));
     commands.extend(seen_where_the_user_is_looking(&runtimes, input));
     let resume_candidates = resume_candidates(input, &sessions, &state.accepted);
-    let ended_tmux_panes = ended_tmux_panes(&state.accepted, input);
+    let resumable_tmux_panes = resumable_tmux_panes(&state.accepted, input, &alive);
 
     state.episodes = runtimes
         .iter()
@@ -90,7 +90,7 @@ pub fn project(
         tab_titles,
         marks_to_keep,
         resume_candidates,
-        ended_tmux_panes,
+        resumable_tmux_panes,
     };
     (state, projection, commands)
 }
@@ -467,43 +467,44 @@ fn session_infos(
 ) -> BTreeMap<Uuid, BTreeMap<ProviderId, SessionInfo>> {
     let mut sessions: BTreeMap<Uuid, BTreeMap<ProviderId, SessionInfo>> = BTreeMap::new();
     for file in &input.session_records {
-        let Some(content) = file.content.as_deref() else {
+        let Some((pane, info)) = resume_hint(file, alive) else {
             continue;
         };
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else {
-            continue;
-        };
-        let Some(pane) = value
-            .get("paneId")
-            .and_then(serde_json::Value::as_str)
-            .and_then(|it| Uuid::parse_str(it).ok())
-        else {
-            continue;
-        };
-        // A hint for a pane the interface no longer has is not offerable.
-        if !alive.contains(&pane) {
-            continue;
-        }
-        let Some(session_id) = value
-            .get("sessionId")
-            .and_then(serde_json::Value::as_str)
-            .filter(|it| !it.is_empty())
-        else {
-            continue;
-        };
-        sessions.entry(pane).or_default().insert(
-            file.provider.clone(),
-            SessionInfo {
-                session_id: session_id.to_owned(),
-                cwd: value
-                    .get("cwd")
-                    .and_then(serde_json::Value::as_str)
-                    .filter(|it| !it.is_empty())
-                    .map(str::to_owned),
-            },
-        );
+        sessions
+            .entry(pane)
+            .or_default()
+            .insert(file.provider.clone(), info);
     }
     sessions
+}
+
+/// The pane a resume hint names and the conversation it can resume, when the
+/// hint is readable, names a conversation, and names a pane the interface
+/// still has — a hint for a pane that is gone is not offerable.
+fn resume_hint(file: &RecordFile, alive: &BTreeSet<Uuid>) -> Option<(Uuid, SessionInfo)> {
+    let value = serde_json::from_str::<serde_json::Value>(file.content.as_deref()?).ok()?;
+    let pane = value
+        .get("paneId")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|it| Uuid::parse_str(it).ok())?;
+    if !alive.contains(&pane) {
+        return None;
+    }
+    let session_id = value
+        .get("sessionId")
+        .and_then(serde_json::Value::as_str)
+        .filter(|it| !it.is_empty())?;
+    Some((
+        pane,
+        SessionInfo {
+            session_id: session_id.to_owned(),
+            cwd: value
+                .get("cwd")
+                .and_then(serde_json::Value::as_str)
+                .filter(|it| !it.is_empty())
+                .map(str::to_owned),
+        },
+    ))
 }
 
 /// Names each tab after the agent session that started most recently in it.
@@ -589,18 +590,29 @@ fn surviving_marks(marks: &AttentionMarks, runtimes: &[RuntimePresentation]) -> 
     }
 }
 
-/// The panes whose run in tmux ended on its own terms.
+/// The panes that have a conversation to resume once tmux stops showing them.
 ///
-/// A pane is named only when every run of its that is in tmux has ended: an
-/// agent the user started again in the same leaf is still going there, and
-/// the tab must not be closed under it.
+/// A pane has one when a run of its in tmux is still going — the tmux went
+/// away under it — or when it has a hosted resume hint and no run of its in
+/// tmux ended its session. The hint is the hook's own word that a hosted
+/// conversation started there, and it stands when the record beside it
+/// cannot be read. An agent the user started again in the same leaf is still
+/// going there, so a pane with both an ended run and a going one has a
+/// conversation.
+///
+/// A pane with neither has nothing to resume: the agent ended its session, or
+/// it exited before it started one — Claude Code asks whether to trust the
+/// folder before its session-start hook runs, so declining leaves no record
+/// and no hint at all.
 ///
 /// Read by the host when tmux drops the window showing an agent, to tell a
-/// session the agent ended from a server that went away. The record is the
-/// only thing that can say which, and reading records is the rules' job.
-fn ended_tmux_panes(
+/// tmux that went away under a conversation from an agent that is simply
+/// gone. The records and hints are the only things that can say which, and
+/// reading them is the rules' job.
+fn resumable_tmux_panes(
     accepted: &BTreeMap<String, AcceptedRun>,
     input: &ProjectionInput,
+    alive: &BTreeSet<Uuid>,
 ) -> BTreeSet<Uuid> {
     let mut ended: BTreeSet<Uuid> = BTreeSet::new();
     let mut going: BTreeSet<Uuid> = BTreeSet::new();
@@ -617,8 +629,14 @@ fn ended_tmux_panes(
             going.insert(pane);
         }
     }
-    ended.retain(|pane| !going.contains(pane));
-    ended
+    let hinted = input
+        .session_records
+        .iter()
+        .filter(|file| file.is_tmux_hosted)
+        .filter_map(|file| resume_hint(file, alive))
+        .map(|(pane, _)| pane)
+        .filter(|pane| !ended.contains(pane));
+    going.into_iter().chain(hinted).collect()
 }
 
 /// Which panes are worth offering a resume for.
@@ -702,6 +720,7 @@ mod tests {
             provider: claude(),
             name: RUN.to_owned(),
             content,
+            is_tmux_hosted: false,
         }
     }
 
@@ -1050,10 +1069,12 @@ mod tests {
     }
 
     #[test]
-    fn only_a_session_end_names_a_pane_as_ended() {
-        // What tells an agent that finished from a tmux that went away: the
-        // first left a session-end hook behind, the second left nothing.
+    fn a_pane_is_resumable_while_its_run_is_going_or_a_hosted_hint_outlives_no_end() {
+        // What tells a tmux that went away under a conversation from an agent
+        // that is simply gone: the first leaves a going run or a hosted hint
+        // behind, the second a session-end hook or nothing at all.
         let pane: Uuid = PANE.parse().expect("pane");
+        let alive = [pane].into_iter().collect::<BTreeSet<_>>();
         let mut record =
             RunRecord::decode(record(Some(1), "2026-09-14T12:00:00Z", "running").as_bytes())
                 .expect("record");
@@ -1073,6 +1094,12 @@ mod tests {
                 })
                 .collect::<BTreeMap<_, _>>()
         };
+        let hint = |is_tmux_hosted: bool| RecordFile {
+            provider: claude(),
+            name: PANE.to_owned(),
+            content: Some(format!(r#"{{"paneId":"{PANE}","sessionId":"S"}}"#)),
+            is_tmux_hosted,
+        };
 
         let mut descriptor = descriptor();
         descriptor.session_end_restart_reasons = vec!["clear".to_owned()];
@@ -1080,37 +1107,66 @@ mod tests {
             providers: [(claude(), descriptor)].into_iter().collect(),
             ..ProjectionInput::default()
         };
+        let hinted = |is_tmux_hosted: bool| ProjectionInput {
+            session_records: vec![hint(is_tmux_hosted)],
+            ..input.clone()
+        };
 
-        assert!(ended_tmux_panes(&accepted(vec![(RUN, record.clone())]), &input).is_empty());
+        assert_eq!(
+            resumable_tmux_panes(&accepted(vec![(RUN, record.clone())]), &input, &alive),
+            alive
+        );
+
+        // An agent that exited before its first session-start hook — Claude
+        // Code's folder trust prompt, declined — left nothing to resume.
+        assert!(resumable_tmux_panes(&accepted(vec![]), &input, &alive).is_empty());
+        // A hosted hint names a conversation even when its record cannot be
+        // read; a plain one is a native run's, and says nothing about tmux.
+        assert_eq!(
+            resumable_tmux_panes(&accepted(vec![]), &hinted(true), &alive),
+            alive
+        );
+        assert!(resumable_tmux_panes(&accepted(vec![]), &hinted(false), &alive).is_empty());
+        // A hint for a leaf the interface no longer has names nothing.
+        assert!(
+            resumable_tmux_panes(&accepted(vec![]), &hinted(true), &BTreeSet::new()).is_empty()
+        );
 
         let mut ended = record.clone();
         ended.last_hook_event = Some("SessionEnd".to_owned());
-        assert_eq!(
-            ended_tmux_panes(&accepted(vec![(RUN, ended.clone())]), &input),
-            [pane].into_iter().collect::<BTreeSet<_>>()
+        assert!(
+            resumable_tmux_panes(&accepted(vec![(RUN, ended.clone())]), &input, &alive).is_empty()
+        );
+        // A session end outweighs a hint the hook has not dropped yet.
+        assert!(
+            resumable_tmux_panes(&accepted(vec![(RUN, ended.clone())]), &hinted(true), &alive)
+                .is_empty()
         );
 
         // `/clear` ends the session and keeps the agent, so the tab it is
-        // running in must not be named as one whose agent has gone.
+        // running in still has a conversation.
         let mut cleared = ended.clone();
         cleared.session_end_reason = Some("clear".to_owned());
-        assert!(ended_tmux_panes(&accepted(vec![(RUN, cleared)]), &input).is_empty());
+        assert_eq!(
+            resumable_tmux_panes(&accepted(vec![(RUN, cleared)]), &input, &alive),
+            alive
+        );
 
         // A second agent started in the same leaf is still going there.
         let second = "BBBBBBBB-2222-4222-8222-BBBBBBBBBBB2";
-        assert!(
-            ended_tmux_panes(
+        assert_eq!(
+            resumable_tmux_panes(
                 &accepted(vec![(RUN, ended), (second, record.clone())]),
-                &input
-            )
-            .is_empty()
+                &input,
+                &alive
+            ),
+            alive
         );
 
         // A run outside tmux ends by its pid, and this is not about it.
         let mut native = record;
         native.tmux_socket_path = None;
-        native.last_hook_event = Some("session_ended".to_owned());
-        assert!(ended_tmux_panes(&accepted(vec![(RUN, native)]), &input).is_empty());
+        assert!(resumable_tmux_panes(&accepted(vec![(RUN, native)]), &input, &alive).is_empty());
     }
 
     /// The tab of a run whose server went away becomes an ordinary terminal,

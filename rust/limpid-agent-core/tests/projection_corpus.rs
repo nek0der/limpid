@@ -137,6 +137,7 @@ fn read_records(
                 provider: provider.clone(),
                 content: fs::read_to_string(&path).ok(),
                 name,
+                is_tmux_hosted: directory.ends_with("/tmux-hosted"),
             })
         })
         .collect();

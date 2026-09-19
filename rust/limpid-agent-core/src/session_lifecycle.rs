@@ -366,6 +366,7 @@ mod tests {
                 provider: provider(name),
                 name: RUN.to_owned(),
                 content: Some(record),
+                is_tmux_hosted: false,
             }],
             session_records: vec![RecordFile {
                 provider: provider(name),
@@ -373,6 +374,7 @@ mod tests {
                 content: Some(format!(
                     r#"{{"schemaVersion":1,"paneId":"{PANE}","runId":"{RUN}","sessionId":"S"}}"#
                 )),
+                is_tmux_hosted: false,
             }],
             resume_intents: Vec::new(),
             pid_status: [("4242".to_owned(), status)].into_iter().collect(),

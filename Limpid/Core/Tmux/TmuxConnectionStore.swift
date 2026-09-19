@@ -85,8 +85,8 @@ final class TmuxConnectionStore {
     @ObservationIgnored var onNotice: ((String) -> Void)?
     /// What the store asks about the agent runs behind its tabs
     /// (`outcome(ofEnded:)`). Without one — in a test, in a preview — an
-    /// agent's tab is kept rather than closed: nothing here can say the agent
-    /// finished, and keeping the tab loses nothing.
+    /// agent's tab is kept rather than closed: nothing here can say whether a
+    /// conversation is left in it, and keeping the tab loses nothing.
     @ObservationIgnored var agentRuns: AgentTmuxRuns?
 
     typealias SessionPresenceCheck = @Sendable (
@@ -657,23 +657,27 @@ final class TmuxConnectionStore {
         case becomeTerminal
     }
 
-    /// Decided by who opened the tab, and for an agent's tab by its run
-    /// record (design §6 decision 2).
+    /// Decided by who opened the tab, and for an agent's tab by whether its
+    /// leaf has a conversation left to resume (design §6 decision 2).
     ///
-    /// An agent that ended its own session leaves a session-end hook behind,
-    /// and its tab has nothing left to show. Anything else that takes the
-    /// tmux away — a killed server, a killed session — leaves the record
-    /// saying the run is going, and the conversation is still worth having:
-    /// the tab becomes a terminal and resumes it (decision 3). A user's
-    /// mirror tab closes either way, as it always has.
+    /// A killed server or session takes the tmux away from a run that is
+    /// still going: the record says so, nothing having run to write
+    /// otherwise, and the conversation is still worth having — the tab
+    /// becomes a terminal and resumes it (decision 3). An agent that ended its
+    /// own session, or exited before it started one (Claude Code's folder
+    /// trust prompt, declined, runs no hook at all), leaves nothing to
+    /// resume, and its tab closes as quietly as its agent did. A user's
+    /// mirror tab closes either way, as it always has. A store with nobody
+    /// to ask keeps an agent's tab, the outcome that loses nothing.
     func outcome(ofEnded tab: Tab) -> EndedTabOutcome {
         guard tab.mirrorOrigin == .agent else { return .close }
+        guard let agentRuns else { return .becomeTerminal }
         // One agent, one session, one window, one leaf: the tab's only leaf
         // is the pane the agent's records name.
         guard let leaf = tab.splitTree.allLeafIDs().first,
-              agentRuns?.hasEndedRun(inPane: leaf) == true
-        else { return .becomeTerminal }
-        return .close
+              agentRuns.hasResumableConversation(inPane: leaf)
+        else { return .close }
+        return .becomeTerminal
     }
 
     /// Turn an agent's tab into an ordinary terminal tab on the same leaves.

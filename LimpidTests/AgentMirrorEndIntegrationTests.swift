@@ -68,10 +68,10 @@ private final class AgentEndHarness {
         )
     }
 
-    /// The record the agent's hooks would have written from inside that
-    /// session, and the resume hint beside it. `hasEnded` is the difference
-    /// between an agent that ended its own session and a tmux that went away
-    /// under a run that was still going.
+    /// What the agent's hooks would have left behind from inside that
+    /// session. `hasEnded` is the difference between an agent that ended its
+    /// own session and a tmux that went away under a run that was still
+    /// going; either way the run started one, so its resume hint is there.
     func writeRecords(for request: AgentMirrorRequest, hasEnded: Bool) throws {
         try AgentRecordFixtures.write(
             AgentStateRecordFixture(
@@ -91,6 +91,12 @@ private final class AgentEndHarness {
             ),
             to: directory.appendingPathComponent("states")
         )
+        try writeHostedHint(for: request)
+    }
+
+    /// The resume hint a hosted run writes when its session starts, where
+    /// the hook keeps the hints of runs Limpid hosts in tmux.
+    func writeHostedHint(for request: AgentMirrorRequest) throws {
         try AgentRecordFixtures.write(
             AgentSessionHintFixture(
                 paneId: request.leafID.uuidString,
@@ -98,7 +104,11 @@ private final class AgentEndHarness {
                 cwd: directory.path,
                 updatedAt: "2026-09-18T00:00:00Z"
             ),
-            to: directory.appendingPathComponent("sessions")
+            to: AgentDirectories(
+                state: directory.appendingPathComponent("states"),
+                sessions: directory.appendingPathComponent("sessions"),
+                cwdEvents: nil
+            ).hostedSessions
         )
     }
 
@@ -195,6 +205,64 @@ struct AgentMirrorEndIntegrationTests {
             // starts a shell.
             #expect(harness.registry.unregisteredIDs.contains(request.leafID))
 
+            let command = try #require(CodexResumeCommandBuilder.initialCommand(for: tab, paneID: request.leafID))
+            #expect(command.contains(AgentEndHarness.sessionID))
+        }
+    }
+
+    /// The agent exited before it started a session — Claude Code asks
+    /// whether to trust the folder before its session-start hook runs, and
+    /// the user declined — and it was the server's only session, so tmux
+    /// ended with it. Nothing was written, so there is no conversation to
+    /// resume: the tab closes as quietly as the agent did, not as a server
+    /// that went away.
+    @Test func anAgentThatExitedBeforeItsSession_closesItsTabWithoutANotice() async throws {
+        try await withTempDir { directory in
+            let harness = try AgentEndHarness(directory: directory)
+            defer { harness.tearDown() }
+            let launch = harness.session.openTab(container: .loose)
+            let leaf = try #require(launch.splitTree.allLeafIDs().first)
+            let request = try harness.request(launchPaneID: leaf)
+            harness.projection.bootstrap(into: harness.session, tmuxPresence: harness.presence)
+            let tabID = try await harness.openMirror(request)
+
+            harness.server.run(["kill-server"])
+
+            #expect(await waitUntil(.seconds(5)) { harness.session.tab(tabID) == nil })
+            #expect(harness.notices.isEmpty)
+            #expect(harness.session.closedTabStack.isEmpty)
+            // The launching tab is left as it was.
+            #expect(harness.session.tab(launch.id) != nil)
+        }
+    }
+
+    /// A hosted hint with no record beside it — one the hook wrote but that
+    /// cannot be read — still names the conversation the run started, so
+    /// the tab resumes it rather than closing on it.
+    @Test func aHostedHintWithoutARecord_leavesTheTabAsATerminalThatResumes() async throws {
+        try await withTempDir { directory in
+            let harness = try AgentEndHarness(directory: directory)
+            defer { harness.tearDown() }
+            let launch = harness.session.openTab(container: .loose)
+            let leaf = try #require(launch.splitTree.allLeafIDs().first)
+            let request = try harness.request(launchPaneID: leaf)
+            harness.projection.bootstrap(into: harness.session, tmuxPresence: harness.presence)
+            let tabID = try await harness.openMirror(request)
+            // Written once the tab holds the leaf, as a session start would
+            // be: with no record to keep it, a hint for a leaf no tab holds
+            // is swept.
+            try harness.writeHostedHint(for: request)
+
+            harness.server.run(["kill-server"])
+
+            #expect(await waitUntil(.seconds(5)) { harness.session.tab(tabID)?.kind == .terminal })
+            let tab = try #require(harness.session.tab(tabID))
+            #expect(tab.splitTree.allLeafIDs() == [request.leafID])
+            #expect(harness.notices == [
+                TmuxConnectionStore.agentServerGoneNotice(
+                    name: AgentProviderRegistry.displayName(for: .codex)
+                )
+            ])
             let command = try #require(CodexResumeCommandBuilder.initialCommand(for: tab, paneID: request.leafID))
             #expect(command.contains(AgentEndHarness.sessionID))
         }
