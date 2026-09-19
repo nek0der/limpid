@@ -1061,9 +1061,9 @@ mod tests {
 
         assert!(resume_candidates(&input(&[]), &sessions, &accepted).is_empty());
         // Another endpoint of the same server says nothing about this one.
-        assert!(resume_candidates(&input(&["/tmp/socket|%9"]), &sessions, &accepted).is_empty());
+        assert!(resume_candidates(&input(&["/tmp/socket|||%9"]), &sessions, &accepted).is_empty());
         assert_eq!(
-            resume_candidates(&input(&["/tmp/socket|%3"]), &sessions, &accepted)[&pane].len(),
+            resume_candidates(&input(&["/tmp/socket|||%3"]), &sessions, &accepted)[&pane].len(),
             1
         );
     }
@@ -1190,12 +1190,53 @@ mod tests {
             Some(true)
         );
         assert_eq!(
-            badge_from(&record, None, &presence(&["/tmp/socket|%9"])).is_tmux_hosted,
+            badge_from(&record, None, &presence(&["/tmp/socket|||%9"])).is_tmux_hosted,
             Some(true)
         );
         assert_eq!(
-            badge_from(&record, None, &presence(&["/tmp/socket|%3"])).is_tmux_hosted,
+            badge_from(&record, None, &presence(&["/tmp/socket|||%3"])).is_tmux_hosted,
             Some(false)
+        );
+    }
+
+    /// Pane ids start again with every server, so a record left by an
+    /// earlier server run on the same socket can name the same pane as a run
+    /// that is going now. That the earlier endpoint is gone says nothing
+    /// about the later one: read as the same endpoint, the live run would
+    /// lose its resume hint as soon as its tab closed, and both runs would
+    /// share whatever the host reported about either.
+    #[test]
+    fn an_endpoint_of_an_earlier_server_run_is_not_a_later_runs_endpoint() {
+        let run_on = |pid: &str, started: &str| {
+            let mut record =
+                RunRecord::decode(record(Some(1), "2026-09-14T12:00:00Z", "running").as_bytes())
+                    .expect("record");
+            record.tmux_socket_path = Some("/tmp/socket".to_owned());
+            record.tmux_pane_id = Some("%0".to_owned());
+            record.tmux_server_pid = Some(pid.to_owned());
+            record.tmux_server_started_at = Some(started.to_owned());
+            record
+        };
+        let earlier = run_on("100", "1000");
+        let mut later = run_on("200", "2000");
+        later.is_tmux_hosted = Some(true);
+        let earlier_key = crate::lifecycle::endpoint_key(&earlier).expect("key");
+        assert_ne!(
+            crate::lifecycle::endpoint_key(&later),
+            Some(earlier_key.clone())
+        );
+
+        let presence = PanePresence {
+            gone_endpoints: [earlier_key].into_iter().collect(),
+            ..PanePresence::default()
+        };
+        assert!(!crate::lifecycle::is_live_tmux_run(
+            &earlier, None, &presence
+        ));
+        assert!(crate::lifecycle::is_live_tmux_run(&later, None, &presence));
+        assert_eq!(
+            badge_from(&later, None, &presence).is_tmux_hosted,
+            Some(true)
         );
     }
 

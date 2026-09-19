@@ -82,15 +82,19 @@ struct AgentProjectionPresence: Encodable {
     /// without this its conversation would be held out of resume for good.
     var goneEndpoints: Set<String> = []
 
-    /// Keyed by socket and pane because that pair is what identifies one tmux
-    /// endpoint, and the rules match a record's own fields against it.
+    /// Keyed by socket, server run, and pane, because that is what identifies
+    /// one tmux endpoint: pane ids start again with every server, so a record
+    /// an earlier server run left on the same socket can name the same pane
+    /// as a run going now, and keyed without the server run the two would
+    /// share whatever this process reports about either. Built from the
+    /// record's own fields, empty where the record has none.
     ///
-    /// The rules build the same key from the record's own socket and pane, so
-    /// this spelling is a contract neither side owns: change it here and a
+    /// The rules build the same key from the record's own fields, so this
+    /// spelling is a contract neither side owns: change it here and a
     /// tmux-hosted run stops matching the pane it is showing in, with no error
     /// anywhere. `endpoint_key` is the other half.
-    static func key(socketPath: String, pane: String) -> String {
-        "\(socketPath)|\(pane)"
+    static func key(for endpoint: TmuxRuntimeEndpoint) -> String {
+        "\(endpoint.socketPath)|\(endpoint.serverPID)|\(endpoint.serverStartedAt)|\(endpoint.paneID)"
     }
 }
 

@@ -34,7 +34,8 @@ extension AppState {
     @MainActor
     func shouldAllowClose(_ request: CloseConfirmer.Request) -> Bool {
         let policy = closePolicy(for: request)
-        let hasAgent = session.hasLiveAgent(inAnyOf: request.paneIDs)
+        // Agents running in tmux are not counted: they outlive the close.
+        let hasAgent = session.hasAgentThatClosingWouldStop(inAnyOf: request.paneIDs)
         guard shouldConfirm(policy: policy, hasAgent: hasAgent) else { return true }
         let title = switch request.kind {
         case .tab: String(localized: "Close tab?")

@@ -26,12 +26,12 @@ struct AgentTmuxSupportTests {
             shimDirectories: [],
             zdotdir: nil,
             basePath: "/usr/bin",
-            agentTmux: PaneShellEnvironment.agentTmuxHost(
+            agentTmux: PaneShellEnvironment.agentTmuxAnswer(
                 hostsAgentsInTmux: isRequested,
                 support: support,
                 intake: intake,
                 socketName: "limpid-test"
-            )
+            ).host
         )
     }
 
@@ -83,6 +83,47 @@ struct AgentTmuxSupportTests {
         #expect(env["LIMPID_AGENT_TMUX_SOCKET"] == nil)
     }
 
+    /// Nor may it be told to run its agents directly while the setting is on:
+    /// its environment is fixed when its shell starts, and every pane a
+    /// launch restores is created before the probe answers. It waits for the
+    /// answer instead, and takes whichever one comes.
+    @Test func pendingAnswer_withTheSettingOn_holdsThePane() {
+        let watching = AgentMirrorIntake.watching(directory: URL(fileURLWithPath: "/private/tmp/requests", isDirectory: true))
+        func answer(
+            _ support: AgentTmuxSupport,
+            isRequested: Bool = true,
+            intake: AgentMirrorIntake = watching
+        ) -> PaneShellEnvironment.AgentTmuxAnswer {
+            PaneShellEnvironment.agentTmuxAnswer(
+                hostsAgentsInTmux: isRequested,
+                support: support,
+                intake: intake,
+                socketName: "limpid-test"
+            )
+        }
+        #expect(answer(.pending) == .pending)
+        #expect(answer(Self.version("tmux 3.5"), intake: .pending) == .pending)
+        // With the setting off nothing is asked, so nothing is waited for.
+        #expect(answer(.pending, isRequested: false) == .direct)
+        // Once the answer is in, the pane takes it, whichever it is.
+        #expect(answer(Self.version("tmux 3.5")) == .host(PaneShellEnvironment.AgentTmuxHost(
+            binary: Self.binary,
+            socketName: "limpid-test",
+            mirrorRequestsDirectory: "/private/tmp/requests"
+        )))
+        #expect(answer(Self.version("tmux 3.2")) == .direct)
+        #expect(answer(.notInstalled) == .direct)
+        #expect(answer(Self.version("tmux 3.5"), intake: .unavailable) == .direct)
+    }
+
+    /// Only a pane that starts a shell of its own has an environment to wait
+    /// for. A mirror pane reads its channel whatever the answer.
+    @Test func onlyAPaneWithItsOwnProcess_waitsForThePendingAnswer() {
+        #expect(PaneHostRepresentable.waitsForShellEnvironment(backing: .ownProcess, agentTmux: .pending))
+        #expect(!PaneHostRepresentable.waitsForShellEnvironment(backing: .ownProcess, agentTmux: .direct))
+        #expect(!PaneHostRepresentable.waitsForShellEnvironment(backing: .noSurface, agentTmux: .pending))
+    }
+
     /// The same rule for the other half of the promise: a tmux a mirror
     /// could attach to is no use while nothing is reading the requests. Demo
     /// mode is the launch that reaches this, and an agent started there has
@@ -102,8 +143,7 @@ struct AgentTmuxSupportTests {
 
     /// The setting offers a tab, so it is only offered when a tab could be
     /// opened. A pending probe is not a refusal: it answers within a moment
-    /// of launch, and a pane opened before it does just runs its agents
-    /// directly.
+    /// of launch, and a pane opened before it does waits for it.
     @Test func hostingSetting_isOfferedOnlyWhenAMirrorCouldAttach() {
         #expect(Self.version("tmux 3.5").allowsHostingSetting)
         #expect(AgentTmuxSupport.pending.allowsHostingSetting)

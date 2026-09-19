@@ -489,10 +489,7 @@ final class AgentProjectionAdapter {
                     leafID: identity.leafID
                 )
             }
-            let key = AgentProjectionPresence.key(
-                socketPath: endpoint.socketPath,
-                pane: endpoint.paneID
-            )
+            let key = AgentProjectionPresence.key(for: endpoint)
             // Reported whether or not anything shows the endpoint: it is what
             // says the run is over, and a run nothing shows is exactly the
             // one the rules would otherwise keep holding.

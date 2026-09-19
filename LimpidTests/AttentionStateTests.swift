@@ -631,6 +631,42 @@ struct AttentionStateTests {
         #expect(session.activeTabID == other.id)
         #expect(session.activeTab?.splitTree.focusedLeafID == otherPane)
     }
+
+    /// A run tmux keeps with no tab showing it is offered for reopening; a
+    /// run whose tmux is gone, or whose agent ended its session, is not. The
+    /// rules clear a badge's tmux flag once its endpoint is gone, and a
+    /// session end leaves the badge with no state, so the two runs a record
+    /// from an earlier server run on the same socket can stand for are both
+    /// left out.
+    @Test func detachedAgentRuns_listOnlyRunsTmuxStillKeeps() {
+        let session = WindowSession()
+        let attention = makeAttention()
+        let endpoint = TmuxRuntimeEndpoint(socketPath: "/tmp/s", serverPID: "2", serverStartedAt: "20", paneID: "%0")
+        func runtime(_ state: AgentState, isTmuxHosted: Bool) -> AgentRuntimePresentation {
+            var badge = badge(state, at: 1)
+            badge.isTmuxHosted = isTmuxHosted
+            let leaf = UUID()
+            return AgentRuntimePresentation(
+                kind: .claude,
+                runID: leaf.uuidString,
+                revision: 1,
+                badge: badge,
+                paneIDs: [],
+                tmuxLocations: [:],
+                stateEpisodeToken: "1",
+                attachmentResolution: .detached,
+                tmuxRun: AgentTmuxRun(kind: .claude, endpoint: endpoint, leafID: leaf)
+            )
+        }
+        let kept = runtime(.idle, isTmuxHosted: true)
+        attention.replaceRuntimes([
+            kept,
+            runtime(.running, isTmuxHosted: false),
+            runtime(.unknown, isTmuxHosted: true)
+        ], kind: .claude)
+
+        #expect(attention.detachedAgentRuns(in: session).map(\.id) == [kept.id])
+    }
 }
 
 /// What the Waiting region says, in both languages. Here rather than in a

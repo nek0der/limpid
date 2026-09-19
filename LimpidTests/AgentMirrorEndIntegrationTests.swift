@@ -112,6 +112,62 @@ private final class AgentEndHarness {
         )
     }
 
+    /// Where the hosted hints are kept, for asserting on the file itself.
+    var hostedHintsDirectory: URL {
+        AgentDirectories(
+            state: directory.appendingPathComponent("states"),
+            sessions: directory.appendingPathComponent("sessions"),
+            cwdEvents: nil
+        ).hostedSessions
+    }
+
+    /// What an agent the user ran on an earlier server on the same socket
+    /// left behind: it ended its session, and its record names the same pane
+    /// number as `request`, because pane ids start again with every server.
+    /// Its leaf is in no tab, which is how such a run looks once its tab
+    /// closed with it. The run id sorts first, so a pass reads it before the
+    /// live run's record.
+    func writeEarlierServerRecord(like request: AgentMirrorRequest) throws {
+        try AgentRecordFixtures.write(
+            AgentStateRecordFixture(
+                runId: "00000000-0000-4000-8000-00000000E001",
+                revision: 2,
+                paneId: UUID().uuidString,
+                state: "unknown",
+                updatedAt: "2026-09-17T00:00:00Z",
+                lastHookEvent: "session_ended",
+                sessionId: "00000000-0000-4000-8000-0000000000E0",
+                isTmuxHosted: true,
+                tmuxSocketPath: request.socketPath,
+                tmuxPaneId: request.paneID,
+                tmuxServerPID: "1",
+                tmuxServerStartedAt: "1000000000"
+            ),
+            to: directory.appendingPathComponent("states")
+        )
+    }
+
+    /// A presence whose probe has answered for the fixture's server as the
+    /// real poll would: the server run `request` names is the one on the
+    /// socket, and it lists the request's pane. Built rather than polled, so
+    /// no tmux but the throwaway one is asked anything.
+    static func presence(serving request: AgentMirrorRequest) -> TmuxPanePresence {
+        let socket = request.socketPath
+        return TmuxPanePresence(topology: TmuxTopology(
+            panes: [TmuxPaneLocation(
+                socketPath: socket,
+                serverPID: request.serverPID,
+                serverStartedAt: request.serverStartedAt,
+                sessionID: request.sessionID,
+                windowID: request.windowID,
+                paneID: request.paneID,
+                isActive: true
+            )],
+            outcomes: [socket: .success("")],
+            servers: [socket: .running(pid: request.serverPID, startedAt: request.serverStartedAt)]
+        ))
+    }
+
     /// Opens the tab the request asks for and waits until tmux has described
     /// its window.
     func openMirror(_ request: AgentMirrorRequest) async throws -> UUID {
@@ -265,6 +321,70 @@ struct AgentMirrorEndIntegrationTests {
             ])
             let command = try #require(CodexResumeCommandBuilder.initialCommand(for: tab, paneID: request.leafID))
             #expect(command.contains(AgentEndHarness.sessionID))
+        }
+    }
+
+    /// The order the user went through on a real machine (2026-09-19): an
+    /// agent run on a server that replaced an earlier one on the same
+    /// socket, whose own agent left a record naming the same pane number.
+    /// The run's tab is closed and opened again from the Waiting list, and
+    /// then the server is killed. The conversation is still the one to
+    /// resume, where it ran: its hint survives the closed tab, the Waiting
+    /// list offers the run once, and the terminal the tab becomes resumes it
+    /// in its own directory.
+    @Test func aRunOnALaterServer_isOfferedOnceAndResumesAfterItsTabWasClosedAndReopened() async throws {
+        try await withTempDir { directory in
+            let harness = try AgentEndHarness(directory: directory)
+            defer { harness.tearDown() }
+            let launch = harness.session.openTab(container: .loose)
+            let leaf = try #require(launch.splitTree.allLeafIDs().first)
+            let request = try harness.request(launchPaneID: leaf)
+            try harness.writeEarlierServerRecord(like: request)
+            try harness.writeRecords(for: request, hasEnded: false)
+            let presence = AgentEndHarness.presence(serving: request)
+            let attention = AttentionState()
+            harness.store.agentRuns = AgentTmuxRuns(projection: harness.projection, presence: presence)
+            harness.projection.bootstrap(into: harness.session, attention: attention, tmuxPresence: presence)
+            let tabID = try await harness.openMirror(request)
+
+            // Closed with ×. tmux keeps the agent, so its hint is kept too.
+            TabActions.closeTab(
+                harness.session,
+                registry: harness.registry,
+                tabID: tabID,
+                confirm: false,
+                agentProjection: harness.projection
+            )
+            harness.projection.refresh()
+            #expect(AgentRecordFixtures.hint(
+                forPaneID: request.leafID,
+                in: harness.hostedHintsDirectory
+            ) != nil)
+
+            // One agent is running in tmux, so the Waiting list has one row,
+            // and it is that agent's. The earlier server's run ended.
+            let detached = attention.detachedAgentRuns(in: harness.session)
+            #expect(detached.compactMap(\.tmuxRun?.leafID) == [request.leafID])
+            let run = try #require(detached.first?.tmuxRun)
+
+            await TmuxMirrorActions.openDetachedAgentRun(
+                run,
+                session: harness.session,
+                store: harness.store,
+                toastCenter: nil
+            )?.value
+            let reopened = try #require(harness.tab(of: request)?.id)
+            let mirror = try #require(harness.store.liveMirror(for: reopened))
+            #expect(await waitUntil { mirror.connection.state == .attached })
+            #expect(attention.detachedAgentRuns(in: harness.session).isEmpty)
+
+            harness.server.run(["kill-server"])
+
+            #expect(await waitUntil(.seconds(5)) { harness.session.tab(reopened)?.kind == .terminal })
+            let tab = try #require(harness.session.tab(reopened))
+            #expect(tab.splitTree.allLeafIDs() == [request.leafID])
+            let command = try #require(CodexResumeCommandBuilder.initialCommand(for: tab, paneID: request.leafID))
+            #expect(command == CodexAgent.resumeCommand(sessionId: AgentEndHarness.sessionID, cwd: directory.path))
         }
     }
 }

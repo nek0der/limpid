@@ -53,6 +53,20 @@ struct AgentTmuxGoneEndpointTests {
         #expect(!topology.isGone(endpoint(generation: nil)))
     }
 
+    /// A record whose start time could not be read still names its server's
+    /// pid, and a server of another pid is another server run, whatever its
+    /// start time. The same pid is not enough the other way: a later server
+    /// can be given a pid again.
+    @Test func anotherServerPID_isGone_withoutARecordedStartTime() {
+        var topology = TmuxTopology()
+        topology.servers[Self.socket] = .running(pid: "43", startedAt: "200")
+        let withoutStart = TmuxServerGeneration.Recorded(pid: "42", startedAt: "")
+        #expect(topology.isGone(endpoint(generation: withoutStart)))
+
+        topology.servers[Self.socket] = .running(pid: "42", startedAt: "200")
+        #expect(!topology.isGone(endpoint(generation: withoutStart)))
+    }
+
     @Test func theRecordedServerWithoutThePane_isGone() {
         var topology = TmuxTopology()
         topology.servers[Self.socket] = .running(pid: Self.generation.pid, startedAt: Self.generation.startedAt)

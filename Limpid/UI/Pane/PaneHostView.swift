@@ -316,6 +316,19 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         }
     }
 
+    /// Whether a leaf's surface waits for the answer that fixes its shell's
+    /// environment (`PaneShellEnvironment.agentTmuxAnswer`). Only a pane
+    /// that starts a process of its own has an environment: a mirror pane
+    /// reads a channel and waits for nothing. Like a leaf whose restored
+    /// binding is being checked, the leaf keeps its place in the layout and
+    /// gets its surface when the answer is in, a moment after launch.
+    nonisolated static func waitsForShellEnvironment(
+        backing: SurfaceBacking,
+        agentTmux: PaneShellEnvironment.AgentTmuxAnswer
+    ) -> Bool {
+        backing == .ownProcess && agentTmux == .pending
+    }
+
     @MainActor
     // swiftlint:disable:next function_parameter_count
     static func resolveOrCreateSurfaceView(
@@ -323,7 +336,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         ghosttyApp: GhosttyApp,
         registry: any SurfaceViewProviding,
         session: WindowSession,
-        agentTmux: PaneShellEnvironment.AgentTmuxHost?,
+        agentTmux: PaneShellEnvironment.AgentTmuxAnswer,
         tmuxStore: TmuxConnectionStore?
     ) -> SurfaceView? {
         if let existing = registry.view(for: paneID) {
@@ -341,7 +354,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         let backing = owningTab.map {
             surfaceBacking(for: $0.ioSource(for: paneID), paneID: paneID, tmuxStore: tmuxStore)
         } ?? .noSurface
-        if backing == .noSurface {
+        if backing == .noSurface || waitsForShellEnvironment(backing: backing, agentTmux: agentTmux) {
             return nil
         }
         let view = SurfaceView(ghosttyApp: ghosttyApp)
@@ -365,7 +378,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         // uniform across panes.
         var env = PaneShellEnvironment.resolved(
             forPaneID: paneID,
-            agentTmux: agentTmux
+            agentTmux: agentTmux.host
         )
         for (k, v) in ClaudeShimLocator.environment(forPaneID: paneID) {
             env[k] = v

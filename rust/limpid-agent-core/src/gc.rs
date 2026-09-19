@@ -497,7 +497,7 @@ mod tests {
         // a gone endpoint are kept only while its pane is open.
         let killed = hosted.clone();
         let mut gone = input.clone();
-        gone.presence.gone_endpoints = ["/tmp/socket|%3".to_owned()].into_iter().collect();
+        gone.presence.gone_endpoints = ["/tmp/socket|||%3".to_owned()].into_iter().collect();
         let entries = records(vec![(RUN, killed.clone())]);
         assert_eq!(
             kept(&sweep(&entries, &gone, &alive, &now())),

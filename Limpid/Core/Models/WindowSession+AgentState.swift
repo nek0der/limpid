@@ -1,6 +1,6 @@
 // WindowSession+AgentState.swift
 // Limpid — "is anything live?" predicates that read raw Claude/Codex
-// badges. Used by the close-confirmation flow only — these are
+// badges. Used by the quit and close confirmations only — these are
 // intentionally NOT filtered through `AttentionState`, because a
 // dismissed-finished pane is still a live session worth protecting
 // before close.
@@ -39,19 +39,18 @@ extension WindowSession {
     ///
     /// An agent in tmux outlives the quit — the server keeps it running and
     /// the next launch shows it again — so warning about it would say work
-    /// is at risk when none is. The badge's `isTmuxHosted` is what says so:
-    /// the rules set it from the run's own record and clear it once that
-    /// tmux is gone, when the tab has become a terminal the agent resumes
-    /// in and quitting would stop it after all.
+    /// is at risk when none is. Once that tmux is gone the tab has become a
+    /// terminal the agent resumes in, and quitting would stop it after all
+    /// (`stoppableAgentBadges`).
     func hasAgentThatQuitWouldStop() -> Bool {
         tabs.contains { tab in
             tab.splitTree.allLeafIDs().contains { leaf in
-                liveAgentBadges(pane: leaf, in: tab).contains { $0.isTmuxHosted != true }
+                !stoppableAgentBadges(pane: leaf, in: tab).isEmpty
             }
         }
     }
 
-    /// "Does any of these panes carry a live agent?" — used by
+    /// "Would closing these panes stop an agent?" — used by
     /// `CloseConfirmer` so the same predicate works for a single-pane
     /// close (one id), a multi-pane tab close (every leaf), or a
     /// "close N tabs" prompt. Iterates the split tree (not the
@@ -59,17 +58,29 @@ extension WindowSession {
     /// `hasLiveAgent(in:)` / `hasAgentThatQuitWouldStop()` — a stale badge
     /// for a pane that no longer exists in any tree must not light
     /// the predicate up.
-    func hasLiveAgent(inAnyOf paneIDs: [UUID]) -> Bool {
+    ///
+    /// An agent in tmux is not counted, for the reason ⌘Q does not count
+    /// it: closing its tab leaves it running in the server, and the Waiting
+    /// list opens its tab again.
+    func hasAgentThatClosingWouldStop(inAnyOf paneIDs: [UUID]) -> Bool {
         guard !paneIDs.isEmpty else { return false }
         let needle = Set(paneIDs)
         for tab in tabs {
             for leaf in tab.splitTree.allLeafIDs()
-                where needle.contains(leaf) && hasLiveAgent(pane: leaf, in: tab)
+                where needle.contains(leaf) && !stoppableAgentBadges(pane: leaf, in: tab).isEmpty
             {
                 return true
             }
         }
         return false
+    }
+
+    /// The live badges of `paneID` whose agent stops with the pane: every
+    /// one but those in tmux. The badge's `isTmuxHosted` is what says so —
+    /// the rules set it from the run's own record and clear it once that
+    /// tmux is gone.
+    private func stoppableAgentBadges(pane paneID: UUID, in tab: Tab) -> [AgentBadge] {
+        liveAgentBadges(pane: paneID, in: tab).filter { $0.isTmuxHosted != true }
     }
 
     /// The badges of `paneID` that say an agent is there. `.unknown` is

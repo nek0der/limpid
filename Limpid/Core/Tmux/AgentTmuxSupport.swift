@@ -32,10 +32,10 @@ enum AgentTmuxSupport: Equatable {
 
     /// Whether the setting that offers a tmux tab can be switched on. A
     /// pending probe reads as available rather than as a refusal: it answers
-    /// within a moment of launch, and switching the setting on before it does
-    /// costs nothing, since a pane opened in the meantime simply runs its
-    /// agents directly. Every other answer means no tab could be opened, so
-    /// the setting is disabled and the pane says which answer it was.
+    /// within a moment of launch, and a pane opened in the meantime waits for
+    /// it (`PaneShellEnvironment.agentTmuxAnswer`). Every other answer means
+    /// no tab could be opened, so the setting is disabled and the pane says
+    /// which answer it was.
     var allowsHostingSetting: Bool {
         switch self {
         case .pending, .supported: true

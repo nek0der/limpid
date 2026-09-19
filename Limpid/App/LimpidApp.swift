@@ -163,8 +163,8 @@ final class AppState {
         self.settingsStore = settingsStore
         self.lastAppliedSettings = settingsStore.settings
         // Once per launch and off the main thread, so creating a pane only
-        // reads the answer. Panes created before it arrives run their agents
-        // directly; see `PaneShellEnvironment.agentTmuxHost`.
+        // reads the answer. With the setting on, a pane created before it
+        // arrives waits for it; see `PaneShellEnvironment.agentTmuxAnswer`.
         Task { [settingsStore] in
             settingsStore.agentTmuxSupport = await AgentTmuxSupport.probe()
         }

@@ -138,10 +138,19 @@ pub(crate) fn is_live_tmux_run(
 /// The key the host indexes tmux endpoints by, for the attachments it reports
 /// and the endpoints it reports gone.
 ///
-/// The host builds the same key from what its own topology probe reported, so
-/// the shape is a contract between two codebases rather than something either
-/// one owns. `AgentProjectionPresence.key(socketPath:pane:)` is the other
-/// half, and a test there pins this spelling.
+/// The server run is part of it, not only the socket and the pane. Pane ids
+/// start again with every server, so a record an earlier server run left on
+/// the same socket can name the same pane as a run going now; keyed by socket
+/// and pane alone, the two shared whatever the host reported about either,
+/// and the earlier endpoint being gone ended the later run for the rules. A
+/// record that could not read its server's start time keys with an empty
+/// one, and the host builds its key from the same record fields, so the two
+/// sides still meet.
+///
+/// The host builds the same key from the record's own fields, so the shape is
+/// a contract between two codebases rather than something either one owns.
+/// `AgentProjectionPresence.key(for:)` is the other half, and a test there
+/// pins this spelling.
 #[must_use]
 pub(crate) fn endpoint_key(record: &RunRecord) -> Option<String> {
     let socket = record.tmux_socket_path.as_deref()?;
@@ -149,7 +158,9 @@ pub(crate) fn endpoint_key(record: &RunRecord) -> Option<String> {
     if socket.is_empty() || pane.is_empty() {
         return None;
     }
-    Some(format!("{socket}|{pane}"))
+    let pid = record.tmux_server_pid.as_deref().unwrap_or_default();
+    let started = record.tmux_server_started_at.as_deref().unwrap_or_default();
+    Some(format!("{socket}|{pid}|{started}|{pane}"))
 }
 
 /// What the runtime must write after one event.
@@ -525,13 +536,33 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
             .tmux
             .as_ref()
             .map(|tmux| tmux.server_pid.to_string()),
-        tmux_server_started_at: context.tmux.as_ref().map(|tmux| {
-            tmux.server_started_at
-                .map(|started| started.to_string())
-                .unwrap_or_default()
-        }),
+        tmux_server_started_at: context
+            .tmux
+            .as_ref()
+            .map(|tmux| server_started_at(prev, tmux)),
         extra: prev.map(|record| record.extra.clone()).unwrap_or_default(),
     }
+}
+
+/// The start time of the server the run is in, as the record should carry it.
+///
+/// Read afresh on every event, because the socket can come to be served by
+/// another server run. It cannot be read once the server is gone, and a
+/// killed server takes its agent with it, so the agent's last hook runs just
+/// after that: the time the record already holds for the same server stays,
+/// or the host could never again tell that server's panes from a later one's
+/// (`endpoint_key`). A different pid is a different server run, and what was
+/// known about the earlier one says nothing about it.
+fn server_started_at(prev: Option<&RunRecord>, tmux: &TmuxEndpoint) -> String {
+    if let Some(started) = tmux.server_started_at {
+        return started.to_string();
+    }
+    prev.filter(|record| {
+        record.tmux_socket_path.as_deref() == Some(tmux.socket_path.as_str())
+            && record.tmux_server_pid.as_deref() == Some(tmux.server_pid.to_string().as_str())
+    })
+    .and_then(|record| record.tmux_server_started_at.clone())
+    .unwrap_or_default()
 }
 
 /// A title observation of `None` means "nothing seen", never "cleared", so
@@ -1078,6 +1109,39 @@ mod tests {
             let writes = apply(Some(&record), &ending, &context, &claude(), LATER);
             assert!(writes.side.is_empty(), "{mode:?}");
         }
+    }
+
+    /// A killed server takes its agent with it, and the agent's last hook
+    /// runs after the server is gone: its start time can no longer be read.
+    /// The run is still the one the record named, so what the record knew
+    /// about its server stays, or the host could never again tell that
+    /// server's panes from a later one's.
+    #[test]
+    fn a_server_that_can_no_longer_be_read_keeps_the_start_time_already_recorded() {
+        let context = tmux_context(Some(TmuxHostMode::LimpidHosted));
+        let record = apply(None, &started(None), &context, &claude(), NOW)
+            .run
+            .expect("record");
+
+        let mut gone = context.clone();
+        if let Some(tmux) = gone.tmux.as_mut() {
+            tmux.server_started_at = None;
+        }
+        let after = apply(Some(&record), &ended("other"), &gone, &claude(), LATER)
+            .run
+            .expect("record");
+        assert_eq!(after.tmux_server_started_at.as_deref(), Some("1700000000"));
+
+        // A different server on the same socket is a different run of it,
+        // and what was known about the first one says nothing about it.
+        let mut other = gone;
+        if let Some(tmux) = other.tmux.as_mut() {
+            tmux.server_pid = 778;
+        }
+        let moved = apply(Some(&record), &ended("other"), &other, &claude(), LATER)
+            .run
+            .expect("record");
+        assert_eq!(moved.tmux_server_started_at.as_deref(), Some(""));
     }
 
     #[test]

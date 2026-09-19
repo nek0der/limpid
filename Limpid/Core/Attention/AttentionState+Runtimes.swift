@@ -22,12 +22,22 @@ extension AttentionState {
     ///
     /// Only runs the probe answered for are listed: a run whose server does
     /// not answer reads as unresolved, not detached, so a row is never
-    /// offered for an agent there is nothing left to open. Oldest first, as
-    /// the waiting rows are, so what has been out of sight longest is on top.
+    /// offered for an agent there is nothing left to open. Nor is a run tmux
+    /// no longer keeps. Nothing attached is also what the rules report for a
+    /// run whose endpoint is gone — the notifications it held have nowhere
+    /// to go — and for a record an earlier server run left on the same
+    /// socket; the badge says which: the rules clear its tmux flag once the
+    /// endpoint is gone, and a session end leaves it with no state. Oldest
+    /// first, as the waiting rows are, so what has been out of sight longest
+    /// is on top.
     func detachedAgentRuns(in session: WindowSession) -> [AgentRuntimePresentation] {
         allRuntimes
             .filter { runtime in
-                guard runtime.resolution == .detached, let run = runtime.tmuxRun else { return false }
+                guard runtime.resolution == .detached,
+                      runtime.badge.isTmuxHosted == true,
+                      runtime.badge.state != .unknown,
+                      let run = runtime.tmuxRun
+                else { return false }
                 return session.tab(containing: run.leafID) == nil
             }
             .sorted { left, right in

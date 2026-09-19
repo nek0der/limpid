@@ -109,14 +109,23 @@ struct TmuxTopology: Equatable {
     /// server no longer listing the pane. A socket the probe could not answer
     /// for says nothing, and an endpoint that records no server run cannot be
     /// told apart from a later one, so neither is called gone.
+    ///
+    /// A recorded pid without a start time is half a server run: a server of
+    /// another pid is certainly another run, while one of the same pid may be
+    /// a later server given that pid again, which the start time would have
+    /// told apart.
     func isGone(_ endpoint: TmuxRuntimeEndpoint) -> Bool {
         switch servers[socketKey(endpoint.socketPath)] {
         case .absent:
             true
         case let .running(pid, startedAt):
-            if endpoint.serverPID.isEmpty || endpoint.serverStartedAt.isEmpty {
+            if endpoint.serverPID.isEmpty {
                 false
-            } else if pid != endpoint.serverPID || startedAt != endpoint.serverStartedAt {
+            } else if pid != endpoint.serverPID {
+                true
+            } else if endpoint.serverStartedAt.isEmpty {
+                false
+            } else if startedAt != endpoint.serverStartedAt {
                 true
             } else {
                 locations(for: endpoint).isEmpty

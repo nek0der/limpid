@@ -531,7 +531,7 @@ struct PaneAreaView: View {
             ghosttyApp: ghosttyApp,
             registry: registry,
             session: session,
-            agentTmux: PaneShellEnvironment.agentTmuxHost(
+            agentTmux: PaneShellEnvironment.agentTmuxAnswer(
                 hostsAgentsInTmux: settings.settings.advanced.hostsAgentsInTmux,
                 support: settings.agentTmuxSupport,
                 intake: settings.agentMirrorIntake

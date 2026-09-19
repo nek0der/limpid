@@ -147,7 +147,7 @@ struct AgentMirrorRequestTests {
     /// The variable is the one A7's shim reads; the host carries it only
     /// when the pane is told to host its agents.
     @Test func paneEnvironment_namesTheDirectoryOnlyWhenHosting() {
-        let host = PaneShellEnvironment.agentTmuxHost(
+        let host = PaneShellEnvironment.agentTmuxAnswer(
             hostsAgentsInTmux: true,
             support: .supported(
                 binary: "/opt/homebrew/bin/tmux",
@@ -155,7 +155,7 @@ struct AgentMirrorRequestTests {
             ),
             intake: .watching(directory: URL(fileURLWithPath: "/private/tmp/requests", isDirectory: true)),
             socketName: ownSocketName
-        )
+        ).host
         let hosted = PaneShellEnvironment.variables(paneID: nil, shimDirectories: [], zdotdir: nil, basePath: "/usr/bin", agentTmux: host)
         #expect(hosted["LIMPID_AGENT_MIRROR_REQUESTS_DIR"] == "/private/tmp/requests")
         let direct = PaneShellEnvironment.variables(paneID: nil, shimDirectories: [], zdotdir: nil, basePath: "/usr/bin", agentTmux: nil)
@@ -169,7 +169,7 @@ struct AgentMirrorRequestTests {
     /// appears.
     @Test(arguments: [AgentMirrorIntake.pending, .unavailable])
     func paneEnvironment_withoutAnIntake_doesNotHost(intake: AgentMirrorIntake) {
-        let host = PaneShellEnvironment.agentTmuxHost(
+        let host = PaneShellEnvironment.agentTmuxAnswer(
             hostsAgentsInTmux: true,
             support: .supported(
                 binary: "/opt/homebrew/bin/tmux",
@@ -177,7 +177,7 @@ struct AgentMirrorRequestTests {
             ),
             intake: intake,
             socketName: ownSocketName
-        )
+        ).host
         #expect(host == nil)
     }
 

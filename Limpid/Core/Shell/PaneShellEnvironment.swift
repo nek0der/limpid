@@ -58,37 +58,64 @@ enum PaneShellEnvironment {
         return env
     }
 
-    /// The tmux host to announce to a new pane, or `nil` when its agents
-    /// must run directly.
+    /// What a new pane is told about hosting its agents in tmux.
+    enum AgentTmuxAnswer: Equatable {
+        /// An answer the decision needs is not in yet. The pane waits for
+        /// it rather than starting its shell (`PaneHostRepresentable`).
+        case pending
+        /// Its agents run in the pane itself.
+        case direct
+        /// Its agents run in tmux, shown in a mirror tab.
+        case host(AgentTmuxHost)
+
+        /// The host to announce, or `nil` unless the pane is told to host.
+        var host: AgentTmuxHost? {
+            guard case let .host(host) = self else { return nil }
+            return host
+        }
+    }
+
+    /// Whether a new pane hosts its agents in tmux, runs them directly, or
+    /// has to wait until it can be told which.
     ///
     /// Hosting needs three things, and every one of them is what makes a
     /// shim's request reach a tab: the user's opt-in, a tmux a mirror tab can
     /// attach to as the launch probe found it, and a watcher actually reading
-    /// the request directory. A pane created before either answer is in is
-    /// not told to host: a shim that is told must be able to rely on a tab
-    /// opening for its agent, and until then nothing says one would. Such a
-    /// pane runs its agents directly, which is what the setting being off
-    /// looks like, and panes created afterwards pick hosting up. Reading
+    /// the request directory. A shim that is told to host must be able to
+    /// rely on a tab opening for its agent, so a pane is never told on an
+    /// answer that is not in: the version could have gone down since the
+    /// last launch, and a stale answer would have the shim ask for a tab
+    /// nothing can open.
+    ///
+    /// Nor is it told to run its agents directly while the setting is on and
+    /// an answer is still out, because the environment is fixed when the
+    /// shell starts: every pane a launch restores is created before the
+    /// probe answers, and would run its agents directly until it was closed.
+    /// Such a pane waits instead, as a leaf whose restored binding is being
+    /// checked does, and the probe answers a moment after launch. Reading
     /// cached answers rather than probing here keeps surface creation from
     /// starting a process per pane.
     ///
     /// The directory comes from the intake rather than from a default, so the
     /// one a pane names is by construction the one being read.
-    static func agentTmuxHost(
+    static func agentTmuxAnswer(
         hostsAgentsInTmux: Bool,
         support: AgentTmuxSupport,
         intake: AgentMirrorIntake,
         socketName: @autoclosure () -> String = defaultAgentSocketName()
-    ) -> AgentTmuxHost? {
-        guard hostsAgentsInTmux,
-              let binary = support.hostBinary,
+    ) -> AgentTmuxAnswer {
+        guard hostsAgentsInTmux else { return .direct }
+        if support == .pending || intake == .pending {
+            return .pending
+        }
+        guard let binary = support.hostBinary,
               let requests = intake.directoryPath
-        else { return nil }
-        return AgentTmuxHost(
+        else { return .direct }
+        return .host(AgentTmuxHost(
             binary: binary,
             socketName: socketName(),
             mirrorRequestsDirectory: requests
-        )
+        ))
     }
 
     /// Production assembly, with the shim directories resolved from the

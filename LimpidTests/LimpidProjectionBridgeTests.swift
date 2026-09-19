@@ -50,7 +50,9 @@ struct LimpidProjectionBridgeTests {
             "updatedAt": "2026-09-14T12:00:00Z",
             "pid": "4242",
             "tmuxSocketPath": socket,
-            "tmuxPaneId": "%7"
+            "tmuxPaneId": "%7",
+            "tmuxServerPID": "900",
+            "tmuxServerStartedAt": "1789000000"
         ]
         var input = AgentProjectionInput()
         input.providers = try JSONDecoder().decode(
@@ -65,11 +67,16 @@ struct LimpidProjectionBridgeTests {
         input.pidStatus = ["4242": "alive"]
         input.tabs = [AgentProjectionTabPanes(id: UUID(), panes: [pane])]
         // The host writes this key; the rules rebuild it from the record's own
-        // socket and pane. If the two spellings ever diverge the run simply
-        // stops appearing, with nothing logged anywhere, so the agreement is
-        // what this asserts.
+        // socket, server run, and pane. If the two spellings ever diverge the
+        // run simply stops appearing, with nothing logged anywhere, so the
+        // agreement is what this asserts.
         input.presence.attachments[
-            AgentProjectionPresence.key(socketPath: socket, pane: "%7")
+            AgentProjectionPresence.key(for: TmuxRuntimeEndpoint(
+                socketPath: socket,
+                serverPID: "900",
+                serverStartedAt: "1789000000",
+                paneID: "%7"
+            ))
         ] = [pane]
 
         let body = try LimpidProjectionBridge.project(
