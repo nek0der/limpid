@@ -77,13 +77,8 @@ struct TmuxConnectionCardContent {
         case .connecting:
             return Self(kind: .connecting, title: "Connecting to tmux…", message: nil, actions: [])
         case .disconnected, .unreachable:
-            if let message = unavailableTmuxMessage(tmuxSupport) {
-                return Self(
-                    kind: .tmuxUnavailable,
-                    title: "Can't reconnect without tmux",
-                    message: message,
-                    actions: [.closeTab]
-                )
+            if let words = unavailableTmuxWords(tmuxSupport) {
+                return Self(kind: .tmuxUnavailable, title: words.title, message: words.message, actions: [.closeTab])
             }
             if effective == .unreachable {
                 return Self(
@@ -118,20 +113,32 @@ struct TmuxConnectionCardContent {
 
     /// Why this Mac's tmux rules a reconnect out, in the words the
     /// Integrations pane uses for the same three answers, or nil when tmux
-    /// is not what stands in the way. A pending probe reads as no obstacle:
-    /// it answers within a moment of launch, and the card would otherwise
-    /// blame tmux for a tab that is about to reconnect.
-    private static func unavailableTmuxMessage(_ support: AgentTmuxSupport) -> LocalizedStringResource? {
+    /// is not what stands in the way. The title names the answer too: a Mac
+    /// with an old tmux must not be told it has none. A pending probe reads
+    /// as no obstacle: it answers within a moment of launch, and the card
+    /// would otherwise blame tmux for a tab that is about to reconnect.
+    private static func unavailableTmuxWords(
+        _ support: AgentTmuxSupport
+    ) -> (title: LocalizedStringResource, message: LocalizedStringResource)? {
         let minimum = TmuxMirrorTarget.minimumVersion.description
         switch support {
         case .pending, .supported:
             return nil
         case .notInstalled:
-            return "No tmux found. Reconnecting needs tmux \(minimum) or newer."
+            return (
+                "Can't reconnect without tmux",
+                "No tmux found. Reconnecting needs tmux \(minimum) or newer."
+            )
         case .unreadableVersion:
-            return "Limpid couldn't read the version of the tmux it found. Reconnecting needs tmux \(minimum) or newer."
+            return (
+                "Can't reconnect with this tmux",
+                "Limpid couldn't read the version of the tmux it found. Reconnecting needs tmux \(minimum) or newer."
+            )
         case let .unsupported(_, version):
-            return "The tmux found is version \(version.description). Reconnecting needs \(minimum) or newer."
+            return (
+                "This tmux is too old to reconnect",
+                "The tmux found is version \(version.description). Reconnecting needs \(minimum) or newer."
+            )
         }
     }
 }

@@ -102,6 +102,8 @@ struct TmuxConnectionCardContentTests {
         let version = try #require(TmuxProtocol.parseVersion("3.2a"))
         let content = try #require(card(.disconnected, tmuxSupport: .unsupported(binary: "/usr/bin/tmux", version: version)))
         #expect(content.kind == .tmuxUnavailable)
+        #expect(resolved(content.title, in: "en") == "This tmux is too old to reconnect")
+        #expect(resolved(content.title, in: "ja") == "tmux が古いため再接続できません")
         #expect(
             resolved(content.message, in: "en")
                 == "The tmux found is version 3.2a. Reconnecting needs \(TmuxMirrorTarget.minimumVersion.description) or newer."
@@ -115,6 +117,7 @@ struct TmuxConnectionCardContentTests {
     @Test func make_withAnUnreadableTmuxVersion_saysThat() throws {
         let content = try #require(card(.disconnected, tmuxSupport: .unreadableVersion(binary: "/usr/bin/tmux")))
         #expect(content.kind == .tmuxUnavailable)
+        #expect(resolved(content.title, in: "en") == "Can't reconnect with this tmux")
         #expect(resolved(content.message, in: "en")?.hasPrefix("Limpid couldn't read the version") == true)
     }
 

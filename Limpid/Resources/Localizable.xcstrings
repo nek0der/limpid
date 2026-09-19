@@ -6477,6 +6477,26 @@
         }
       }
     },
+    "Can't reconnect with this tmux": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この tmux では再接続できません"
+          }
+        }
+      }
+    },
+    "This tmux is too old to reconnect": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux が古いため再接続できません"
+          }
+        }
+      }
+    },
     "Can't reconnect without tmux": {
       "localizations": {
         "ja": {
