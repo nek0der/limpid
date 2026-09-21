@@ -275,4 +275,69 @@ struct PaneActionsTests {
     func canClosePaneOrTab_withoutTab_isFalse() {
         #expect(!PaneActions.canClosePaneOrTab(nil))
     }
+
+    /// Only a mirror tab holding more than one pane refuses, and the refusal
+    /// names the key that does what the user meant. Every other tab has
+    /// nothing to say, so nothing is said.
+    @Test("only a split mirror tab has a refusal to read", arguments: [
+        (Tab.Kind.terminal, 1, false),
+        (Tab.Kind.terminal, 2, false),
+        (Tab.Kind.tmuxMirror, 1, false),
+        (Tab.Kind.tmuxMirror, 2, true)
+    ])
+    func closeRefusal_onlyForASplitMirrorTab(kind: Tab.Kind, leafCount: Int, hasRefusal: Bool) {
+        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+        for _ in 1..<leafCount {
+            PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
+        }
+        session.update(tab.id) { $0.kind = kind }
+
+        let refusal = PaneActions.closeRefusal(for: session.activeTab)
+        #expect((refusal != nil) == hasRefusal)
+        if let refusal {
+            #expect(refusal.contains("⌘⌥W"))
+        }
+    }
+
+    @Test("the close rule has no refusal to read without a tab")
+    func closeRefusal_withoutTab_isNil() {
+        #expect(PaneActions.closeRefusal(for: nil) == nil)
+    }
+
+    /// ⌘W on a mirror tab's pane closes nothing; the toast is the only thing
+    /// that tells the user why, and it is spoken as well as drawn.
+    @Test func closeActivePaneOrTab_onASplitMirrorTab_saysWhyItRefuses() throws {
+        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+        PaneActions.split(session, direction: .horizontal, tmuxStore: nil)
+        session.update(tab.id) { $0.kind = .tmuxMirror }
+        let before = try #require(session.tab(tab.id))
+        let toasts = ToastCenter()
+        var spoken: [String] = []
+        toasts.announce = { spoken.append($0) }
+
+        PaneActions.closeActivePaneOrTab(
+            session,
+            registry: RecordingSurfaceRegistry(),
+            toastCenter: toasts
+        )
+
+        #expect(session.tab(tab.id)?.splitTree == before.splitTree)
+        let message = try #require(toasts.current?.message)
+        #expect(message == PaneActions.closeRefusal(for: before))
+        #expect(spoken == [message])
+    }
+
+    /// Every toast, whatever showed it: a banner nobody asked for takes no
+    /// focus, so the announcement is all VoiceOver has of it.
+    @Test func toastCenter_speaksEveryToastItShows() {
+        let toasts = ToastCenter()
+        var spoken: [String] = []
+        toasts.announce = { spoken.append($0) }
+
+        toasts.show(ToastItem(message: "first", undo: nil))
+        toasts.show(ToastItem(message: "second", undo: {}))
+        toasts.dismiss()
+
+        #expect(spoken == ["first", "second"])
+    }
 }

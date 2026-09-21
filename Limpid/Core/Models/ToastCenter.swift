@@ -12,12 +12,22 @@
 // normal "Show Hidden Worktrees" / context-menu paths.
 
 import Foundation
+import SwiftUI
 
 @MainActor
 @Observable
 final class ToastCenter {
     /// Currently visible toast, if any. `nil` between toasts.
     var current: ToastItem?
+
+    /// How a toast reaches VoiceOver. A toast appears without the user
+    /// asking for it and takes no focus, so nothing in the view tree makes
+    /// VoiceOver read it; the announcement is what does. It lives here
+    /// rather than at each call site so a message that is worth a banner is
+    /// spoken by that fact alone. Tests replace it to observe what would be
+    /// said.
+    @ObservationIgnored
+    var announce: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
 
     private var dismissTask: Task<Void, Never>?
 
@@ -28,6 +38,7 @@ final class ToastCenter {
     func show(_ item: ToastItem) {
         dismissTask?.cancel()
         current = item
+        announce(item.message)
         dismissTask = Task { [weak self, id = item.id, lifetime = item.lifetimeSeconds] in
             try? await Task.sleep(for: .seconds(lifetime))
             guard !Task.isCancelled else { return }

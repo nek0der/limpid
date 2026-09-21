@@ -622,10 +622,10 @@ struct LimpidApp: App {
         allowsAutomaticChecks: !LimpidPaths.isDevBuild
     )
 
-    /// ⌘W closes the focused pane, or the tab when it holds the last one;
-    /// `PaneActions.canClosePaneOrTab` says when that has anything to do.
+    /// ⌘W closes the focused pane, the tab when it holds the last one, or
+    /// gives a refusal to read; `PaneActions.closeIsOffered` says which.
     private var isClosePaneDisabled: Bool {
-        !PaneActions.canClosePaneOrTab(state.session.activeTab)
+        !PaneActions.closeIsOffered(state.session.activeTab)
     }
 
     var body: some Scene {
@@ -736,15 +736,15 @@ struct LimpidApp: App {
                 .disabled(state.session.closedTabStack.isEmpty)
             }
             CommandGroup(after: .newItem) {
-                // ⌘W — closes the focused pane, cascades
-                // to the tab when only one pane is left. Single-icon
-                // family across the whole app (plain `xmark`) so
-                // every "close X" affordance reads as the same verb.
+                // ⌘W — closes the focused pane, cascades to the tab when
+                // only one pane is left. Single-icon family across the whole
+                // app (plain `xmark`) so every "close X" reads as one verb.
                 Button {
                     PaneActions.closeActivePaneOrTab(
                         state.session,
                         registry: state.registry,
-                        agentProjection: state.agentProjection
+                        agentProjection: state.agentProjection,
+                        toastCenter: state.toastCenter
                     )
                 } label: {
                     Label("Close Pane", systemImage: "xmark")

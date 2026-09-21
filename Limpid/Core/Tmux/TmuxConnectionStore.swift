@@ -761,10 +761,13 @@ final class TmuxConnectionStore {
             reason = exitReason
         }
         log.notice("attach failed session=\(connection.target.sessionID, privacy: .public)")
+        // Named while the tab is still there: an agent's tab is called after
+        // its agent, and a closed tab has nothing left to read that from.
+        let name = Self.noticeName(of: first.endedTab.session.tab(first.tabID), tmuxName: first.displayName)
         for mirror in affected {
             mirror.closeTab()
         }
-        onNotice?(Self.openFailureNotice(name: first.displayName, reason: reason))
+        onNotice?(Self.openFailureNotice(name: name, reason: reason))
     }
 
     /// What the user reads when the tmux behind an agent's tab is gone and
@@ -777,8 +780,23 @@ final class TmuxConnectionStore {
     /// opened for, which is what the tab is named after and what the user
     /// typed, and the tab's own title when this build does not know the
     /// provider.
-    private static func agentName(of tab: Tab) -> String {
+    static func agentName(of tab: Tab) -> String {
         tab.mirroredAgent.map(AgentProviderRegistry.displayName(for:)) ?? tab.displayTitle
+    }
+
+    /// What to call a mirror tab wherever the user reads about it.
+    ///
+    /// A user's mirror tab is called `session:window`, the name the palette
+    /// listed it under and the one they picked it by. An agent's tab is
+    /// called after its agent: its session is one Limpid named
+    /// (`limpid-<launch>-<leaf>`), an internal id the user never typed and
+    /// could not act on, and the agent is what they started.
+    ///
+    /// `tmuxName` is what tmux calls it, used when the tab is a user's or is
+    /// no longer in the session at all.
+    static func noticeName(of tab: Tab?, tmuxName: String) -> String {
+        guard let tab, tab.mirrorOrigin == .agent else { return tmuxName }
+        return agentName(of: tab)
     }
 
     /// What the user reads when a mirror tab could not be opened. `name`

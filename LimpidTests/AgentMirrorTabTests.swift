@@ -164,6 +164,24 @@ struct AgentMirrorTabCapabilityTests {
         #expect(toasts.current != nil)
     }
 
+    /// Limpid names an agent's tmux session after the launch and the leaf,
+    /// an id the user never typed and cannot act on. Notices call such a tab
+    /// after its agent; a user's tab keeps the `session:window` it was
+    /// opened by.
+    @Test func noticeName_callsAnAgentsTabAfterItsAgent() throws {
+        let session = WindowSession()
+        let agent = try #require(session.tab(mirrorTab(in: session, origin: .agent).tab))
+        let user = try #require(session.tab(mirrorTab(in: session, origin: .user, title: "shell").tab))
+        let tmuxName = "limpid-1a2b3c4d-5e6f7a8b:codex"
+
+        #expect(
+            TmuxConnectionStore.noticeName(of: agent, tmuxName: tmuxName)
+                == AgentProviderRegistry.displayName(for: .codex)
+        )
+        #expect(TmuxConnectionStore.noticeName(of: user, tmuxName: "work:editor") == "work:editor")
+        #expect(TmuxConnectionStore.noticeName(of: nil, tmuxName: tmuxName) == tmuxName)
+    }
+
     /// One pane, so ⌘W and Close Pane close the tab.
     @Test func agentTab_closesAsAWhole() throws {
         let session = WindowSession()

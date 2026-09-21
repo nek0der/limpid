@@ -71,6 +71,25 @@ struct AgentTmuxSupportTests {
         #expect(Self.environment(for: support)["LIMPID_AGENT_TMUX"] == nil)
     }
 
+    /// The Pane menu greys "Reconnect to tmux" out for exactly the answers
+    /// the tab's card hides its Reconnect button for, and trails the item's
+    /// title with the reason. A pending probe is no obstacle, as everywhere
+    /// else.
+    @Test func reconnectObstacle_namesEveryAnswerThatRulesAReconnectOut() {
+        #expect(AgentTmuxSupport.pending.reconnectObstacle == nil)
+        #expect(Self.version("tmux 3.5").reconnectObstacle == nil)
+        #expect(AgentTmuxSupport.notInstalled.reconnectObstacle != nil)
+        #expect(AgentTmuxSupport.unreadableVersion(binary: Self.binary).reconnectObstacle != nil)
+
+        let old = Self.version("tmux 3.2")
+        let obstacle = old.reconnectObstacle
+        #expect(obstacle != nil)
+        #expect(obstacle?.contains(TmuxMirrorTarget.minimumVersion.description) == true)
+        // Each answer is named apart: a Mac with an old tmux must not be
+        // told it has none.
+        #expect(obstacle != AgentTmuxSupport.notInstalled.reconnectObstacle)
+    }
+
     @Test func missingTmux_injectsNothing() {
         let support = AgentTmuxSupport.evaluate(binary: nil, versionOutput: nil)
         #expect(support == .notInstalled)

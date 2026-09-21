@@ -43,6 +43,28 @@ enum AgentTmuxSupport: Equatable {
         }
     }
 
+    /// Why this Mac's tmux rules a mirror tab's reconnect out, or nil when
+    /// tmux is not what stands in the way. Short enough to trail a menu
+    /// item's title: a disabled item shows no tooltip, so the reason has to
+    /// be part of what is drawn.
+    ///
+    /// The three answers are named apart for the reason the connection card
+    /// names them apart: a Mac with an old tmux must not be told it has
+    /// none. A pending probe reads as no obstacle, as it does everywhere
+    /// else — it answers within a moment of launch.
+    var reconnectObstacle: String? {
+        switch self {
+        case .pending, .supported:
+            nil
+        case .notInstalled:
+            String(localized: "no tmux found")
+        case .unreadableVersion:
+            String(localized: "unreadable tmux version")
+        case .unsupported:
+            String(localized: "needs tmux \(TmuxMirrorTarget.minimumVersion.description) or newer")
+        }
+    }
+
     /// Classifies what was found. Pure, so each outcome is testable without a
     /// tmux on the machine.
     static func evaluate(binary: String?, versionOutput: TmuxCommandResult?) -> AgentTmuxSupport {

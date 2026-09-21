@@ -179,6 +179,25 @@ enum PaneActions {
         return tab.capabilities.canClosePane || tab.splitTree.allLeafIDs().count <= 1
     }
 
+    /// Why the ⌘W cascade cannot act on `tab`, in the user's words, or nil
+    /// when it can. The refusal itself stays in the capability table: tmux
+    /// owns the panes of a mirror tab, and closing one from here would kill
+    /// whatever runs in it without the confirmation an ordinary pane gets
+    /// (design §10). What this adds is the sentence the user reads, and the
+    /// key that does what they meant — a menu item greyed out on a key
+    /// press explains nothing.
+    static func closeRefusal(for tab: Tab?) -> String? {
+        guard let tab, !canClosePaneOrTab(tab), tab.kind == .tmuxMirror else { return nil }
+        return String(localized: "A tmux pane can't be closed from Limpid. Press ⌘⌥W to close the tab.")
+    }
+
+    /// Whether ⌘W is worth offering on `tab`: it either closes something or
+    /// says why it cannot. A menu item greyed out on a key press answers
+    /// nothing, so a refusal with words keeps the item live.
+    static func closeIsOffered(_ tab: Tab?) -> Bool {
+        canClosePaneOrTab(tab) || closeRefusal(for: tab) != nil
+    }
+
     /// ⌘W cascade: close the focused pane; if the tab has only one
     /// pane left after that, close the tab too. Both branches flow
     /// through `CloseConfirmer` so the confirm policy is honored
@@ -188,9 +207,16 @@ enum PaneActions {
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         attention: AttentionState? = nil,
-        agentProjection: AgentProjectionAdapter? = nil
+        agentProjection: AgentProjectionAdapter? = nil,
+        toastCenter: ToastCenter? = nil
     ) {
-        guard let tab = session.activeTab, canClosePaneOrTab(tab) else { return }
+        guard let tab = session.activeTab else { return }
+        guard canClosePaneOrTab(tab) else {
+            if let refusal = closeRefusal(for: tab) {
+                toastCenter?.show(ToastItem(message: refusal, undo: nil))
+            }
+            return
+        }
         let leafCount = tab.splitTree.allLeafIDs().count
         if leafCount <= 1 {
             TabActions.closeActiveTab(

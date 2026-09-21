@@ -54,10 +54,14 @@ enum TmuxMirrorActions {
             connection = try store.connection(for: target.binding)
         } catch {
             log.error("cannot mirror \(target.displayName, privacy: .private): \(String(describing: error), privacy: .public)")
+            // Named before the tab goes: `describe` has run, so the record
+            // already says whose mirror this is, and an agent's is called
+            // after its agent rather than after the session id we gave it.
+            let name = TmuxConnectionStore.noticeName(of: session.tab(tab.id), tmuxName: target.displayName)
+            TabActions.closeTab(session, registry: store.registry, tabID: tab.id, confirm: false, isReopenable: false)
             // No tmux spoke here, so there is no reason of tmux's to show;
             // the log keeps the system's.
-            TabActions.closeTab(session, registry: store.registry, tabID: tab.id, confirm: false, isReopenable: false)
-            store.onNotice?(TmuxConnectionStore.openFailureNotice(name: target.displayName, reason: nil))
+            store.onNotice?(TmuxConnectionStore.openFailureNotice(name: name, reason: nil))
             return false
         }
         let mirror = store.makeMirror(
@@ -208,6 +212,13 @@ enum TmuxMirrorActions {
                 ownControlPIDs: store.ownControlPIDs,
                 limpidTTYs: limpidTTYs ?? paneTTYs(session: session, registry: store.registry)
             )
+            // A pane of ours was attached to this session and has just been
+            // detached, which drops it back to its shell with nothing on
+            // screen to say why. It is the pane's own scrollback it returns
+            // to, so the news is the whole remedy.
+            if !found.limpidPanes.isEmpty {
+                store.onNotice?(Self.paneDetachedNotice(name: target.displayName))
+            }
             guard !found.otherApps.isEmpty else { return true }
             switch confirm(target, found.otherApps) {
             case .cancel:
@@ -219,6 +230,12 @@ enum TmuxMirrorActions {
                 return true
             }
         }
+    }
+
+    /// What the user reads when opening a mirror detached a client of
+    /// Limpid's own (design D5). `name` is `session:window`.
+    static func paneDetachedNotice(name: String) -> String {
+        String(localized: "“\(name)” now shows in a Limpid tab, so this pane was detached from it.")
     }
 
     /// The alert behind `openFromPalette`'s `confirm`.

@@ -100,7 +100,15 @@ struct PaneCommands: Commands {
                 Button {
                     reconnectActiveMirror()
                 } label: {
-                    Label("Reconnect to tmux", systemImage: "arrow.clockwise")
+                    Label {
+                        if let obstacle = tmuxObstacle {
+                            Text("Reconnect to tmux (\(obstacle))")
+                        } else {
+                            Text("Reconnect to tmux")
+                        }
+                    } icon: {
+                        Image(systemName: "arrow.clockwise")
+                    }
                 }
                 .disabled(!canReconnectActiveMirror)
             }
@@ -128,9 +136,22 @@ struct PaneCommands: Commands {
 
     /// Enabled for a mirror tab whose connection ended or whose server did
     /// not answer; the store says which tabs those are.
+    ///
+    /// A Mac whose tmux a mirror cannot attach to disables the item as well,
+    /// which is what the tab's own card already does with its Reconnect
+    /// button: `reconnectAsked` would return without doing anything, and an
+    /// item that does nothing is worse than one that says why.
     private var canReconnectActiveMirror: Bool {
+        guard tmuxObstacle == nil else { return false }
         guard let tab = state.session.activeTab, TmuxMirrorActions.mirrorRef(of: tab) != nil else { return false }
         return state.tmuxStore.canReconnect(tabID: tab.id)
+    }
+
+    /// Why this Mac's tmux rules the reconnect out, in the few words that
+    /// trail the item's title while it is disabled, or nil when tmux is not
+    /// what stands in the way.
+    private var tmuxObstacle: String? {
+        state.settingsStore.agentTmuxSupport.reconnectObstacle
     }
 
     /// Asks about other apps' clients before attaching, as opening from the

@@ -8714,6 +8714,66 @@
           }
         }
       }
+    },
+    "A tmux pane can't be closed from Limpid. Press ⌘⌥W to close the tab.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux のペインは Limpid からは閉じられません。タブを閉じるには ⌘⌥W です。"
+          }
+        }
+      }
+    },
+    "Reconnect to tmux (%@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux に再接続（%@）"
+          }
+        }
+      }
+    },
+    "no tmux found": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux が見つかりません"
+          }
+        }
+      }
+    },
+    "unreadable tmux version": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux のバージョンを読み取れません"
+          }
+        }
+      }
+    },
+    "needs tmux %@ or newer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux %@ 以降が必要"
+          }
+        }
+      }
+    },
+    "“%@” now shows in a Limpid tab, so this pane was detached from it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」を Limpid のタブで表示したため、このペインの接続を外しました。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
