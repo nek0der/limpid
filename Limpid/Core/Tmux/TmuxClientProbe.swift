@@ -55,6 +55,16 @@ enum TmuxClientProbe {
         return bindings
     }
 
+    /// How many lines of a `list-clients` listing name a tty, which are the
+    /// ones `parseClients` is expected to return. The rest are control-mode
+    /// clients — Limpid's own mirrors — which drive no terminal.
+    static func countedClientLines(_ output: String) -> Int {
+        output.split(separator: "\n", omittingEmptySubsequences: true).count { line in
+            let fields = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
+            return fields.count == 3 && !fields[0].isEmpty
+        }
+    }
+
     /// Where package managers put tmux. Resolving by name is not an
     /// option: a GUI app launched from Finder or the Dock inherits
     /// launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), which
@@ -200,7 +210,12 @@ enum TmuxClientProbe {
         let clientResult = query(listClientsArguments)
         guard case let .success(clientText) = clientResult else { return ServerResult(outcome: clientResult) }
         var clients = parseClients(clientText, socketPath: socketPath)
-        guard clients.count == clientText.split(separator: "\n").count else { return ServerResult(outcome: .invalidOutput) }
+        // A control client has no tty, and Limpid's own mirrors are control
+        // clients: counting those lines as unparsed would throw away every
+        // client of a server Limpid is itself attached to, which is the one
+        // case where a pane's own `tmux attach` shares a server with a
+        // mirror.
+        guard clients.count == countedClientLines(clientText) else { return ServerResult(outcome: .invalidOutput) }
         let identityResult = query(["display-message", "-p", "#{pid}\t#{start_time}"])
         guard case let .success(identity) = identityResult else { return ServerResult(outcome: identityResult) }
         let expected = identity.trimmingCharacters(in: .whitespacesAndNewlines)

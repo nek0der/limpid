@@ -506,3 +506,25 @@ struct TmuxClientProbeSmokeTests {
         return String(data: data, encoding: .utf8) ?? ""
     }
 }
+
+@Suite("Counting the client lines a listing is expected to parse")
+struct TmuxClientLineCountTests {
+    /// Limpid's own mirrors are control-mode clients, which drive no
+    /// terminal and so list an empty tty. Counting those as unparsed made
+    /// the whole listing invalid, and a pane that had run `tmux attach` on
+    /// the same server was then never resolved to its session.
+    @Test func countedClientLines_ignoresControlModeClients() {
+        let listing = """
+        \t$0\tweb
+        \t$2\tlimpid
+        /dev/ttys010\t$1\tnotes
+        """
+        #expect(TmuxClientProbe.countedClientLines(listing) == 1)
+        #expect(TmuxClientProbe.parseClients(listing, socketPath: "/tmp/s").count == 1)
+    }
+
+    @Test func countedClientLines_countsEveryClientWithATty() {
+        let listing = "/dev/ttys001\t$0\ta\n/dev/ttys002\t$1\tb"
+        #expect(TmuxClientProbe.countedClientLines(listing) == 2)
+    }
+}
