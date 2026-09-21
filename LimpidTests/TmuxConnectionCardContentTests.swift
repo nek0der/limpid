@@ -39,13 +39,13 @@ struct TmuxConnectionCardContentTests {
 
     @Test func make_noRecordWithoutMirror_readsAsDisconnected() {
         let content = card(nil, hasMirror: false)
-        #expect(content?.kind == .disconnected)
+        #expect(content?.state == .disconnected)
         #expect(content?.actions == [.closeTab, .reconnect])
     }
 
     @Test func make_connecting_showsProgressWithoutActions() throws {
         let content = try #require(card(.connecting))
-        #expect(content.kind == .connecting)
+        #expect(content.state == .connecting)
         #expect(content.showsProgress)
         #expect(content.message == nil)
         #expect(content.actions.isEmpty)
@@ -53,7 +53,7 @@ struct TmuxConnectionCardContentTests {
 
     @Test func make_disconnected_offersReconnectAsTheEmphasizedAction() throws {
         let content = try #require(card(.disconnected))
-        #expect(content.kind == .disconnected)
+        #expect(content.state == .disconnected)
         #expect(!content.showsProgress)
         #expect(content.actions == [.closeTab, .reconnect])
         #expect(content.primaryAction == .reconnect)
@@ -61,7 +61,7 @@ struct TmuxConnectionCardContentTests {
 
     @Test func make_unreachable_offersReconnectAsTheEmphasizedAction() throws {
         let content = try #require(card(.unreachable))
-        #expect(content.kind == .unreachable)
+        #expect(content.state == .unreachable)
         #expect(content.actions == [.closeTab, .reconnect])
         #expect(content.primaryAction == .reconnect)
     }
@@ -78,7 +78,7 @@ struct TmuxConnectionCardContentTests {
     @Test(arguments: [true, false])
     func make_serverReplaced_neverOffersReconnect(canReconnect: Bool) throws {
         let content = try #require(card(.serverReplaced, canReconnect: canReconnect))
-        #expect(content.kind == .serverReplaced)
+        #expect(content.state == .serverReplaced)
         #expect(content.actions == [.closeTab])
         #expect(content.primaryAction == nil)
     }
@@ -88,7 +88,7 @@ struct TmuxConnectionCardContentTests {
     @Test(arguments: [TmuxTabConnection.disconnected, .unreachable])
     func make_withoutTmux_saysSoInsteadOfOfferingAClose(connection: TmuxTabConnection) throws {
         let content = try #require(card(connection, canReconnect: false, tmuxSupport: .notInstalled))
-        #expect(content.kind == .tmuxUnavailable)
+        #expect(content.state == .tmuxUnavailable(.notInstalled))
         #expect(content.actions == [.closeTab])
         #expect(content.primaryAction == nil)
         #expect(resolved(content.title, in: "en") == "Can't reconnect without tmux")
@@ -101,7 +101,7 @@ struct TmuxConnectionCardContentTests {
     @Test func make_withTmuxTooOld_namesTheVersionFound() throws {
         let version = try #require(TmuxProtocol.parseVersion("3.2a"))
         let content = try #require(card(.disconnected, tmuxSupport: .unsupported(binary: "/usr/bin/tmux", version: version)))
-        #expect(content.kind == .tmuxUnavailable)
+        #expect(content.state == .tmuxUnavailable(.unsupported(version: version)))
         #expect(resolved(content.title, in: "en") == "This tmux is too old to reconnect")
         #expect(resolved(content.title, in: "ja") == "tmux が古いため再接続できません")
         #expect(
@@ -116,7 +116,7 @@ struct TmuxConnectionCardContentTests {
 
     @Test func make_withAnUnreadableTmuxVersion_saysThat() throws {
         let content = try #require(card(.disconnected, tmuxSupport: .unreadableVersion(binary: "/usr/bin/tmux")))
-        #expect(content.kind == .tmuxUnavailable)
+        #expect(content.state == .tmuxUnavailable(.unreadableVersion))
         #expect(resolved(content.title, in: "en") == "Can't reconnect with this tmux")
         #expect(resolved(content.message, in: "en")?.hasPrefix("Limpid couldn't read the version") == true)
     }
@@ -125,14 +125,14 @@ struct TmuxConnectionCardContentTests {
     /// not blame tmux for a tab that is about to reconnect on its own.
     @Test func make_whileTheProbeIsPending_readsAsAnOrdinaryDisconnection() throws {
         let content = try #require(card(.disconnected, tmuxSupport: .pending))
-        #expect(content.kind == .disconnected)
+        #expect(content.state == .disconnected)
     }
 
     /// Only a tab that could otherwise be brought back speaks of tmux: a tab
     /// whose server was replaced has nothing to reconnect to either way.
     @Test func make_serverReplaced_withoutTmux_keepsItsOwnCard() {
-        #expect(card(.serverReplaced, tmuxSupport: .notInstalled)?.kind == .serverReplaced)
-        #expect(card(.connecting, tmuxSupport: .notInstalled)?.kind == .connecting)
+        #expect(card(.serverReplaced, tmuxSupport: .notInstalled)?.state == .serverReplaced)
+        #expect(card(.connecting, tmuxSupport: .notInstalled)?.state == .connecting)
     }
 
     @Test func make_texts_resolveInEnglish() throws {
@@ -180,5 +180,120 @@ struct TmuxConnectionCardContentTests {
             resolved(UnavailablePaneCardContent.message, in: "ja")
                 == "このバージョンの Limpid では読めない形式で保存されているため、このペインでは何も実行されません。"
         )
+    }
+}
+
+/// The vocabulary the tab row's mark and the pane banner both read, so a
+/// state cannot come out as one symbol in one place and another elsewhere.
+@Suite("TmuxStatePresentation")
+struct TmuxStatePresentationTests {
+    /// Every state, including one of each reason a tmux can be unusable.
+    private static let all: [TmuxStatePresentation] = [
+        .connecting,
+        .disconnected,
+        .unreachable,
+        .serverReplaced,
+        .tmuxUnavailable(.notInstalled),
+        .droppedOutput,
+        .windowLargerThanTab,
+        .mirroring(windowName: "editor")
+    ]
+
+    /// Swift Testing destructures pairs, so the expectation travels as one
+    /// value per state.
+    struct Treatment: Sendable {
+        let symbol: String
+        let severity: TmuxStatePresentation.Severity
+    }
+
+    @Test(arguments: [
+        (TmuxStatePresentation.connecting, Treatment(symbol: "arrow.triangle.2.circlepath", severity: .neutral)),
+        (.disconnected, Treatment(symbol: "cable.connector.slash", severity: .warning)),
+        (.unreachable, Treatment(symbol: "exclamationmark.triangle", severity: .warning)),
+        (.serverReplaced, Treatment(symbol: "clock.arrow.circlepath", severity: .ended)),
+        (.tmuxUnavailable(.notInstalled), Treatment(symbol: "questionmark.circle", severity: .warning)),
+        (.tmuxUnavailable(.unreadableVersion), Treatment(symbol: "questionmark.circle", severity: .warning)),
+        (.droppedOutput, Treatment(symbol: "exclamationmark.arrow.circlepath", severity: .warning)),
+        (.windowLargerThanTab, Treatment(symbol: "crop", severity: .warning)),
+        (.mirroring(windowName: "editor"), Treatment(symbol: "rectangle.on.rectangle", severity: .neutral))
+    ])
+    func state_hasItsSymbolAndSeverity(state: TmuxStatePresentation, treatment: Treatment) {
+        #expect(state.symbol == treatment.symbol)
+        #expect(state.severity == treatment.severity)
+    }
+
+    /// The mark must be readable without its color, so no two states may
+    /// share a symbol or a title.
+    @Test func everyState_hasItsOwnSymbolAndTitle() {
+        #expect(Set(Self.all.map(\.symbol)).count == Self.all.count)
+        #expect(Set(Self.all.map { String(localized: $0.title) }).count == Self.all.count)
+    }
+
+    /// The three answers stay apart: a Mac with an old tmux must not be told
+    /// it has none.
+    @Test func unavailableTmux_namesWhichAnswerItWas() throws {
+        let version = try #require(TmuxProtocol.parseVersion("3.2a"))
+        let titles = [
+            TmuxStatePresentation.UnavailableTmux.notInstalled,
+            .unreadableVersion,
+            .unsupported(version: version)
+        ].map { String(localized: TmuxStatePresentation.tmuxUnavailable($0).title) }
+        #expect(Set(titles).count == titles.count)
+    }
+
+    @Test(arguments: [
+        (AgentTmuxSupport.pending, nil as TmuxStatePresentation.UnavailableTmux?),
+        (.supported(binary: "/opt/homebrew/bin/tmux", version: TmuxMirrorTarget.minimumVersion), nil),
+        (.notInstalled, .notInstalled),
+        (.unreadableVersion(binary: "/usr/bin/tmux"), .unreadableVersion)
+    ])
+    func unavailableTmux_readsTheProbesAnswer(
+        support: AgentTmuxSupport,
+        expected: TmuxStatePresentation.UnavailableTmux?
+    ) {
+        #expect(TmuxStatePresentation.UnavailableTmux(support) == expected)
+    }
+
+    @Test func unavailableTmux_carriesTheVersionFound() throws {
+        let version = try #require(TmuxProtocol.parseVersion("3.2a"))
+        let support = AgentTmuxSupport.unsupported(binary: "/usr/bin/tmux", version: version)
+        #expect(TmuxStatePresentation.UnavailableTmux(support) == .unsupported(version: version))
+    }
+}
+
+/// At launch every restored mirror tab connects at once, so the banner holds
+/// a connect back until it has lasted long enough to be news.
+@Suite("TmuxConnectionBanner")
+struct TmuxConnectionBannerTests {
+    private func card(_ connection: TmuxTabConnection) -> TmuxConnectionCardContent? {
+        TmuxConnectionCardContent.make(
+            connection: connection,
+            hasMirror: true,
+            canReconnect: true,
+            tmuxSupport: .supported(binary: "/opt/homebrew/bin/tmux", version: TmuxMirrorTarget.minimumVersion),
+            sessionName: "work"
+        )
+    }
+
+    @Test func connecting_isHeldBackUntilTheWaitHasPassed() throws {
+        let connecting = try #require(card(.connecting))
+        #expect(TmuxConnectionBanner.visibleContent(connecting, showsConnecting: false) == nil)
+        #expect(TmuxConnectionBanner.visibleContent(connecting, showsConnecting: true)?.state == .connecting)
+    }
+
+    /// Only connecting waits: every other state is either rare or lasting.
+    @Test(arguments: [TmuxTabConnection.disconnected, .unreachable, .serverReplaced])
+    func otherStates_appearAtOnce(connection: TmuxTabConnection) throws {
+        let content = try #require(card(connection))
+        #expect(TmuxConnectionBanner.visibleContent(content, showsConnecting: false)?.state == content.state)
+    }
+
+    @Test func noCard_staysNoCard() {
+        #expect(TmuxConnectionBanner.visibleContent(nil, showsConnecting: true) == nil)
+        #expect(TmuxConnectionBanner.visibleContent(nil, showsConnecting: false) == nil)
+    }
+
+    @Test func theWait_isAboutASecond() {
+        #expect(TmuxConnectionBanner.connectingDelay == .seconds(1))
     }
 }

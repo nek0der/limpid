@@ -24,6 +24,17 @@ struct TmuxConnectionBanner: View {
     @Environment(\.agentProjection) private var agentProjection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Whether `.connecting` has lasted long enough to be worth saying. See
+    /// `connectingDelay`.
+    @State private var showsConnecting = false
+
+    /// How long a tab may be connecting before the banner says so. At launch
+    /// every restored mirror tab connects at once, and a banner that appears
+    /// and goes again in a few hundred milliseconds is noise on every tab
+    /// rather than news about one. A connect that takes longer than this is
+    /// the one worth showing.
+    static let connectingDelay: Duration = .seconds(1)
+
     /// Read in the body, so a change to the tab's record or to its mirror
     /// redraws the banner.
     private var content: TmuxConnectionCardContent? {
@@ -36,8 +47,21 @@ struct TmuxConnectionBanner: View {
             hasMirror: tmuxStore.mirror(for: tabID) != nil,
             canReconnect: tmuxStore.tmuxExecutable != nil && tmuxStore.canReconnect(tabID: tabID),
             tmuxSupport: settings.agentTmuxSupport,
-            sessionName: ref.binding.sessionName
+            // An agent's session is named after the launch, not after
+            // anything the user typed, so the card names the agent instead.
+            sessionName: TmuxConnectionStore.noticeName(of: tab, tmuxName: ref.binding.sessionName)
         )
+    }
+
+    /// What the banner shows of `content`: everything but a connect that has
+    /// not yet lasted `connectingDelay`. Every other state appears at once —
+    /// only connecting is both common and short-lived.
+    static func visibleContent(
+        _ content: TmuxConnectionCardContent?,
+        showsConnecting: Bool
+    ) -> TmuxConnectionCardContent? {
+        guard let content, content.state == .connecting else { return content }
+        return showsConnecting ? content : nil
     }
 
     /// What VoiceOver hears when the banner changes. Heading and body
@@ -49,7 +73,7 @@ struct TmuxConnectionBanner: View {
     }
 
     var body: some View {
-        let content = content
+        let content = Self.visibleContent(content, showsConnecting: showsConnecting)
         VStack(spacing: 0) {
             if let content {
                 TmuxConnectionCard(content: content, perform: perform)
@@ -59,18 +83,29 @@ struct TmuxConnectionBanner: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .top)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: content?.kind)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: content?.state)
+        // Restarted whenever the state changes, so a tab that stops
+        // connecting — or starts again — is timed from that moment, and the
+        // wait is dropped with the view.
+        .task(id: self.content?.state) {
+            showsConnecting = false
+            guard self.content?.state == .connecting else { return }
+            try? await Task.sleep(for: Self.connectingDelay)
+            guard !Task.isCancelled else { return }
+            showsConnecting = true
+        }
         // The banner stays up across the change, so VoiceOver would not
         // otherwise hear that a reconnect began or how it ended. A reconnect
         // that worked takes the banner away entirely, which is the one
-        // outcome nothing on screen is left to announce.
-        .onChange(of: content?.kind) { old, kind in
-            guard kind != nil else {
+        // outcome nothing on screen is left to announce. Announced from what
+        // is shown, so a connect too short to appear is not spoken either.
+        .onChange(of: content?.state) { old, state in
+            guard state != nil else {
                 guard old != nil, session.tab(tabID) != nil else { return }
                 AccessibilityNotification.Announcement(String(localized: "Connected to tmux")).post()
                 return
             }
-            guard let content = self.content else { return }
+            guard let content = Self.visibleContent(self.content, showsConnecting: showsConnecting) else { return }
             AccessibilityNotification.Announcement(announcement(content)).post()
         }
     }
@@ -140,23 +175,11 @@ private struct TmuxConnectionCard: View {
             ProgressView()
                 .controlSize(.small)
         } else {
-            Image(systemName: symbol)
-                .foregroundStyle(isWarning ? LimpidColor.warning : LimpidColor.secondaryText)
+            // Symbol and color come from the shared vocabulary, so the mark
+            // in this tab's row stands for the same state in the same way.
+            Image(systemName: content.state.symbol)
+                .foregroundStyle(content.state.severity.color)
         }
-    }
-
-    private var symbol: String {
-        switch content.kind {
-        case .connecting: "arrow.triangle.2.circlepath"
-        case .disconnected: "bolt.horizontal.circle"
-        case .unreachable: "exclamationmark.triangle"
-        case .serverReplaced: "clock.arrow.circlepath"
-        case .tmuxUnavailable: "questionmark.circle"
-        }
-    }
-
-    private var isWarning: Bool {
-        content.kind == .unreachable
     }
 
     /// Reconnecting is the only action the card emphasizes, and it is

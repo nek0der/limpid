@@ -6,72 +6,22 @@ import SwiftUI
 /// What a mirror tab's row shows beside its title. A value rather than view
 /// code so every state can be checked without drawing anything.
 ///
-/// The row carries one mark, for the most pressing reason, and its tooltip
-/// and accessibility label list every reason. Each reason has its own
-/// symbol, so the mark does not depend on its color to be read.
+/// The row carries one mark, for the most pressing state, and its tooltip
+/// and accessibility label name every state it stands for. The symbol and
+/// the severity come from `TmuxStatePresentation`, the vocabulary the card
+/// over the panes reads too, so the two never say the same thing twice over
+/// in two ways. Each state has its own symbol, so the mark does not depend
+/// on its color to be read.
 struct TmuxTabRowMark: Equatable {
-    /// Most pressing first.
-    enum Reason: Equatable, CaseIterable {
-        case serverReplaced
-        case unreachable
-        case disconnected
-        case connecting
-        case droppedOutput
-        case windowLargerThanTab
-        /// Nothing is wrong: the row says that what it shows comes from
-        /// tmux rather than from a process of Limpid's own.
-        case mirroring
-
-        var symbol: String {
-            switch self {
-            case .serverReplaced: "xmark.octagon"
-            case .unreachable: "exclamationmark.triangle"
-            case .disconnected: "cable.connector.slash"
-            case .connecting: "arrow.triangle.2.circlepath"
-            case .droppedOutput: "exclamationmark.arrow.circlepath"
-            case .windowLargerThanTab: "crop"
-            case .mirroring: "rectangle.on.rectangle"
-            }
-        }
-
-        /// The connection states read as the tab's card over the panes
-        /// titles them (`TmuxConnectionCardContent`).
-        ///
-        /// - Parameter windowName: the tmux window the tab shows. Only the
-        ///   neutral mark names it: the others speak of the connection or
-        ///   of the mirror, which the window's name says nothing about.
-        func text(windowName: String) -> LocalizedStringResource {
-            switch self {
-            case .serverReplaced: "This tab can't reconnect"
-            case .unreachable: "Can't reach the tmux server"
-            case .disconnected: "Disconnected from tmux"
-            case .connecting: "Connecting to tmux…"
-            case .droppedOutput: "Some output was dropped; redrawing from tmux"
-            case .windowLargerThanTab: "The tmux window is larger than this tab, so part of it is hidden"
-            case .mirroring: "Mirroring the tmux window “\(windowName)”"
-            }
-        }
-
-        /// Waiting for a connection and mirroring normally are not problems.
-        var isWarning: Bool {
-            switch self {
-            case .connecting, .mirroring: false
-            default: true
-            }
-        }
-    }
-
     /// Most pressing first; never empty.
-    let reasons: [Reason]
-    /// The tmux window the tab shows, for the neutral mark's tooltip.
-    let windowName: String
+    let states: [TmuxStatePresentation]
 
-    var primary: Reason {
-        reasons[0]
+    var primary: TmuxStatePresentation {
+        states[0]
     }
 
     var help: String {
-        reasons.map { String(localized: $0.text(windowName: windowName)) }.joined(separator: "\n")
+        states.map { String(localized: $0.title) }.joined(separator: "\n")
     }
 
     /// The mark for a mirror tab, or nil when it carries none.
@@ -88,34 +38,50 @@ struct TmuxTabRowMark: Equatable {
     ///     mirror is visible at rest; a tab opened for a hosted agent gets
     ///     none, because its identity glyph already carries the tmux dot and
     ///     two marks for one fact read as two.
-    ///   - windowName: the tmux window the tab shows.
+    ///   - tmuxSupport: what the launch probe found about this Mac's tmux.
+    ///     A tab that lost its connection says that there is no tmux to
+    ///     bring it back with, the way its card does: the row saying
+    ///     "Disconnected from tmux" while the card says the tmux found is
+    ///     too old is one state told two ways.
+    ///   - windowName: the tmux window the tab shows. Only the neutral mark
+    ///     names it: the others speak of the connection or of the mirror,
+    ///     which the window's name says nothing about.
     static func make(
         connection: TmuxTabConnection?,
         hasMirror: Bool,
         issues: TmuxTabIssues?,
         origin: Tab.MirrorOrigin = .user,
+        tmuxSupport: AgentTmuxSupport = .pending,
         windowName: String = ""
     ) -> Self? {
-        var reasons: [Reason] = []
+        var states: [TmuxStatePresentation] = []
+        // A connection that ended reads as the card reads it: when tmux
+        // itself is what rules a reconnect out, that is what the row says.
+        let unavailable = TmuxStatePresentation.UnavailableTmux(tmuxSupport)
         switch connection {
-        case .serverReplaced: reasons.append(.serverReplaced)
-        case .unreachable: reasons.append(.unreachable)
-        case .disconnected: reasons.append(.disconnected)
-        case .connecting: reasons.append(.connecting)
-        case nil where !hasMirror: reasons.append(.disconnected)
+        case .serverReplaced:
+            states.append(.serverReplaced)
+        case .unreachable:
+            states.append(unavailable.map(TmuxStatePresentation.tmuxUnavailable) ?? .unreachable)
+        case .disconnected:
+            states.append(unavailable.map(TmuxStatePresentation.tmuxUnavailable) ?? .disconnected)
+        case .connecting:
+            states.append(.connecting)
+        case nil where !hasMirror:
+            states.append(unavailable.map(TmuxStatePresentation.tmuxUnavailable) ?? .disconnected)
         case .live, nil:
             if issues?.hasDroppedOutput == true {
-                reasons.append(.droppedOutput)
+                states.append(.droppedOutput)
             }
             if issues?.isWindowLargerThanTab == true {
-                reasons.append(.windowLargerThanTab)
+                states.append(.windowLargerThanTab)
             }
         }
-        if reasons.isEmpty, origin == .user {
-            reasons.append(.mirroring)
+        if states.isEmpty, origin == .user {
+            states.append(.mirroring(windowName: windowName))
         }
-        guard !reasons.isEmpty else { return nil }
-        return Self(reasons: reasons, windowName: windowName)
+        guard !states.isEmpty else { return nil }
+        return Self(states: states)
     }
 }
 
@@ -123,6 +89,7 @@ struct TmuxTabRowMark: Equatable {
 /// marks. Reads the store, which is observable for exactly these values.
 struct TmuxTabRowMarkView: View {
     @Environment(\.tmuxConnectionStore) private var tmuxStore
+    @Environment(SettingsStore.self) private var settings
     let tab: Tab
 
     /// The window the tab shows: the one its mirror reports, or else the one
@@ -139,12 +106,13 @@ struct TmuxTabRowMarkView: View {
                hasMirror: tmuxStore.mirror(for: tab.id) != nil,
                issues: tmuxStore.tabIssues[tab.id],
                origin: tab.mirrorOrigin,
+               tmuxSupport: settings.agentTmuxSupport,
                windowName: windowName
            )
         {
             Image(systemName: mark.primary.symbol)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(mark.primary.isWarning ? AnyShapeStyle(LimpidColor.warning) : AnyShapeStyle(.secondary))
+                .foregroundStyle(mark.primary.severity.color)
                 .frame(
                     width: LimpidLayout.containerColumnTrailingSlot,
                     height: LimpidLayout.containerColumnTrailingSlot
