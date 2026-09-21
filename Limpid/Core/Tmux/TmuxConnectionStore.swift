@@ -206,6 +206,12 @@ final class TmuxConnectionStore {
     /// stopped. The mirrors of tabs that lost it still hold it and its
     /// sinks, and they release them when their tabs close or are
     /// reconnected.
+    /// Keys whose connection has been made but has not yet been handed the
+    /// mirror that will hold it. `reconcile` leaves these alone: a tab list
+    /// that changes while a mirror is opening must not stop the connection
+    /// being opened for it.
+    private var openingKeys: Set<Key> = []
+
     func connection(for binding: TmuxBinding) throws -> TmuxSessionConnection {
         let key = Key(binding)
         if let existing = connections[key] {
@@ -231,6 +237,13 @@ final class TmuxConnectionStore {
         try connection.start()
         connections[key] = connection
         outputGates[key] = TmuxOutputGate()
+        // A connection is made before the mirror that will hold it exists,
+        // and anything that rewrites the tab list in between — a tab moved
+        // back to where it was closed, a drag, a tab opened elsewhere —
+        // reconciles the store, which would find this one held by nobody
+        // and stop it. It is held out of that check until its mirror
+        // registers, or until it ends without one.
+        openingKeys.insert(key)
         // Learn every pane of the session once; notifications keep the
         // picture current from here on.
         connection.send("list-panes -s -F '#{window_id} #{pane_id}'") { [weak self] lines, isError in
@@ -403,6 +416,7 @@ final class TmuxConnectionStore {
             previous.stop()
         }
         mirrors[mirror.tabID] = mirror
+        openingKeys.remove(Self.key(of: mirror))
         tabConnections[mirror.tabID] = mirror.connectionState == .connected ? .live : .disconnected
         tabIssues.removeValue(forKey: mirror.tabID)
         mirror.onIssuesChanged = { [weak self, weak mirror] issues in
@@ -494,12 +508,13 @@ final class TmuxConnectionStore {
         let usedKeys = Set(connections.compactMap { key, connection in
             mirrors.values.contains { $0.connection === connection } ? key : nil
         })
-        for (key, connection) in connections where !usedKeys.contains(key) {
+        for (key, connection) in connections where !usedKeys.contains(key) && !openingKeys.contains(key) {
             connection.stop()
             log.notice("closed idle connection session=\(key.sessionID, privacy: .public)")
         }
-        connections = connections.filter { usedKeys.contains($0.key) }
-        outputGates = outputGates.filter { usedKeys.contains($0.key) }
+        let keptKeys = usedKeys.union(openingKeys)
+        connections = connections.filter { keptKeys.contains($0.key) }
+        outputGates = outputGates.filter { keptKeys.contains($0.key) }
         for key in touchedKeys where usedKeys.contains(key) {
             gateOutput(for: key)
         }
@@ -605,6 +620,9 @@ final class TmuxConnectionStore {
     /// check, as it does after a connection that did attach: a refusal
     /// alone does not say the session is gone.
     private func connectionEnded(_ connection: TmuxSessionConnection) {
+        // A connection that ends is no longer opening, whether or not a
+        // mirror ever took it: the next `reconcile` is free to drop it.
+        openingKeys.remove(Key(socketPath: connection.target.socketPath, sessionID: connection.target.sessionID))
         let affected = mirrors.values.filter { $0.connection === connection }
         for mirror in affected {
             mirror.connectionEnded()

@@ -912,3 +912,29 @@ struct TmuxMirrorAutoReconnectIntegrationTests {
         #expect(harness.controlClientCount() == 1)
     }
 }
+
+/// A tab list that changes while a mirror is opening — a tab moved back to
+/// where it was closed, a drag, a tab opened elsewhere — reconciles the
+/// store. A connection made a moment earlier is held by nobody yet, and
+/// stopping it there left the tab connected to nothing.
+@MainActor
+@Suite(
+    "Reconcile while a connection is opening",
+    .tags(.smoke),
+    .disabled(if: TmuxServerFixture.isUnavailable, "tmux is not installed")
+)
+struct TmuxOpeningConnectionTests {
+    @Test func reconcile_keepsAConnectionWithNoMirrorYet() throws {
+        let server = try TmuxServerFixture.launch()
+        defer { server.tearDown() }
+        let store = TmuxConnectionStore(
+            registry: RecordingSurfaceRegistry(),
+            secureInput: nil,
+            tmuxExecutable: server.executable
+        )
+        let binding = TmuxBinding(socketPath: server.socketPath, sessionID: "$0", sessionName: "limpid-test")
+        let connection = try store.connection(for: binding)
+        store.reconcile(tabs: [])
+        #expect(store.connections[TmuxConnectionStore.Key(binding)] === connection)
+    }
+}
