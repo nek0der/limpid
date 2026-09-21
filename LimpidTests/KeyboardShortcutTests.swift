@@ -146,6 +146,31 @@ struct KeyboardShortcutTests {
         }
     }
 
+    /// Two actions on one trigger is exactly what `validate` refuses a
+    /// user, and libghostty's last-write-wins would silently pick one of
+    /// them. What ships has to hold to the same rule, and a new action is
+    /// where it would be broken — ⌃⌘T ("New tmux Window") was added with
+    /// this as the check that it was free.
+    @Test("No two default shortcuts share a trigger, and none is reserved")
+    func defaults_areFreeOfConflicts() {
+        var owners: [String: LimpidShortcutAction] = [:]
+        for action in LimpidShortcutAction.allCases {
+            guard let shortcut = action.defaultShortcut else { continue }
+            let trigger = shortcut.ghosttyTrigger
+            #expect(
+                owners[trigger] == nil,
+                "\(action.rawValue) and \(owners[trigger]?.rawValue ?? "?") both default to \(trigger)"
+            )
+            owners[trigger] = action
+            #expect(
+                !ReservedShortcuts.triggers.contains(trigger),
+                "\(action.rawValue) defaults to the reserved \(trigger)"
+            )
+        }
+        #expect(LimpidShortcutAction.newTmuxWindow.defaultShortcut
+            == StoredShortcut(key: "t", modifiers: [.control, .command]))
+    }
+
     /// The actions libghostty's keybind table fires itself must stay
     /// limited to actions with **no menu item** — otherwise the menu's
     /// `keyboardShortcut` and libghostty's keybind both fire for the

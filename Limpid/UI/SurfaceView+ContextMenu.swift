@@ -116,6 +116,24 @@ extension SurfaceView {
             accessibilityDescription: nil
         )
 
+        // Only for a pane the user typed `tmux attach` into: a pane with no
+        // tmux in it has no session to show, and a mirror tab's pane already
+        // is one (design D5). The session's name is in the title, because
+        // the user may have more than one and this item names which.
+        if let sessionName = manualTmuxSessionName?() {
+            menu.addItem(.separator())
+            let show = menu.addItem(
+                withTitle: String(localized: "Show This Session in a Limpid Tab"),
+                action: #selector(showTmuxSessionInTab(_:)),
+                keyEquivalent: ""
+            )
+            show.toolTip = sessionName
+            show.image = NSImage(
+                systemSymbolName: "rectangle.split.2x1",
+                accessibilityDescription: nil
+            )
+        }
+
         if canMoveToNewTab?() == true {
             menu.addItem(.separator())
             let promote = menu.addItem(
@@ -179,6 +197,10 @@ extension SurfaceView {
         onRequestMoveToNewTab?()
     }
 
+    @objc func showTmuxSessionInTab(_ sender: Any?) {
+        onRequestShowTmuxSessionInTab?()
+    }
+
     private func runSurfaceBinding(_ action: String) {
         guard let surface else { return }
         _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
@@ -235,6 +257,11 @@ extension SurfaceView: NSMenuItemValidation {
             return surface != nil
         case #selector(movePaneToNewTab(_:)):
             return surface != nil && canMoveToNewTab?() == true
+        // The item is only added for a pane that has a session; it is
+        // validated again because the poll can resolve the pane's client
+        // away while the menu is up.
+        case #selector(showTmuxSessionInTab(_:)):
+            return surface != nil && manualTmuxSessionName?() != nil
         default:
             return true
         }

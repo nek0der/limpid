@@ -376,6 +376,11 @@ enum TabActions {
     ) {
         switch action {
         case .newTab: newTab(session)
+        // ⌃⌘T. Disabled on every tab that is not a live mirror, by the
+        // menu item and the palette row alike, so nothing happens here when
+        // the tab's connection ended between the item being drawn and
+        // pressed (design D1).
+        case .newTmuxWindow: TmuxSessionActions.newWindow(session: session, store: tmuxStore)
         case .newWorktree:
             NotificationCenter.default.post(name: .limpidCreateWorktreeRequested, object: session)
         case .renameTab: renameActiveTab(session)

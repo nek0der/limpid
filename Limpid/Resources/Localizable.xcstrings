@@ -8952,6 +8952,231 @@
           }
         }
       }
+    },
+    "Close Its Tabs": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションのタブを閉じる"
+          }
+        }
+      }
+    },
+    "Couldn't find the tmux session in this pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペインの tmux セッションが見つかりませんでした"
+          }
+        }
+      }
+    },
+    "Couldn't start a new tmux session": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい tmux セッションを開始できませんでした"
+          }
+        }
+      }
+    },
+    "Everything running in its %lld windows ends, for every client showing them, and every Limpid tab of this session closes. Closing those tabs instead leaves the session running in tmux.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションの %lld 個のウィンドウで動いているものはすべて終了し、表示しているすべてのクライアントから消え、このセッションの Limpid のタブも閉じます。タブを閉じるだけなら、セッションは tmux で動き続けます。"
+          }
+        }
+      }
+    },
+    "New Window": {
+      "comment": "tmux directory — open a new window in this session",
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいウィンドウ"
+          }
+        }
+      }
+    },
+    "New tmux Session": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい tmux セッション"
+          }
+        }
+      }
+    },
+    "New tmux Window (%@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい tmux ウィンドウ（%@）"
+          }
+        }
+      }
+    },
+    "Open All Windows": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのウィンドウを開く"
+          }
+        }
+      }
+    },
+    "Quit Session": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッションを終了"
+          }
+        }
+      }
+    },
+    "Quit the tmux session “%@”?": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux セッション「%@」を終了しますか？"
+          }
+        }
+      }
+    },
+    "Show %lld more": {
+      "comment": "tmux directory — how many windows of a session the list is holding back",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Show %lld more"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Show %lld more"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ほか %lld 窓"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Show This Session in a Limpid Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションを Limpid のタブで表示"
+          }
+        }
+      }
+    },
+    "Showing": {
+      "comment": "tmux directory — a tab is already showing this window",
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示中"
+          }
+        }
+      }
+    },
+    "already open": {
+      "comment": "why a tmux directory item is disabled",
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて表示中"
+          }
+        }
+      }
+    },
+    "no tabs show this session": {
+      "comment": "why a tmux directory item is disabled",
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブに表示していません"
+          }
+        }
+      }
+    },
+    "not a tmux tab": {
+      "comment": "why a tmux menu item is disabled",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux のタブではありません"
+          }
+        }
+      }
+    },
+    "nothing to reconnect": {
+      "comment": "why a tmux directory item is disabled",
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再接続するものがありません"
+          }
+        }
+      }
+    },
+    "Quit This Session…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションを終了…"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

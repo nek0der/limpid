@@ -92,11 +92,31 @@ struct PaneCommands: Commands {
             .limpidShortcut(.previousTab, in: state.settingsStore)
             .disabled(state.session.tabs(in: state.session.activeContainerID).count <= 1)
 
+            // ⌃⌘T is a shortcut of the menu bar's, so its item cannot be
+            // hidden the way Reconnect is: a hidden item's key equivalent
+            // does not fire, and the keystroke would reach the pane as a
+            // control character instead of saying why it did nothing (D1).
+            Divider()
+            Button {
+                TmuxSessionActions.newWindow(session: state.session, store: state.tmuxStore)
+            } label: {
+                Label {
+                    if let obstacle = newTmuxWindowObstacle {
+                        Text("New tmux Window (\(obstacle))")
+                    } else {
+                        Text("New tmux Window")
+                    }
+                } icon: {
+                    Image(systemName: LimpidShortcutAction.newTmuxWindow.iconName)
+                }
+            }
+            .limpidShortcut(.newTmuxWindow, in: state.settingsStore)
+            .disabled(newTmuxWindowObstacle != nil)
+
             // Only where it means something: every other tab would carry a
             // permanently grey item, and a separator above it, for a verb
             // that has nothing to do with it.
             if isMirrorTab {
-                Divider()
                 Button {
                     reconnectActiveMirror()
                 } label: {
@@ -145,6 +165,13 @@ struct PaneCommands: Commands {
         guard tmuxObstacle == nil else { return false }
         guard let tab = state.session.activeTab, TmuxMirrorActions.mirrorRef(of: tab) != nil else { return false }
         return state.tmuxStore.canReconnect(tabID: tab.id)
+    }
+
+    /// Why "New tmux Window" cannot run, in the few words that trail its
+    /// title while it is disabled, or nil when it can. The palette's row
+    /// reads the same answer, so the two never disagree about why.
+    private var newTmuxWindowObstacle: String? {
+        TmuxSessionActions.newWindowObstacle(session: state.session, store: state.tmuxStore)
     }
 
     /// Why this Mac's tmux rules the reconnect out, in the few words that

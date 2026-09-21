@@ -317,7 +317,7 @@ struct ToolbarTmuxChip: View {
 
     private func chip(_ content: ToolbarTmuxChipContent) -> some View {
         Menu {
-            ToolbarTmuxChipMenu(content: content, perform: { perform($0) })
+            ToolbarTmuxChipMenu(content: content, settings: settings, perform: { perform($0) })
         } label: {
             label(content)
         }
@@ -390,6 +390,10 @@ struct ToolbarTmuxChip: View {
 /// holds no state of its own.
 private struct ToolbarTmuxChipMenu: View {
     let content: ToolbarTmuxChipContent
+    /// Read for the shortcuts the items show. Both of them are the user's
+    /// to rebind, so the chip shows what they bound rather than what
+    /// Limpid ships with.
+    let settings: SettingsStore
     let perform: (ToolbarTmuxChipContent.Item) -> Void
 
     var body: some View {
@@ -401,12 +405,12 @@ private struct ToolbarTmuxChipMenu: View {
                 Text(message)
             }
         }
-        item(.newWindow, title: "New tmux Window", symbol: "plus.rectangle.on.rectangle")
-            .keyboardShortcut("t", modifiers: [.control, .command])
+        item(.newWindow, title: "New tmux Window", symbol: LimpidShortcutAction.newTmuxWindow.iconName)
+            .limpidShortcut(.newTmuxWindow, in: settings)
         item(.reconnect, title: "Reconnect", symbol: "arrow.clockwise")
         item(.otherClients, title: "Other Clients…", symbol: "person.2")
-        item(.closeTab, title: "Close Tab", symbol: "xmark")
-            .keyboardShortcut("w", modifiers: [.command, .option])
+        item(.closeTab, title: "Close Tab", symbol: LimpidShortcutAction.closeTab.iconName)
+            .limpidShortcut(.closeTab, in: settings)
         Divider()
         item(.quitWindow, title: "Quit This Window…", symbol: "trash", isDestructive: true)
     }

@@ -794,7 +794,7 @@ struct LimpidApp: App {
                         attention: state.attention,
                         registry: state.registry,
                         reviewPresentation: state.reviewPresentation,
-                        tmuxStore: state.tmuxStore
+                        tmuxStore: state.tmuxStore, tmuxPresence: state.tmuxPresence
                     )
                 } label: {
                     Label("Command Palette", systemImage: "text.magnifyingglass")
@@ -809,7 +809,7 @@ struct LimpidApp: App {
                         attention: state.attention,
                         registry: state.registry,
                         reviewPresentation: state.reviewPresentation,
-                        tmuxStore: state.tmuxStore,
+                        tmuxStore: state.tmuxStore, tmuxPresence: state.tmuxPresence,
                         initialQuery: ""
                     )
                 } label: {
@@ -936,7 +936,7 @@ struct ContentView: View {
                 toastCenter: state.toastCenter,
                 minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
                 agentProjection: state.agentProjection,
-                tmuxStore: state.tmuxStore
+                tmuxStore: state.tmuxStore, tmuxPresence: state.tmuxPresence
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: .limpidToggleNotificationHistory)) { _ in

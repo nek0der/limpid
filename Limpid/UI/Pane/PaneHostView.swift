@@ -42,6 +42,7 @@ struct PaneHostView: View {
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(LimpidDragState.self) private var dragState
     @Environment(ReviewPresentation.self) private var reviewPresentation
+    @Environment(TmuxPanePresence.self) private var tmuxPresence
     @Environment(\.tmuxConnectionStore) private var tmuxStore
 
     /// A pane whose source this build cannot read runs nothing, so it says
@@ -67,6 +68,7 @@ struct PaneHostView: View {
                     toastCenter: toastCenter,
                     dragState: dragState,
                     reviewPresentation: reviewPresentation,
+                    tmuxPresence: tmuxPresence,
                     tmuxStore: tmuxStore,
                     size: geo.size,
                     paddingOverride: paddingOverride
@@ -197,6 +199,9 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
     let toastCenter: ToastCenter
     let dragState: LimpidDragState
     let reviewPresentation: ReviewPresentation
+    /// The pane poll. Absent from `==` for the same reason as the store: it
+    /// lives as long as the app does.
+    let tmuxPresence: TmuxPanePresence
     /// The tmux store, when the app has one. Deliberately absent from `==`
     /// below with the other environment references: it is an AppState-lifetime
     /// singleton, so its identity never changes across renders.
@@ -507,6 +512,26 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         // on screen, which only the active tab's panes are.
         view.canClosePaneOrTab = { [weak session] in
             PaneActions.canClosePaneOrTab(session?.activeTab)
+        }
+        // Read at the moment the menu opens rather than cached: the poll
+        // resolves which session a pane shows a couple of seconds after the
+        // user attaches, and answers again when they detach.
+        view.manualTmuxSessionName = { [weak session, tmuxPresence] in
+            guard let session else { return nil }
+            return TmuxSessionActions.manualSession(
+                paneID: paneID,
+                session: session,
+                presence: tmuxPresence
+            )?.sessionName
+        }
+        view.onRequestShowTmuxSessionInTab = { [weak session, tmuxPresence, tmuxStore] in
+            guard let session, let tmuxStore else { return }
+            TmuxSessionActions.showSessionInTab(
+                paneID: paneID,
+                session: session,
+                store: tmuxStore,
+                presence: tmuxPresence
+            )
         }
     }
 

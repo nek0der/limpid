@@ -74,6 +74,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     // File
     case newTab
     case newWorktree
+    case newTmuxWindow
     case renameTab
     case reopenClosedTab
     case closeSurface
@@ -143,7 +144,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
 
     var category: LimpidShortcutCategory {
         switch self {
-        case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
+        case .newTab, .newWorktree, .newTmuxWindow, .renameTab, .reopenClosedTab,
              .closeSurface, .closeTab: .file
         case .toggleSidebar, .toggleTabLayout, .notificationHistory, .reviewChanges, .reviewTurn: .view
         case .nextSection, .previousSection, .nextTab, .previousTab,
@@ -181,7 +182,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .resetFontSize: "reset_font_size"
         // Menu-owned + Limpid-only actions: the menu Button or a
         // notification fires `TabActions.…` directly.
-        case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
+        case .newTab, .newWorktree, .newTmuxWindow, .renameTab, .reopenClosedTab,
              .closeSurface, .closeTab, .toggleSidebar, .toggleTabLayout,
              .notificationHistory, .reviewChanges, .reviewTurn,
              .nextSection, .previousSection, .nextTab, .previousTab,
@@ -219,7 +220,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .nextPrompt, .previousPrompt,
              .scrollToTop, .scrollToBottom, .scrollPageUp, .scrollPageDown: true
-        case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
+        case .newTab, .newWorktree, .newTmuxWindow, .renameTab, .reopenClosedTab,
              .closeSurface, .closeTab, .toggleSidebar, .toggleTabLayout,
              .notificationHistory, .reviewChanges, .reviewTurn,
              .nextSection, .previousSection, .nextTab, .previousTab,
@@ -241,6 +242,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .newTab: "New Tab"
         case .newWorktree: "New Worktree…"
+        case .newTmuxWindow: "New tmux Window"
         case .renameTab: "Rename Tab"
         case .reopenClosedTab: "Reopen Closed Tab"
         case .closeSurface: "Close Pane"
@@ -290,6 +292,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .newTab: "plus"
         case .newWorktree: "arrow.triangle.branch"
+        case .newTmuxWindow: "plus.rectangle.on.rectangle"
         case .renameTab: "pencil"
         case .reopenClosedTab: "arrow.uturn.backward"
         case .closeSurface: "xmark.square"
@@ -346,6 +349,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .newTab: .init(key: "t", modifiers: [.command])
         case .newWorktree: .init(key: "n", modifiers: [.command, .option])
+        case .newTmuxWindow: .init(key: "t", modifiers: [.control, .command])
         case .renameTab: .init(key: "r", modifiers: [.command, .shift])
         case .reopenClosedTab: .init(key: "t", modifiers: [.command, .shift])
         case .closeSurface: .init(key: "w", modifiers: [.command])

@@ -64,6 +64,9 @@ enum CommandPaletteActions {
         // palette is one of the ways to close it.
         reviewPresentation: ReviewPresentation?,
         tmuxStore: TmuxConnectionStore?,
+        // What the tmux rows read. Resolved here rather than in the catalog
+        // so the catalog stays a pure function of what it is handed.
+        tmuxPresence: TmuxPanePresence? = nil,
         initialQuery: String = ">"
     ) {
         if session.commandPaletteState != nil {
@@ -78,7 +81,13 @@ enum CommandPaletteActions {
             attention: attention,
             registry: registry,
             reviewPresentation: reviewPresentation,
-            isTmuxAvailable: state.isTmuxAvailable
+            isTmuxAvailable: state.isTmuxAvailable,
+            tmux: TmuxPaletteContext.make(
+                session: session,
+                store: tmuxStore,
+                presence: tmuxPresence,
+                support: settings.agentTmuxSupport
+            )
         )
         state.initialQuery = initialQuery.isEmpty ? nil : initialQuery
         state.applyFilter(query: "", frecencyStore: frecencyStore)
@@ -151,7 +160,11 @@ enum CommandPaletteActions {
         toastCenter: ToastCenter,
         minPaneSize: Double,
         agentProjection: AgentProjectionAdapter? = nil,
-        tmuxStore: TmuxConnectionStore?
+        tmuxStore: TmuxConnectionStore?,
+        // The pane poll, for the row that shows the session a pane is
+        // attached to by hand. Absent in a preview, where that row is
+        // never listed.
+        tmuxPresence: TmuxPanePresence? = nil
     ) {
         closeCommandPalette(session)
         frecencyStore.record(action.frecencyKey)
@@ -193,11 +206,8 @@ enum CommandPaletteActions {
             NotificationCenter.default.post(name: .limpidOpenSettings, object: nil)
         case .insertPrefix:
             break // Handled in ToolbarPaletteField, never reaches here.
-        case let .mirrorTmuxWindow(target):
-            // The row is only listed when a store exists; a missing one
-            // here is a wiring error, not a user-facing state.
-            guard let tmuxStore else { break }
-            TmuxMirrorActions.openFromPalette(target, session: session, store: tmuxStore)
+        case .newTmuxSession, .showPaneTmuxSession, .mirrorTmuxWindow:
+            executeTmuxAction(action, session: session, store: tmuxStore, presence: tmuxPresence)
         }
 
         // Restore focus to the terminal surface so the next keystroke
@@ -210,5 +220,36 @@ enum CommandPaletteActions {
             view.window?.makeFirstResponder(view)
         }
     }
+
     // swiftlint:enable function_parameter_count
+
+    /// The rows that ask something of tmux. Apart from the dispatch above
+    /// because each one needs the store, and three more guards there would
+    /// say the same thing three times: a row is only listed when a store
+    /// exists, so a missing one is a wiring error rather than a state the
+    /// user can reach.
+    private static func executeTmuxAction(
+        _ action: CommandPaletteAction,
+        session: WindowSession,
+        store: TmuxConnectionStore?,
+        presence: TmuxPanePresence?
+    ) {
+        guard let store else { return }
+        switch action {
+        case .newTmuxSession:
+            TmuxSessionActions.newSession(session: session, store: store)
+        case let .showPaneTmuxSession(paneID):
+            guard let presence else { return }
+            TmuxSessionActions.showSessionInTab(
+                paneID: paneID,
+                session: session,
+                store: store,
+                presence: presence
+            )
+        case let .mirrorTmuxWindow(target):
+            TmuxMirrorActions.openFromPalette(target, session: session, store: store)
+        default:
+            break
+        }
+    }
 }

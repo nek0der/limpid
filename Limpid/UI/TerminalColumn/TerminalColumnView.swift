@@ -34,6 +34,7 @@ private struct TerminalColumnEmptyState: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AttentionState.self) private var attention
     @Environment(ReviewPresentation.self) private var reviewPresentation
+    @Environment(TmuxPanePresence.self) private var tmuxPresence
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.frecencyStore) private var frecencyStore
     @Environment(\.tmuxConnectionStore) private var tmuxStore
@@ -73,7 +74,8 @@ private struct TerminalColumnEmptyState: View {
                     attention: attention,
                     registry: registry,
                     reviewPresentation: reviewPresentation,
-                    tmuxStore: tmuxStore
+                    tmuxStore: tmuxStore,
+                    tmuxPresence: tmuxPresence
                 )
             },
             WelcomeCommand(title: "Toggle Sidebar", action: .toggleSidebar, isEnabled: true) {

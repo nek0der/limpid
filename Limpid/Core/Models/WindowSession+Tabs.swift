@@ -29,25 +29,7 @@ extension WindowSession {
         after anchorTabID: UUID? = nil,
         activates: Bool = true
     ) -> Tab {
-        let resolvedWD: URL?
-        switch container {
-        case .loose:
-            let defaults = quickTabDefaultsProvider()
-            resolvedWD = workingDirectory ?? resolveCwdMode(defaults.mode, path: defaults.path)
-        case let .group(gid):
-            let group = groups.first(where: { $0.id == gid })
-            resolvedWD = workingDirectory ?? resolveCwdMode(
-                group?.cwdMode ?? .inheritPrevious,
-                path: group?.cwdPath
-            )
-        case let .project(pid):
-            let project = projects.first(where: { $0.id == pid })
-            resolvedWD = workingDirectory ?? project?.rootURL
-        case let .worktree(pid, wid):
-            let project = projects.first(where: { $0.id == pid })
-            let wt = project?.worktrees.first(where: { $0.id == wid })
-            resolvedWD = workingDirectory ?? wt?.workingDirectory ?? project?.rootURL
-        }
+        let resolvedWD = workingDirectory ?? containerWorkingDirectory(container)
         // Initial title matches what the shell's OSC 7 will set it to
         // moments later — the working-directory basename, with $HOME
         // collapsed to "~". Skipping a placeholder ("scratch" / group
@@ -69,6 +51,31 @@ extension WindowSession {
             setActiveTab(tab.id)
         }
         return tab
+    }
+
+    /// Where a tab opened in `container` starts, when nothing names a
+    /// directory of its own: the container's own path, or the mode a loose
+    /// tab or a group was configured with. Nil falls through to
+    /// libghostty's home-on-launch default.
+    ///
+    /// Read by anything that has to start somewhere in the container the
+    /// user is looking at rather than open a tab — a tmux session made from
+    /// the palette (design D2) — so the two cannot start in different
+    /// places.
+    func containerWorkingDirectory(_ container: ContainerID) -> URL? {
+        switch container {
+        case .loose:
+            let defaults = quickTabDefaultsProvider()
+            return resolveCwdMode(defaults.mode, path: defaults.path)
+        case let .group(gid):
+            let group = groups.first(where: { $0.id == gid })
+            return resolveCwdMode(group?.cwdMode ?? .inheritPrevious, path: group?.cwdPath)
+        case let .project(pid):
+            return projects.first(where: { $0.id == pid })?.rootURL
+        case let .worktree(pid, wid):
+            let project = projects.first(where: { $0.id == pid })
+            return project?.worktrees.first(where: { $0.id == wid })?.workingDirectory ?? project?.rootURL
+        }
     }
 
     /// Resolve a `WorkingDirectoryMode` to a concrete cwd URL, or nil

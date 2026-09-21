@@ -11,6 +11,7 @@ struct ToolbarPaletteField: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AttentionState.self) private var attention
     @Environment(ReviewPresentation.self) private var reviewPresentation
+    @Environment(TmuxPanePresence.self) private var tmuxPresence
     @Environment(\.frecencyStore) private var frecencyStore
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.tmuxConnectionStore) private var tmuxStore
@@ -46,7 +47,8 @@ struct ToolbarPaletteField: View {
             attention: attention,
             registry: registry,
             reviewPresentation: reviewPresentation,
-            tmuxStore: tmuxStore
+            tmuxStore: tmuxStore,
+            tmuxPresence: tmuxPresence
         )
     }
 }

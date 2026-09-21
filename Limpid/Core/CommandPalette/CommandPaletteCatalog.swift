@@ -24,6 +24,10 @@ enum CommandPaletteCatalog {
         let canEqualize: Bool
         let canReview: Bool
         let canReviewTurn: Bool
+        /// Why "New tmux Window" cannot run, or nil when it can. The rows
+        /// that ask something of tmux carry the reason they are disabled
+        /// rather than greying out in silence (design D1).
+        let newTmuxWindowObstacle: String?
     }
 
     private struct ShortcutDependencies {
@@ -39,7 +43,8 @@ enum CommandPaletteCatalog {
         attention: AttentionState,
         registry: (any SurfaceViewProviding)? = nil,
         reviewPresentation: ReviewPresentation? = nil,
-        isTmuxAvailable: Bool = false
+        isTmuxAvailable: Bool = false,
+        tmux: TmuxPaletteContext = .unavailable
     ) -> [CommandPaletteItem] {
         var items: [CommandPaletteItem] = []
         items.reserveCapacity(80)
@@ -51,11 +56,13 @@ enum CommandPaletteCatalog {
                 attention: attention,
                 registry: registry,
                 reviewPresentation: reviewPresentation
-            )
+            ),
+            tmux: tmux
         )
         if isTmuxAvailable {
             appendTmuxEntry(to: &items)
         }
+        appendTmuxActions(to: &items, tmux: tmux)
         appendTabs(to: &items, session: session)
         appendGroups(to: &items, session: session)
         appendProjects(to: &items, session: session)
@@ -85,6 +92,54 @@ enum CommandPaletteCatalog {
             shortcutDisplay: nil,
             action: action
         ))
+    }
+
+    /// The tmux verbs that do not start from a mirror tab: a new session
+    /// (design D2), and the session the focused pane is attached to by hand
+    /// (design D5). Both are left out entirely without a tmux — there is
+    /// nothing to explain to a user who has none — and the first is listed
+    /// disabled, with the reason, when this Mac's tmux is one Limpid cannot
+    /// mirror.
+    private static func appendTmuxActions(to items: inout [CommandPaletteItem], tmux: TmuxPaletteContext) {
+        guard tmux.hasTmux else { return }
+        items.append(actionRow(
+            "New tmux Session",
+            icon: "plus.rectangle.on.rectangle",
+            action: .newTmuxSession,
+            obstacle: tmux.newSessionObstacle
+        ))
+        guard let paneID = tmux.manualSessionPaneID else { return }
+        items.append(actionRow(
+            "Show This Session in a Limpid Tab",
+            icon: "rectangle.split.2x1",
+            action: .showPaneTmuxSession(paneID),
+            subtitle: tmux.manualSessionName
+        ))
+    }
+
+    /// One Actions row for a verb of Limpid's own, searchable by its
+    /// English name wherever the UI language renames it.
+    private static func actionRow(
+        _ resource: LocalizedStringResource,
+        icon: String,
+        action: CommandPaletteAction,
+        subtitle: String? = nil,
+        obstacle: String? = nil
+    ) -> CommandPaletteItem {
+        let localizedTitle = String(localized: resource)
+        let englishTitle = englishString(resource)
+        return CommandPaletteItem(
+            id: action.frecencyKey,
+            category: .actions,
+            title: localizedTitle,
+            searchAlias: localizedTitle != englishTitle ? englishTitle : nil,
+            subtitle: subtitle,
+            icon: icon,
+            shortcutDisplay: nil,
+            statusLabel: obstacle,
+            action: action,
+            isEnabled: obstacle == nil
+        )
     }
 
     /// One row per tmux window found on a reachable server, titled with
@@ -138,7 +193,8 @@ enum CommandPaletteCatalog {
     private static func appendShortcutActions(
         to items: inout [CommandPaletteItem],
         session: WindowSession,
-        dependencies: ShortcutDependencies
+        dependencies: ShortcutDependencies,
+        tmux: TmuxPaletteContext
     ) {
         let hasActiveTab = session.activeTab != nil
         let hasMultipleTabs = session.tabs(in: session.activeContainerID).count > 1
@@ -179,12 +235,14 @@ enum CommandPaletteCatalog {
                 session: session,
                 attention: dependencies.attention,
                 paneID: focusedPaneID
-            )
+            ),
+            newTmuxWindowObstacle: tmux.newWindowObstacle
         )
 
         for action in LimpidShortcutAction.allCases {
             let shortcut = dependencies.settings.settings.keyboard.shortcut(for: action)
             let enabled = isActionEnabled(action, context: context)
+            let obstacle = enabled ? nil : disabledReason(action, context: context)
             let localizedTitle = String(localized: action.localizedTitle)
             var englishResource = action.localizedTitle
             englishResource.locale = Locale(identifier: "en")
@@ -197,6 +255,7 @@ enum CommandPaletteCatalog {
                 subtitle: nil,
                 icon: action.iconName,
                 shortcutDisplay: shortcut?.displayString,
+                statusLabel: obstacle,
                 action: .shortcutAction(action),
                 isEnabled: enabled
             ))
@@ -368,8 +427,24 @@ enum CommandPaletteCatalog {
         case .focusPaneDown: context.reachable(.down)
         case .reviewChanges: context.canReview
         case .reviewTurn: context.canReviewTurn
+        case .newTmuxWindow: context.newTmuxWindowObstacle == nil
         case .commandPalette, .quickOpen: false
         default: true
+        }
+    }
+
+    /// Why a disabled row cannot run, shown at its trailing edge. Only the
+    /// tmux verbs answer: every other action is disabled by something the
+    /// user can see for themselves (no tab, no split, nothing to reopen),
+    /// while a tmux row is disabled by the state of a connection that is
+    /// nowhere on this row (design D1).
+    private static func disabledReason(
+        _ action: LimpidShortcutAction,
+        context: ActionEnabledContext
+    ) -> String? {
+        switch action {
+        case .newTmuxWindow: context.newTmuxWindowObstacle
+        default: nil
         }
     }
 

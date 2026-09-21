@@ -316,6 +316,17 @@ final class SurfaceView: NSView {
     /// no tab claims this view, and the verbs it gates stay off.
     var tabCapabilities: (() -> TabCapabilities?)?
 
+    /// Whether this pane is running a tmux client the user started by
+    /// hand, and what that session is called. Set by `PaneHostView` from
+    /// the pane poll; nil, or a nil answer, keeps "Show This Session in a
+    /// Limpid Tab" out of the menu, which is where it belongs for every
+    /// pane that is not in tmux (design D5).
+    var manualTmuxSessionName: (() -> String?)?
+
+    /// Show the tmux session this pane is attached to in a tab of its own.
+    /// Set by `PaneHostView` alongside the question above.
+    var onRequestShowTmuxSessionInTab: (() -> Void)?
+
     /// Whether the right-click Close Pane has anything to do. Set by
     /// `PaneHostView` to `PaneActions.canClosePaneOrTab`, the rule ⌘W and
     /// the palette read, so the three never disagree. Nil means disabled.
