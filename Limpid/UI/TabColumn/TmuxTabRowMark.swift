@@ -1,5 +1,5 @@
 // TmuxTabRowMark.swift
-// Limpid — the mark a mirror tab's row carries for its connection and for what its mirror warns about, decided apart from the view.
+// Limpid — the badge a mirror tab's row wears, and the mark it carries when its connection wants attention.
 
 import SwiftUI
 
@@ -12,6 +12,11 @@ import SwiftUI
 /// over the panes reads too, so the two never say the same thing twice over
 /// in two ways. Each state has its own symbol, so the mark does not depend
 /// on its color to be read.
+///
+/// Only a state that wants something of the user reaches this slot. That a
+/// tab is drawn from tmux at all is said once, by the badge on its identity
+/// glyph (`TmuxTabIdentityBadge`): a second mark at rest told the same fact
+/// a second way and left the trailing slot meaning nothing in particular.
 struct TmuxTabRowMark: Equatable {
     /// Most pressing first; never empty.
     let states: [TmuxStatePresentation]
@@ -33,26 +38,16 @@ struct TmuxTabRowMark: Equatable {
     ///     in this run, which reads as disconnected, as its card does.
     ///   - issues: what the tab's mirror warns about. Only a live tab's
     ///     count: a tab that is not live repaints and resizes nothing.
-    ///   - origin: who the tab was opened for. A tab the user opened gets
-    ///     the neutral mark when there is nothing to warn about, so being a
-    ///     mirror is visible at rest; a tab opened for a hosted agent gets
-    ///     none, because its identity glyph already carries the tmux dot and
-    ///     two marks for one fact read as two.
     ///   - tmuxSupport: what the launch probe found about this Mac's tmux.
     ///     A tab that lost its connection says that there is no tmux to
     ///     bring it back with, the way its card does: the row saying
     ///     "Disconnected from tmux" while the card says the tmux found is
     ///     too old is one state told two ways.
-    ///   - windowName: the tmux window the tab shows. Only the neutral mark
-    ///     names it: the others speak of the connection or of the mirror,
-    ///     which the window's name says nothing about.
     static func make(
         connection: TmuxTabConnection?,
         hasMirror: Bool,
         issues: TmuxTabIssues?,
-        origin: Tab.MirrorOrigin = .user,
-        tmuxSupport: AgentTmuxSupport = .pending,
-        windowName: String = ""
+        tmuxSupport: AgentTmuxSupport = .pending
     ) -> Self? {
         var states: [TmuxStatePresentation] = []
         // A connection that ended reads as the card reads it: when tmux
@@ -77,11 +72,48 @@ struct TmuxTabRowMark: Equatable {
                 states.append(.windowLargerThanTab)
             }
         }
-        if states.isEmpty, origin == .user {
-            states.append(.mirroring(windowName: windowName))
-        }
         guard !states.isEmpty else { return nil }
         return Self(states: states)
+    }
+}
+
+/// The badge on a tab row's identity glyph: Limpid draws this tab from
+/// tmux, and what it shows keeps running when the tab is closed.
+///
+/// One badge for both kinds of mirror. What differs is only the words: an
+/// agent's user is never told about tmux (design D6), because tmux is not
+/// something they chose and the fact they need — that closing the tab does
+/// not stop the agent — reads without it.
+///
+/// A pane the user put into tmux by hand carries none. Limpid does not draw
+/// that pane, and closing its tab kills the client rather than leaving a
+/// window running, so the badge would promise something that is not true
+/// (design D5).
+struct TmuxTabIdentityBadge: Equatable {
+    /// Who the tab was opened for, which is all the badge needs to know.
+    let origin: Tab.MirrorOrigin
+
+    /// The same symbol the card over the panes and the toolbar's chip use
+    /// for "this comes from tmux", drawn filled: at badge size the outlined
+    /// pair of rectangles closes up into a smudge.
+    var symbol: String {
+        TmuxStatePresentation.mirroring(windowName: "").symbol
+    }
+
+    /// The badge's tooltip, and the same words VoiceOver reads.
+    var help: LocalizedStringResource {
+        switch origin {
+        case .user:
+            "Shown from tmux — the window keeps running when this tab closes"
+        case .agent:
+            "Runs in the background — it keeps running when this tab closes"
+        }
+    }
+
+    /// The badge for a tab, or nil when it carries none.
+    static func make(kind: Tab.Kind, origin: Tab.MirrorOrigin) -> Self? {
+        guard kind == .tmuxMirror else { return nil }
+        return Self(origin: origin)
     }
 }
 
@@ -92,22 +124,13 @@ struct TmuxTabRowMarkView: View {
     @Environment(SettingsStore.self) private var settings
     let tab: Tab
 
-    /// The window the tab shows: the one its mirror reports, or else the one
-    /// inside its saved title, which is what a reconnect starts from too.
-    private var windowName: String {
-        guard let ref = TmuxMirrorActions.mirrorRef(of: tab) else { return "" }
-        return TmuxMirrorActions.windowName(of: tab, binding: ref.binding, store: tmuxStore)
-    }
-
     var body: some View {
         if let tmuxStore,
            let mark = TmuxTabRowMark.make(
                connection: tmuxStore.tabConnections[tab.id],
                hasMirror: tmuxStore.mirror(for: tab.id) != nil,
                issues: tmuxStore.tabIssues[tab.id],
-               origin: tab.mirrorOrigin,
-               tmuxSupport: settings.agentTmuxSupport,
-               windowName: windowName
+               tmuxSupport: settings.agentTmuxSupport
            )
         {
             Image(systemName: mark.primary.symbol)

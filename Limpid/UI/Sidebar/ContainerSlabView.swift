@@ -328,21 +328,16 @@ struct ContainerSlabView: View {
                             }
                         }
                         if !detached.isEmpty {
-                            DetachedAgentHeader(count: detached.count)
+                            BackgroundAgentHeader(count: detached.count)
                         }
                         ForEach(detached, id: \.id) { runtime in
                             if let run = runtime.tmuxRun {
-                                DetachedAgentRow(
+                                BackgroundAgentRow(
                                     agentName: AgentProviderRegistry.displayName(for: run.kind),
+                                    state: runtime.badge.state,
                                     prompt: runtime.badge.lastPrompt ?? runtime.badge.firstPrompt
                                 ) {
-                                    guard let tmuxStore else { return }
-                                    TmuxMirrorActions.openDetachedAgentRun(
-                                        run,
-                                        session: session,
-                                        store: tmuxStore,
-                                        toastCenter: toastCenter
-                                    )
+                                    openBackgroundAgentRun(run)
                                 }
                             }
                         }
@@ -353,6 +348,27 @@ struct ContainerSlabView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .clipped()
+    }
+
+    /// Bring a background agent's tab back, in the container and at the
+    /// position it had when it was closed (design D7).
+    ///
+    /// The placement is restored once the open has finished, because the
+    /// tab is made inside that task: tmux is asked first where the agent's
+    /// pane sits now. A nil task means nothing new opened — a tab already
+    /// showed the run, and it was brought forward where it stands.
+    private func openBackgroundAgentRun(_ run: AgentTmuxRun) {
+        guard let tmuxStore else { return }
+        guard let opening = TmuxMirrorActions.openDetachedAgentRun(
+            run,
+            session: session,
+            store: tmuxStore,
+            toastCenter: toastCenter
+        ) else { return }
+        Task {
+            await opening.value
+            BackgroundAgentTabPlacements.restore(forLeaf: run.leafID, in: session)
+        }
     }
 
     /// The scrolling upper pane of the slab: Quick Tabs, Groups,

@@ -105,6 +105,13 @@ enum TabActions {
             session.recordClosedTab(snapshot)
         }
 
+        // An agent whose tab closes keeps running in the background, and the
+        // Background list is how the user comes back to it. Remember where
+        // the tab sat so that reopening puts it back (design D7). Recorded
+        // whatever `isReopenable` says: that flag is about the closed-tab
+        // stack, and an agent is opened again from its own records.
+        BackgroundAgentTabPlacements.record(tab, in: session)
+
         session.closeTab(tabID)
         for leafID in leafIDs {
             registry.unregister(leafID)

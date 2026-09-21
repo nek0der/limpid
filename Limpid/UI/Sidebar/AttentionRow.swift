@@ -243,15 +243,19 @@ struct AttentionRow: View {
 
 }
 
-/// One agent that is running in tmux with no tab showing it: its tab was
-/// closed, or it was never opened. Tapping the row opens that tab again, on
-/// the leaf the agent's records name (design §5 decision 5).
+/// One agent that keeps running with no tab showing it: its tab was closed,
+/// or it was never opened. Tapping the row opens that tab again, on the leaf
+/// the agent's records name (design §5 decision 5) and in the place the tab
+/// held when it was closed (design D7).
 ///
 /// Below the waiting rows rather than among them: nothing here is waiting on
 /// the user, and the row says where an agent went rather than what it wants.
-struct DetachedAgentRow: View {
+struct BackgroundAgentRow: View {
     /// What the agent calls itself, from the provider registry.
     let agentName: String
+    /// What the agent is doing, so the row says more than that it is
+    /// somewhere out of sight.
+    let state: AgentState
     /// The agent's last prompt, when it has one to show.
     let prompt: String?
     let onTap: () -> Void
@@ -260,7 +264,26 @@ struct DetachedAgentRow: View {
 
     private var detail: String {
         let preview = prompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return preview.isEmpty ? String(localized: "Running in tmux without a tab") : preview
+        return preview.isEmpty ? String(localized: "Running in the background") : preview
+    }
+
+    /// The state in words, for a row whose reader cannot see the agent.
+    /// The two states this list is mostly made of get words of their own:
+    /// the badge's "Needs input" reads as a fault where what is meant is a
+    /// turn to take, and "Running" says less here than "Working" does. The
+    /// rest keep the vocabulary the badges and the Waiting list use, and the
+    /// states that say nothing (idle, unknown) show nothing.
+    private var stateLabel: String? {
+        switch state {
+        case .needsInput:
+            String(localized: "Waiting for input", comment: "Background agent row — what the agent is doing")
+        case .running, .compacting:
+            String(localized: "Working", comment: "Background agent row — what the agent is doing")
+        case .error, .finished:
+            state.localizedLabel
+        case .idle, .unknown:
+            nil
+        }
     }
 
     var body: some View {
@@ -271,10 +294,20 @@ struct DetachedAgentRow: View {
                 .frame(width: 16)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: agentName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.primary.opacity(0.85))
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(verbatim: agentName)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.primary.opacity(0.85))
+                        .lineLimit(1)
+                    Spacer(minLength: 2)
+                    if let stateLabel {
+                        Text(verbatim: stateLabel)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.primary.opacity(0.5))
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
                 Text(verbatim: detail)
                     .font(.system(size: 11))
                     .foregroundStyle(Color.primary.opacity(0.45))
@@ -299,19 +332,21 @@ struct DetachedAgentRow: View {
     }
 }
 
-/// The Waiting region's subheading for the detached rows, with how many
+/// The Waiting region's subheading for the background rows, with how many
 /// there are. The rows below it are not waiting on anybody and ⌘J does not
 /// walk them (they have no pane to walk to), so the region says out loud
 /// where the Waiting list ends rather than letting the two run together.
-struct DetachedAgentHeader: View {
+struct BackgroundAgentHeader: View {
     let count: Int
 
     var body: some View {
         HStack(spacing: 4) {
-            // English in every locale, like the "Waiting" header above it:
-            // the two label one lane of the same workflow and would read as
-            // two unrelated regions if only one were translated.
-            Text("Detached")
+            // Translated, unlike the "Waiting" header above it: "Waiting" is
+            // the name of a lane the user learns, while this one describes
+            // where the agents below it went, and a description that is not
+            // read is worth nothing (design D6 — the word the agent's user
+            // gets is "background", not "tmux").
+            Text("Background")
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .tracking(0.6)
                 .foregroundStyle(Color.primary.opacity(0.55))
@@ -330,7 +365,7 @@ struct DetachedAgentHeader: View {
         .padding(.bottom, 6)
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isHeader)
-        .accessibilityLabel(Text("Detached"))
+        .accessibilityLabel(Text("Background"))
         .accessibilityValue(Text(verbatim: "\(count)"))
     }
 }

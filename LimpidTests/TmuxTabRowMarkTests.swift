@@ -6,29 +6,14 @@ import Testing
 @testable import Limpid
 
 struct TmuxTabRowMarkTests {
-    /// A tab opened for a hosted agent carries no mark of its own when
-    /// nothing is wrong: its identity glyph already shows the tmux dot.
-    @Test func liveAgentTab_withNothingToWarnAbout_hasNoMark() {
-        #expect(TmuxTabRowMark.make(connection: .live, hasMirror: true, issues: nil, origin: .agent) == nil)
-        #expect(TmuxTabRowMark.make(connection: .live, hasMirror: true, issues: TmuxTabIssues(), origin: .agent) == nil)
+    /// Nothing is wrong, so nothing is in the trailing slot. That the tab is
+    /// drawn from tmux is said by the badge on its identity glyph instead
+    /// (`TmuxTabIdentityBadge`), for both kinds of mirror.
+    @Test func liveMirrorTab_withNothingToWarnAbout_hasNoMark() {
+        #expect(TmuxTabRowMark.make(connection: .live, hasMirror: true, issues: nil) == nil)
+        #expect(TmuxTabRowMark.make(connection: .live, hasMirror: true, issues: TmuxTabIssues()) == nil)
         // Registered, not yet recorded: the mirror is there and says nothing.
-        #expect(TmuxTabRowMark.make(connection: nil, hasMirror: true, issues: nil, origin: .agent) == nil)
-    }
-
-    /// A tab the user opened says it is a mirror even when all is well, so
-    /// the row does not read as an ordinary terminal.
-    @Test func liveUserTab_withNothingToWarnAbout_carriesTheNeutralMark() throws {
-        let mark = try #require(TmuxTabRowMark.make(
-            connection: .live,
-            hasMirror: true,
-            issues: TmuxTabIssues(),
-            origin: .user,
-            windowName: "editor"
-        ))
-        #expect(mark.states == [.mirroring(windowName: "editor")])
-        #expect(mark.primary.severity == .neutral)
-        // The tooltip names the window, in whatever language it resolves to.
-        #expect(mark.help.contains("editor"))
+        #expect(TmuxTabRowMark.make(connection: nil, hasMirror: true, issues: nil) == nil)
     }
 
     @Test(arguments: [
@@ -133,13 +118,57 @@ struct TmuxTabRowMarkTests {
         #expect(mark.primary == card.state)
         #expect(mark.help == String(localized: card.title))
     }
+}
 
-    @Test func neutralMarkText_resolvesInBothLanguages() {
-        var english = TmuxStatePresentation.mirroring(windowName: "editor").title
+/// Which tabs wear the badge that says Limpid draws them from tmux, and
+/// what it says, apart from the row that composes it onto the glyph.
+@Suite("Tab row tmux badge")
+struct TmuxTabIdentityBadgeTests {
+    /// Both kinds of mirror wear it: the fact it states — this tab is drawn
+    /// from tmux and closing it does not stop what it shows — is the same
+    /// one either way.
+    @Test(arguments: [Tab.MirrorOrigin.user, .agent])
+    func mirrorTab_wearsTheBadge(origin: Tab.MirrorOrigin) throws {
+        let badge = try #require(TmuxTabIdentityBadge.make(kind: .tmuxMirror, origin: origin))
+        #expect(badge.origin == origin)
+        #expect(badge.symbol == TmuxStatePresentation.mirroring(windowName: "").symbol)
+    }
+
+    /// An ordinary tab wears none, including one whose pane the user put
+    /// into tmux by hand: Limpid does not draw that pane, and closing its
+    /// tab ends the client rather than leaving a window running (design D5).
+    /// Such a pane never makes the tab a mirror, so the kind is all the
+    /// badge has to read.
+    @Test(arguments: [Tab.MirrorOrigin.user, .agent])
+    func terminalTab_wearsNone(origin: Tab.MirrorOrigin) {
+        #expect(TmuxTabIdentityBadge.make(kind: .terminal, origin: origin) == nil)
+    }
+
+    /// The user's mirror is told about tmux, because the window is theirs
+    /// and they opened it from tmux themselves.
+    @Test func usersMirror_namesTmux() throws {
+        let badge = try #require(TmuxTabIdentityBadge.make(kind: .tmuxMirror, origin: .user))
+        var english = badge.help
         english.locale = Locale(identifier: "en")
-        #expect(String(localized: english) == "Mirroring the tmux window “editor”")
-        var japanese = TmuxStatePresentation.mirroring(windowName: "editor").title
+        #expect(String(localized: english) == "Shown from tmux — the window keeps running when this tab closes")
+        var japanese = badge.help
         japanese.locale = Locale(identifier: "ja")
-        #expect(String(localized: japanese) == "tmux のウィンドウ「editor」を表示しています")
+        #expect(String(localized: japanese) == "tmux から表示中。このタブを閉じてもウィンドウは動き続けます")
+    }
+
+    /// An agent's user is not told about tmux (design D6): they did not
+    /// choose it, and what they need to know reads without it.
+    @Test func agentsTab_saysBackgroundRatherThanTmux() throws {
+        let badge = try #require(TmuxTabIdentityBadge.make(kind: .tmuxMirror, origin: .agent))
+        var english = badge.help
+        english.locale = Locale(identifier: "en")
+        let text = String(localized: english)
+        #expect(text == "Runs in the background — it keeps running when this tab closes")
+        #expect(!text.contains("tmux"))
+        var japanese = badge.help
+        japanese.locale = Locale(identifier: "ja")
+        let japaneseText = String(localized: japanese)
+        #expect(japaneseText == "バックグラウンドで実行中。このタブを閉じても動き続けます")
+        #expect(!japaneseText.contains("tmux"))
     }
 }

@@ -75,30 +75,36 @@ struct TabRow: View {
         }
     }
 
-    /// Does any pane in this tab run its agent inside a tmux session we
-    /// host? The flag rides the agent's own lifecycle record, so it
-    /// clears itself when the session ends rather than needing a probe
-    /// of its own.
-    private var isHostedInTmux: Bool {
-        tab.splitTree.allLeafIDs().contains { leaf in
-            // Two sources because neither covers the other's panes. The
-            // poll sees any mounted pane, including a shell the user put
-            // into tmux by hand, and sees nothing for a tab that has not
-            // been opened this launch. The agent record survives exactly
-            // that case, and clears itself when the session ends.
-            tmuxPresence.paneIDs.contains(leaf)
-                || tab.agentBadges[.claude]?[leaf]?.isTmuxHosted == true
-                || tab.agentBadges[.codex]?[leaf]?.isTmuxHosted == true
-        }
+    /// The badge on the identity glyph, when the tab earns one: it is a
+    /// mirror, whichever of the two kinds. A tab's record is enough to
+    /// decide, so the badge does not flicker with a poll and is there for
+    /// a restored tab that has not been connected yet.
+    private var tmuxIdentityBadge: TmuxTabIdentityBadge? {
+        TmuxTabIdentityBadge.make(kind: tab.kind, origin: tab.mirrorOrigin)
+    }
+
+    /// Does a pane in this tab run a tmux client the user attached by
+    /// hand? Only the poll can see one, and only while the pane is
+    /// mounted. It earns no badge — Limpid does not draw that pane and
+    /// closing the tab ends the client rather than leaving a window
+    /// running (design D5) — but the tooltip still says what is there,
+    /// so the row does not stay silent about it.
+    private var hasManualTmuxClient: Bool {
+        tab.kind != .tmuxMirror
+            && tab.splitTree.allLeafIDs().contains { tmuxPresence.paneIDs.contains($0) }
     }
 
     /// Tooltip for the identity icon. `verbatim` on the empty case so
-    /// it never becomes a catalog entry: an unhosted pane has nothing
-    /// to say that the glyph does not already say.
+    /// it never becomes a catalog entry: a pane with no tmux in it has
+    /// nothing to say that the glyph does not already say.
     private var identityIconHelp: Text {
-        isHostedInTmux
-            ? Text("Running in tmux — the session survives quitting Limpid")
-            : Text(verbatim: "")
+        if let tmuxIdentityBadge {
+            return Text(tmuxIdentityBadge.help)
+        }
+        if hasManualTmuxClient {
+            return Text("Running in tmux — the session survives quitting Limpid")
+        }
+        return Text(verbatim: "")
     }
 
     /// Build the hover tooltip for the agent-state icon. Includes
@@ -197,27 +203,36 @@ struct TabRow: View {
                     width: LimpidLayout.containerColumnMarkerSlot,
                     height: LimpidLayout.containerColumnMarkerSlot
                 )
-                // A mark rather than a second glyph: the glyph already
-                // carries "agent vs plain terminal", and hosting is an
-                // orthogonal fact about the same pane. Sits on the
-                // identity icon because that is what it qualifies.
+                // A badge rather than a second glyph: the glyph already
+                // carries "agent vs plain terminal", and being drawn
+                // from tmux is an orthogonal fact about the same panes.
+                // Sits on the identity icon because that is what it
+                // qualifies.
                 .overlay(alignment: .bottomTrailing) {
-                    if isHostedInTmux {
+                    if let tmuxIdentityBadge {
+                        // Knocked out of a disc in the row's own ground,
+                        // the way `ContainerRow` composes its pull
+                        // request badge: over a glyph's strokes a bare
+                        // mark this small loses its outline. Monochrome
+                        // — the badge says what the tab is, not how it
+                        // is doing, and a hue here would compete with
+                        // the trailing state mark that does.
                         Circle()
-                            // Teal rather than tmux's own green: the
-                            // trailing activity badge already spends
-                            // green on `finished`, and two greens on one
-                            // row would read as one signal. Teal is the
-                            // nearest hue the badge does not use.
-                            .fill(Color(.systemTeal))
-                            .frame(width: 5, height: 5)
-                            .offset(x: 1, y: 1)
-                            // The mark carries meaning, so it cannot be
-                            // shape-only. Nothing is added when the pane
-                            // is not hosted: the icon reads then exactly
-                            // as it did before.
+                            .fill(LimpidColor.statusGlyphKnockout)
+                            .overlay {
+                                Image(systemName: tmuxIdentityBadge.symbol)
+                                    .symbolVariant(.fill)
+                                    .font(.system(size: 6, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(width: 10, height: 10)
+                            .offset(x: 2, y: 2)
+                            // The badge carries meaning, so it cannot be
+                            // shape-only. Nothing is added for a tab
+                            // that is not a mirror: the icon reads then
+                            // exactly as it did before.
                             .accessibilityElement()
-                            .accessibilityLabel(Text("Running in tmux"))
+                            .accessibilityLabel(Text(tmuxIdentityBadge.help))
                     }
                 }
                 // The tooltip hangs off the 16pt icon rather than the

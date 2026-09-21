@@ -680,18 +680,22 @@ struct WaitingRegionTextTests {
         return String(localized: resource)
     }
 
-    /// The subheading over the agents with no tab. English in both locales,
-    /// like the "Waiting" header it sits under.
-    @Test func detachedHeader_readsTheSameInEveryLocale() {
-        #expect(resolved("Detached", in: "en") == "Detached")
-        #expect(resolved("Detached", in: "ja") == "Detached")
+    /// The subheading over the agents that keep running with no tab. It
+    /// describes where they went rather than naming a lane the user learns,
+    /// so unlike "Waiting" above it, it is translated.
+    @Test func backgroundHeader_readsInBothLanguages() {
+        #expect(resolved("Background", in: "en") == "Background")
+        #expect(resolved("Background", in: "ja") == "バックグラウンド")
     }
 
-    /// The row's own text carries the agent and its prompt; the hint says
-    /// what activating it does, which is all the label used to say.
-    @Test func detachedRow_textsResolveInJapanese() {
+    /// The row's own text carries the agent, what it is doing and its
+    /// prompt; the hint says what activating it does, which is all the
+    /// label used to say. None of it names tmux (design D6).
+    @Test func backgroundRow_textsResolveInJapanese() {
         #expect(resolved("Opens a tab showing this agent", in: "ja") == "このエージェントを表示するタブを開きます")
-        #expect(resolved("Running in tmux without a tab", in: "ja") == "tmux で実行中（タブなし）")
+        #expect(resolved("Running in the background", in: "ja") == "バックグラウンドで実行中")
+        #expect(resolved("Waiting for input", in: "ja") == "入力待ち")
+        #expect(resolved("Working", in: "ja") == "作業中")
     }
 
     /// What is refused in a mirror tab is the review surface, not one of its
