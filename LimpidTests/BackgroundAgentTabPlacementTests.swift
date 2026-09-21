@@ -20,11 +20,23 @@ struct BackgroundAgentTabPlacementTests {
         return (tab.id, leaf)
     }
 
-    /// What `openDetachedAgentRun` does: a new tab on the agent's own leaf,
-    /// at the end of the active container.
+    /// What `openAgentMirror` does for a tab asked back from the Background
+    /// list: the remembered place decides the container and the tab it
+    /// follows, before the tab exists.
     @discardableResult
     private func reopen(_ leafID: UUID, in session: WindowSession) -> UUID {
-        session.openTab(container: session.activeContainerID, paneID: leafID).id
+        let remembered = BackgroundAgentTabPlacements.openTarget(forLeaf: leafID, in: session)
+        let tab = session.openTab(
+            container: remembered?.container ?? session.activeContainerID,
+            paneID: leafID,
+            after: remembered?.after
+        )
+        if let remembered, remembered.after == nil,
+           let first = session.tabs(in: remembered.container).first, first.id != tab.id
+        {
+            session.reorderTab(tab.id, before: first.id)
+        }
+        return tab.id
     }
 
     /// The agent's tab was second of three; it comes back second, not last.
@@ -38,9 +50,6 @@ struct BackgroundAgentTabPlacementTests {
 
         TabActions.closeTab(session, registry: RecordingSurfaceRegistry(), tabID: agent.tab, confirm: false)
         let reopened = reopen(agent.leaf, in: session)
-        #expect(session.tabs(in: .loose).map(\.id) == [order[0], order[2], reopened])
-
-        BackgroundAgentTabPlacements.restore(forLeaf: agent.leaf, in: session)
 
         #expect(session.tabs(in: .loose).map(\.id) == [order[0], reopened, order[2]])
     }
@@ -56,7 +65,6 @@ struct BackgroundAgentTabPlacementTests {
         TabActions.closeTab(session, registry: RecordingSurfaceRegistry(), tabID: agent.tab, confirm: false)
         let others = session.tabs(in: .loose).map(\.id)
         let reopened = reopen(agent.leaf, in: session)
-        BackgroundAgentTabPlacements.restore(forLeaf: agent.leaf, in: session)
 
         #expect(session.tabs(in: .loose).map(\.id) == [reopened] + others)
     }
@@ -71,15 +79,9 @@ struct BackgroundAgentTabPlacementTests {
         session.setActiveContainer(.loose)
 
         let reopened = reopen(agent.leaf, in: session)
-        #expect(session.tab(reopened)?.container == .loose)
-
-        BackgroundAgentTabPlacements.restore(forLeaf: agent.leaf, in: session)
 
         #expect(session.tab(reopened)?.container == .group(group.id))
         #expect(session.tabs(in: .group(group.id)).map(\.id) == [reopened])
-        // The user asked for this tab a moment ago, so it keeps the focus
-        // the move would otherwise hand to a neighbour.
-        #expect(session.activeTabID == reopened)
     }
 
     /// The container is gone, so the tab stays where a new tab opens: the
@@ -94,7 +96,6 @@ struct BackgroundAgentTabPlacementTests {
 
         let first = session.openTab(container: .loose)
         let reopened = reopen(agent.leaf, in: session)
-        BackgroundAgentTabPlacements.restore(forLeaf: agent.leaf, in: session)
 
         #expect(session.tabs(in: .loose).map(\.id) == [first.id, reopened])
     }
@@ -109,7 +110,6 @@ struct BackgroundAgentTabPlacementTests {
 
         #expect(BackgroundAgentTabPlacements.placement(forLeaf: agent.leaf) != nil)
         reopen(agent.leaf, in: session)
-        BackgroundAgentTabPlacements.restore(forLeaf: agent.leaf, in: session)
 
         #expect(BackgroundAgentTabPlacements.placement(forLeaf: agent.leaf) == nil)
     }

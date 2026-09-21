@@ -68,34 +68,23 @@ enum BackgroundAgentTabPlacements {
         records.last { $0.leafID == leafID }?.placement
     }
 
-    /// Move the tab showing `leafID` back to where that agent's tab was when
-    /// it closed, and spend the record.
+    /// Where to open the tab for `leafID`, spending the record: the
+    /// container it was closed in and the tab it should follow, or nil when
+    /// nothing was remembered or that container is gone — the tab then opens
+    /// where a new one would (design D7).
     ///
-    /// Call it once the tab exists; the caller does not have to know whether
-    /// anything was remembered. Nothing happens when no record was kept, or
-    /// when no tab shows the leaf. When the container it was closed in is
-    /// gone the record is spent and the tab is left where it opened — the
-    /// end of the active container (design D7).
-    static func restore(forLeaf leafID: UUID, in session: WindowSession) {
-        guard let recordIndex = records.lastIndex(where: { $0.leafID == leafID }) else { return }
+    /// Resolved before the tab exists rather than moved afterwards: moving a
+    /// tab rewrites the list the connection store reconciles against, and a
+    /// mirror that is still opening does not survive being taken out of it.
+    static func openTarget(forLeaf leafID: UUID, in session: WindowSession) -> (container: ContainerID, after: UUID?)? {
+        guard let recordIndex = records.lastIndex(where: { $0.leafID == leafID }) else { return nil }
         let placement = records.remove(at: recordIndex).placement
-        guard let tab = session.tab(containing: leafID),
-              session.containerExists(placement.container)
-        else { return }
-        // `moveTab` hands the selection to a neighbour when the tab it moves
-        // is the active one, which is right for a drag out of the container
-        // the user is looking at and wrong here: the user asked for this tab
-        // a moment ago.
-        let wasActive = session.activeTabID == tab.id
-        session.moveTab(tab.id, to: placement.container)
-        let siblings = session.tabs(in: placement.container).filter { $0.id != tab.id }
-        if placement.index < siblings.count {
-            session.reorderTab(tab.id, before: siblings[placement.index].id)
-        } else {
-            session.reorderTab(tab.id, before: nil)
-        }
-        if wasActive {
-            session.setActiveTab(tab.id)
-        }
+        guard session.containerExists(placement.container) else { return nil }
+        let siblings = session.tabs(in: placement.container)
+        // The tab followed the one before it in the list. At the front it
+        // follows nothing, which `openTab` reads as "first".
+        guard placement.index > 0 else { return (placement.container, nil) }
+        let previous = siblings[min(placement.index, siblings.count) - 1]
+        return (placement.container, previous.id)
     }
 }

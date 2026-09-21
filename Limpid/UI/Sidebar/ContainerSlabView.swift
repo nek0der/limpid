@@ -352,13 +352,9 @@ struct ContainerSlabView: View {
         .clipped()
     }
 
-    /// Bring a background agent's tab back, in the container and at the
-    /// position it had when it was closed (design D7).
-    ///
-    /// The placement is restored once the open has finished, because the
-    /// tab is made inside that task: tmux is asked first where the agent's
-    /// pane sits now. A nil task means nothing new opened — a tab already
-    /// showed the run, and it was brought forward where it stands.
+    /// Bring a background agent's tab back. Where it opens is decided
+    /// inside the open itself (`TmuxMirrorActions.openAgentMirror`), from
+    /// what was remembered when the tab closed (design D7).
     private func openBackgroundAgentRun(_ run: AgentTmuxRun) {
         guard let tmuxStore else { return }
         guard let opening = TmuxMirrorActions.openDetachedAgentRun(
@@ -367,10 +363,7 @@ struct ContainerSlabView: View {
             store: tmuxStore,
             toastCenter: toastCenter
         ) else { return }
-        Task {
-            await opening.value
-            BackgroundAgentTabPlacements.restore(forLeaf: run.leafID, in: session)
-        }
+        _ = opening
     }
 
     /// The scrolling upper pane of the slab: Quick Tabs, Groups,

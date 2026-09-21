@@ -124,14 +124,27 @@ enum TmuxMirrorActions {
         let launchTab = isUserAsked ? nil : session.tab(containing: request.launchPaneID)
         let workingDirectory = (launchTab?.pwd ?? launchTab?.workingDirectory).map { URL(fileURLWithPath: $0) }
         let name = AgentProviderRegistry.displayName(for: request.provider)
+        // A tab the user asked back from the Background list opens where it
+        // was closed (design D7). Resolved before the tab exists: a tab moved
+        // afterwards rewrites the list the store reconciles against, and a
+        // mirror still opening does not survive being taken out of it.
+        let remembered = isUserAsked ? BackgroundAgentTabPlacements.openTarget(forLeaf: request.leafID, in: session) : nil
         let tab = session.openTab(
-            container: launchTab?.container ?? session.activeContainerID,
+            container: remembered?.container ?? launchTab?.container ?? session.activeContainerID,
             title: name,
             workingDirectory: workingDirectory,
             paneID: request.leafID,
-            after: launchTab?.id,
+            after: remembered?.after ?? launchTab?.id,
             activates: isUserAsked || (launchTab.map { $0.id == session.activeTabID } ?? false)
         )
+        // `openTab` appends when nothing anchors it, so a tab that was the
+        // first of its container is put back at the front here — before the
+        // mirror exists, which is what makes the move safe.
+        if let remembered, remembered.after == nil,
+           let first = session.tabs(in: remembered.container).first, first.id != tab.id
+        {
+            session.reorderTab(tab.id, before: first.id)
+        }
         // The window's name is tmux's to give; until the mirror asks, the
         // notices name the window after the agent.
         let target = TmuxMirrorTarget(
