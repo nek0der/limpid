@@ -90,6 +90,54 @@ extension TmuxWindowMirror {
         }
     }
 
+    /// The window `new-window` made: its id, the pane tmux started in it,
+    /// and the name it was given.
+    struct CreatedWindow: Equatable {
+        let windowID: String
+        let paneID: String
+        let windowName: String
+    }
+
+    /// `new-window` in this mirror's session, placed right after the window
+    /// the tab shows, and reported so the caller can open a mirror tab on
+    /// it. `-d` keeps every client attached to the session where it is:
+    /// the window belongs to the tab about to be opened for it, not to
+    /// whatever else shows this session.
+    ///
+    /// The name comes last because it may hold spaces; the two ids may not.
+    func newWindow(completion: @escaping (CreatedWindow?) -> Void) {
+        guard canSend else {
+            completion(nil)
+            return
+        }
+        let command = "new-window -d -a -t \(TmuxProtocol.quote(windowID)) -P -F '#{window_id} #{pane_id} #{window_name}'"
+        connection.send(command) { [weak self] lines, isError in
+            guard !isError else {
+                self?.reportFailure(lines, message: String(localized: "Couldn't open a new tmux window"))
+                completion(nil)
+                return
+            }
+            completion(lines.first.flatMap(Self.parseCreatedWindow))
+        }
+    }
+
+    static func parseCreatedWindow(_ line: String) -> CreatedWindow? {
+        guard let (windowID, rest) = TmuxProtocol.splitFirstField(line),
+              let (paneID, name) = TmuxProtocol.splitFirstField(rest),
+              windowID.hasPrefix("@"), paneID.hasPrefix("%")
+        else { return nil }
+        return CreatedWindow(windowID: windowID, paneID: paneID, windowName: name)
+    }
+
+    /// `kill-window`: everything running in the window ends, for every
+    /// client showing it. The one thing Limpid offers that destroys work in
+    /// tmux, so nothing calls it without a confirmation (design D4). What
+    /// becomes of the tab is left to the `%window-close` tmux sends back,
+    /// which is the same route as a window killed from anywhere else.
+    func killWindow() {
+        run("kill-window -t \(TmuxProtocol.quote(windowID))", failure: String(localized: "Couldn't quit the tmux window"))
+    }
+
     /// `join-pane` moves a pane of this window into `window` of the same
     /// session, split against that window's active pane.
     func joinPane(paneID: UUID, into window: String) {

@@ -78,6 +78,7 @@ struct ToolbarTerminalColumnSegment: View {
                     .frame(minWidth: LimpidLayout.toolbarContainerTitleMinWidth, alignment: .leading)
             }
             ToolbarPaletteField()
+            ToolbarTmuxChip(isCompact: false)
             Spacer(minLength: 0)
             reviewButton
             if updateState.showsBadge, let updater {
@@ -128,6 +129,7 @@ struct ToolbarTerminalColumnSegment: View {
     private var compactTerminalColumnContent: some View {
         HStack(spacing: LimpidLayout.toolbarControlSpacing) {
             ToolbarPaletteField()
+            ToolbarTmuxChip(isCompact: true)
             Spacer(minLength: 0)
             reviewButton
             if updateState.showsBadge, let updater {

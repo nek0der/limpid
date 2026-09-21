@@ -18,10 +18,11 @@ private let log = Logger.limpid("tmux.store")
 /// "one per server", which holds for the first version's scope of one
 /// window per tab.
 ///
-/// Observable only for `mirrors`, `tabConnections`, `tabIssues`, and
-/// `panesAwaitingRestoreCheck`: the pane area draws a mirror tab from its
-/// mirror, holds back the leaves whose binding is still being checked, and
-/// says how the tab stands with its server, the tab's row marks both that
+/// Observable only for `mirrors`, `tabConnections`, `tabIssues`,
+/// `panesAwaitingRestoreCheck`, and `droppedInput`: the pane area draws a
+/// mirror tab from its mirror, holds back the leaves whose binding is still
+/// being checked, says how the tab stands with its server and tells the
+/// user when their typing went nowhere, the tab's row marks the connection
 /// and what its mirror warns about, and all of it can change after the tab
 /// is on screen. Everything else is bookkeeping the view never reads.
 @MainActor
@@ -272,19 +273,46 @@ final class TmuxConnectionStore {
         mirrors[tabID]?.areaSizeChanged()
     }
 
+    /// The last time typing went nowhere, for the pane area to say so.
+    ///
+    /// A dropped keystroke is not told about once per key — that would bury
+    /// the screen — so the count is what a view watches: it rises with each
+    /// drop, which lets a notice already on screen stay up rather than
+    /// having to be cleared and raised again, and a second burst of typing
+    /// restarts the wait.
+    struct DroppedInput: Equatable {
+        let paneID: UUID
+        /// Rises with every dropped keystroke of this run.
+        let count: Int
+    }
+
+    /// Set whenever a key or text typed into a mirror pane could not be
+    /// sent, and never cleared here: the view that shows it decides how long
+    /// it stays, and a stale value names a pane nothing is typing into.
+    private(set) var droppedInput: DroppedInput?
+
     /// A key typed into a mirror pane. A pane with no live mirror (dormant,
     /// or its connection gone) has nowhere to send it.
     func sendKey(_ event: TmuxKeyEvent, paneID: UUID) {
-        sendInput(TmuxKeyTranslator.inputs(for: event), paneID: paneID)
+        sendInput(TmuxKeyTranslator.inputs(for: event), paneID: paneID, isTyped: true)
     }
 
     /// Text a binding or the surface's text entry point sent to a mirror pane.
     func sendText(_ bytes: [UInt8], paneID: UUID) {
-        sendInput(TmuxKeyTranslator.inputs(forText: bytes), paneID: paneID)
+        sendInput(TmuxKeyTranslator.inputs(forText: bytes), paneID: paneID, isTyped: true)
     }
 
-    private func sendInput(_ inputs: [TmuxInput], paneID: UUID) {
-        guard !inputs.isEmpty, let mirror = mirrors.values.first(where: { $0.contains(paneID: paneID) }) else { return }
+    /// `isTyped` marks what the user meant to send. A mouse or focus report
+    /// the surface wrote back goes the same way, and a dropped one is not
+    /// news: nobody typed it, and saying so would raise the notice from
+    /// moving the pointer over a disconnected pane.
+    private func sendInput(_ inputs: [TmuxInput], paneID: UUID, isTyped: Bool = false) {
+        guard !inputs.isEmpty else { return }
+        guard let mirror = mirrors.values.first(where: { $0.contains(paneID: paneID) }), mirror.canSend else {
+            guard isTyped else { return }
+            droppedInput = DroppedInput(paneID: paneID, count: (droppedInput?.count ?? 0) + 1)
+            return
+        }
         mirror.sendInput(inputs, paneID: paneID)
     }
 

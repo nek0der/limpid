@@ -21,13 +21,25 @@ enum TmuxMirrorActions {
     ///
     /// A window a live tab already mirrors is not opened twice; that tab is
     /// brought forward instead, because each tmux pane feeds one sink.
+    ///
+    /// `after` puts the tab beside a tab of the user's, in that tab's
+    /// container, for a window opened from one (⌃⌘T): the new window is
+    /// next to it in tmux too. Without it the tab opens where a new tab
+    /// opens, in the container the user is looking at (D7).
     @discardableResult
-    static func open(_ target: TmuxMirrorTarget, session: WindowSession, store: TmuxConnectionStore) -> Bool {
+    static func open(
+        _ target: TmuxMirrorTarget,
+        session: WindowSession,
+        store: TmuxConnectionStore,
+        after anchorTabID: UUID? = nil
+    ) -> Bool {
         if let existing = store.liveMirror(showing: target.windowID, of: target.binding) {
             session.setActiveTab(existing.tabID)
             return true
         }
-        let tab = session.openTabInActiveScope()
+        let anchor = anchorTabID.flatMap { session.tab($0) }
+        let tab = anchor.map { session.openTab(container: $0.container, after: $0.id) }
+            ?? session.openTabInActiveScope()
         return startMirror(target, inNewTab: tab, session: session, store: store) { $0.title = target.displayName }
     }
 

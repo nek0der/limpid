@@ -6,11 +6,11 @@ import SwiftUI
 /// The one vocabulary for a tmux state: which symbol stands for it, how
 /// pressing it is, and what it is called.
 ///
-/// The mark in a mirror tab's row (`TmuxTabRowMark`) and the banner over its
-/// panes (`TmuxConnectionBanner`) both resolve a state through this type.
-/// They used to keep their own tables, which drifted apart — the same tab
-/// could carry one symbol in the row and another over the panes — so a
-/// change to how a state reads now lands in one place.
+/// The mark in a mirror tab's row (`TmuxTabRowMark`) and the toolbar chip
+/// for the tab on screen (`ToolbarTmuxChipContent`) both resolve a state
+/// through this type. They used to keep their own tables, which drifted
+/// apart — the same tab could carry one symbol in the row and another over
+/// the panes — so a change to how a state reads now lands in one place.
 enum TmuxStatePresentation: Equatable {
     /// How pressing a state is. Every severity is paired with a symbol of
     /// its own, so the state survives for a viewer who cannot separate the
@@ -125,9 +125,11 @@ enum TmuxStatePresentation: Equatable {
     }
 }
 
-/// The card a mirror tab shows while it is not live (stage 11 decision 8).
-/// A value rather than view code so every state can be checked without
-/// drawing anything.
+/// What a mirror tab has to say for itself while it is not live (stage 11
+/// decision 8). It was a card over the panes; the chip in the toolbar now
+/// carries it, as its heading and the line at the head of its menu. A value
+/// rather than view code so every state can be checked without drawing
+/// anything.
 struct TmuxConnectionCardContent {
     enum Action: Equatable {
         case reconnect

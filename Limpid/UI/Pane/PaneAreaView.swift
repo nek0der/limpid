@@ -269,12 +269,16 @@ struct PaneAreaView: View {
                         canEqualizeSubtree: tab.capabilities.canEqualizeSubtree,
                         minPaneSize: settings.settings.terminal.minPaneSize
                     )
-                    // Floated over the panes rather than laid out above them;
-                    // `TmuxConnectionBanner` says why. One banner per tab, so
+                    // How a mirror tab stands is the toolbar chip's to say.
+                    // What is left over the panes is the one thing the chip
+                    // cannot catch in time: a keystroke that went nowhere,
+                    // said where the user was typing. Floated rather than
+                    // laid out, so the area keeps the height tmux sizes the
+                    // window from (decision D3). One notice per tab, so
                     // switching tabs neither animates nor announces a change.
-                    .overlay(alignment: .top) {
+                    .overlay(alignment: .topTrailing) {
                         if tab.kind == .tmuxMirror {
-                            TmuxConnectionBanner(tabID: tab.id)
+                            TmuxDroppedInputNotice(tabID: tab.id)
                                 .id(tab.id)
                         }
                     }

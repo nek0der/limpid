@@ -1,162 +1,82 @@
 // TmuxConnectionCards.swift
-// Limpid — the banner a mirror tab shows while it is not live, and the card of a pane whose source cannot be read.
+// Limpid — the notice a mirror pane shows when typing into it went nowhere, and the card of a pane whose source cannot be read.
 
 import SwiftUI
 
-/// The connection banner of mirror tab `tabID`, floated over the top of its
-/// pane area. It floats rather than taking a row of its own: the space it
-/// took would shrink the pane area, which a mirror tab reports to the store
-/// as the size its tmux window is given, so a reconnect would size the
-/// window down and back up for everyone attached to it. The panes stay as
-/// they are underneath, so what they show can still be scrolled and
-/// selected (stage 11 decision 4); the few lines the banner covers are
-/// reached by scrolling.
+/// The one-line notice a mirror pane shows when typing into it went
+/// nowhere. It is the whole of what a tab that is not live says over its
+/// panes: the chip in the toolbar carries the state at all times, and a
+/// state that sat over the panes could only say it by covering them.
 ///
-/// The host has no hit-test shape of its own, so only the banner takes
-/// clicks.
-struct TmuxConnectionBanner: View {
+/// Raised by typing rather than by the state, because the state alone is
+/// not news — a tab can sit disconnected for as long as the user likes,
+/// and only a keystroke that went nowhere is something they need told.
+/// Floated over the pane area's top-right corner: the area's height is the
+/// size a mirror tab gives its tmux window, and a row of its own would
+/// resize that window for everyone attached to it (decision D3).
+struct TmuxDroppedInputNotice: View {
     let tabID: UUID
     @Environment(WindowSession.self) private var session
-    @Environment(AttentionState.self) private var attention
-    @Environment(SettingsStore.self) private var settings
-    @Environment(\.surfaceRegistry) private var registry
     @Environment(\.tmuxConnectionStore) private var tmuxStore
-    @Environment(\.agentProjection) private var agentProjection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Whether `.connecting` has lasted long enough to be worth saying. See
-    /// `connectingDelay`.
-    @State private var showsConnecting = false
+    /// How long the notice stays. Long enough to read in passing, short
+    /// enough that it is gone before the next thing the user does.
+    static let duration: Duration = .seconds(3)
 
-    /// How long a tab may be connecting before the banner says so. At launch
-    /// every restored mirror tab connects at once, and a banner that appears
-    /// and goes again in a few hundred milliseconds is noise on every tab
-    /// rather than news about one. A connect that takes longer than this is
-    /// the one worth showing.
-    static let connectingDelay: Duration = .seconds(1)
+    @State private var isShowing = false
 
-    /// Read in the body, so a change to the tab's record or to its mirror
-    /// redraws the banner.
-    private var content: TmuxConnectionCardContent? {
-        guard let tmuxStore,
+    /// The drop the store last recorded, when it was in a pane of this tab.
+    /// A drop in another tab's pane is another tab's news.
+    private var drop: TmuxConnectionStore.DroppedInput? {
+        guard let drop = tmuxStore?.droppedInput,
               let tab = session.tab(tabID),
-              let ref = TmuxMirrorActions.mirrorRef(of: tab)
+              tab.splitTree.contains(leafID: drop.paneID)
         else { return nil }
-        return TmuxConnectionCardContent.make(
-            connection: tmuxStore.tabConnections[tabID],
-            hasMirror: tmuxStore.mirror(for: tabID) != nil,
-            canReconnect: tmuxStore.tmuxExecutable != nil && tmuxStore.canReconnect(tabID: tabID),
-            tmuxSupport: settings.agentTmuxSupport,
-            // An agent's session is named after the launch, not after
-            // anything the user typed, so the card names the agent instead.
-            sessionName: TmuxConnectionStore.noticeName(of: tab, tmuxName: ref.binding.sessionName)
-        )
-    }
-
-    /// What the banner shows of `content`: everything but a connect that has
-    /// not yet lasted `connectingDelay`. Every other state appears at once —
-    /// only connecting is both common and short-lived.
-    static func visibleContent(
-        _ content: TmuxConnectionCardContent?,
-        showsConnecting: Bool
-    ) -> TmuxConnectionCardContent? {
-        guard let content, content.state == .connecting else { return content }
-        return showsConnecting ? content : nil
-    }
-
-    /// What VoiceOver hears when the banner changes. Heading and body
-    /// together: the heading alone says a reconnect ended without saying how.
-    private func announcement(_ content: TmuxConnectionCardContent) -> String {
-        let title = String(localized: content.title)
-        guard let message = content.message else { return title }
-        return "\(title) \(String(localized: message))"
+        return drop
     }
 
     var body: some View {
-        let content = Self.visibleContent(content, showsConnecting: showsConnecting)
         VStack(spacing: 0) {
-            if let content {
-                TmuxConnectionCard(content: content, perform: perform)
+            if isShowing {
+                notice
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
-                    .transition(reduceMotion ? .identity : .move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .identity : .opacity)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .top)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: content?.state)
-        // Restarted whenever the state changes, so a tab that stops
-        // connecting — or starts again — is timed from that moment, and the
-        // wait is dropped with the view.
-        .task(id: self.content?.state) {
-            showsConnecting = false
-            guard self.content?.state == .connecting else { return }
-            try? await Task.sleep(for: Self.connectingDelay)
-            guard !Task.isCancelled else { return }
-            showsConnecting = true
-        }
-        // The banner stays up across the change, so VoiceOver would not
-        // otherwise hear that a reconnect began or how it ended. A reconnect
-        // that worked takes the banner away entirely, which is the one
-        // outcome nothing on screen is left to announce. Announced from what
-        // is shown, so a connect too short to appear is not spoken either.
-        .onChange(of: content?.state) { old, state in
-            guard state != nil else {
-                guard old != nil, session.tab(tabID) != nil else { return }
-                AccessibilityNotification.Announcement(String(localized: "Connected to tmux")).post()
+        .frame(maxWidth: .infinity, alignment: .topTrailing)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: isShowing)
+        // Keyed on the drop itself, so typing on while the notice is up
+        // restarts the wait rather than letting it expire mid-sentence.
+        .task(id: drop) {
+            guard drop != nil else {
+                isShowing = false
                 return
             }
-            guard let content = Self.visibleContent(self.content, showsConnecting: showsConnecting) else { return }
-            AccessibilityNotification.Announcement(announcement(content)).post()
+            isShowing = true
+            AccessibilityNotification.Announcement(String(localized: "Input isn't reaching tmux")).post()
+            try? await Task.sleep(for: Self.duration)
+            guard !Task.isCancelled else { return }
+            isShowing = false
         }
     }
 
-    private func perform(_ action: TmuxConnectionCardContent.Action) {
-        switch action {
-        case .reconnect:
-            guard let tmuxStore else { return }
-            TmuxMirrorActions.reconnectAsked(tabID: tabID, session: session, store: tmuxStore)
-        case .closeTab:
-            TabActions.closeTab(
-                session,
-                registry: registry,
-                tabID: tabID,
-                source: .mouse,
-                attention: attention,
-                agentProjection: agentProjection
-            )
-        }
-    }
-}
-
-private struct TmuxConnectionCard: View {
-    let content: TmuxConnectionCardContent
-    let perform: (TmuxConnectionCardContent.Action) -> Void
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            leadingMark
-                .frame(width: 20)
+    private var notice: some View {
+        HStack(spacing: 10) {
+            Image(systemName: TmuxStatePresentation.disconnected.symbol)
+                .foregroundStyle(TmuxStatePresentation.Severity.warning.color)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(content.title)
-                    .font(LimpidFont.headline)
-                    .foregroundStyle(LimpidColor.primaryText)
-                    .accessibilityAddTraits(.isHeader)
-                if let message = content.message {
-                    Text(message)
-                        .font(LimpidFont.bodySecondary)
-                        .foregroundStyle(LimpidColor.secondaryText)
-                }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            ForEach(content.actions, id: \.self) { action in
-                button(for: action, isProminent: action == content.primaryAction)
-            }
+            Text("Input isn't reaching tmux")
+                .font(LimpidFont.bodySecondary)
+                .foregroundStyle(LimpidColor.primaryText)
+            Button("Reconnect") { reconnect() }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!canReconnect)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(maxWidth: 640)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(
             .regularMaterial,
             in: RoundedRectangle(cornerRadius: LimpidLayout.paneBannerCornerRadius, style: .continuous)
@@ -170,38 +90,15 @@ private struct TmuxConnectionCard: View {
         .accessibilityElement(children: .contain)
     }
 
-    @ViewBuilder private var leadingMark: some View {
-        if content.showsProgress {
-            ProgressView()
-                .controlSize(.small)
-        } else {
-            // Symbol and color come from the shared vocabulary, so the mark
-            // in this tab's row stands for the same state in the same way.
-            Image(systemName: content.state.symbol)
-                .foregroundStyle(content.state.severity.color)
-        }
+    private var canReconnect: Bool {
+        guard let tmuxStore else { return false }
+        return tmuxStore.tmuxExecutable != nil && tmuxStore.canReconnect(tabID: tabID)
     }
 
-    /// Reconnecting is the only action the card emphasizes, and it is
-    /// emphasized by weight alone: the banner floats over panes whose
-    /// surface holds first responder, so Return goes to the terminal and a
-    /// button marked as the window's default action would promise a key that
-    /// never reaches it.
-    @ViewBuilder
-    private func button(for action: TmuxConnectionCardContent.Action, isProminent: Bool) -> some View {
-        let label: LocalizedStringKey = switch action {
-        case .reconnect: "Reconnect"
-        case .closeTab: "Close Tab"
-        }
-        if isProminent {
-            Button(label) { perform(action) }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-        } else {
-            Button(label) { perform(action) }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-        }
+    private func reconnect() {
+        guard let tmuxStore else { return }
+        isShowing = false
+        TmuxMirrorActions.reconnectAsked(tabID: tabID, session: session, store: tmuxStore)
     }
 }
 

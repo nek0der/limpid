@@ -6436,17 +6436,6 @@
         }
       }
     },
-    "Running in tmux without a tab": {
-      "comment": "Waiting row detail for an agent whose tab was closed",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "tmux で実行中（タブなし）"
-          }
-        }
-      }
-    },
     "The tmux found is version %@. Reconnecting needs %@ or newer.": {
       "localizations": {
         "ja": {
@@ -6533,17 +6522,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "tmux のウィンドウ「%@」を表示しています"
-          }
-        }
-      }
-    },
-    "Detached": {
-      "comment": "Sidebar Waiting subsection header, above the agents that have no tab. Stays English in every locale for the same reason as \"Waiting\" — do not translate.",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Detached"
           }
         }
       }
@@ -7031,16 +7009,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "tmux"
-          }
-        }
-      }
-    },
-    "Running in tmux": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "tmux で実行中"
           }
         }
       }
@@ -8765,12 +8733,222 @@
         }
       }
     },
+    "Background": {
+      "comment": "Sidebar Waiting subsection header, above the agents that keep running with no tab",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンド"
+          }
+        }
+      }
+    },
+    "Running in the background": {
+      "comment": "Background agent row detail, when the agent has no prompt to show",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドで実行中"
+          }
+        }
+      }
+    },
+    "Runs in the background — it keeps running when this tab closes": {
+      "comment": "Tab row badge on the identity glyph, for the tab of an agent running in the background",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドで実行中。このタブを閉じても動き続けます"
+          }
+        }
+      }
+    },
+    "Shown from tmux — the window keeps running when this tab closes": {
+      "comment": "Tab row badge on the identity glyph, for a mirror tab the user opened",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux から表示中。このタブを閉じてもウィンドウは動き続けます"
+          }
+        }
+      }
+    },
+    "Waiting for input": {
+      "comment": "Background agent row — what the agent is doing",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力待ち"
+          }
+        }
+      }
+    },
+    "Working": {
+      "comment": "Background agent row — what the agent is doing",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作業中"
+          }
+        }
+      }
+    },
     "“%@” now shows in a Limpid tab, so this pane was detached from it.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "「%@」を Limpid のタブで表示したため、このペインの接続を外しました。"
+          }
+        }
+      }
+    },
+    "Couldn't open a new tmux window": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい tmux ウィンドウを開けませんでした"
+          }
+        }
+      }
+    },
+    "Couldn't quit the tmux window": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux ウィンドウを終了できませんでした"
+          }
+        }
+      }
+    },
+    "Quit the tmux window “%@”?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux ウィンドウ「%@」を終了しますか？"
+          }
+        }
+      }
+    },
+    "%@ is running in this window. Quitting it ends that run, in tmux as well as here, and closes this tab. Closing the tab instead leaves the agent running in the background.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このウィンドウでは %@ が実行中です。終了すると、その実行は Limpid でも tmux でも終わり、このタブも閉じます。タブを閉じるだけなら、エージェントはバックグラウンドで動き続けます。"
+          }
+        }
+      }
+    },
+    "Everything running in this window ends, for every client showing it, and this tab closes. Closing the tab instead leaves the window running in tmux.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このウィンドウで実行中のものはすべて終わり、表示しているすべてのクライアントでも終了します。このタブも閉じます。タブを閉じるだけなら、ウィンドウは tmux で動き続けます。"
+          }
+        }
+      }
+    },
+    "Quit Window": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウィンドウを終了"
+          }
+        }
+      }
+    },
+    "connecting": {
+      "comment": "why a tmux menu item is disabled",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続中"
+          }
+        }
+      }
+    },
+    "not connected": {
+      "comment": "why a tmux menu item is disabled",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未接続"
+          }
+        }
+      }
+    },
+    "already connected": {
+      "comment": "why Reconnect is disabled",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続済み"
+          }
+        }
+      }
+    },
+    "nothing left to connect to": {
+      "comment": "why Reconnect is disabled",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続先がありません"
+          }
+        }
+      }
+    },
+    "New tmux Window": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい tmux ウィンドウ"
+          }
+        }
+      }
+    },
+    "Other Clients…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのクライアント…"
+          }
+        }
+      }
+    },
+    "Quit This Window…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このウィンドウを終了…"
+          }
+        }
+      }
+    },
+    "Input isn't reaching tmux": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力は tmux に届いていません"
           }
         }
       }
