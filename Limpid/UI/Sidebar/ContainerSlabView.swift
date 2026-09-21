@@ -162,6 +162,7 @@ struct ContainerSlabView: View {
     private struct FoldSignature: Hashable {
         let groupsExpanded: Bool
         let projectsExpanded: Bool
+        let tmuxExpanded: Bool
         let projectStates: [Bool]
     }
 
@@ -169,6 +170,7 @@ struct ContainerSlabView: View {
         FoldSignature(
             groupsExpanded: session.groupsSectionExpanded,
             projectsExpanded: session.projectsSectionExpanded,
+            tmuxExpanded: session.tmuxSectionExpanded,
             projectStates: session.projects.map(\.isExpanded)
         )
     }
@@ -574,6 +576,12 @@ struct ContainerSlabView: View {
                         }
                     }
                 }
+
+                // A sibling category of Groups and Projects (item 2-2),
+                // not a part of the Waiting region below: what runs in
+                // tmux is somewhere to go back to, not something waiting
+                // for the user. It draws nothing without a tmux.
+                TmuxDirectorySection(isVisible: isPresentationEnabled)
             }
             // The same inset the tab list and the horizontal strip
             // take, so the first row of every list lands on one line.
@@ -628,36 +636,12 @@ struct ContainerSlabView: View {
         toggle: @escaping () -> Void,
         addAccessory: (() -> AnyView)? = nil
     ) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .tracking(0.6)
-                .foregroundStyle(Color.primary.opacity(0.55))
-            Spacer()
-            // `+` sits just left of the section's own fold chevron.
-            // Both are section furniture and share the header's
-            // trailing padding with the rows' status column below.
-            if let addAccessory {
-                addAccessory()
-            }
-            if let isExpanded {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.primary.opacity(0.45))
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: LimpidLayout.containerColumnTrailingSlot, height: LimpidLayout.containerColumnTrailingSlot)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 18)
-        .padding(.top, 18)
-        .padding(.bottom, 4)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if isExpanded != nil {
-                toggle()
-            }
-        }
+        SlabSectionHeader(
+            title: title,
+            isExpanded: isExpanded,
+            toggle: toggle,
+            accessory: addAccessory?()
+        )
     }
 
     // MARK: - Project add helpers
@@ -779,11 +763,56 @@ private struct ProjectAddMenu: View {
     }
 }
 
+/// One category header in the slab: its name, an optional `+`, and the
+/// fold chevron. Its own view rather than a method of the slab so every
+/// category reads the same, wherever the category itself is built —
+/// `TmuxDirectorySection` owns its section and still wears this header.
+struct SlabSectionHeader: View {
+    let title: String
+    /// Nil for a header with nothing to fold, which then takes no tap.
+    let isExpanded: Bool?
+    let toggle: () -> Void
+    var accessory: AnyView?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .tracking(0.6)
+                .foregroundStyle(Color.primary.opacity(0.55))
+            Spacer()
+            // `+` sits just left of the section's own fold chevron.
+            // Both are section furniture and share the header's
+            // trailing padding with the rows' status column below.
+            if let accessory {
+                accessory
+            }
+            if let isExpanded {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.primary.opacity(0.45))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: LimpidLayout.containerColumnTrailingSlot, height: LimpidLayout.containerColumnTrailingSlot)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 18)
+        .padding(.top, 18)
+        .padding(.bottom, 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isExpanded != nil {
+                toggle()
+            }
+        }
+    }
+}
+
 /// Filled circle badge with a `+` glyph — used as the visual for the
-/// GROUPS / PROJECTS section-header add affordance. Reads as a
+/// GROUPS / PROJECTS / tmux section-header add affordance. Reads as a
 /// solid, always-on button (vs the chevron's text-weight glyph)
 /// without resorting to a full Toolbar capsule shape.
-private struct SectionAddBadge: View {
+struct SectionAddBadge: View {
     var body: some View {
         Image(systemName: "plus")
             .font(.system(size: 10, weight: .bold))
@@ -817,7 +846,7 @@ private struct SectionAddBadge: View {
 /// `LazyVStack` no longer skips a folded section's rows the way an
 /// `if` would: laziness now works at section granularity, which is the
 /// standing cost of folding this way.
-private struct FoldableSection<Header: View, Content: View>: View {
+struct FoldableSection<Header: View, Content: View>: View {
     let isExpanded: Bool
     let height: CGFloat
     @ViewBuilder let header: Header

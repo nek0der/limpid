@@ -77,6 +77,11 @@ final class WindowSession {
     /// ("GROUPS" / "PROJECTS"); individual rows don't expose their own.
     var groupsSectionExpanded: Bool = true
     var projectsSectionExpanded: Bool = true
+    /// The tmux directory's fold, kept beside the other two so the three
+    /// categories behave alike. Folded to start with: it lists what the
+    /// user has running outside Limpid, which is not what they came to the
+    /// sidebar for, and unfolding it is what starts the listing.
+    var tmuxSectionExpanded: Bool = false
 
     /// Sidebar (container column) width in points; persisted.
     var sidebarWidth: CGFloat
