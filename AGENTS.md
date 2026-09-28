@@ -30,6 +30,7 @@ make run         # Launch the most recently built app
 make test        # Rust, XCTest, and Swift Testing suites
 make rust-test   # Rust workspace tests only
 make review-core # the terminal-probe scenario that runs outside the test target
+make release-check # unsigned Release archive, checked for what `exportArchive` needs
 make dmg         # Release DMG artifact
 make screenshot  # Regenerate .github/assets/hero.png (builds Release first)
 make xcodegen    # Regenerate Limpid.xcodeproj from project.yml

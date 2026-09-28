@@ -6,7 +6,7 @@ name: Release
 #   3. Notarize the .app and staple the ticket
 #   4. Package into a signed + notarized + stapled dmg
 #   5. Sign the dmg for Sparkle with the EdDSA private key
-#   6. Publish the dmg to a GitHub Release
+#   6. Attach the dmg to the draft GitHub Release and publish it
 #   7. Append a new <item> to gh-pages/appcast.xml so Sparkle clients
 #      pick the update up within SUScheduledCheckInterval (24 h).
 #
@@ -67,14 +67,27 @@ jobs:
           printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
           printf 'Releasing %s (version %s)\n' "$TAG" "$VERSION"
 
+      # Check out the tag rather than the triggering ref. A dispatch runs on
+      # whatever branch it was started from, and building that under the
+      # tag's name would ship code the tag does not point at.
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: refs/tags/${{ steps.ver.outputs.tag }}
           submodules: recursive
           fetch-depth: 0
-          # On tag push we already are on the tag (default ref).
-          # For manual smoke tests via workflow_dispatch the requested
-          # tag may not exist yet, so just stay on the triggering ref.
+
+      # Only main is gated by the required PR checks, including the Release
+      # archive check, so a tag anywhere else has not passed them.
+      - name: Require the tag to be on main
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "refs/tags/$TAG" origin/main; then
+            echo "::error::$TAG is not on main; only commits that passed the required checks are released."
+            exit 1
+          fi
 
       - name: Select latest Xcode
         run: |
@@ -216,14 +229,36 @@ jobs:
           xcrun stapler staple "$DMG"
           echo "path=$DMG" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
-        id: gh_release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-        with:
-          tag_name: ${{ steps.ver.outputs.tag }}
-          name: ${{ steps.ver.outputs.tag }}
-          generate_release_notes: true
-          files: ${{ steps.dmg.outputs.path }}
+      # release-please creates the release as a draft (see
+      # .github/release-please-config.json), so a run that fails before this
+      # point leaves a draft rather than a public release with no dmg, which
+      # is what v0.1.5 left behind. We publish here, before the appcast points
+      # Sparkle at the download URL, which a draft does not serve. We use `gh`
+      # because it resolves a draft by its tag; the REST lookup by tag only
+      # returns published releases.
+      - name: Attach the dmg and publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          DMG: ${{ steps.dmg.outputs.path }}
+        run: |
+          set -euo pipefail
+          # A dispatch for a tag release-please did not cut has no release yet.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes ""
+          fi
+          gh release upload "$TAG" "$DMG" --clobber
+
+          # Append GitHub's generated notes under release-please's changelog,
+          # once, so a re-run does not repeat them.
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          gh release view "$TAG" --json body --jq .body > "$NOTES"
+          if ! grep -q '^\*\*Full Changelog\*\*' "$NOTES"; then
+            printf '\n' >> "$NOTES"
+            gh api "repos/$GH_REPO/releases/generate-notes" -f tag_name="$TAG" --jq .body >> "$NOTES"
+          fi
+          gh release edit "$TAG" --notes-file "$NOTES" --draft=false --latest
 
       # Sparkle's official publishing recipe, as used by TimeMachineStatus,
       # CodeEdit, boring.notch et al.: stage the current dmg in a *flat*
