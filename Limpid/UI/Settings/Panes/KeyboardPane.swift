@@ -24,6 +24,10 @@ struct KeyboardPane: View {
     /// back to its default at once is hard to undo by hand.
     @State private var showingResetConfirm = false
 
+    /// Same storage `SettingsScene` selects the visible section from, so
+    /// the quick-terminal row can switch to that pane.
+    @AppStorage("settings.last-section") private var selectedSectionRaw = SettingsSection.keyboard.rawValue
+
     /// Stored separately so the literal stays under SwiftLint's
     /// line-length cap. The exact string is the `Localizable.xcstrings`
     /// key — splitting it across source lines would change the key.
@@ -48,6 +52,7 @@ struct KeyboardPane: View {
                         ShortcutRow(
                             action: action,
                             keyboard: $store.settings.keyboard,
+                            quickTerminalHotKey: store.settings.quickTerminal.hotKey,
                             recordingAction: $recordingAction
                         )
                         .settingsSearchTarget(SettingsSearchCatalog.shortcutID(action))
@@ -55,6 +60,53 @@ struct KeyboardPane: View {
                 } header: {
                     Text(category.sectionTitle)
                 }
+            }
+            // The quick terminal's hotkey is recorded in its own pane: it is
+            // system-wide, has no menu item, and follows different rules
+            // (⌘ or ⌃ required, shortcuts macOS has enabled refused).
+            // Listing it here read-only keeps the one place people look for
+            // shortcuts complete without mixing those rules into the rows
+            // above.
+            Section {
+                LabeledContent {
+                    // Same slot widths and pill as `ShortcutRow`, so the
+                    // hotkey lines up with the shortcuts above; the reset
+                    // slot carries a chevron because the pill opens
+                    // another pane instead of recording here.
+                    HStack(spacing: 8) {
+                        Button {
+                            selectedSectionRaw = SettingsSection.quickTerminal.rawValue
+                        } label: {
+                            Text(store.settings.quickTerminal.hotKey?.displayString ?? String(localized: "Unbound"))
+                                .font(.system(.body, design: .default).monospacedDigit())
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .fill(Color.secondary.opacity(0.12))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: 170, alignment: .trailing)
+                        .help("Open Quick Terminal settings")
+                        .accessibilityLabel(Text("Open Quick Terminal settings"))
+
+                        Image(systemName: "chevron.forward")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18, alignment: .center)
+                            .accessibilityHidden(true)
+                    }
+                } label: {
+                    Text("Quick Terminal hotkey")
+                }
+                .settingsSearchTarget(SettingsSearchCatalog.keyboardQuickTerminalHotKey.id)
+            } header: {
+                Text("System-wide")
+            } footer: {
+                Text("Active in every app, not only Limpid. Change it in Quick Terminal settings.")
             }
             Section {
                 // Left-aligned destructive button, matching the
@@ -98,6 +150,9 @@ struct KeyboardPane: View {
 private struct ShortcutRow: View {
     let action: LimpidShortcutAction
     @Binding var keyboard: KeyboardSettings
+    /// Carbon takes the quick terminal's global hotkey before the menu bar
+    /// sees it, so the recorder refuses it.
+    let quickTerminalHotKey: StoredShortcut?
     @Binding var recordingAction: LimpidShortcutAction?
 
     @State private var rejection: ShortcutValidation?
@@ -113,6 +168,7 @@ private struct ShortcutRow: View {
                     ShortcutRecorder(
                         action: action,
                         keyboard: $keyboard,
+                        quickTerminalHotKey: quickTerminalHotKey,
                         recordingAction: $recordingAction,
                         rejection: $rejection
                     )
@@ -158,6 +214,8 @@ private struct ShortcutRow: View {
             return String(localized: "Reserved by Limpid (⌘1–⌘9, ⌘⌃1–⌘⌃9)")
         case .missingModifier:
             return String(localized: "Shortcut must include ⌘, ⌥, ⌃, or ⇧")
+        case .quickTerminalConflict:
+            return String(localized: "Already used by the Quick Terminal hotkey")
         }
     }
 }
@@ -174,12 +232,18 @@ private struct ShortcutRow: View {
 private struct ShortcutRecorder: View {
     let action: LimpidShortcutAction
     @Binding var keyboard: KeyboardSettings
+    let quickTerminalHotKey: StoredShortcut?
     @Binding var recordingAction: LimpidShortcutAction?
     @Binding var rejection: ShortcutValidation?
 
     @Environment(\.limpidAccent) private var accent
+    @Environment(QuickTerminalHotKeyCenter.self) private var hotKeyCenter: QuickTerminalHotKeyCenter?
     @State private var keyMonitor: Any?
     @State private var mouseMonitor: Any?
+    /// This row's hold on the quick terminal's global hotkey while it
+    /// records. `nil` when not recording or when Settings runs without a
+    /// hotkey center (previews).
+    @State private var hotKeySuspension: QuickTerminalHotKeyCenter.Suspension?
     /// Button frame in SwiftUI's `.global` space (window content
     /// view, top-left origin). The mouse monitor converts AppKit's
     /// window-coordinate click into this same space before deciding
@@ -243,11 +307,15 @@ private struct ShortcutRecorder: View {
             // binding, and tears down when anyone else (including
             // `nil`) takes over.
             if new == action {
+                suspendQuickTerminalHotKey()
                 installKeyMonitor()
                 installMouseMonitor()
             } else {
                 teardownMonitors()
             }
+        }
+        .stopsShortcutRecordingOnFocusLoss(isRecording: isRecording) {
+            stopRecording()
         }
         .onDisappear {
             if isRecording {
@@ -294,6 +362,21 @@ private struct ShortcutRecorder: View {
             NSEvent.removeMonitor(mouseMonitor)
             self.mouseMonitor = nil
         }
+        if let hotKeySuspension {
+            hotKeyCenter?.resume(hotKeySuspension)
+            self.hotKeySuspension = nil
+        }
+    }
+
+    /// Carbon takes a registered global hotkey before our key monitor
+    /// sees it, so without this, pressing the quick terminal's hotkey
+    /// would toggle the panel instead of reaching `commit(_:)` and its
+    /// `.quickTerminalConflict` message. Released in `teardownMonitors()`,
+    /// which every way out of recording goes through.
+    @MainActor
+    private func suspendQuickTerminalHotKey() {
+        guard hotKeySuspension == nil else { return }
+        hotKeySuspension = hotKeyCenter?.suspend()
     }
 
     @MainActor
@@ -366,17 +449,43 @@ private struct ShortcutRecorder: View {
     /// own shortcut recorder behaves the same way.
     @MainActor
     private func commit(_ shortcut: StoredShortcut) {
-        let result = keyboard.validate(shortcut, for: action)
+        let result = keyboard.validate(shortcut, for: action, quickTerminalHotKey: quickTerminalHotKey)
         switch result {
         case .ok:
             keyboard.setOverride(shortcut, for: action)
             rejection = nil
             stopRecording()
-        case .conflict, .reserved, .missingModifier:
+        case .conflict, .reserved, .missingModifier, .quickTerminalConflict:
             rejection = result
             // Stay recording so the user can press another combo
             // without an extra click; Esc still cancels via
             // `handleKey`.
+        }
+    }
+}
+
+// MARK: - Focus loss
+
+extension View {
+    /// Ends a shortcut recording when the Settings window stops being key
+    /// or Limpid stops being the active app. The recorder's local key
+    /// monitor only sees keystrokes sent to our windows, so a recording
+    /// left armed would keep the quick terminal's global hotkey suspended
+    /// with nothing able to finish it. Any window resigning key counts:
+    /// while a recorder is armed, the Settings window is the key window.
+    func stopsShortcutRecordingOnFocusLoss(
+        isRecording: Bool,
+        stop: @escaping @MainActor () -> Void
+    ) -> some View {
+        onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            if isRecording {
+                stop()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            if isRecording {
+                stop()
+            }
         }
     }
 }

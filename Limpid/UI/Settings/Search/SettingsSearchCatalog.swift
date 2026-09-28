@@ -90,6 +90,33 @@ enum SettingsSearchCatalog {
                 order: 1
             ),
 
+            makeEntry(
+                "quick-terminal.hotkey",
+                .quickTerminal,
+                "Hotkey",
+                "Show or hide",
+                keywords: ["Global shortcut", "Quick Terminal hotkey"],
+                order: 0
+            ),
+            makeEntry("quick-terminal.position", .quickTerminal, "Layout", "Position", keywords: ["Screen edge"], order: 1),
+            makeEntry("quick-terminal.size", .quickTerminal, "Layout", "Size", keywords: ["Quick Terminal size"], order: 2),
+            makeEntry(
+                "quick-terminal.hides-on-focus-loss",
+                .quickTerminal,
+                "Behavior",
+                "Hide when focus leaves",
+                keywords: ["Autohide"],
+                order: 3
+            ),
+
+            makeEntry(
+                "keyboard.quick-terminal-hotkey",
+                .keyboard,
+                "System-wide",
+                "Quick Terminal hotkey",
+                keywords: ["Global shortcut"],
+                order: 99
+            ),
             makeEntry("keyboard.restore-defaults", .keyboard, "Reset", "Restore Defaults", keywords: ["Reset shortcuts"], order: 100),
 
             makeEntry(
@@ -280,6 +307,26 @@ enum SettingsSearchCatalog {
 
     static var defaultWorkingDirectory: SettingsSearchEntry {
         requiredEntry("tabs-and-panes.default-working-directory")
+    }
+
+    static var quickTerminalHotKey: SettingsSearchEntry {
+        requiredEntry("quick-terminal.hotkey")
+    }
+
+    static var quickTerminalPosition: SettingsSearchEntry {
+        requiredEntry("quick-terminal.position")
+    }
+
+    static var quickTerminalSize: SettingsSearchEntry {
+        requiredEntry("quick-terminal.size")
+    }
+
+    static var quickTerminalHidesOnFocusLoss: SettingsSearchEntry {
+        requiredEntry("quick-terminal.hides-on-focus-loss")
+    }
+
+    static var keyboardQuickTerminalHotKey: SettingsSearchEntry {
+        requiredEntry("keyboard.quick-terminal-hotkey")
     }
 
     static var keyboardRestoreDefaults: SettingsSearchEntry {

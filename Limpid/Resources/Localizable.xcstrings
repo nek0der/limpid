@@ -8080,6 +8080,551 @@
           }
         }
       }
+    },
+    "Quick Terminal": {
+      "comment": "Name of the quick terminal panel",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Terminal"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイックターミナル"
+          }
+        }
+      }
+    },
+    "Hotkey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hotkey"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホットキー"
+          }
+        }
+      }
+    },
+    "Active in every app, not only Limpid. Click to record a hotkey; press ⎋ to cancel or ⌫ to clear.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active in every app, not only Limpid. Click to record a hotkey; press ⎋ to cancel or ⌫ to clear."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid 以外のアプリの使用中にも有効です。クリックしてホットキーを記録し、⎋ でキャンセル、⌫ で解除します。"
+          }
+        }
+      }
+    },
+    "Position": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Position"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置"
+          }
+        }
+      }
+    },
+    "Top": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上"
+          }
+        }
+      }
+    },
+    "Bottom": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bottom"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下"
+          }
+        }
+      }
+    },
+    "Left": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左"
+          }
+        }
+      }
+    },
+    "Right": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右"
+          }
+        }
+      }
+    },
+    "Center": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Center"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中央"
+          }
+        }
+      }
+    },
+    "Layout": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Layout"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レイアウト"
+          }
+        }
+      }
+    },
+    "Size is a share of the screen's height for Top, Bottom, and Center, and of its width for Left and Right.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Size is a share of the screen's height for Top, Bottom, and Center, and of its width for Left and Right."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイズは、上・下・中央では高さ、左・右では幅に対する割合です。"
+          }
+        }
+      }
+    },
+    "Hide when focus leaves": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide when focus leaves"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォーカスが外れたら隠す"
+          }
+        }
+      }
+    },
+    "Behavior": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Behavior"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動作"
+          }
+        }
+      }
+    },
+    "Clear hotkey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear hotkey"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホットキーを解除"
+          }
+        }
+      }
+    },
+    "Show or hide": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show or hide"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示と非表示の切り替え"
+          }
+        }
+      }
+    },
+    "Hotkey must include ⌘ or ⌃.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hotkey must include ⌘ or ⌃."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホットキーには ⌘ または ⌃ を含める必要があります。"
+          }
+        }
+      }
+    },
+    "The terminal failed to start, so the hotkey is off.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The terminal failed to start, so the hotkey is off."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルを起動できなかったため、ホットキーは無効です。"
+          }
+        }
+      }
+    },
+    "No key on the current keyboard layout types this hotkey.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No key on the current keyboard layout types this hotkey."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在のキーボードレイアウトには、このホットキーを入力できるキーがありません。"
+          }
+        }
+      }
+    },
+    "The hotkey is off because %@ uses the same keys.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The hotkey is off because %@ uses the same keys."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ が同じキーを使用しているため、ホットキーは無効です。"
+          }
+        }
+      }
+    },
+    "The hotkey is off because macOS uses the same keys.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The hotkey is off because macOS uses the same keys."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS が同じキーを使用しているため、ホットキーは無効です。"
+          }
+        }
+      }
+    },
+    "System-wide": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System-wide"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム全体"
+          }
+        }
+      }
+    },
+    "Open Quick Terminal settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Quick Terminal settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイックターミナルの設定を開く"
+          }
+        }
+      }
+    },
+    "Active in every app, not only Limpid. Change it in Quick Terminal settings.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active in every app, not only Limpid. Change it in Quick Terminal settings."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid 以外のアプリの使用中にも有効です。クイックターミナルの設定で変更できます。"
+          }
+        }
+      }
+    },
+    "Another app already uses this hotkey.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another app already uses this hotkey."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このホットキーはほかのアプリが使用しています。"
+          }
+        }
+      }
+    },
+    "Limpid reserves this combination for its own use.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid reserves this combination for its own use."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpid が使用するため予約されている組み合わせです。"
+          }
+        }
+      }
+    },
+    "macOS uses this combination.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS uses this combination."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS がこの組み合わせを使用しています。"
+          }
+        }
+      }
+    },
+    "Other apps may use this combination for their own commands.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other apps may use this combination for their own commands."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのアプリがこの組み合わせを独自のコマンドに使用している可能性があります。"
+          }
+        }
+      }
+    },
+    "The hotkey could not be registered (error %lld).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The hotkey could not be registered (error %lld)."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホットキーを登録できませんでした (エラー %lld)。"
+          }
+        }
+      }
+    },
+    "Quick Terminal hotkey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Terminal hotkey"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイックターミナルのホットキー"
+          }
+        }
+      }
+    },
+    "Already used by the Quick Terminal hotkey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Already used by the Quick Terminal hotkey"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイックターミナルのホットキーで使用中"
+          }
+        }
+      }
+    },
+    "Global shortcut": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Global shortcut"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グローバルショートカット"
+          }
+        }
+      }
+    },
+    "Screen edge": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen edge"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面の端"
+          }
+        }
+      }
+    },
+    "Quick Terminal size": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Terminal size"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイックターミナルのサイズ"
+          }
+        }
+      }
+    },
+    "Autohide": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autohide"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動で隠す"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -63,7 +63,7 @@ extension AppState {
                 app: ghosttyApp, settings: latest,
                 resourcesDir: resourcesDir,
                 includeUserConfig: includeUserConfig,
-                surfaces: self.registry.allViews
+                surfaces: self.allSurfaceViews
             ) {
                 self.settingsStore.ghosttyConfigDiagnostics = diagnostics
             }
@@ -81,7 +81,10 @@ extension AppState {
                 BellFeatures.forAction(settingsStore.settings.terminal.bellAction)
             },
             secureInputManager: registry.secureInputManager,
-            attention: attention
+            attention: attention,
+            claimsSurfaceExit: { [weak quickTerminal] view in
+                quickTerminal?.handleSurfaceExit(view) == true
+            }
         )
     }
 
@@ -96,6 +99,6 @@ extension AppState {
         let colorScheme = GhosttyApp.currentColorScheme(
             preference: settingsStore.settings.appearance.colorScheme
         )
-        ghosttyApp.setColorScheme(colorScheme, surfaces: registry.allViews)
+        ghosttyApp.setColorScheme(colorScheme, surfaces: allSurfaceViews)
     }
 }

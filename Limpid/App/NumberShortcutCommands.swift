@@ -15,24 +15,26 @@ struct NumberShortcutCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .windowList) {
-            goToTabButton(number: 1)
-            goToTabButton(number: 2)
-            goToTabButton(number: 3)
-            goToTabButton(number: 4)
-            goToTabButton(number: 5)
-            goToTabButton(number: 6)
-            goToTabButton(number: 7)
-            goToTabButton(number: 8)
-            goToTabButton(number: 9)
-            goToSectionButton(number: 1)
-            goToSectionButton(number: 2)
-            goToSectionButton(number: 3)
-            goToSectionButton(number: 4)
-            goToSectionButton(number: 5)
-            goToSectionButton(number: 6)
-            goToSectionButton(number: 7)
-            goToSectionButton(number: 8)
-            goToSectionButton(number: 9)
+            MainWindowCommandItems(state.quickTerminal) {
+                goToTabButton(number: 1)
+                goToTabButton(number: 2)
+                goToTabButton(number: 3)
+                goToTabButton(number: 4)
+                goToTabButton(number: 5)
+                goToTabButton(number: 6)
+                goToTabButton(number: 7)
+                goToTabButton(number: 8)
+                goToTabButton(number: 9)
+                goToSectionButton(number: 1)
+                goToSectionButton(number: 2)
+                goToSectionButton(number: 3)
+                goToSectionButton(number: 4)
+                goToSectionButton(number: 5)
+                goToSectionButton(number: 6)
+                goToSectionButton(number: 7)
+                goToSectionButton(number: 8)
+                goToSectionButton(number: 9)
+            }
         }
     }
 

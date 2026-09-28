@@ -85,8 +85,8 @@ struct PaneHostView: View {
 /// allocate (`ghostty_surface_new` returned NULL). One Retry button so
 /// the user is not trapped staring at a black rectangle — a successful
 /// re-run clears `creationFailed` and the card vanishes on the next
-/// SwiftUI tick.
-private struct PaneCreationFailureCard: View {
+/// SwiftUI tick. The quick terminal shows the same card over its panel.
+struct PaneCreationFailureCard: View {
     let surfaceView: SurfaceView
 
     var body: some View {
@@ -235,14 +235,6 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         if let existing = registry.view(for: paneID) {
             return existing
         }
-        let view = SurfaceView(ghosttyApp: ghosttyApp)
-        view.isScrollbarEnabled = ghosttyApp.isScrollbarEnabled
-        let owningTab = session.tab(containing: paneID)
-        view.initialWorkingDirectory = owningTab?.workingDirectory
-        view.initialCommand = Self.resolveInitialCommand(
-            tab: owningTab,
-            paneID: paneID
-        )
         // Four layers over one pty: what every pane gets, then each
         // agent's own directories, then the flags that hand Codex our
         // hooks. The agent layers are inert when the user never runs the
@@ -261,6 +253,29 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         for (k, v) in CodexHookInstaller.shared.environment() {
             env[k] = v
         }
+        let view = Self.makeSurfaceView(ghosttyApp: ghosttyApp, environment: env)
+        let owningTab = session.tab(containing: paneID)
+        view.initialWorkingDirectory = owningTab?.workingDirectory
+        view.initialCommand = Self.resolveInitialCommand(
+            tab: owningTab,
+            paneID: paneID
+        )
+        Self.stageScrollback(view: view, session: session, tab: owningTab, paneID: paneID)
+        registry.register(view, for: paneID)
+        return view
+    }
+
+    /// A fresh surface view with the configuration every terminal shares,
+    /// panes and the quick terminal alike: the scrollbar preference from
+    /// the live config and the demo-mode prompt mask over `environment`.
+    @MainActor
+    static func makeSurfaceView(
+        ghosttyApp: GhosttyApp,
+        environment: [String: String]
+    ) -> SurfaceView {
+        let view = SurfaceView(ghosttyApp: ghosttyApp)
+        view.isScrollbarEnabled = ghosttyApp.isScrollbarEnabled
+        var env = environment
         if DemoFixture.isDemoActive {
             // Stop the demo shell prompt from baking a real user@host into
             // the hero screenshot. zsh expands %n@%m via getpwuid/gethostname,
@@ -272,8 +287,6 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
             env["PS1"] = "demo@limpid \\W $ "
         }
         view.extraEnvironment = env
-        Self.stageScrollback(view: view, session: session, tab: owningTab, paneID: paneID)
-        registry.register(view, for: paneID)
         return view
     }
 

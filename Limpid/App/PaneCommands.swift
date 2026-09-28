@@ -10,77 +10,82 @@ struct PaneCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Pane") {
-            Button {
-                PaneActions.split(
-                    state.session,
-                    direction: .horizontal,
-                    registry: state.registry,
-                    minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
-                    toastCenter: state.toastCenter
-                )
-            } label: {
-                Label("Split Right", systemImage: "rectangle.split.2x1")
-            }
-            .limpidShortcut(.splitRight, in: state.settingsStore)
-            .disabled(state.session.activeTab == nil)
-            Button {
-                PaneActions.split(
-                    state.session,
-                    direction: .vertical,
-                    registry: state.registry,
-                    minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
-                    toastCenter: state.toastCenter
-                )
-            } label: {
-                Label("Split Down", systemImage: "rectangle.split.1x2")
-            }
-            .limpidShortcut(.splitDown, in: state.settingsStore)
-            .disabled(state.session.activeTab == nil)
-            Button {
-                PaneActions.equalizeSplits(state.session)
-            } label: {
-                Label("Equalize Splits", systemImage: "rectangle.split.2x1.slash")
-            }
-            .limpidShortcut(.equalizeSplits, in: state.settingsStore)
-            .disabled(state.session.activeTab?.splitTree.isSplit != true)
-            Button {
-                PaneActions.toggleZoom(state.session)
-            } label: {
-                if state.session.activeTab?.zoomedLeafID != nil {
-                    Label("Unzoom Pane", systemImage: "arrow.down.right.and.arrow.up.left")
-                } else {
-                    Label("Zoom Pane", systemImage: "arrow.up.left.and.arrow.down.right")
+            // Splits, zoom, and focus act on the main window's active tab.
+            // The quick terminal is a single pane, so the whole menu steps
+            // aside while it has the keyboard.
+            MainWindowCommandItems(state.quickTerminal) {
+                Button {
+                    PaneActions.split(
+                        state.session,
+                        direction: .horizontal,
+                        registry: state.registry,
+                        minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
+                        toastCenter: state.toastCenter
+                    )
+                } label: {
+                    Label("Split Right", systemImage: "rectangle.split.2x1")
                 }
-            }
-            // ⌘⇧↩ is the conventional "maximize pane" chord.
-            // ⌘⇧Z would steal the system Redo shortcut.
-            .limpidShortcut(.toggleSplitZoom, in: state.settingsStore)
-            .disabled(state.session.activeTab?.splitTree.isSplit != true)
+                .limpidShortcut(.splitRight, in: state.settingsStore)
+                .disabled(state.session.activeTab == nil)
+                Button {
+                    PaneActions.split(
+                        state.session,
+                        direction: .vertical,
+                        registry: state.registry,
+                        minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
+                        toastCenter: state.toastCenter
+                    )
+                } label: {
+                    Label("Split Down", systemImage: "rectangle.split.1x2")
+                }
+                .limpidShortcut(.splitDown, in: state.settingsStore)
+                .disabled(state.session.activeTab == nil)
+                Button {
+                    PaneActions.equalizeSplits(state.session)
+                } label: {
+                    Label("Equalize Splits", systemImage: "rectangle.split.2x1.slash")
+                }
+                .limpidShortcut(.equalizeSplits, in: state.settingsStore)
+                .disabled(state.session.activeTab?.splitTree.isSplit != true)
+                Button {
+                    PaneActions.toggleZoom(state.session)
+                } label: {
+                    if state.session.activeTab?.zoomedLeafID != nil {
+                        Label("Unzoom Pane", systemImage: "arrow.down.right.and.arrow.up.left")
+                    } else {
+                        Label("Zoom Pane", systemImage: "arrow.up.left.and.arrow.down.right")
+                    }
+                }
+                // ⌘⇧↩ is the conventional "maximize pane" chord.
+                // ⌘⇧Z would steal the system Redo shortcut.
+                .limpidShortcut(.toggleSplitZoom, in: state.settingsStore)
+                .disabled(state.session.activeTab?.splitTree.isSplit != true)
 
-            // ⌥⌘+arrow focuses the neighbor. Moving a pane to another
-            // slot now uses ⌥⌘ + drag instead of a directional shortcut —
-            // see `MoveDropDelegate` for the drop side.
-            Divider()
-            paneDirectionButton(.focusPaneLeft, .left, perform: focus)
-            paneDirectionButton(.focusPaneRight, .right, perform: focus)
-            paneDirectionButton(.focusPaneUp, .up, perform: focus)
-            paneDirectionButton(.focusPaneDown, .down, perform: focus)
+                // ⌥⌘+arrow focuses the neighbor. Moving a pane to another
+                // slot now uses ⌥⌘ + drag instead of a directional shortcut —
+                // see `MoveDropDelegate` for the drop side.
+                Divider()
+                paneDirectionButton(.focusPaneLeft, .left, perform: focus)
+                paneDirectionButton(.focusPaneRight, .right, perform: focus)
+                paneDirectionButton(.focusPaneUp, .up, perform: focus)
+                paneDirectionButton(.focusPaneDown, .down, perform: focus)
 
-            Divider()
-            Button {
-                NavActions.cycleTab(state.session, forward: true)
-            } label: {
-                Label("Next Tab", systemImage: "arrow.right")
+                Divider()
+                Button {
+                    NavActions.cycleTab(state.session, forward: true)
+                } label: {
+                    Label("Next Tab", systemImage: "arrow.right")
+                }
+                .limpidShortcut(.nextTab, in: state.settingsStore)
+                .disabled(state.session.tabs(in: state.session.activeContainerID).count <= 1)
+                Button {
+                    NavActions.cycleTab(state.session, forward: false)
+                } label: {
+                    Label("Previous Tab", systemImage: "arrow.left")
+                }
+                .limpidShortcut(.previousTab, in: state.settingsStore)
+                .disabled(state.session.tabs(in: state.session.activeContainerID).count <= 1)
             }
-            .limpidShortcut(.nextTab, in: state.settingsStore)
-            .disabled(state.session.tabs(in: state.session.activeContainerID).count <= 1)
-            Button {
-                NavActions.cycleTab(state.session, forward: false)
-            } label: {
-                Label("Previous Tab", systemImage: "arrow.left")
-            }
-            .limpidShortcut(.previousTab, in: state.settingsStore)
-            .disabled(state.session.tabs(in: state.session.activeContainerID).count <= 1)
         }
     }
 

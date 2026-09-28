@@ -27,6 +27,7 @@ struct LimpidSettings: Codable, Equatable {
     var keyboard: KeyboardSettings = .init()
     var confirmations: ConfirmationSettings = .init()
     var advanced: AdvancedSettings = .init()
+    var quickTerminal: QuickTerminalSettings = .init()
     var jumpOpensTurnReview = true
 
     /// Trailing root-level keys the current build doesn't recognize.
@@ -61,6 +62,9 @@ struct LimpidSettings: Codable, Equatable {
             ConfirmationSettings.self, forKey: .confirmations
         ) ?? .init()
         self.advanced = try c.decode(AdvancedSettings.self, forKey: .advanced)
+        self.quickTerminal = try c.decodeIfPresent(
+            QuickTerminalSettings.self, forKey: .quickTerminal
+        ) ?? .init()
         self.jumpOpensTurnReview = try c.decodeIfPresent(
             Bool.self,
             forKey: .jumpOpensTurnReview
@@ -80,12 +84,14 @@ struct LimpidSettings: Codable, Equatable {
         try c.encode(keyboard, forKey: .keyboard)
         try c.encode(confirmations, forKey: .confirmations)
         try c.encode(advanced, forKey: .advanced)
+        try c.encode(quickTerminal, forKey: .quickTerminal)
         try c.encode(jumpOpensTurnReview, forKey: .jumpOpensTurnReview)
         try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
-        case schemaVersion, appearance, font, terminal, keyboard, confirmations, advanced, jumpOpensTurnReview
+        case schemaVersion, appearance, font, terminal, keyboard, confirmations, advanced, quickTerminal
+        case jumpOpensTurnReview
     }
 
     private static let knownKeyStrings: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))
@@ -524,6 +530,10 @@ enum ShortcutValidation: Equatable {
     /// of that character and break terminal input. The recorder
     /// requires at least one of ⌘/⌥/⌃/⇧.
     case missingModifier
+    /// The quick terminal's global hotkey uses the same trigger. Carbon
+    /// takes a registered hotkey before the menu bar sees it, so the
+    /// menu item would never fire.
+    case quickTerminalConflict
 }
 
 /// User-bound shortcuts. Each entry overrides libghostty's default
@@ -589,7 +599,8 @@ struct KeyboardSettings: Codable, Equatable {
     /// always surprising; we reject up front instead.
     func validate(
         _ proposed: StoredShortcut,
-        for action: LimpidShortcutAction
+        for action: LimpidShortcutAction,
+        quickTerminalHotKey: StoredShortcut? = nil
     ) -> ShortcutValidation {
         // Require at least one of ⌘/⌥/⌃/⇧. A bare letter would
         // hijack every plain keypress of that character and make
@@ -604,6 +615,9 @@ struct KeyboardSettings: Codable, Equatable {
             if shortcut(for: other) == proposed {
                 return .conflict(other)
             }
+        }
+        if proposed == quickTerminalHotKey {
+            return .quickTerminalConflict
         }
         return .ok
     }
