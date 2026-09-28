@@ -51,7 +51,7 @@ struct TerminalPane: View {
                     Text("Underline").tag(CursorStyle.underline)
                 }
                 .settingsSearchTarget(SettingsSearchCatalog.cursorStyle.id)
-                Toggle("Blink", isOn: Binding(
+                SettingsToggle("Blink", isOn: Binding(
                     get: { store.settings.terminal.cursorBlink == .on },
                     set: { store.settings.terminal.cursorBlink = $0 ? .on : .off }
                 ))

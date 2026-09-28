@@ -593,12 +593,6 @@
         "ja": { "stringUnit": { "state": "translated", "value": "ショートカットをリセット" } }
       }
     },
-    "Restore All Settings to Defaults": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Restore All Settings to Defaults" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "すべての設定を初期値に戻す" } }
-      }
-    },
     "Restore Default Review App": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Restore Default Review App" } },

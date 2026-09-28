@@ -68,40 +68,39 @@ struct KeyboardPane: View {
             // shortcuts complete without mixing those rules into the rows
             // above.
             Section {
-                LabeledContent {
-                    // Same slot widths and pill as `ShortcutRow`, so the
-                    // hotkey lines up with the shortcuts above; the reset
-                    // slot carries a chevron because the pill opens
-                    // another pane instead of recording here.
-                    HStack(spacing: 8) {
-                        Button {
-                            selectedSectionRaw = SettingsSection.quickTerminal.rawValue
-                        } label: {
+                HStack(spacing: 12) {
+                    Text("Quick Terminal hotkey")
+                    Spacer(minLength: 12)
+                    // Same width and pill as `ShortcutRow`, so the hotkey
+                    // lines up with the shortcuts above; the chevron inside
+                    // the pill says it opens another pane instead of
+                    // recording here.
+                    Button {
+                        selectedSectionRaw = SettingsSection.quickTerminal.rawValue
+                    } label: {
+                        HStack(spacing: 4) {
                             Text(store.settings.quickTerminal.hotKey?.displayString ?? String(localized: "Unbound"))
                                 .font(.system(.body, design: .default).monospacedDigit())
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 5)
-                                        .fill(Color.secondary.opacity(0.12))
-                                )
+                            Image(systemName: "chevron.forward")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
                         }
-                        .buttonStyle(.plain)
-                        .frame(width: 170, alignment: .trailing)
-                        .help("Open Quick Terminal settings")
-                        .accessibilityLabel(Text("Open Quick Terminal settings"))
-
-                        Image(systemName: "chevron.forward")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 18, alignment: .center)
-                            .accessibilityHidden(true)
+                        .padding(.horizontal, 8)
+                        .frame(height: LimpidLayout.settingsRecorderPillHeight)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(Color.secondary.opacity(0.12))
+                        )
                     }
-                } label: {
-                    Text("Quick Terminal hotkey")
+                    .buttonStyle(.plain)
+                    .frame(width: LimpidLayout.settingsRecorderWidth, alignment: .trailing)
+                    .help("Open Quick Terminal settings")
+                    .accessibilityLabel(Text("Open Quick Terminal settings"))
                 }
+                .settingsControlRow(controlHeight: LimpidLayout.settingsRecorderPillHeight)
                 .settingsSearchTarget(SettingsSearchCatalog.keyboardQuickTerminalHotKey.id)
             } header: {
                 Text("System-wide")
@@ -112,12 +111,15 @@ struct KeyboardPane: View {
                 // Left-aligned destructive button, matching the
                 // shape Advanced > Restore All Defaults uses so the
                 // two reset affordances feel consistent.
-                Button(role: .destructive) {
-                    showingResetConfirm = true
-                } label: {
-                    Text("Restore Defaults")
+                HStack {
+                    Button(role: .destructive) {
+                        showingResetConfirm = true
+                    } label: {
+                        Text("Restore Defaults")
+                    }
+                    .disabled(!hasAnyOverride)
                 }
-                .disabled(!hasAnyOverride)
+                .settingsControlRow()
                 .settingsSearchTarget(SettingsSearchCatalog.keyboardRestoreDefaults.id)
             } footer: {
                 Text(footerKey)
@@ -158,46 +160,50 @@ private struct ShortcutRow: View {
     @State private var rejection: ShortcutValidation?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            LabeledContent {
-                // Fixed slot widths so the recorder button's trailing
-                // edge lands at the same x across every row regardless
-                // of whether the override / reset affordance is showing
-                // and regardless of the recorded glyph's width.
-                HStack(spacing: 8) {
-                    ShortcutRecorder(
-                        action: action,
-                        keyboard: $keyboard,
-                        quickTerminalHotKey: quickTerminalHotKey,
-                        recordingAction: $recordingAction,
-                        rejection: $rejection
-                    )
-                    .frame(width: 170, alignment: .trailing)
-
-                    ZStack {
-                        if keyboard.overrides[action.rawValue] != nil {
-                            Button {
-                                keyboard.resetOverride(for: action)
-                                rejection = nil
-                            } label: {
-                                Image(systemName: "arrow.uturn.backward")
-                            }
-                            .buttonStyle(.borderless)
-                            .help("Reset to default")
-                        }
-                    }
-                    .frame(width: 18, alignment: .center)
-                }
-            } label: {
+        // A custom row (see `settingsControlRow`) with the rejection
+        // message as a second line under the label, so the row keeps the
+        // height of its neighbors while no message is showing.
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(action.localizedTitle)
+                if let rejection {
+                    Text(rejectionMessage(for: rejection))
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             }
-            if let rejection {
-                Text(rejectionMessage(for: rejection))
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .padding(.leading, 4)
+            Spacer(minLength: 12)
+            // Fixed widths so the pill's trailing edge lands at the
+            // form's control edge on every row, regardless of whether the
+            // reset affordance is showing and regardless of the recorded
+            // glyph's width. The reset button takes a fixed slot before
+            // the pill.
+            HStack(spacing: 8) {
+                ZStack {
+                    if keyboard.overrides[action.rawValue] != nil {
+                        Button {
+                            keyboard.resetOverride(for: action)
+                            rejection = nil
+                        } label: {
+                            Image(systemName: "arrow.uturn.backward")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Reset to default")
+                        .accessibilityLabel(Text("Reset to default"))
+                    }
+                }
+                .frame(width: LimpidLayout.settingsRecorderAccessoryWidth, alignment: .center)
+                ShortcutRecorder(
+                    action: action,
+                    keyboard: $keyboard,
+                    quickTerminalHotKey: quickTerminalHotKey,
+                    recordingAction: $recordingAction,
+                    rejection: $rejection
+                )
+                .frame(width: LimpidLayout.settingsRecorderWidth, alignment: .trailing)
             }
         }
+        .settingsControlRow(controlHeight: LimpidLayout.settingsRecorderPillHeight)
     }
 
     private func rejectionMessage(for rejection: ShortcutValidation) -> String {
@@ -271,7 +277,7 @@ private struct ShortcutRecorder: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .frame(height: LimpidLayout.settingsRecorderPillHeight)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
                         .fill(
@@ -286,6 +292,12 @@ private struct ShortcutRecorder: View {
                 )
         }
         .buttonStyle(.plain)
+        // The row is an `HStack`, not `LabeledContent`, so the action's
+        // title is not attached to the button for accessibility; set it
+        // here and report the shortcut as the value, the same way the
+        // Quick Terminal recorder does.
+        .accessibilityLabel(Text(action.localizedTitle))
+        .accessibilityValue(Text(label))
         // `.onGeometryChange` fires on any geometric change — size OR
         // position. The previous `GeometryReader { .onChange(of: proxy.size) }`
         // shape only fired when size changed, so scrolling Settings

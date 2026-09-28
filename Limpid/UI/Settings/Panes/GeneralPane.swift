@@ -108,12 +108,15 @@ extension ConfirmPolicy {
 private struct AboutSection: View {
     var body: some View {
         Section {
-            LabeledContent("Limpid") {
+            HStack(spacing: 12) {
+                Text("Limpid")
+                Spacer(minLength: 12)
                 Text(Self.versionString)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .monospacedDigit()
             }
+            .settingsControlRow(controlHeight: LimpidLayout.settingsTextRowControlHeight)
             .settingsSearchTarget(SettingsSearchCatalog.appVersion.id)
         }
     }
@@ -143,7 +146,7 @@ private struct UpdatesSection: View {
 
     var body: some View {
         Section {
-            Toggle("Automatically check for updates", isOn: Binding(
+            SettingsToggle("Automatically check for updates", isOn: Binding(
                 get: { autoCheck },
                 set: { newValue in
                     autoCheck = newValue
@@ -151,9 +154,9 @@ private struct UpdatesSection: View {
                 }
             ))
             .settingsSearchTarget(SettingsSearchCatalog.automaticUpdates.id)
-            HStack {
+            HStack(spacing: 12) {
                 Text("Updates")
-                Spacer()
+                Spacer(minLength: 12)
                 // We intentionally don't gate this on Sparkle's
                 // `canCheckForUpdates`. After a failed appcast fetch
                 // (404, no network at launch, etc.) the flag has
@@ -175,6 +178,7 @@ private struct UpdatesSection: View {
                 }
                 .disabled(stateModel.isBusy)
             }
+            .settingsControlRow()
             .settingsSearchTarget(SettingsSearchCatalog.checkForUpdates.id)
             // Inline the same state-driven popover content underneath
             // the button so a user who initiated the check from
@@ -188,9 +192,7 @@ private struct UpdatesSection: View {
                 UpdatePopover(updater: updater, dismiss: {
                     stateModel.state = .idle
                 }, width: nil)
-                // Keep the embedded update view transparent so it
-                // inherits the adaptive grouped-form surface instead
-                // of drawing a second card inside the section.
+                    .environment(\.updatePopoverMetrics, .settingsRow)
             }
         } header: {
             Text("Software Update")
