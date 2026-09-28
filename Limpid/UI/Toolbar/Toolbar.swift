@@ -212,6 +212,18 @@ struct ToolbarTerminalColumnSegment: View {
                 Label("Mark All as Read", systemImage: "checkmark.circle")
             }
             Divider()
+            // The only toolbar entry to the cheat sheet. It lives in the
+            // overflow rather than as its own icon: the toolbar is already
+            // full and a reference sheet is not a daily action.
+            Button {
+                NotificationCenter.default.post(
+                    name: .limpidToggleKeyboardShortcuts,
+                    object: session
+                )
+            } label: {
+                Label("Keyboard Shortcuts", systemImage: "keyboard")
+            }
+            Divider()
             Button(role: .destructive) {
                 TabActions.closeAllTabsInActiveContainer(
                     session,

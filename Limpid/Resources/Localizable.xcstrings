@@ -8625,6 +8625,106 @@
           }
         }
       }
+    },
+    "Keyboard Shortcuts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーボードショートカット"
+          }
+        }
+      }
+    },
+    "Help": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヘルプ"
+          }
+        }
+      }
+    },
+    "Search shortcuts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ショートカットを検索"
+          }
+        }
+      }
+    },
+    "No shortcuts match": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一致するショートカットはありません"
+          }
+        }
+      }
+    },
+    "Customize…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタマイズ…"
+          }
+        }
+      }
+    },
+    "Open Keyboard settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーボード設定を開く"
+          }
+        }
+      }
+    },
+    "Tabs & Sections": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブとセクション"
+          }
+        }
+      }
+    },
+    "Go to Tab 1–9": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ 1〜9 へ移動"
+          }
+        }
+      }
+    },
+    "Go to Section 1–9": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セクション 1〜9 へ移動"
+          }
+        }
+      }
+    },
+    "Insert Newline": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改行を挿入"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

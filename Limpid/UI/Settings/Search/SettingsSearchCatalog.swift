@@ -204,7 +204,7 @@ enum SettingsSearchCatalog {
             SettingsSearchEntry(
                 id: shortcutID(action),
                 section: .keyboard,
-                groupTitle: action.category.searchGroupTitle,
+                groupTitle: action.category.resourceTitle,
                 title: action.localizedTitle,
                 keywords: ["Keyboard Shortcut"],
                 order: offset
@@ -394,19 +394,5 @@ enum SettingsSearchCatalog {
             technicalAliases: technicalAliases,
             order: order
         )
-    }
-}
-
-private extension LimpidShortcutCategory {
-    var searchGroupTitle: LocalizedStringResource {
-        switch self {
-        case .file: "File"
-        case .view: "View"
-        case .navigation: "Navigation"
-        case .splits: "Splits"
-        case .search: "Find"
-        case .terminal: "Terminal"
-        case .font: "Font"
-        }
     }
 }

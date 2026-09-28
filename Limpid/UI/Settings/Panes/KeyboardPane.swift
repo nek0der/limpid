@@ -26,7 +26,7 @@ struct KeyboardPane: View {
 
     /// Same storage `SettingsScene` selects the visible section from, so
     /// the quick-terminal row can switch to that pane.
-    @AppStorage("settings.last-section") private var selectedSectionRaw = SettingsSection.keyboard.rawValue
+    @AppStorage(SettingsSection.lastSectionDefaultsKey) private var selectedSectionRaw = SettingsSection.keyboard.rawValue
 
     /// Stored separately so the literal stays under SwiftLint's
     /// line-length cap. The exact string is the `Localizable.xcstrings`
