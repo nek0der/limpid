@@ -8,6 +8,12 @@ import Foundation
 import SwiftUI
 
 enum SettingsSection: String, CaseIterable, Identifiable {
+    /// `UserDefaults` key holding the last visible section's rawValue.
+    /// `SettingsScene` reads it to pick the pane it opens on, and any
+    /// surface that wants to land on a specific pane writes it before
+    /// posting `.limpidOpenSettings`.
+    static let lastSectionDefaultsKey = "settings.last-section"
+
     case general
     case appearance
     case font

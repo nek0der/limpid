@@ -54,8 +54,9 @@ A native macOS three-pane sidebar plus a Liquid Glass toolbar — calm, out of t
 | ⇧⌘P | Command palette |
 | ⌘1…⌘9 | Jump to tab N |
 | ⌘, | Settings |
+| ⌘/ | Keyboard shortcut cheat sheet |
 
-All bindings live in `Settings → Keyboard` and are layout-agnostic.
+All bindings live in `Settings → Keyboard` and are layout-agnostic. Press ⌘/ to see the full list with your own bindings.
 
 ## Install
 

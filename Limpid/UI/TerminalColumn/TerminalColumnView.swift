@@ -79,6 +79,12 @@ private struct TerminalColumnEmptyState: View {
                     name: .limpidToggleSidebarPresentation,
                     object: session
                 )
+            },
+            WelcomeCommand(title: "Keyboard Shortcuts", action: .keyboardShortcuts, isEnabled: true) {
+                NotificationCenter.default.post(
+                    name: .limpidToggleKeyboardShortcuts,
+                    object: session
+                )
             }
         ]
     }
@@ -109,11 +115,7 @@ private struct WelcomeCommandRow: View {
                     )
                     .lineLimit(1)
                 Spacer(minLength: 24)
-                HStack(spacing: 4) {
-                    ForEach(Array(keycaps.enumerated()), id: \.offset) { _, token in
-                        WelcomeKeycap(symbol: token)
-                    }
-                }
+                KeycapRow(tokens: keycaps)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -130,21 +132,5 @@ private struct WelcomeCommandRow: View {
 
     private var keycaps: [String] {
         settings.settings.keyboard.shortcut(for: command.action)?.displayTokens ?? []
-    }
-}
-
-/// A single keycap chip — one modifier symbol or the key glyph.
-private struct WelcomeKeycap: View {
-    let symbol: String
-
-    var body: some View {
-        Text(symbol)
-            .font(.system(size: 11, weight: .medium, design: .rounded))
-            .foregroundStyle(LimpidColor.secondaryText)
-            .frame(minWidth: 20, minHeight: 20)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(LimpidColor.rowActiveFill)
-            )
     }
 }

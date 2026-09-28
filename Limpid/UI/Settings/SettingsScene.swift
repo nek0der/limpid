@@ -17,7 +17,7 @@ import SwiftUI
 struct SettingsScene: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
-    @AppStorage("settings.last-section") private var selectedSectionRaw = SettingsSection.general.rawValue
+    @AppStorage(SettingsSection.lastSectionDefaultsKey) private var selectedSectionRaw = SettingsSection.general.rawValue
     @State private var searchText = ""
     @State private var selectedSearchResultID: String?
     @State private var revealRequest: SettingsRevealRequest?

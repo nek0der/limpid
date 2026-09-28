@@ -25,6 +25,9 @@ extension Notification.Name {
     /// Posted from `TabActions.dispatchViewAction` so it stays
     /// colocated with the dispatch slice that emits it.
     static let limpidToggleNotificationHistory = Notification.Name("dev.limpid.toggleNotificationHistory")
+    /// Toggles the keyboard shortcut cheat sheet on the main window.
+    /// `object` is the owning `WindowSession`.
+    static let limpidToggleKeyboardShortcuts = Notification.Name("dev.limpid.toggleKeyboardShortcuts")
 }
 
 /// A focused leaf and its neighbor on a given edge of the same tab.
@@ -307,6 +310,8 @@ enum TabActions {
         case .terminal, .font:
             guard let ghosttyAction = action.ghosttyAction else { return }
             dispatchGhosttyAction(ghosttyAction, session: session, registry: registry)
+        case .help:
+            dispatchHelpAction(action, session: session)
         }
     }
 
@@ -366,6 +371,19 @@ enum TabActions {
         default:
             log.fault("dispatchViewAction missing handler for \(action.rawValue, privacy: .public) — add a case or fix action.category")
             assertionFailure("dispatchViewAction missing handler for \(action) — add a case or fix action.category")
+        }
+    }
+
+    private static func dispatchHelpAction(
+        _ action: LimpidShortcutAction,
+        session: WindowSession
+    ) {
+        switch action {
+        case .keyboardShortcuts:
+            NotificationCenter.default.post(name: .limpidToggleKeyboardShortcuts, object: session)
+        default:
+            log.fault("dispatchHelpAction missing handler for \(action.rawValue, privacy: .public) — add a case or fix action.category")
+            assertionFailure("dispatchHelpAction missing handler for \(action) — add a case or fix action.category")
         }
     }
 

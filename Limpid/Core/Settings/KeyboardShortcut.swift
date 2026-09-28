@@ -23,6 +23,7 @@ enum LimpidShortcutCategory: Int, CaseIterable, Identifiable {
     case search
     case terminal
     case font
+    case help
 
     var id: Int {
         rawValue
@@ -43,6 +44,7 @@ enum LimpidShortcutCategory: Int, CaseIterable, Identifiable {
         case .search: "Find"
         case .terminal: "Terminal"
         case .font: "Font"
+        case .help: "Help"
         }
     }
 }
@@ -125,6 +127,12 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     case commandPalette
     case quickOpen
 
+    /// Help. Opens the read-only cheat sheet listing every binding above
+    /// (plus the reserved and system-wide ones). Lives in its own
+    /// category so Settings → Keyboard and the sheet group it under
+    /// Help, matching the menu that owns it.
+    case keyboardShortcuts
+
     // Copy / Paste are intentionally absent: macOS's standard Edit
     // menu owns ⌘C / ⌘V via the responder chain (NSResponder's
     // `copy:` / `paste:` selectors), and we can't reliably suppress
@@ -149,6 +157,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .nextPrompt, .previousPrompt: .terminal
         case .increaseFontSize, .decreaseFontSize, .resetFontSize: .font
         case .commandPalette, .quickOpen: .view
+        case .keyboardShortcuts: .help
         }
     }
 
@@ -183,7 +192,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
              .focusPaneLeft, .focusPaneRight,
              .focusPaneUp, .focusPaneDown,
              .find, .findNext, .findPrevious,
-             .commandPalette, .quickOpen: nil
+             .commandPalette, .quickOpen, .keyboardShortcuts: nil
         }
     }
 
@@ -227,6 +236,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .resetFontSize: "Reset Font Size"
         case .commandPalette: "Command Palette"
         case .quickOpen: "Quick Open"
+        case .keyboardShortcuts: "Keyboard Shortcuts"
         }
     }
 
@@ -272,6 +282,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .resetFontSize: "textformat.size"
         case .commandPalette: "text.magnifyingglass"
         case .quickOpen: "doc.text.magnifyingglass"
+        case .keyboardShortcuts: "keyboard"
         }
     }
 
@@ -330,6 +341,11 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .resetFontSize: .init(key: "0", modifiers: [.command])
         case .commandPalette: .init(key: "p", modifiers: [.command, .shift])
         case .quickOpen: .init(key: "p", modifiers: [.command])
+        // ⌘/ is the cross-app convention for a shortcut cheat sheet
+        // (Slack, Linear, the Claude app). Stored as the literal `/`
+        // so JIS layouts, where the key sits elsewhere, still match
+        // through libghostty's utf8 fallback.
+        case .keyboardShortcuts: .init(key: "/", modifiers: [.command])
         }
     }
 }

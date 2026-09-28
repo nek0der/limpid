@@ -38,6 +38,9 @@ final class AppState {
     let attention: AttentionState
     /// Transient approval projection, intentionally excluded from persistence.
     let approvalPresentation = ApprovalPresentationStore()
+    /// Whether the keyboard shortcut cheat sheet is up; transient like
+    /// the approval projection.
+    let keyboardShortcutPresentation = KeyboardShortcutPresentation()
     /// Keeps the bundled LaunchAgent aligned with the signed app artifact.
     let agentIntegrationServiceRegistrar = AgentIntegrationServiceRegistrar()
     let store: SessionStore
@@ -789,7 +792,13 @@ struct LimpidApp: App {
                 }
             }
             SettingsAwareFindCommands(state: state)
-            PaneCommands(state: state)
+            // `CommandsBuilder` accepts at most ten children. The Xcode
+            // that CI runs enforces the limit; grouping keeps the count
+            // at ten without changing the menus.
+            Group {
+                PaneCommands(state: state)
+                HelpCommands(state: state)
+            }
         }
 
         // Settings window. We DELIBERATELY use `Window(id:)` instead
@@ -915,6 +924,10 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .limpidOpenSettings)) { _ in
             openWindow(id: LimpidApp.settingsWindowID)
         }
+        // Attached before the clipboard sheet below so a pending OSC 52
+        // confirmation always wins: the host closes the cheat sheet the
+        // moment a request arrives (see `KeyboardShortcutSheetHost`).
+        .keyboardShortcutSheet(state: state, yieldsTo: mainWindowClipboardRequest != nil)
         .sheet(item: Binding(
             get: { mainWindowClipboardRequest },
             set: { newValue in
