@@ -20,6 +20,12 @@ final class GhosttyEventCoordinator {
     private let bellFeaturesProvider: () -> BellFeatures
     private let secureInputManager: SecureInputManager
     private weak var attention: AttentionState?
+    /// Offered a surface's close and exit events before the registry
+    /// lookup that would otherwise drop them, for a surface that lives
+    /// outside the pane registry (the quick terminal's). Returns true when
+    /// it took the event. A closure rather than the owner itself so Core
+    /// does not depend on the UI type that owns that surface.
+    private let claimsSurfaceExit: @MainActor (SurfaceView) -> Bool
 
     /// Pending SET_TITLE applies, keyed by pane id. We debounce title
     /// updates by a tiny delay so a shell that prints the command name
@@ -42,7 +48,8 @@ final class GhosttyEventCoordinator {
         notificationManager: LimpidNotificationManager,
         bellFeaturesProvider: @escaping () -> BellFeatures,
         secureInputManager: SecureInputManager,
-        attention: AttentionState? = nil
+        attention: AttentionState? = nil,
+        claimsSurfaceExit: @escaping @MainActor (SurfaceView) -> Bool = { _ in false }
     ) {
         self.ghosttyApp = ghosttyApp
         self.session = session
@@ -51,6 +58,7 @@ final class GhosttyEventCoordinator {
         self.bellFeaturesProvider = bellFeaturesProvider
         self.secureInputManager = secureInputManager
         self.attention = attention
+        self.claimsSurfaceExit = claimsSurfaceExit
     }
 
     // Single entry point invoked by `GhosttyActionRouter.sink`. Switch
@@ -276,8 +284,7 @@ final class GhosttyEventCoordinator {
         let durationSeconds = Double(durationNs) / 1_000_000_000.0
         guard durationSeconds >= config.minimumDuration else { return }
 
-        let isFocusedSource = LimpidNotificationDelegate.isKeyAndFocused
-            && (view.window?.firstResponder === view)
+        let isFocusedSource = LimpidNotificationDelegate.isViewFocused(view)
         if config.mode == .unfocused, isFocusedSource {
             return
         }
@@ -354,8 +361,7 @@ final class GhosttyEventCoordinator {
         // pane being focused as "the user is right here, no need to
         // bounce the Dock". The pane flash still fires because it is the
         // visible feedback the Visual setting promises in that state.
-        let isFocusedSource = LimpidNotificationDelegate.isKeyAndFocused
-            && (view.window?.firstResponder === view)
+        let isFocusedSource = LimpidNotificationDelegate.isViewFocused(view)
         let hasSystem = features.contains(.system)
         let hasAttention = features.contains(.attention)
         let hasPaneFlash = features.contains(.paneFlash)
@@ -437,23 +443,29 @@ final class GhosttyEventCoordinator {
             containerLabel: owningTab.map { session.containerLabel(for: $0.container) }
         )
 
-        let isFocusedSource = LimpidNotificationDelegate.isKeyAndFocused
-            && (view.window?.firstResponder === view)
+        let isFocusedSource = LimpidNotificationDelegate.isViewFocused(view)
         log.notice("DESKTOP_NOTIFICATION focusedSource=\(isFocusedSource, privacy: .public)")
         if !isFocusedSource {
             session.markUnread(paneID: paneID)
         }
     }
 
-    /// SHOW_CHILD_EXITED — the pane's child process terminated.
+    /// SHOW_CHILD_EXITED — a surface's child process terminated (a pane's, or the quick terminal's).
     private func handleChildExited(view: SurfaceView, exitCode: UInt32) {
+        // A shell that dies right after launch gets no close request of its
+        // own, only this event. The quick terminal has nowhere to show the
+        // exit, so it hides and starts fresh on the next summon.
+        if claimsSurfaceExit(view) {
+            return
+        }
         guard let paneID = registry.id(for: view) else { return }
         session?.setChildExited(paneID: paneID, code: exitCode)
     }
 
-    /// CLOSE_SURFACE — fired by `GhosttyApp.closeSurfaceCallback`.
-    /// Remove the corresponding leaf from the owning tab's SplitTree;
-    /// if that was the last leaf, close the tab too.
+    /// CLOSE_SURFACE — fired by `GhosttyApp.closeSurfaceCallback` for a
+    /// pane's surface or the quick terminal's. For a pane, remove the
+    /// corresponding leaf from the owning tab's SplitTree; if that was the
+    /// last leaf, close the tab too.
     private func handleCloseSurface(view: SurfaceView) {
         // Dismiss any clipboard-confirmation sheet tied to this pane.
         // The pane is about to be freed but the surface is still live
@@ -464,6 +476,11 @@ final class GhosttyEventCoordinator {
         // releases it; `Surface.deinit` does not walk pending request
         // states).
         ClipboardConfirmationCoordinator.shared?.cancelPending(for: view)
+        // The quick terminal's surface is not in the registry, so it has to
+        // be claimed before the lookup below drops the event.
+        if claimsSurfaceExit(view) {
+            return
+        }
         guard let session,
               let paneID = registry.id(for: view)
         else {

@@ -77,6 +77,11 @@ final class AppState {
     /// .always / .never) against macOS's accessibility flag into a
     /// single Bool the Liquid Glass slab observes.
     let reduceTransparencyResolver: ReduceTransparencyResolver
+    /// The hotkey-summoned panel with its own shell, outside the session.
+    let quickTerminal: QuickTerminalController
+    /// Keeps the quick terminal's global hotkey registered to match its
+    /// setting. Observed by Settings for registration failures.
+    let quickTerminalHotKeyCenter: QuickTerminalHotKeyCenter
     /// The settings document the observation hook last acted on, so a write
     /// that leaves it identical does not start the work below again. Which of
     /// those writes actually reach libghostty is decided by
@@ -176,6 +181,19 @@ final class AppState {
             log.fault("GhosttyApp init failed: \(String(describing: error), privacy: .public)")
             self.ghosttyApp = nil
         }
+        let quickTerminal = Self.makeQuickTerminal(
+            ghosttyApp: ghosttyApp,
+            settingsStore: settingsStore,
+            reduceTransparencyResolver: resolver,
+            clipboard: clipboardConfirmation,
+            secureInputManager: registry.secureInputManager
+        )
+        self.quickTerminal = quickTerminal
+        self.quickTerminalHotKeyCenter = Self.makeQuickTerminalHotKeyCenter(
+            isTerminalAvailable: ghosttyApp != nil,
+            settingsStore: settingsStore,
+            quickTerminal: quickTerminal
+        )
 
         let store = SessionStore()
         self.store = store
@@ -301,6 +319,7 @@ final class AppState {
         // Register the ⌘Q + tab/pane close gates. Gate bodies live in
         // `AppState+QuitGate.swift`.
         registerConfirmGates()
+        quickTerminalHotKeyCenter.start()
     }
 
     private func configureTurnReview() {
@@ -620,44 +639,49 @@ struct LimpidApp: App {
                 OpenSettingsCommand()
             }
             // ── File menu ──────────────────────────────────────
+            // Groups that act on the main window's session are wrapped in
+            // `MainWindowCommandItems`, which disables them while the quick
+            // terminal has the keyboard.
             CommandGroup(replacing: .newItem) {
-                Button {
-                    TabActions.newTab(state.session)
-                } label: {
-                    Label("New Tab", systemImage: "plus.rectangle")
+                MainWindowCommandItems(state.quickTerminal) {
+                    Button {
+                        TabActions.newTab(state.session)
+                    } label: {
+                        Label("New Tab", systemImage: "plus.rectangle")
+                    }
+                    .limpidShortcut(.newTab, in: state.settingsStore)
+                    // ⌘⌥N raises the Create Worktree sheet for the active
+                    // project. Routed through a session-scoped Notification so
+                    // the window layout can present it even when its always-
+                    // mounted sidebar is disabled offscreen. Disabled
+                    // when the active container isn't a project — the
+                    // worktree concept doesn't apply to Quick Tabs or
+                    // Groups.
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .limpidCreateWorktreeRequested,
+                            object: state.session
+                        )
+                    } label: {
+                        Label("New Worktree…", systemImage: "arrow.triangle.branch")
+                    }
+                    .limpidShortcut(.newWorktree, in: state.settingsStore)
+                    .disabled(state.session.activeContainerID.projectID == nil)
+                    Button {
+                        TabActions.renameActiveTab(state.session)
+                    } label: {
+                        Label("Rename Tab", systemImage: "pencil")
+                    }
+                    .limpidShortcut(.renameTab, in: state.settingsStore)
+                    .disabled(state.session.activeTab == nil)
+                    Button {
+                        TabActions.reopenClosedTab(state.session)
+                    } label: {
+                        Label("Reopen Closed Tab", systemImage: "arrow.uturn.backward.square")
+                    }
+                    .limpidShortcut(.reopenClosedTab, in: state.settingsStore)
+                    .disabled(state.session.closedTabStack.isEmpty)
                 }
-                .limpidShortcut(.newTab, in: state.settingsStore)
-                // ⌘⌥N raises the Create Worktree sheet for the active
-                // project. Routed through a session-scoped Notification so
-                // the window layout can present it even when its always-
-                // mounted sidebar is disabled offscreen. Disabled
-                // when the active container isn't a project — the
-                // worktree concept doesn't apply to Quick Tabs or
-                // Groups.
-                Button {
-                    NotificationCenter.default.post(
-                        name: .limpidCreateWorktreeRequested,
-                        object: state.session
-                    )
-                } label: {
-                    Label("New Worktree…", systemImage: "arrow.triangle.branch")
-                }
-                .limpidShortcut(.newWorktree, in: state.settingsStore)
-                .disabled(state.session.activeContainerID.projectID == nil)
-                Button {
-                    TabActions.renameActiveTab(state.session)
-                } label: {
-                    Label("Rename Tab", systemImage: "pencil")
-                }
-                .limpidShortcut(.renameTab, in: state.settingsStore)
-                .disabled(state.session.activeTab == nil)
-                Button {
-                    TabActions.reopenClosedTab(state.session)
-                } label: {
-                    Label("Reopen Closed Tab", systemImage: "arrow.uturn.backward.square")
-                }
-                .limpidShortcut(.reopenClosedTab, in: state.settingsStore)
-                .disabled(state.session.closedTabStack.isEmpty)
             }
             CommandGroup(after: .newItem) {
                 // ⌘W — closes the focused pane, cascades
@@ -665,89 +689,104 @@ struct LimpidApp: App {
                 // family across the whole app (plain `xmark`) so
                 // every "close X" affordance reads as the same verb.
                 Button {
-                    PaneActions.closeActivePaneOrTab(
-                        state.session,
-                        registry: state.registry,
-                        agentProjection: state.agentProjection
-                    )
+                    if state.quickTerminal.isPanelKey {
+                        state.quickTerminal.hide()
+                    } else {
+                        PaneActions.closeActivePaneOrTab(
+                            state.session,
+                            registry: state.registry,
+                            agentProjection: state.agentProjection
+                        )
+                    }
                 } label: {
                     Label("Close Pane", systemImage: "xmark")
                 }
                 .limpidShortcut(.closeSurface, in: state.settingsStore)
-                .disabled(state.session.activeTab == nil)
+                // Outside `MainWindowCommandItems`, and enabled for the quick
+                // terminal even with no tab in the main window.
+                // `.closeSurface` has no libghostty action, so the bridge
+                // binds its trigger to `ignore`; a disabled item would leave
+                // ⌘W doing nothing in the panel.
+                .disabled(!state.quickTerminal.isPanelKey && state.session.activeTab == nil)
                 // ⌘⌥W → close the entire tab regardless of how many
                 // panes it contains (no per-pane cascade).
-                Button {
-                    TabActions.closeActiveTab(
-                        state.session,
-                        registry: state.registry,
-                        agentProjection: state.agentProjection
-                    )
-                } label: {
-                    Label("Close Tab", systemImage: "xmark.rectangle")
+                MainWindowCommandItems(state.quickTerminal) {
+                    Button {
+                        TabActions.closeActiveTab(
+                            state.session,
+                            registry: state.registry,
+                            agentProjection: state.agentProjection
+                        )
+                    } label: {
+                        Label("Close Tab", systemImage: "xmark.rectangle")
+                    }
+                    .limpidShortcut(.closeTab, in: state.settingsStore)
+                    .disabled(state.session.activeTab == nil)
                 }
-                .limpidShortcut(.closeTab, in: state.settingsStore)
-                .disabled(state.session.activeTab == nil)
             }
             // ── View menu ─────────────────────────────────────
             CommandGroup(after: .sidebar) {
-                Button {
-                    NotificationCenter.default.post(
-                        name: .limpidToggleSidebarPresentation,
-                        object: state.session
-                    )
-                } label: {
-                    Label("Toggle Sidebar", systemImage: "sidebar.left")
+                MainWindowCommandItems(state.quickTerminal) {
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .limpidToggleSidebarPresentation,
+                            object: state.session
+                        )
+                    } label: {
+                        Label("Toggle Sidebar", systemImage: "sidebar.left")
+                    }
+                    .limpidShortcut(.toggleSidebar, in: state.settingsStore)
+                    Button {
+                        state.session.tabColumnHorizontal.toggle()
+                    } label: {
+                        Label("Toggle Tab Layout", systemImage: "rectangle.topthird.inset.filled")
+                    }
+                    .limpidShortcut(.toggleTabLayout, in: state.settingsStore)
                 }
-                .limpidShortcut(.toggleSidebar, in: state.settingsStore)
-                Button {
-                    state.session.tabColumnHorizontal.toggle()
-                } label: {
-                    Label("Toggle Tab Layout", systemImage: "rectangle.topthird.inset.filled")
-                }
-                .limpidShortcut(.toggleTabLayout, in: state.settingsStore)
             }
             NumberShortcutCommands(state: state)
             NavigationCommands(state: state)
             CommandGroup(after: .toolbar) {
-                Button {
-                    CommandPaletteActions.openCommandPalette(
-                        state.session,
-                        settings: state.settingsStore,
-                        frecencyStore: state.frecencyStore,
-                        attention: state.attention,
-                        registry: state.registry,
-                        reviewPresentation: state.reviewPresentation
-                    )
-                } label: {
-                    Label("Command Palette", systemImage: "text.magnifyingglass")
-                }
-                .limpidShortcut(.commandPalette, in: state.settingsStore)
+                MainWindowCommandItems(state.quickTerminal) {
+                    Button {
+                        CommandPaletteActions.openCommandPalette(
+                            state.session,
+                            settings: state.settingsStore,
+                            frecencyStore: state.frecencyStore,
+                            attention: state.attention,
+                            registry: state.registry,
+                            reviewPresentation: state.reviewPresentation
+                        )
+                    } label: {
+                        Label("Command Palette", systemImage: "text.magnifyingglass")
+                    }
+                    .limpidShortcut(.commandPalette, in: state.settingsStore)
 
-                Button {
-                    CommandPaletteActions.openCommandPalette(
-                        state.session,
-                        settings: state.settingsStore,
-                        frecencyStore: state.frecencyStore,
-                        attention: state.attention,
-                        registry: state.registry,
-                        reviewPresentation: state.reviewPresentation,
-                        initialQuery: ""
-                    )
-                } label: {
-                    Label("Quick Open", systemImage: "magnifyingglass")
-                }
-                .limpidShortcut(.quickOpen, in: state.settingsStore)
+                    Button {
+                        CommandPaletteActions.openCommandPalette(
+                            state.session,
+                            settings: state.settingsStore,
+                            frecencyStore: state.frecencyStore,
+                            attention: state.attention,
+                            registry: state.registry,
+                            reviewPresentation: state.reviewPresentation,
+                            initialQuery: ""
+                        )
+                    } label: {
+                        Label("Quick Open", systemImage: "magnifyingglass")
+                    }
+                    .limpidShortcut(.quickOpen, in: state.settingsStore)
 
-                Button {
-                    toggleNotificationHistory(state.historyPresentation, session: state.session)
-                } label: {
-                    Label("Notification History", systemImage: "bell")
-                }
-                .limpidShortcut(.notificationHistory, in: state.settingsStore)
+                    Button {
+                        toggleNotificationHistory(state.historyPresentation, session: state.session)
+                    } label: {
+                        Label("Notification History", systemImage: "bell")
+                    }
+                    .limpidShortcut(.notificationHistory, in: state.settingsStore)
 
-                ReviewChangesMenuItem(state: state)
-                ReviewThisTurnMenuItem(state: state)
+                    ReviewChangesMenuItem(state: state)
+                    ReviewThisTurnMenuItem(state: state)
+                }
             }
             SettingsAwareFindCommands(state: state)
             PaneCommands(state: state)
@@ -765,6 +804,7 @@ struct LimpidApp: App {
         Window("Settings", id: Self.settingsWindowID) {
             SettingsScene()
                 .environment(state.settingsStore)
+                .environment(state.quickTerminalHotKeyCenter)
                 .environment(state.reduceTransparencyResolver)
                 .environment(\.sparkleUpdater, updaterStack.updater)
                 .environment(updaterStack.stateModel)
@@ -794,6 +834,15 @@ struct ContentView: View {
     let state: AppState
     @State private var loadIssue: SessionLoadIssue?
     @Environment(\.openWindow) private var openWindow
+
+    /// The pending clipboard request unless it comes from the quick
+    /// terminal, which presents its own on the panel.
+    private var mainWindowClipboardRequest: PendingClipboardRequest? {
+        guard let request = state.clipboardConfirmation.pending,
+              !state.quickTerminal.ownsClipboardRequest(request)
+        else { return nil }
+        return request
+    }
 
     var body: some View {
         Group {
@@ -867,14 +916,14 @@ struct ContentView: View {
             openWindow(id: LimpidApp.settingsWindowID)
         }
         .sheet(item: Binding(
-            get: { state.clipboardConfirmation.pending },
+            get: { mainWindowClipboardRequest },
             set: { newValue in
                 // The system also drives this binding to nil when the
                 // sheet is dismissed via Esc / clicking outside; treat
                 // that as a Deny so libghostty always receives a
                 // completion (otherwise the surface request stays open
                 // forever and the embedded shell can't proceed).
-                if newValue == nil, state.clipboardConfirmation.pending != nil {
+                if newValue == nil, mainWindowClipboardRequest != nil {
                     state.clipboardConfirmation.deny()
                 }
             }

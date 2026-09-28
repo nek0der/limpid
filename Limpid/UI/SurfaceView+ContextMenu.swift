@@ -81,6 +81,12 @@ extension SurfaceView {
             keyEquivalent: ""
         )
 
+        // Find, split, and close act through callbacks the pane host
+        // installs. A surface outside any pane (the quick terminal) has
+        // none of them, so we leave the items out rather than offer ones
+        // that do nothing.
+        guard paneID != nil else { return menu }
+
         menu.addItem(.separator())
         menu.addItem(
             withTitle: String(localized: "Find…"),

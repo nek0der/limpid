@@ -151,6 +151,7 @@ struct SettingsScene: View {
         case .font: FontPane()
         case .terminal: TerminalPane()
         case .tabsAndPanes: TabsAndPanesPane()
+        case .quickTerminal: QuickTerminalPane()
         case .keyboard: KeyboardPane()
         case .integrations: IntegrationsPane()
         case .review: ReviewSettingsPane()

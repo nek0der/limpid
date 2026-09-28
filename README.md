@@ -35,6 +35,9 @@ Read the branch or the working tree inside Limpid, comment on the lines you want
 
 When an agent finishes, press ⌘J and Review opens the diff since the prompt was sent. Read it, leave line comments, and send them to the pane below without searching through earlier worktree changes. Use ⌥⌘J to open that turn directly from the focused pane.
 
+### Quick terminal
+A system-wide hotkey opens a terminal over whatever app you are in, and the same hotkey puts it away. It slides in from the top, bottom, left, or right edge, or appears in the center, and by default hides when it loses focus. Off until you bind a hotkey in `Settings → Quick Terminal`.
+
 ### Designed to disappear
 A native macOS three-pane sidebar plus a Liquid Glass toolbar — calm, out of the way, native.
 

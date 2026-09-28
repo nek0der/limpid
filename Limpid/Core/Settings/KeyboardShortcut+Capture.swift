@@ -51,7 +51,9 @@ extension StoredShortcut {
     /// `charactersIgnoringModifiers`, which gives us the user's
     /// layout-specific literal (`=` on US's keyCode 24, `^` on JIS's
     /// same physical key) without us having to know the layout.
-    private static let keyCodeNames: [UInt16: String] = [
+    /// Internal so the quick terminal's global hotkey can map a stored
+    /// name back to a keyCode.
+    static let keyCodeNames: [UInt16: String] = [
         36: "return", 76: "return", // return, keypad enter
         48: "tab", 49: "space", 51: "backspace", 53: "escape",
         117: "delete", 115: "home", 119: "end",
@@ -94,11 +96,28 @@ extension StoredShortcut {
     /// libghostty's keybind file as `shift+]=…` instead of `}`.
     @MainActor
     private static func translateKeyCodeIgnoringShift(_ keyCode: UInt16) -> String? {
+        currentLayoutTranslator()?(keyCode)
+    }
+
+    /// A translator bound to the input source that is current now, for
+    /// callers that translate many keyCodes in one pass (the global
+    /// hotkey's reverse lookup scans all 128). Reading the layout once
+    /// keeps that scan from querying the input source per keyCode. `nil`
+    /// when the current input source has no Unicode layout data.
+    @MainActor
+    static func currentLayoutTranslator() -> ((UInt16) -> String?)? {
         guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
               let layoutDataPtr = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
         else { return nil }
         let layoutData = Unmanaged<CFData>.fromOpaque(layoutDataPtr).takeUnretainedValue() as Data
-        return layoutData.withUnsafeBytes { rawBuffer -> String? in
+        let keyboardType = UInt32(LMGetKbdType())
+        return { keyCode in
+            translate(keyCode, layoutData: layoutData, keyboardType: keyboardType)
+        }
+    }
+
+    private static func translate(_ keyCode: UInt16, layoutData: Data, keyboardType: UInt32) -> String? {
+        layoutData.withUnsafeBytes { rawBuffer -> String? in
             guard let layoutBytes = rawBuffer.baseAddress else { return nil }
             let keyLayoutPtr = layoutBytes.assumingMemoryBound(to: UCKeyboardLayout.self)
             var deadKeyState: UInt32 = 0
@@ -109,7 +128,7 @@ extension StoredShortcut {
                 keyCode,
                 UInt16(kUCKeyActionDown),
                 0, // modifierKeyState — zero strips Shift, Option, …
-                UInt32(LMGetKbdType()),
+                keyboardType,
                 OptionBits(kUCKeyTranslateNoDeadKeysMask),
                 &deadKeyState,
                 chars.count,

@@ -71,7 +71,9 @@ in `Core/`, no `Settings` ↔ `Persistence` cycles.
 | `AgentIntegrationService/Service/RustApprovalHost.swift` | Ownership-safe Swift wrapper around the Rust approval service/session C ABI |
 | `AgentIntegrationService/Shared/AgentIntegrationConfiguration.swift` | Debug/Release identifiers and Team ID-bound peer requirements |
 | `scripts/build-rust-bridge.sh` | Builds the architecture-specific Rust static library into Xcode DerivedData |
-| `Limpid/Core/SurfaceRegistry.swift` | `[UUID: SurfaceView]` mapping — single source of truth for AppKit surface lifetime |
+| `Limpid/Core/SurfaceRegistry.swift` | `[UUID: SurfaceView]` mapping — owns the lifetime of every pane's surface (the quick terminal's surface lives outside it) |
+| `Limpid/UI/QuickTerminal/QuickTerminalController.swift` | The quick terminal panel: show / hide choreography, activation hand-back, and the lifetime of its one surface outside the registry |
+| `Limpid/Core/QuickTerminal/QuickTerminalHotKeyCenter.swift` | Keeps the quick terminal's global hotkey registered to match the setting, the keyboard layout, and the Settings recorders |
 | `Limpid/UI/SurfaceView.swift` | The `NSView` subclass that owns the libghostty surface + Metal layer |
 | `Limpid/UI/Pane/PaneHostView.swift` | `NSViewRepresentable` bridging `SurfaceRegistry` ↔ SplitTree |
 | `Limpid/Core/Git/PRStatusSyncer.swift` | Schedules forge CLI lookups per sidebar row and writes them into `PRStatusStore` (opt-in; `gh` / `glab`) |
@@ -106,6 +108,11 @@ across those rebuilds. `registry.unregister(_:)` and
 `registry.reconcile(activeIDs:)` are called only by destructive
 operations (close tab / remove worktree / surface-exit callback) —
 never by tab switches.
+
+The quick terminal's one surface is the exception: it is not in the
+registry, whose reconcile and occlusion passes only know about panes.
+`QuickTerminalController` owns it, and its close and child-exit events
+reach the controller before the coordinator's registry lookup.
 
 The libghostty handle (`ghostty_surface_t`) is freed exactly once,
 in `SurfaceView.deinit`. The deinit hops to MainActor via

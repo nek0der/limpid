@@ -22,37 +22,41 @@ struct SettingsAwareFindCommands: Commands {
                 state.session.paneSearchStates[$0] != nil
             } ?? false
 
-            Section {
-                Button {
-                    if let settingsSearchFocusAction {
-                        settingsSearchFocusAction()
-                    } else {
-                        performFind(.find)
+            // The quick terminal has no find overlay; routing Find to the
+            // main window would search a pane the user cannot see.
+            MainWindowCommandItems(state.quickTerminal) {
+                Section {
+                    Button {
+                        if let settingsSearchFocusAction {
+                            settingsSearchFocusAction()
+                        } else {
+                            performFind(.find)
+                        }
+                    } label: {
+                        Label("Find…", systemImage: "magnifyingglass")
                     }
-                } label: {
-                    Label("Find…", systemImage: "magnifyingglass")
+                    .limpidShortcut(.find, in: state.settingsStore)
+                    Button {
+                        performFind(.findNext)
+                    } label: {
+                        Label("Find Next", systemImage: "chevron.down")
+                    }
+                    .limpidShortcut(.findNext, in: state.settingsStore)
+                    .disabled(!hasActiveSearch && !state.reviewPresentation.isPresented)
+                    Button {
+                        performFind(.findPrevious)
+                    } label: {
+                        Label("Find Previous", systemImage: "chevron.up")
+                    }
+                    .limpidShortcut(.findPrevious, in: state.settingsStore)
+                    .disabled(!hasActiveSearch && !state.reviewPresentation.isPresented)
                 }
-                .limpidShortcut(.find, in: state.settingsStore)
-                Button {
-                    performFind(.findNext)
-                } label: {
-                    Label("Find Next", systemImage: "chevron.down")
-                }
-                .limpidShortcut(.findNext, in: state.settingsStore)
-                .disabled(!hasActiveSearch && !state.reviewPresentation.isPresented)
-                Button {
-                    performFind(.findPrevious)
-                } label: {
-                    Label("Find Previous", systemImage: "chevron.up")
-                }
-                .limpidShortcut(.findPrevious, in: state.settingsStore)
-                .disabled(!hasActiveSearch && !state.reviewPresentation.isPresented)
+                .disabled(
+                    settingsSearchFocusAction == nil
+                        && state.session.activeTab == nil
+                        && !state.reviewPresentation.isPresented
+                )
             }
-            .disabled(
-                settingsSearchFocusAction == nil
-                    && state.session.activeTab == nil
-                    && !state.reviewPresentation.isPresented
-            )
         }
     }
 }

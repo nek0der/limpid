@@ -14,6 +14,16 @@ private let log = Logger.limpid("ghostty.config-bridge")
 
 @MainActor
 enum GhosttyConfigBridge {
+    /// Horizontal padding, in points, we give every surface through
+    /// `window-padding-x`. See `makeConfigString` for why. The quick
+    /// terminal subtracts it from its own inset, so both read this value.
+    nonisolated static let windowPaddingX = 8
+
+    /// libghostty's default `window-padding-y`, in points, which we leave
+    /// in place (`window-padding-y` in `vendor/ghostty/src/config/Config.zig`).
+    /// Recorded here because the quick terminal's inset is measured on top
+    /// of it; update it if a libghostty bump changes that default.
+    nonisolated static let libghosttyDefaultWindowPaddingY = 2
 
     // MARK: - Serialization
 
@@ -79,7 +89,7 @@ enum GhosttyConfigBridge {
         // full-width row still runs edge to edge while ordinary text
         // keeps its margin. libghostty's own default is 2, which reads
         // as no margin at all once the pane stopped being inset.
-        lines.append("window-padding-x = 8")
+        lines.append("window-padding-x = \(windowPaddingX)")
         lines.append("window-padding-color = extend")
 
         // Theme: pick the bundled `Apple System Colors` pair so the

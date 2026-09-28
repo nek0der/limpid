@@ -13,6 +13,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case font
     case terminal
     case tabsAndPanes
+    case quickTerminal
     case keyboard
     case integrations
     case review
@@ -29,6 +30,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .font: "Font"
         case .terminal: "Terminal"
         case .tabsAndPanes: "Tabs & Panes"
+        case .quickTerminal: "Quick Terminal"
         case .keyboard: "Keyboard"
         case .integrations: "Integrations"
         case .review: "Review"
@@ -43,6 +45,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .font: "textformat"
         case .terminal: "terminal"
         case .tabsAndPanes: "rectangle.split.2x1"
+        case .quickTerminal: "apple.terminal.on.rectangle"
         case .keyboard: "keyboard"
         case .integrations: "puzzlepiece.extension"
         case .review: "text.document"

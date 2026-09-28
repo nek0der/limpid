@@ -92,16 +92,6 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
         }
     }
 
-    /// Coarse "is some Limpid window currently focused" check.
-    /// Kept around for the GhosttyEventCoordinator paths that already
-    /// own a `SurfaceView` and want to refine with their own
-    /// `firstResponder === view` test — they conjunct this with the
-    /// view check inline rather than re-implementing it.
-    @MainActor
-    static var isKeyAndFocused: Bool {
-        NSApp.keyWindow != nil && NSApp.isActive
-    }
-
     /// True only when the surface view for `paneIDString` is the first
     /// responder of the key window. The previous heuristic just checked
     /// "is *some* Limpid window key", which suppressed banners for
@@ -112,7 +102,7 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
     /// recoverable, but a notification dropped on the floor is gone.
     @MainActor
     static func isPaneFocused(paneIDString: String?) -> Bool {
-        guard NSApp.isActive, let keyWindow = NSApp.keyWindow else { return false }
+        guard NSApp.isActive, NSApp.keyWindow != nil else { return false }
         guard let paneIDString,
               let paneID = UUID(uuidString: paneIDString),
               let registry,
@@ -125,6 +115,17 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
             // is recoverable (the user sees + dismisses it).
             return false
         }
+        return isViewFocused(view)
+    }
+
+    /// True only when `view` is the first responder of the key window of the
+    /// active app. The window check matters once the quick terminal can be
+    /// key: a main-window pane is still its own window's first responder
+    /// then, and treating it as focused would suppress its notifications
+    /// and unread marks while the user is typing in the panel.
+    @MainActor
+    static func isViewFocused(_ view: SurfaceView) -> Bool {
+        guard NSApp.isActive, let keyWindow = NSApp.keyWindow else { return false }
         return view.window === keyWindow && keyWindow.firstResponder === view
     }
 }
