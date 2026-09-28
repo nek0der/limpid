@@ -1,4 +1,4 @@
-.PHONY: build build-release run dev test rust-test review-core fmt rust-fmt lint rust-lint rust-header dmg xcodegen ghostty screenshot clean help
+.PHONY: build build-release release-check run dev test rust-test review-core fmt rust-fmt lint rust-lint rust-header dmg xcodegen ghostty screenshot clean help
 
 SCHEME  := Limpid
 PROJECT := Limpid.xcodeproj
@@ -22,6 +22,7 @@ help:
 	@echo "  make fmt         Auto-format with SwiftFormat"
 	@echo "  make lint        Lint Swift and Rust sources, mirrors CI"
 	@echo "  make rust-header Regenerate the bridge C header and fail if it drifted"
+	@echo "  make release-check Archive Release unsigned and check it can be distributed"
 	@echo "  make dmg         Package a release DMG"
 	@echo "  make xcodegen    Regenerate Limpid.xcodeproj from project.yml"
 	@echo "  make ghostty     Build vendored libghostty"
@@ -44,6 +45,20 @@ build: $(PBXPROJ)
 build-release: $(PBXPROJ)
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
 		-destination '$(BUILD_DESTINATION)' build
+
+# `build` alone never assembles an archive, which is how the v0.1.5 generic
+# archive reached the release workflow. We archive unsigned so this runs
+# without the Developer ID certificate, then check the layout that
+# `exportArchive` depends on.
+RELEASE_CHECK_ARCHIVE ?= build/ReleaseCheck/Limpid.xcarchive
+release-check: $(PBXPROJ)
+	scripts/test-check-release-archive.sh
+	rm -rf '$(RELEASE_CHECK_ARCHIVE)'
+	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
+		-destination '$(BUILD_DESTINATION)' \
+		CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+		archive -archivePath '$(RELEASE_CHECK_ARCHIVE)'
+	scripts/check-release-archive.sh '$(RELEASE_CHECK_ARCHIVE)'
 
 run:
 	@app="$(APP_PATH)"; \
