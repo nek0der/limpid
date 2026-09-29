@@ -214,6 +214,15 @@ final class AgentIntegrationServiceRegistrar {
 
     func start(readinessChanged: @escaping (Bool) -> Void) {
         guard !LimpidPaths.isRunningInTests else { return }
+        // A demo run, such as `make screenshot`, shares its bundle identifier
+        // and LaunchAgent label with the Limpid the user already runs.
+        // `SMAppService` keeps one registration per user, so reconciling here
+        // would replace that app's service with this build's. The demo leaves
+        // the agents on their native prompts instead.
+        guard !DemoFixture.isDemoActive else {
+            Self.log.notice("Native approvals are off: demo mode")
+            return
+        }
         self.readinessChanged = readinessChanged
 
         #if DEBUG
