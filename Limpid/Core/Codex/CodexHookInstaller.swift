@@ -124,10 +124,11 @@ final class CodexHookInstaller {
     /// and a no-op when the block already matches — a config kept under
     /// version control only shows a diff when our hooks actually change.
     func refresh() {
-        // Demo mode (`LIMPID_DEMO=1`, e.g. `make screenshot`) must not
-        // touch real-user state on disk.
-        if ProcessInfo.processInfo.environment["LIMPID_DEMO"] == "1" {
-            log.debug("LIMPID_DEMO=1 — skipping trust block")
+        // Demo mode (`LIMPID_DEMO`, e.g. `make screenshot`) must not
+        // touch real-user state on disk. `DemoFixture` decides what counts
+        // as demo mode, so this cannot write while the session is the fixture.
+        if DemoFixture.isDemoActive {
+            log.debug("demo mode — skipping trust block")
             return
         }
         guard let lifecycleCommand else {
@@ -166,7 +167,7 @@ final class CodexHookInstaller {
     /// caller treats that as "no Codex integration this pane".
     func environment() -> [String: String] {
         guard let lifecycleCommand else { return [:] }
-        if ProcessInfo.processInfo.environment["LIMPID_DEMO"] == "1" {
+        if DemoFixture.isDemoActive {
             return [:]
         }
         // The variable names come from the provider's install recipe and the

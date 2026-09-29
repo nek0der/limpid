@@ -26,6 +26,7 @@ final class GhosttyEventCoordinator {
     /// it took the event. A closure rather than the owner itself so Core
     /// does not depend on the UI type that owns that surface.
     private let claimsSurfaceExit: @MainActor (SurfaceView) -> Bool
+    private let linkOpener: TerminalLinkOpener
 
     /// Pending SET_TITLE applies, keyed by pane id. We debounce title
     /// updates by a tiny delay so a shell that prints the command name
@@ -49,7 +50,8 @@ final class GhosttyEventCoordinator {
         bellFeaturesProvider: @escaping () -> BellFeatures,
         secureInputManager: SecureInputManager,
         attention: AttentionState? = nil,
-        claimsSurfaceExit: @escaping @MainActor (SurfaceView) -> Bool = { _ in false }
+        claimsSurfaceExit: @escaping @MainActor (SurfaceView) -> Bool = { _ in false },
+        linkOpener: TerminalLinkOpener
     ) {
         self.ghosttyApp = ghosttyApp
         self.session = session
@@ -59,6 +61,7 @@ final class GhosttyEventCoordinator {
         self.secureInputManager = secureInputManager
         self.attention = attention
         self.claimsSurfaceExit = claimsSurfaceExit
+        self.linkOpener = linkOpener
     }
 
     // Single entry point invoked by `GhosttyActionRouter.sink`. Switch
@@ -94,8 +97,12 @@ final class GhosttyEventCoordinator {
             handleCloseSurface(view: view)
         case let .mouseOverLink(view, url):
             handleMouseOverLink(view: view, url: url)
-        case let .openUrl(url):
-            handleOpenUrl(url: url)
+        case let .openUrl(url, source):
+            if let url {
+                linkOpener.open(url, source: source)
+            } else {
+                linkOpener.reject(.malformed)
+            }
         case let .mouseShape(view, shape):
             handleMouseShape(view: view, shape: shape)
         case let .secureInput(view, mode):
@@ -550,14 +557,6 @@ final class GhosttyEventCoordinator {
 
     private func handleMouseOverLink(view: SurfaceView, url: String?) {
         view.hoverUrl = url
-    }
-
-    private func handleOpenUrl(url: String) {
-        guard let nsURL = URL(string: url) else {
-            log.warning("OPEN_URL invalid URL: \(url, privacy: .private)")
-            return
-        }
-        NSWorkspace.shared.open(nsURL)
     }
 
     private func handleMouseShape(view: SurfaceView, shape: ghostty_action_mouse_shape_e) {

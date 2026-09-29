@@ -16,7 +16,7 @@ import Testing
 /// It sits outside the suite because a trait that reads a static member of
 /// the type it is attached to makes the macro expansion circular.
 private func isRunningInDemoMode() -> Bool {
-    ProcessInfo.processInfo.environment["LIMPID_DEMO"] == "1"
+    DemoFixture.isDemoActive
 }
 
 @Suite("Agent hook backend")

@@ -11,6 +11,23 @@
         }
       }
     },
+    "A program in the terminal chose this link, and it may not match the text you clicked.\n\n%@": {
+      "comment": "Body of the terminal hyperlink prompt; the argument is the link target",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A program in the terminal chose this link, and it may not match the text you clicked.\n\n%@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このリンクはターミナル内のプログラムが指定したもので、クリックした文字列と一致しない場合があります。\n\n%@"
+          }
+        }
+      }
+    },
     "Agent responses and completed commands appear as notifications.": {
       "localizations": {
         "ja": {
@@ -73,6 +90,39 @@
         }
       }
     },
+    "No app can open this link.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No app can open this link."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このリンクを開けるアプリがありません。"
+          }
+        }
+      }
+    },
+    "Open this link in %@?": {
+      "comment": "Title of the prompt before a terminal hyperlink opens another app; the argument is that app's name",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open this link in %@?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このリンクを %@ で開きますか？"
+          }
+        }
+      }
+    },
     "Sending approval": {
       "localizations": {
         "en": {
@@ -100,6 +150,118 @@
         },
         "ja": {
           "stringUnit": { "state": "translated", "value": "送信中…" }
+        }
+      }
+    },
+    "Shown in Finder instead of opened, because it can run code.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shown in Finder instead of opened, because it can run code."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードを実行できる項目のため、開かずに Finder で表示しました。"
+          }
+        }
+      }
+    },
+    "The file doesn’t exist.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file doesn’t exist."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルが存在しません。"
+          }
+        }
+      }
+    },
+    "The link contains invisible or line-breaking characters.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The link contains invisible or line-breaking characters."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクに不可視文字または改行文字が含まれています。"
+          }
+        }
+      }
+    },
+    "The link isn’t a valid address.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The link isn’t a valid address."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクのアドレスが正しくありません。"
+          }
+        }
+      }
+    },
+    "The link points to a file on another computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The link points to a file on another computer."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンク先は別のコンピュータ上のファイルです。"
+          }
+        }
+      }
+    },
+    "The link points to something that isn’t a file or folder.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The link points to something that isn’t a file or folder."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンク先はファイルでもフォルダでもありません。"
+          }
+        }
+      }
+    },
+    "The web link has no host.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The web link has no host."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web リンクにホスト名がありません。"
+          }
         }
       }
     },
