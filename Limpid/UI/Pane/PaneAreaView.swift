@@ -405,9 +405,13 @@ private struct ReviewStripPane: View {
     let surfaceView: SurfaceView
     let available: CGFloat
     @Environment(ReviewPresentation.self) private var reviewPresentation
+    @Environment(WindowSession.self) private var session
 
     var body: some View {
-        if let height = reviewPresentation.stripHeight(in: available) {
+        if let height = reviewPresentation.displayedStripHeight(
+            in: available,
+            cellHeight: session.gridCellHeight(of: surfaceView)
+        ) {
             PaneContainerView(paneID: paneID, surfaceView: surfaceView)
                 .frame(height: height)
         }

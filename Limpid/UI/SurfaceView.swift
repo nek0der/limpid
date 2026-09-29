@@ -145,6 +145,16 @@ final class SurfaceView: NSView {
     /// serve as evidence of user interaction without making the overlay blink.
     var onScrollGesture: (() -> Void)?
 
+    /// The live cell height in points, or `nil` off screen, where there is no
+    /// backing scale to convert libghostty's pixels with.
+    var cellHeight: CGFloat? {
+        guard let surface,
+              let pixels = GhosttyFFI.surfaceCellHeightPixels(surface),
+              let scale = window?.backingScaleFactor, scale > 0
+        else { return nil }
+        return CGFloat(pixels) / scale
+    }
+
     func updateScrollbarState(_ state: TerminalScrollbarState) {
         scrollbarState = state
         onScrollbarStateChange?(state)

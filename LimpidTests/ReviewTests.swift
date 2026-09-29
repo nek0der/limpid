@@ -130,6 +130,20 @@ struct ReviewTests {
         #expect(ReviewStrip.height(5000, isCollapsed: false, in: 900) == 720)
     }
 
+    /// The strip leaves the spare space the tab leaves, so the agent's last
+    /// row sits the same distance from the bottom in both.
+    @Test func stripKeepsTheSpareSpaceOfTheTab() {
+        // Tab: (800 - 16) / 15 = 52 rows with 4pt to spare. Strip: 240 holds
+        // 14 rows plus that spare, 16 + 210 + 4 = 230.
+        #expect(ReviewStrip.fitted(240, matching: 800, cellHeight: 15, verticalPadding: 8) == 230)
+        #expect(ReviewStrip.fitted(230, matching: 800, cellHeight: 15, verticalPadding: 8) == 230)
+        // A tab with nothing to spare trims the strip to whole rows.
+        #expect(ReviewStrip.fitted(240, matching: 766, cellHeight: 15, verticalPadding: 8) == 226)
+        // Nothing to fit to, or not even one row: the height stands.
+        #expect(ReviewStrip.fitted(240, matching: 800, cellHeight: nil, verticalPadding: 8) == 240)
+        #expect(ReviewStrip.fitted(20, matching: 800, cellHeight: 15, verticalPadding: 8) == 20)
+    }
+
     /// The list the rail draws and the list `n` / `p` walk are one list. They
     /// were two: the keys stepped through layer-then-path order while the tree
     /// showed directory order, so in tree mode they jumped around the rail

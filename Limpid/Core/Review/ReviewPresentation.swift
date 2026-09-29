@@ -66,6 +66,32 @@ enum ReviewStrip {
         return min(max(height, minimum), (available * maximumFraction).rounded(.down))
     }
 
+    /// Trimmed so the grid leaves the same spare space the tab does.
+    /// libghostty puts the part of a surface's height that does not fill a
+    /// row outside the grid — below it, or split around it when
+    /// `window-padding-balance` is on — so the spare space depends on the
+    /// height. A strip of arbitrary height put the agent's prompt a few
+    /// points off from where it sat in the tab, and the text looked as if it
+    /// moved when review opened. `tabHeight` is the height the pane had as the
+    /// tab's only pane; the strip keeps that height's spare space, and the
+    /// review surface above takes the trimmed points. `nil` or a height that
+    /// fits no row leaves the height as it is.
+    static func fitted(
+        _ height: CGFloat,
+        matching tabHeight: CGFloat,
+        cellHeight: CGFloat?,
+        verticalPadding: CGFloat = CGFloat(GhosttyConfigBridge.windowPaddingY)
+    ) -> CGFloat {
+        guard let cellHeight, cellHeight > 0 else { return height }
+        let padding = verticalPadding * 2
+        let tabGrid = tabHeight - padding
+        guard tabGrid > 0 else { return height }
+        let spare = tabGrid - (tabGrid / cellHeight).rounded(.down) * cellHeight
+        let rows = ((height - padding - spare) / cellHeight).rounded(.down)
+        guard rows >= 1 else { return height }
+        return rows * cellHeight + padding + spare
+    }
+
     /// Rounded to whole points. A drag reports fractional deltas, and handing
     /// the terminal a new size for a change it cannot render is what a flicker
     /// is made of.
@@ -299,6 +325,15 @@ final class ReviewPresentation {
     /// The height to render the docked terminal at, or `nil` for none.
     func stripHeight(in available: CGFloat) -> CGFloat? {
         ReviewStrip.height(stripHeight, isCollapsed: isStripCollapsed, in: available)
+    }
+
+    /// The height the strip is drawn at: `stripHeight(in:)` fitted to the
+    /// grid. The divider sits on this edge, so a drag and the accessibility
+    /// value start from it rather than from the height before the fit.
+    func displayedStripHeight(in available: CGFloat, cellHeight: CGFloat?) -> CGFloat? {
+        stripHeight(in: available).map {
+            ReviewStrip.fitted($0, matching: available, cellHeight: cellHeight)
+        }
     }
 
     /// Guarded rather than assigned. Observation's generated setter notifies on

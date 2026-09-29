@@ -39,9 +39,8 @@ enum QuickTerminalLayout {
     /// Space between the panel edge and the terminal's text, on every side.
     ///
     /// A pane never touches a window corner, so libghostty's own padding
-    /// (`GhosttyConfigBridge.windowPaddingX` horizontally, and libghostty's
-    /// default `GhosttyConfigBridge.libghosttyDefaultWindowPaddingY`
-    /// vertically) is enough there. The panel's terminal runs
+    /// (`GhosttyConfigBridge.windowPaddingX` and `windowPaddingY`) is
+    /// enough there. The panel's terminal runs
     /// to the rounded corners, where that left the first line against the
     /// curve. 14pt clears a 17pt continuous corner and reads like the inner
     /// margin of other floating system panels.
@@ -51,7 +50,7 @@ enum QuickTerminalLayout {
     /// from the edge, on top of libghostty's own padding.
     static let terminalInsetHorizontal: CGFloat = terminalInset - CGFloat(GhosttyConfigBridge.windowPaddingX)
     static let terminalInsetVertical: CGFloat =
-        terminalInset - CGFloat(GhosttyConfigBridge.libghosttyDefaultWindowPaddingY)
+        terminalInset - CGFloat(GhosttyConfigBridge.windowPaddingY)
 
     /// Width of the centered panel as a share of the visible frame. Its
     /// height follows the size setting.

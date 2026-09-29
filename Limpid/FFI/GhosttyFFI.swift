@@ -152,6 +152,13 @@ enum GhosttyFFI {
         return pid_t(pid)
     }
 
+    /// Height of one terminal cell in device pixels, or `nil` while the
+    /// surface has no font metrics yet.
+    static func surfaceCellHeightPixels(_ surface: ghostty_surface_t) -> UInt32? {
+        let height = ghostty_surface_size(surface).cell_height_px
+        return height > 0 ? height : nil
+    }
+
     /// Build mode libghostty was compiled with.
     static func buildMode() -> String {
         switch ghostty_info().build_mode {

@@ -19,11 +19,12 @@ enum GhosttyConfigBridge {
     /// terminal subtracts it from its own inset, so both read this value.
     nonisolated static let windowPaddingX = 8
 
-    /// libghostty's default `window-padding-y`, in points, which we leave
-    /// in place (`window-padding-y` in `vendor/ghostty/src/config/Config.zig`).
-    /// Recorded here because the quick terminal's inset is measured on top
-    /// of it; update it if a libghostty bump changes that default.
-    nonisolated static let libghosttyDefaultWindowPaddingY = 2
+    /// Vertical padding, in points, we give every surface through
+    /// `window-padding-y`. We own it for the reason we own the horizontal
+    /// one, and because the review strip trims its height to whole rows:
+    /// that needs the padding libghostty will apply, and the C API cannot
+    /// read a user's value back. The quick terminal subtracts it too.
+    nonisolated static let windowPaddingY = 8
 
     // MARK: - Serialization
 
@@ -90,6 +91,7 @@ enum GhosttyConfigBridge {
         // keeps its margin. libghostty's own default is 2, which reads
         // as no margin at all once the pane stopped being inset.
         lines.append("window-padding-x = \(windowPaddingX)")
+        lines.append("window-padding-y = \(windowPaddingY)")
         lines.append("window-padding-color = extend")
 
         // Theme: pick the bundled `Apple System Colors` pair so the

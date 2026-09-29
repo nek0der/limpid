@@ -34,6 +34,18 @@ struct GhosttyConfigBridgeTests {
         return nil
     }
 
+    // MARK: - Padding
+
+    /// The review strip fits its height with the padding it expects
+    /// libghostty to apply, so the generated layer has to carry both values
+    /// and win over a user's own config file loaded before it.
+    @Test("window padding is emitted on both axes")
+    func makeConfig_windowPadding_isEmittedOnBothAxes() {
+        let config = generate(.default)
+        #expect(value(of: "window-padding-x", in: config) == "\(GhosttyConfigBridge.windowPaddingX)")
+        #expect(value(of: "window-padding-y", in: config) == "\(GhosttyConfigBridge.windowPaddingY)")
+    }
+
     // MARK: - Font
 
     @Test("font-family is omitted when the user hasn't picked one")
