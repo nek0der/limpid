@@ -14,15 +14,10 @@ enum TitleFormatting {
     /// Picking the same string up front avoids a visible title flash
     /// from our placeholder to the shell's first emission.
     static func pwdStyle(for workingDirectory: URL?) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let path = workingDirectory?.path ?? home
-        let tildePath: String
-        if path == home {
+        let path = workingDirectory?.path ?? FileManager.default.homeDirectoryForCurrentUser.path
+        let tildePath = PathFormatting.abbreviateHome(path)
+        if tildePath == "~" {
             return "~"
-        } else if path.hasPrefix(home + "/") {
-            tildePath = "~" + path.dropFirst(home.count)
-        } else {
-            tildePath = path
         }
         // zsh-style truncation: ≥4 components → "…/last3"
         let components = tildePath.split(separator: "/", omittingEmptySubsequences: false)
