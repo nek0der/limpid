@@ -64,7 +64,7 @@ struct TerminalLinkPolicyTests {
             let file = dir.appendingPathComponent("notes.txt")
             try Data("hi".utf8).write(to: file)
             let canonical = file.resolvingSymlinksInPath()
-            #expect(TerminalLinkPolicy.action(for: file.absoluteString, source: source) == .open(canonical))
+            #expect(TerminalLinkPolicy.action(for: file.absoluteString, source: source) == .openFile(canonical, nil))
         }
     }
 
@@ -74,7 +74,7 @@ struct TerminalLinkPolicyTests {
             try Data("hi".utf8).write(to: file)
             #expect(
                 TerminalLinkPolicy.action(for: file.path, source: .matchedText)
-                    == .open(file.resolvingSymlinksInPath())
+                    == .openFile(file.resolvingSymlinksInPath(), nil)
             )
         }
     }
@@ -144,9 +144,92 @@ struct TerminalLinkPolicyTests {
         #expect(TerminalLinkPolicy.action(for: "/etc/hosts", source: .hyperlink) == .reject(.malformed))
     }
 
-    /// libghostty resolves a relative match against the pane's working
-    /// directory when the file exists, so a relative path here names nothing.
-    @Test func unresolvedRelativeMatchIsRejected() {
+    @Test func relativeMatchWithNowhereToLookIsRejected() {
         #expect(TerminalLinkPolicy.action(for: "src/missing.swift:12", source: .matchedText) == .reject(.missingFile))
+    }
+
+    // MARK: Paths with a position
+
+    /// What agents and compilers print: a path relative to the pane's
+    /// directory with a line and column.
+    @Test(arguments: [
+        ("Sources/Main.swift:12:5", FilePosition(line: 12, column: 5)),
+        ("Sources/Main.swift:12", FilePosition(line: 12, column: nil)),
+        ("Sources/Main.swift#L12", FilePosition(line: 12, column: nil)),
+        ("Sources/Main.swift#L12C5", FilePosition(line: 12, column: 5)),
+        ("Sources/Main.swift#L12-L20", FilePosition(line: 12, column: nil)),
+    ])
+    func relativePathWithPositionOpensAtThatPosition(text: String, position: FilePosition) throws {
+        try withTempDir { dir in
+            let file = try makeFile("Sources/Main.swift", in: dir)
+            #expect(
+                TerminalLinkPolicy.action(for: text, source: .matchedText, baseDirectories: [dir])
+                    == .openFile(file.resolvingSymlinksInPath(), position)
+            )
+        }
+    }
+
+    @Test func absolutePathWithPositionOpensAtThatPosition() throws {
+        try withTempDir { dir in
+            let file = try makeFile("a.txt", in: dir)
+            #expect(
+                TerminalLinkPolicy.action(for: file.path + ":3", source: .matchedText)
+                    == .openFile(file.resolvingSymlinksInPath(), FilePosition(line: 3, column: nil))
+            )
+        }
+    }
+
+    /// A file whose name really ends in `:12` is opened as named.
+    @Test func literalNameWinsOverASuffix() throws {
+        try withTempDir { dir in
+            let file = try makeFile("notes:12", in: dir)
+            #expect(
+                TerminalLinkPolicy.action(for: "notes:12", source: .matchedText, baseDirectories: [dir])
+                    == .openFile(file.resolvingSymlinksInPath(), nil)
+            )
+        }
+    }
+
+    /// The first base that has the file wins, so the pane's own directory
+    /// takes precedence over the container root.
+    @Test func baseDirectoriesAreTriedInOrder() throws {
+        try withTempDir { dir in
+            let paneDir = dir.appendingPathComponent("pane")
+            let rootDir = dir.appendingPathComponent("root")
+            let inPane = try makeFile("x/a.swift", in: paneDir)
+            _ = try makeFile("x/a.swift", in: rootDir)
+            let onlyInRoot = try makeFile("y/b.swift", in: rootDir)
+            #expect(
+                TerminalLinkPolicy.action(for: "x/a.swift:1", source: .matchedText, baseDirectories: [paneDir, rootDir])
+                    == .openFile(inPane.resolvingSymlinksInPath(), FilePosition(line: 1, column: nil))
+            )
+            #expect(
+                TerminalLinkPolicy.action(for: "y/b.swift:1", source: .matchedText, baseDirectories: [paneDir, rootDir])
+                    == .openFile(onlyInRoot.resolvingSymlinksInPath(), FilePosition(line: 1, column: nil))
+            )
+        }
+    }
+
+    /// A position never turns a script into something that opens.
+    @Test func scriptWithPositionIsStillRevealed() throws {
+        try withTempDir { dir in
+            let file = try makeFile("run.sh", in: dir)
+            #expect(
+                TerminalLinkPolicy.action(for: "run.sh:1", source: .matchedText, baseDirectories: [dir])
+                    == .reveal(file.resolvingSymlinksInPath())
+            )
+        }
+    }
+
+    @Test(arguments: ["a.swift:0", "a.swift:", "a.swift#L", "a.swift#Lx"])
+    func malformedSuffixIsNotAPosition(text: String) {
+        #expect(TerminalPathReference.candidates(for: text) == [TerminalPathReference(path: text, position: nil)])
+    }
+
+    private func makeFile(_ relativePath: String, in dir: URL) throws -> URL {
+        let file = dir.appendingPathComponent(relativePath)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: file)
+        return file
     }
 }

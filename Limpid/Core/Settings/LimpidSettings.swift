@@ -709,14 +709,15 @@ struct AdvancedSettings: Codable, Equatable {
     /// break the escaping the blocks depend on.
     var reviewInstructions: String = ""
 
-    /// The application Review uses when opening a reviewed file. `nil` leaves
-    /// file handling to macOS's default application for that file type.
+    /// The application that opens a local file, whether from Review or from a
+    /// path ⌘-clicked in a terminal pane. `nil` leaves file handling to
+    /// macOS's default application for that file type.
     ///
     /// We persist the bundle identifier rather than the selected bundle's URL:
     /// applications move when they are updated or installed on another volume.
     /// The display name is only a last-known label for a missing application;
     /// opening always resolves the identifier again through `NSWorkspace`.
-    var reviewFileApplication: ReviewFileApplication?
+    var fileApplication: FileApplication?
 
     /// See `LimpidSettings.unknownFields`.
     var unknownFields: [String: LimpidJSONValue] = [:]
@@ -728,8 +729,8 @@ struct AdvancedSettings: Codable, Equatable {
         self.reviewInstructions = try c.decodeIfPresent(
             String.self, forKey: .reviewInstructions
         ) ?? ""
-        self.reviewFileApplication = try c.decodeIfPresent(
-            ReviewFileApplication.self, forKey: .reviewFileApplication
+        self.fileApplication = try c.decodeIfPresent(
+            FileApplication.self, forKey: .fileApplication
         )
         self.ghosttyConfig = try c.decodeIfPresent(
             GhosttyConfig.self, forKey: .ghosttyConfig
@@ -756,14 +757,16 @@ struct AdvancedSettings: Codable, Equatable {
         try c.encode(showPRStatusOnlyWhenAttention, forKey: .showPRStatusOnlyWhenAttention)
         try c.encode(hostsAgentsInTmux, forKey: .hostsAgentsInTmux)
         try c.encode(reviewInstructions, forKey: .reviewInstructions)
-        try c.encodeIfPresent(reviewFileApplication, forKey: .reviewFileApplication)
+        try c.encodeIfPresent(fileApplication, forKey: .fileApplication)
         try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case ghosttyConfig
         case reviewInstructions
-        case reviewFileApplication
+        /// Named for Review, its first user; the stored key stays so
+        /// existing settings files keep their choice.
+        case fileApplication = "reviewFileApplication"
         case showPRStatusInSidebar
         case showPRStatusOnlyWhenAttention
         case hostsAgentsInTmux
@@ -777,7 +780,7 @@ struct AdvancedSettings: Codable, Equatable {
 /// `bundleIdentifier` is the durable identity. `lastKnownDisplayName` keeps
 /// Settings intelligible when the selected application has since been removed;
 /// it never participates in locating or launching the application.
-struct ReviewFileApplication: Codable, Equatable {
+struct FileApplication: Codable, Equatable {
     let bundleIdentifier: String
     let lastKnownDisplayName: String
 

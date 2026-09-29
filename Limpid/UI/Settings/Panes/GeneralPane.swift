@@ -32,6 +32,8 @@ struct GeneralPane: View {
 
             ConfirmationsSection()
 
+            FileApplicationSection()
+
             if let updater {
                 UpdatesSection(updater: updater)
             }
