@@ -1,5 +1,5 @@
 // CommandPaletteDropdown.swift
-// Limpid — glass-backed results list for the command palette.
+// Limpid — material-backed results list for the command palette.
 // Positioned by ContentView via PreferenceKey; this view only
 // renders the scrollable result list.
 
@@ -13,16 +13,12 @@ struct CommandPaletteDropdown: View {
         // Outer vertical padding shortens the inner `ScrollView`, which
         // shortens its legacy scroller track in turn — that's what
         // keeps the track from running flush into the palette's rounded
-        // top + bottom corners. Clip BEFORE the glass treatment so the
+        // top + bottom corners. Clip BEFORE the surface treatment so the
         // scroller (track + thumb) is bounded by the rounded shape too.
         resultsList
             .padding(.vertical, 10)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .limpidGlass(.palette)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.20), lineWidth: 0.5)
-            )
+            .floatingPanelSurface(cornerRadius: 16)
             .pointerStyle(.default)
     }
 

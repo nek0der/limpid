@@ -92,6 +92,7 @@ struct PaneSearchOverlay: View {
         showsNavigation: Bool
     ) -> some View {
         searchSurface(
+            cornerRadius: fieldCornerRadius + barInset,
             HStack(spacing: 6) {
                 searchField(width: fieldWidth, showsCounter: showsCounter)
                     .layoutPriority(1)
@@ -101,31 +102,31 @@ struct PaneSearchOverlay: View {
                 }
                 closeButton
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(barInset)
         )
     }
 
     private var ultraCompactSearchField: some View {
         searchSurface(
+            cornerRadius: fieldCornerRadius + compactInset,
             searchField(width: nil, showsCounter: false)
-                .padding(4)
+                .padding(compactInset)
                 .frame(maxWidth: .infinity)
         )
     }
 
-    private func searchSurface(_ content: some View) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+    /// The bar's radius is the field's radius plus the inset between
+    /// them, so the two corners stay concentric. A larger outer
+    /// radius makes the field's corners look squarer than the bar's.
+    private func searchSurface(cornerRadius: CGFloat, _ content: some View) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
         return content
-            .limpidGlassBackground(.palette)
-            .overlay(
-                shape.strokeBorder(Color.primary.opacity(0.20), lineWidth: 0.5)
-            )
+            .floatingPanelSurface(cornerRadius: cornerRadius)
             // Fade the complete control so an inactive search does not compete
             // with the focused pane. A full-strength material backing remains
             // underneath to blur terminal text instead of exposing it through
-            // the faded glass surface.
+            // the faded surface.
             .opacity(displayOpacity)
             .background {
                 if !isInteractive {
@@ -135,6 +136,14 @@ struct PaneSearchOverlay: View {
                 }
             }
     }
+
+    /// 8 rather than 6: at 6 the field's small, faint corners read as
+    /// squarer than the bar's even though the two are concentric.
+    private let fieldCornerRadius: CGFloat = 8
+    /// One inset on every side so the field sits evenly inside the bar.
+    private let barInset: CGFloat = 6
+    /// The narrowest variant gives the field more of the bar's width.
+    private let compactInset: CGFloat = 4
 
     private var displayOpacity: Double {
         isInteractive ? 1.0 : inactiveOpacity
@@ -160,7 +169,10 @@ struct PaneSearchOverlay: View {
         // narrowest variant gives that space back to text entry.
         .padding(.trailing, showsCounter ? 52 : 8)
         .padding(.vertical, 5)
-        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .background(
+            LimpidColor.rowActiveFill,
+            in: RoundedRectangle(cornerRadius: fieldCornerRadius, style: .continuous)
+        )
         .overlay(alignment: .trailing) {
             if showsCounter {
                 matchCounter

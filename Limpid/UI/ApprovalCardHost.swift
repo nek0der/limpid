@@ -258,12 +258,7 @@ private struct ApprovalCard: View {
             }
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
-        }
-        .shadow(color: .black.opacity(0.18), radius: 18, y: 6)
+        .floatingPanelSurface(cornerRadius: 12)
         .pointerStyle(.default)
         .onAppear {
             beginAllowDelay()

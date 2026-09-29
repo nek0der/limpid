@@ -26,13 +26,13 @@ struct CommandPaletteRow: View {
                 if let alias = item.searchAlias {
                     Text(alias)
                         .font(LimpidFont.caption)
-                        .foregroundStyle(.quaternary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 if let subtitle = item.subtitle {
                     Text(subtitle)
                         .font(LimpidFont.caption)
-                        .foregroundStyle(.quaternary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
