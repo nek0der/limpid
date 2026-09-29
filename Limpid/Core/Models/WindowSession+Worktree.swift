@@ -335,7 +335,7 @@ private func ensureLocalExcludeCoversWorktreesDir(repoRoot: URL) {
             .error(
                 """
                 Failed to update .git/info/exclude at \
-                \(excludeURL.path, privacy: .public): \
+                \(excludeURL.path, privacy: .private): \
                 \(error.localizedDescription, privacy: .public)
                 """
             )
@@ -390,7 +390,7 @@ extension WindowSession {
             )
         }
         guard result.succeeded else {
-            log.error("git worktree add failed: \(result.stderr, privacy: .public)")
+            log.error("git worktree add failed: \(result.stderr, privacy: .private)")
             throw CreateWorktreeError.gitFailed(stderr: result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
@@ -451,7 +451,7 @@ extension WindowSession {
             // Rust and legacy hook receivers apply the same guard.
             if let cwd = item.cwd, isUnsafeRelativePath(cwd) {
                 log.warning("""
-                bootstrap step skipped — unsafe cwd '\(cwd, privacy: .public)' \
+                bootstrap step skipped — unsafe cwd '\(cwd, privacy: .private)' \
                 escapes the worktree
                 """)
                 continue
@@ -494,7 +494,7 @@ extension WindowSession {
                 if proc.terminationStatus != 0 {
                     log.warning("""
                     bootstrap step exited \(proc.terminationStatus, privacy: .public): \
-                    \(item.cmd, privacy: .public)
+                    \(item.cmd, privacy: .private)
                     """)
                 }
                 if resumed.tryClaim() {
@@ -505,7 +505,7 @@ extension WindowSession {
                 try process.run()
             } catch {
                 log.warning("""
-                bootstrap step failed to launch: \(item.cmd, privacy: .public) \
+                bootstrap step failed to launch: \(item.cmd, privacy: .private) \
                 — \(error.localizedDescription, privacy: .public)
                 """)
                 if resumed.tryClaim() {
@@ -574,7 +574,7 @@ extension WindowSession {
                     throw DeleteWorktreeError.dirtyNeedsForce
                 }
             }
-            log.error("git worktree remove failed: \(stderr, privacy: .public)")
+            log.error("git worktree remove failed: \(stderr, privacy: .private)")
             throw DeleteWorktreeError.gitFailed(stderr: stderr)
         }
         // On success the disk is already cleaned up; drop the row
