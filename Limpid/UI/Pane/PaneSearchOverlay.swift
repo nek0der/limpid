@@ -282,7 +282,7 @@ struct PaneSearchOverlay: View {
         state.total = nil
         state.selected = nil
         let action = "search:\(needle)"
-        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+        GhosttyFFI.performBindingAction(action, on: surface)
         lastDispatchedNeedle = needle
     }
 
@@ -290,7 +290,7 @@ struct PaneSearchOverlay: View {
         guard isInteractive, let surface = surfaceView.surface else { return }
         let direction: PaneSearchDirection = forward ? .forward : .backward
         let action = direction.bindingAction
-        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+        GhosttyFFI.performBindingAction(action, on: surface)
     }
 }
 

@@ -45,13 +45,13 @@ extension SurfaceView {
     @objc func paste(_ sender: Any?) {
         guard let surface else { return }
         let action = "paste_from_clipboard"
-        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+        GhosttyFFI.performBindingAction(action, on: surface)
     }
 
     @objc func copy(_ sender: Any?) {
         guard let surface else { return }
         let action = "copy_to_clipboard"
-        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+        GhosttyFFI.performBindingAction(action, on: surface)
     }
 
     // MARK: - Responder entry points

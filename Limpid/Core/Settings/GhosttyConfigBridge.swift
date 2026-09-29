@@ -251,9 +251,7 @@ enum GhosttyConfigBridge {
     }
 
     /// Rebuild the libghostty config from the current `LimpidSettings`
-    /// and push it into the running app. Triggers
-    /// `Notification.Name.limpidConfigDidChange` so SwiftUI views
-    /// (and per-surface code) can react in the same tick.
+    /// and push it into the running app.
     ///
     /// Surfaces opened *before* this call retain settings that
     /// libghostty marks as new-terminal only (font family, ligatures,
@@ -286,10 +284,6 @@ enum GhosttyConfigBridge {
         // Ownership moves to GhosttyApp so a later conditional-state soft
         // reload uses this exact layered config rather than the startup copy.
         app.replaceConfig(with: cfg, surfaces: surfaces)
-        NotificationCenter.default.post(
-            name: .limpidConfigDidChange,
-            object: nil
-        )
         log.notice("ghostty config reloaded (\(surfaces.count, privacy: .public) live surfaces)")
         return diagnostics
     }
@@ -334,14 +328,4 @@ enum GhosttyConfigBridge {
             : "xterm-256color"
     }
 
-}
-
-// MARK: - Notification name
-
-extension Notification.Name {
-    /// Posted by `GhosttyConfigBridge.reloadConfig` after libghostty
-    /// has accepted the new config. Listeners (SwiftUI views, the
-    /// SurfaceRegistry) re-evaluate any local cache that mirrored
-    /// the old settings.
-    static let limpidConfigDidChange = Notification.Name("dev.limpid.configDidChange")
 }
