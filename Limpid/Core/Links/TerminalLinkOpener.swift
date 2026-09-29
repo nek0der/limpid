@@ -13,13 +13,19 @@ final class TerminalLinkOpener {
     /// Shows a one-line explanation when a click does something other than
     /// open the target. A closure so Core does not own the toast view state.
     private let notify: (String) -> Void
+    /// Read at click time so a change in Settings applies to the next click.
+    private let fileApplication: () -> FileApplication?
 
-    init(notify: @escaping (String) -> Void) {
+    init(
+        notify: @escaping (String) -> Void,
+        fileApplication: @escaping () -> FileApplication? = { nil }
+    ) {
         self.notify = notify
+        self.fileApplication = fileApplication
     }
 
-    func open(_ text: String, source: TerminalLinkSource) {
-        perform(TerminalLinkPolicy.action(for: text, source: source))
+    func open(_ text: String, source: TerminalLinkSource, baseDirectories: [URL] = []) {
+        perform(TerminalLinkPolicy.action(for: text, source: source, baseDirectories: baseDirectories))
     }
 
     /// For a click whose target could not be read at all.
@@ -31,6 +37,15 @@ final class TerminalLinkOpener {
         switch action {
         case let .open(url):
             NSWorkspace.shared.open(url)
+        case let .openFile(url, position):
+            let application = FileOpener.application(for: fileApplication())
+            Task { [notify] in
+                do {
+                    try await FileOpener.open(url, at: position, with: application)
+                } catch {
+                    notify(error.localizedDescription)
+                }
+            }
         case let .reveal(url):
             NSWorkspace.shared.activateFileViewerSelecting([url])
             notify(String(localized: "Shown in Finder instead of opened, because it can run code."))

@@ -56,8 +56,10 @@ enum GhosttyEvent {
     /// libghostty asks us to open a URL (⌘-click on a detected link
     /// or OSC 8 hyperlink). `url` is nil when the bytes were not UTF-8;
     /// the event is still delivered so the click is refused rather than
-    /// falling back to libghostty's own opener.
-    case openUrl(url: String?, source: TerminalLinkSource)
+    /// falling back to libghostty's own opener. The surface is nil for an
+    /// app-targeted request; a relative path then has nothing to resolve
+    /// against.
+    case openUrl(SurfaceView?, url: String?, source: TerminalLinkSource)
     /// libghostty wants the cursor shape changed (e.g. pointing hand
     /// over a link).
     case mouseShape(SurfaceView, shape: ghostty_action_mouse_shape_e)
@@ -230,7 +232,7 @@ enum GhosttyActionRouter {
                 ? .hyperlink
                 : .matchedText
             log.notice("OPEN_URL source=\(String(describing: source), privacy: .public) url=\(url ?? "nil", privacy: .private)")
-            return .openUrl(url: url, source: source)
+            return .openUrl(surfaceView(from: target), url: url, source: source)
 
         case GHOSTTY_ACTION_MOUSE_SHAPE:
             guard let view = surfaceView(from: target) else { return nil }

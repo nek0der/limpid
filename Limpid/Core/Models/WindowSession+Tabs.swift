@@ -25,13 +25,8 @@ extension WindowSession {
                 group?.cwdMode ?? .inheritPrevious,
                 path: group?.cwdPath
             )
-        case let .project(pid):
-            let project = projects.first(where: { $0.id == pid })
-            resolvedWD = workingDirectory ?? project?.rootURL
-        case let .worktree(pid, wid):
-            let project = projects.first(where: { $0.id == pid })
-            let wt = project?.worktrees.first(where: { $0.id == wid })
-            resolvedWD = workingDirectory ?? wt?.workingDirectory ?? project?.rootURL
+        case .project, .worktree:
+            resolvedWD = workingDirectory ?? rootDirectory(of: container)
         }
         // Initial title matches what the shell's OSC 7 will set it to
         // moments later — the working-directory basename, with $HOME
@@ -47,6 +42,22 @@ extension WindowSession {
         tabs.append(tab)
         setActiveTab(tab.id)
         return tab
+    }
+
+    /// The directory a project or worktree container stands for: the
+    /// worktree's checkout, falling back to the project root. Groups and
+    /// loose tabs have no directory of their own.
+    func rootDirectory(of container: ContainerID) -> URL? {
+        switch container {
+        case .loose, .group:
+            return nil
+        case let .project(pid):
+            return projects.first(where: { $0.id == pid })?.rootURL
+        case let .worktree(pid, wid):
+            let project = projects.first(where: { $0.id == pid })
+            let worktree = project?.worktrees.first(where: { $0.id == wid })
+            return worktree?.workingDirectory ?? project?.rootURL
+        }
     }
 
     /// Resolve a `WorkingDirectoryMode` to a concrete cwd URL, or nil

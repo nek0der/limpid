@@ -17,3 +17,12 @@ scripts/check-notices-coverage.sh:Kitty
 # Neutral reference: the demo fixture explains why it deliberately does NOT run
 # real CLI tools (output drifts, may be absent) — not a comparison or clone.
 Limpid/Core/Persistence/DemoFixture.swift:lazygit
+
+# Opening a file at a line needs the editor's own identifiers: its bundle
+# identifier to recognize it and its registered URL scheme to hand it the line.
+# These are interfaces the editor publishes, not a comparison or clone note.
+Limpid/Core/Files/EditorLineLaunch.swift:"com.microsoft.VSCode
+Limpid/Core/Files/EditorLineLaunch.swift:scheme: "vscode
+LimpidTests/FileOpenerTests.swift:"com.microsoft.VSCode
+LimpidTests/FileOpenerTests.swift:"vscode://file/
+LimpidTests/FileOpenerTests.swift:"vscode-insiders://file/

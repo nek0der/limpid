@@ -40,15 +40,23 @@ enum SettingsSearchCatalog {
                 order: 4
             ),
             makeEntry(
+                "general.file-application",
+                .general,
+                "Open Files With",
+                "Choose App…",
+                keywords: ["Editor", "Open file in editor", "Review application"],
+                order: 5
+            ),
+            makeEntry(
                 "general.automatic-updates",
                 .general,
                 "Software Update",
                 "Automatically check for updates",
                 keywords: ["Auto update"],
-                order: 5
+                order: 6
             ),
-            makeEntry("general.check-for-updates", .general, "Software Update", "Check Now…", keywords: ["Check for updates"], order: 6),
-            makeEntry("general.version", .general, "About", "Limpid version", keywords: ["Version"], order: 7),
+            makeEntry("general.check-for-updates", .general, "Software Update", "Check Now…", keywords: ["Check for updates"], order: 7),
+            makeEntry("general.version", .general, "About", "Limpid version", keywords: ["Version"], order: 8),
 
             makeEntry("appearance.theme", .appearance, "Theme", "Theme", keywords: ["Color scheme"], order: 0),
             makeEntry("appearance.accent", .appearance, "Theme", "Accent", keywords: ["Accent color"], order: 1),
@@ -165,20 +173,12 @@ enum SettingsSearchCatalog {
                 order: 0
             ),
             makeEntry(
-                "review.choose-application",
-                .review,
-                "Review Files",
-                "Choose App…",
-                keywords: ["Review application", "Reset review application"],
-                order: 1
-            ),
-            makeEntry(
                 "review.instructions",
                 .review,
                 "Review Instructions",
                 "Review instructions",
                 keywords: ["Agent instructions", "Reset review instructions"],
-                order: 2
+                order: 1
             ),
 
             makeEntry(
@@ -353,8 +353,8 @@ enum SettingsSearchCatalog {
         requiredEntry("review.jump-opens-turn-review")
     }
 
-    static var reviewFileApplication: SettingsSearchEntry {
-        requiredEntry("review.choose-application")
+    static var fileApplication: SettingsSearchEntry {
+        requiredEntry("general.file-application")
     }
 
     static var reviewInstructions: SettingsSearchEntry {
