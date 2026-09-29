@@ -63,7 +63,7 @@ struct ContainerSlabView: View {
             bottomMinHeight: LimpidLayout.attentionMinHeight,
             bottomFractionRange: LimpidLayout.attentionMinFraction...LimpidLayout.attentionMaxFraction,
             bottomInitialFraction: session.attentionHeightFraction,
-            bottomDefaultFraction: LimpidLayout.attentionHeightFraction,
+            bottomDefaultFraction: SessionLayoutDefaults.attentionHeightFraction,
             onBottomFractionChanged: { fraction in
                 persistAttentionFraction(fraction)
             },

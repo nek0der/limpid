@@ -13,6 +13,11 @@ private let log = Logger.limpid("ghostty.events")
 
 @MainActor
 final class GhosttyEventCoordinator {
+    /// Debounce window applied to libghostty SET_TITLE updates so a
+    /// shell that prints "exit" right before terminating doesn't flash
+    /// it onto the tab before close_surface_cb fires.
+    private static let setTitleDebounce: TimeInterval = 0.08
+
     private weak var ghosttyApp: GhosttyApp?
     private weak var session: WindowSession?
     private let registry: any SurfaceViewProviding
@@ -171,7 +176,7 @@ final class GhosttyEventCoordinator {
         pendingTitleApplies[paneID]?.cancel()
         let tabID = owningTab.id
         pendingTitleApplies[paneID] = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(LimpidLayout.setTitleDebounce))
+            try? await Task.sleep(for: .seconds(Self.setTitleDebounce))
             guard !Task.isCancelled else { return }
             self?.applySetTitle(tabID: tabID, paneID: paneID, title: title)
         }
@@ -397,7 +402,7 @@ final class GhosttyEventCoordinator {
             // darken the visible flash.
             pendingBellFlashes[paneID]?.cancel()
             pendingBellFlashes[paneID] = Task { @MainActor [weak self, weak session] in
-                try? await Task.sleep(nanoseconds: LimpidMotion.bellFlashNanoseconds)
+                try? await Task.sleep(nanoseconds: BellFeatures.paneFlashNanoseconds)
                 guard !Task.isCancelled else { return }
                 session?.setBell(paneID: paneID, ringing: false)
                 self?.pendingBellFlashes.removeValue(forKey: paneID)

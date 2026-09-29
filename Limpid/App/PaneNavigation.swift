@@ -27,7 +27,7 @@ func flashPane(_ paneID: UUID, session: WindowSession) {
     flashTasks[paneID]?.cancel()
     session.setBell(paneID: paneID, ringing: true)
     flashTasks[paneID] = Task { @MainActor [weak session] in
-        try? await Task.sleep(nanoseconds: LimpidMotion.bellFlashNanoseconds)
+        try? await Task.sleep(nanoseconds: BellFeatures.paneFlashNanoseconds)
         if Task.isCancelled {
             return
         }

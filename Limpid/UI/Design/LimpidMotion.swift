@@ -70,10 +70,4 @@ enum LimpidMotion {
     /// one's feel keeps the other in step.
     static let transientBanner: Animation = .spring(response: 0.35, dampingFraction: 0.85)
 
-    /// How long a pane's bell-ring highlight stays lit. One token so
-    /// the libghostty bell handler and the manual `flashPane` helper
-    /// agree on the duration — pre-token they drifted to 350ms and
-    /// 400ms respectively, and either could win depending on the
-    /// path the user took.
-    static let bellFlashNanoseconds: UInt64 = 400_000_000
 }

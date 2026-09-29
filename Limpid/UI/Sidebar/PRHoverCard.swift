@@ -88,7 +88,7 @@ private struct PRHoverCardPresenter: ViewModifier {
                         rowID: rowID,
                         info: info,
                         anchor: anchorRect,
-                        delay: reduceMotion ? .zero : LimpidLayout.prHoverCardOpenDelay
+                        delay: reduceMotion ? .zero : PRHoverPresentation.openDelay
                     )
                 } else {
                     presentation.rowExited(rowID: rowID)
