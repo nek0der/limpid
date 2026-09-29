@@ -135,7 +135,7 @@ enum CommandPaletteCatalog {
                 id: "tab.\(tab.id.uuidString)",
                 category: .navigate,
                 title: tab.displayTitle,
-                subtitle: subtitle.map { shortenPath($0) },
+                subtitle: subtitle.map { PathFormatting.abbreviateHome($0) },
                 icon: "macwindow",
                 shortcutDisplay: nil,
                 action: .jumpToTab(tab.id)
@@ -173,7 +173,7 @@ enum CommandPaletteCatalog {
                 id: "project.\(project.id.uuidString)",
                 category: .navigate,
                 title: project.name,
-                subtitle: shortenPath(project.rootURL.path),
+                subtitle: PathFormatting.abbreviateHome(project.rootURL.path),
                 icon: ContainerSymbol.project,
                 shortcutDisplay: nil,
                 action: .activateProject(project.id)
@@ -184,7 +184,7 @@ enum CommandPaletteCatalog {
                     id: "worktree.\(project.id.uuidString).\(worktree.id.uuidString)",
                     category: .navigate,
                     title: worktree.label,
-                    subtitle: shortenPath(worktree.workingDirectory.path),
+                    subtitle: PathFormatting.abbreviateHome(worktree.workingDirectory.path),
                     icon: ContainerSymbol.worktree,
                     shortcutDisplay: nil,
                     action: .activateWorktree(
@@ -231,7 +231,7 @@ enum CommandPaletteCatalog {
                 id: "recent.\(url.path)",
                 category: .reopen,
                 title: url.lastPathComponent,
-                subtitle: shortenPath(url.path),
+                subtitle: PathFormatting.abbreviateHome(url.path),
                 icon: "clock",
                 shortcutDisplay: nil,
                 action: .openRecentProject(url)
@@ -288,15 +288,5 @@ enum CommandPaletteCatalog {
         case .commandPalette, .quickOpen: false
         default: true
         }
-    }
-
-    // MARK: - Helpers
-
-    private static func shortenPath(_ path: String) -> String {
-        guard let home = ProcessInfo.processInfo.environment["HOME"] else { return path }
-        if path.hasPrefix(home) {
-            return "~" + path.dropFirst(home.count)
-        }
-        return path
     }
 }
