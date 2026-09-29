@@ -18,10 +18,12 @@ LIMPID_AGENT_SERVICE_CONTROL=unregister make dev
 ```
 
 Ad hoc-signed builds cannot become ready because they have no Team ID for the
-peer requirements. Debug and Release use distinct LaunchAgent labels, Mach
-service names, bundle identifiers, property lists, markers, and Application
-Support directories. Development cleanup must target only
-`dev.limpid.agent-integration-service.dev`.
+peer requirements; Limpid then shows no alert and leaves the providers on
+their native prompts. `make build` signs Debug with a Team ID when
+`LIMPID_DEVELOPMENT_TEAM` is set (see `CONTRIBUTING.md`). Debug and Release use
+distinct LaunchAgent labels, Mach service names, bundle identifiers, property
+lists, markers, and Application Support directories. Development cleanup must
+target only `dev.limpid.agent-integration-service.dev`.
 
 The signed Hook Helper is embedded in the application's `Contents/MacOS`
 directory and is the only requester accepted by the Release configuration. In

@@ -233,6 +233,19 @@ struct AgentIntegrationServiceRegistrarTests {
         #expect(presentation.issue == reconciliation)
     }
 
+    @Test("reports no issue for an ad hoc-signed build, since retrying cannot fix it")
+    func reconciliationFailure_adHocSigningIsQuiet() {
+        #expect(AgentIntegrationServiceIssue.forReconciliationFailure(
+            AgentIntegrationError.adHocSigningUnsupported
+        ) == nil)
+
+        let issue = AgentIntegrationServiceIssue.forReconciliationFailure(
+            AgentIntegrationError.invalidResponse
+        )
+        #expect(issue?.reason == .reconciliationFailed)
+        #expect(issue?.diagnostic == String(describing: AgentIntegrationError.invalidResponse))
+    }
+
     private func action(
         _ status: AgentIntegrationRegistrationStatus,
         running: AgentIntegrationServiceArtifact?,
