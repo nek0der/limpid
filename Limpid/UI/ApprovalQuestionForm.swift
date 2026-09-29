@@ -122,9 +122,9 @@ struct ApprovalQuestionForm: View {
             // ring, so the accent stroke stands in for it.
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(LimpidColor.rowActiveFill))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(LimpidColor.rowActiveFill))
             .overlay {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(limpidAccent, lineWidth: 1.5)
                     .opacity(focus.wrappedValue == .answerField ? 1 : 0)
             }

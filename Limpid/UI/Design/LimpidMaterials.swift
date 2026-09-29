@@ -1,107 +1,25 @@
 // LimpidMaterials.swift
-// Limpid — glass-layer material tokens mapping design-rules.md §1–§3 to SwiftUI.
+// Limpid — shared surface treatment for panels that float over the terminal.
 
 import SwiftUI
 
-/// Limpid glass-layer definitions. Maps design-rules.md §1–§3 into SwiftUI.
-///
-/// **Usage**:
-/// ```swift
-/// SomeView()
-///     .limpidGlass(.sidebar)
-/// ```
-/// applies the matching material, corner radius, shadow, and rim highlight
-/// in one call.
-enum LimpidGlassLayer {
-    /// Main pane — the glass slab around the libghostty drawing area.
-    case mainPane
-    /// Left sidebar — the thinnest layer; lets the background show through.
-    case sidebar
-    /// Right-side Blocks panel.
-    case blocks
-    /// Nested card inside Blocks (individual block).
-    case innerCard
-    /// Floating bottom status bar.
-    case statusBar
-    /// Command palette — top-most layer, largest corner radius and strongest blur.
-    case palette
-
-    private var material: Material {
-        switch self {
-        case .sidebar, .blocks: .ultraThinMaterial
-        case .innerCard: .thinMaterial
-        case .mainPane, .statusBar: .regularMaterial
-        case .palette: .thickMaterial
-        }
-    }
-
-    /// Design value §3.1.
-    fileprivate var cornerRadius: CGFloat {
-        switch self {
-        case .innerCard: 8
-        case .palette: 16
-        default: 14
-        }
-    }
-
-}
-
-// MARK: - View modifier
-
 extension View {
-    /// Apply the standard Limpid glass treatment for the given layer.
-    func limpidGlass(_ layer: LimpidGlassLayer) -> some View {
-        modifier(LimpidGlassModifier(layer: layer))
-    }
-
-    /// Paint glass behind interactive descendants without letting the glass
-    /// surface replace their hit-testing or pointer regions.
-    func limpidGlassBackground(_ layer: LimpidGlassLayer) -> some View {
-        modifier(LimpidGlassBackgroundModifier(layer: layer))
-    }
-}
-
-private struct LimpidGlassModifier: ViewModifier {
-    let layer: LimpidGlassLayer
-
-    func body(content: Content) -> some View {
-        // macOS 26 / iOS 26 ships the native Liquid Glass material via
-        // `.glassEffect(_:in:)`. Use it; it provides the refraction,
-        // depth, and built-in shadow that hand-rolled Materials can't —
-        // stacking a manual `.shadow` underneath read as a dark cloud
-        // in light mode, so we leave depth entirely to the system.
-        content.glassEffect(
-            layer.glass,
-            in: RoundedRectangle(cornerRadius: layer.cornerRadius, style: .continuous)
-        )
-    }
-}
-
-private struct LimpidGlassBackgroundModifier: ViewModifier {
-    let layer: LimpidGlassLayer
-
-    func body(content: Content) -> some View {
-        content.background {
-            Color.clear
-                .glassEffect(
-                    layer.glass,
-                    in: RoundedRectangle(cornerRadius: layer.cornerRadius, style: .continuous)
-                )
-                .allowsHitTesting(false)
+    /// Surface for panels that float over the terminal. They share one
+    /// treatment so they read as the same layer. We use a material rather
+    /// than Liquid Glass because glass lets the terminal text behind it
+    /// show through strongly enough to compete with the panel's own text.
+    func floatingPanelSurface(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        // The shadow belongs to the backing shape alone. Applied to the
+        // whole view, SwiftUI would also cast it from every piece of text
+        // and every row fill inside the panel, which reads as a haze.
+        return background {
+            shape
+                .fill(.regularMaterial)
+                .shadow(color: .black.opacity(0.18), radius: 18, y: 6)
         }
-    }
-}
-
-private extension LimpidGlassLayer {
-    /// Glass variant per layer. `.regular` is the standard Liquid Glass
-    /// material; `.clear` is more transparent (for the lightest panels).
-    var glass: Glass {
-        switch self {
-        case .sidebar, .blocks: .clear
-        case .innerCard: .regular
-        case .mainPane: .regular
-        case .statusBar: .regular
-        case .palette: .regular
+        .overlay {
+            shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
         }
     }
 }

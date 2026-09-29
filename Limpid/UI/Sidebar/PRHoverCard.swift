@@ -124,9 +124,7 @@ struct PRHoverCardHost: View {
     /// edge, so the card reads as attached to the row without
     /// touching it.
     private let anchorGap: CGFloat = 12
-    /// Corner radius of the card's material and its border, which have
-    /// to be struck from the same value or the stroke sits off the
-    /// fill's edge.
+    /// Corner radius of the card's floating surface.
     private let cornerRadius: CGFloat = 10
     /// Fixed card width, shared with `PRHoverCardContent` so the
     /// centering math below and the content's own frame cannot drift
@@ -156,16 +154,8 @@ struct PRHoverCardHost: View {
                 let localX = snap.anchorRect.maxX - overlayOrigin.x + anchorGap
                 let localY = snap.anchorRect.midY - overlayOrigin.y
                 PRHoverCardContent(info: snap.info)
-                    .background(
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(.regularMaterial)
-                            .pointerStyle(.default)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .stroke(LimpidColor.toolbarHairline, lineWidth: 0.5)
-                    )
-                    .shadow(color: .black.opacity(0.20), radius: 12, x: 0, y: 4)
+                    .floatingPanelSurface(cornerRadius: cornerRadius)
+                    .pointerStyle(.default)
                     .fixedSize(horizontal: false, vertical: true)
                     // `.onHover` MUST sit before `.position`. `.position`
                     // expands its subject to fill the parent (the whole

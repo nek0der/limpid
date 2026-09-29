@@ -143,11 +143,7 @@ struct NotificationHistoryView: View {
             height: height
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .limpidGlass(.palette)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.20), lineWidth: 0.5)
-        )
+        .floatingPanelSurface(cornerRadius: 16)
         .animation(reduceMotion ? nil : LimpidMotion.paletteToggle, value: isConfirmingClear)
         .background {
             NotificationHistoryEscapeMonitor {
