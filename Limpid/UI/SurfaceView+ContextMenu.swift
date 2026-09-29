@@ -187,7 +187,7 @@ extension SurfaceView {
 
     private func runSurfaceBinding(_ action: String) {
         guard let surface else { return }
-        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+        GhosttyFFI.performBindingAction(action, on: surface)
     }
 }
 

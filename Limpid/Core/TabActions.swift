@@ -472,7 +472,7 @@ enum TabActions {
               let view = registry.view(for: leafID),
               let surface = view.surface
         else { return }
-        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+        GhosttyFFI.performBindingAction(action, on: surface)
     }
 
 }

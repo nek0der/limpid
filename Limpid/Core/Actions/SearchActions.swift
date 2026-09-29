@@ -65,7 +65,7 @@ enum SearchActions {
         session.paneSearchStates[paneID] = nil
         guard let surface = registry.view(for: paneID)?.surface else { return }
         let action = "end_search"
-        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+        GhosttyFFI.performBindingAction(action, on: surface)
     }
 
     /// ⌘G — jump to the next match for the focused pane, if any.
@@ -79,7 +79,7 @@ enum SearchActions {
               let surface = view.surface
         else { return }
         let action = PaneSearchDirection.forward.bindingAction
-        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+        GhosttyFFI.performBindingAction(action, on: surface)
     }
 
     /// ⇧⌘G — jump to the previous match.
@@ -93,7 +93,7 @@ enum SearchActions {
               let surface = view.surface
         else { return }
         let action = PaneSearchDirection.backward.bindingAction
-        _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+        GhosttyFFI.performBindingAction(action, on: surface)
     }
 
     /// Resolve the focused pane id of the active tab so the search

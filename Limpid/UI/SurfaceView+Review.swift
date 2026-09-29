@@ -30,7 +30,7 @@ extension SurfaceView: ReviewTextDelivering, ReviewPasteStaging {
         guard let surface else { throw ReviewError.targetUnavailable }
         try ReviewPasteAttempt.deliver(prompt, receipt: receipt, staging: self) {
             let action = "paste_from_clipboard"
-            return ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+            return GhosttyFFI.performBindingAction(action, on: surface)
         }
     }
 }
