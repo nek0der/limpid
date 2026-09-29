@@ -160,6 +160,13 @@ final class WindowSession {
     /// `@Observable` parent, so SwiftUI still re-renders on change.
     var paneTransients: [UUID: PaneTransients] = [:]
 
+    /// Bumped whenever a surface in this window reports a new cell size. A
+    /// view that sizes itself to the grid reads it to re-render and then asks
+    /// the surface for the live value: a surface off screen has no window to
+    /// convert its pixels with, so a recorded value could go stale while the
+    /// pane sat in another tab. Not persisted, and not in the autosave block.
+    var cellSizeGeneration = 0
+
     /// Total unread across every pane in the window. Maintained
     /// incrementally by the unread mutators (`markUnread` /
     /// `clearUnread` / `clearAllUnread` / `restore(from:)`) so

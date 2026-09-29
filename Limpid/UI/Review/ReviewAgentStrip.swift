@@ -54,6 +54,14 @@ struct ReviewAgentStripHeader: View {
         reviewPresentation.isStripCollapsed
     }
 
+    private var cellHeight: CGFloat? {
+        session.gridCellHeight(of: registry.view(for: paneID))
+    }
+
+    private var displayedHeight: CGFloat? {
+        reviewPresentation.displayedStripHeight(in: available, cellHeight: cellHeight)
+    }
+
     /// Wake a pane before the layout mounts it.
     ///
     /// Review tells libghostty to stop drawing every pane but the docked one.
@@ -117,7 +125,7 @@ struct ReviewAgentStripHeader: View {
         .accessibilityValue(
             isCollapsed
                 ? Text("Collapsed")
-                : Text(verbatim: "\(Int((reviewPresentation.stripHeight(in: available) ?? 0).rounded()))")
+                : Text(verbatim: "\(Int((displayedHeight ?? 0).rounded()))")
         )
         .accessibilityAdjustableAction { direction in
             // Collapsed there is nothing below to take from, and growing brings
@@ -129,9 +137,12 @@ struct ReviewAgentStripHeader: View {
                 reviewPresentation.resizeStrip(to: ReviewStrip.default, in: available)
                 return
             }
-            let current = reviewPresentation.stripHeight(in: available) ?? ReviewStrip.default
+            // At least a row: the strip is fitted to whole rows, so a step
+            // shorter than one grows nothing once the font is large.
+            let current = displayedHeight ?? ReviewStrip.default
+            let step = max(ReviewRowMetrics.strideForResize, cellHeight ?? 0)
             reviewPresentation.resizeStrip(
-                to: current + (direction == .increment ? 1 : -1) * ReviewRowMetrics.strideForResize,
+                to: current + (direction == .increment ? 1 : -1) * step,
                 in: available
             )
         }
@@ -250,7 +261,7 @@ struct ReviewAgentStripHeader: View {
         DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in
                 let origin = dragOrigin
-                    ?? reviewPresentation.stripHeight(in: available)
+                    ?? displayedHeight
                     ?? ReviewStrip.default
                 dragOrigin = origin
                 reviewPresentation.resizeStrip(to: origin - value.translation.height, in: available)
@@ -361,5 +372,15 @@ private extension View {
     /// advertising a drag they do not answer.
     func pointerOverHandle() -> some View {
         pointerStyle(.default)
+    }
+}
+
+extension WindowSession {
+    /// The cell height to fit a pane to, read live from its surface. Reading
+    /// `cellSizeGeneration` first is what re-renders the caller when a font
+    /// or scale change moves the grid.
+    func gridCellHeight(of surfaceView: SurfaceView?) -> CGFloat? {
+        _ = cellSizeGeneration
+        return surfaceView?.cellHeight
     }
 }

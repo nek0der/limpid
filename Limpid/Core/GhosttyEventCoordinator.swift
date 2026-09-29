@@ -88,6 +88,8 @@ final class GhosttyEventCoordinator {
             handleSearchSelected(view: view, selected: selected)
         case let .scrollbar(view, state):
             view.updateScrollbarState(state)
+        case let .cellSize(view):
+            handleCellSize(view: view)
         case let .closeSurface(view, _):
             handleCloseSurface(view: view)
         case let .mouseOverLink(view, url):
@@ -520,6 +522,13 @@ final class GhosttyEventCoordinator {
         let n = tabs.count
         let next = forward ? (i + 1) % n : (i - 1 + n) % n
         return tabs[next]
+    }
+
+    /// Only surfaces of this window bump it; another window's grid does not
+    /// concern the views observing this session.
+    private func handleCellSize(view: SurfaceView) {
+        guard let session, registry.id(for: view) != nil else { return }
+        session.cellSizeGeneration &+= 1
     }
 
     /// PWD propagates to every tab whose tree contains the reporting
