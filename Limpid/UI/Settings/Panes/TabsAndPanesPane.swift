@@ -10,7 +10,7 @@ struct TabsAndPanesPane: View {
         @Bindable var store = store
         SettingsForm(title: "Tabs & Panes", section: .tabsAndPanes) {
             Section {
-                HStack(alignment: .firstTextBaseline) {
+                HStack(spacing: 12) {
                     Text("Minimum pane size")
 
                     Spacer(minLength: 12)
@@ -31,6 +31,7 @@ struct TabsAndPanesPane: View {
                         .accessibilityValue(Text("\(Int(store.settings.terminal.minPaneSize)) pt"))
                     }
                 }
+                .settingsControlRow()
                 .settingsSearchTarget(SettingsSearchCatalog.minimumPaneSize.id)
             } header: {
                 Text("Pane Layout")

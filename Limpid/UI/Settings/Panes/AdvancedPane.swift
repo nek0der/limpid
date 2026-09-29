@@ -22,6 +22,7 @@ struct AdvancedPane: View {
                     }
                     .accessibilityLabel(Text("Open settings.json in Default Editor"))
                 }
+                .settingsControlRow()
                 .settingsSearchTarget(SettingsSearchCatalog.settingsFile.id)
             } header: {
                 Text("settings.json")
@@ -36,12 +37,18 @@ struct AdvancedPane: View {
             }
 
             Section {
-                Button(role: .destructive) {
-                    isResetConfirmationPresented = true
-                } label: {
-                    Text("Restore All Defaults")
+                // A button placed directly in the form gets a taller row
+                // than the pop-up rows (44pt against 38pt, measured on
+                // macOS 26); the `HStack` makes it a custom row that
+                // `settingsControlRow` can size.
+                HStack {
+                    Button(role: .destructive) {
+                        isResetConfirmationPresented = true
+                    } label: {
+                        Text("Restore All Defaults")
+                    }
                 }
-                .accessibilityLabel(Text("Restore All Settings to Defaults"))
+                .settingsControlRow()
                 .settingsSearchTarget(SettingsSearchCatalog.restoreAllDefaults.id)
             } header: {
                 Text("Reset")

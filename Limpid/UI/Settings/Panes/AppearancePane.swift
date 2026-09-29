@@ -31,7 +31,7 @@ struct AppearancePane: View {
             }
 
             Section {
-                HStack(alignment: .center) {
+                HStack(spacing: 12) {
                     Text("Accent")
                     Spacer(minLength: 12)
                     AccentColorPicker(
@@ -41,13 +41,17 @@ struct AppearancePane: View {
                         }
                     )
                 }
+                // The swatches are 30pt. Treated as a 24pt control, the row
+                // comes out 44pt, a little taller than its neighbors, as
+                // System Settings' accent row is.
+                .settingsControlRow()
                 .settingsSearchTarget(SettingsSearchCatalog.accentColor.id)
             } footer: {
                 Text("Painted on focus rings, drop targets, and other highlights.")
             }
 
             Section {
-                Toggle(
+                SettingsToggle(
                     "Transparency",
                     isOn: Binding(
                         get: { store.settings.appearance.transparency == .on },

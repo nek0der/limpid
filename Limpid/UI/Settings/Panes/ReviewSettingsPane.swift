@@ -13,18 +13,17 @@ struct ReviewSettingsPane: View {
         @Bindable var store = store
         SettingsForm(title: "Review", section: .review) {
             Section {
-                Toggle(
+                SettingsToggle(
                     "Open the turn's changes when jumping to a finished agent",
                     isOn: $store.settings.jumpOpensTurnReview
                 )
-                .accessibilityLabel(Text("Open the turn's changes when jumping to a finished agent"))
                 .settingsSearchTarget(SettingsSearchCatalog.jumpOpensTurnReview.id)
             } header: {
                 Text("Finished Agents")
             }
 
             Section {
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     Text(reviewFileApplicationName)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -40,6 +39,7 @@ struct ReviewSettingsPane: View {
                         .accessibilityLabel(Text("Restore Default Review App"))
                     }
                 }
+                .settingsControlRow()
                 .settingsSearchTarget(SettingsSearchCatalog.reviewFileApplication.id)
                 if case .configuredApplicationMissing = ReviewFileAction.application(
                     for: store.settings.advanced.reviewFileApplication
@@ -69,15 +69,21 @@ struct ReviewSettingsPane: View {
                 .accessibilityLabel(Text("Review instructions"))
                 .settingsSearchTarget(SettingsSearchCatalog.reviewInstructions.id)
             } header: {
+                // A small button keeps the header's height close to a
+                // plain text header; the negative padding absorbs the
+                // remaining 4pt so the spacing above and below the header
+                // matches the other sections (30pt and 10pt).
                 HStack {
                     Text("Review Instructions")
                     Spacer(minLength: 8)
                     Button("Restore Default") {
                         store.settings.advanced.reviewInstructions = ""
                     }
+                    .controlSize(.small)
                     .disabled(store.settings.advanced.reviewInstructions.isEmpty)
                     .accessibilityLabel(Text("Restore Default Review Instructions"))
                 }
+                .padding(.vertical, -2)
             } footer: {
                 Text(
                     """

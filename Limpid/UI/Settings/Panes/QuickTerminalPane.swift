@@ -46,7 +46,7 @@ struct QuickTerminalPane: View {
             }
 
             Section {
-                Toggle("Hide when focus leaves", isOn: $store.settings.quickTerminal.hidesOnFocusLoss)
+                SettingsToggle("Hide when focus leaves", isOn: $store.settings.quickTerminal.hidesOnFocusLoss)
                     .settingsSearchTarget(SettingsSearchCatalog.quickTerminalHidesOnFocusLoss.id)
             } header: {
                 Text("Behavior")
@@ -67,46 +67,49 @@ private struct QuickTerminalHotKeyRow: View {
     @State private var rejection: QuickTerminalHotKeyValidation?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            LabeledContent {
-                HStack(spacing: 8) {
-                    QuickTerminalHotKeyRecorder(
-                        quickTerminal: $quickTerminal,
-                        keyboard: keyboard,
-                        rejection: $rejection
-                    )
-                    .frame(width: 170, alignment: .trailing)
-
-                    ZStack {
-                        if quickTerminal.hotKey != nil {
-                            Button {
-                                quickTerminal.hotKey = nil
-                                rejection = nil
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                            }
-                            .buttonStyle(.borderless)
-                            .help("Clear hotkey")
-                            .accessibilityLabel(Text("Clear hotkey"))
-                        }
-                    }
-                    .frame(width: 18, alignment: .center)
-                }
-            } label: {
+        // A custom row (see `settingsControlRow`) with the message as a
+        // second line under the label, matching `ShortcutRow`.
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Show or hide")
+                if let message {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else if let warning {
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
-            if let message {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .padding(.leading, 4)
-            } else if let warning {
-                Text(warning)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .padding(.leading, 4)
+            Spacer(minLength: 12)
+            // Same widths as the Keyboard pane's rows: the clear button
+            // takes a fixed slot before the pill so the pill's trailing
+            // edge lines up with the form's other controls.
+            HStack(spacing: 8) {
+                ZStack {
+                    if quickTerminal.hotKey != nil {
+                        Button {
+                            quickTerminal.hotKey = nil
+                            rejection = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Clear hotkey")
+                        .accessibilityLabel(Text("Clear hotkey"))
+                    }
+                }
+                .frame(width: LimpidLayout.settingsRecorderAccessoryWidth, alignment: .center)
+                QuickTerminalHotKeyRecorder(
+                    quickTerminal: $quickTerminal,
+                    keyboard: keyboard,
+                    rejection: $rejection
+                )
+                .frame(width: LimpidLayout.settingsRecorderWidth, alignment: .trailing)
             }
         }
+        .settingsControlRow(controlHeight: LimpidLayout.settingsRecorderPillHeight)
     }
 
     /// Caution about the saved hotkey that does not stop it from working.
@@ -196,7 +199,7 @@ private struct QuickTerminalHotKeyRecorder: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .frame(height: LimpidLayout.settingsRecorderPillHeight)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
                         .fill(isRecording ? accent.opacity(0.2) : Color.secondary.opacity(0.12))

@@ -29,7 +29,7 @@ struct FontPane: View {
             }
 
             Section {
-                Toggle("Ligatures", isOn: $store.settings.font.ligatures)
+                SettingsToggle("Ligatures", isOn: $store.settings.font.ligatures)
                     .settingsSearchTarget(SettingsSearchCatalog.ligatures.id)
                 SliderRowInt(
                     title: "Line height",

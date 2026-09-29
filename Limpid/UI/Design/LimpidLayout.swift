@@ -63,6 +63,37 @@ enum LimpidLayout {
     static let mainWindowMinWidth: CGFloat = tabColumnMinWidth + reviewMinWidth
     static let mainWindowMinHeight: CGFloat = 400
 
+    /// Height of the content box a grouped `Form` row has on macOS 26. A
+    /// 24pt pop-up overhangs it by 3pt on each side and stays centered.
+    /// Custom rows
+    /// (`View.settingsControlRow(controlHeight:)`) reproduce that with a
+    /// negative vertical padding. `LabeledContent` cannot be used for
+    /// them because it sizes the row from its label and bottom-aligns
+    /// taller content.
+    static let settingsRowContentHeight: CGFloat = 18
+    /// Width of the shortcut recorder pill in Settings, shared by every
+    /// recorder row so the pills line up.
+    static let settingsRecorderWidth: CGFloat = 170
+    /// Height of the shortcut recorder pill in Settings: body text plus
+    /// 2pt each side.
+    static let settingsRecorderPillHeight: CGFloat = 20
+    /// Slot for the recorder pill's accessory (reset or clear button),
+    /// placed before the pill so the pill's trailing edge lines up with
+    /// the form's other controls.
+    static let settingsRecorderAccessoryWidth: CGFloat = 18
+    /// Slider rows: a fixed slider frame and readout slot keep the track
+    /// edges aligned across rows whose labels differ in width. The width
+    /// leaves the longest label ("Unfocused pane opacity" in Japanese) on one
+    /// line at the form's 542pt inner width with some room to spare (it
+    /// wraps at 220). A slider lays out 16pt tall, which is the control
+    /// height `settingsControlRow` pads up from.
+    static let settingsSliderWidth: CGFloat = 180
+    static let settingsSliderValueWidth: CGFloat = 56
+    static let settingsSliderControlHeight: CGFloat = 16
+    /// Rows that hold only text (the version row) are shorter than
+    /// control rows; this pads them up to the same height.
+    static let settingsTextRowControlHeight: CGFloat = 16
+
     /// The narrowest the review surface may be. What its header needs to
     /// keep every control readable on two rows, with the destination name
     /// still a few characters long. Enforced through the window minimum

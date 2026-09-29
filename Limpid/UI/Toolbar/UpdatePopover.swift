@@ -65,6 +65,37 @@ struct UpdatePopover: View {
     }
 }
 
+/// Spacing and type that depend on where the update view is shown. The
+/// toolbar popover owns its whole bubble; Settings embeds the view in a
+/// form row that already insets its content on every side.
+struct UpdatePopoverMetrics {
+    /// Padding around each state's content.
+    var contentInsets: EdgeInsets
+    /// Font of the "Update available" headline.
+    var headlineFont: Font
+    /// Padding of the release-notes row.
+    var releaseNotesPadding: EdgeInsets
+
+    static let popover = UpdatePopoverMetrics(
+        contentInsets: EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16),
+        headlineFont: .system(size: 16, weight: .semibold),
+        releaseNotesPadding: EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
+    )
+
+    /// The row's own inset supplies the horizontal padding and the space
+    /// below the release-notes row; the headline matches the other
+    /// states' titles so it does not outrank the section header.
+    static let settingsRow = UpdatePopoverMetrics(
+        contentInsets: EdgeInsets(top: 8, leading: 0, bottom: 10, trailing: 0),
+        headlineFont: .system(size: 13, weight: .semibold),
+        releaseNotesPadding: EdgeInsets(top: 10, leading: 0, bottom: 0, trailing: 0)
+    )
+}
+
+extension EnvironmentValues {
+    @Entry var updatePopoverMetrics = UpdatePopoverMetrics.popover
+}
+
 // MARK: - Building blocks
 
 /// Reusable metadata block (version / size / date) used by Available
@@ -110,6 +141,7 @@ private struct UpdateMetadata: View {
 /// states that surface an appcast item.
 private struct ReleaseNotesLink: View {
     let url: URL
+    @Environment(\.updatePopoverMetrics) private var metrics
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -126,8 +158,7 @@ private struct ReleaseNotesLink: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(metrics.releaseNotesPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -137,6 +168,7 @@ private struct ReleaseNotesLink: View {
 // MARK: - State views
 
 private struct CheckingView: View {
+    @Environment(\.updatePopoverMetrics) private var metrics
     let cancel: OneShot<Void>
 
     var body: some View {
@@ -149,11 +181,13 @@ private struct CheckingView: View {
                 .controlSize(.small)
                 .keyboardShortcut(.cancelAction)
         }
-        .padding(16)
+        .padding(metrics.contentInsets)
     }
 }
 
 private struct AvailableView: View {
+    @Environment(\.updatePopoverMetrics) private var metrics
+    @Environment(\.limpidAccent) private var accent
     let item: UpdateDisplayItem
     let reply: OneShot<SPUUserUpdateChoice>
     let dismiss: () -> Void
@@ -162,7 +196,7 @@ private struct AvailableView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Update available", comment: "Update popover: available header")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(metrics.headlineFont)
                 UpdateMetadata(item: item)
                 HStack(spacing: 8) {
                     Button {
@@ -190,10 +224,14 @@ private struct AvailableView: View {
                             .fontWeight(.semibold)
                     }
                     .buttonStyle(.borderedProminent)
+                    // Set explicitly because Settings embeds this view in a
+                    // form that drops the window's tint; without it the
+                    // default button falls back to the system accent there.
+                    .tint(accent)
                     .keyboardShortcut(.defaultAction)
                 }
             }
-            .padding(16)
+            .padding(metrics.contentInsets)
             if let notes = item.releaseNotesURL {
                 ReleaseNotesLink(url: notes)
             }
@@ -202,6 +240,7 @@ private struct AvailableView: View {
 }
 
 private struct DownloadingView: View {
+    @Environment(\.updatePopoverMetrics) private var metrics
     let item: UpdateDisplayItem
     let expected: UInt64?
     let received: UInt64
@@ -227,7 +266,7 @@ private struct DownloadingView: View {
                     .keyboardShortcut(.cancelAction)
             }
         }
-        .padding(16)
+        .padding(metrics.contentInsets)
     }
 
     private func progressText(received: UInt64, expected: UInt64) -> String {
@@ -240,6 +279,7 @@ private struct DownloadingView: View {
 }
 
 private struct ExtractingView: View {
+    @Environment(\.updatePopoverMetrics) private var metrics
     let progress: Double
 
     var body: some View {
@@ -248,11 +288,13 @@ private struct ExtractingView: View {
                 .font(.system(size: 13, weight: .semibold))
             ProgressView(value: progress)
         }
-        .padding(16)
+        .padding(metrics.contentInsets)
     }
 }
 
 private struct ReadyToInstallView: View {
+    @Environment(\.updatePopoverMetrics) private var metrics
+    @Environment(\.limpidAccent) private var accent
     let item: UpdateDisplayItem
     let reply: OneShot<SPUUserUpdateChoice>
     let dismiss: () -> Void
@@ -283,14 +325,16 @@ private struct ReadyToInstallView: View {
                         .fontWeight(.semibold)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(accent)
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(16)
+        .padding(metrics.contentInsets)
     }
 }
 
 private struct InstallingView: View {
+    @Environment(\.updatePopoverMetrics) private var metrics
     let retry: OneShot<Void>?
     @State private var showRetry = false
 
@@ -310,7 +354,7 @@ private struct InstallingView: View {
                 .controlSize(.small)
             }
         }
-        .padding(16)
+        .padding(metrics.contentInsets)
         .task(id: retry == nil) {
             // Sparkle's `applicationWillTerminate` can be canceled or
             // delayed by a pane's confirm-quit dialog; without the
@@ -330,6 +374,7 @@ private struct InstallingView: View {
 /// popover would otherwise need to coordinate timer vs. badge
 /// visibility separately.
 private struct InstalledView: View {
+    @Environment(\.updatePopoverMetrics) private var metrics
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "checkmark.circle.fill")
@@ -339,11 +384,12 @@ private struct InstalledView: View {
                 .font(.system(size: 13))
             Spacer(minLength: 0)
         }
-        .padding(16)
+        .padding(metrics.contentInsets)
     }
 }
 
 private struct NotFoundView: View {
+    @Environment(\.updatePopoverMetrics) private var metrics
     let acknowledgement: OneShot<Void>
     let dismiss: () -> Void
 
@@ -365,11 +411,13 @@ private struct NotFoundView: View {
                 .controlSize(.small)
             }
         }
-        .padding(16)
+        .padding(metrics.contentInsets)
     }
 }
 
 private struct ErrorView: View {
+    @Environment(\.updatePopoverMetrics) private var metrics
+    @Environment(\.limpidAccent) private var accent
     let error: any Error
     let acknowledgement: OneShot<Void>
     let retry: () -> Void
@@ -417,10 +465,11 @@ private struct ErrorView: View {
                     Text("Retry", comment: "Update popover: retry failed check")
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(accent)
                 .controlSize(.small)
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(16)
+        .padding(metrics.contentInsets)
     }
 }

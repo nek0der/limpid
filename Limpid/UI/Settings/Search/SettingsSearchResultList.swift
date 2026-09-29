@@ -51,6 +51,13 @@ struct SettingsSearchResultList: View {
                                                 .foregroundStyle(.secondary)
                                                 .lineLimit(1)
                                         }
+                                        // Indent to the header's title so results read
+                                        // as children of their section (the icon column
+                                        // stays empty).
+                                        .padding(
+                                            .leading,
+                                            SettingsSidebarRowLabel.iconSlot + SettingsSidebarRowLabel.titleSpacing
+                                        )
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .contentShape(Rectangle())
                                     }
@@ -61,8 +68,16 @@ struct SettingsSearchResultList: View {
                                     .accessibilityLabel(accessibilityLabel(for: entry))
                                 }
                             } header: {
-                                Label(section.title, systemImage: section.icon)
-                                    .padding(.bottom, 6)
+                                // The list's header inset sits 2pt left of the
+                                // sidebar rows' cell inset; nudge so the icons
+                                // share one column across both lists. The
+                                // sidebar list style paints headers in the
+                                // tertiary color, too faint to read as a
+                                // section name here; secondary keeps the
+                                // hierarchy against the primary result titles.
+                                SettingsSidebarRowLabel(section: section)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.leading, 2)
                             }
                         }
                     }

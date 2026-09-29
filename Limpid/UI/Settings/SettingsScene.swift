@@ -24,8 +24,10 @@ struct SettingsScene: View {
     @State private var revealSequence: UInt = 0
     @State private var searchFocusRequest: UInt = 0
 
-    /// Slab width — matches the proportions of the main window's container column.
-    private static let sidebarWidth: CGFloat = 210
+    /// Slab width — matches the proportions of the main window's container
+    /// column. The detail pane reserves the same width on its leading edge
+    /// so the sidebar doesn't cover content.
+    static let sidebarWidth: CGFloat = 210
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -104,11 +106,10 @@ struct SettingsScene: View {
         .limpidSettingsToolbar()
     }
 
-    /// Footprint reserved on the detail pane's leading edge so the
-    /// sidebar doesn't cover content, plus a small gutter.
-    static var leadingInset: CGFloat {
-        sidebarWidth + 8
-    }
+    /// Gap between the sidebar and the detail pane's content. It is a
+    /// content margin on the form rather than extra reserved width, so the
+    /// title bar still reaches the sidebar's edge.
+    static let detailGutter: CGFloat = 8
 
     private var selectedSection: SettingsSection {
         SettingsSection(rawValue: selectedSectionRaw) ?? .general
@@ -231,6 +232,9 @@ private struct SettingsSidebarSlab: View {
             // of it, which is why this is a shared starting point
             // rather than a shared baseline.
             Spacer().frame(height: LimpidLayout.topStripHeight)
+            // The translucent capsule System Settings shows for its
+            // sidebar search; see `SettingsSearchNSField` for why the
+            // field itself does not paint it.
             SettingsSearchField(
                 text: $searchText,
                 focusRequest: searchFocusRequest,
@@ -238,13 +242,18 @@ private struct SettingsSidebarSlab: View {
                 onSubmit: onSubmit,
                 onCancel: onCancel
             )
-            .frame(height: 24)
+            .frame(height: 28)
+            .background(.thinMaterial, in: Capsule(style: .continuous))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(LimpidColor.toolbarHairline, lineWidth: 0.5)
+            )
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
 
             if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 List(SettingsSection.allCases, selection: $selection) { section in
-                    Label(section.title, systemImage: section.icon)
+                    SettingsSidebarRowLabel(section: section)
                         .tag(section)
                 }
                 .tint(accent)

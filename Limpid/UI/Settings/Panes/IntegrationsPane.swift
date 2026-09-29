@@ -10,7 +10,7 @@ struct IntegrationsPane: View {
         @Bindable var store = store
         SettingsForm(title: "Integrations", section: .integrations) {
             Section {
-                Toggle(
+                SettingsToggle(
                     "Use Ghostty config file",
                     isOn: Binding(
                         get: { store.settings.advanced.ghosttyConfig == .on },
@@ -49,12 +49,12 @@ struct IntegrationsPane: View {
             }
 
             Section {
-                Toggle(
+                SettingsToggle(
                     "Show PR status in sidebar",
                     isOn: $store.settings.advanced.showPRStatusInSidebar
                 )
                 .settingsSearchTarget(SettingsSearchCatalog.showPRStatus.id)
-                Toggle(
+                SettingsToggle(
                     "Mark only rows needing attention",
                     isOn: $store.settings.advanced.showPRStatusOnlyWhenAttention
                 )
@@ -78,7 +78,7 @@ struct IntegrationsPane: View {
             }
 
             Section {
-                Toggle(
+                SettingsToggle(
                     "Run agents in tmux",
                     isOn: $store.settings.advanced.hostsAgentsInTmux
                 )
