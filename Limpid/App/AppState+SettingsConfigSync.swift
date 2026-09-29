@@ -84,6 +84,9 @@ extension AppState {
             attention: attention,
             claimsSurfaceExit: { [weak quickTerminal] view in
                 quickTerminal?.handleSurfaceExit(view) == true
+            },
+            linkOpener: TerminalLinkOpener { [toastCenter] message in
+                toastCenter.show(ToastItem(message: message, undo: nil))
             }
         )
     }

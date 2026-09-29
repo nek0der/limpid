@@ -54,8 +54,10 @@ enum GhosttyEvent {
     /// the cursor left the link region).
     case mouseOverLink(SurfaceView, url: String?)
     /// libghostty asks us to open a URL (⌘-click on a detected link
-    /// or OSC 8 hyperlink).
-    case openUrl(url: String)
+    /// or OSC 8 hyperlink). `url` is nil when the bytes were not UTF-8;
+    /// the event is still delivered so the click is refused rather than
+    /// falling back to libghostty's own opener.
+    case openUrl(url: String?, source: TerminalLinkSource)
     /// libghostty wants the cursor shape changed (e.g. pointing hand
     /// over a link).
     case mouseShape(SurfaceView, shape: ghostty_action_mouse_shape_e)
@@ -214,13 +216,21 @@ enum GhosttyActionRouter {
             let payload = action.action.open_url
             // Copy before the callback returns — the URL is handed to
             // NSWorkspace.open after libghostty reclaims the buffer. The
-            // failable init also rejects a non-UTF-8 URL rather than opening a
-            // replacement-character-laden string.
-            guard let ptr = payload.url, payload.len > 0,
-                  let url = String(bytes: UnsafeRawBufferPointer(start: ptr, count: Int(payload.len)), encoding: .utf8)
-            else { return nil }
-            log.notice("OPEN_URL url=\(url, privacy: .private)")
-            return .openUrl(url: url)
+            // failable init rejects a non-UTF-8 URL rather than opening a
+            // replacement-character-laden string. That case still becomes
+            // an event: returning nil reports the action unhandled, and
+            // libghostty then opens the raw bytes with its own unrestricted
+            // opener, which would bypass `TerminalLinkPolicy`.
+            let url: String? = if let ptr = payload.url, payload.len > 0 {
+                String(bytes: UnsafeRawBufferPointer(start: ptr, count: Int(payload.len)), encoding: .utf8)
+            } else {
+                nil
+            }
+            let source: TerminalLinkSource = payload.kind == GHOSTTY_ACTION_OPEN_URL_KIND_OSC8
+                ? .hyperlink
+                : .matchedText
+            log.notice("OPEN_URL source=\(String(describing: source), privacy: .public) url=\(url ?? "nil", privacy: .private)")
+            return .openUrl(url: url, source: source)
 
         case GHOSTTY_ACTION_MOUSE_SHAPE:
             guard let view = surfaceView(from: target) else { return nil }
