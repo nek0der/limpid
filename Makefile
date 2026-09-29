@@ -6,6 +6,33 @@ PBXPROJ := $(PROJECT)/project.pbxproj
 CONFIG  := Debug
 BUILD_DESTINATION ?= generic/platform=macOS
 
+# Debug is ad-hoc signed unless LIMPID_DEVELOPMENT_TEAM names a Team ID. The
+# approval service authenticates its peers by Team ID, so native approvals run
+# only in a build signed this way; CONTRIBUTING.md has the setup.
+LIMPID_CODE_SIGN_IDENTITY ?= Apple Development
+DEBUG_SIGNING = $(if $(LIMPID_DEVELOPMENT_TEAM),CODE_SIGN_IDENTITY='$(LIMPID_CODE_SIGN_IDENTITY)' DEVELOPMENT_TEAM='$(LIMPID_DEVELOPMENT_TEAM)')
+# An incremental build re-signs the helper tools but leaves the copies already
+# embedded in the app untouched, so after a signer change the service rejects
+# them. `build` and `test` share one signer, record it in DEBUG_SIGNING_STAMP,
+# and remove the built app when it changes, so Xcode embeds and signs the
+# tools again while compiled objects stay cached.
+DEBUG_SIGNER = $(if $(LIMPID_DEVELOPMENT_TEAM),$(LIMPID_DEVELOPMENT_TEAM) $(LIMPID_CODE_SIGN_IDENTITY),ad-hoc)
+DEBUG_SIGNING_STAMP := build/debug-signing
+define debug_signing_guard
+@signer='$(DEBUG_SIGNER)'; \
+	if [ "$$signer" != "$$(cat $(DEBUG_SIGNING_STAMP) 2>/dev/null || echo ad-hoc)" ]; then \
+		app=$$(xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) \
+			-showBuildSettings 2>/dev/null | awk -F' = ' \
+			'/ BUILT_PRODUCTS_DIR = /{d=$$2} / FULL_PRODUCT_NAME = /{n=$$2} END{print d"/"n}'); \
+		case "$$app" in \
+			*/Build/Products/*.app) \
+				echo "Debug signing changed; removing $$app"; rm -rf "$$app";; \
+			*) echo "Debug signing changed, but the built app was not found: '$$app'" >&2; exit 1;; \
+		esac; \
+	fi; \
+	mkdir -p $(dir $(DEBUG_SIGNING_STAMP)); printf '%s' "$$signer" > $(DEBUG_SIGNING_STAMP)
+endef
+
 # Resolve the built .app path from xcodebuild itself so we don't guess the
 # DerivedData hash or the Dev/Release product name.
 APP_PATH = $(shell xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) -showBuildSettings 2>/dev/null \
@@ -39,8 +66,9 @@ $(PBXPROJ): project.yml
 	xcodegen
 
 build: $(PBXPROJ)
+	$(debug_signing_guard)
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) \
-		-destination '$(BUILD_DESTINATION)' build
+		-destination '$(BUILD_DESTINATION)' $(DEBUG_SIGNING) build
 
 build-release: $(PBXPROJ)
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
@@ -69,7 +97,9 @@ run:
 dev: build run
 
 test: rust-test $(PBXPROJ)
-	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' test
+	$(debug_signing_guard)
+	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' \
+		$(DEBUG_SIGNING) test
 
 rust-test:
 	cargo test --locked --workspace --all-targets

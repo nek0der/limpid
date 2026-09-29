@@ -71,6 +71,17 @@ You should see a Limpid window with a working terminal pane (zsh by default), a 
 
 > First-launch tip: a locally-built Debug binary is ad-hoc signed, so macOS may quarantine it. Right-click → Open the first time.
 
+### Native approvals in a Debug build
+
+The approval service accepts connections only from executables signed with its own Team ID. A Debug build is ad-hoc signed by default, so it runs without native approvals, and Claude and Codex use their own permission prompts. To try native approvals, build with a signing identity that has a Team ID. The service's check accepts an Apple Development certificate, which a free Apple Account can create in Xcode.
+
+```bash
+export LIMPID_DEVELOPMENT_TEAM=<your Team ID>
+# Optional; the identity defaults to "Apple Development".
+# export LIMPID_CODE_SIGN_IDENTITY="Developer ID Application"
+make dev
+```
+
 ### Open in Xcode
 
 ```bash

@@ -48,6 +48,10 @@ Agent-side tips:
   available. It returns structured diff logs and reuses Xcode's index cache, so
   iteration is dramatically faster than `make build` shelling out to
   `xcodebuild`.
+- Debug builds are ad-hoc signed by default, so the approval service never
+  becomes ready, and Claude and Codex use their own permission prompts. To
+  exercise native approvals, set `LIMPID_DEVELOPMENT_TEAM`; `CONTRIBUTING.md`
+  has the details.
 - Use `make build` (or direct `xcodebuild`) for the initial full build, CI
   repros, or when the MCP is not reachable.
 - `vendor/ghostty` is a git submodule; run `make ghostty` after a fresh clone

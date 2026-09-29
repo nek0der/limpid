@@ -122,6 +122,18 @@ struct AgentIntegrationServiceIssue: Identifiable, Equatable, Sendable {
         reason
     }
 
+    /// The issue a failed reconciliation reports, or `nil` when there is
+    /// nothing the user can act on. An ad hoc-signed build has no Team ID
+    /// for the service to authenticate its peers with, and retrying cannot
+    /// change the running app's signature, so it stays unavailable without
+    /// an alert; the agents keep their native permission prompts.
+    static func forReconciliationFailure(_ error: any Error) -> Self? {
+        if case AgentIntegrationError.adHocSigningUnsupported = error {
+            return nil
+        }
+        return Self(reason: .reconciliationFailed, diagnostic: String(describing: error))
+    }
+
     var title: String {
         String(localized: "Native approvals are unavailable")
     }
@@ -180,6 +192,9 @@ final class AgentIntegrationServiceRegistrar {
     private var retryTask: Task<Void, Never>?
     private var activeObserver: Any?
     private var readinessChanged: ((Bool) -> Void)?
+    /// Set once the running app turns out to be ad hoc-signed. Its signature
+    /// cannot change while it runs, so later activations skip reconciling.
+    private var isSigningUnsupported = false
 
     init(
         appBundleURL: URL = Bundle.main.bundleURL,
@@ -234,7 +249,7 @@ final class AgentIntegrationServiceRegistrar {
     }
 
     private func reconcile(forceReplacement: Bool = false) {
-        guard reconcileTask == nil else { return }
+        guard reconcileTask == nil, !isSigningUnsupported else { return }
         reconcileTask = Task { [weak self] in
             guard let self else { return }
             defer { reconcileTask = nil }
@@ -267,8 +282,13 @@ final class AgentIntegrationServiceRegistrar {
                     diagnostic: observationDiagnostic
                 )
             } catch {
+                guard let issue = AgentIntegrationServiceIssue.forReconciliationFailure(error) else {
+                    Self.log.notice("Native approvals are off: this build is ad hoc-signed")
+                    isSigningUnsupported = true
+                    return
+                }
                 Self.log.error("Service reconciliation failed: \(String(describing: error), privacy: .public)")
-                setUnavailable(.reconciliationFailed, diagnostic: String(describing: error))
+                setUnavailable(issue.reason, diagnostic: issue.diagnostic)
             }
         }
     }
