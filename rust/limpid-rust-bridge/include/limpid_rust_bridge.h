@@ -318,6 +318,9 @@ int32_t limpid_provider_approval_request_v1(const uint8_t *provider,
 //
 // `decision_json` is an `ApprovalDecision` document such as
 // `{"decision":"allow_once"}` or `{"decision":"deny","message":"..."}`.
+// An `answer` decision always delegates through this entry point, because it
+// has no request to echo; callers that need it rendered use
+// `limpid_provider_approval_output_v2` with the request document.
 // Returns `LIMPID_PROVIDER_OK` with the bytes to write to the hook's standard
 // output; an empty body means the provider's native flow decides. On
 // success, ownership of `*out` transfers to the caller, which must release
@@ -328,6 +331,22 @@ int32_t limpid_provider_approval_request_v1(const uint8_t *provider,
 // Same contract as `limpid_provider_approval_request_v1`.
 int32_t limpid_provider_approval_output_v1(const uint8_t *provider,
                                            size_t provider_len,
+                                           const uint8_t *decision_json,
+                                           size_t decision_len,
+                                           uint8_t **out,
+                                           size_t *out_len);
+
+// Same as `limpid_provider_approval_output_v1`, with the `ApprovalRequest`
+// JSON that `limpid_provider_approval_request_v1` produced. An answer needs
+// the request's `tool_name` and `input`; the other decisions ignore it.
+//
+// # Safety
+//
+// Same contract as `limpid_provider_approval_request_v1`.
+int32_t limpid_provider_approval_output_v2(const uint8_t *provider,
+                                           size_t provider_len,
+                                           const uint8_t *request_json,
+                                           size_t request_len,
                                            const uint8_t *decision_json,
                                            size_t decision_len,
                                            uint8_t **out,

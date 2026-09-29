@@ -17,9 +17,9 @@ pub use lifecycle::{
     ApplyContext, RecordWrites, SideWrite, TurnSnapshotOp, apply, sanitize_text, sanitize_title,
     turn_snapshot_cwd,
 };
-/// Re-exported so the protocol crate can name a provider without depending
-/// on the model crate directly.
-pub use limpid_agent_model::ProviderId;
+/// Re-exported so the protocol crate can name a provider and a question
+/// without depending on the model crate directly.
+pub use limpid_agent_model::{ApprovalQuestion, ProviderId};
 pub use projection::project;
 pub use session_lifecycle::{on_launch, on_terminate};
 pub use title::{

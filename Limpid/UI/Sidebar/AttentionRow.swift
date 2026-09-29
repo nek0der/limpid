@@ -22,8 +22,12 @@ struct ApprovalAttentionRow: View {
     @State private var isHovering = false
     @FocusState private var isFocused: Bool
 
+    /// A question names itself by its header, which says more than the
+    /// provider's generic question tool name. An empty header falls back like
+    /// a missing one, as the card treats it.
     private var accessibilityTarget: String {
-        "\(approval.provider.rawValue.capitalized) — \(approval.toolName)"
+        let header = approval.questions.first?.header.flatMap { $0.isEmpty ? nil : $0 }
+        return "\(approval.provider.rawValue.capitalized) — \(header ?? approval.toolName)"
     }
 
     private var waitLabel: String {
@@ -44,7 +48,7 @@ struct ApprovalAttentionRow: View {
                     .foregroundStyle(.orange)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(verbatim: "\(approval.provider.rawValue.capitalized) — \(approval.toolName)")
+                    Text(verbatim: accessibilityTarget)
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
                     if let summary = approval.summary, !summary.isEmpty {

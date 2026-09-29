@@ -605,6 +605,7 @@ final class AgentProjectionAdapter {
                 tab.title = title
             }
         }
+        onProjectionApplied?(session)
     }
 
     private func runtimePresentation(
@@ -671,6 +672,10 @@ final class AgentProjectionAdapter {
     /// Set by the host to actually raise a notification. Returns whether it
     /// was delivered, which is what retires the pending entry.
     var onNotify: ((AgentNotifyPayload, Tab) -> Bool)?
+    /// Set by the host to react once the panes reflect a new projection.
+    /// Approval presentation uses it to release requests the terminal
+    /// already answered.
+    var onProjectionApplied: (@MainActor (WindowSession) -> Void)?
 
     private func deliver(_ payload: AgentNotifyPayload, session: WindowSession) -> Bool {
         guard let onNotify, let tab = session.tabs.first(where: { $0.id == payload.tab }) else {

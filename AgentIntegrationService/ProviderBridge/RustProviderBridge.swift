@@ -21,16 +21,19 @@ enum RustProviderBridge {
         }
     }
 
-    /// Renders a neutral decision document (`{"decision":"allow_once"}`, …)
-    /// as the bytes the provider's hook must print. `nil` means delegate:
-    /// print nothing and let the provider's native flow decide.
-    static func approvalOutput(provider: String, decisionJSON: Data) throws -> Data? {
-        try call(provider: provider, input: decisionJSON, notApproval: false) { pointers in
-            limpid_provider_approval_output_v1(
-                pointers.provider, pointers.providerCount,
-                pointers.input, pointers.inputCount,
-                pointers.out, pointers.outCount
-            )
+    /// Renders a decision with the request it answers. Only an answer needs
+    /// the request; it echoes the provider's tool input back with the answers.
+    static func approvalOutput(provider: String, requestJSON: Data, decisionJSON: Data) throws -> Data? {
+        try requestJSON.withUnsafeBytes { requestBuffer -> Data? in
+            let requestPointer = requestBuffer.bindMemory(to: UInt8.self).baseAddress
+            return try call(provider: provider, input: decisionJSON, notApproval: false) { pointers in
+                limpid_provider_approval_output_v2(
+                    pointers.provider, pointers.providerCount,
+                    requestPointer, requestBuffer.count,
+                    pointers.input, pointers.inputCount,
+                    pointers.out, pointers.outCount
+                )
+            }
         }
     }
 

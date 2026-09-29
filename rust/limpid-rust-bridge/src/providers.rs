@@ -10,6 +10,7 @@ use limpid_agent_hook::{
 use limpid_agent_model::{
     ApprovalDecision, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, RawHookInput,
 };
+use serde_json::Value;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 use std::slice;
@@ -192,6 +193,9 @@ pub unsafe extern "C" fn limpid_provider_approval_request_v1(
 ///
 /// `decision_json` is an `ApprovalDecision` document such as
 /// `{"decision":"allow_once"}` or `{"decision":"deny","message":"..."}`.
+/// An `answer` decision always delegates through this entry point, because it
+/// has no request to echo; callers that need it rendered use
+/// `limpid_provider_approval_output_v2` with the request document.
 /// Returns `LIMPID_PROVIDER_OK` with the bytes to write to the hook's standard
 /// output; an empty body means the provider's native flow decides. On
 /// success, ownership of `*out` transfers to the caller, which must release
@@ -222,7 +226,50 @@ pub unsafe extern "C" fn limpid_provider_approval_output_v1(
         let decision = unsafe { input_bytes(decision_json, decision_len) }?;
         let decision: ApprovalDecision =
             serde_json::from_slice(decision).map_err(|_| PROVIDER_INVALID_INPUT)?;
-        if let Some(body) = adapter.approval_output(&decision).stdout {
+        if let Some(body) = adapter.approval_output(&decision, &Value::Null).stdout {
+            // SAFETY: The caller guarantees both output pointers are writable,
+            // and the bytes are owned by the caller until it frees them.
+            unsafe { transfer(body, out, out_len) };
+        }
+        Ok(PROVIDER_OK)
+    });
+    status.unwrap_or_else(|code| code)
+}
+
+/// Same as `limpid_provider_approval_output_v1`, with the `ApprovalRequest`
+/// JSON that `limpid_provider_approval_request_v1` produced. An answer needs
+/// the request's `tool_name` and `input`; the other decisions ignore it.
+///
+/// # Safety
+///
+/// Same contract as `limpid_provider_approval_request_v1`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn limpid_provider_approval_output_v2(
+    provider: *const u8,
+    provider_len: usize,
+    request_json: *const u8,
+    request_len: usize,
+    decision_json: *const u8,
+    decision_len: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        return PROVIDER_NULL_POINTER;
+    }
+    // SAFETY: The caller guarantees both output pointers are writable.
+    unsafe {
+        ptr::write(out, ptr::null_mut());
+        ptr::write(out_len, 0);
+    }
+    let status = provider_boundary(|| {
+        let adapter = unsafe { resolve_adapter(provider, provider_len) }?;
+        let request = unsafe { input_bytes(request_json, request_len) }?;
+        let request: Value = serde_json::from_slice(request).map_err(|_| PROVIDER_INVALID_INPUT)?;
+        let decision = unsafe { input_bytes(decision_json, decision_len) }?;
+        let decision: ApprovalDecision =
+            serde_json::from_slice(decision).map_err(|_| PROVIDER_INVALID_INPUT)?;
+        if let Some(body) = adapter.approval_output(&decision, &request).stdout {
             // SAFETY: The caller guarantees both output pointers are writable,
             // and the bytes are owned by the caller until it frees them.
             unsafe { transfer(body, out, out_len) };
@@ -286,7 +333,6 @@ fn provider_boundary(operation: impl FnOnce() -> Result<i32, i32>) -> Result<i32
 mod tests {
     use super::*;
     use crate::limpid_approval_bytes_free_v1;
-    use serde_json::Value;
 
     fn request(provider: &str, payload: &[u8]) -> (i32, Option<Value>) {
         let mut out: *mut u8 = ptr::dangling_mut();
@@ -313,6 +359,32 @@ mod tests {
             limpid_provider_approval_output_v1(
                 provider.as_ptr(),
                 provider.len(),
+                decision.as_ptr(),
+                decision.len(),
+                &raw mut out,
+                &raw mut out_len,
+            )
+        };
+        if out.is_null() {
+            assert_eq!(out_len, 0);
+            return (status, None);
+        }
+        // SAFETY: A non-null output is the exact owned pair the call produced.
+        let bytes = unsafe { slice::from_raw_parts(out, out_len) }.to_vec();
+        unsafe { limpid_approval_bytes_free_v1(out, out_len) };
+        (status, Some(bytes))
+    }
+
+    fn output_v2(provider: &str, request: &[u8], decision: &[u8]) -> (i32, Option<Vec<u8>>) {
+        let mut out: *mut u8 = ptr::dangling_mut();
+        let mut out_len: usize = 99;
+        // SAFETY: Every pointer is a live local of this test.
+        let status = unsafe {
+            limpid_provider_approval_output_v2(
+                provider.as_ptr(),
+                provider.len(),
+                request.as_ptr(),
+                request.len(),
                 decision.as_ptr(),
                 decision.len(),
                 &raw mut out,
@@ -440,6 +512,18 @@ mod tests {
         assert_eq!((status, bytes), (PROVIDER_INVALID_INPUT, None));
         let (status, _) = output("nope", br#"{"decision":"delegate"}"#);
         assert_eq!(status, PROVIDER_UNKNOWN_PROVIDER);
+    }
+
+    #[test]
+    fn answers_render_only_through_v2_with_the_request() {
+        let request = br#"{"tool_name":"AskUserQuestion","input":{"questions":[{"question":"q","options":[{"label":"a"}]}]}}"#;
+        let answer = br#"{"decision":"answer","answers":{"q":"a"}}"#;
+        let (status, bytes) = output_v2("claude", request, answer);
+        assert_eq!(status, PROVIDER_OK);
+        let bytes = String::from_utf8(bytes.expect("bytes")).expect("utf8");
+        assert!(bytes.contains(r#""updatedInput""#));
+        let (status, bytes) = output("claude", answer);
+        assert_eq!((status, bytes), (PROVIDER_OK, None));
     }
 
     fn hook(provider: &str, kind: u32, payload: &[u8], env: &[u8]) -> (i32, Option<Value>) {

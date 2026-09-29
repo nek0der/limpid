@@ -109,6 +109,96 @@ struct AgentIntegrationApprovalBridgeTests {
         #expect(body["code"] as? String == "epoch_mismatch")
     }
 
+    /// The broker reads `body.questions` and `body.decision.answers` by name,
+    /// so a renamed key would silently drop the question card or the answer.
+    @Test func approvalWire_questionsAndAnswers_useTheBrokerKeys() throws {
+        let submission = AgentIntegrationApprovalSubmission(
+            runID: UUID(),
+            requestID: UUID(),
+            provider: "claude",
+            sessionID: nil,
+            operationID: nil,
+            toolName: "AskUserQuestion",
+            summary: "Which color?",
+            input: [String: Any](),
+            questions: [["prompt": "Which color?", "options": [["label": "Red"]], "multi_select": false]],
+            timeoutMilliseconds: 1000
+        )
+        let submitted = try AgentIntegrationApprovalWire.object(from: AgentIntegrationApprovalWire.submit(
+            epoch: UUID(),
+            submission: submission
+        ))
+        let submitBody = try #require(submitted["body"] as? [String: Any])
+        let questions = try #require(submitBody["questions"] as? [[String: Any]])
+        #expect(questions.first?["prompt"] as? String == "Which color?")
+
+        let answered = try AgentIntegrationApprovalWire.object(from: AgentIntegrationApprovalWire.resolve(
+            epoch: UUID(),
+            runID: submission.runID,
+            requestID: submission.requestID,
+            decision: "answer",
+            answers: ["Which color?": "Red"]
+        ))
+        let answerBody = try #require(answered["body"] as? [String: Any])
+        let answerDecision = try #require(answerBody["decision"] as? [String: Any])
+        #expect(answerDecision["decision"] as? String == "answer")
+        let answers = try #require(answerDecision["answers"] as? [String: String])
+        #expect(answers["Which color?"] == "Red")
+
+        let denied = try AgentIntegrationApprovalWire.object(from: AgentIntegrationApprovalWire.resolve(
+            epoch: UUID(),
+            runID: submission.runID,
+            requestID: submission.requestID,
+            decision: "deny"
+        ))
+        let denyBody = try #require(denied["body"] as? [String: Any])
+        let denyDecision = try #require(denyBody["decision"] as? [String: Any])
+        #expect(denyDecision["decision"] as? String == "deny")
+        #expect(denyDecision["answers"] == nil)
+    }
+
+    /// The card refuses to send an answer `fitsDecisionLimit` rejects, so its
+    /// limit has to be the broker's to the byte: a smaller one blocks answers
+    /// the broker would take, and a larger one lets through answers that can
+    /// only fail.
+    @Test func answerAtTheDecisionLimit_isWhatTheBrokerAccepts() throws {
+        let service = try RustApprovalService(maximumRecords: 8)
+        let runID = UUID()
+        let requestID = UUID()
+        let requester = try service.requesterSession(runID: runID)
+        let controller = try service.controllerSession()
+        let epoch = try completeHello(on: requester)
+        _ = try completeHello(on: controller)
+        _ = try AgentIntegrationProbeWire.requireType(
+            "approval.result",
+            in: requester.exchange(AgentIntegrationProbeWire.submit(epoch: epoch, runID: runID, requestID: requestID))
+        )
+
+        // ASCII without `/` encodes the same in Foundation and serde, so the
+        // padding lands the decision exactly on the limit.
+        let emptyDecision = try JSONSerialization.data(withJSONObject: AgentIntegrationApprovalWire.decisionBody(
+            decision: "answer",
+            answers: ["q": ""]
+        ))
+        let padding = ApprovalResolution.maximumEncodedBytes - emptyDecision.count
+        let atLimit = ApprovalResolution.answer(["q": String(repeating: "a", count: padding)])
+        let overLimit = ApprovalResolution.answer(["q": String(repeating: "a", count: padding + 1)])
+        #expect(atLimit.fitsDecisionLimit)
+        #expect(!overLimit.fitsDecisionLimit)
+
+        func resolve(_ resolution: ApprovalResolution) throws -> [String: Any] {
+            try AgentIntegrationProbeWire.response(controller.exchange(AgentIntegrationApprovalWire.resolve(
+                epoch: epoch,
+                runID: runID,
+                requestID: requestID,
+                decision: resolution.wireDecision,
+                answers: resolution.answers
+            )))
+        }
+        #expect(try resolve(overLimit)["type"] as? String == "error")
+        #expect(try resolve(atLimit)["type"] as? String == "approval.result")
+    }
+
     private func completeHello(on session: RustApprovalSession) throws -> UUID {
         let (hello, _) = try AgentIntegrationProbeWire.hello()
         return try AgentIntegrationProbeWire.epoch(

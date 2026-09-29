@@ -232,6 +232,9 @@ final class AppState {
 
         let agentProjection = AgentProjectionAdapter()
         self.agentProjection = agentProjection
+        agentProjection.onProjectionApplied = { [weak approvalPresentation] session in
+            approvalPresentation?.releaseStaleApprovals(in: session)
+        }
 
         self.session = session
         let attention = AttentionState()

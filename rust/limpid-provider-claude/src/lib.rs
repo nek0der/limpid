@@ -11,6 +11,7 @@ use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe, NormalizeError,
     ProviderAdapter, ProviderDescriptor, ProviderOutput, RawHookInput, WorktreeIntent,
 };
+use serde_json::Value;
 
 /// The Claude Code provider.
 #[derive(Debug, Default, Clone, Copy)]
@@ -43,8 +44,8 @@ impl ProviderAdapter for ClaudeAdapter {
         approval::approval_request(input.bytes)
     }
 
-    fn approval_output(&self, decision: &ApprovalDecision) -> ProviderOutput {
-        approval::approval_output(decision)
+    fn approval_output(&self, decision: &ApprovalDecision, request: &Value) -> ProviderOutput {
+        approval::approval_output(decision, request)
     }
 
     fn transcript_path(&self, input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {

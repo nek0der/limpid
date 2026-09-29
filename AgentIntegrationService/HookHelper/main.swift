@@ -125,6 +125,7 @@ func run(input: Data) throws -> Data? {
                 toolName: toolName,
                 summary: request["summary"] as? String,
                 input: requestInput,
+                questions: request["questions"],
                 timeoutMilliseconds: timeoutMilliseconds
             )
         )
@@ -152,8 +153,10 @@ func run(input: Data) throws -> Data? {
     }
     var neutralDecision: [String: Any] = ["decision": decision]
     neutralDecision["message"] = result["message"] as? String
+    neutralDecision["answers"] = result["answers"] as? [String: String]
     return try RustProviderBridge.approvalOutput(
         provider: provider,
+        requestJSON: translated,
         decisionJSON: JSONSerialization.data(withJSONObject: neutralDecision)
     )
 }
