@@ -548,8 +548,8 @@ struct ReviewFileActionsMenu: View {
         ReviewFileAction.fileURL(for: file.path, in: root)
     }
 
-    private var application: ReviewFileApplicationResolution {
-        ReviewFileAction.application(for: settingsStore.settings.advanced.reviewFileApplication)
+    private var application: FileApplicationResolution {
+        FileOpener.application(for: settingsStore.settings.advanced.fileApplication)
     }
 
     private var openTitle: String {
@@ -573,7 +573,7 @@ struct ReviewFileActionsMenu: View {
             guard let fileURL else { return }
             Task {
                 do {
-                    try await ReviewFileAction.open(fileURL, with: application)
+                    try await FileOpener.open(fileURL, with: application)
                 } catch {
                     toastCenter.show(ToastItem(message: error.localizedDescription, undo: nil))
                 }
