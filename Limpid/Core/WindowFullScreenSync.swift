@@ -21,6 +21,11 @@
 // until the next transition. AppKit posts no failure notification, and
 // taking over `window.delegate` to catch `windowDidFailToEnterFullScreen`
 // would fight SwiftUI's own delegate, so we accept this rare edge.
+//
+// It also keeps `WindowSession.areTrafficLightsHidden`, which the toolbar
+// reads to move the sidebar controls into the traffic lights' place. That
+// flag clears on `willExit` instead, because the traffic lights reappear
+// during the shrink animation.
 
 import AppKit
 import Foundation
@@ -38,6 +43,7 @@ final class WindowFullScreenSync: NSObject {
         // Seed from the live state in case the window is restored
         // straight into fullscreen.
         session.isFullScreen = window.styleMask.contains(.fullScreen)
+        session.areTrafficLightsHidden = session.isFullScreen
 
         let center = NotificationCenter.default
         center.addObserver(
@@ -50,6 +56,12 @@ final class WindowFullScreenSync: NSObject {
             self,
             selector: #selector(syncFromStyleMask(_:)),
             name: NSWindow.didEnterFullScreenNotification,
+            object: window
+        )
+        center.addObserver(
+            self,
+            selector: #selector(handleWillExit(_:)),
+            name: NSWindow.willExitFullScreenNotification,
             object: window
         )
         center.addObserver(
@@ -68,12 +80,21 @@ final class WindowFullScreenSync: NSObject {
     /// in place — no wallpaper flash mid-transition.
     @objc private func handleWillEnter(_ note: Notification) {
         session?.isFullScreen = true
+        session?.areTrafficLightsHidden = true
+    }
+
+    /// The traffic lights come back during the shrink animation, so the
+    /// toolbar makes room for them before `didExit`.
+    @objc private func handleWillExit(_ note: Notification) {
+        session?.areTrafficLightsHidden = false
     }
 
     /// Authoritative sync once a transition settles. `didExit` fires after
     /// the shrink animation, so the drop survives the way out too.
     @objc private func syncFromStyleMask(_ note: Notification) {
         guard let window else { return }
-        session?.isFullScreen = window.styleMask.contains(.fullScreen)
+        let isFullScreen = window.styleMask.contains(.fullScreen)
+        session?.isFullScreen = isFullScreen
+        session?.areTrafficLightsHidden = isFullScreen
     }
 }

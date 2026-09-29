@@ -36,6 +36,14 @@ enum LimpidLayout {
         trafficLightOriginX + 2 * trafficLightSpacing + trafficLightButtonSize
     }
 
+    /// Leading x of the sidebar controls in the top strip. In a window they
+    /// sit past the traffic lights. In full screen the traffic lights leave
+    /// the strip — they come back only with the menu bar, in a titlebar
+    /// that slides over the content — so the controls move into their place.
+    static func sidebarControlsLeadingInset(areTrafficLightsHidden: Bool) -> CGFloat {
+        areTrafficLightsHidden ? trafficLightOriginX : trafficLightWidth + 10
+    }
+
     /// Height of the top toolbar strip inside each column. Everything
     /// the strip carries — the toolbar content row and the AppKit
     /// traffic lights — centers on its midline, so this is the one
@@ -114,6 +122,12 @@ enum LimpidLayout {
 
     /// Minimum width of the active-container title inside a terminal toolbar.
     static let toolbarContainerTitleMinWidth: CGFloat = 200
+    /// Horizontal padding of the terminal column's toolbar row.
+    static let terminalToolbarHorizontalInset: CGFloat = 12
+    /// Leading inset of the active-container title from the edge of the
+    /// column that holds it, the same in the tab column and the terminal
+    /// column so the title does not shift when it moves between them.
+    static let toolbarContainerTitleInset: CGFloat = 14
     /// Standard gap between top-level toolbar controls.
     static let toolbarControlSpacing: CGFloat = 8
     /// Additional width needed when the terminal toolbar also owns the active

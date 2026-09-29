@@ -85,8 +85,9 @@ struct FloatingSidebarToolbar: View {
     @Environment(WindowSession.self) private var session
 
     var body: some View {
+        // The sidebar toggle sits right after the traffic lights, where other
+        // macOS apps keep it; the bell follows.
         HStack(spacing: 4) {
-            ToolbarBellButton()
             ToolbarIconButton(
                 systemImage: "sidebar.left",
                 help: isSidebarPresented ? "Hide Sidebar (⌘1)" : "Show Sidebar (⌘1)"
@@ -96,6 +97,7 @@ struct FloatingSidebarToolbar: View {
                     object: session
                 )
             }
+            ToolbarBellButton()
         }
     }
 }

@@ -106,7 +106,10 @@ struct ThreePaneLayout: View {
                 // surface moves underneath instead of dragging the controls
                 // across the traffic lights.
                 FloatingSidebarToolbar(isSidebarPresented: plan.isSidebarPresented)
-                    .padding(.leading, LimpidLayout.trafficLightWidth + 10)
+                    .padding(
+                        .leading,
+                        LimpidLayout.sidebarControlsLeadingInset(areTrafficLightsHidden: state.session.areTrafficLightsHidden)
+                    )
                     .padding(.top, LimpidLayout.toolbarContentTopInset)
                     .ignoresSafeArea(.all, edges: .top)
             }
@@ -277,11 +280,16 @@ private struct HorizontalModeBody: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Horizontal tabs do not have a vertical tab column. Reserve only
-            // the visible sidebar or hidden-sidebar controls, then give the
-            // remaining titlebar to one responsive toolbar.
+            // The same toolbar as vertical tabs, down to the tab segment
+            // that carries the title and New Tab, so switching orientation
+            // moves only the tab list.
             HStack(spacing: 0) {
-                Spacer().frame(width: plan.horizontalToolbarLeadingInset)
+                Spacer().frame(width: plan.reservedSidebarWidth)
+                ToolbarTabColumnSegment(
+                    showsContainerIdentity: plan.regularContainerIdentityPlacement == .tabToolbar,
+                    showsNewTab: !plan.isCompactSidebarOverlayPresented && !isSidebarTransitioning
+                )
+                .frame(width: plan.tabToolbarWidth)
                 ToolbarTerminalColumnSegment(plan: plan)
                     .frame(maxWidth: .infinity)
             }
@@ -296,11 +304,6 @@ private struct HorizontalModeBody: View {
                     }
                     HorizontalTabBar(container: session.activeContainerID)
                         .frame(maxWidth: .infinity)
-                    if !plan.isCompactSidebarOverlayPresented, !isSidebarTransitioning {
-                        NewTabToolbarButton()
-                            .padding(.trailing, 8)
-                            .transition(.asymmetric(insertion: .opacity, removal: .identity))
-                    }
                 }
                 .overlay(alignment: .bottom) {
                     if !reduce {

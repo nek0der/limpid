@@ -44,9 +44,14 @@ struct MainWindowLayoutPlan: Equatable {
     let regularToolbarMinimumWidth: CGFloat
     let tabColumnMinimumWidth: CGFloat
     let tabColumnMaximumWidth: CGFloat
+    /// Width of the vertical tab column below the toolbar; 0 with
+    /// horizontal tabs, which live in a bar instead.
     let tabColumnWidth: CGFloat
+    /// Width of the tab segment in the toolbar, which holds the container
+    /// title and New Tab. It is the same for both orientations, so switching
+    /// between them moves only the tab list and leaves the toolbar in place.
+    let tabToolbarWidth: CGFloat
     let primaryContentWidth: CGFloat
-    let horizontalToolbarLeadingInset: CGFloat
 
     var isSidebarPresented: Bool {
         switch sidebarPresentation {
@@ -107,8 +112,9 @@ struct MainWindowLayoutPlan: Equatable {
         let primaryMinimum = input.isReviewPresented
             ? ReviewRail.inlineMinimumWidth
             : LimpidLayout.terminalColumnMinWidth
-        let fullLayoutMinimum = sidebarWidth + primaryMinimum
-            + (orientation == .vertical ? LimpidLayout.tabColumnMinWidth : 0)
+        // Horizontal tabs have no column, but their toolbar keeps the same
+        // tab segment, so both orientations need the same width.
+        let fullLayoutMinimum = sidebarWidth + primaryMinimum + LimpidLayout.tabColumnMinWidth
         let usesCompactSidebar = input.availableWidth < fullLayoutMinimum
         let reservesSidebar = !input.isSidebarHidden && !usesCompactSidebar
         let reservedSidebarWidth = reservesSidebar ? sidebarWidth : 0
@@ -121,28 +127,18 @@ struct MainWindowLayoutPlan: Equatable {
             .hidden
         }
 
-        let tabMinimum = orientation == .vertical ? LimpidLayout.tabColumnMinWidth : 0
-        let maximumTabWidth: CGFloat = if orientation == .vertical {
-            min(
-                LimpidLayout.tabColumnMaxWidth,
-                max(tabMinimum, input.availableWidth - reservedSidebarWidth - primaryMinimum)
-            )
-        } else {
-            0
-        }
-        let tabColumnWidth: CGFloat = if orientation == .vertical {
-            min(max(input.requestedTabWidth, tabMinimum), maximumTabWidth)
-        } else {
-            0
-        }
+        let tabMinimum = LimpidLayout.tabColumnMinWidth
+        let maximumTabWidth = min(
+            LimpidLayout.tabColumnMaxWidth,
+            max(tabMinimum, input.availableWidth - reservedSidebarWidth - primaryMinimum)
+        )
+        let tabToolbarWidth = min(max(input.requestedTabWidth, tabMinimum), maximumTabWidth)
+        let tabColumnWidth: CGFloat = orientation == .vertical ? tabToolbarWidth : 0
         let primaryContentWidth = max(
             0,
             input.availableWidth - reservedSidebarWidth - tabColumnWidth
         )
-        let horizontalToolbarLeadingInset = reservedSidebarWidth > 0
-            ? reservedSidebarWidth
-            : ContainerColumnFootprint.hiddenToolbarInset
-        let regularContainerPlacement: ContainerIdentityPlacement = orientation == .vertical && reservesSidebar
+        let regularContainerPlacement: ContainerIdentityPlacement = reservesSidebar
             ? .tabToolbar
             : .terminalToolbar
         let regularToolbarMinimum = LimpidLayout.terminalToolbarFullWidth
@@ -158,23 +154,8 @@ struct MainWindowLayoutPlan: Equatable {
             tabColumnMinimumWidth: tabMinimum,
             tabColumnMaximumWidth: maximumTabWidth,
             tabColumnWidth: tabColumnWidth,
-            primaryContentWidth: primaryContentWidth,
-            horizontalToolbarLeadingInset: horizontalToolbarLeadingInset
+            tabToolbarWidth: tabToolbarWidth,
+            primaryContentWidth: primaryContentWidth
         )
-    }
-}
-
-/// X position of the container sidebar's right edge for the given
-/// session. The sidebar starts at the window's leading edge, so its
-/// width is the whole footprint.
-enum ContainerColumnFootprint {
-    /// Leading titlebar area occupied by traffic lights and the sidebar
-    /// controls while the sidebar itself is absent. Horizontal tabs use this
-    /// instead of reserving a nonexistent vertical tab column.
-    static var hiddenToolbarInset: CGFloat {
-        let controls = 2 * LimpidLayout.toolbarButtonWidth + 4
-        let floatingToolbarRightEdge = LimpidLayout.trafficLightWidth + 10 + controls
-        let toolbarGap: CGFloat = 12
-        return floatingToolbarRightEdge + toolbarGap
     }
 }

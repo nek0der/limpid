@@ -105,6 +105,13 @@ final class WindowSession {
     /// blur while collapsing the hue to neutral.
     var isFullScreen: Bool = false
 
+    /// Whether the traffic lights are out of the top strip, so the sidebar
+    /// controls can take their place. Also maintained by
+    /// `WindowFullScreenSync`, but unlike `isFullScreen` it clears when the
+    /// exit animation starts: the traffic lights return while the window
+    /// shrinks, before `didExit`.
+    var areTrafficLightsHidden: Bool = false
+
     /// Most-recently-opened Project rootURLs. Drives the "+" menu's
     /// Recent section so the user doesn't re-pick paths via the file
     /// picker every time.
