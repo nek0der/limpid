@@ -55,14 +55,14 @@ struct MainWindowLayoutPlanTests {
         #expect(plan.regularContainerIdentityPlacement == .terminalToolbar)
     }
 
-    @Test("Horizontal tabs do not reserve a vertical tab column")
+    @Test("Horizontal tabs do not reserve a vertical tab column below the toolbar")
     func horizontalTerminal_usesActualPrimaryWidth() {
-        let plan = resolve(width: 700, isTabColumnHorizontal: true)
+        let plan = resolve(width: 1100, isTabColumnHorizontal: true)
 
-        #expect(!plan.usesCompactSidebar)
         #expect(plan.sidebarPresentation == .reserved(width: LayoutFixture.sidebarWidth))
         #expect(plan.tabColumnWidth == 0)
-        #expect(plan.primaryContentWidth == 460)
+        #expect(plan.tabToolbarWidth == LayoutFixture.tabWidth)
+        #expect(plan.primaryContentWidth == 860)
     }
 
     @Test("A minimum-width horizontal review overlays its sidebar")
@@ -78,13 +78,27 @@ struct MainWindowLayoutPlanTests {
         #expect(plan.primaryContentWidth == 560)
     }
 
-    @Test("A roomy horizontal toolbar owns container context once")
-    func horizontalWide_assignsContextToUnifiedToolbar() {
+    @Test("Switching tab orientation leaves the toolbar in place", arguments: [
+        (560, false), (760, false), (1100, false), (1100, true),
+    ])
+    func orientationSwitch_keepsToolbarGeometry(width: CGFloat, isSidebarHidden: Bool) {
+        let vertical = resolve(width: width, isSidebarHidden: isSidebarHidden)
+        let horizontal = resolve(width: width, isSidebarHidden: isSidebarHidden, isTabColumnHorizontal: true)
+
+        #expect(horizontal.sidebarPresentation == vertical.sidebarPresentation)
+        #expect(horizontal.tabToolbarWidth == vertical.tabToolbarWidth)
+        #expect(horizontal.tabToolbarWidth == vertical.tabColumnWidth)
+        #expect(horizontal.regularContainerIdentityPlacement == vertical.regularContainerIdentityPlacement)
+        #expect(horizontal.regularToolbarMinimumWidth == vertical.regularToolbarMinimumWidth)
+    }
+
+    @Test("A roomy horizontal toolbar keeps container context in its tab segment")
+    func horizontalWide_assignsContextToTabSegment() {
         let plan = resolve(width: 1100, isTabColumnHorizontal: true)
 
         #expect(plan.sidebarPresentation == .reserved(width: LayoutFixture.sidebarWidth))
         #expect(plan.primaryContentWidth == 860)
-        #expect(plan.regularContainerIdentityPlacement == .terminalToolbar)
+        #expect(plan.regularContainerIdentityPlacement == .tabToolbar)
     }
 
     @Test("Opening a compact sidebar changes presentation without relocating chrome")
@@ -120,12 +134,16 @@ struct MainWindowLayoutPlanTests {
             isReviewPresented: true
         ),
         SidebarBoundary(
-            threshold: LayoutFixture.sidebarWidth + LimpidLayout.terminalColumnMinWidth,
+            threshold: LayoutFixture.sidebarWidth
+                + LimpidLayout.tabColumnMinWidth
+                + LimpidLayout.terminalColumnMinWidth,
             isHorizontal: true,
             isReviewPresented: false
         ),
         SidebarBoundary(
-            threshold: LayoutFixture.sidebarWidth + ReviewRail.inlineMinimumWidth,
+            threshold: LayoutFixture.sidebarWidth
+                + LimpidLayout.tabColumnMinWidth
+                + ReviewRail.inlineMinimumWidth,
             isHorizontal: true,
             isReviewPresented: true
         ),

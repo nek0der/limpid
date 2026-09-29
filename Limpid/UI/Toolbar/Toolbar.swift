@@ -12,7 +12,8 @@ import SwiftUI
 
 // MARK: - tab column toolbar segment
 
-/// The vertical tab column owns its context and New Tab action.
+/// The toolbar's tab segment: the container title and New Tab. It sits over
+/// the vertical tab column, and at the same place with horizontal tabs.
 struct ToolbarTabColumnSegment: View {
     let showsContainerIdentity: Bool
     let showsNewTab: Bool
@@ -22,6 +23,7 @@ struct ToolbarTabColumnSegment: View {
             HStack(alignment: .center) {
                 if showsContainerIdentity {
                     ToolbarContainerTitle()
+                        .padding(.leading, LimpidLayout.toolbarContainerTitleInset)
                 }
                 Spacer()
                 if showsNewTab {
@@ -73,15 +75,23 @@ struct ToolbarTerminalColumnSegment: View {
     private var terminalColumnContent: some View {
         HStack(spacing: LimpidLayout.toolbarControlSpacing) {
             if plan.regularContainerIdentityPlacement == .terminalToolbar {
+                // The row's own padding already covers most of the inset.
                 ToolbarContainerTitle()
+                    .padding(
+                        .leading,
+                        LimpidLayout.toolbarContainerTitleInset - LimpidLayout.terminalToolbarHorizontalInset
+                    )
                     .frame(minWidth: LimpidLayout.toolbarContainerTitleMinWidth, alignment: .leading)
             }
             ToolbarPaletteField()
             Spacer(minLength: 0)
-            reviewButton
+            // The update button comes and goes, so it sits at the edge of the
+            // flexible space, where appearing does not push the fixed
+            // controls.
             if updateState.showsBadge, let updater {
                 ToolbarUpdateButton(updater: updater)
             }
+            reviewButton
             HStack(spacing: 2) {
                 ToolbarIconButton(
                     systemImage: "chevron.backward",
@@ -130,7 +140,7 @@ struct ToolbarTerminalColumnSegment: View {
             }
             actionsMenu(density: .regular)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, LimpidLayout.terminalToolbarHorizontalInset)
     }
 
     /// Narrow-window toolbar. The command palette and review state remain
@@ -140,13 +150,13 @@ struct ToolbarTerminalColumnSegment: View {
         HStack(spacing: LimpidLayout.toolbarControlSpacing) {
             ToolbarPaletteField()
             Spacer(minLength: 0)
-            reviewButton
             if updateState.showsBadge, let updater {
                 ToolbarUpdateButton(updater: updater)
             }
+            reviewButton
             actionsMenu(density: .compact)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, LimpidLayout.terminalToolbarHorizontalInset)
     }
 
     /// Review is a primary mode switch, so it remains directly reachable at
@@ -419,7 +429,8 @@ struct ProgressRing: View {
 }
 
 /// Shared container title block. `MainWindowLayoutPlan` assigns its regular
-/// presentation to one toolbar; compact presentation omits the title.
+/// presentation to one toolbar; compact presentation omits the title. Each
+/// placement insets it by `LimpidLayout.toolbarContainerTitleInset`.
 struct ToolbarContainerTitle: View {
     @Environment(WindowSession.self) private var session
 
@@ -450,7 +461,6 @@ struct ToolbarContainerTitle: View {
             // switcher used to host it, but the switcher was removed
             // when Log/Diff/Stash placeholders went away).
         }
-        .padding(.leading, 14)
     }
 }
 
