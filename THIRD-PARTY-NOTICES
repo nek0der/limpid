@@ -17,6 +17,10 @@ with a pointer to ghostty for their authoritative license texts.
 Statically linked into Limpid via GhosttyKit.xcframework.
 Project: https://github.com/ghostty-org/ghostty
 
+Limpid/Core/Links/TerminalLinkPolicy.swift adapts the link-safety rules from
+Ghostty's macOS app (macos/Sources/Helpers/UntrustedURL.swift) under the same
+license.
+
 MIT License
 
 Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
