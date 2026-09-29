@@ -1,7 +1,8 @@
 // PathFormatting.swift
-// Limpid — small utilities for rendering file-system paths in UI.
-// Lives under `UI/Design` because the only callers are SwiftUI views
-// (sheets, popovers) and the formatting choices are presentational.
+// Limpid — small utilities for rendering file-system paths for display.
+// In Core so the command palette and tab titles share the one home
+// abbreviation the sheets use; a copy that matched `$HOME` without the
+// trailing separator turned `/Users/nameX` into `~X`.
 
 import Foundation
 

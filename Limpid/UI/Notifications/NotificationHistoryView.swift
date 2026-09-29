@@ -163,15 +163,16 @@ struct NotificationHistoryView: View {
             Text("Notifications")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
             if store.unreadCount > 0 {
-                // Perfect circle for 1-2 digit counts; the
-                // notification bell color (orange) keeps the popover
-                // visually in lockstep with the toolbar badge.
-                Text("\(min(store.unreadCount, 99))")
+                // Perfect circle for 1-2 digit counts, widening only for
+                // "99+"; the notification bell color (orange) keeps the
+                // popover visually in lockstep with the toolbar badge.
+                Text(UnreadBadge.text(for: store.unreadCount))
                     .font(.system(size: 10.5, weight: .medium, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.white)
-                    .frame(width: 18, height: 18)
-                    .background(Circle().fill(LimpidColor.notificationBell))
+                    .padding(.horizontal, 2)
+                    .frame(minWidth: 18, minHeight: 18)
+                    .background(Capsule().fill(LimpidColor.notificationBell))
             }
             Spacer()
             if !store.entries.isEmpty, !isConfirmingClear {
