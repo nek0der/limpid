@@ -30,8 +30,9 @@ enum EditorLineLaunch: Equatable {
         let path = file.path
         let suffix = position.column.map { ":\(position.line):\($0)" } ?? ":\(position.line)"
         switch bundleIdentifier {
-        // VS Code documents `vscode://file/<path>:line:column`; forks keep
-        // the handler under their own scheme.
+        // Visual Studio Code documents a `file` URL host that takes
+        // `<path>:line:column`; its forks keep the handler under their own
+        // scheme.
         case "com.microsoft.VSCode":
             return fileURL(scheme: "vscode", path: path + suffix)
         case "com.microsoft.VSCodeInsiders":
