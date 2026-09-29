@@ -70,6 +70,11 @@ final class ClipboardConfirmationCoordinator {
 
     var pending: PendingClipboardRequest?
 
+    /// Takes a refused review paste back off the comments it carried. Set by
+    /// `AppState`, which owns the review pool, rather than observed by a view:
+    /// the mark has to come off whether or not a window is showing, and once.
+    @ObservationIgnored var onReviewPasteDenied: ((ReviewPasteReceipt) -> Void)?
+
     /// Reentrancy guard. `allow` / `deny` set this before they nil out
     /// `pending`, so the `.sheet(item:)` binding's "dismiss = deny"
     /// fallback can tell the difference between "user clicked the
@@ -137,10 +142,7 @@ final class ClipboardConfirmationCoordinator {
     /// delivery that never happened recorded as one that did.
     @MainActor static func reportReviewPasteDenied(_ receipt: ReviewPasteReceipt?) {
         guard let receipt else { return }
-        NotificationCenter.default.post(
-            name: .limpidReviewPasteDenied,
-            object: receipt
-        )
+        shared?.onReviewPasteDenied?(receipt)
     }
 
     /// User clicked Allow. The read and unsafe-paste paths complete

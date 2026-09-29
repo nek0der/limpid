@@ -9,11 +9,6 @@ extension Notification.Name {
     static let limpidReviewChanges = Notification.Name("dev.limpid.reviewChanges")
     static let limpidReviewTurn = Notification.Name("dev.limpid.reviewTurn")
     static let limpidReviewFind = Notification.Name("dev.limpid.reviewFind")
-    /// Posted when a review paste is refused at the confirmation sheet. The
-    /// comments were already recorded as sent by then — the paste action
-    /// answers long before the sheet does — so this is what takes the mark
-    /// back off them.
-    static let limpidReviewPasteDenied = Notification.Name("dev.limpid.reviewPasteDenied")
 
     /// Posted when the command palette opens so the overlay grabs focus.
     static let limpidCommandPaletteFocus = Notification.Name("dev.limpid.commandPaletteFocus")

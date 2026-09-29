@@ -744,35 +744,27 @@ struct ReviewTests {
         let root = URL(fileURLWithPath: "/tmp/x")
         let receipt = ReviewPasteReceipt(root: root, commentIDs: [UUID()])
         var refusals: [ReviewPasteReceipt] = []
-        let observer = NotificationCenter.default.addObserver(
-            forName: .limpidReviewPasteDenied,
-            object: nil,
-            queue: .main
-        ) { note in
-            guard let refused = note.object as? ReviewPasteReceipt else { return }
-            MainActor.assumeIsolated { refusals.append(refused) }
-        }
-        defer { NotificationCenter.default.removeObserver(observer) }
+        let report: @MainActor (ReviewPasteReceipt) -> Void = { refusals.append($0) }
 
         // Dropped: the pane died before anything could take it.
-        ReviewPasteDelivery(receipt: receipt).failIfUnsettled()
+        ReviewPasteDelivery(receipt: receipt, reportDenied: report).failIfUnsettled()
         #expect(refusals.count == 1)
         #expect(refusals.first?.commentIDs == receipt.commentIDs)
 
         // Landed: the terminal took the text, so there is nothing to take back.
-        let landed = ReviewPasteDelivery(receipt: receipt)
+        let landed = ReviewPasteDelivery(receipt: receipt, reportDenied: report)
         landed.landed()
         landed.failIfUnsettled()
         #expect(refusals.count == 1)
 
         // Handed on: the sheet owns the answer now, and reports its own.
-        let handed = ReviewPasteDelivery(receipt: receipt)
+        let handed = ReviewPasteDelivery(receipt: receipt, reportDenied: report)
         #expect(handed.handedOn()?.commentIDs == receipt.commentIDs)
         handed.failIfUnsettled()
         #expect(refusals.count == 1)
 
         // Reported once however many ways out run.
-        let dropped = ReviewPasteDelivery(receipt: receipt)
+        let dropped = ReviewPasteDelivery(receipt: receipt, reportDenied: report)
         dropped.failIfUnsettled()
         dropped.failIfUnsettled()
         #expect(refusals.count == 2)
