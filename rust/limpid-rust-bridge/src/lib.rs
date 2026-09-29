@@ -9,8 +9,8 @@ pub use projection::{
 };
 pub use providers::{
     LIMPID_HOOK_KIND_LIFECYCLE, LIMPID_HOOK_KIND_WORKTREE, limpid_hook_run_v1,
-    limpid_provider_approval_output_v1, limpid_provider_approval_request_v1,
-    limpid_provider_result,
+    limpid_provider_approval_output_v1, limpid_provider_approval_output_v2,
+    limpid_provider_approval_request_v1, limpid_provider_result,
 };
 
 use limpid_agent_core::{

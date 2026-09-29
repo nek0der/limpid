@@ -146,6 +146,7 @@ impl ApprovalService {
                         "approval.allow_once".into(),
                         "approval.deny".into(),
                         "approval.delegate".into(),
+                        "approval.answer".into(),
                         "approval.subscribe".into(),
                         "approval.wait".into(),
                     ],

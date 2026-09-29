@@ -115,6 +115,7 @@ The response supplies the server epoch and negotiated capabilities:
       "approval.allow_once",
       "approval.deny",
       "approval.delegate",
+      "approval.answer",
       "approval.wait"
     ]
   }
@@ -149,6 +150,21 @@ handshake return `hello_required`.
 }
 ```
 
+The body may also carry an optional `questions` list when the provider asks
+the user to answer rather than to grant a permission. The field is omitted when
+the list is empty, so an ordinary approval and a helper that predates it keep
+the shape above. Each question has these fields:
+
+- `header` (optional) is a short label the card may show above the prompt.
+- `prompt` is the question text, which also keys the answer in an `answer`
+  decision.
+- `options` lists the selectable choices, each with a `label` and an optional
+  `description`.
+- `multi_select` is `true` when the user may pick more than one option.
+
+`approval.get` and `approval.wait` return the list unchanged under
+`request.questions`.
+
 The server computes a monotonic deadline when it first accepts the request. A
 retry with the same key and identical content returns the existing record and
 does not extend the deadline. Reusing the key with different content returns
@@ -163,6 +179,7 @@ Pending
   |-- resolve(allow_once) --> Resolved(allow_once)
   |-- resolve(deny) -------> Resolved(deny)
   |-- resolve(delegate) ---> Resolved(delegate)
+  |-- resolve(answer) -----> Resolved(answer)
   |-- requester cancel ----> Canceled
   `-- deadline ------------> Expired
 ```
@@ -178,9 +195,19 @@ The supported decisions are:
 - `allow_once` grants only this provider request.
 - `deny` may include a reason for the provider.
 - `delegate` makes no decision and returns control to the provider's normal UI.
+- `answer` carries an `answers` map from each question's `prompt` to its
+  answer text, as in `{"decision":"answer","answers":{"Which color?":"Red"}}`.
+  The text is the chosen label, or text the user typed in its place. For a
+  multi-select question it is every chosen label joined with `, `, with typed
+  text last.
+  The 8 KiB decision limit applies to the whole decision, answers included.
+  `approval.get` and `approval.wait` return it under `state.result`. A provider
+  that cannot render an answer treats it as `delegate`.
 
-Persistent provider permission changes and tool-input rewriting are outside
-version 1.
+Persistent provider permission changes are outside version 1. Rewriting the
+input of an approved tool call is also outside version 1, except that a
+provider may render an `answer` decision as the input of the question-asking
+call it answers.
 
 ## Waiting, snapshots, and subscriptions
 

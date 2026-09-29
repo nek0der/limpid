@@ -81,7 +81,7 @@ pub trait ProviderAdapter: Send + Sync {
         -> Result<Vec<AgentEvent>, NormalizeError>;
     fn approval_request(&self, input: RawHookInput<'_>)
         -> Result<Option<ApprovalRequest>, NormalizeError>;
-    fn approval_output(&self, decision: &ApprovalDecision) -> ProviderOutput;
+    fn approval_output(&self, decision: &ApprovalDecision, request: &Value) -> ProviderOutput;
 
     // Optional; both have a default implementation returning `Ok(None)`.
     fn transcript_path(&self, input: RawHookInput<'_>)
@@ -102,9 +102,13 @@ pub trait ProviderAdapter: Send + Sync {
   payload, so a provider's new event is visible before the core understands
   it. Unrecognized fields on known events are ignored.
 - `approval_request` and `approval_output` replace the Swift approval
-  translation. The decision vocabulary stays `allow_once`, `deny`, and
-  `delegate`; `ask` is added to the protocol, the `hello` capabilities, and the
-  broker together only when a provider that emits it is integrated.
+  translation. The decision vocabulary is `allow_once`, `deny`, `delegate`,
+  and `answer`. A decision joins the protocol, the `hello` capabilities, and
+  the broker together; `ask` joins them the same way only when a provider that
+  emits it is integrated. An `answer` decision is rendered by the provider that
+  asked the question; every other provider delegates it. `approval_output`
+  receives the whole `ApprovalRequest` document, so the adapter renders an
+  answer only when its `tool_name` is the provider's question tool.
 - `install_recipe` declares the settings fragments, environment variables, and
   PATH shims the platform must place. The adapter never touches the file
   system.

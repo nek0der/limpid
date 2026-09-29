@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-use limpid_agent_model::ProviderId;
+use limpid_agent_model::{ApprovalQuestion, ProviderId};
 
 macro_rules! identifier {
     ($name:ident) => {
@@ -50,6 +50,9 @@ pub struct ApprovalRequest {
     /// Canonical JSON owned by the protocol adapter.
     pub input_json: String,
     pub timeout_ms: u64,
+    /// Questions the provider wants answered instead of a permission; empty
+    /// for an ordinary tool approval.
+    pub questions: Vec<ApprovalQuestion>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,6 +60,7 @@ pub enum ApprovalDecision {
     AllowOnce,
     Deny { message: Option<String> },
     Delegate,
+    Answer { answers: BTreeMap<String, String> },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -331,6 +335,7 @@ mod tests {
             summary: Some("Run tests".into()),
             input_json: r#"{"command":"make test"}"#.into(),
             timeout_ms: 1_000,
+            questions: Vec::new(),
         }
     }
 

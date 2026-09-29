@@ -51,10 +51,11 @@ pub(crate) fn approval_request(bytes: &[u8]) -> Result<Option<ApprovalRequest>, 
         summary,
         input: input.clone(),
         timeout_ms: APPROVAL_TIMEOUT_MS,
+        questions: Vec::new(),
     }))
 }
 
-pub(crate) fn approval_output(decision: &ApprovalDecision) -> ProviderOutput {
+pub(crate) fn approval_output(decision: &ApprovalDecision, _request: &Value) -> ProviderOutput {
     let body = match decision {
         ApprovalDecision::AllowOnce => json!({"behavior": "allow"}),
         ApprovalDecision::Deny {
@@ -63,7 +64,11 @@ pub(crate) fn approval_output(decision: &ApprovalDecision) -> ProviderOutput {
             json!({"behavior": "deny", "message": message})
         }
         ApprovalDecision::Deny { message: None } => json!({"behavior": "deny"}),
-        ApprovalDecision::Delegate => return ProviderOutput { stdout: None },
+        // Codex has no question tool, so there is nothing to render an
+        // answer into; it delegates like an explicit `Delegate`.
+        ApprovalDecision::Delegate | ApprovalDecision::Answer { .. } => {
+            return ProviderOutput { stdout: None };
+        }
     };
     // serde_json's default map keeps keys sorted, which is what the Swift
     // adapter emitted with `.sortedKeys`, so the documents stay identical.
@@ -107,20 +112,32 @@ mod tests {
 
     #[test]
     fn output_bytes_match_the_swift_adapter() {
-        let allow = approval_output(&ApprovalDecision::AllowOnce)
+        let allow = approval_output(&ApprovalDecision::AllowOnce, &Value::Null)
             .stdout
             .expect("bytes");
         assert_eq!(
             String::from_utf8(allow).expect("utf8"),
             r#"{"hookSpecificOutput":{"decision":{"behavior":"allow"},"hookEventName":"PermissionRequest"}}"#
         );
-        let deny = approval_output(&ApprovalDecision::Deny { message: None })
+        let deny = approval_output(&ApprovalDecision::Deny { message: None }, &Value::Null)
             .stdout
             .expect("bytes");
         assert_eq!(
             String::from_utf8(deny).expect("utf8"),
             r#"{"hookSpecificOutput":{"decision":{"behavior":"deny"},"hookEventName":"PermissionRequest"}}"#
         );
-        assert_eq!(approval_output(&ApprovalDecision::Delegate).stdout, None);
+        assert_eq!(
+            approval_output(&ApprovalDecision::Delegate, &Value::Null).stdout,
+            None
+        );
+    }
+
+    #[test]
+    fn codex_answer_delegates() {
+        let answers = std::collections::BTreeMap::new();
+        assert_eq!(
+            approval_output(&ApprovalDecision::Answer { answers }, &json!({})).stdout,
+            None
+        );
     }
 }

@@ -349,10 +349,15 @@ mod tests {
                 summary: None,
                 input: serde_json::Value::Null,
                 timeout_ms: 1,
+                questions: Vec::new(),
             }))
         }
 
-        fn approval_output(&self, _decision: &ApprovalDecision) -> ProviderOutput {
+        fn approval_output(
+            &self,
+            _decision: &ApprovalDecision,
+            _request: &serde_json::Value,
+        ) -> ProviderOutput {
             ProviderOutput::default()
         }
     }
@@ -379,7 +384,11 @@ mod tests {
         ) -> Result<Option<ApprovalRequest>, NormalizeError> {
             Ok(None)
         }
-        fn approval_output(&self, _decision: &ApprovalDecision) -> ProviderOutput {
+        fn approval_output(
+            &self,
+            _decision: &ApprovalDecision,
+            _request: &serde_json::Value,
+        ) -> ProviderOutput {
             ProviderOutput::default()
         }
     }

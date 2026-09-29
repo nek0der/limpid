@@ -1,9 +1,10 @@
 use limpid_agent_core::{
-    ApprovalDecision, ApprovalKey, ApprovalRequest, ApprovalSnapshot, ApprovalState, ProviderId,
-    RequestId, RunId,
+    ApprovalDecision, ApprovalKey, ApprovalQuestion, ApprovalRequest, ApprovalSnapshot,
+    ApprovalState, ProviderId, RequestId, RunId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -118,6 +119,11 @@ pub struct ApprovalRequestWire {
     pub summary: Option<String>,
     pub input: Value,
     pub timeout_ms: u64,
+    /// Defaults to empty so a request from a helper that predates questions
+    /// still parses, and is omitted when empty so an ordinary approval keeps
+    /// its old shape.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<ApprovalQuestion>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -129,6 +135,9 @@ pub enum ApprovalDecisionWire {
         message: Option<String>,
     },
     Delegate,
+    Answer {
+        answers: BTreeMap<String, String>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -199,6 +208,7 @@ impl ApprovalRequestWire {
             summary: self.summary,
             input_json: serde_json::to_string(&self.input)?,
             timeout_ms: self.timeout_ms,
+            questions: self.questions,
         })
     }
 }
@@ -209,6 +219,7 @@ impl From<ApprovalDecisionWire> for ApprovalDecision {
             ApprovalDecisionWire::AllowOnce => Self::AllowOnce,
             ApprovalDecisionWire::Deny { message } => Self::Deny { message },
             ApprovalDecisionWire::Delegate => Self::Delegate,
+            ApprovalDecisionWire::Answer { answers } => Self::Answer { answers },
         }
     }
 }
@@ -227,6 +238,7 @@ impl ApprovalSnapshotWire {
                 summary: value.request.summary,
                 input,
                 timeout_ms: value.request.timeout_ms,
+                questions: value.request.questions,
             },
             state: match value.state {
                 ApprovalState::Pending => ApprovalStateWire::Pending,
@@ -237,6 +249,9 @@ impl ApprovalSnapshotWire {
                             ApprovalDecisionWire::Deny { message }
                         }
                         ApprovalDecision::Delegate => ApprovalDecisionWire::Delegate,
+                        ApprovalDecision::Answer { answers } => {
+                            ApprovalDecisionWire::Answer { answers }
+                        }
                     },
                 },
                 ApprovalState::Canceled => ApprovalStateWire::Canceled,
@@ -341,5 +356,37 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn answer_decision_round_trips_through_the_wire() {
+        let value = json!({"decision": "answer", "answers": {"Which color?": "Red"}});
+        let wire: ApprovalDecisionWire = serde_json::from_value(value.clone()).unwrap();
+        let domain: ApprovalDecision = wire.into();
+        let mut answers = std::collections::BTreeMap::new();
+        answers.insert("Which color?".to_owned(), "Red".to_owned());
+        assert_eq!(domain, ApprovalDecision::Answer { answers });
+        let back: ApprovalDecisionWire = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(back).unwrap(), value);
+    }
+
+    #[test]
+    fn request_questions_are_optional_on_the_wire_and_kept_in_the_domain() {
+        let run_id = Uuid::from_u128(3);
+        let request_id = Uuid::from_u128(4);
+        let plain: ApprovalRequestWire = serde_json::from_value(json!({
+            "run_id": run_id, "request_id": request_id, "provider": "claude",
+            "tool_name": "Bash", "input": {"command": "ls"}, "timeout_ms": 1
+        }))
+        .unwrap();
+        assert!(plain.questions.is_empty());
+        let question: ApprovalRequestWire = serde_json::from_value(json!({
+            "run_id": run_id, "request_id": request_id, "provider": "claude",
+            "tool_name": "AskUserQuestion", "input": {}, "timeout_ms": 1,
+            "questions": [{"prompt": "Which color?", "options": [{"label": "Red"}], "multi_select": false}]
+        }))
+        .unwrap();
+        let domain = question.into_domain().unwrap();
+        assert_eq!(domain.questions[0].prompt, "Which color?");
     }
 }

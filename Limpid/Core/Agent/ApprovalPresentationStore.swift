@@ -15,6 +15,11 @@ struct ApprovalPresentation: Identifiable, Equatable, Sendable {
     let requestDescription: String?
     let inputDescription: String
     let deadlineMilliseconds: UInt64
+    let questions: [ApprovalQuestion]
+
+    var isQuestion: Bool {
+        !questions.isEmpty
+    }
 
     var id: String {
         "\(epoch.uuidString):\(runID.uuidString):\(requestID.uuidString)"
@@ -27,6 +32,9 @@ final class ApprovalPresentationStore {
     private nonisolated static let log = Logger.limpid("agent-approval")
     private(set) var pending: [ApprovalPresentation] = []
     private(set) var resolvingIDs: Set<String> = []
+    /// The request whose most recent user decision failed to reach the broker.
+    /// Optional because nothing has failed yet, or a later resolve cleared it.
+    private(set) var lastFailureID: String?
     /// The one request whose detail card is visible in this scene.
     /// This is presentation state only; the broker remains the authority.
     private(set) var presentedID: String?
@@ -40,13 +48,41 @@ final class ApprovalPresentationStore {
     private var previewingIDs: Set<String> = []
     private var cardIsHovering = false
     private var cardIsFocused = false
+    /// Unsent answers by request. A question card closes on the same hover
+    /// and focus rules as any other card, so its draft lives here rather than
+    /// in the card's view state, and reopening the card restores it. Entries
+    /// leave with their request.
+    private var answerDrafts: [String: ApprovalAnswerDraft] = [:]
     private var previewDismissTask: Task<Void, Never>?
     private let previewDismissDelay: Duration
     private var observerTask: Task<Void, Never>?
     private var observerGeneration = UUID()
+    /// Requests whose pane was seen in `needsInput` while they were pending.
+    /// Only those are released when the pane's turn ends; a request that
+    /// arrives while the pane is still `running` has not been shown to the
+    /// user yet, so the pane's state says nothing about it.
+    private var observedNeedsInputIDs: Set<String> = []
+    /// Requests the broker has already accepted a decision for. The broker
+    /// projection that drops them can land after the pane's turn ends, and a
+    /// second decision for a settled request is rejected as already terminal,
+    /// so the release path must not send one.
+    private var settledIDs: Set<String> = []
+    /// Requests whose background release failed, for example after a service
+    /// restart changed the epoch. The release runs on every projection pass,
+    /// so without this it would resend and log on each one until the request
+    /// leaves.
+    private var failedReleaseIDs: Set<String> = []
+    /// Injected so tests can observe decisions without a live service; the
+    /// default is the XPC path.
+    private let decisionSender: @Sendable (ApprovalPresentation, ApprovalResolution) async throws -> Void
 
-    init(previewDismissDelay: Duration = LimpidLayout.prHoverCardDismissGrace) {
+    init(
+        previewDismissDelay: Duration = LimpidLayout.prHoverCardDismissGrace,
+        decisionSender: @escaping @Sendable (ApprovalPresentation, ApprovalResolution) async throws -> Void
+            = ApprovalPresentationStore.sendDecision
+    ) {
         self.previewDismissDelay = previewDismissDelay
+        self.decisionSender = decisionSender
     }
 
     func start() {
@@ -70,21 +106,75 @@ final class ApprovalPresentationStore {
         previewingIDs = []
         cardIsHovering = false
         cardIsFocused = false
+        answerDrafts = [:]
         previewDismissTask?.cancel()
         previewDismissTask = nil
+        observedNeedsInputIDs = []
+        settledIDs = []
+        failedReleaseIDs = []
     }
 
-    func resolve(_ approval: ApprovalPresentation, decision: String) {
-        guard decision == "allow_once" || decision == "deny",
-              resolvingIDs.insert(approval.id).inserted
-        else { return }
+    func resolve(_ approval: ApprovalPresentation, _ resolution: ApprovalResolution) {
+        send(resolution, for: approval, isUserDecision: true)
+    }
+
+    /// A user's decision owns the card's failure line. A background release
+    /// does not: nobody pressed anything, so its failure must neither show a
+    /// "try again" on the card nor clear a failure another decision left.
+    private func send(_ resolution: ApprovalResolution, for approval: ApprovalPresentation, isUserDecision: Bool) {
+        guard resolvingIDs.insert(approval.id).inserted else { return }
+        if isUserDecision, lastFailureID == approval.id {
+            lastFailureID = nil
+        }
         Task {
             do {
-                try await Self.sendDecision(approval, decision: decision)
+                try await decisionSender(approval, resolution)
+                settledIDs.insert(approval.id)
             } catch {
                 Self.log.error("Approval decision failed: \(String(describing: error), privacy: .public)")
+                if isUserDecision {
+                    lastFailureID = approval.id
+                } else {
+                    failedReleaseIDs.insert(approval.id)
+                }
             }
             resolvingIDs.remove(approval.id)
+        }
+    }
+
+    /// Releases requests the terminal already answered. The helper prints
+    /// nothing for `delegate`; the provider ignores it because the tool has
+    /// already run, and the card and Waiting row disappear with the record.
+    ///
+    /// We release only once the pane's turn is over. The pane's state is one
+    /// value per session, so a subagent or another tool going back to
+    /// `running` does not mean this dialog was answered; the turn cannot end
+    /// while a dialog is open. The hook helper is no signal either:
+    /// measured with Claude Code 2.1.284, answering in the terminal leaves it
+    /// running until its own timeout. The cost is that a request answered in
+    /// the terminal keeps its row until the turn ends.
+    func releaseStaleApprovals(in session: WindowSession) {
+        for approval in pending {
+            guard let (tabID, paneID) = paneLocation(for: approval, in: session),
+                  let state = session.tab(tabID)?.agentBadges[approval.provider]?[paneID]?.state
+            else { continue }
+            if state == .needsInput {
+                observedNeedsInputIDs.insert(approval.id)
+            } else if Self.turnIsOver(state),
+                      observedNeedsInputIDs.contains(approval.id),
+                      !resolvingIDs.contains(approval.id),
+                      !settledIDs.contains(approval.id),
+                      !failedReleaseIDs.contains(approval.id)
+            {
+                send(.delegate, for: approval, isUserDecision: false)
+            }
+        }
+    }
+
+    private static func turnIsOver(_ state: AgentState) -> Bool {
+        switch state {
+        case .finished, .error, .idle: true
+        case .unknown, .running, .compacting, .needsInput: false
         }
     }
 
@@ -155,6 +245,15 @@ final class ApprovalPresentationStore {
         if !cardIsFocused {
             schedulePreviewDismiss(for: approval.id)
         }
+    }
+
+    func answerDraft(for approval: ApprovalPresentation) -> ApprovalAnswerDraft {
+        answerDrafts[approval.id] ?? ApprovalAnswerDraft()
+    }
+
+    func updateAnswerDraft(_ draft: ApprovalAnswerDraft, for approval: ApprovalPresentation) {
+        guard pending.contains(approval) else { return }
+        answerDrafts[approval.id] = draft
     }
 
     var presentedApproval: ApprovalPresentation? {
@@ -240,7 +339,7 @@ final class ApprovalPresentationStore {
 
     private nonisolated static func sendDecision(
         _ approval: ApprovalPresentation,
-        decision: String
+        _ resolution: ApprovalResolution
     ) async throws {
         let client = try AgentIntegrationXPCClient(role: .controller)
         try validateCurrentService(client.openSession())
@@ -254,7 +353,8 @@ final class ApprovalPresentationStore {
                 epoch: approval.epoch,
                 runID: approval.runID,
                 requestID: approval.requestID,
-                decision: decision
+                decision: resolution.wireDecision,
+                answers: resolution.answers
             )
         ))
         guard response["type"] as? String == "approval.result" else {
@@ -318,7 +418,8 @@ final class ApprovalPresentationStore {
                 summary: request["summary"] as? String,
                 requestDescription: (input as? [String: Any])?["description"] as? String,
                 inputDescription: inputDescription,
-                deadlineMilliseconds: deadline
+                deadlineMilliseconds: deadline,
+                questions: ApprovalQuestion.decode(request["questions"])
             ))
         }
         return (sequence, requests.sorted { $0.id < $1.id })
@@ -335,6 +436,9 @@ final class ApprovalPresentationStore {
         resolvingIDs = []
         dismissCard()
         rowAnchors = [:]
+        observedNeedsInputIDs = []
+        settledIDs = []
+        failedReleaseIDs = []
     }
 
     /// Applies a broker projection. Kept separate from the XPC observer so the
@@ -355,6 +459,10 @@ final class ApprovalPresentationStore {
             approvals.contains { $0.id == entry.key }
         }
         previewingIDs.formIntersection(approvals.map(\.id))
+        observedNeedsInputIDs = observedNeedsInputIDs.filter { id in approvals.contains { $0.id == id } }
+        settledIDs = settledIDs.filter { id in approvals.contains { $0.id == id } }
+        failedReleaseIDs = failedReleaseIDs.filter { id in approvals.contains { $0.id == id } }
+        answerDrafts = answerDrafts.filter { entry in approvals.contains { $0.id == entry.key } }
         if let presentedID, !approvals.contains(where: { $0.id == presentedID }) {
             // A disappearing row also owns any card it presented. Other
             // requests remain quiet until their own row is previewed.

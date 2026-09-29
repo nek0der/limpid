@@ -12,6 +12,9 @@ struct AgentIntegrationApprovalSubmission {
     let toolName: String
     let summary: String?
     let input: Any
+    /// The provider's question list, passed through untouched; `nil` for a
+    /// request that asks nothing.
+    let questions: Any?
     let timeoutMilliseconds: Int
 }
 
@@ -37,6 +40,7 @@ enum AgentIntegrationApprovalWire {
         body["session_id"] = submission.sessionID
         body["operation_id"] = submission.operationID
         body["summary"] = submission.summary
+        body["questions"] = submission.questions
         return try request(type: "approval.submit", epoch: epoch, body: body)
     }
 
@@ -65,15 +69,27 @@ enum AgentIntegrationApprovalWire {
         runID: UUID,
         requestID: UUID,
         decision: String,
-        message: String? = nil
+        message: String? = nil,
+        answers: [String: String]? = nil
     ) throws -> Data {
-        var decisionBody: [String: Any] = ["decision": decision]
-        decisionBody["message"] = message
-        return try request(type: "approval.resolve", epoch: epoch, body: [
+        try request(type: "approval.resolve", epoch: epoch, body: [
             "run_id": runID.uuidString,
             "request_id": requestID.uuidString,
-            "decision": decisionBody
+            "decision": decisionBody(decision: decision, message: message, answers: answers)
         ])
+    }
+
+    /// The `decision` object of `approval.resolve`. Shared with the size check
+    /// in the app so the bytes it measures are the bytes that are sent.
+    static func decisionBody(
+        decision: String,
+        message: String? = nil,
+        answers: [String: String]? = nil
+    ) -> [String: Any] {
+        var body: [String: Any] = ["decision": decision]
+        body["message"] = message
+        body["answers"] = answers
+        return body
     }
 
     static func snapshot(epoch: UUID) throws -> Data {

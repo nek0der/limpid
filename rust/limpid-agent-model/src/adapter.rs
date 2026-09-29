@@ -85,8 +85,17 @@ pub trait ProviderAdapter: Send + Sync {
         input: RawHookInput<'_>,
     ) -> Result<Option<ApprovalRequest>, NormalizeError>;
 
-    /// Renders a decision as the provider's hook output.
-    fn approval_output(&self, decision: &ApprovalDecision) -> crate::ProviderOutput;
+    /// Renders a decision as the provider's hook output. `request` is the
+    /// `ApprovalRequest` JSON (`tool_name`, `input`, ...) this provider
+    /// produced for the decision. An answer needs both fields to render: the
+    /// tool name decides whether the request was a question at all, and the
+    /// input has to be echoed because the provider replaces the whole tool
+    /// input with the hook's.
+    fn approval_output(
+        &self,
+        decision: &ApprovalDecision,
+        request: &Value,
+    ) -> crate::ProviderOutput;
 
     /// Names the transcript the runtime should read alongside this payload,
     /// when the provider keeps one and this event's normalization uses it.

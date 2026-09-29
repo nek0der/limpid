@@ -25,7 +25,9 @@ pub use adapter::{
     HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, RawHookInput, TmuxEndpoint,
     parse_object,
 };
-pub use approval::{ApprovalDecision, ApprovalRequest, ProviderOutput};
+pub use approval::{
+    ApprovalDecision, ApprovalQuestion, ApprovalQuestionOption, ApprovalRequest, ProviderOutput,
+};
 pub use command::{
     Command, CommandOp, CommandOutcome, MAX_PANE_RECORDS, MAX_RETIRED_RECORDS, NotificationKind,
     NotifyCommand, OnMismatch, PaneStoreKind, Patch, Precondition, RETIRED_RECORD_LIFETIME_SECS,

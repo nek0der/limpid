@@ -58,6 +58,7 @@ fn approval(run_id: Uuid, request_id: Uuid) -> ApprovalRequestWire {
         summary: Some("Run tests".into()),
         input: json!({"command": "make test"}),
         timeout_ms: 5_000,
+        questions: Vec::new(),
     }
 }
 
@@ -122,6 +123,101 @@ fn requester_waits_for_controller_decision_over_real_streams() {
         panic!("expected approval result");
     };
     assert!(matches!(snapshot.state, ApprovalStateWire::Resolved { .. }));
+
+    drop(requester);
+    resolver.join().unwrap();
+    requester_task.join().unwrap();
+    controller_task.join().unwrap();
+}
+
+#[test]
+fn requester_receives_controller_answer_over_real_streams() {
+    let service = Arc::new(ApprovalService::new(8));
+    let run_id = Uuid::new_v4();
+    let request_id = Uuid::new_v4();
+    let (mut requester, requester_task) = start_connection(
+        Arc::clone(&service),
+        Principal::Requester {
+            run_id: RunId::new(run_id),
+        },
+    );
+    let (mut controller, controller_task) =
+        start_connection(Arc::clone(&service), Principal::Controller);
+    let requester_epoch = hello(&mut requester);
+    let controller_epoch = hello(&mut controller);
+
+    let mut request = approval(run_id, request_id);
+    request.tool_name = "AskUserQuestion".into();
+    request.input = json!({});
+    request.questions = serde_json::from_value(json!([{
+        "prompt": "Which color?",
+        "options": [{"label": "Red"}],
+        "multi_select": false
+    }]))
+    .unwrap();
+    let submit = exchange(
+        &mut requester,
+        &WireRequest {
+            version: PROTOCOL_VERSION,
+            message_id: Uuid::new_v4(),
+            service_epoch: Some(requester_epoch),
+            body: RequestBody::ApprovalSubmit(request),
+        },
+    );
+    assert!(matches!(submit.body, ResponseBody::ApprovalResult(_)));
+
+    let get = exchange(
+        &mut controller,
+        &WireRequest {
+            version: PROTOCOL_VERSION,
+            message_id: Uuid::new_v4(),
+            service_epoch: Some(controller_epoch),
+            body: RequestBody::ApprovalGet(ApprovalKeyWire { run_id, request_id }),
+        },
+    );
+    let ResponseBody::ApprovalResult(pending) = get.body else {
+        panic!("expected approval result");
+    };
+    let pending = serde_json::to_value(&pending).unwrap();
+    assert_eq!(pending["request"]["questions"][0]["prompt"], "Which color?");
+
+    let decision = json!({"decision": "answer", "answers": {"Which color?": "Red"}});
+    let resolve_decision: ApprovalDecisionWire = serde_json::from_value(decision.clone()).unwrap();
+    let resolver = thread::spawn(move || {
+        let response = exchange(
+            &mut controller,
+            &WireRequest {
+                version: PROTOCOL_VERSION,
+                message_id: Uuid::new_v4(),
+                service_epoch: Some(controller_epoch),
+                body: RequestBody::ApprovalResolve {
+                    key: ApprovalKeyWire { run_id, request_id },
+                    decision: resolve_decision,
+                },
+            },
+        );
+        assert!(matches!(response.body, ResponseBody::ApprovalResult(_)));
+        drop(controller);
+    });
+
+    let response = exchange(
+        &mut requester,
+        &WireRequest {
+            version: PROTOCOL_VERSION,
+            message_id: Uuid::new_v4(),
+            service_epoch: Some(requester_epoch),
+            body: RequestBody::ApprovalWait {
+                key: ApprovalKeyWire { run_id, request_id },
+                maximum_wait_ms: 5_000,
+            },
+        },
+    );
+    let ResponseBody::ApprovalResult(snapshot) = response.body else {
+        panic!("expected approval result");
+    };
+    let snapshot = serde_json::to_value(&snapshot).unwrap();
+    assert_eq!(snapshot["state"]["status"], "resolved");
+    assert_eq!(snapshot["state"]["result"], decision);
 
     drop(requester);
     resolver.join().unwrap();

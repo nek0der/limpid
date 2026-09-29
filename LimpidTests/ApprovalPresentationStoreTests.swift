@@ -205,12 +205,289 @@ struct ApprovalPresentationStoreTests {
         #expect(store.presentedApproval == nil)
     }
 
-    private func approval(epoch: UUID = UUID()) -> ApprovalPresentation {
+    @Test func questionCard_dismissesLikeAnyCardAndKeepsItsDraft() async {
+        let store = ApprovalPresentationStore(previewDismissDelay: .milliseconds(20))
+        let request = approval(questions: [question])
+        store.updatePending([request])
+        store.present(request)
+        var draft = store.answerDraft(for: request)
+        draft.toggle(label: "Red", questionIndex: 0, in: question)
+        store.updateAnswerDraft(draft, for: request)
+
+        store.cardFocusChanged(true, for: request)
+        store.cardFocusChanged(false, for: request)
+        try? await Task.sleep(for: .milliseconds(60))
+        #expect(store.presentedApproval == nil)
+
+        store.present(request)
+        #expect(store.answerDraft(for: request).answers(for: [question]) == ["Which color?": "Red"])
+    }
+
+    @Test func rowPreview_replacesQuestionCardWithoutLosingDraft() {
+        let store = ApprovalPresentationStore(previewDismissDelay: .milliseconds(20))
+        let first = approval(questions: [question])
+        let second = approval(epoch: first.epoch)
+        store.updatePending([first, second])
+        store.present(first)
+        var draft = store.answerDraft(for: first)
+        draft.setFreeText("Green", questionIndex: 0, in: question)
+        store.updateAnswerDraft(draft, for: first)
+
+        store.previewBegan(second)
+        #expect(store.presentedApproval == second)
+        #expect(store.answerDraft(for: first).freeText[0] == "Green")
+    }
+
+    @Test func answerDraft_leavesWithItsRequest() {
+        let store = ApprovalPresentationStore()
+        let request = approval(questions: [question])
+        store.updatePending([request])
+        var draft = store.answerDraft(for: request)
+        draft.toggle(label: "Red", questionIndex: 0, in: question)
+        store.updateAnswerDraft(draft, for: request)
+
+        store.updatePending([])
+        store.updatePending([request])
+        #expect(store.answerDraft(for: request) == ApprovalAnswerDraft())
+
+        // A request that is no longer pending cannot gain a draft either.
+        store.updatePending([])
+        store.updateAnswerDraft(draft, for: request)
+        store.updatePending([request])
+        #expect(store.answerDraft(for: request) == ApprovalAnswerDraft())
+    }
+
+    @Test func resolve_answer_sendsAnswersAndClearsResolving() async {
+        let recorded = Recorder()
+        let store = ApprovalPresentationStore(decisionSender: { approval, resolution in
+            await recorded.append((approval.id, resolution))
+        })
+        let request = approval(epoch: UUID(), questions: [
+            ApprovalQuestion(
+                header: "Color",
+                prompt: "Which color?",
+                options: [.init(label: "Red", description: nil)],
+                isMultiSelect: false
+            )
+        ])
+        store.updatePending([request])
+        store.resolve(request, .answer(["Which color?": "Red"]))
+        await recorded.waitForCount(1)
+        await waitUntilSettled(store, request)
+        #expect(await recorded.entries.first?.1 == .answer(["Which color?": "Red"]))
+        #expect(!store.resolvingIDs.contains(request.id))
+    }
+
+    @Test func resolve_failure_clearsResolvingState() async {
+        struct Failure: Error {}
+        let store = ApprovalPresentationStore(decisionSender: { _, _ in throw Failure() })
+        let request = approval(epoch: UUID())
+        store.updatePending([request])
+        store.resolve(request, .allowOnce)
+        await waitUntilSettled(store, request)
+        #expect(!store.resolvingIDs.contains(request.id))
+        #expect(store.lastFailureID == request.id)
+    }
+
+    @Test func releaseStaleApprovals_delegatesOnceTheTurnIsOver() async {
+        let recorded = Recorder()
+        let store = ApprovalPresentationStore(decisionSender: { approval, resolution in
+            await recorded.append((approval.id, resolution))
+        })
+        let (session, _, paneID) = WindowSessionFixture.withLooseTab()
+        session.applyAcrossTabs { tab in
+            tab.agentSessions[.claude] = [paneID: AgentSessionInfo(sessionId: "claude-session", cwd: nil)]
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .running, updatedAt: Date())]
+        }
+        let request = approval(epoch: UUID(), sessionID: "claude-session")
+        store.updatePending([request])
+
+        // The pane has not asked for input yet, so the user has not seen the
+        // request in the terminal and nothing may be released.
+        store.releaseStaleApprovals(in: session)
+        #expect(await recorded.entries.isEmpty)
+
+        session.applyAcrossTabs { tab in
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .needsInput, updatedAt: Date())]
+        }
+        store.releaseStaleApprovals(in: session)
+        #expect(await recorded.entries.isEmpty)
+
+        // A background subagent or another tool puts the session back into
+        // `running` while the dialog is still open; that is no answer.
+        session.applyAcrossTabs { tab in
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .running, updatedAt: Date())]
+        }
+        store.releaseStaleApprovals(in: session)
+        await Task.yield()
+        #expect(store.resolvingIDs.isEmpty)
+        #expect(await recorded.entries.isEmpty)
+
+        session.applyAcrossTabs { tab in
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .finished, updatedAt: Date())]
+        }
+        store.releaseStaleApprovals(in: session)
+        // A second projection that lands before the decision settles must
+        // not send it again. Calling without a suspension point in between
+        // keeps the first decision in flight regardless of scheduling.
+        store.releaseStaleApprovals(in: session)
+        await recorded.waitForCount(1)
+        await waitUntilSettled(store, request)
+        #expect(await recorded.entries.first?.1 == .delegate)
+        #expect(await recorded.entries.count == 1)
+    }
+
+    @Test func releaseStaleApprovals_skipsRequestSettledBeforeProjectionDropsIt() async {
+        let recorded = Recorder()
+        let store = ApprovalPresentationStore(decisionSender: { approval, resolution in
+            await recorded.append((approval.id, resolution))
+        })
+        let (session, _, paneID) = WindowSessionFixture.withLooseTab()
+        session.applyAcrossTabs { tab in
+            tab.agentSessions[.claude] = [paneID: AgentSessionInfo(sessionId: "claude-session", cwd: nil)]
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .needsInput, updatedAt: Date())]
+        }
+        let request = approval(epoch: UUID(), sessionID: "claude-session", questions: [question])
+        store.updatePending([request])
+        store.releaseStaleApprovals(in: session)
+
+        store.resolve(request, .answer(["Which color?": "Red"]))
+        await recorded.waitForCount(1)
+        await waitUntilSettled(store, request)
+
+        // The turn ends before the broker projection drops the answered
+        // request; a late `delegate` would be rejected as already terminal.
+        session.applyAcrossTabs { tab in
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .finished, updatedAt: Date())]
+        }
+        store.releaseStaleApprovals(in: session)
+        await Task.yield()
+        #expect(store.resolvingIDs.isEmpty)
+        #expect(await recorded.entries.count == 1)
+        #expect(store.lastFailureID == nil)
+    }
+
+    @Test func releaseFailure_neitherReportsNorRetries() async {
+        struct Failure: Error {}
+        let recorded = Recorder()
+        let store = ApprovalPresentationStore(decisionSender: { approval, resolution in
+            await recorded.append((approval.id, resolution))
+            throw Failure()
+        })
+        let (session, _, paneID) = WindowSessionFixture.withLooseTab()
+        session.applyAcrossTabs { tab in
+            tab.agentSessions[.claude] = [paneID: AgentSessionInfo(sessionId: "claude-session", cwd: nil)]
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .needsInput, updatedAt: Date())]
+        }
+        let request = approval(epoch: UUID(), sessionID: "claude-session")
+        store.updatePending([request])
+        store.releaseStaleApprovals(in: session)
+        session.applyAcrossTabs { tab in
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .finished, updatedAt: Date())]
+        }
+
+        store.releaseStaleApprovals(in: session)
+        await recorded.waitForCount(1)
+        await waitUntilSettled(store, request)
+        // Nobody pressed anything, so the card must not ask to try again.
+        #expect(store.lastFailureID == nil)
+
+        // The next projection pass must not resend a release that failed.
+        store.releaseStaleApprovals(in: session)
+        await Task.yield()
+        #expect(store.resolvingIDs.isEmpty)
+        #expect(await recorded.entries.count == 1)
+    }
+
+    @Test func resolve_keepsTheFailureOfAnotherRequest() async {
+        struct Failure: Error {}
+        let failing = approval(epoch: UUID())
+        let succeeding = approval(epoch: failing.epoch)
+        let failingID = failing.id
+        let store = ApprovalPresentationStore(decisionSender: { approval, _ in
+            if approval.id == failingID {
+                throw Failure()
+            }
+        })
+        store.updatePending([failing, succeeding])
+
+        store.resolve(failing, .allowOnce)
+        await waitUntilSettled(store, failing)
+        #expect(store.lastFailureID == failing.id)
+
+        store.resolve(succeeding, .allowOnce)
+        await waitUntilSettled(store, succeeding)
+        #expect(store.lastFailureID == failing.id)
+    }
+
+    @Test func decode_questions_readsSnapshotShape() {
+        let decoded = ApprovalQuestion.decode([
+            [
+                "header": "Color",
+                "prompt": "Which color?",
+                "multi_select": true,
+                "options": [["label": "Red", "description": "warm"], ["label": "Blue"]]
+            ],
+            ["prompt": "Which size?"]
+        ])
+        #expect(decoded.count == 2)
+        #expect(decoded[0].isMultiSelect)
+        #expect(decoded[0].options[1].description == nil)
+        #expect(decoded[1].options.isEmpty)
+        #expect(ApprovalQuestion.decode(nil).isEmpty)
+    }
+
+    /// The sender runs off the main actor and the store clears its resolving
+    /// state only after hopping back, so a single yield does not guarantee
+    /// the decision task has finished. The deadline keeps a regression from
+    /// hanging the suite.
+    private func waitUntilSettled(
+        _ store: ApprovalPresentationStore,
+        _ request: ApprovalPresentation
+    ) async {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while store.resolvingIDs.contains(request.id), ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+    }
+
+    private let question = ApprovalQuestion(
+        header: "Color",
+        prompt: "Which color?",
+        options: [.init(label: "Red", description: nil)],
+        isMultiSelect: false
+    )
+
+    private func approval(
+        epoch: UUID = UUID(),
+        sessionID: String? = nil,
+        questions: [ApprovalQuestion] = []
+    ) -> ApprovalPresentation {
         ApprovalPresentation(
             epoch: epoch, runID: UUID(), requestID: UUID(), provider: .claude,
-            sessionID: nil, toolName: "Bash", summary: nil, requestDescription: nil,
+            sessionID: sessionID, toolName: "Bash", summary: nil, requestDescription: nil,
             inputDescription: "{}",
-            deadlineMilliseconds: 0
+            deadlineMilliseconds: 0,
+            questions: questions
         )
+    }
+}
+
+/// Collects the decisions a store hands to its injected sender, so a test can
+/// observe what would have crossed the XPC boundary.
+private actor Recorder {
+    private(set) var entries: [(String, ApprovalResolution)] = []
+
+    func append(_ entry: (String, ApprovalResolution)) {
+        entries.append(entry)
+    }
+
+    /// The deadline makes a store that never calls its sender fail the
+    /// following expectations instead of hanging the suite.
+    func waitForCount(_ count: Int) async {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while entries.count < count, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
     }
 }

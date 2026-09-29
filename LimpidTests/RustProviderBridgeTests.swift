@@ -56,6 +56,7 @@ struct RustProviderBridgeTests {
         func output(_ decision: [String: Any]) throws -> Data? {
             try RustProviderBridge.approvalOutput(
                 provider: "claude",
+                requestJSON: JSONSerialization.data(withJSONObject: ["tool_name": "Bash", "input": [:]]),
                 decisionJSON: JSONSerialization.data(withJSONObject: decision)
             )
         }
@@ -70,6 +71,22 @@ struct RustProviderBridgeTests {
         #expect(throws: AgentIntegrationError.self) {
             try output(["decision": "ask"])
         }
+    }
+
+    @Test("renders an answer through the v2 output with the request input")
+    func answerOutputEchoesQuestions() throws {
+        let request = try JSONSerialization.data(withJSONObject: [
+            "tool_name": "AskUserQuestion",
+            "input": ["questions": [["question": "Which color?", "options": [["label": "Red"]]]]]
+        ])
+        let decision = try JSONSerialization.data(withJSONObject: [
+            "decision": "answer", "answers": ["Which color?": "Red"]
+        ])
+        let output = try #require(try RustProviderBridge.approvalOutput(
+            provider: "claude", requestJSON: request, decisionJSON: decision
+        ))
+        let text = try #require(String(bytes: output, encoding: .utf8))
+        #expect(text.contains(#""updatedInput":{"answers":{"Which color?":"Red"}"#))
     }
 
     @Test("reports non-permission events as no request and unknown providers as failures")
