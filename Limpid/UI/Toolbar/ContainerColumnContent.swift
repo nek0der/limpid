@@ -50,7 +50,7 @@ struct ToolbarBellButton: View {
             )
             .overlay(alignment: .topTrailing) {
                 if unread > 0 {
-                    Text(badgeText(unread))
+                    Text(UnreadBadge.text(for: unread))
                         .font(.system(size: 9, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(.white)
@@ -72,10 +72,6 @@ struct ToolbarBellButton: View {
         } action: { frame in
             historyPresentation.anchorFrame = frame
         }
-    }
-
-    private func badgeText(_ n: Int) -> String {
-        n > 99 ? "99+" : "\(n)"
     }
 }
 
