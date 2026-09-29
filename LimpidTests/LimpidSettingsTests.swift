@@ -69,7 +69,7 @@ struct LimpidSettingsTests {
         settings.advanced.showPRStatusOnlyWhenAttention = true
         settings.advanced.hostsAgentsInTmux = true
         settings.advanced.reviewInstructions = "Fix these."
-        settings.advanced.reviewFileApplication = ReviewFileApplication(
+        settings.advanced.fileApplication = FileApplication(
             bundleIdentifier: "com.example.Editor",
             lastKnownDisplayName: "Example Editor"
         )
@@ -97,7 +97,20 @@ struct LimpidSettingsTests {
         let restored = try JSONDecoder().decode(AdvancedSettings.self, from: data)
         #expect(restored.hostsAgentsInTmux)
         #expect(restored.reviewInstructions.isEmpty)
-        #expect(restored.reviewFileApplication == nil)
+        #expect(restored.fileApplication == nil)
+    }
+
+    /// The preference predates its use outside Review; a settings file that
+    /// already chose an app must keep it.
+    @Test func fileApplication_keepsItsStoredKey() throws {
+        let data = Data(#"{"reviewFileApplication":{"bundleIdentifier":"com.example.Editor","lastKnownDisplayName":"Example Editor"}}"#
+            .utf8)
+        let restored = try JSONDecoder().decode(AdvancedSettings.self, from: data)
+        #expect(restored.fileApplication?.bundleIdentifier == "com.example.Editor")
+
+        let encoded = try JSONEncoder().encode(restored)
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(object["reviewFileApplication"] != nil)
     }
 
     @Test("malformed JSON throws a DecodingError rather than crashing")
