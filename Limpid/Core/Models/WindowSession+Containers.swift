@@ -11,8 +11,39 @@ extension WindowSession {
 
     // MARK: - Project operations
 
+    /// Open a folder as a Project and put the user in it. Every
+    /// user-facing way to open a project (the sidebar's folder panel and
+    /// recent list, the command palette's recent projects) comes through
+    /// here, so they cannot differ in what opening one does.
+    ///
+    /// A linked worktree path is promoted to its main checkout first;
+    /// otherwise the Project would list itself inside its own
+    /// `git worktree list`. The Projects section unfolds so the row the
+    /// user just opened is visible. A Project with no tab gets one,
+    /// because `addOrActivateProject` appends a new Project without
+    /// activating it and there would be nothing to switch to.
+    ///
+    /// `resolveMainCheckout` is injectable so tests can pin the
+    /// resolution without spawning `git`; production uses the default.
+    @discardableResult
+    func openProject(
+        at url: URL,
+        resolveMainCheckout: (URL) async -> URL = GitProcess.resolveMainCheckout(of:)
+    ) async -> Project {
+        let rootURL = await resolveMainCheckout(url)
+        projectsSectionExpanded = true
+        let project = addOrActivateProject(rootURL: rootURL)
+        if !tabs.contains(where: { $0.projectID == project.id }) {
+            openTab(container: .project(project.id))
+        }
+        return project
+    }
+
     /// Add or activate a Project rooted at the given URL. Existing
     /// Projects with the same path are activated instead of duplicated.
+    /// This is the bare model operation: it resolves no linked worktree
+    /// and opens no tab for a new Project. User gestures go through
+    /// `openProject(at:)` instead.
     @discardableResult
     func addOrActivateProject(rootURL: URL, suggestedName: String? = nil) -> Project {
         let normalized = rootURL.standardizedFileURL

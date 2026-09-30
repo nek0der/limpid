@@ -107,7 +107,12 @@ enum CommandPaletteActions {
         case let .reopenClosedTab(tabID):
             TabActions.reopenClosedTab(session, specificID: tabID)
         case let .openRecentProject(url):
-            session.addOrActivateProject(rootURL: url)
+            // Same flow as the sidebar's `+` menu. It finishes after the
+            // focus restore below, and the new tab's surface takes focus
+            // itself when it mounts.
+            Task { @MainActor in
+                await session.openProject(at: url)
+            }
         case .openSettings:
             NotificationCenter.default.post(name: .limpidOpenSettings, object: nil)
         case .insertPrefix:
