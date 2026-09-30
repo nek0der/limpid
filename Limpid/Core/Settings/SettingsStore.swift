@@ -101,15 +101,23 @@ final class SettingsStore {
 
     /// JSON file location for this store instance.
     var settingsFileURL: URL {
-        directory.appendingPathComponent("settings.json")
+        Self.settingsFileURL(in: directory)
     }
 
     /// JSON file location for the production install. Used by callers
     /// that hint at the file path without holding a store reference
     /// (e.g. `GhosttyConfigBridge.makeConfigString`).
     static var defaultSettingsFileURL: URL {
-        LimpidPaths.applicationSupportDirectory()
-            .appendingPathComponent("settings.json")
+        settingsFileURL(in: LimpidPaths.applicationSupportDirectory())
+    }
+
+    /// The settings file inside `directory`. Loading, saving, the file
+    /// watcher, and moving an unreadable file aside all find the file
+    /// through here, so they cannot end up on different files. The name
+    /// is the one users edit by hand and the one older builds read, so
+    /// it must not change.
+    private static func settingsFileURL(in directory: URL) -> URL {
+        directory.appendingPathComponent("settings.json")
     }
 
     convenience init() {
@@ -128,7 +136,7 @@ final class SettingsStore {
         // still follows `AppleLanguages` (untouched here) — capture
         // pipelines crop to the SwiftUI window content.
         self.appLanguage = DemoFixture.isDemoActive ? .english : stored
-        var loaded = Self.loadFromDiskOrDefault(at: directory.appendingPathComponent("settings.json"))
+        var loaded = Self.loadFromDiskOrDefault(at: Self.settingsFileURL(in: directory))
         // The hero screenshot pipeline runs under `LIMPID_DEMO=1`.
         // Force the toolbar opaque there so the captured PNG doesn't
         // depend on whatever wallpaper / other windows happen to sit
