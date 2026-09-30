@@ -73,14 +73,16 @@ enum NamedKey: String, CaseIterable, Sendable {
         keyCodes.first ?? 0
     }
 
+    /// The number printed on a function key, 1 through 20, or nil for any
+    /// other key. We read it from the raw value so the twenty cases are not
+    /// listed a second time.
+    var functionKeyNumber: Int? {
+        guard rawValue.first == "f", let number = Int(rawValue.dropFirst()) else { return nil }
+        return number
+    }
+
     var isFunctionKey: Bool {
-        switch self {
-        case .f1, .f2, .f3, .f4, .f5, .f6, .f7, .f8, .f9, .f10,
-             .f11, .f12, .f13, .f14, .f15, .f16, .f17, .f18, .f19, .f20:
-            true
-        default:
-            false
-        }
+        functionKeyNumber != nil
     }
 
     init?(keyCode: UInt16) {

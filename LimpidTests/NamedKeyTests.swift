@@ -1,6 +1,7 @@
 // NamedKeyTests.swift
 // Limpid — coverage for the named-key table: key codes in both directions,
-// the stored names, and a function key captured by the shortcut recorder.
+// the stored names, a function key captured by the shortcut recorder, and
+// the menu key a function key maps to.
 
 import AppKit
 import Testing
@@ -59,10 +60,91 @@ struct NamedKeyTests {
         #expect(HotKeyMapping.keyCode(for: "f13", translate: { _ in nil }) == 105)
     }
 
-    @Test("a function key shows its name in menus and has no SwiftUI constant")
-    func functionKey_menuAffordance() {
+    @Test("a function key shows its name in menus")
+    func functionKey_glyph_isName() {
         #expect(NamedKey.f13.glyph == "F13")
-        #expect(NamedKey.f13.keyEquivalent == nil)
         #expect(NamedKey.escape.keyEquivalent == .escape)
+    }
+
+    @Test("every function key's menu key is AppKit's character for that key")
+    func functionKey_keyEquivalent_isAppKitCharacter() throws {
+        let functionKeys = NamedKey.allCases.filter(\.isFunctionKey)
+        #expect(functionKeys.count == 20)
+        for key in functionKeys {
+            let number = try #require(key.functionKeyNumber)
+            let scalars = Array(key.keyEquivalent.character.unicodeScalars)
+            #expect(scalars.map(\.value) == [UInt32(NSF1FunctionKey + number - 1)], "\(key)")
+        }
+        // The loop leans on AppKit numbering the keys contiguously; spot-check
+        // that against the constants of two keys in the middle and at the end.
+        let f5 = try #require(UnicodeScalar(UInt16(NSF5FunctionKey)))
+        let f20 = try #require(UnicodeScalar(UInt16(NSF20FunctionKey)))
+        #expect(NamedKey.f5.keyEquivalent.character == Character(f5))
+        #expect(NamedKey.f20.keyEquivalent.character == Character(f20))
+        #expect(NamedKey.escape.functionKeyNumber == nil)
+    }
+
+    @Test("a stored function-key shortcut has a menu key")
+    func storedFunctionKey_hasSwiftUIKeyEquivalent() {
+        let shortcut = StoredShortcut(key: "f13", modifiers: [.control])
+        #expect(shortcut.swiftUIKeyEquivalent == NamedKey.f13.keyEquivalent)
+        #expect(StoredShortcut(key: "not_a_key", modifiers: []).swiftUIKeyEquivalent == nil)
+    }
+
+    /// SwiftUI copies the key's character into `NSMenuItem.keyEquivalent`; this
+    /// checks the AppKit half, that a menu item holding our character fires on
+    /// the key event a function key sends, which carries the fn flag the
+    /// item's mask does not name.
+    @Test("a menu item with a function key fires on that key", arguments: [
+        (NamedKey.f5, NSEvent.ModifierFlags.control),
+        (NamedKey.f13, NSEvent.ModifierFlags.control),
+        (NamedKey.f13, NSEvent.ModifierFlags()),
+    ])
+    func functionKeyMenuItem_firesOnKey(key: NamedKey, modifiers: NSEvent.ModifierFlags) throws {
+        let target = MenuTarget()
+        let menu = NSMenu()
+        let item = NSMenuItem(
+            title: "Probe",
+            action: #selector(MenuTarget.fire(_:)),
+            keyEquivalent: String(key.keyEquivalent.character)
+        )
+        item.keyEquivalentModifierMask = modifiers
+        item.target = target
+        menu.addItem(item)
+
+        let pressed = try Self.keyDown(key, modifiers: modifiers)
+        #expect(menu.performKeyEquivalent(with: pressed))
+        #expect(target.fireCount == 1)
+
+        let otherKey: NamedKey = key == .f6 ? .f7 : .f6
+        let other = try Self.keyDown(otherKey, modifiers: modifiers)
+        #expect(!menu.performKeyEquivalent(with: other))
+        #expect(target.fireCount == 1)
+    }
+
+    private static func keyDown(_ key: NamedKey, modifiers: NSEvent.ModifierFlags) throws -> NSEvent {
+        let text = String(key.keyEquivalent.character)
+        return try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers.union(.function),
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: text,
+            charactersIgnoringModifiers: text,
+            isARepeat: false,
+            keyCode: key.primaryKeyCode
+        ))
+    }
+}
+
+/// Counts how often the probe menu item runs its action.
+@MainActor
+private final class MenuTarget: NSObject {
+    private(set) var fireCount = 0
+
+    @objc func fire(_: NSMenuItem) {
+        fireCount += 1
     }
 }
