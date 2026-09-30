@@ -233,7 +233,7 @@ private struct ApprovalQuestionTabs: View {
                     .truncationMode(.tail)
             }
             .font(.caption.weight(.semibold))
-            .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.65))
+            .foregroundStyle(isSelected ? LimpidColor.onAccent : Color.primary.opacity(0.65))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
             // A plain button only hit-tests its drawn content, which would

@@ -205,7 +205,7 @@ enum ReviewRowPainter {
         NSBezierPath(roundedRect: rect, xRadius: 3.5, yRadius: 3.5).fill()
         let bar: CGFloat = 6
         let thickness: CGFloat = 1.5
-        NSColor.white.setFill()
+        NSColor(LimpidColor.onAccent).setFill()
         NSRect(
             x: rect.midX - bar / 2, y: rect.midY - thickness / 2,
             width: bar, height: thickness

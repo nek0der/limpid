@@ -288,20 +288,15 @@ struct ReviewHeader: View {
     /// counts change only when the snapshot does, which relays out the whole
     /// header anyway.
     private var stats: some View {
-        HStack(spacing: 4) {
-            Text(verbatim: "+\(totals.added)")
-                .foregroundStyle(LimpidColor.success)
-            Text(verbatim: "−\(totals.removed)")
-                .foregroundStyle(LimpidColor.error)
-        }
-        .font(.caption.monospacedDigit())
-        .lineLimit(1)
-        .fixedSize()
-        .padding(.horizontal, 9)
-        .frame(height: ReviewHeaderMetrics.controlHeight)
-        .background(Capsule().fill(LimpidColor.rowActiveFill.opacity(0.6)))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("Changed lines"))
+        DiffStatLabel(added: totals.added, removed: totals.removed)
+            .font(.caption.monospacedDigit())
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 9)
+            .frame(height: ReviewHeaderMetrics.controlHeight)
+            .background(Capsule().fill(LimpidColor.rowActiveFill.opacity(0.6)))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text("Changed lines"))
     }
 
     private enum ScopeControl {
@@ -883,13 +878,10 @@ struct ReviewFileBar: View {
                         .contentShape(Rectangle())
                         .help(Text("This file cannot be reviewed as text."))
                 } else {
-                    HStack(spacing: 4) {
-                        Text(verbatim: "+\(stat.added)").foregroundStyle(LimpidColor.success)
-                        Text(verbatim: "−\(stat.removed)").foregroundStyle(LimpidColor.error)
-                    }
-                    .font(.system(size: 10, design: .monospaced))
-                    .contentShape(Rectangle())
-                    .help(Text("Changed lines"))
+                    DiffStatLabel(added: stat.added, removed: stat.removed)
+                        .font(.system(size: 10, design: .monospaced))
+                        .contentShape(Rectangle())
+                        .help(Text("Changed lines"))
                 }
             }
             Text(verbatim: file.layer.title)

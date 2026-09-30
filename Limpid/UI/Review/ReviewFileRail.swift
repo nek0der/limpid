@@ -207,13 +207,7 @@ struct ReviewFileRail: View {
             // label never reaches it.
             .help(Text("Flat list or folder tree"))
             if let onClose {
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("Close"))
-                .help(Text("Close"))
+                DismissGlyphButton(label: "Close", action: onClose)
             }
         }
         .padding(.horizontal, 8)
@@ -519,16 +513,12 @@ struct ReviewFileRail: View {
                     .foregroundStyle(LimpidColor.tertiaryText)
                     .fixedSize()
             } else {
-                HStack(spacing: 3) {
-                    Text(verbatim: "+\(stat.added)")
-                        .foregroundStyle(LimpidColor.success)
-                    Text(verbatim: "−\(stat.removed)")
-                        .foregroundStyle(LimpidColor.error)
-                }
-                .font(.system(size: 9, design: .monospaced))
-                // Never wrapped: the name has the layout priority, and without
-                // this the counts folded onto two lines to give it room.
-                .fixedSize()
+                DiffStatLabel(added: stat.added, removed: stat.removed, spacing: 3)
+                    .font(.system(size: 9, design: .monospaced))
+                    // Never wrapped: the name has the layout priority, and
+                    // without this the counts folded onto two lines to give
+                    // it room.
+                    .fixedSize()
             }
         }
     }

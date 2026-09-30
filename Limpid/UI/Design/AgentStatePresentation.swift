@@ -46,8 +46,13 @@ extension AgentState {
         self == .finished && isViewedFinished ? .secondary : iconColor
     }
 
-    func accessibilityLabel(isViewedFinished: Bool) -> String {
-        guard self == .finished, isViewedFinished else { return localizedLabel }
-        return "\(localizedLabel), \(String(localized: "Viewed"))"
+    /// What VoiceOver says for the state's glyph. `description` stands in
+    /// for the bare state name where a site has more to say — the rows
+    /// speak their pane breakdown — and a viewed completion is named as
+    /// such either way, since the outline that shows it is drawn, not said.
+    func accessibilityLabel(isViewedFinished: Bool, description: String? = nil) -> String {
+        let base = description ?? localizedLabel
+        guard self == .finished, isViewedFinished else { return base }
+        return "\(base), \(String(localized: "Viewed"))"
     }
 }

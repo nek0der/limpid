@@ -35,6 +35,22 @@ struct AgentStateTests {
         }
     }
 
+    @Test func accessibilityLabel_description_replacesStateName() {
+        #expect(AgentState.running.accessibilityLabel(isViewedFinished: false, description: "2 Running")
+            == "2 Running")
+        #expect(AgentState.error.accessibilityLabel(isViewedFinished: false) == AgentState.error.localizedLabel)
+    }
+
+    @Test func accessibilityLabel_viewedSuffix_onlyOnFinished() {
+        let viewed = String(localized: "Viewed")
+        #expect(AgentState.finished.accessibilityLabel(isViewedFinished: true, description: "1 Finished")
+            == "1 Finished, \(viewed)")
+        #expect(AgentState.finished.accessibilityLabel(isViewedFinished: true)
+            == "\(AgentState.finished.localizedLabel), \(viewed)")
+        #expect(AgentState.needsInput.accessibilityLabel(isViewedFinished: true, description: "Needs input")
+            == "Needs input")
+    }
+
     @Test("aggregateAgentState picks the highest priority entry")
     func aggregate_picksHighestPriority() {
         let mixed: [AgentState] = [.idle, .running, .needsInput, .error]

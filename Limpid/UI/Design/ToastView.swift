@@ -60,18 +60,9 @@ private struct ToastCapsule: View {
             // ⌘Z routes into the focused pane (editor undo), so the
             // toast can't claim that key without breaking the host
             // app's primary use case. Users click Undo explicitly.
-            Button {
+            DismissGlyphButton(label: "Dismiss") {
                 toastCenter.dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .help("Dismiss")
-            .accessibilityLabel(Text("Dismiss"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

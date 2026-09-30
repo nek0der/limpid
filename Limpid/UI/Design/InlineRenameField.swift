@@ -2,6 +2,13 @@
 // Limpid — Text ↔ TextField swap, the macOS 2026 industry-standard
 // pattern for sidebar inline rename.
 //
+// The field owns the whole rename, not just the swap: the draft, the
+// double-click that starts it, and the rule for what a submit means.
+// `TabRow` and `ContainerRow` each used to keep their own draft and
+// their own copy of that rule, and had to resync the draft by hand
+// after an empty submit or the label went blank. Drawing the label
+// from the model's name instead of the draft removes that step.
+//
 // Why the swap (and NOT "always-on TextField + .focusable toggle"):
 //
 //   - SwiftUI's TextField on macOS is backed by `NSTextField`, which
@@ -38,39 +45,53 @@ import AppKit
 import SwiftUI
 
 struct InlineRenameField: View {
-    @Binding var text: String
+    /// The name as the model holds it. Drawn whenever the field is not
+    /// editing, and what an edit starts from.
+    let name: String
+    /// Owned by the row, which opens an edit from its context menu or a
+    /// shortcut by setting this and reads it to hold off its own taps.
     @Binding var isEditing: Bool
     var font: Font
     var foregroundColor: Color
-    var onCommit: (String) -> Void
-    var onCancel: () -> Void
+    /// Receives the submitted name, trimmed and never empty. Nil for a
+    /// label that cannot be renamed: it then never enters editing but is
+    /// still drawn here, so a list that mixes the two keeps every label
+    /// on the same left edge.
+    var onRename: ((String) -> Void)?
 
     @Environment(\.isEnabled) private var isEnabled
     @FocusState private var fieldFocused: Bool
-    @State private var rollback: String = ""
+    /// The text being typed. Seeded from `name` each time an edit
+    /// starts and never drawn outside one.
+    @State private var draft: String = ""
     @State private var didFinalize: Bool = false
     @State private var outsideClickMonitor: Any?
 
     /// Match the field editor's default `lineFragmentPadding` so the
     /// static `Text` lines up with the editing TextField's first
     /// glyph.
-    ///
-    /// Not private: a list that mixes renameable rows with plain ones
-    /// has to apply the same offset to both, or the two label styles
-    /// sit 5pt apart for a reason that has nothing to do with either
-    /// row. `ContainerRow` does exactly that.
-    static let fieldEditorLeadingPadding: CGFloat = 5
+    private static let fieldEditorLeadingPadding: CGFloat = 5
+
+    /// What a submit renames to: the draft without surrounding
+    /// whitespace, or nil when nothing is left. An empty or all-blank
+    /// submit keeps the prior name rather than clearing it.
+    nonisolated static func committedName(from draft: String) -> String? {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
     var body: some View {
         Group {
-            if isEditing {
-                TextField("", text: $text)
+            if isEditing, onRename != nil {
+                TextField("", text: $draft)
                     .textFieldStyle(.plain)
                     .focused($fieldFocused)
                     .onSubmit { finalize(commit: true) }
                     .onExitCommand { finalize(commit: false) }
                     .onAppear {
-                        rollback = text
+                        // Runs before the field's first frame, so it
+                        // never shows a previous edit's leftover text.
+                        draft = name
                         didFinalize = false
                         // Mount-time `.task` focus loss is a known
                         // macOS 14+ quirk; bumping focus to the next
@@ -87,22 +108,35 @@ struct InlineRenameField: View {
                         }
                     }
             } else {
-                Text(text)
+                Text(name)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .padding(.leading, Self.fieldEditorLeadingPadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     // SwiftUI's `Text` hit-tests only the drawn glyphs,
-                    // so callers that attach `.onTapGesture(count: 2)`
-                    // to start a rename get a target the width of the
-                    // label itself — a one-character tab name was
-                    // basically un-double-clickable. Expand hits to the
-                    // full row-wide frame the parent already laid out.
+                    // so a double-click to start a rename got a target
+                    // the width of the label itself — a one-character
+                    // tab name was basically un-double-clickable. Expand
+                    // hits to the full row-wide frame the parent already
+                    // laid out.
                     .contentShape(Rectangle())
             }
         }
         .font(font)
         .foregroundStyle(foregroundColor)
+        // `simultaneousGesture` (not `.onTapGesture`) so this double-tap
+        // recognizer doesn't gate single-click delivery to the inner
+        // TextField while editing — same lesson as PR #50 for the row's
+        // activation tap. Masked off entirely on a label that cannot be
+        // renamed, so it never sits in that row's gesture arbitration.
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded {
+                if !isEditing {
+                    isEditing = true
+                }
+            },
+            including: onRename == nil ? .subviews : .all
+        )
         .onChange(of: isEnabled) { _, enabled in
             // An offscreen sidebar remains mounted for its slide animation.
             // Finalize explicitly so its shared field editor and event
@@ -117,11 +151,8 @@ struct InlineRenameField: View {
         guard !didFinalize else { return }
         didFinalize = true
         removeOutsideClickMonitor()
-        if commit {
-            onCommit(text)
-        } else {
-            text = rollback
-            onCancel()
+        if commit, let newName = Self.committedName(from: draft) {
+            onRename?(newName)
         }
         isEditing = false
     }

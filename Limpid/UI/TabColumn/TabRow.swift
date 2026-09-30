@@ -27,7 +27,6 @@ struct TabRow: View {
 
     @State private var isEditing = false
     @State private var isHovering = false
-    @State private var draft = ""
 
     private var isActive: Bool {
         session.activeTabID == tab.id
@@ -224,41 +223,18 @@ struct TabRow: View {
                 // 5pt mark, which is too small to hover deliberately.
                 .help(identityIconHelp)
             InlineRenameField(
-                text: $draft,
+                name: tab.displayTitle,
                 isEditing: $isEditing,
                 font: .system(size: 13, weight: .medium, design: .rounded),
                 foregroundColor: isActive ? .primary : .secondary,
-                onCommit: { value in commitRename(value) },
-                onCancel: { cancelRename() }
+                onRename: onRename
             )
             .layoutPriority(1)
-            // `simultaneousGesture` (not `.onTapGesture`) so this double-
-            // tap recognizer doesn't gate single-click delivery to the
-            // inner TextField while editing — same lesson as PR #50 for
-            // the row's activation tap. The closure still no-ops when
-            // already editing.
-            .simultaneousGesture(
-                TapGesture(count: 2).onEnded {
-                    if !isEditing {
-                        beginRename()
-                    }
-                }
-            )
-            .onChange(of: tab.displayTitle) { _, new in
-                if !isEditing {
-                    draft = new
-                }
-            }
-            .onAppear {
-                if !isEditing {
-                    draft = tab.displayTitle
-                }
-            }
             // ⌘⇧R posts this; only the matching row reacts so cross-
             // container renames don't fire the wrong row.
             .onReceive(NotificationCenter.default.publisher(for: .limpidRenameActiveTab)) { note in
                 if (note.object as? UUID) == tab.id, !isEditing {
-                    beginRename()
+                    isEditing = true
                 }
             }
             Spacer(minLength: 4)
@@ -266,32 +242,18 @@ struct TabRow: View {
             // status mark and the close sit closer to each other than
             // either does to the title, because they are one thing.
             HStack(spacing: LimpidLayout.containerColumnTrailingSpacing) {
-                if let summary = aggregateAgentStateSummary,
-                   let iconName = summary.state.iconName(isViewedFinished: summary.isViewedFinished),
-                   let iconColor = summary.state.iconColor(isViewedFinished: summary.isViewedFinished)
-                {
-                    let state = summary.state
+                if let summary = aggregateAgentStateSummary, summary.state.hasVisibleBadge {
                     // Agent rows show the lifecycle badge as their single
                     // status mark. The bell is suppressed here so we don't
                     // stack two indicators for the same event — the agent's
                     // OS notification + history entry still fire; the bell
                     // is reserved for non-agent unread (terminal OSC 9/777,
                     // child-exit, etc.) on rows that have no agent badge.
-                    let tooltip = agentTooltip(for: state)
-                    Image(systemName: iconName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(iconColor)
-                        .frame(
-                            width: LimpidLayout.containerColumnTrailingSlot,
-                            height: LimpidLayout.containerColumnTrailingSlot
-                        )
-                        .help(tooltip)
-                        // Match `ContainerRow`'s sister fix: SF Symbol names
-                        // alone don't carry meaning, especially when the
-                        // color is the only sighted differentiator.
-                        .accessibilityLabel(Text(summary.isViewedFinished
-                                ? "\(tooltip), \(String(localized: "Viewed"))"
-                                : tooltip))
+                    AgentStateMark(
+                        state: summary.state,
+                        isViewedFinished: summary.isViewedFinished,
+                        tooltip: agentTooltip(for: summary.state)
+                    )
                 } else {
                     NotificationBell(
                         isUnread: hasUnread,
@@ -324,19 +286,7 @@ struct TabRow: View {
                 // instead froze that gap into every row, so the status mark
                 // never reached the row's right edge.
                 if isActive || isHovering {
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .frame(
-                                width: LimpidLayout.containerColumnTrailingSlot,
-                                height: LimpidLayout.containerColumnTrailingSlot
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Close Tab")
-                    .accessibilityLabel(Text("Close Tab"))
+                    DismissGlyphButton(label: "Close Tab", action: onClose)
                 }
             }
         }
@@ -386,7 +336,7 @@ struct TabRow: View {
         )
         .contextMenu {
             Button {
-                beginRename()
+                isEditing = true
             } label: {
                 Label("Rename…", systemImage: "pencil")
             }
@@ -406,32 +356,6 @@ struct TabRow: View {
             id: tab.id.uuidString,
             dragState: dragState
         )
-    }
-
-    private func beginRename() {
-        draft = tab.displayTitle
-        isEditing = true
-    }
-
-    private func commitRename(_ value: String) {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            // Empty submit on a tab without a prior `titleOverride`
-            // is a no-op assignment, so the value-guarded
-            // `WindowSession.update` skips the write and
-            // `.onChange(of: tab.displayTitle)` never fires to
-            // resync `draft` — the pill would render blank. Bring
-            // `draft` back in line with the live title ourselves.
-            draft = tab.displayTitle
-        } else {
-            onRename(trimmed)
-        }
-        isEditing = false
-    }
-
-    private func cancelRename() {
-        draft = tab.displayTitle
-        isEditing = false
     }
 }
 
