@@ -225,13 +225,18 @@ int32_t limpid_projection_providers_v1(uint8_t **out, size_t *out_len);
 // owns the body and frees it with `limpid_approval_bytes_free_v1`.
 int32_t limpid_projection_install_recipes_v1(uint8_t **out, size_t *out_len);
 
-// How run records are named in every provider's state directory, as
-// `{ "runRecordSuffix": "<suffix>" }`: a record's file name is its storage id
-// followed by the suffix.
+// How the hook runtime names the files in every provider's directories, as
+// `{ "runRecordSuffix", "sessionHintSuffix", "cwdEventSuffix",
+// "worktreeEventsDirectory", "worktreeEventSuffix", "lockSuffix" }`. A run
+// record's file name is its storage id followed by `runRecordSuffix`; a resume
+// hint's and a cwd event's are the pane id followed by their suffix; worktree
+// events are the files ending in `worktreeEventSuffix` in the
+// `worktreeEventsDirectory` of the state directory; and the lock on any of
+// these files is its path followed by `lockSuffix`.
 //
-// The hook runtime writes each record under that name, and the host lists,
-// rewrites, and retires it by the same name. Reporting it here is what keeps
-// the host from spelling the name a second time.
+// The hook runtime writes each file under that name, and the host lists,
+// rewrites, locks, and deletes it by the same name. Reporting them here is
+// what keeps the host from spelling the names a second time.
 //
 // # Safety
 //

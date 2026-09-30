@@ -39,7 +39,8 @@ struct AgentRemediationRegressionTests {
                 updatedAt: "2026-09-09T00:00:00Z",
                 runId: runID
             ), to: hints)
-            let fd = open(hints.appendingPathComponent(paneID.uuidString + ".json.flock").path, O_CREAT | O_RDWR, 0o600)
+            let hintURL = try hints.appendingPathComponent(AgentRecordFixtures.hintFileName(paneID.uuidString))
+            let fd = try open(AgentRecordFixtures.lockURL(for: hintURL).path, O_CREAT | O_RDWR, 0o600)
             #expect(fd >= 0)
             guard fd >= 0 else { return }
             defer { close(fd) }
@@ -78,8 +79,8 @@ struct AgentRemediationRegressionTests {
                 resumeIntents: intents, processStatus: { _ in status }
             )
             projection.bootstrap(into: session)
-            let sidecar = try states.appendingPathComponent(AgentRecordFixtures.recordFileName(runID) + ".flock")
-            let fd = open(sidecar.path, O_CREAT | O_RDWR, 0o600)
+            let recordURL = try states.appendingPathComponent(AgentRecordFixtures.recordFileName(runID))
+            let fd = try open(AgentRecordFixtures.lockURL(for: recordURL).path, O_CREAT | O_RDWR, 0o600)
             #expect(fd >= 0)
             guard fd >= 0 else { return }
             defer { close(fd) }

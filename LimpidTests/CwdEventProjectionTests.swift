@@ -64,12 +64,12 @@ struct CwdEventProjectionTests {
             "updatedAt": updatedAt
         ]
         try JSONSerialization.data(withJSONObject: record)
-            .write(to: harness.events.appendingPathComponent("\(pane.uuidString).cwd.json"))
+            .write(to: harness.events.appendingPathComponent(AgentRecordFixtures.cwdEventFileName(pane.uuidString)))
     }
 
-    private func exists(_ harness: Harness, pane: UUID) -> Bool {
-        FileManager.default.fileExists(
-            atPath: harness.events.appendingPathComponent("\(pane.uuidString).cwd.json").path
+    private func exists(_ harness: Harness, pane: UUID) throws -> Bool {
+        try FileManager.default.fileExists(
+            atPath: harness.events.appendingPathComponent(AgentRecordFixtures.cwdEventFileName(pane.uuidString)).path
         )
     }
 
@@ -127,7 +127,7 @@ struct CwdEventProjectionTests {
             // event is moot because there is nothing left to move.
             #expect(harness.moves.value.count == 1)
             #expect(harness.moves.value.first?.pane == harness.pane)
-            #expect(!exists(harness, pane: absent))
+            #expect(try !exists(harness, pane: absent))
         }
     }
 
@@ -141,8 +141,8 @@ struct CwdEventProjectionTests {
 
             harness.adapter.bootstrap(into: harness.session, attention: AttentionState())
 
-            #expect(!exists(harness, pane: closed))
-            #expect(exists(harness, pane: harness.pane))
+            #expect(try !exists(harness, pane: closed))
+            #expect(try exists(harness, pane: harness.pane))
         }
     }
 }

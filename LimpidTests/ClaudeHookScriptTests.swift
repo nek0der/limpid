@@ -553,6 +553,44 @@ struct ClaudeHookScriptTests {
         #expect(restartedAt >= previousAt)
     }
 
+    /// The app finds a pane's resume hint and cwd event by the names the Rust
+    /// writer reports. The receiver spells them itself, so reading each file
+    /// back by the reported name is what catches a receiver that drifts.
+    @Test("writes the resume hint and the cwd event under the names the app reads")
+    func paneFiles_useTheReportedNames() throws {
+        _ = try runHooks([
+            payload("SessionStart"),
+            payload("CwdChanged", extra: ["old_cwd": "/tmp", "new_cwd": "/private/tmp"])
+        ]) { dir, _, paneID, eventIndex in
+            let url = try eventIndex == 0
+                ? dir.appendingPathComponent("sessions/" + AgentRecordFixtures.hintFileName(paneID))
+                : dir.appendingPathComponent("cwd/" + AgentRecordFixtures.cwdEventFileName(paneID))
+            let file = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+            #expect(file?["paneId"] as? String == paneID)
+        }
+    }
+
+    /// The app locks a record's sidecar before it rewrites the record. The
+    /// receiver names the sidecar itself, so it has to hold off while the
+    /// app holds that lock; one that locks another file writes straight
+    /// through.
+    @Test("holds off while the app holds the record's lock")
+    func recordLock_isTheOneTheAppTakes() throws {
+        let runID = UUID().uuidString
+        var held: AgentRecordFixtures.HeldLock?
+        let record = try runHooks(midTurn(), extraEnvironment: ["LIMPID_AGENT_RUN_ID": runID]) { _, states, _, index in
+            guard index == 0 else { return }
+            held = try AgentRecordFixtures.HeldLock(
+                on: states.appendingPathComponent(AgentRecordFixtures.recordFileName(runID))
+            )
+        }
+        #expect(held != nil)
+        // The prompt arrived while the lock was held, so the record is still
+        // the one SessionStart wrote.
+        #expect(record?["lastHookEvent"] as? String == "SessionStart")
+        #expect(record?["revision"] as? Int == 1)
+    }
+
     @Test("keys one invocation by run id and increments its revision")
     func runIdentity_multipleEvents_shareOneOrderedRecord() throws {
         let runID = UUID().uuidString

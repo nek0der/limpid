@@ -15,6 +15,7 @@
 //! committed and reviewed like the `expected.json` goldens they feed.
 
 use limpid_agent_hook::{HookEnv, HookOutcome, HookRuntime, NoSnapshots, run_hook};
+use limpid_agent_model::LOCK_FILE_SUFFIX;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -128,7 +129,7 @@ fn derive(case: &Path, fixtures: &Path) -> Result<(), String> {
     prune_lock_sidecars(case)
 }
 
-/// Drops the `.flock` files the runtime leaves beside every record it writes.
+/// Drops the lock sidecars the runtime leaves beside every record it writes.
 /// They are runtime scaffolding rather than state, and committing empty lock
 /// files would put noise in every corpus diff.
 fn prune_lock_sidecars(case: &Path) -> Result<(), String> {
@@ -138,7 +139,11 @@ fn prune_lock_sidecars(case: &Path) -> Result<(), String> {
             continue;
         };
         for entry in entries.flatten() {
-            if entry.path().extension().is_some_and(|it| it == "flock") {
+            if entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.ends_with(LOCK_FILE_SUFFIX))
+            {
                 fs::remove_file(entry.path())
                     .map_err(|error| format!("{}: {error}", entry.path().display()))?;
             }

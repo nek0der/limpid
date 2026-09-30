@@ -14,7 +14,7 @@ struct AgentRuntimeHookRegressionTests {
             let sessionID = UUID().uuidString
             let sessions = directory.appendingPathComponent("sessions")
             try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
-            let hint = sessions.appendingPathComponent(paneID + ".json")
+            let hint = try sessions.appendingPathComponent(AgentRecordFixtures.hintFileName(paneID))
             try JSONSerialization.data(withJSONObject: [
                 "schemaVersion": 1, "paneId": paneID, "sessionId": sessionID,
                 "cwd": directory.path, "updatedAt": "2026-09-09T00:00:00Z"

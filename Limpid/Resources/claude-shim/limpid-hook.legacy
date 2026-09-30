@@ -142,6 +142,13 @@ cwd_events_dir="${LIMPID_CWD_EVENTS_DIR:-$HOME/Library/Application Support/Limpi
 mkdir -p "$sessions_dir" 2>/dev/null
 mkdir -p "$states_dir" 2>/dev/null
 mkdir -p "$cwd_events_dir" 2>/dev/null
+# The names are the ones `SESSION_HINT_FILE_SUFFIX` and `CWD_EVENT_FILE_SUFFIX`
+# in limpid-agent-model declare and the app finds these files by. A shell
+# script cannot read them from there, so ClaudeHookScriptTests runs this
+# receiver and reads each file back by the declared name: a drift here fails
+# that suite instead of losing the pane's resume or its cwd move.
+hint_name="$pane_id.json"
+cwd_event_name="$pane_id.cwd.json"
 
 # Read a field from the JSON payload. `plutil` ships with every macOS,
 # so values containing quotes / newlines / backslashes survive intact
@@ -567,8 +574,8 @@ if [ "$hook_event" = "CwdChanged" ]; then
   [ -n "$cwd_old" ] || cwd_old="$(extract previous_cwd)"
   new_safe="$(json_escape "$cwd_new")"
   old_safe="$(json_escape "$cwd_old")"
-  cwd_final="$cwd_events_dir/$pane_id.cwd.json"
-  cwd_tmp="$cwd_events_dir/.$pane_id.cwd.json.tmp.$$"
+  cwd_final="$cwd_events_dir/$cwd_event_name"
+  cwd_tmp="$cwd_events_dir/.$cwd_event_name.tmp.$$"
   {
     printf '{"schemaVersion":1,"paneId":"%s","newCwd":"%s","oldCwd":"%s","updatedAt":"%s"}\n' \
       "$pane_id" "$new_safe" "$old_safe" "$ts"
@@ -582,17 +589,17 @@ fi
 # no-ops on this path.
 if [ "$hook_event" = "SessionEnd" ]; then
   [ -z "${TMUX:-}" ] || exit 0
-  limpid_acquire_record_lock "$sessions_dir/$pane_id.json" || exit 0
+  limpid_acquire_record_lock "$sessions_dir/$hint_name" || exit 0
   trap 'limpid_release_record_lock' 0
   trap 'exit 0' HUP INT TERM
-  owner_run=$(plutil -extract runId raw -o - "$sessions_dir/$pane_id.json" 2>/dev/null || true)
-  owner_session=$(plutil -extract sessionId raw -o - "$sessions_dir/$pane_id.json" 2>/dev/null || true)
+  owner_run=$(plutil -extract runId raw -o - "$sessions_dir/$hint_name" 2>/dev/null || true)
+  owner_session=$(plutil -extract sessionId raw -o - "$sessions_dir/$hint_name" 2>/dev/null || true)
   [ -n "$session_id" ] && [ "$owner_session" = "$session_id" ] || exit 0
   if [ "$owner_run" != "$run_id" ]; then
     # Legacy hints have no invocation ID. The session lock protects the
     # native conversation check against a newer SessionStart replacement.
     [ -z "$owner_run" ] || exit 0
-    hint_updated=$(plutil -extract updatedAt raw -o - "$sessions_dir/$pane_id.json" 2>/dev/null || true)
+    hint_updated=$(plutil -extract updatedAt raw -o - "$sessions_dir/$hint_name" 2>/dev/null || true)
     for candidate in "$states_dir"/*"$record_suffix"; do
       [ -f "$candidate" ] || continue
       candidate_pane=$(plutil -extract paneId raw -o - "$candidate" 2>/dev/null || true)
@@ -606,7 +613,7 @@ if [ "$hook_event" = "SessionEnd" ]; then
   fi
   case "$reason" in
     clear|logout|exit|prompt_input_exit|quit)
-      rm -f "$sessions_dir/$pane_id.json" 2>/dev/null
+      rm -f "$sessions_dir/$hint_name" 2>/dev/null
       ;;
     *)
       # SIGTERM-driven end or any reason we don't recognise. Keep
@@ -631,11 +638,11 @@ esac
 
 # Native resume hints belong to direct invocations, not tmux clients.
 [ -z "${TMUX:-}" ] || exit 0
-session_final="$sessions_dir/$pane_id.json"
+session_final="$sessions_dir/$hint_name"
 limpid_acquire_record_lock "$session_final" || exit 0
 trap 'limpid_release_record_lock' 0
 trap 'exit 0' HUP INT TERM
-session_tmp="$sessions_dir/.$pane_id.json.tmp.$$"
+session_tmp="$sessions_dir/.$hint_name.tmp.$$"
 
 {
   printf '{"schemaVersion":1,"paneId":"%s","sessionId":"%s","cwd":"%s","updatedAt":"%s","lastHookEvent":"%s","runId":"%s"}\n' \

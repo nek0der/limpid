@@ -94,7 +94,33 @@ enum AgentRecordFixtures {
     /// stops agreeing with the app fails a suite instead of passing against a
     /// copy of its own.
     static func recordFileName(_ storageID: String) throws -> String {
-        try storageID + #require(AgentProviderRegistry.recordLayout).runRecordSuffix
+        try storageID + layout().runRecordSuffix
+    }
+
+    /// The names the writer gives every other file in a provider's
+    /// directories, from the same report and for the same reason.
+    static func layout() throws -> AgentRecordLayout {
+        try #require(AgentProviderRegistry.recordLayout)
+    }
+
+    /// The file name of the resume hint for `paneID`.
+    static func hintFileName(_ paneID: String) throws -> String {
+        try paneID + layout().sessionHintSuffix
+    }
+
+    /// The file name of the working-directory event for `paneID`.
+    static func cwdEventFileName(_ paneID: String) throws -> String {
+        try paneID + layout().cwdEventSuffix
+    }
+
+    /// Where worktree events land inside the state directory `state`.
+    static func worktreeEvents(in state: URL) throws -> URL {
+        try state.appendingPathComponent(layout().worktreeEventsDirectory, isDirectory: true)
+    }
+
+    /// The sidecar every writer of `url` locks.
+    static func lockURL(for url: URL) throws -> URL {
+        try URL(fileURLWithPath: url.path + layout().lockSuffix)
     }
 
     /// Writes `record` into `directory` under the name its storage id gives
@@ -139,14 +165,37 @@ enum AgentRecordFixtures {
     static func write(_ hint: AgentSessionHintFixture, to directory: URL) throws {
         try ensureDirectory(directory)
         try encoder.encode(hint).write(
-            to: directory.appendingPathComponent("\(hint.paneId).json")
+            to: directory.appendingPathComponent(hintFileName(hint.paneId))
         )
     }
 
     static func hint(forPaneID paneID: UUID, in directory: URL) -> AgentSessionHintFixture? {
-        let url = directory.appendingPathComponent("\(paneID.uuidString).json")
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let name = try? hintFileName(paneID.uuidString),
+              let data = try? Data(contentsOf: directory.appendingPathComponent(name))
+        else { return nil }
         return try? decoder.decode(AgentSessionHintFixture.self, from: data)
+    }
+
+    // MARK: - Locks
+
+    /// Holds the lock every writer of a file takes, as the app does while it
+    /// rewrites that file, until the holder goes away. For the suites that run
+    /// a receiver while the app is mid-write: a receiver that locks another
+    /// sidecar writes straight through.
+    final class HeldLock {
+        private let descriptor: Int32
+
+        init(on url: URL) throws {
+            descriptor = try open(AgentRecordFixtures.lockURL(for: url).path, O_CREAT | O_RDWR, 0o600)
+            #expect(descriptor >= 0)
+            #expect(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
+        }
+
+        deinit {
+            if descriptor >= 0 {
+                close(descriptor)
+            }
+        }
     }
 
     // MARK: - Reading what a hook wrote

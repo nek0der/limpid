@@ -2,7 +2,10 @@
 //! state directory and checks what lands on disk.
 
 use limpid_agent_hook::{HookEnv, HookOutcome, HookRuntime, NoSnapshots, run_hook};
-use limpid_agent_model::{RunRecord, RunState, run_record_file_name};
+use limpid_agent_model::{
+    LOCK_FILE_SUFFIX, RunRecord, RunState, cwd_event_file_name, run_record_file_name,
+    session_hint_file_name,
+};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -83,7 +86,12 @@ impl Scratch {
     }
 
     fn hint(&self) -> Option<Value> {
-        let bytes = fs::read(self.root.join("sessions").join(format!("{PANE}.json"))).ok()?;
+        let bytes = fs::read(
+            self.root
+                .join("sessions")
+                .join(session_hint_file_name(PANE)),
+        )
+        .ok()?;
         Some(serde_json::from_slice(&bytes).expect("hint decodes"))
     }
 
@@ -164,7 +172,7 @@ fn claude_session_basic_writes_a_version_three_record_and_drops_the_hint() {
         scratch
             .root
             .join("states")
-            .join(format!("{}.flock", run_record_file_name(RUN)))
+            .join(format!("{}{LOCK_FILE_SUFFIX}", run_record_file_name(RUN)))
             .exists(),
         cfg!(unix)
     );
@@ -184,7 +192,7 @@ fn claude_cwd_change_writes_the_cwd_event_and_no_record() {
     let payloads = fixture_case("claude", "cwd-changed");
     replay(&scratch, "claude", &payloads);
     let event: Value = serde_json::from_slice(
-        &fs::read(scratch.root.join("cwd").join(format!("{PANE}.cwd.json"))).expect("cwd event"),
+        &fs::read(scratch.root.join("cwd").join(cwd_event_file_name(PANE))).expect("cwd event"),
     )
     .expect("json");
     assert_eq!(event["schemaVersion"], 1);
@@ -345,7 +353,7 @@ fn a_busy_record_lock_skips_the_write_and_logs() {
         .write(true)
         .create(true)
         .truncate(false)
-        .open(states.join(format!("{}.flock", run_record_file_name(RUN))))
+        .open(states.join(format!("{}{LOCK_FILE_SUFFIX}", run_record_file_name(RUN))))
         .expect("sidecar");
     sidecar.try_lock().expect("hold the lock");
     let payloads = fixture_case("claude", "session-basic");

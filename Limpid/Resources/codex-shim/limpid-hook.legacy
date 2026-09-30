@@ -135,6 +135,12 @@ sessions_dir="${LIMPID_CODEX_SESSIONS_DIR:-$HOME/Library/Application Support/Lim
 states_dir="${LIMPID_CODEX_AGENT_STATES_DIR:-$HOME/Library/Application Support/Limpid/codex-agent-states}"
 mkdir -p "$sessions_dir" 2>/dev/null
 mkdir -p "$states_dir" 2>/dev/null
+# The name is the one `SESSION_HINT_FILE_SUFFIX` in limpid-agent-model
+# declares and the app finds resume hints by. A shell script cannot read it
+# from there, so CodexHookScriptTests runs this receiver and reads the hint
+# back by the declared name: a drift here fails that suite instead of losing
+# the pane's resume.
+hint_name="$pane_id.json"
 
 # Read a field via plutil (ships with every macOS) so values with
 # quotes / newlines / backslashes survive — the old sed match stopped
@@ -450,11 +456,11 @@ esac
 
 # Native resume hints belong to direct invocations, not tmux clients.
 [ -z "${TMUX:-}" ] || exit 0
-session_final="$sessions_dir/$pane_id.json"
+session_final="$sessions_dir/$hint_name"
 limpid_acquire_record_lock "$session_final" || exit 0
 trap 'limpid_release_record_lock' 0
 trap 'exit 0' HUP INT TERM
-session_tmp="$sessions_dir/.$pane_id.json.tmp.$$"
+session_tmp="$sessions_dir/.$hint_name.tmp.$$"
 
 {
   printf '{"schemaVersion":1,"paneId":"%s","sessionId":"%s","cwd":"%s","updatedAt":"%s","lastHookEvent":"%s","runId":"%s"}\n' \

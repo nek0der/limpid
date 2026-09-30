@@ -276,11 +276,8 @@ final class AgentProjectionAdapter {
 
     private func watchedDirectories() -> [URL] {
         directories.values.flatMap { directory -> [URL] in
-            [
-                directory.state,
-                directory.sessions,
-                directory.state.appendingPathComponent("worktree-events", isDirectory: true)
-            ] + (directory.cwdEvents.map { [$0] } ?? [])
+            [directory.state, directory.sessions]
+                + [directory.worktreeEvents, directory.cwdEvents].compactMap(\.self)
         }
     }
 
@@ -354,7 +351,7 @@ final class AgentProjectionAdapter {
         input.providers = descriptors
         for (provider, directory) in directories {
             input.records += runRecords(in: directory, provider: provider)
-            input.sessionRecords += files(in: directory.sessions, suffix: ".json", provider: provider)
+            input.sessionRecords += paneFiles(in: directory, .sessions, provider: provider)
         }
         input.resumeIntents = intents()
         input.pidStatus = pidStatus(for: input.records)
@@ -382,11 +379,9 @@ final class AgentProjectionAdapter {
 
         for (provider, directory) in directories {
             input.records += runRecords(in: directory, provider: provider)
-            input.sessionRecords += files(in: directory.sessions, suffix: ".json", provider: provider)
-            if let cwd = directory.cwdEvents {
-                input.cwdEvents += files(in: cwd, suffix: ".cwd.json", provider: provider)
-            }
-            input.worktreeEvents += worktreeFiles(in: directory.state, provider: provider)
+            input.sessionRecords += paneFiles(in: directory, .sessions, provider: provider)
+            input.cwdEvents += paneFiles(in: directory, .cwdEvents, provider: provider)
+            input.worktreeEvents += worktreeFiles(in: directory, provider: provider)
         }
         input.resumeIntents = intents()
 
@@ -408,6 +403,17 @@ final class AgentProjectionAdapter {
         return files(in: directory.state, suffix: suffix, provider: provider)
     }
 
+    /// The provider's resume hints or cwd events, found the same way as its
+    /// run records and read as nothing for the same reason.
+    private func paneFiles(
+        in directory: AgentDirectories,
+        _ kind: AgentPaneStoreKind,
+        provider: String
+    ) -> [AgentProjectionFile] {
+        guard let store = directory.paneStore(kind) else { return [] }
+        return files(in: store.directory, suffix: store.suffix, provider: provider)
+    }
+
     private func files(in directory: URL, suffix: String, provider: String) -> [AgentProjectionFile] {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
             return []
@@ -425,16 +431,18 @@ final class AgentProjectionAdapter {
         }
     }
 
-    private func worktreeFiles(in state: URL, provider: String) -> [AgentProjectionWorktreeFile] {
-        let directory = state.appendingPathComponent("worktree-events", isDirectory: true)
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
+    private func worktreeFiles(in owner: AgentDirectories, provider: String) -> [AgentProjectionWorktreeFile] {
+        guard let directory = owner.worktreeEvents,
+              let suffix = owner.layout?.worktreeEventSuffix,
+              let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path)
+        else {
             return []
         }
         return names.sorted().compactMap { name in
-            // The writer renames a dot-prefixed temporary into place, so a
-            // name that is not a finished `.json` event is a write in
-            // progress and must not be read as an event.
-            guard name.hasSuffix(".json"), !name.hasPrefix(".") else { return nil }
+            // The writer renames a temporary into place, so a name that is
+            // not a finished event's is a write in progress and must not be
+            // read as an event.
+            guard name.hasSuffix(suffix), !name.hasPrefix(".") else { return nil }
             guard let data = try? Data(contentsOf: directory.appendingPathComponent(name)),
                   let content = String(data: data, encoding: .utf8)
             else { return nil }

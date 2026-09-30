@@ -20,6 +20,8 @@ struct AgentCommandExecutorTests {
         /// The file the rules address as `Self.run`, named the way the writer
         /// names it.
         let record: URL
+        /// The resume hint for `Self.pane`, named the same way.
+        let hint: URL
     }
 
     private func fixture(in root: URL) throws -> Fixture {
@@ -37,7 +39,8 @@ struct AgentCommandExecutorTests {
             state: state,
             sessions: sessions,
             intents: intents,
-            record: state.appendingPathComponent(AgentRecordFixtures.recordFileName(Self.run))
+            record: state.appendingPathComponent(AgentRecordFixtures.recordFileName(Self.run)),
+            hint: sessions.appendingPathComponent(AgentRecordFixtures.hintFileName(Self.pane))
         )
     }
 
@@ -58,7 +61,7 @@ struct AgentCommandExecutorTests {
     private func writeHint(_ fixture: Fixture, runID: String) throws {
         let hint: [String: Any] = ["schemaVersion": 1, "paneId": Self.pane, "runId": runID, "sessionId": "S"]
         try JSONSerialization.data(withJSONObject: hint)
-            .write(to: fixture.sessions.appendingPathComponent("\(Self.pane).json"))
+            .write(to: fixture.hint)
     }
 
     private func commands(_ json: String) throws -> [AgentProjectionCommand] {
@@ -95,7 +98,7 @@ struct AgentCommandExecutorTests {
             let outcomes = try fixture.executor.run(commands(retirementChain(hintRunID: Self.run)))
             #expect(outcomes.count == 2)
 
-            #expect(!FileManager.default.fileExists(atPath: fixture.sessions.appendingPathComponent("\(Self.pane).json").path))
+            #expect(!FileManager.default.fileExists(atPath: fixture.hint.path))
             #expect(!FileManager.default.fileExists(atPath: fixture.record.path))
 
             // Retiring is a move, not a delete: a record that turns out to
@@ -120,7 +123,7 @@ struct AgentCommandExecutorTests {
 
             // The pane has moved on, so the hint stays where it is. The dead
             // record still has to go or it would be re-examined forever.
-            #expect(FileManager.default.fileExists(atPath: fixture.sessions.appendingPathComponent("\(Self.pane).json").path))
+            #expect(FileManager.default.fileExists(atPath: fixture.hint.path))
             #expect(!FileManager.default.fileExists(atPath: fixture.record.path))
         }
     }
@@ -176,7 +179,7 @@ struct AgentCommandExecutorTests {
 
             // Somebody is mid-write, so the snapshot this was decided from is
             // already stale even though the command said to continue.
-            let lockPath = fixture.sessions.appendingPathComponent("\(Self.pane).json.flock").path
+            let lockPath = try AgentRecordFixtures.lockURL(for: fixture.hint).path
             let descriptor = open(lockPath, O_CREAT | O_RDWR, 0o600)
             #expect(descriptor >= 0)
             #expect(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
@@ -232,7 +235,8 @@ struct AgentCommandExecutorTests {
             let fixture = try fixture(in: root)
             let closed = UUID().uuidString
             try writeHint(fixture, runID: Self.run)
-            try Data("{}".utf8).write(to: fixture.sessions.appendingPathComponent("\(closed).json"))
+            let closedHint = try fixture.sessions.appendingPathComponent(AgentRecordFixtures.hintFileName(closed))
+            try Data("{}".utf8).write(to: closedHint)
 
             let json = """
             [{
@@ -244,8 +248,8 @@ struct AgentCommandExecutorTests {
             """
             try fixture.executor.run(commands(json))
 
-            #expect(FileManager.default.fileExists(atPath: fixture.sessions.appendingPathComponent("\(Self.pane).json").path))
-            #expect(!FileManager.default.fileExists(atPath: fixture.sessions.appendingPathComponent("\(closed).json").path))
+            #expect(FileManager.default.fileExists(atPath: fixture.hint.path))
+            #expect(!FileManager.default.fileExists(atPath: closedHint.path))
         }
     }
 
@@ -273,9 +277,9 @@ struct AgentCommandExecutorTests {
     func worktreeEvent_deleteLeavesNoLockFile() throws {
         try withTempDir { root in
             let fixture = try fixture(in: root)
-            let events = fixture.state.appendingPathComponent("worktree-events", isDirectory: true)
+            let events = try AgentRecordFixtures.worktreeEvents(in: fixture.state)
             try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
-            let name = "1757000000-4242-abcdef-create.json"
+            let name = try "1757000000-4242-abcdef-create" + AgentRecordFixtures.layout().worktreeEventSuffix
             try Data("{}".utf8).write(to: events.appendingPathComponent(name))
             let json = """
             [{

@@ -9,8 +9,9 @@
 
 use limpid_agent_core::project;
 use limpid_agent_model::{
-    Capability, Command, Instants, Projection, ProjectionInput, ProjectionState,
-    ProviderDescriptor, ProviderId, RUN_RECORD_FILE_SUFFIX, RecordFile, WorktreeEventFile,
+    CWD_EVENT_FILE_SUFFIX, Capability, Command, Instants, Projection, ProjectionInput,
+    ProjectionState, ProviderDescriptor, ProviderId, RUN_RECORD_FILE_SUFFIX, RecordFile,
+    SESSION_HINT_FILE_SUFFIX, WorktreeEventFile,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -174,8 +175,13 @@ fn build_input(case: &Path) -> (ProjectionInput, Instants) {
         RUN_RECORD_FILE_SUFFIX,
         &codex,
     ));
-    let mut session_records = read_records(case, "sessions", ".json", &claude);
-    session_records.extend(read_records(case, "codex-sessions", ".json", &codex));
+    let mut session_records = read_records(case, "sessions", SESSION_HINT_FILE_SUFFIX, &claude);
+    session_records.extend(read_records(
+        case,
+        "codex-sessions",
+        SESSION_HINT_FILE_SUFFIX,
+        &codex,
+    ));
     let mut worktree_events = read_worktree_events(case, &claude);
     worktree_events.sort_by(|left, right| left.file_name.cmp(&right.file_name));
 
@@ -183,7 +189,7 @@ fn build_input(case: &Path) -> (ProjectionInput, Instants) {
         providers: descriptors(),
         records,
         session_records,
-        cwd_events: read_records(case, "cwd-events", ".cwd.json", &claude),
+        cwd_events: read_records(case, "cwd-events", CWD_EVENT_FILE_SUFFIX, &claude),
         worktree_events,
         resume_intents: hand.resume_intents,
         marks: hand.marks,

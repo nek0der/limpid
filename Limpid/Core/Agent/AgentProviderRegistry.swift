@@ -51,21 +51,35 @@ enum AgentProviderRegistry {
     }
 }
 
-/// How the hook runtime names the files in a provider's state directory. The
-/// same for every provider, which is why it is not part of a descriptor.
-struct AgentRecordLayout: Decodable {
+/// How the hook runtime names the files in a provider's directories. The same
+/// for every provider, which is why it is not part of a descriptor.
+struct AgentRecordLayout: Decodable, Equatable {
     /// What a run record's file name ends with; the rest of the name is the
     /// record's storage id.
     var runRecordSuffix: String
+    /// What a resume hint's file name ends with in the session directory; the
+    /// rest of the name is the pane's id.
+    var sessionHintSuffix: String
+    /// What a working-directory event's file name ends with in the cwd-event
+    /// directory; the rest of the name is the pane's id.
+    var cwdEventSuffix: String
+    /// The directory inside the state directory that worktree events land in.
+    var worktreeEventsDirectory: String
+    /// What a finished worktree event's file name ends with. Anything else in
+    /// that directory is a write still in progress.
+    var worktreeEventSuffix: String
+    /// What is appended to a file's path to name the sidecar every writer
+    /// locks before replacing or deleting that file.
+    var lockSuffix: String
 }
 
 extension AgentProviderRegistry {
     /// Read once, like the descriptors: the writer's naming is compiled in.
     ///
     /// Optional because the bridge can fail, and there is no name to fall back
-    /// to: a guessed one would find nothing the writer wrote. Without it no
-    /// record is read or addressed, the same "decide nothing" an empty
-    /// registry gives.
+    /// to: a guessed one would find nothing the writer wrote, or lock a file
+    /// no writer locks. Without it no record, hint, or event is read, locked,
+    /// or addressed, the same "decide nothing" an empty registry gives.
     static let recordLayout: AgentRecordLayout? = {
         do {
             return try JSONDecoder().decode(

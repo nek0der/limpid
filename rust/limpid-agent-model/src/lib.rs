@@ -12,6 +12,7 @@ mod adapter;
 mod approval;
 mod command;
 mod event;
+mod layout;
 mod projection;
 mod provider;
 mod record;
@@ -34,6 +35,10 @@ pub use command::{
     RecordPatch, ResumeIntent, Target,
 };
 pub use event::{AgentEvent, Titles};
+pub use layout::{
+    CWD_EVENT_FILE_SUFFIX, LOCK_FILE_SUFFIX, SESSION_HINT_FILE_SUFFIX, WORKTREE_EVENT_FILE_SUFFIX,
+    WORKTREE_EVENTS_DIRECTORY, cwd_event_file_name, session_hint_file_name,
+};
 pub use projection::{
     AcceptedRun, AttachmentResolution, AttentionMarks, Badge, EpisodeStamp, Focus, Instants,
     LifecycleInput, NOTIFICATION_BODY_CHARS, NOTIFICATION_PENDING_LIFETIME_MS, ObservedRuntime,
