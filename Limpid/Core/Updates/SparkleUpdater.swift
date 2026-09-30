@@ -9,8 +9,8 @@
 // controller wires up its own driver internally and there's no way
 // to swap it after construction.
 
+import Observation
 import Sparkle
-import SwiftUI
 
 // MARK: - Update presentation
 
@@ -47,109 +47,6 @@ struct UpdateDisplayItem {
     }
 
     static let placeholder = UpdateDisplayItem(displayVersion: "v0.0.0")
-}
-
-// MARK: - Main window marker
-
-/// Tags a Limpid main `NSWindow` so the updater can distinguish it
-/// from the Settings window (both are titled and visible but only
-/// the main window hosts `ToolbarTerminalColumnSegment` where the update affordance
-/// lives). The SwiftUI `Window(id:)` scene id does NOT propagate to
-/// `NSWindow.identifier`, so identifier-string filtering doesn't work.
-///
-/// Apply with `.background(LimpidMainWindowMarker())` inside the
-/// `WindowGroup` content. The driver consults `NSWindow.isLimpidMainWindow`
-/// in `hasInlineTarget`.
-struct LimpidMainWindowMarker: NSViewRepresentable {
-    /// Subclass that tags its window in `viewDidMoveToWindow`. The
-    /// previous shape deferred the tag via a single
-    /// `DispatchQueue.main.async` tick — if AppKit hadn't parented the
-    /// view by the time that block ran (a real race on cold launch
-    /// when SwiftUI is still attaching the representable to the
-    /// `WindowGroup`'s `NSWindow`), the block bailed silently and the
-    /// window was never marked, which then made `hasInlineTarget`
-    /// return false for the entire session. `viewDidMoveToWindow` is
-    /// correctness-by-construction (AppKit fires it the moment the
-    /// view actually enters a window) and matches `WindowAccessor`'s
-    /// idiom.
-    private final class MarkerView: NSView {
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            guard let window else { return }
-            objc_setAssociatedObject(
-                window,
-                LimpidMainWindowMarker.associatedKey,
-                NSNumber(value: true),
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
-    }
-
-    func makeNSView(context _: Context) -> NSView {
-        MarkerView()
-    }
-
-    func updateNSView(_: NSView, context _: Context) {}
-
-    /// `objc_setAssociatedObject` needs a stable raw key. Using a
-    /// static let on the struct keeps the address fixed for the
-    /// process lifetime.
-    nonisolated(unsafe) static let associatedKey: UnsafeRawPointer = {
-        let p = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
-        p.initialize(to: 0)
-        return UnsafeRawPointer(p)
-    }()
-}
-
-extension NSWindow {
-    /// `true` when the window has been tagged by `LimpidMainWindowMarker`
-    /// (i.e. it hosts a Limpid main `ContentView`, not the Settings
-    /// scene or a Sparkle alert window).
-    var isLimpidMainWindow: Bool {
-        (objc_getAssociatedObject(self, LimpidMainWindowMarker.associatedKey) as? NSNumber)?.boolValue == true
-    }
-
-    /// `true` when the window has been tagged by `LimpidSettingsWindowMarker`
-    /// (i.e. it hosts the `SettingsScene`, which also renders an inline
-    /// `UpdatePopover` for the Update affordance on `GeneralPane`).
-    var isLimpidSettingsWindow: Bool {
-        (objc_getAssociatedObject(self, LimpidSettingsWindowMarker.associatedKey) as? NSNumber)?.boolValue == true
-    }
-}
-
-/// Tags the Settings window so the updater can treat it as a valid
-/// inline target alongside the main window. Without this, opening
-/// Settings while the main window is hidden and clicking Check Now…
-/// triggered both Sparkle's standard modal AND Limpid's inline
-/// popover at once because `hasInlineTarget` only knew about the main
-/// window. The Settings GeneralPane renders its own `UpdatePopover`,
-/// so once the window is tagged the driver can drop the standard
-/// modal even when the main window is offscreen.
-struct LimpidSettingsWindowMarker: NSViewRepresentable {
-    private final class MarkerView: NSView {
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            guard let window else { return }
-            objc_setAssociatedObject(
-                window,
-                LimpidSettingsWindowMarker.associatedKey,
-                NSNumber(value: true),
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
-    }
-
-    func makeNSView(context _: Context) -> NSView {
-        MarkerView()
-    }
-
-    func updateNSView(_: NSView, context _: Context) {}
-
-    nonisolated(unsafe) static let associatedKey: UnsafeRawPointer = {
-        let p = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
-        p.initialize(to: 0)
-        return UnsafeRawPointer(p)
-    }()
 }
 
 // MARK: - One-shot callback wrapper
@@ -269,35 +166,6 @@ final class UpdateStateModel {
         case .idle, .available, .readyToInstall, .installed, .notFound, .error:
             false
         }
-    }
-}
-
-/// SwiftUI menu item suitable for placement in
-/// `CommandGroup(after: .appInfo)`. Both Debug (mock pipeline) and
-/// Release (real `checkForUpdates()`) flow through here; the button
-/// disables itself whenever `UpdateStateModel.isBusy` is true so
-/// concurrent pipelines can't be launched from the menu.
-///
-/// We don't gate on Sparkle's `canCheckForUpdates` because that flag
-/// has been observed to stick at `false` after a failed appcast fetch
-/// (404, no network at launch, etc.), leaving the menu item
-/// permanently un-clickable.
-struct CheckForUpdatesMenuItem: View {
-    let updaterStack: UpdaterStack
-
-    var body: some View {
-        Button("Check for Updates…") {
-            #if DEBUG
-                MockUpdateAvailability.simulate(into: updaterStack.stateModel)
-            #else
-                updaterStack.updater.checkForUpdates()
-            #endif
-        }
-        // The state model isn't injected into the CommandGroup
-        // environment, so we observe it directly via Bindable rather
-        // than `@Environment`. The closure-style read keeps SwiftUI's
-        // dependency tracking honest.
-        .disabled(updaterStack.stateModel.isBusy)
     }
 }
 
