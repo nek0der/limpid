@@ -434,7 +434,7 @@ struct ShortcutModifiers: OptionSet, Codable, Hashable {
 ///   - A **named key** (`"return"`, `"left"`, `"f1"`, …) — for keys
 ///     that don't have a single useful character (arrows, function
 ///     keys, modifiers). These map to Ghostty's physical-key enum
-///     and to SwiftUI's `KeyEquivalent` constants. Our stored `return`
+///     and to a SwiftUI `KeyEquivalent` (see `NamedKey.keyEquivalent`). Our stored `return`
 ///     name becomes Ghostty's `enter` alias at serialization time.
 ///
 /// Why not use Ghostty's `equal` / `bracket_left` / `digit_0` names
@@ -515,8 +515,8 @@ extension StoredShortcut {
     /// Stored key → SwiftUI `KeyEquivalent`. Named keys come from
     /// `NamedKey.keyEquivalent`; single-character keys (letters / digits /
     /// punctuation) wrap as `KeyEquivalent(Character(key))`. Returns
-    /// `nil` for stored values SwiftUI can't express — see
-    /// `NamedKey.keyEquivalent` for which ones (notably F-keys).
+    /// `nil` only for a stored value that is neither, which a hand-edited
+    /// settings file can produce.
     var swiftUIKeyEquivalent: KeyEquivalent? {
         if let named = NamedKey(storedName: key) {
             return named.keyEquivalent
@@ -547,12 +547,14 @@ extension NamedKey {
         }
     }
 
-    /// SwiftUI's constant for this key. `KeyEquivalent` has none for the
-    /// function keys, so a menu item bound to one shows no shortcut and
-    /// the menu never fires it. Only the actions libghostty runs itself
-    /// (those with a `LimpidShortcutAction.ghosttyAction`) still fire, and
-    /// only while a terminal surface has focus.
-    var keyEquivalent: KeyEquivalent? {
+    /// The key a menu item needs to fire on this key. `KeyEquivalent` has
+    /// constants only for the keys it names; for a function key we hand it
+    /// the character AppKit itself uses for that key, one of the private-use
+    /// characters from `NSF1FunctionKey` (U+F704) upward. SwiftUI passes the
+    /// character through to `NSMenuItem.keyEquivalent` unchanged, so the
+    /// menu both shows the key and fires on it, and a menu-owned action bound
+    /// to a function key works like one bound to a letter.
+    var keyEquivalent: KeyEquivalent {
         switch self {
         case .return: .return
         case .tab: .tab
@@ -568,8 +570,21 @@ extension NamedKey {
         case .end: .end
         case .pageUp: .pageUp
         case .pageDown: .pageDown
-        default: nil
+        case .f1, .f2, .f3, .f4, .f5, .f6, .f7, .f8, .f9, .f10,
+             .f11, .f12, .f13, .f14, .f15, .f16, .f17, .f18, .f19, .f20:
+            KeyEquivalent(Character(Self.functionKeyCharacter(number: functionKeyNumber ?? 1)))
         }
+    }
+
+    /// AppKit numbers the function-key characters contiguously from F1, so
+    /// F*n* is U+F704 + *n* − 1. We write the value out rather than read
+    /// `NSF1FunctionKey` because this file stays free of AppKit; the tests
+    /// check each key against AppKit's constants.
+    private static func functionKeyCharacter(number: Int) -> Unicode.Scalar {
+        // The sum stays inside the Private Use Area for every key we name,
+        // which is never a surrogate, so the initializer cannot fail; the
+        // fallback only keeps the accessor total.
+        Unicode.Scalar(UInt32(0xF704 + number - 1)) ?? "\u{F704}"
     }
 }
 

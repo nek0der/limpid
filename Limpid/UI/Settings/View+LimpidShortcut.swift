@@ -18,10 +18,10 @@ extension View {
 
     /// Bind this view's `.keyboardShortcut` to whatever the user has
     /// configured for `action`. Falls through to the action's
-    /// built-in default when no override is set. Silently drops the
-    /// shortcut when the stored key has no SwiftUI `KeyEquivalent`
-    /// representation (rare; libghostty still handles the keypress
-    /// when the terminal surface has focus).
+    /// built-in default when no override is set. Every named key and
+    /// every single character has a `KeyEquivalent`; the shortcut is
+    /// dropped only for a stored key that is neither, which only a
+    /// hand-edited settings file can produce.
     func limpidShortcut(
         _ action: LimpidShortcutAction,
         in store: SettingsStore
