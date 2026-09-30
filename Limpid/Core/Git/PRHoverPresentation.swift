@@ -59,13 +59,27 @@ final class PRHoverPresentation {
     /// ordering `hoveringRows` exists to tolerate.
     private var showTaskRowID: ContainerID?
 
+    /// How long the pointer has to rest on a row before its card
+    /// appears. Long enough that dragging the pointer down the sidebar
+    /// does not flash a card per row, short enough to read as a
+    /// deliberate peek rather than a wait.
+    static let openDelay: Duration = .milliseconds(250)
+
+    /// Grace period started when the pointer leaves either the row or
+    /// the card, long enough to cross the gap between them before the
+    /// card is taken away. Whether it is actually gone is decided when
+    /// the period expires, not when it starts. Long enough for the
+    /// trip, short enough that a dismissal the user did intend does
+    /// not feel sticky — nothing ties it to the open delay.
+    static let dismissGrace: Duration = .milliseconds(150)
+
     /// Grace period between the pointer leaving everything and the
     /// card disappearing, so it can cross the row → card gap.
     /// Injectable so tests can drive the state machine without
     /// sleeping for real.
     private let dismissDelay: Duration
 
-    init(dismissDelay: Duration = LimpidLayout.prHoverCardDismissGrace) {
+    init(dismissDelay: Duration = PRHoverPresentation.dismissGrace) {
         self.dismissDelay = dismissDelay
     }
 
