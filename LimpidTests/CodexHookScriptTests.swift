@@ -67,7 +67,7 @@ struct CodexHookScriptTests {
             }
 
             let recordID = extraEnvironment["LIMPID_AGENT_RUN_ID"] ?? paneID
-            let record = states.appendingPathComponent("\(recordID).state.json")
+            let record = try states.appendingPathComponent(AgentRecordFixtures.recordFileName(recordID))
             guard let data = try? Data(contentsOf: record) else { return nil }
             return try JSONSerialization.jsonObject(with: data) as? [String: Any]
         }
@@ -190,7 +190,7 @@ struct CodexHookScriptTests {
             ],
             afterEach: { _, states, paneID, eventIndex in
                 let snapshotKey = paneID.lowercased()
-                let recordURL = states.appendingPathComponent("\(paneID).state.json")
+                let recordURL = try states.appendingPathComponent(AgentRecordFixtures.recordFileName(paneID))
                 let privateIndexURL = repo.url.appendingPathComponent(".git/limpid/turn-\(snapshotKey).index")
                 let record = try JSONSerialization.jsonObject(with: Data(contentsOf: recordURL)) as? [String: Any]
                 if eventIndex == 0 {
@@ -292,7 +292,7 @@ struct CodexHookScriptTests {
         }
         var records = [[String: Any]]()
         _ = try runHooks(payloads, extraEnvironment: environment) { _, states, paneID, _ in
-            let url = states.appendingPathComponent("\(paneID).state.json")
+            let url = try states.appendingPathComponent(AgentRecordFixtures.recordFileName(paneID))
             let data = try Data(contentsOf: url)
             let record = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
             records.append(record)
@@ -500,7 +500,7 @@ struct CodexHookScriptTests {
             process.waitUntilExit()
 
             let data = try Data(
-                contentsOf: states.appendingPathComponent("\(paneID).state.json")
+                contentsOf: states.appendingPathComponent(AgentRecordFixtures.recordFileName(paneID))
             )
             let record = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             #expect(record?["pid"] as? String == String(process.processIdentifier))

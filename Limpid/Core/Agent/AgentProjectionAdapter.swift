@@ -353,7 +353,7 @@ final class AgentProjectionAdapter {
         var input = AgentProjectionInput()
         input.providers = descriptors
         for (provider, directory) in directories {
-            input.records += files(in: directory.state, suffix: ".state.json", provider: provider)
+            input.records += runRecords(in: directory, provider: provider)
             input.sessionRecords += files(in: directory.sessions, suffix: ".json", provider: provider)
         }
         input.resumeIntents = intents()
@@ -381,7 +381,7 @@ final class AgentProjectionAdapter {
         input.acknowledged = pending
 
         for (provider, directory) in directories {
-            input.records += files(in: directory.state, suffix: ".state.json", provider: provider)
+            input.records += runRecords(in: directory, provider: provider)
             input.sessionRecords += files(in: directory.sessions, suffix: ".json", provider: provider)
             if let cwd = directory.cwdEvents {
                 input.cwdEvents += files(in: cwd, suffix: ".cwd.json", provider: provider)
@@ -398,6 +398,14 @@ final class AgentProjectionAdapter {
         input.presence = presence(for: input.records)
         input.focus = focus(in: session)
         return input
+    }
+
+    /// The provider's run records, found by the name the writer gives them.
+    /// Without that name there is no file we can call a record, so the pass
+    /// sees none rather than reading files by a guess.
+    private func runRecords(in directory: AgentDirectories, provider: String) -> [AgentProjectionFile] {
+        guard let suffix = directory.runRecordSuffix else { return [] }
+        return files(in: directory.state, suffix: suffix, provider: provider)
     }
 
     private func files(in directory: URL, suffix: String, provider: String) -> [AgentProjectionFile] {

@@ -136,7 +136,7 @@ struct AgentRuntimeHookRegressionTests {
             let runID = UUID().uuidString
             let states = directory.appendingPathComponent("states")
             try FileManager.default.createDirectory(at: states, withIntermediateDirectories: true)
-            let legacy = states.appendingPathComponent("\(paneID).state.json")
+            let legacy = try states.appendingPathComponent(AgentRecordFixtures.recordFileName(paneID))
             let sentinel = Data("legacy writer owns this file".utf8)
             try sentinel.write(to: legacy)
             _ = try shell("""
@@ -148,7 +148,8 @@ struct AgentRuntimeHookRegressionTests {
                 "LIMPID_CODEX_SESSIONS_DIR": directory.appendingPathComponent("sessions").path
             ])
             #expect(try Data(contentsOf: legacy) == sentinel)
-            #expect(FileManager.default.fileExists(atPath: states.appendingPathComponent("\(runID).state.json").path))
+            let record = try states.appendingPathComponent(AgentRecordFixtures.recordFileName(runID))
+            #expect(FileManager.default.fileExists(atPath: record.path))
         }
     }
 

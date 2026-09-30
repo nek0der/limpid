@@ -51,6 +51,34 @@ enum AgentProviderRegistry {
     }
 }
 
+/// How the hook runtime names the files in a provider's state directory. The
+/// same for every provider, which is why it is not part of a descriptor.
+struct AgentRecordLayout: Decodable {
+    /// What a run record's file name ends with; the rest of the name is the
+    /// record's storage id.
+    var runRecordSuffix: String
+}
+
+extension AgentProviderRegistry {
+    /// Read once, like the descriptors: the writer's naming is compiled in.
+    ///
+    /// Optional because the bridge can fail, and there is no name to fall back
+    /// to: a guessed one would find nothing the writer wrote. Without it no
+    /// record is read or addressed, the same "decide nothing" an empty
+    /// registry gives.
+    static let recordLayout: AgentRecordLayout? = {
+        do {
+            return try JSONDecoder().decode(
+                AgentRecordLayout.self,
+                from: LimpidProjectionBridge.recordLayout()
+            )
+        } catch {
+            log.error("record layout unavailable: \(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }()
+}
+
 /// What one provider needs the platform to set up for its hooks to reach
 /// Limpid. Declared by the provider crate so adding one is a crate and its
 /// fixtures, not a list on this side that could disagree about a name.

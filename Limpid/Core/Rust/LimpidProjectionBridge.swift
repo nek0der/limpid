@@ -53,6 +53,14 @@ enum LimpidProjectionBridge {
         } input: { Data() }
     }
 
+    /// How run records are named in each provider's state directory, as
+    /// `{ "runRecordSuffix": "<suffix>" }`.
+    static func recordLayout() throws -> Data {
+        try call { pointers in
+            limpid_projection_record_layout_v1(pointers.out, pointers.outCount)
+        } input: { Data() }
+    }
+
     /// Decides what to restore or retire before the interface is built.
     static func onLaunch(input: Data, now: String) throws -> Data {
         try lifecycle(input: input, now: now, limpid_projection_on_launch_v1)

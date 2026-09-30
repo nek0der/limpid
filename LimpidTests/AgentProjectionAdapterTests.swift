@@ -40,7 +40,7 @@ struct AgentProjectionAdapterTests {
             "updatedAt": "2026-09-14T12:00:00Z",
             "pid": "4242"
         ]
-        let recordURL = state.appendingPathComponent("\(Self.run).state.json")
+        let recordURL = try state.appendingPathComponent(AgentRecordFixtures.recordFileName(Self.run))
         try JSONSerialization.data(withJSONObject: record).write(to: recordURL)
 
         let intents = AgentResumeIntentStore(
@@ -142,7 +142,7 @@ struct AgentProjectionAdapterTests {
                 "pid": "4242"
             ]
             try JSONSerialization.data(withJSONObject: record)
-                .write(to: state.appendingPathComponent("\(Self.run).state.json"))
+                .write(to: state.appendingPathComponent(AgentRecordFixtures.recordFileName(Self.run)))
             let hint: [String: Any] = [
                 "schemaVersion": 1,
                 "paneId": pane.uuidString,
@@ -168,10 +168,9 @@ struct AgentProjectionAdapterTests {
             // the hint it owned goes with it, for every provider alike. The
             // pane being restored changes nothing; the pid is what decides.
             #expect(adapter.lastFailure == nil)
+            let recordURL = try state.appendingPathComponent(AgentRecordFixtures.recordFileName(Self.run))
             #expect(!FileManager.default.fileExists(atPath: hintURL.path))
-            #expect(!FileManager.default.fileExists(
-                atPath: state.appendingPathComponent("\(Self.run).state.json").path
-            ))
+            #expect(!FileManager.default.fileExists(atPath: recordURL.path))
             #expect(session.activeTab?.agentResumeCandidates[pane] == nil)
         }
     }

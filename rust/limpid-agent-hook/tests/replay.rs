@@ -2,7 +2,7 @@
 //! state directory and checks what lands on disk.
 
 use limpid_agent_hook::{HookEnv, HookOutcome, HookRuntime, NoSnapshots, run_hook};
-use limpid_agent_model::{RunRecord, RunState};
+use limpid_agent_model::{RunRecord, RunState, run_record_file_name};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -78,7 +78,7 @@ impl Scratch {
     }
 
     fn record(&self) -> Option<RunRecord> {
-        let bytes = fs::read(self.root.join("states").join(format!("{RUN}.state.json"))).ok()?;
+        let bytes = fs::read(self.root.join("states").join(run_record_file_name(RUN))).ok()?;
         Some(RunRecord::decode(&bytes).expect("record decodes"))
     }
 
@@ -164,7 +164,7 @@ fn claude_session_basic_writes_a_version_three_record_and_drops_the_hint() {
         scratch
             .root
             .join("states")
-            .join(format!("{RUN}.state.json.flock"))
+            .join(format!("{}.flock", run_record_file_name(RUN)))
             .exists(),
         cfg!(unix)
     );
@@ -260,7 +260,7 @@ fn a_version_two_record_is_continued_with_a_higher_revision() {
     let states = scratch.root.join("states");
     fs::create_dir_all(&states).expect("states");
     fs::write(
-        states.join(format!("{RUN}.state.json")),
+        states.join(run_record_file_name(RUN)),
         format!(
             r#"{{"schemaVersion":2,"paneId":"{PANE}","state":"running","detail":"","runStartedAt":"2026-09-13T00:00:00Z","updatedAt":"2026-09-13T00:00:00Z","lastHookEvent":"UserPromptSubmit","firstPrompt":"old","revision":7,"stateEpisodeToken":"7","runId":"{RUN}"}}"#
         ),
@@ -345,7 +345,7 @@ fn a_busy_record_lock_skips_the_write_and_logs() {
         .write(true)
         .create(true)
         .truncate(false)
-        .open(states.join(format!("{RUN}.state.json.flock")))
+        .open(states.join(format!("{}.flock", run_record_file_name(RUN))))
         .expect("sidecar");
     sidecar.try_lock().expect("hold the lock");
     let payloads = fixture_case("claude", "session-basic");

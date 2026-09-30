@@ -30,7 +30,7 @@ use limpid_agent_core::{
 };
 use limpid_agent_model::{
     Capability, HookContext, InstallRecipe, ProviderAdapter, ProviderDescriptor, ProviderId,
-    RawHookInput, RunRecord, TmuxEndpoint,
+    RawHookInput, RunRecord, TmuxEndpoint, run_record_file_name,
 };
 use limpid_provider_claude::ClaudeAdapter;
 use limpid_provider_codex::CodexAdapter;
@@ -249,7 +249,7 @@ fn write_events(
 ) {
     let run_id = &apply_context.run_id;
     let pane_id = &apply_context.pane_id;
-    let record_path = directories.state.join(format!("{run_id}.state.json"));
+    let record_path = directories.state.join(run_record_file_name(run_id));
     for event in events {
         // `git add -A` can take long in a large repository, so the capture
         // happens before the record lock is taken, as the shell receiver did;

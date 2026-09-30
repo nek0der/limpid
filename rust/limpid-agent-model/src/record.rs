@@ -15,6 +15,24 @@ use std::collections::BTreeMap;
 /// title resolver's candidate limit.
 pub const MAX_RECORD_TEXT_BYTES: usize = 4_096;
 
+/// What a run record's file name ends with in its provider's state directory.
+/// The rest of the name is the record's storage id: its run id, or the launch
+/// pane id for a record from before run ids existed.
+///
+/// Declared once because the hook runtime writes the file under this name and
+/// the host finds, rewrites, and retires it by the same name. The host asks the
+/// bridge for this value rather than keeping a copy, since a copy that drifted
+/// would compile, pass its own tests, and leave every run invisible. Records
+/// already on disk, and the shell receivers kept as the rollback path, use
+/// exactly this name, so changing it strands them.
+pub const RUN_RECORD_FILE_SUFFIX: &str = ".state.json";
+
+/// The file name of the run record stored under `storage_id`.
+#[must_use]
+pub fn run_record_file_name(storage_id: &str) -> String {
+    format!("{storage_id}{RUN_RECORD_FILE_SUFFIX}")
+}
+
 /// Lifecycle state of one run, as the badge and Waiting rules read it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -275,6 +293,16 @@ mod tests {
     use super::*;
 
     const V2: &str = r#"{"schemaVersion":2,"paneId":"6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10","state":"idle","detail":"","runStartedAt":"","updatedAt":"2026-09-14T00:00:00Z","lastHookEvent":"SessionStart","pid":"123","sessionId":"abc","stateEpisodeToken":"1","runId":"6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11","revision":1,"futureField":{"nested":true}}"#;
+
+    #[test]
+    fn the_record_file_name_matches_what_is_already_on_disk() {
+        // Existing records and the shell receivers use this name; a change
+        // here must come with a migration, not slip through as a rename.
+        assert_eq!(
+            run_record_file_name("6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11"),
+            "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11.state.json"
+        );
+    }
 
     #[test]
     fn version_two_empty_run_started_at_becomes_none() {

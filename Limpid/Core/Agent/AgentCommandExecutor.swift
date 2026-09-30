@@ -16,6 +16,36 @@ struct AgentDirectories {
     var retired: URL {
         state.appendingPathComponent("retired", isDirectory: true)
     }
+
+    /// What a run record's file name ends with in `state`. Asked of the Rust
+    /// writer rather than spelled here, so the side that reads a record cannot
+    /// disagree with the side that wrote it about which file it is in.
+    var runRecordSuffix: String? {
+        AgentProviderRegistry.recordLayout?.runRecordSuffix
+    }
+
+    /// The file the run record stored under `storageID` lives in.
+    func recordURL(storageID: String) -> URL? {
+        runRecordSuffix.map { state.appendingPathComponent(storageID + $0) }
+    }
+
+    /// The name a record retired at `retiredAt` gets in `retired`. The stamp
+    /// is the only record of when it was retired, which is what pruning reads
+    /// back; the nonce keeps two retirements in the same second apart.
+    func retiredRecordName(storageID: String, retiredAt: Int) -> String? {
+        runRecordSuffix.map { "\(storageID).\(retiredAt).\(UUID().uuidString)\($0)" }
+    }
+
+    /// When the file `name` in `retired` was retired, or nil when the name is
+    /// not one `retiredRecordName` produces.
+    func retiredAt(ofRetiredFileNamed name: String) -> TimeInterval? {
+        guard let suffix = runRecordSuffix, name.hasSuffix(suffix) else { return nil }
+        let fields = name.dropLast(suffix.count).split(separator: ".")
+        guard fields.count == 3, UUID(uuidString: String(fields[0])) != nil,
+              let stamp = TimeInterval(fields[1]), UUID(uuidString: String(fields[2])) != nil
+        else { return nil }
+        return stamp
+    }
 }
 
 /// Runs the file commands a projection pass returned.
@@ -124,8 +154,13 @@ struct AgentCommandExecutor {
         else {
             return .preconditionChanged
         }
+        guard let name = owner.retiredRecordName(
+            storageID: storageID,
+            retiredAt: Int(Date().timeIntervalSince1970)
+        ) else {
+            return .preconditionChanged
+        }
         SecureFileWrite.ensureUserOnlyDirectory(owner.retired)
-        let name = "\(storageID).\(Int(Date().timeIntervalSince1970)).\(UUID().uuidString).state.json"
         do {
             try FileManager.default.moveItem(
                 at: url,
@@ -204,9 +239,9 @@ struct AgentCommandExecutor {
         lifetimeSeconds: Int
     ) -> RecordMutationOutcome {
         guard case let .retiredRecords(provider) = target,
-              let retired = directories[provider]?.retired,
+              let owner = directories[provider],
               let urls = try? FileManager.default.contentsOfDirectory(
-                  at: retired,
+                  at: owner.retired,
                   includingPropertiesForKeys: nil
               )
         else {
@@ -215,12 +250,7 @@ struct AgentCommandExecutor {
         let entries = urls.compactMap { url -> (URL, TimeInterval)? in
             // The name is the only thing that says when a record was retired,
             // so anything that does not parse is left where it is.
-            let fields = url.lastPathComponent.split(separator: ".")
-            guard fields.count == 5, UUID(uuidString: String(fields[0])) != nil,
-                  let stamp = TimeInterval(fields[1]), UUID(uuidString: String(fields[2])) != nil,
-                  fields[3] == "state", fields[4] == "json"
-            else { return nil }
-            return (url, stamp)
+            owner.retiredAt(ofRetiredFileNamed: url.lastPathComponent).map { (url, $0) }
         }.sorted { $0.1 == $1.1 ? $0.0.path < $1.0.path : $0.1 > $1.1 }
 
         let now = Date().timeIntervalSince1970
@@ -310,7 +340,7 @@ struct AgentCommandExecutor {
         switch target {
         case let .record(provider, storageID):
             isIdentifier(storageID)
-                ? directories[provider]?.state.appendingPathComponent("\(storageID).state.json")
+                ? directories[provider]?.recordURL(storageID: storageID)
                 : nil
         case let .sessionHint(provider, pane):
             directories[provider]?.sessions

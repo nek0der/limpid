@@ -10,7 +10,7 @@
 use limpid_agent_core::project;
 use limpid_agent_model::{
     Capability, Command, Instants, Projection, ProjectionInput, ProjectionState,
-    ProviderDescriptor, ProviderId, RecordFile, WorktreeEventFile,
+    ProviderDescriptor, ProviderId, RUN_RECORD_FILE_SUFFIX, RecordFile, WorktreeEventFile,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -167,11 +167,11 @@ fn build_input(case: &Path) -> (ProjectionInput, Instants) {
     let claude = provider("claude");
     let codex = provider("codex");
 
-    let mut records = read_records(case, "agent-states", ".state.json", &claude);
+    let mut records = read_records(case, "agent-states", RUN_RECORD_FILE_SUFFIX, &claude);
     records.extend(read_records(
         case,
         "codex-agent-states",
-        ".state.json",
+        RUN_RECORD_FILE_SUFFIX,
         &codex,
     ));
     let mut session_records = read_records(case, "sessions", ".json", &claude);

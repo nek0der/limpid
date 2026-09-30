@@ -201,6 +201,12 @@ if ! command -v limpid_is_uuid >/dev/null 2>&1 || ! limpid_is_uuid "$run_id"; th
 fi
 run_id=$(printf '%s' "$run_id" | tr 'a-f' 'A-F')
 record_id="$run_id"
+# The suffix is the one `RUN_RECORD_FILE_SUFFIX` in limpid-agent-model
+# declares and the app finds records by. A shell script cannot read it from
+# there, so ClaudeHookScriptTests runs this receiver and reads the record back
+# by the declared name: a drift here fails that suite instead of hiding runs.
+record_suffix=".state.json"
+record_name="$record_id$record_suffix"
 
 tmux_socket=""
 tmux_session=""
@@ -274,7 +280,7 @@ case "$hook_event" in
         # command / question text) rather than clobbering it with the
         # generic "Claude needs your permission to use X" message.
         # Fall back to the message, then a literal placeholder.
-        prev_detail="$(plutil -extract detail raw -o - "$states_dir/$record_id.state.json" 2>/dev/null)"
+        prev_detail="$(plutil -extract detail raw -o - "$states_dir/$record_name" 2>/dev/null)"
         if [ -n "$prev_detail" ]; then
           detail_safe="$(json_escape "$prev_detail")"
         elif [ -n "$message_safe" ]; then
@@ -307,7 +313,7 @@ case "$hook_event" in
 esac
 
 if [ -n "$new_state" ] && command -v limpid_acquire_record_lock >/dev/null 2>&1; then
-  state_lock_target="$states_dir/$record_id.state.json"
+  state_lock_target="$states_dir/$record_name"
   if limpid_acquire_record_lock "$state_lock_target"; then
     trap 'limpid_release_record_lock' 0
     trap 'exit 0' HUP INT TERM
@@ -317,8 +323,8 @@ if [ -n "$new_state" ] && command -v limpid_acquire_record_lock >/dev/null 2>&1;
 fi
 
 if [ -n "$new_state" ]; then
-  state_final="$states_dir/$record_id.state.json"
-  state_tmp="$states_dir/.$record_id.state.json.tmp.$$"
+  state_final="$states_dir/$record_name"
+  state_tmp="$states_dir/.$record_name.tmp.$$"
   # `runStartedAt` is set at UserPromptSubmit and cleared on Stop /
   # SessionStart / SessionEnd so the tab column tooltip can compute elapsed
   # seconds without extra bookkeeping. `lastPrompt` follows the same
@@ -587,7 +593,7 @@ if [ "$hook_event" = "SessionEnd" ]; then
     # native conversation check against a newer SessionStart replacement.
     [ -z "$owner_run" ] || exit 0
     hint_updated=$(plutil -extract updatedAt raw -o - "$sessions_dir/$pane_id.json" 2>/dev/null || true)
-    for candidate in "$states_dir"/*.state.json; do
+    for candidate in "$states_dir"/*"$record_suffix"; do
       [ -f "$candidate" ] || continue
       candidate_pane=$(plutil -extract paneId raw -o - "$candidate" 2>/dev/null || true)
       [ "$candidate_pane" = "$pane_id" ] || continue

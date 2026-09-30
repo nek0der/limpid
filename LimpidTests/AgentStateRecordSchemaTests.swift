@@ -35,7 +35,7 @@ struct AgentStateRecordSchemaTests {
             try FileManager.default.createDirectory(at: states, withIntermediateDirectories: true)
             try Data(json.replacingOccurrences(of: "%PANE%", with: paneID.uuidString).utf8)
                 .write(to: states.appendingPathComponent(
-                    "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11.state.json"
+                    AgentRecordFixtures.recordFileName("6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11")
                 ))
             let projection = ProjectionFixture.adapter(
                 provider: provider,

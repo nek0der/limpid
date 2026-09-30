@@ -9,6 +9,7 @@
 // outside `Limpid` so nobody mistakes it for a second authority on the shape.
 
 import Foundation
+import Testing
 @testable import Limpid
 
 /// One agent lifecycle record, as `limpid-agent-hook` writes it.
@@ -87,24 +88,34 @@ enum AgentRecordFixtures {
 
     // MARK: - Lifecycle records
 
+    /// The file name the writer gives the run record stored under
+    /// `storageID`, from the layout the Rust side reports. Suites build record
+    /// paths through this rather than spelling the name, so a writer that
+    /// stops agreeing with the app fails a suite instead of passing against a
+    /// copy of its own.
+    static func recordFileName(_ storageID: String) throws -> String {
+        try storageID + #require(AgentProviderRegistry.recordLayout).runRecordSuffix
+    }
+
     /// Writes `record` into `directory` under the name its storage id gives
     /// it, creating the directory when it is not there yet.
     static func write(_ record: AgentStateRecordFixture, to directory: URL) throws {
         try ensureDirectory(directory)
         try encoder.encode(record).write(
-            to: directory.appendingPathComponent("\(record.storageID).state.json")
+            to: directory.appendingPathComponent(recordFileName(record.storageID))
         )
     }
 
     /// Every well-formed record in `directory`. A file whose name does not
-    /// parse as `<uuid>.state.json`, or whose payload disagrees with its own
-    /// name, is skipped, so a partial write or a misnamed file cannot be read
-    /// as a record.
+    /// parse as `<uuid>` plus the record suffix, or whose payload disagrees
+    /// with its own name, is skipped, so a partial write or a misnamed file
+    /// cannot be read as a record.
     static func records(in directory: URL) -> [AgentStateRecordFixture] {
+        guard let suffix = AgentProviderRegistry.recordLayout?.runRecordSuffix else { return [] }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         return names.compactMap { name in
-            guard name.hasSuffix(".state.json"), !name.hasPrefix(".") else { return nil }
-            let stem = String(name.dropLast(".state.json".count))
+            guard name.hasSuffix(suffix), !name.hasPrefix(".") else { return nil }
+            let stem = String(name.dropLast(suffix.count))
             guard UUID(uuidString: stem) != nil,
                   let data = try? Data(contentsOf: directory.appendingPathComponent(name)),
                   let record = try? decoder.decode(AgentStateRecordFixture.self, from: data),
