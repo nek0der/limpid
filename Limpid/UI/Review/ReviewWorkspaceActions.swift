@@ -10,6 +10,28 @@ extension ReviewWorkspaceView {
 
     // MARK: - Actions
 
+    /// Opens the reviewed file at `line` of the file as it is on disk. The
+    /// staged and turn layers show a snapshot that later edits can move away
+    /// from; the editor then lands near the line rather than on it, which is
+    /// still where the reader wanted to be.
+    func openInEditor(line: Int) {
+        guard let file = store.diff?.file,
+              let fileURL = ReviewFileAction.fileURL(for: file.path, in: store.root),
+              FileManager.default.fileExists(atPath: fileURL.path)
+        else {
+            toastCenter.show(ToastItem(message: String(localized: "The file doesn’t exist."), undo: nil))
+            return
+        }
+        let application = FileOpener.application(for: settingsStore.settings.advanced.fileApplication)
+        Task {
+            do {
+                try await FileOpener.open(fileURL, at: FilePosition(line: line, column: nil), with: application)
+            } catch {
+                toastCenter.show(ToastItem(message: error.localizedDescription, undo: nil))
+            }
+        }
+    }
+
     func toggleTerminal() {
         if reviewPresentation.isStripCollapsed, let paneID = reviewPresentation.originPaneID {
             registry.updateOcclusion(visibleIDs: [paneID])
@@ -38,8 +60,7 @@ extension ReviewWorkspaceView {
         // here. Whatever went wrong against the previous state is not this
         // one's problem.
         store.clearError()
-        selection = ReviewSelection()
-        textSelection.clear()
+        selection.clear()
         composer.cancel()
         pendingJump = nil
         // Read before the wait and compared after it, the same way `insert`
@@ -84,16 +105,17 @@ extension ReviewWorkspaceView {
     }
 
     func beginComposing() {
-        guard let start = selection.startLineID, let end = selection.endLineID else { return }
+        let run = selection.lines
+        guard let start = run.startLineID, let end = run.endLineID else { return }
         // Anchored to the last line the run actually covers in the column it
         // was taken in. `ReviewStore.add` filters the run the same way, so a
         // composer anchored to the raw end of the range sat under a line that
         // column does not draw — rows away from the highlight it belongs to,
         // and naming a span the saved comment would not have.
         let covered = (store.diff?.lines ?? [])
-            .filter { $0.id >= start && $0.id <= end && ReviewSide.covers($0, on: selection.side) }
+            .filter { $0.id >= start && $0.id <= end && ReviewSide.covers($0, on: run.side) }
             .map(\.id)
-        composer.compose(start: covered.min() ?? start, end: covered.max() ?? end, side: selection.side)
+        composer.compose(start: covered.min() ?? start, end: covered.max() ?? end, side: run.side)
     }
 
     func cancelComposing() {

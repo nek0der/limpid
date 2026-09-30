@@ -76,19 +76,6 @@ extension ReviewDiffTable.Coordinator {
         )
     }
 
-    func selectCodeLine(at position: ReviewTextPosition, extending: Bool) {
-        guard let line = textLine(at: position), line.isCommentable else { return }
-        if extending,
-           parent.selection.side == position.side,
-           let anchor = parent.selection.anchorLineID,
-           ReviewRunBounds.canExtend(parent.diffLines, from: anchor, to: position.lineID)
-        {
-            parent.selection.extend(to: position.lineID)
-        } else {
-            parent.selection.select(position.lineID, on: position.side)
-        }
-    }
-
     func selectTextUnit(at position: ReviewTextPosition, clickCount: Int) {
         guard let line = textLine(at: position), line.isTextSelectable else { return }
         let length = (line.text as NSString).length
@@ -110,13 +97,19 @@ extension ReviewDiffTable.Coordinator {
                 utf16Offset: NSMaxRange(range)
             )
         )
-        parent.textSelection = selection
+        parent.selection.selectText(selection, keepingLines: isComposing)
+    }
+
+    /// An open composer keeps its lines highlighted: they show which lines
+    /// the comment is for.
+    var isComposing: Bool {
+        parent.composerLineID != nil
     }
 
     func syncTextSelection(in table: NSTableView) {
         let previous = appliedTextSelection
-        guard previous != parent.textSelection else { return }
-        appliedTextSelection = parent.textSelection
+        guard previous != parent.selection.text else { return }
+        appliedTextSelection = parent.selection.text
         let visible = table.rows(in: table.visibleRect)
         guard visible.length > 0 else { return }
         let upper = min(visible.location + visible.length, parent.rows.count)
@@ -125,12 +118,12 @@ extension ReviewDiffTable.Coordinator {
             switch parent.rows[index].kind {
             case let .code(line):
                 previous.range(in: line, at: index, on: nil)
-                    != parent.textSelection.range(in: line, at: index, on: nil)
+                    != parent.selection.text.range(in: line, at: index, on: nil)
             case let .splitCode(pair):
                 ReviewSide.allCases.contains { side in
                     guard let line = pair.line(on: side) else { return false }
                     return previous.range(in: line, at: index, on: side)
-                        != parent.textSelection.range(in: line, at: index, on: side)
+                        != parent.selection.text.range(in: line, at: index, on: side)
                 }
             case .notice, .hunk, .comment, .composer, .expander:
                 false

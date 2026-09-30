@@ -740,6 +740,7 @@ struct ReviewFooterHints: View {
             hint("n / p", String(localized: "File"))
             hint("c", String(localized: "Comment"))
             hint("v", String(localized: "Viewed"))
+            hint("o", String(localized: "Open"))
             hint("⌘↩", String(localized: "Insert"))
             hint("⌘⇧E", String(localized: "Terminal"))
         }

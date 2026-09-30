@@ -17,8 +17,9 @@ struct ReviewTextPosition: Equatable {
     let utf16Offset: Int
 }
 
-/// A copy selection independent from `ReviewSelection`, which continues to
-/// describe the line range a comment belongs to.
+/// A copy selection, apart from `ReviewSelection`, which continues to
+/// describe the line range a comment belongs to. `ReviewDiffSelection` holds
+/// the two and decides which one is on screen.
 struct ReviewTextSelection: Equatable {
     var anchor: ReviewTextPosition?
     var head: ReviewTextPosition?
@@ -39,6 +40,14 @@ struct ReviewTextSelection: Equatable {
 
     mutating func clear() {
         self = ReviewTextSelection()
+    }
+
+    /// The rows the selection spans, top first, or nil when nothing is
+    /// selected. A right-click, the open key and the line keys check it
+    /// before the line selection, which a drag has usually let go of.
+    var rowRange: ClosedRange<Int>? {
+        guard !isEmpty, let anchor, let head else { return nil }
+        return min(anchor.rowIndex, head.rowIndex)...max(anchor.rowIndex, head.rowIndex)
     }
 
     /// Re-resolves transient row indexes after cards or expanded context alter

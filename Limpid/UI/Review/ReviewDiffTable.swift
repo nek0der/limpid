@@ -17,6 +17,9 @@ enum ReviewTableKey {
     case comment, close, insert, toggleTerminal
     /// Mark the open file read, or put it back.
     case markViewed
+    /// Open the file in the app chosen for files, at the top of the
+    /// selection, or at the file's first change when nothing is selected.
+    case openInEditor
 
     init?(event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
@@ -32,6 +35,10 @@ enum ReviewTableKey {
             self = .close
             return
         }
+        if let arrow = Self.arrow(event, modifiers: modifiers) {
+            self = arrow
+            return
+        }
         guard !event.modifierFlags.contains(.command),
               !event.modifierFlags.contains(.control),
               !event.modifierFlags.contains(.option),
@@ -39,6 +46,19 @@ enum ReviewTableKey {
               let key = Self.byCharacter[characters]
         else { return nil }
         self = key
+    }
+
+    /// ↑ / ↓ as the line keys, with Shift extending. Left to `NSTableView`
+    /// they were a second way of moving that knew nothing of dragged text,
+    /// and after a drag they started over at the file's first or last line.
+    private static func arrow(_ event: NSEvent, modifiers: NSEvent.ModifierFlags) -> ReviewTableKey? {
+        guard modifiers.isEmpty || modifiers == .shift else { return nil }
+        let isExtending = modifiers == .shift
+        switch event.keyCode {
+        case 125: return isExtending ? .extendNextLine : .nextLine
+        case 126: return isExtending ? .extendPreviousLine : .previousLine
+        default: return nil
+        }
     }
 
     /// Shift is the only modifier `charactersIgnoringModifiers` keeps, so the
@@ -50,7 +70,8 @@ enum ReviewTableKey {
         "h": .oldSide, "l": .newSide,
         "n": .nextFile, "p": .previousFile,
         "c": .comment,
-        "v": .markViewed
+        "v": .markViewed,
+        "o": .openInEditor
     ]
 }
 
@@ -65,9 +86,22 @@ final class ReviewTableRowView: NSTableRowView {
 final class ReviewTableView: NSTableView {
     var onKey: ((ReviewTableKey) -> Bool)?
     var onCopyCode: (() -> Bool)?
+    /// The title of the context menu's open item for the row that was
+    /// right-clicked, or nil when there is nothing to open. Asked per menu so
+    /// it names the app chosen now and the line the editor will land on.
+    var openInEditorTitle: ((Int) -> String?)?
+    var onOpenInEditor: ((Int?) -> Void)?
+    /// The row the context menu was built for.
+    private var menuRow: Int?
     var hasTextSelection: (() -> Bool)?
+    /// Whether a row lies inside the text the reader dragged over.
+    var textSelectionCovers: ((Int) -> Bool)?
     var textPosition: ((NSPoint, ReviewTextPosition?) -> ReviewTextPosition?)?
-    var onCodePress: ((ReviewTextPosition, Bool) -> Void)?
+    /// A press on code that did not become a drag. Lines are picked in the
+    /// gutter and code is for reading and copying, so this only lets go of
+    /// the line selection rather than choosing the line under the pointer.
+    /// Returns whether it did; an open composer keeps its lines.
+    var onCodePress: (() -> Bool)?
     var onTextSelection: ((ReviewTextSelection) -> Void)?
     var onSelectTextUnit: ((ReviewTextPosition, Int) -> Void)?
     var hidesAccessibilityTree = false
@@ -79,13 +113,12 @@ final class ReviewTableView: NSTableView {
     /// selects whole rows, and a row of the split layout is two columns wide —
     /// this is what tells the two apart.
     ///
-    /// Cleared by the next key, because it answers for the pointer only: the
-    /// arrow keys are not ours and reach `NSTableView` directly, and a stale
-    /// press was still deciding the column for them long after it happened.
+    /// Cleared by the next key, because it answers for the pointer only: a
+    /// stale press was still deciding the column for the keyboard long after
+    /// it happened.
     private(set) var lastClickX: CGFloat?
     private var textDragAnchor: ReviewTextPosition?
     private var textDragOrigin: NSPoint?
-    private var textPressExtendsLineSelection = false
     private var didDragText = false
     private var latestTextDragEvent: NSEvent?
     /// `nonisolated(unsafe)` permits `deinit` to invalidate the RunLoop timer.
@@ -123,7 +156,6 @@ final class ReviewTableView: NSTableView {
         }
         textDragAnchor = position
         textDragOrigin = point
-        textPressExtendsLineSelection = event.modifierFlags.contains(.shift)
         didDragText = false
         onTextSelection?(ReviewTextSelection(anchor: position, head: position))
     }
@@ -167,16 +199,15 @@ final class ReviewTableView: NSTableView {
             consumesMouseUp = false
             return
         }
-        guard let anchor = textDragAnchor else {
+        guard textDragAnchor != nil else {
             super.mouseUp(with: event)
             return
         }
         if !didDragText {
-            onCodePress?(anchor, textPressExtendsLineSelection)
+            _ = onCodePress?()
         }
         textDragAnchor = nil
         textDragOrigin = nil
-        textPressExtendsLineSelection = false
         didDragText = false
         stopTextAutoscroll()
     }
@@ -230,24 +261,61 @@ final class ReviewTableView: NSTableView {
         super.keyDown(with: event)
     }
 
-    override func menu(for _: NSEvent) -> NSMenu? {
-        guard !selectedRowIndexes.isEmpty || hasTextSelection?() == true else { return nil }
+    override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
-        let copy = NSMenuItem(
-            title: hasTextSelection?() == true
-                ? String(localized: "Copy Selected Text")
-                : String(localized: "Copy Code"),
-            action: #selector(copySelectedCode(_:)),
-            keyEquivalent: "c"
-        )
-        copy.keyEquivalentModifierMask = .command
-        copy.target = self
-        menu.addItem(copy)
-        return menu
+        let point = convert(event.locationInWindow, from: nil)
+        let clicked = row(at: point)
+        menuRow = clicked >= 0 ? clicked : nil
+        // A right-click inside the line selection or the dragged text keeps
+        // it, so every item acts on what the reader can see highlighted.
+        // Outside both, it does what a left click there would: in the gutter
+        // it selects the line, on code it lets go of both selections. Either
+        // way nothing stale is left for Copy to act on. An open composer
+        // keeps its lines, and those are not the line under the pointer that
+        // Open names, so Copy Code is left out rather than copy them.
+        var offersLineCopy = true
+        if clicked >= 0, !selectedRowIndexes.contains(clicked),
+           textSelectionCovers?(clicked) != true
+        {
+            onTextSelection?(ReviewTextSelection())
+            if textPosition?(point, nil) != nil {
+                if onCodePress?() == true {
+                    deselectAll(nil)
+                } else {
+                    offersLineCopy = false
+                }
+            } else if delegate?.tableView?(self, shouldSelectRow: clicked) ?? true {
+                lastClickX = point.x
+                selectRowIndexes(IndexSet(integer: clicked), byExtendingSelection: false)
+            }
+        }
+        if let menuRow, let title = openInEditorTitle?(menuRow) {
+            let open = NSMenuItem(title: title, action: #selector(openRowInEditor(_:)), keyEquivalent: "")
+            open.target = self
+            menu.addItem(open)
+        }
+        if (offersLineCopy && !selectedRowIndexes.isEmpty) || hasTextSelection?() == true {
+            let copy = NSMenuItem(
+                title: hasTextSelection?() == true
+                    ? String(localized: "Copy Selected Text")
+                    : String(localized: "Copy Code"),
+                action: #selector(copySelectedCode(_:)),
+                keyEquivalent: "c"
+            )
+            copy.keyEquivalentModifierMask = .command
+            copy.target = self
+            menu.addItem(copy)
+        }
+        return menu.items.isEmpty ? nil : menu
     }
 
     @objc private func copySelectedCode(_: Any?) {
         _ = onCopyCode?()
+    }
+
+    @objc private func openRowInEditor(_: Any?) {
+        guard let menuRow else { return }
+        onOpenInEditor?(menuRow)
     }
 }
 
@@ -298,10 +366,9 @@ struct ReviewDiffTable: NSViewRepresentable {
     /// False while a replacement snapshot is loading. The SwiftUI hit-test
     /// gate does not stop an already-focused `NSTableView` receiving keys.
     var isInteractionEnabled = true
-    @Binding var selection: ReviewSelection
-    /// Independent from the line range above: dragging over code copies exact
-    /// characters without changing which lines a comment would cover.
-    @Binding var textSelection: ReviewTextSelection
+    /// The line run and the dragged text. Changed only through its own
+    /// methods, which keep one of the two on screen at a time.
+    @Binding var selection: ReviewDiffSelection
     /// Read only: every transition goes through `onCompose` / `onCancelCompose`
     /// so the workspace can keep the edit target in step with the line.
     let composerLineID: Int?
@@ -338,6 +405,11 @@ struct ReviewDiffTable: NSViewRepresentable {
     /// Toggles the open file's read mark. Here rather than only in the list
     /// because that is where the reader is when they finish a file.
     let onToggleViewed: () -> Void
+    /// The app files open in, which the open item names.
+    let fileApplication: FileApplicationResolution
+    /// Opens the file at a line of the new file. The table works out the
+    /// line; the surface knows the repository and the app.
+    let onOpenLine: (Int) -> Void
     /// Unfolds part of one gap. The store owns how much is showing; this only
     /// says which gap the reader pressed and which way.
     let onExpand: (Int, ReviewGapAction) -> Void
@@ -399,18 +471,29 @@ struct ReviewDiffTable: NSViewRepresentable {
         table.onCopyCode = { [weak coordinator = context.coordinator] in
             coordinator?.copySelectedCode() ?? false
         }
+        table.openInEditorTitle = { [weak coordinator = context.coordinator] row in
+            coordinator?.openInEditorTitle(clickedRow: row)
+        }
+        table.onOpenInEditor = { [weak coordinator = context.coordinator] row in
+            coordinator?.openInEditor(clickedRow: row)
+        }
         table.hasTextSelection = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.textSelection.isEmpty == false
+            coordinator?.parent.selection.text.isEmpty == false
+        }
+        table.textSelectionCovers = { [weak coordinator = context.coordinator] row in
+            coordinator?.parent.selection.text.rowRange?.contains(row) == true
         }
         table.textPosition = { [weak coordinator = context.coordinator, weak table] point, anchor in
             guard let coordinator, let table else { return nil }
             return coordinator.textPosition(at: point, continuingFrom: anchor, in: table)
         }
-        table.onCodePress = { [weak coordinator = context.coordinator] position, extends in
-            coordinator?.selectCodeLine(at: position, extending: extends)
+        table.onCodePress = { [weak coordinator = context.coordinator] in
+            guard let coordinator else { return false }
+            return coordinator.parent.selection.pressCode(keepingLines: coordinator.isComposing)
         }
         table.onTextSelection = { [weak coordinator = context.coordinator] selection in
-            coordinator?.parent.textSelection = selection
+            guard let coordinator else { return }
+            coordinator.parent.selection.selectText(selection, keepingLines: coordinator.isComposing)
         }
         table.onSelectTextUnit = { [weak coordinator = context.coordinator] position, clickCount in
             coordinator?.selectTextUnit(at: position, clickCount: clickCount)

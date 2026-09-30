@@ -174,6 +174,40 @@
         }
       }
     },
+    "Open Line %lld in %@": {
+      "comment": "Review line menu item; the arguments are the line in the file on disk and the app's name",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Line %lld in %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@で %1$lld 行目を開く"
+          }
+        }
+      }
+    },
+    "Open Line %lld in Default Application": {
+      "comment": "Review line menu item when no app is chosen; the argument is the line in the file on disk",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Line %lld in Default Application"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトのアプリケーションで %lld 行目を開く"
+          }
+        }
+      }
+    },
     "Open file in editor": {
       "comment": "Settings search keyword",
       "localizations": {

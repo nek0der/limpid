@@ -130,10 +130,10 @@ extension ReviewDiffTable {
                   !parent.isOverlayPresented,
                   let payload = ReviewCopyPayload.text(
                       rows: parent.rows,
-                      selection: parent.textSelection
+                      selection: parent.selection.text
                   ) ?? ReviewCopyPayload.code(
                       lines: parent.diffLines,
-                      selection: parent.selection,
+                      selection: parent.selection.lines,
                       layout: parent.layout
                   )
             else { return false }
@@ -184,7 +184,7 @@ extension ReviewDiffTable {
             gutter.isHidden = parent.layout == .sideBySide
             guard !gutter.isHidden else { return }
             gutter.rows = parent.rows
-            gutter.selection = parent.selection
+            gutter.selection = parent.selection.lines
             gutter.commentCounts = parent.lineCommentCounts
             gutter.numberWidth = parent.numberWidth
             gutter.frame = NSRect(
@@ -199,9 +199,9 @@ extension ReviewDiffTable {
             // lag.
             let key = [
                 parent.contentKey,
-                String(parent.selection.startLineID ?? -1),
-                String(parent.selection.endLineID ?? -1),
-                parent.selection.side?.rawValue ?? "",
+                String(parent.selection.lines.startLineID ?? -1),
+                String(parent.selection.lines.endLineID ?? -1),
+                parent.selection.lines.side?.rawValue ?? "",
                 // The composer's height moves every row under it. `contentKey`
                 // does not carry it — the row list is the same — so without it
                 // the numbers stayed where the rows used to be.
@@ -552,19 +552,19 @@ extension ReviewDiffTable {
                 let view = reuse(tableView, "review-code", ReviewCodeRowView.init)
                 view.configure(
                     line,
-                    isSelected: parent.selection.contains(line.id),
+                    isSelected: parent.selection.lines.contains(line.id),
                     numberWidth: parent.numberWidth,
                     language: parent.language,
                     match: parent.search.query,
                     intralineRanges: parent.intralineHighlights[line.id],
-                    selectedRange: parent.textSelection.range(in: line, at: row, on: nil)
+                    selectedRange: parent.selection.text.range(in: line, at: row, on: nil)
                 )
                 return view
             case let .splitCode(pair):
                 let view = reuse(tableView, "review-split", ReviewSplitCodeRowView.init)
                 view.configure(pair, context: ReviewSplitRowContext(
-                    selection: parent.selection,
-                    textSelection: parent.textSelection,
+                    selection: parent.selection.lines,
+                    textSelection: parent.selection.text,
                     intralineHighlights: parent.intralineHighlights,
                     rowIndex: row,
                     commentCounts: parent.lineCommentCounts,
@@ -647,9 +647,9 @@ extension ReviewDiffTable {
                 syncSelection(in: table)
                 return
             }
-            guard parent.selection.startLineID != first
-                || parent.selection.endLineID != last
-                || parent.selection.side != side else { return }
+            guard parent.selection.lines.startLineID != first
+                || parent.selection.lines.endLineID != last
+                || parent.selection.lines.side != side else { return }
             // A drag or a shift-click can reach across the `@@` between two
             // hunks, which are next to each other here and far apart in the
             // file. The run stops at the boundary rather than following it.
@@ -667,7 +667,7 @@ extension ReviewDiffTable {
             var next = ReviewSelection()
             // A shift-click extends the run the user already had, so the end
             // they did not touch stays the anchor.
-            if parent.selection.anchorLineID == last {
+            if parent.selection.lines.anchorLineID == last {
                 next.select(last, on: side)
                 next.extend(to: first)
             } else {
@@ -676,7 +676,7 @@ extension ReviewDiffTable {
                     next.extend(to: last)
                 }
             }
-            parent.selection = next
+            parent.selection.updateLines { $0 = next }
         }
 
         /// Which column a press landed in. The pointer decides in the split
@@ -692,17 +692,17 @@ extension ReviewDiffTable {
 
         func syncSelection(in table: NSTableView) {
             let previous = appliedSelection
-            guard previous != parent.selection || appliedSelectionKey != parent.contentKey else { return }
+            guard previous != parent.selection.lines || appliedSelectionKey != parent.contentKey else { return }
             appliedSelectionKey = parent.contentKey
-            appliedSelection = parent.selection
+            appliedSelection = parent.selection.lines
             defer { redrawSelection(in: table, from: previous) }
-            guard let start = parent.selection.startLineID, let end = parent.selection.endLineID else {
+            guard let start = parent.selection.lines.startLineID, let end = parent.selection.lines.endLineID else {
                 if table.selectedRow != -1 {
                     table.deselectAll(nil)
                 }
                 return
             }
-            let side = parent.selection.side
+            let side = parent.selection.lines.side
             let indexes = IndexSet(parent.rows.indices.filter { index in
                 guard let id = parent.rows[index].commentableLineID(on: side) else { return false }
                 return id >= start && id <= end
@@ -713,10 +713,10 @@ extension ReviewDiffTable {
             // every row below it, so the same run lands on different indexes
             // and this would scroll to it — undoing the anchor that had just
             // put the reader's line back where it was.
-            guard previous != parent.selection else { return }
+            guard previous != parent.selection.lines else { return }
             // Follow the moving end of the run rather than its start, or
             // extending downward scrolls back to where it began.
-            if let head = parent.selection.headLineID,
+            if let head = parent.selection.lines.headLineID,
                let index = parent.rows.firstIndex(where: { $0.commentableLineID(on: side) == head }),
                index < table.numberOfRows
             {
@@ -731,14 +731,14 @@ extension ReviewDiffTable {
         /// reload of the diff. The scan is over row identity only, which is
         /// cheap next to rebuilding a view per row.
         private func redrawSelection(in table: NSTableView, from previous: ReviewSelection) {
-            guard previous != parent.selection, table.numberOfRows == parent.rows.count else { return }
+            guard previous != parent.selection.lines, table.numberOfRows == parent.rows.count else { return }
             let sides: [ReviewSide?] = parent.layout == .sideBySide ? [.old, .new] : [nil]
             let changed = IndexSet(parent.rows.indices.filter { index in
                 let row = parent.rows[index]
                 return sides.contains { side in
                     guard let id = row.commentableLineID(on: side) else { return false }
-                    return previous.contains(id, on: side) != parent.selection.contains(id, on: side)
-                        || (previous.endLineID == id) != (parent.selection.endLineID == id)
+                    return previous.contains(id, on: side) != parent.selection.lines.contains(id, on: side)
+                        || (previous.endLineID == id) != (parent.selection.lines.endLineID == id)
                 }
             })
             guard !changed.isEmpty else { return }
