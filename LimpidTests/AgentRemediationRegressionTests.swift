@@ -78,7 +78,8 @@ struct AgentRemediationRegressionTests {
                 resumeIntents: intents, processStatus: { _ in status }
             )
             projection.bootstrap(into: session)
-            let fd = open(states.appendingPathComponent(runID + ".state.json.flock").path, O_CREAT | O_RDWR, 0o600)
+            let sidecar = try states.appendingPathComponent(AgentRecordFixtures.recordFileName(runID) + ".flock")
+            let fd = open(sidecar.path, O_CREAT | O_RDWR, 0o600)
             #expect(fd >= 0)
             guard fd >= 0 else { return }
             defer { close(fd) }

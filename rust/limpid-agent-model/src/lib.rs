@@ -45,7 +45,10 @@ pub use provider::{
     Capability, InstallRecipe, ProviderDescriptor, ProviderId, ProviderIdError, RecipePlaceholder,
     RecipeVariable, SettingsFragment,
 };
-pub use record::{MAX_RECORD_TEXT_BYTES, RecordError, RunRecord, RunRecordV2, RunState};
+pub use record::{
+    MAX_RECORD_TEXT_BYTES, RUN_RECORD_FILE_SUFFIX, RecordError, RunRecord, RunRecordV2, RunState,
+    run_record_file_name,
+};
 pub use timestamp::{
     days_from_civil, format_utc_seconds, parse_utc_seconds, seconds_between, unix_seconds,
 };

@@ -19,6 +19,17 @@ struct LimpidProjectionBridgeTests {
         #expect(registry["codex"]?.capabilities.contains("session_title") == false)
     }
 
+    @Test("the record layout crosses the boundary and is what the registry reads")
+    func recordLayout_isReported() throws {
+        let layout = try JSONDecoder().decode(
+            AgentRecordLayout.self,
+            from: LimpidProjectionBridge.recordLayout()
+        )
+        // An empty suffix would make every file in a state directory a record.
+        #expect(!layout.runRecordSuffix.isEmpty)
+        #expect(AgentProviderRegistry.recordLayout?.runRecordSuffix == layout.runRecordSuffix)
+    }
+
     @Test("an empty pass round-trips and carries state forward")
     func emptyPass_roundTrips() throws {
         let now = Data(#"{"wall":"2026-09-14T12:00:00Z","monotonicMs":0}"#.utf8)

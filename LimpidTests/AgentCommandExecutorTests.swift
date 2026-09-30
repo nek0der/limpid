@@ -17,6 +17,9 @@ struct AgentCommandExecutorTests {
         let state: URL
         let sessions: URL
         let intents: URL
+        /// The file the rules address as `Self.run`, named the way the writer
+        /// names it.
+        let record: URL
     }
 
     private func fixture(in root: URL) throws -> Fixture {
@@ -26,14 +29,15 @@ struct AgentCommandExecutorTests {
         for directory in [state, sessions, intents] {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
-        return Fixture(
+        return try Fixture(
             executor: AgentCommandExecutor(
                 directories: ["claude": AgentDirectories(state: state, sessions: sessions, cwdEvents: nil)],
                 resumeIntents: AgentResumeIntentStore(directory: intents)
             ),
             state: state,
             sessions: sessions,
-            intents: intents
+            intents: intents,
+            record: state.appendingPathComponent(AgentRecordFixtures.recordFileName(Self.run))
         )
     }
 
@@ -48,7 +52,7 @@ struct AgentCommandExecutorTests {
             "pid": pid
         ]
         try JSONSerialization.data(withJSONObject: record)
-            .write(to: fixture.state.appendingPathComponent("\(Self.run).state.json"))
+            .write(to: fixture.record)
     }
 
     private func writeHint(_ fixture: Fixture, runID: String) throws {
@@ -92,7 +96,7 @@ struct AgentCommandExecutorTests {
             #expect(outcomes.count == 2)
 
             #expect(!FileManager.default.fileExists(atPath: fixture.sessions.appendingPathComponent("\(Self.pane).json").path))
-            #expect(!FileManager.default.fileExists(atPath: fixture.state.appendingPathComponent("\(Self.run).state.json").path))
+            #expect(!FileManager.default.fileExists(atPath: fixture.record.path))
 
             // Retiring is a move, not a delete: a record that turns out to
             // have been live is still there to be read.
@@ -117,7 +121,7 @@ struct AgentCommandExecutorTests {
             // The pane has moved on, so the hint stays where it is. The dead
             // record still has to go or it would be re-examined forever.
             #expect(FileManager.default.fileExists(atPath: fixture.sessions.appendingPathComponent("\(Self.pane).json").path))
-            #expect(!FileManager.default.fileExists(atPath: fixture.state.appendingPathComponent("\(Self.run).state.json").path))
+            #expect(!FileManager.default.fileExists(atPath: fixture.record.path))
         }
     }
 
@@ -130,7 +134,7 @@ struct AgentCommandExecutorTests {
             try writeHint(fixture, runID: Self.run)
 
             try fixture.executor.run(commands(retirementChain(hintRunID: Self.run)))
-            #expect(FileManager.default.fileExists(atPath: fixture.state.appendingPathComponent("\(Self.run).state.json").path))
+            #expect(FileManager.default.fileExists(atPath: fixture.record.path))
         }
     }
 
@@ -150,7 +154,7 @@ struct AgentCommandExecutorTests {
             """
             try fixture.executor.run(commands(json))
 
-            let data = try Data(contentsOf: fixture.state.appendingPathComponent("\(Self.run).state.json"))
+            let data = try Data(contentsOf: fixture.record)
             let record = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
             #expect(record["state"] as? String == "unknown")
             // Clearing the pid is what keeps the liveness sweep from retiring
@@ -180,7 +184,7 @@ struct AgentCommandExecutorTests {
 
             let outcomes = try fixture.executor.run(commands(retirementChain(hintRunID: Self.run)))
             #expect(outcomes.count == 1)
-            #expect(FileManager.default.fileExists(atPath: fixture.state.appendingPathComponent("\(Self.run).state.json").path))
+            #expect(FileManager.default.fileExists(atPath: fixture.record.path))
         }
     }
 
@@ -194,8 +198,11 @@ struct AgentCommandExecutorTests {
             // Recent stamps, so the count cap is what decides rather than the
             // age cap; the age rule has its own reach in the rules.
             let stamp = Int(Date().timeIntervalSince1970)
+            let directories = AgentDirectories(state: fixture.state, sessions: fixture.sessions, cwdEvents: nil)
             for index in 0..<5 {
-                let name = "\(UUID().uuidString).\(stamp - index).\(UUID().uuidString).state.json"
+                let name = try #require(
+                    directories.retiredRecordName(storageID: UUID().uuidString, retiredAt: stamp - index)
+                )
                 try Data("{}".utf8).write(to: retired.appendingPathComponent(name))
             }
             // A name that does not parse says nothing about when it was
@@ -215,7 +222,7 @@ struct AgentCommandExecutorTests {
             let remaining = try FileManager.default.contentsOfDirectory(atPath: retired.path)
             #expect(remaining.filter { $0 != "stray.json" }.count == 2)
             #expect(remaining.contains("stray.json"))
-            #expect(FileManager.default.fileExists(atPath: fixture.state.appendingPathComponent("\(Self.run).state.json").path))
+            #expect(FileManager.default.fileExists(atPath: fixture.record.path))
         }
     }
 
@@ -258,7 +265,7 @@ struct AgentCommandExecutorTests {
             // A newer rule set must not be able to stall an older host, and
             // must not have its unknown command guessed at either.
             try fixture.executor.run(commands(json))
-            #expect(FileManager.default.fileExists(atPath: fixture.state.appendingPathComponent("\(Self.run).state.json").path))
+            #expect(FileManager.default.fileExists(atPath: fixture.record.path))
         }
     }
 

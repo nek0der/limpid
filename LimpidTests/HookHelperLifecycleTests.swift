@@ -67,7 +67,7 @@ struct HookHelperLifecycleTests {
     }
 
     private func record(in directory: URL) throws -> [String: Any]? {
-        let url = directory.appendingPathComponent("states/\(Self.runID).state.json")
+        let url = try directory.appendingPathComponent("states/\(AgentRecordFixtures.recordFileName(Self.runID))")
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
@@ -90,7 +90,7 @@ struct HookHelperLifecycleTests {
             #expect(record["firstPrompt"] != nil)
             let hint = directory.appendingPathComponent("sessions/\(Self.paneID).json")
             #expect(FileManager.default.fileExists(atPath: hint.path))
-            let recordURL = directory.appendingPathComponent("states/\(Self.runID).state.json")
+            let recordURL = try directory.appendingPathComponent("states/\(AgentRecordFixtures.recordFileName(Self.runID))")
             // The dictionary assertions above only prove the JSON says what we
             // expect. Running it through a typed reader as well is what catches
             // a field whose Rust shape stopped being readable, which otherwise
@@ -119,7 +119,7 @@ struct HookHelperLifecycleTests {
             let env = environment(provider: "claude", in: directory)
             let states = directory.appendingPathComponent("states")
             try FileManager.default.createDirectory(at: states, withIntermediateDirectories: true)
-            let recordURL = states.appendingPathComponent("\(Self.runID).state.json")
+            let recordURL = try states.appendingPathComponent(AgentRecordFixtures.recordFileName(Self.runID))
             let outcome = try AgentFileLock.withLock(for: recordURL) {
                 let payload = try fixturePayload("claude", "0000-SessionStart.json")
                 let result = try runHelper(["hook", "claude"], payload: payload, environment: env)

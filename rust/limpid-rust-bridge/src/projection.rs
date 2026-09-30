@@ -6,7 +6,9 @@
 //! them back, which keeps the state's shape a private matter for the rules.
 
 use limpid_agent_core::{on_launch, on_terminate, project};
-use limpid_agent_model::{Command, Instants, LifecycleInput, ProjectionInput, ProjectionState};
+use limpid_agent_model::{
+    Command, Instants, LifecycleInput, ProjectionInput, ProjectionState, RUN_RECORD_FILE_SUFFIX,
+};
 use serde::Serialize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
@@ -112,6 +114,46 @@ pub unsafe extern "C" fn limpid_projection_install_recipes_v1(
     match outcome {
         Ok(code) | Err(code) => code,
     }
+}
+
+/// How run records are named in every provider's state directory, as
+/// `{ "runRecordSuffix": "<suffix>" }`: a record's file name is its storage id
+/// followed by the suffix.
+///
+/// The hook runtime writes each record under that name, and the host lists,
+/// rewrites, and retires it by the same name. Reporting it here is what keeps
+/// the host from spelling the name a second time.
+///
+/// # Safety
+///
+/// The output pointers must be writable. On `LIMPID_PROJECTION_OK` the caller
+/// owns the body and frees it with `limpid_approval_bytes_free_v1`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn limpid_projection_record_layout_v1(
+    out: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    let outcome = projection_boundary(|| {
+        if out.is_null() || out_len.is_null() {
+            return Err(PROJECTION_NULL_POINTER);
+        }
+        let layout = RecordLayout {
+            run_record_suffix: RUN_RECORD_FILE_SUFFIX,
+        };
+        let body = serde_json::to_vec(&layout).map_err(|_| PROJECTION_INTERNAL)?;
+        unsafe { transfer(body, out, out_len) };
+        Ok(PROJECTION_OK)
+    });
+    match outcome {
+        Ok(code) | Err(code) => code,
+    }
+}
+
+/// What `limpid_projection_record_layout_v1` reports.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordLayout {
+    run_record_suffix: &'static str,
 }
 
 /// Reduces the records the host found into what to show and what to change.
@@ -392,6 +434,25 @@ mod tests {
             let commands: Value = serde_json::from_slice(&body).expect("decode");
             assert_eq!(commands, Value::Array(vec![]));
         }
+    }
+
+    #[test]
+    fn the_record_layout_names_the_file_the_hook_writes() {
+        let mut out: *mut u8 = ptr::null_mut();
+        let mut out_len: usize = 0;
+        let status = unsafe { limpid_projection_record_layout_v1(&raw mut out, &raw mut out_len) };
+        assert_eq!(status, PROJECTION_OK);
+        let body = unsafe { slice::from_raw_parts(out, out_len) }.to_vec();
+        unsafe { limpid_approval_bytes_free_v1(out, out_len) };
+        let layout: Value = serde_json::from_slice(&body).expect("decode");
+        assert_eq!(
+            layout,
+            serde_json::json!({ "runRecordSuffix": RUN_RECORD_FILE_SUFFIX })
+        );
+
+        let status =
+            unsafe { limpid_projection_record_layout_v1(ptr::null_mut(), &raw mut out_len) };
+        assert_eq!(status, PROJECTION_NULL_POINTER);
     }
 
     #[test]

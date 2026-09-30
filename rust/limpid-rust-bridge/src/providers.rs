@@ -570,11 +570,9 @@ mod tests {
         let body = body.expect("body");
         assert_eq!(body["outcome"], "applied");
         assert_eq!(body["exit_code"], 0);
-        let record = std::fs::read(
-            scratch
-                .join("states")
-                .join("6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11.state.json"),
-        )
+        let record = std::fs::read(scratch.join("states").join(
+            limpid_agent_model::run_record_file_name("6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11"),
+        ))
         .expect("record written");
         assert!(String::from_utf8_lossy(&record).contains("\"schemaVersion\":3"));
 

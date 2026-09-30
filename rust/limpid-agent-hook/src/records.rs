@@ -406,7 +406,7 @@ mod tests {
 
         fn record(&self, run_id: &str, updated_at: &str) {
             fs::write(
-                self.0.join(format!("{run_id}.state.json")),
+                self.0.join(limpid_agent_model::run_record_file_name(run_id)),
                 format!(
                     r#"{{"schemaVersion":3,"paneId":"{PANE}","runId":"{run_id}","revision":1,"state":"running","updatedAt":"{updated_at}"}}"#
                 ),
