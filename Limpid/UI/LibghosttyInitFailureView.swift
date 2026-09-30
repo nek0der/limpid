@@ -9,10 +9,7 @@
 // subsystem, and reset `settings.json` to defaults.
 
 import AppKit
-import OSLog
 import SwiftUI
-
-private let log = Logger.limpid("init.failure.view")
 
 struct LibghosttyInitFailureView: View {
     @Environment(AppState.self) private var state
@@ -41,7 +38,7 @@ struct LibghosttyInitFailureView: View {
                     revealConsole()
                 }
                 Button("Reset Settings to Defaults") {
-                    resetSettings()
+                    SettingsStore.moveSettingsFileAside()
                 }
                 Button("Quit Limpid") {
                     NSApp.terminate(nil)
@@ -58,24 +55,5 @@ struct LibghosttyInitFailureView: View {
     private func revealConsole() {
         let url = URL(fileURLWithPath: "/System/Applications/Utilities/Console.app")
         NSWorkspace.shared.open(url)
-    }
-
-    /// Rename the current `settings.json` aside and let the next
-    /// SettingsStore read seed defaults. The user has to relaunch
-    /// Limpid for the change to take — the in-process `GhosttyApp`
-    /// is already half-initialized and we cannot re-run
-    /// `ghostty_app_new` on a dead handle.
-    private func resetSettings() {
-        let url = SettingsStore.defaultSettingsFileURL
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
-        let ts = Int(Date().timeIntervalSince1970)
-        let bak = url.deletingLastPathComponent()
-            .appendingPathComponent("settings.json.bak-init-failure-\(ts)")
-        do {
-            try FileManager.default.moveItem(at: url, to: bak)
-            log.notice("renamed settings.json to \(bak.lastPathComponent, privacy: .public)")
-        } catch {
-            log.error("settings.json reset failed: \(String(describing: error), privacy: .public)")
-        }
     }
 }

@@ -1,10 +1,11 @@
 // SecureFileWrite.swift
 // Limpid — helpers that write user data files (session snapshot,
 // notification history, scrollback dumps) with `0600` permissions
-// and create their parent directories with `0700`. Without these
-// the macOS defaults (`0644` / `0755`) leave the file world-readable,
-// which matters on shared / multi-user Macs where the data carries
-// command history, search needles, project paths, and OSC 52 traffic.
+// and create their parent directories with `0700`, and that move an
+// unreadable one aside. Without these the macOS defaults (`0644` /
+// `0755`) leave the file world-readable, which matters on shared /
+// multi-user Macs where the data carries command history, search
+// needles, project paths, and OSC 52 traffic.
 
 import Foundation
 import OSLog
@@ -58,6 +59,28 @@ enum SecureFileWrite {
         } catch {
             try? fm.removeItem(at: tmp)
             throw error
+        }
+    }
+
+    /// Moves a file aside to `<name>.bak-<reason>-<unix time>` beside it,
+    /// and returns where it went. A store that cannot read its file calls
+    /// this before anything saves: the next save would otherwise replace
+    /// bytes the user may still want back with defaults or an empty list.
+    /// Best effort: a missing file is left alone, and a failed rename is
+    /// logged and leaves the file where it was.
+    @discardableResult
+    static func quarantine(_ url: URL, reason: String, now: Date = Date()) -> URL? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return nil }
+        let backup = url.deletingLastPathComponent()
+            .appendingPathComponent("\(url.lastPathComponent).bak-\(reason)-\(Int(now.timeIntervalSince1970))")
+        do {
+            try fm.moveItem(at: url, to: backup)
+            log.notice("quarantined \(url.lastPathComponent, privacy: .public) to \(backup.lastPathComponent, privacy: .public)")
+            return backup
+        } catch {
+            log.error("failed to quarantine \(url.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .private)")
+            return nil
         }
     }
 
