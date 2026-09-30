@@ -31,25 +31,4 @@ enum LimpidFont {
 
     /// Primary command-palette item.
     static let paletteItem: Font = .system(size: 14, weight: .medium, design: .default)
-
-    // MARK: - Monospace
-
-    /// Default terminal font (user-overridable).
-    static let terminal: Font = .system(size: 13, design: .monospaced)
-
-    /// Blocks command name (monospaced, lighter weight).
-    static let blockCommand: Font = .system(size: 12, weight: .medium, design: .monospaced)
-
-    /// Main-pane header (path / branch display).
-    static let paneHeader: Font = .system(size: 12, weight: .regular, design: .monospaced)
-}
-
-// MARK: - Text modifiers
-
-extension Text {
-    /// For numeric / aligned values (cost, line counts, port numbers, etc.).
-    /// design-rules §4.3 — always apply tabular figures.
-    func limpidTabular() -> some View {
-        self.monospacedDigit()
-    }
 }

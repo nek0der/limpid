@@ -64,9 +64,6 @@ enum LimpidColor {
     /// Tertiary text (e.g. empty-state captions).
     static let tertiaryText: Color = .primary.opacity(0.5)
 
-    /// Subtle panel divider — used as a soft shadow substitute, not stroked as a line.
-    static let panelDivider: Color = .primary.opacity(0.06)
-
     /// Row-state fills shared by the sidebar pills and the tab bar pills.
     /// Picking once here keeps the two strips visually in lockstep.
     /// The fill is the whole "selected" signal now that the pills carry
@@ -81,7 +78,6 @@ enum LimpidColor {
     /// reads as "in the path of selection" without competing with the
     /// selected row below it.
     static let rowAncestorActiveFill: Color = .primary.opacity(0.03)
-    static let tabActiveFill: Color = .primary.opacity(0.10)
     /// Stroke color for a control that outlines itself without leaning
     /// on the accent palette — the Command Palette field
     /// (`ToolbarPaletteField`) and the pane search overlay, since the
@@ -160,12 +156,6 @@ enum LimpidColor {
     static let tabColumnTrailingDividerOpaque: Color = .init(
         light: Color.black.opacity(0.08),
         dark: Color.white.opacity(0.10)
-    )
-
-    /// Rim highlight along the top of glass panels (§2.2).
-    static let rimLight: Color = .init(
-        light: Color.white.opacity(0.15),
-        dark: Color.white.opacity(0.08)
     )
 
     /// Accent palette for groups / projects. Indices are stable —
