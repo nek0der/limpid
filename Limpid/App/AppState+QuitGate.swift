@@ -6,6 +6,7 @@
 // `function_body_length` budget, and so the policy + agent check +
 // alert sit next to the session + settings they read.
 
+import AppKit
 import Foundation
 
 extension AppState {
@@ -16,7 +17,7 @@ extension AppState {
         let policy = settingsStore.settings.confirmations.quit
         let hasAgent = session.hasLiveAgentAnywhere()
         guard shouldConfirm(policy: policy, hasAgent: hasAgent) else { return true }
-        return LimpidConfirm.runDestructive(
+        return runDestructiveAlert(
             title: String(localized: "Quit Limpid?"),
             message: hasAgent
                 ? String(localized: "Active agents may lose unsaved work.")
@@ -41,7 +42,7 @@ extension AppState {
         case .pane: String(localized: "Close pane?")
         }
         let message: String? = hasAgent ? agentBody(for: request.kind) : nil
-        return LimpidConfirm.runDestructive(
+        return runDestructiveAlert(
             title: title,
             message: message,
             confirmLabel: String(localized: "Close")
@@ -81,5 +82,42 @@ extension AppState {
         case .always: true
         case .onlyWhenAgent: hasAgent
         }
+    }
+
+    /// Runs the warning alert both gates share and returns `true` when
+    /// the user picked the destructive action. It is private to this
+    /// file on purpose: a close or quit prompt shown from anywhere else
+    /// would skip the user's confirmation policy, so the only way to
+    /// reach the alert is through `shouldAllowQuit` or `shouldAllowClose`.
+    /// Core actions ask through `CloseConfirmer.allow` and the delegate
+    /// through `quitGate`, which both land here. The alert is synchronous
+    /// because those callers gate their work on the answer. The
+    /// destructive button is the default so Return confirms; Escape
+    /// cancels. `message` is `nil` when the title alone carries the
+    /// intent, so an `always` prompt with no live agent does not show
+    /// agent-specific copy.
+    @MainActor
+    private func runDestructiveAlert(
+        title: String,
+        message: String?,
+        confirmLabel: String
+    ) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = title
+        if let message {
+            alert.informativeText = message
+        }
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: confirmLabel)
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        // A Dock right-click "Quit" (or any terminate while we are in the
+        // background) routes through here while another app is frontmost.
+        // At the normal window level a background app's window stays behind
+        // the active app, so we raise the alert to the modal-panel level so
+        // it sits above other apps. We do this instead of `NSApp.activate()`
+        // so canceling doesn't pull every Limpid window in front of the
+        // user's other work.
+        alert.window.level = .modalPanel
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
