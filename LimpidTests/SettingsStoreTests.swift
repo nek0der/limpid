@@ -39,4 +39,22 @@ struct SettingsStoreTests {
             #expect(try Data(contentsOf: quarantinedURL) == originalBytes)
         }
     }
+
+    /// The file name is what users edit by hand and what older builds
+    /// read, so we pin it here rather than through the store's helper.
+    @Test("the store saves to and loads from settings.json in its directory")
+    func saveAndLoad_useSettingsJSONInDirectory() throws {
+        try withTempDir { dir in
+            let file = dir.appendingPathComponent("settings.json")
+            let store = SettingsStore(directory: dir)
+            #expect(store.settingsFileURL == file)
+
+            store.settings.terminal.minPaneSize = 120
+            store.saveNow()
+            #expect(FileManager.default.fileExists(atPath: file.path))
+
+            let reloaded = SettingsStore(directory: dir)
+            #expect(reloaded.settings.terminal.minPaneSize == 120)
+        }
+    }
 }
