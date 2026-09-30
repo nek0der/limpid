@@ -67,7 +67,7 @@ final class SessionStore {
                     )
                 // Move the unsupported snapshot aside so the next save
                 // doesn't destroy it — a future migration may want it.
-                quarantineCorruptedFile(reason: "version-mismatch")
+                SecureFileWrite.quarantine(fileURL, reason: "version-mismatch")
                 return .versionMismatch(
                     found: snapshot.version,
                     expected: SessionSnapshot.currentVersion
@@ -84,23 +84,8 @@ final class SessionStore {
             // We absolutely don't want the next `scheduleSave` to clobber
             // a file the user might still recover from. Rename it now,
             // before any mutation triggers a write.
-            quarantineCorruptedFile(reason: "decode-failed")
+            SecureFileWrite.quarantine(fileURL, reason: "decode-failed")
             return .decodeFailed(error)
-        }
-    }
-
-    /// Rename the on-disk snapshot to `state.json.bak-<unix>` so a
-    /// subsequent save lands in a fresh file instead of overwriting
-    /// the bad one. Best-effort; failures are logged but not surfaced.
-    private func quarantineCorruptedFile(reason: String) {
-        let ts = Int(Date().timeIntervalSince1970)
-        let bak = fileURL.deletingLastPathComponent()
-            .appendingPathComponent("state.json.bak-\(reason)-\(ts)")
-        do {
-            try FileManager.default.moveItem(at: fileURL, to: bak)
-            log.notice("quarantined snapshot to \(bak.lastPathComponent, privacy: .public)")
-        } catch {
-            log.error("failed to quarantine snapshot: \(String(describing: error), privacy: .public)")
         }
     }
 

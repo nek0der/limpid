@@ -147,15 +147,7 @@ final class NotificationHistoryStore {
             // A subsequent `record` / `markRead` would otherwise debounce
             // a write of the empty `entries` array and destroy the bad-
             // but-maybe-recoverable file. Move it aside first.
-            let ts = Int(Date().timeIntervalSince1970)
-            let bak = fileURL.deletingLastPathComponent()
-                .appendingPathComponent("notifications.json.bak-\(ts)")
-            do {
-                try FileManager.default.moveItem(at: fileURL, to: bak)
-                log.notice("quarantined notifications to \(bak.lastPathComponent, privacy: .public)")
-            } catch {
-                log.error("failed to quarantine notifications: \(String(describing: error), privacy: .public)")
-            }
+            SecureFileWrite.quarantine(fileURL, reason: "decode-failed")
         }
     }
 

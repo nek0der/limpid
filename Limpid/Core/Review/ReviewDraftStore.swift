@@ -2,9 +2,6 @@
 // Limpid — the review draft on disk, apart from the state it restores.
 
 import Foundation
-import OSLog
-
-private let log = Logger.limpid("review.draft")
 
 /// What one repository's review is between sessions: the comments, and which
 /// files the reader has finished with.
@@ -103,7 +100,7 @@ struct FileReviewDraftStore: ReviewDraftStoring {
             // being to find the file and delete it. The reader starts from an
             // empty draft and their bytes survive beside it, which is what
             // `SettingsStore` and `SessionStore` already do.
-            Self.quarantine(at: file, reason: "decode-failed")
+            SecureFileWrite.quarantine(file, reason: "decode-failed")
             throw ReviewError.storageFailed
         }
     }
@@ -119,22 +116,6 @@ struct FileReviewDraftStore: ReviewDraftStoring {
             throw draft.comments.contains(where: \.isResolved) ? ReviewError.resolvedBacklogTooLarge : ReviewError.storageFailed
         }
         try SecureFileWrite.writeAtomic(data, to: file)
-    }
-
-    /// Rename an unreadable draft to `<name>.bak-<reason>-<ts>` so the reader's
-    /// own bytes outlive the fresh draft that replaces them. Best effort: a
-    /// rename that fails leaves the file where it was, and the next write
-    /// replaces it.
-    private static func quarantine(at url: URL, reason: String) {
-        let stamp = Int(Date().timeIntervalSince1970)
-        let backup = url.deletingLastPathComponent()
-            .appendingPathComponent(url.lastPathComponent + ".bak-\(reason)-\(stamp)")
-        do {
-            try FileManager.default.moveItem(at: url, to: backup)
-            log.notice("quarantined review draft to \(backup.lastPathComponent, privacy: .public)")
-        } catch {
-            log.error("failed to quarantine review draft: \(String(describing: error), privacy: .private)")
-        }
     }
 }
 

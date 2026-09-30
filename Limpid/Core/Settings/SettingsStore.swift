@@ -185,25 +185,18 @@ final class SettingsStore {
             // next mutation — didSet → scheduleSave would otherwise
             // atomic-replace the bad bytes with defaults. Rename the bad
             // file aside now so the subsequent save lands on a fresh
-            // path. Mirrors SessionStore.quarantineCorruptedFile.
-            quarantineCorruptedFile(at: url, reason: "decode-failed")
+            // path.
+            SecureFileWrite.quarantine(url, reason: "decode-failed")
             return .default
         }
     }
 
-    /// Rename a corrupted settings.json to `settings.json.bak-<reason>-<ts>`
-    /// so the user's original bytes survive even after defaults take
-    /// over. Best-effort; failures are logged.
-    private static func quarantineCorruptedFile(at url: URL, reason: String) {
-        let ts = Int(Date().timeIntervalSince1970)
-        let bak = url.deletingLastPathComponent()
-            .appendingPathComponent("settings.json.bak-\(reason)-\(ts)")
-        do {
-            try FileManager.default.moveItem(at: url, to: bak)
-            log.notice("quarantined settings.json to \(bak.lastPathComponent, privacy: .public)")
-        } catch {
-            log.error("failed to quarantine settings.json: \(String(describing: error), privacy: .public)")
-        }
+    /// Moves `settings.json` aside so the next launch starts from
+    /// defaults. For the libghostty init-failure screen: the running
+    /// `GhosttyApp` is already half-initialized, so the reset only takes
+    /// effect on relaunch.
+    static func moveSettingsFileAside(at url: URL = defaultSettingsFileURL) {
+        SecureFileWrite.quarantine(url, reason: "init-failure")
     }
 
     /// Schedule a JSON write after `saveDebounce`. Repeated calls
