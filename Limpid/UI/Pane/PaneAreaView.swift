@@ -310,7 +310,7 @@ struct PaneAreaView: View {
     ) -> Bool {
         guard zone != .center,
               let tree = session.activeTab?.splitTree,
-              let currentRoot = tree.root
+              let availableSize = PaneActions.mountedPaneAreaSize(of: tree, registry: registry)
         else { return true }
         let candidate = switch zone {
         case .center: tree
@@ -319,26 +319,12 @@ struct PaneAreaView: View {
         case .top: tree.inserting(source, beside: target, on: .top)
         case .bottom: tree.inserting(source, beside: target, on: .bottom)
         }
-        guard let candidateRoot = candidate.root else { return false }
-
-        let paneIDs = tree.allLeafIDs()
-        let renderedRects = paneIDs.compactMap { paneID -> CGRect? in
-            guard let view = registry.view(for: paneID), view.window != nil else { return nil }
-            return view.convert(view.bounds, to: nil)
-        }
-        guard renderedRects.count == paneIDs.count,
-              let firstRect = renderedRects.first
-        else { return true }
-        let renderedBounds = renderedRects.dropFirst().reduce(firstRect) { $0.union($1) }
-
-        let floor = settings.settings.terminal.minPaneSize
-        func fits(_ axis: SplitDirection, available: CGFloat) -> Bool {
-            let current = currentRoot.minimumExtent(along: axis, leafMinimum: floor)
-            let required = candidateRoot.minimumExtent(along: axis, leafMinimum: floor)
-            return required <= max(available, current) + 0.5
-        }
-        return fits(.horizontal, available: renderedBounds.width)
-            && fits(.vertical, available: renderedBounds.height)
+        return PaneActions.fitsPaneArea(
+            candidate,
+            replacing: tree,
+            availableSize: availableSize,
+            minPaneSize: settings.settings.terminal.minPaneSize
+        )
     }
 
     /// Review replaces the split tree but keeps the origin pane docked below
