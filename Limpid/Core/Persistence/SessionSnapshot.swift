@@ -28,7 +28,7 @@ struct SessionSnapshot: Codable, @unchecked Sendable {
     var activeTabID: UUID?
     var activeContainerID: ContainerID
     var sidebarWidth: Double
-    var tabColumnWidth: Double = LimpidLayout.tabColumnWidth
+    var tabColumnWidth: Double = SessionLayoutDefaults.tabColumnWidth
 
     /// What `tabColumnWidth` defaulted to before the two columns were
     /// unified. Only the decoder reads it — see the note there.
@@ -56,7 +56,7 @@ struct SessionSnapshot: Codable, @unchecked Sendable {
         activeTabID: UUID?,
         activeContainerID: ContainerID = .loose,
         sidebarWidth: Double,
-        tabColumnWidth: Double = LimpidLayout.tabColumnWidth,
+        tabColumnWidth: Double = SessionLayoutDefaults.tabColumnWidth,
         attentionHeightFraction: Double? = nil,
         sidebarHidden: Bool = false,
         tabColumnHorizontal: Bool = false,
@@ -150,8 +150,8 @@ struct SessionSnapshot: Codable, @unchecked Sendable {
         // columns squared up.
         let storedTabColumnWidth = try c.decodeIfPresent(Double.self, forKey: .tabColumnWidth)
         self.tabColumnWidth = storedTabColumnWidth == Self.legacyTabColumnWidth
-            ? LimpidLayout.tabColumnWidth
-            : storedTabColumnWidth ?? LimpidLayout.tabColumnWidth
+            ? SessionLayoutDefaults.tabColumnWidth
+            : storedTabColumnWidth ?? SessionLayoutDefaults.tabColumnWidth
         self.attentionHeightFraction = try c.decodeIfPresent(Double.self, forKey: .attentionHeightFraction)
         self.sidebarHidden = try c.decode(Bool.self, forKey: .sidebarHidden)
         self.tabColumnHorizontal = try c.decodeIfPresent(Bool.self, forKey: .tabColumnHorizontal) ?? false
@@ -326,7 +326,7 @@ extension WindowSession {
         sidebarWidth = CGFloat(snapshot.sidebarWidth)
         tabColumnWidth = CGFloat(snapshot.tabColumnWidth)
         attentionHeightFraction = snapshot.attentionHeightFraction
-            .map { CGFloat($0) } ?? LimpidLayout.attentionHeightFraction
+            .map { CGFloat($0) } ?? SessionLayoutDefaults.attentionHeightFraction
         sidebarHidden = snapshot.sidebarHidden
         tabColumnHorizontal = snapshot.tabColumnHorizontal
         recentProjectPaths = snapshot.recentProjectPaths

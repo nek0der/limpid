@@ -136,32 +136,11 @@ enum LimpidLayout {
         toolbarContainerTitleMinWidth + toolbarControlSpacing
     }
 
-    /// Container column width — clamped via min/max below.
-    static let containerColumnWidth: CGFloat = 240
-
-    /// Tab column (tab list / mode body) default width. The current value
-    /// lives on `WindowSession.tabColumnWidth` so the user can drag-resize
-    /// it; double-clicking the divider resets to this default.
-    ///
-    /// Derived from the container column rather than set apart from it.
-    /// It used to be 260 against the container's 240, which gave the
-    /// wider column to the shorter names — a tab list holds `main` and
-    /// `shell`, the container list holds branch names long enough to
-    /// truncate. Two widths that near each other also read as a mistake
-    /// rather than as hierarchy.
-    static var tabColumnWidth: CGFloat {
-        containerColumnWidth
-    }
-
     static let tabColumnMinWidth: CGFloat = 200
     static let tabColumnMaxWidth: CGFloat = 500
 
-    /// Container column Waiting region height as a fraction of the slab height.
-    /// Default for `WindowSession.attentionHeightFraction`: the share a
-    /// session opens at until the user moves the divider, and the share
-    /// a double-click resets to. A fraction (not points) so the region
-    /// keeps its proportion when the window resizes.
-    static let attentionHeightFraction: CGFloat = 0.25
+    /// Bounds for the Waiting region's share of the slab height. The
+    /// default share is `SessionLayoutDefaults.attentionHeightFraction`.
     static let attentionMinFraction: CGFloat = 0.08
     static let attentionMaxFraction: CGFloat = 0.6
     /// Floor for the Waiting region in points — regardless of the
@@ -306,20 +285,6 @@ enum LimpidLayout {
     /// track the `.callout` under Dynamic Type.
     static let prCardGlyphSize: CGFloat = 14
 
-    /// How long the pointer has to rest on a row before its card
-    /// appears. Long enough that dragging the pointer down the sidebar
-    /// does not flash a card per row, short enough to read as a
-    /// deliberate peek rather than a wait.
-    static let prHoverCardOpenDelay: Duration = .milliseconds(250)
-
-    /// Grace period started when the pointer leaves either the row or
-    /// the card, long enough to cross the gap between them before the
-    /// card is taken away. Whether it is actually gone is decided when
-    /// the period expires, not when it starts. Long enough for the
-    /// trip, short enough that a dismissal the user did intend does
-    /// not feel sticky — nothing ties it to the open delay.
-    static let prHoverCardDismissGrace: Duration = .milliseconds(150)
-
     // MARK: - Pane surface
 
     /// Radius of the banner a pane shows when its process exits. The
@@ -402,11 +367,6 @@ enum LimpidLayout {
 
     /// Debounce window before the on-disk state file is rewritten.
     static let persistenceDebounce: TimeInterval = 0.400
-
-    /// Debounce window applied to libghostty SET_TITLE updates so a
-    /// shell that prints "exit" right before terminating doesn't flash
-    /// it onto the tab before close_surface_cb fires.
-    static let setTitleDebounce: TimeInterval = 0.08
 
     /// Easing curve used when the tab pill grows / shrinks between its
     /// natural width and the rename-mode `maxWidth` lock.

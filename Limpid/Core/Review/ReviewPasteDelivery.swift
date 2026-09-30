@@ -18,9 +18,18 @@ import Foundation
 final class ReviewPasteDelivery {
     private var receipt: ReviewPasteReceipt?
     private var isSettled: Bool
+    /// Where a refusal goes. Injectable so a test counts its own refusals
+    /// rather than sharing the app's handler with every test running beside it.
+    private let reportDenied: @MainActor (ReviewPasteReceipt) -> Void
 
-    init(receipt: ReviewPasteReceipt?) {
+    init(
+        receipt: ReviewPasteReceipt?,
+        reportDenied: @escaping @MainActor (ReviewPasteReceipt) -> Void = {
+            ClipboardConfirmationCoordinator.reportReviewPasteDenied($0)
+        }
+    ) {
         self.receipt = receipt
+        self.reportDenied = reportDenied
         // A paste with no receipt is not a review paste; nothing to answer for.
         isSettled = receipt == nil
     }
@@ -47,7 +56,7 @@ final class ReviewPasteDelivery {
         guard !isSettled, let receipt else { return }
         isSettled = true
         self.receipt = nil
-        ClipboardConfirmationCoordinator.reportReviewPasteDenied(receipt)
+        reportDenied(receipt)
     }
 }
 
@@ -56,9 +65,18 @@ final class ReviewPasteDelivery {
 final class ReviewPasteLedger {
     /// Absent when no confirmation is pending, including non-review requests.
     private var pending: ReviewPasteDelivery?
+    private let reportDenied: @MainActor (ReviewPasteReceipt) -> Void
+
+    init(
+        reportDenied: @escaping @MainActor (ReviewPasteReceipt) -> Void = {
+            ClipboardConfirmationCoordinator.reportReviewPasteDenied($0)
+        }
+    ) {
+        self.reportDenied = reportDenied
+    }
 
     func enqueue(receipt: ReviewPasteReceipt?) -> Bool {
-        let delivery = ReviewPasteDelivery(receipt: receipt)
+        let delivery = ReviewPasteDelivery(receipt: receipt, reportDenied: reportDenied)
         guard pending == nil else {
             delivery.failIfUnsettled()
             return false

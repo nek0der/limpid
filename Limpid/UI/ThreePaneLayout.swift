@@ -17,7 +17,6 @@ struct ThreePaneLayout: View {
     let state: AppState
     let app: GhosttyApp
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
-    @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.limpidAccent) private var limpidAccent
     /// Compact windows overlay the container slab instead of reserving a
     /// column for it. This is presentation-only so narrowing a window never
@@ -186,22 +185,6 @@ struct ThreePaneLayout: View {
                 attention: state.attention,
                 presentation: state.reviewPresentation
             )
-        }
-        // A paste the user refused at the confirmation sheet delivered nothing.
-        // Review has already closed by then, so the store is reached through
-        // the pool rather than through the surface that was showing it.
-        .onReceive(NotificationCenter.default.publisher(for: .limpidReviewPasteDenied)) { notification in
-            guard let receipt = notification.object as? ReviewPasteReceipt else { return }
-            state.reviewStores.store(root: receipt.root).unmarkInserted(receipt.commentIDs)
-            // Said out loud, because the refusal arrives after review has told
-            // the reader it went and usually after review has closed. Without
-            // this the only two paths that refuse — the confirmation sheet,
-            // and a second request arriving while one is already up — took the
-            // comments back in silence.
-            toastCenter.show(ToastItem(
-                message: String(localized: "Review was not delivered. The comments stay in this review."),
-                undo: nil
-            ))
         }
     }
 

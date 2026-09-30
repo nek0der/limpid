@@ -49,7 +49,7 @@ struct SettingsScene: View {
                 // own `UpdatePopover`; without this marker the driver
                 // would layer Sparkle's standard modal on top whenever
                 // the main window is hidden.
-                .background(LimpidSettingsWindowMarker())
+                .background(LimpidWindowRoleMarker(role: .settings))
 
             // Flush glass sidebar with the section list — the same
             // treatment the main window gives its container sidebar, so

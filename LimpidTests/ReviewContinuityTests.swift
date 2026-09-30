@@ -883,16 +883,7 @@ struct ReviewPasteLedgerTests {
         let first = ReviewPasteReceipt(root: root, commentIDs: [UUID()])
         let second = ReviewPasteReceipt(root: root, commentIDs: [UUID()])
         var refused: [[UUID]] = []
-        let observer = NotificationCenter.default.addObserver(forName: .limpidReviewPasteDenied, object: nil, queue: .main) { note in
-            guard let receipt = note.object as? ReviewPasteReceipt else { return }
-            MainActor.assumeIsolated {
-                if receipt.root == root {
-                    refused.append(receipt.commentIDs)
-                }
-            }
-        }
-        defer { NotificationCenter.default.removeObserver(observer) }
-        let ledger = ReviewPasteLedger()
+        let ledger = ReviewPasteLedger { refused.append($0.commentIDs) }
         #expect(ledger.enqueue(receipt: first))
         #expect(!ledger.enqueue(receipt: second))
         #expect(refused == [second.commentIDs])

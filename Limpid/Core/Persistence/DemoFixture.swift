@@ -358,8 +358,8 @@ enum DemoFixture {
             tabs: tabs,
             activeTabID: editorTabID,
             activeContainerID: featContainer,
-            sidebarWidth: Double(LimpidLayout.containerColumnWidth),
-            tabColumnWidth: Double(LimpidLayout.tabColumnWidth),
+            sidebarWidth: Double(SessionLayoutDefaults.containerColumnWidth),
+            tabColumnWidth: Double(SessionLayoutDefaults.tabColumnWidth),
             sidebarHidden: false,
             windowFrame: WindowFrame(CGRect(x: 100, y: 100, width: 1280, height: 800)),
             recentProjectPaths: [limpidRoot]

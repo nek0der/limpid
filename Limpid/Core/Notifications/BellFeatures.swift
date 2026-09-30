@@ -16,6 +16,13 @@ struct BellFeatures: OptionSet {
     /// Flash the originating pane for a moment.
     static let paneFlash = BellFeatures(rawValue: 1 << 2)
 
+    /// How long a pane's bell-ring highlight stays lit. One constant so
+    /// the libghostty bell handler and the manual `flashPane` helper
+    /// agree on the duration — before it they drifted to 350ms and
+    /// 400ms respectively, and either could win depending on the
+    /// path the user took.
+    static let paneFlashNanoseconds: UInt64 = 400_000_000
+
     static func forAction(_ action: BellAction) -> BellFeatures {
         switch action {
         case .none: []
