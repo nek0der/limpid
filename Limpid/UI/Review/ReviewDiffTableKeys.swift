@@ -37,13 +37,17 @@ extension ReviewDiffTable.Coordinator {
         case .toggleTerminal:
             parent.onToggleTerminal()
         case .comment:
-            guard !parent.selection.isEmpty else { return true }
+            parent.selection.takeTextAsLines(rows: parent.rows, diffLines: parent.diffLines)
+            guard !parent.selection.lines.isEmpty else { return true }
             parent.onCompose()
         case .markViewed:
             parent.onToggleViewed()
         case .openInEditor:
             openInEditor(clickedRow: nil)
+        case .nextFile, .previousFile:
+            move(key)
         default:
+            parent.selection.takeTextAsLines(rows: parent.rows, diffLines: parent.diffLines)
             move(key)
         }
         return true
@@ -111,24 +115,31 @@ extension ReviewDiffTable.Coordinator {
     }
 
     /// The row the open action goes to, which is always one the reader can
-    /// see: the top of the selection, since a right-click selects the line
-    /// it lands on first. A line that cannot be selected — one unfolded from
-    /// the file — and a line inside dragged text are their own targets. The
-    /// key uses the line selection, then dragged text, and with neither it
-    /// opens the file's first change rather than doing nothing.
+    /// see. Dragged text and a line selection replace each other, so only one
+    /// is on screen — except while a composer holds its lines, when the text
+    /// is the newer and comes first. A right-click inside either opens
+    /// its top; a right-click elsewhere selects the line it lands on first,
+    /// except on a line that cannot be selected — one unfolded from the
+    /// file — which is its own target. The key opens the top of whichever
+    /// selection there is, and with neither it opens the file's first change
+    /// rather than doing nothing.
     private func openTarget(clickedRow: Int?) -> Int? {
+        let textRows = parent.selection.text.rowRange
         if let clickedRow, parent.rows.indices.contains(clickedRow) {
-            let side = parent.selection.side
+            if let textRows, textRows.contains(clickedRow) {
+                return textRows.lowerBound
+            }
+            let side = parent.selection.lines.side
             guard let lineID = parent.rows[clickedRow].commentableLineID(on: side),
-                  parent.selection.contains(lineID)
+                  parent.selection.lines.contains(lineID)
             else { return clickedRow }
         }
-        return selectionStartRow ?? parent.textSelection.rowRange?.lowerBound ?? firstChangedRow
+        return textRows?.lowerBound ?? selectionStartRow ?? firstChangedRow
     }
 
     private var selectionStartRow: Int? {
-        guard let start = parent.selection.startLineID else { return nil }
-        let side = parent.selection.side
+        guard let start = parent.selection.lines.startLineID else { return nil }
+        let side = parent.selection.lines.side
         return parent.rows.firstIndex { $0.commentableLineID(on: side) == start }
     }
 
@@ -162,13 +173,13 @@ extension ReviewDiffTable.Coordinator {
     /// reader opens a diff to read.
     var cursorSide: ReviewSide? {
         guard parent.layout == .sideBySide else { return nil }
-        return parent.selection.side ?? .new
+        return parent.selection.lines.side ?? .new
     }
 
     /// The moving end of the selection — what `j` / `k` step from.
     private var currentIndex: Int? {
-        guard let lineID = parent.selection.headLineID else { return nil }
-        let side = parent.selection.side
+        guard let lineID = parent.selection.lines.headLineID else { return nil }
+        let side = parent.selection.lines.side
         return parent.rows.firstIndex { $0.commentableLineID(on: side) == lineID }
     }
 
@@ -181,7 +192,7 @@ extension ReviewDiffTable.Coordinator {
     private func moveToSide(_ side: ReviewSide) {
         guard parent.layout == .sideBySide, let index = currentIndex,
               let lineID = parent.rows[index].commentableLineID(on: side) else { return }
-        parent.selection.select(lineID, on: side)
+        parent.selection.updateLines { $0.select(lineID, on: side) }
         parent.onCancelCompose()
     }
 
@@ -193,7 +204,7 @@ extension ReviewDiffTable.Coordinator {
         guard let next,
               let lineID = parent.rows[next].commentableLineID(on: side) else { return }
         guard extend else {
-            parent.selection.select(lineID, on: side)
+            parent.selection.updateLines { $0.select(lineID, on: side) }
             // The composer belongs to the run it was opened on, and this
             // is a move to a different line entirely.
             parent.onCancelCompose()
@@ -204,8 +215,8 @@ extension ReviewDiffTable.Coordinator {
         // It stops at the end of the block it started in: the next hunk is one
         // row away on screen and hundreds of lines away in the file, and a run
         // that crossed would name all of them.
-        guard ReviewRunBounds.canExtend(parent.diffLines, from: parent.selection.anchorLineID, to: lineID) else { return }
-        parent.selection.extend(to: lineID)
+        guard ReviewRunBounds.canExtend(parent.diffLines, from: parent.selection.lines.anchorLineID, to: lineID) else { return }
+        parent.selection.updateLines { $0.extend(to: lineID) }
     }
 
     /// First commentable line of each changed block, in order. `]` / `[`
@@ -239,7 +250,7 @@ extension ReviewDiffTable.Coordinator {
             : starts.last { current == nil || $0 < (current ?? 0) }
         let side = cursorSide
         guard let target, let lineID = parent.rows[target].commentableLineID(on: side) else { return }
-        parent.selection.select(lineID, on: side)
+        parent.selection.updateLines { $0.select(lineID, on: side) }
         parent.onCancelCompose()
     }
 

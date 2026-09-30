@@ -149,10 +149,9 @@ struct ReviewWorkspaceView: View {
     @Environment(SettingsStore.self) var settingsStore
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @State var fileID: String?
-    @State var selection = ReviewSelection()
-    /// Exact code characters selected for copying. Comment ranges remain in
-    /// `selection`; the two gestures have different lifetimes and semantics.
-    @State var textSelection = ReviewTextSelection()
+    /// The line run a comment will cover and the text dragged for copying,
+    /// held together so that only one of them is highlighted at a time.
+    @State var selection = ReviewDiffSelection()
     /// Editing reuses the composer rather than opening a modal on top of a
     /// surface that already covers the window, so which comment is being
     /// rewritten has to travel with it.
@@ -342,7 +341,7 @@ struct ReviewWorkspaceView: View {
         // rather than by scanning the rows: the find bar asks for the current
         // match on every keystroke.
         guard hit.isCommentable else { return }
-        selection.select(hit.lineID, on: hit.side)
+        selection.updateLines { $0.select(hit.lineID, on: hit.side) }
     }
 
     /// What the widest line can depend on, and nothing else.
@@ -636,15 +635,24 @@ struct ReviewWorkspaceView: View {
             // keystroke: the keystroke does not know what the hits are yet.
             moveSearch(by: 0)
         }
-        .onChange(of: selection) { old, new in
+        .onChange(of: composer.isOpen) { _, isOpen in
+            if !isOpen {
+                selection.composerDidClose()
+            }
+        }
+        .onChange(of: selection.lines) { old, new in
             // Only while the run is still being extended. A plain click
             // somewhere else is the reader leaving, and dragging the draft
             // along committed it to lines they never selected. The anchor is
             // what says which: `follow` changes the side alone, so a layout
             // switch must not throw the draft away. An edit in progress is
             // never discarded — there is no undo for it.
+            // A composer already on the new run was opened for it in the same
+            // keystroke — `c` on dragged text picks the run and composes at
+            // once — so that change is not the reader leaving.
             guard let start = new.startLineID, let end = new.endLineID else { return }
-            if old.anchorLineID != new.anchorLineID, composer.editingCommentID == nil {
+            let isComposingNewRun = composer.startLineID == start && composer.lineID == end
+            if old.anchorLineID != new.anchorLineID, composer.editingCommentID == nil, !isComposingNewRun {
                 cancelComposing()
                 return
             }
@@ -654,15 +662,16 @@ struct ReviewWorkspaceView: View {
         // the same patch, so include the file id or a selection and pending
         // jump from the previous file can survive the switch.
         .onChange(of: store.diff.map { $0.file.id + "|" + $0.fingerprint }, initial: true) { _, _ in
-            selection = ReviewSelection()
-            textSelection.clear()
+            selection.clear()
             cancelComposing()
             // A comment opened from the list names a line in a file that may
             // still be loading; the jump lands once the diff is here.
             if let target = pendingJump, store.diff?.file.id == target.fileID {
-                selection.select(target.start, on: target.side)
-                if target.end != target.start {
-                    selection.extend(to: target.end)
+                selection.updateLines { lines in
+                    lines.select(target.start, on: target.side)
+                    if target.end != target.start {
+                        lines.extend(to: target.end)
+                    }
                 }
                 pendingJump = nil
             }
@@ -672,7 +681,7 @@ struct ReviewWorkspaceView: View {
         // rendered row. Rebase by line identity and clear only if an endpoint
         // actually disappeared.
         .onChange(of: contentKey) { _, _ in
-            textSelection = textSelection.rebased(in: rows) ?? ReviewTextSelection()
+            selection.rebaseText(in: rows)
         }
     }
 
@@ -710,9 +719,9 @@ struct ReviewWorkspaceView: View {
     private func setLayout(_ layout: ReviewDiffLayout) {
         guard layout != reviewPresentation.diffLayout else { return }
         reviewPresentation.diffLayout = layout
-        textSelection.clear()
-        let head = selection.headLineID.flatMap { id in store.diff?.lines.first { $0.id == id } }
-        selection.follow(layout, head: head, lines: store.diff?.lines ?? [])
+        selection.clearText()
+        let head = selection.lines.headLineID.flatMap { id in store.diff?.lines.first { $0.id == id } }
+        selection.updateLines { $0.follow(layout, head: head, lines: store.diff?.lines ?? []) }
     }
 
     func toggleViewed(_ fileID: String) {
@@ -757,15 +766,19 @@ struct ReviewWorkspaceView: View {
             side: comment.side
         )
         if fileID == comment.file.id {
-            selection.select(comment.lineID, on: comment.side)
-            if comment.lastLineID != comment.lineID {
-                selection.extend(to: comment.lastLineID)
-            }
             // A comment written in the unified layout has no column; landing on
             // it in the split one has to pick the column that draws it, the
             // same way a layout switch does.
             let head = store.diff?.lines.first { $0.id == comment.lastLineID }
-            selection.follow(reviewPresentation.diffLayout, head: head, lines: store.diff?.lines ?? [])
+            let layout = reviewPresentation.diffLayout
+            let diffLines = store.diff?.lines ?? []
+            selection.updateLines { lines in
+                lines.select(comment.lineID, on: comment.side)
+                if comment.lastLineID != comment.lineID {
+                    lines.extend(to: comment.lastLineID)
+                }
+                lines.follow(layout, head: head, lines: diffLines)
+            }
             pendingJump = nil
         } else {
             select(comment.file.id)
@@ -810,7 +823,6 @@ struct ReviewWorkspaceView: View {
                     contentIdentity: (fileID ?? "") + "|" + (store.diff?.fingerprint ?? ""),
                     isInteractionEnabled: !store.isLoading,
                     selection: $selection,
-                    textSelection: $textSelection,
                     composerLineID: composer.lineID,
                     composerStartLine: composerStartLine,
                     composerIsEditing: composer.editingCommentID != nil,

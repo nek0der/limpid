@@ -125,15 +125,15 @@ struct ReviewComposerFocusTests {
     ) -> ReviewDiffTable {
         let file = ReviewFile(path: "a.swift", layer: .unstaged, status: .modified)
         let line = ReviewLine(id: 0, kind: .added, text: "new", oldLine: nil, newLine: 1)
-        var selection = ReviewSelection()
-        selection.select(line.id)
+        var selection = ReviewDiffSelection()
+        selection.updateLines { $0.select(line.id) }
         return ReviewDiffTable(
             rows: [ReviewRow(id: 0, kind: .code(line)), ReviewRow(id: 1, kind: .composer(line))],
             diffLines: [line], intralineHighlights: ReviewIntralineHighlights(),
             contentKey: "focus", widthKey: "focus", layout: .unified,
             files: [file], lineCommentCounts: [:], numberWidth: 26, expandedFileID: file.id, contentIdentity: file.id,
             isInteractionEnabled: isInteractionEnabled,
-            selection: .constant(selection), textSelection: .constant(ReviewTextSelection()),
+            selection: .constant(selection),
             composerLineID: line.id, composerStartLine: nil,
             composerIsEditing: false, composerText: .constant("focus-keep"),
             onSelectFile: { _ in }, onCompose: onCompose, onCancelCompose: {}, onCommit: {}, onInsert: {}, onToggleTerminal: {},

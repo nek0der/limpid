@@ -17,8 +17,9 @@ struct ReviewTextPosition: Equatable {
     let utf16Offset: Int
 }
 
-/// A copy selection independent from `ReviewSelection`, which continues to
-/// describe the line range a comment belongs to.
+/// A copy selection, apart from `ReviewSelection`, which continues to
+/// describe the line range a comment belongs to. `ReviewDiffSelection` holds
+/// the two and decides which one is on screen.
 struct ReviewTextSelection: Equatable {
     var anchor: ReviewTextPosition?
     var head: ReviewTextPosition?
@@ -42,8 +43,8 @@ struct ReviewTextSelection: Equatable {
     }
 
     /// The rows the selection spans, top first, or nil when nothing is
-    /// selected. A drag selects text without moving the line selection, so
-    /// this is what a right-click and the open key check against.
+    /// selected. A right-click, the open key and the line keys check it
+    /// before the line selection, which a drag has usually let go of.
     var rowRange: ClosedRange<Int>? {
         guard !isEmpty, let anchor, let head else { return nil }
         return min(anchor.rowIndex, head.rowIndex)...max(anchor.rowIndex, head.rowIndex)

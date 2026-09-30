@@ -143,8 +143,9 @@ final class ReviewSplitCodeRowView: NSView {
             onAddComment?()
             return
         }
-        // Everything else is the table's: clicking a line selects it, and
-        // shift-clicking extends the run.
+        // Everything else is the table's: a click in the gutter selects the
+        // line and a shift-click extends the run, and a press on code starts
+        // a text selection.
         super.mouseDown(with: event)
     }
 
