@@ -311,9 +311,8 @@ enum LimpidLayout {
 
     // MARK: - Tab pill
 
-    /// Tab pill width clamp. The pill grows to maxWidth while renaming
-    /// so the editor field has room.
-    static let tabPillMinWidth: CGFloat = 100
+    /// Tab pill width limit. The pill grows to it while renaming so the
+    /// editor field has room.
     static let tabPillMaxWidth: CGFloat = 200
 
     /// Tab pill height. Derived from the container row rather than
@@ -364,9 +363,6 @@ enum LimpidLayout {
     }
 
     // MARK: - Timings
-
-    /// Debounce window before the on-disk state file is rewritten.
-    static let persistenceDebounce: TimeInterval = 0.400
 
     /// Easing curve used when the tab pill grows / shrinks between its
     /// natural width and the rename-mode `maxWidth` lock.
