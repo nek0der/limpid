@@ -545,7 +545,12 @@ struct ClaudeHookScriptTests {
         #expect(optionalText(rust[7], "providerSessionTitle") == "Replacement title")
         #expect(optionalText(rust[9], "firstPrompt") == "Second prompt")
         #expect(optionalText(rust[9], "providerSessionTitle") == "Replacement title")
-        #expect(rust[9]["sessionStartedAt"] as? String == rust[8]["sessionStartedAt"] as? String)
+        // A compact restart refreshes `sessionStartedAt` like every start does
+        // (`lifecycle.rs`), so the value can only move forward. Comparing for
+        // equality passed only while both events landed in the same second.
+        let restartedAt = try #require(optionalText(rust[9], "sessionStartedAt"))
+        let previousAt = try #require(optionalText(rust[8], "sessionStartedAt"))
+        #expect(restartedAt >= previousAt)
     }
 
     @Test("keys one invocation by run id and increments its revision")
