@@ -53,8 +53,9 @@ enum LimpidProjectionBridge {
         } input: { Data() }
     }
 
-    /// How run records are named in each provider's state directory, as
-    /// `{ "runRecordSuffix": "<suffix>" }`.
+    /// How the files in each provider's directories are named, as
+    /// `{ "runRecordSuffix", "sessionHintSuffix", "cwdEventSuffix",
+    /// "worktreeEventsDirectory", "worktreeEventSuffix", "lockSuffix" }`.
     static func recordLayout() throws -> Data {
         try call { pointers in
             limpid_projection_record_layout_v1(pointers.out, pointers.outCount)

@@ -88,7 +88,7 @@ struct HookHelperLifecycleTests {
             #expect(record["runId"] as? String == Self.runID)
             #expect(record["paneId"] as? String == Self.paneID)
             #expect(record["firstPrompt"] != nil)
-            let hint = directory.appendingPathComponent("sessions/\(Self.paneID).json")
+            let hint = try directory.appendingPathComponent("sessions/\(AgentRecordFixtures.hintFileName(Self.paneID))")
             #expect(FileManager.default.fileExists(atPath: hint.path))
             let recordURL = try directory.appendingPathComponent("states/\(AgentRecordFixtures.recordFileName(Self.runID))")
             // The dictionary assertions above only prove the JSON says what we

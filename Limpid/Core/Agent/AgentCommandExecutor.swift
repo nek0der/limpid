@@ -17,16 +17,42 @@ struct AgentDirectories {
         state.appendingPathComponent("retired", isDirectory: true)
     }
 
-    /// What a run record's file name ends with in `state`. Asked of the Rust
-    /// writer rather than spelled here, so the side that reads a record cannot
-    /// disagree with the side that wrote it about which file it is in.
+    /// How the writer names the files in these directories. Asked of the Rust
+    /// writer rather than spelled here, so the side that reads a file cannot
+    /// disagree with the side that wrote it about which file it is.
+    var layout: AgentRecordLayout? {
+        AgentProviderRegistry.recordLayout
+    }
+
+    /// What a run record's file name ends with in `state`.
     var runRecordSuffix: String? {
-        AgentProviderRegistry.recordLayout?.runRecordSuffix
+        layout?.runRecordSuffix
     }
 
     /// The file the run record stored under `storageID` lives in.
     func recordURL(storageID: String) -> URL? {
         runRecordSuffix.map { state.appendingPathComponent(storageID + $0) }
+    }
+
+    /// Where worktree events land, inside `state`.
+    var worktreeEvents: URL? {
+        layout.map { state.appendingPathComponent($0.worktreeEventsDirectory, isDirectory: true) }
+    }
+
+    /// The directory a per-pane store lives in and what each pane's file name
+    /// ends with there; the rest of the name is the pane's id. Nil when the
+    /// provider has no such store or the layout is unknown.
+    func paneStore(_ kind: AgentPaneStoreKind) -> (directory: URL, suffix: String)? {
+        guard let layout else { return nil }
+        return switch kind {
+        case .sessions: (sessions, layout.sessionHintSuffix)
+        case .cwdEvents: cwdEvents.map { ($0, layout.cwdEventSuffix) }
+        }
+    }
+
+    /// The file `pane`'s entry in the per-pane store `kind` lives in.
+    func paneStoreURL(_ kind: AgentPaneStoreKind, pane: UUID) -> URL? {
+        paneStore(kind).map { $0.directory.appendingPathComponent(pane.uuidString + $0.suffix) }
     }
 
     /// The name a record retired at `retiredAt` gets in `retired`. The stamp
@@ -267,10 +293,10 @@ struct AgentCommandExecutor {
         keep: Set<UUID>,
         max: Int
     ) -> RecordMutationOutcome {
-        guard case let .paneStore(provider, store) = target,
-              let directory = paneStoreURL(provider: provider, store: store),
+        guard case let .paneStore(provider, kind) = target,
+              let store = directories[provider]?.paneStore(kind),
               let urls = try? FileManager.default.contentsOfDirectory(
-                  at: directory,
+                  at: store.directory,
                   includingPropertiesForKeys: [.contentModificationDateKey]
               )
         else {
@@ -280,8 +306,10 @@ struct AgentCommandExecutor {
         // Files a writer is holding. Kept apart so the cap below cannot undo
         // the wait, and counted so the deferral is visible in a log.
         var busy: [URL] = []
-        for url in urls where url.pathExtension == "json" {
-            let stem = url.lastPathComponent.split(separator: ".").first.map(String.init) ?? ""
+        // Only files named the way the writer names a pane's entry are swept,
+        // which leaves out the temporaries and lock sidecars beside them.
+        for url in urls where url.lastPathComponent.hasSuffix(store.suffix) {
+            let stem = String(url.lastPathComponent.dropLast(store.suffix.count))
             if let pane = UUID(uuidString: stem), keep.contains(pane) {
                 let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
                     .contentModificationDate ?? .distantPast
@@ -343,22 +371,19 @@ struct AgentCommandExecutor {
                 ? directories[provider]?.recordURL(storageID: storageID)
                 : nil
         case let .sessionHint(provider, pane):
-            directories[provider]?.sessions
-                .appendingPathComponent("\(pane.uuidString).json")
+            directories[provider]?.paneStoreURL(.sessions, pane: pane)
         case let .resumeIntent(runID):
             isIdentifier(runID)
                 ? resumeIntents.directory.appendingPathComponent("\(runID).json")
                 : nil
         case let .worktreeEvent(provider, fileName):
             isFileName(fileName)
-                ? directories[provider]?.state
-                .appendingPathComponent("worktree-events", isDirectory: true)
-                .appendingPathComponent(fileName)
+                ? directories[provider]?.worktreeEvents?.appendingPathComponent(fileName)
                 : nil
         case let .retiredRecords(provider):
             directories[provider]?.retired
         case let .paneStore(provider, store):
-            paneStoreURL(provider: provider, store: store)
+            directories[provider]?.paneStore(store)?.directory
         case .host, .unknown:
             nil
         }
@@ -376,13 +401,6 @@ struct AgentCommandExecutor {
 
     private func isFileName(_ value: String) -> Bool {
         !value.isEmpty && value != "." && value != ".." && !value.contains("/")
-    }
-
-    private func paneStoreURL(provider: String, store: AgentPaneStoreKind) -> URL? {
-        switch store {
-        case .sessions: directories[provider]?.sessions
-        case .cwdEvents: directories[provider]?.cwdEvents
-        }
     }
 
     // MARK: - Preconditions

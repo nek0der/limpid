@@ -59,6 +59,11 @@ limpid_next_revision() {
 limpid_acquire_record_lock() {
   # A persistent inode plus a kernel lock avoids stale-owner recovery.
   # FD 9 stays open in our shell; exit (including SIGKILL) releases it.
+  # The sidecar suffix is the one `LOCK_FILE_SUFFIX` in limpid-agent-model
+  # declares and the app and the Rust runtime lock. A shell script cannot read
+  # it from there, so the hook script suites hold the app's lock and expect
+  # the receiver to skip its write: a drift here fails them instead of letting
+  # two writers into one file.
   exec 9>"$1.flock" || return 1
   larl_attempt=0
   while ! /usr/bin/lockf -s -t 0 9; do

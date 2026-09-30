@@ -25,9 +25,16 @@ struct LimpidProjectionBridgeTests {
             AgentRecordLayout.self,
             from: LimpidProjectionBridge.recordLayout()
         )
-        // An empty suffix would make every file in a state directory a record.
-        #expect(!layout.runRecordSuffix.isEmpty)
-        #expect(AgentProviderRegistry.recordLayout?.runRecordSuffix == layout.runRecordSuffix)
+        // An empty suffix would make every file in a directory a record, a
+        // hint, or an event, and an empty lock suffix would lock the file
+        // itself rather than its sidecar.
+        for name in [
+            layout.runRecordSuffix, layout.sessionHintSuffix, layout.cwdEventSuffix,
+            layout.worktreeEventsDirectory, layout.worktreeEventSuffix, layout.lockSuffix
+        ] {
+            #expect(!name.isEmpty)
+        }
+        #expect(AgentProviderRegistry.recordLayout == layout)
     }
 
     @Test("an empty pass round-trips and carries state forward")

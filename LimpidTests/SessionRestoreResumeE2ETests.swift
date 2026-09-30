@@ -55,7 +55,7 @@ struct SessionRestoreResumeE2ETests {
                 record["cwd"] = cwd
             }
             try JSONSerialization.data(withJSONObject: record)
-                .write(to: sessions.appendingPathComponent("\(paneID.uuidString).json"))
+                .write(to: sessions.appendingPathComponent(AgentRecordFixtures.hintFileName(paneID.uuidString)))
         }
 
         let data = try JSONEncoder().encode(session.makeSnapshot())

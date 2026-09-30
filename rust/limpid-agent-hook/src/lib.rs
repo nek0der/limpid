@@ -30,7 +30,8 @@ use limpid_agent_core::{
 };
 use limpid_agent_model::{
     Capability, HookContext, InstallRecipe, ProviderAdapter, ProviderDescriptor, ProviderId,
-    RawHookInput, RunRecord, TmuxEndpoint, run_record_file_name,
+    RawHookInput, RunRecord, TmuxEndpoint, cwd_event_file_name, run_record_file_name,
+    session_hint_file_name,
 };
 use limpid_provider_claude::ClaudeAdapter;
 use limpid_provider_codex::CodexAdapter;
@@ -340,7 +341,7 @@ fn perform_side_write(
 ) {
     match side {
         SideWrite::SessionHint { session_id, cwd } => {
-            let path = directories.session.join(format!("{pane_id}.json"));
+            let path = directories.session.join(session_hint_file_name(pane_id));
             let body = json!({
                 "schemaVersion": 1,
                 "paneId": pane_id,
@@ -363,7 +364,7 @@ fn perform_side_write(
             if !drops_session {
                 return;
             }
-            let path = directories.session.join(format!("{pane_id}.json"));
+            let path = directories.session.join(session_hint_file_name(pane_id));
             let deleted = with_record_lock(&path, || {
                 if records::hint_is_owned(&path, session_id, run_id, pane_id, &directories.state) {
                     std::fs::remove_file(&path).is_ok()
@@ -379,7 +380,7 @@ fn perform_side_write(
             let Some(directory) = &directories.cwd_events else {
                 return;
             };
-            let path = directory.join(format!("{pane_id}.cwd.json"));
+            let path = directory.join(cwd_event_file_name(pane_id));
             let body = json!({
                 "schemaVersion": 1,
                 "paneId": pane_id,

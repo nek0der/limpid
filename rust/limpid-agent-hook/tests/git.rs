@@ -6,7 +6,7 @@ use limpid_agent_hook::{
     GitSnapshots, HookEnv, HookOutcome, HookRuntime, InterceptResult, NoSnapshots, SnapshotRunner,
     run_worktree_hook,
 };
-use limpid_agent_model::WorktreeIntent;
+use limpid_agent_model::{WORKTREE_EVENT_FILE_SUFFIX, WORKTREE_EVENTS_DIRECTORY, WorktreeIntent};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -242,12 +242,19 @@ fn intercept_creates_the_worktree_where_the_project_says_and_notifies() {
         !repo.root.join("escaped.txt").exists(),
         "an escaping cwd is skipped"
     );
-    let events: Vec<PathBuf> = fs::read_dir(states.join("worktree-events"))
+    let events: Vec<PathBuf> = fs::read_dir(states.join(WORKTREE_EVENTS_DIRECTORY))
         .expect("events")
         .flatten()
         .map(|entry| entry.path())
         .collect();
     assert_eq!(events.len(), 1);
+    // The host lists events by this suffix, so a name without it is an
+    // event nothing reads.
+    assert!(
+        events[0]
+            .to_string_lossy()
+            .ends_with(WORKTREE_EVENT_FILE_SUFFIX)
+    );
     let event: serde_json::Value =
         serde_json::from_slice(&fs::read(&events[0]).expect("event")).expect("json");
     assert_eq!(event["event"], "WorktreeCreate");

@@ -1,8 +1,11 @@
 //! File-level mechanics shared by every record the hook writes: the
-//! `.flock` sidecar lock the Swift stores and the shell receivers use,
-//! atomic replacement, user-only permissions, and the diagnostic log.
+//! sidecar lock the Swift stores and the shell receivers use, atomic
+//! replacement, user-only permissions, and the diagnostic log.
 
-use limpid_agent_model::RunRecord;
+use limpid_agent_model::{
+    LOCK_FILE_SUFFIX, RUN_RECORD_FILE_SUFFIX, RunRecord, WORKTREE_EVENT_FILE_SUFFIX,
+    WORKTREE_EVENTS_DIRECTORY,
+};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -23,14 +26,15 @@ const O_NOFOLLOW: i32 = 0o400_000;
 #[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
 const O_NOFOLLOW: i32 = 0;
 
-/// Runs `body` while holding the exclusive advisory lock on `path`'s `.flock`
-/// sidecar, retrying a busy lock as the shell did. Returns `None` when the
-/// lock stayed busy or the sidecar could not be opened (a symlink planted
-/// there, for example), in which case the event is dropped rather than
-/// written out of order, as the shell receiver and the Swift store do. On
-/// non-Unix hosts there is no lock and `body` runs directly.
+/// Runs `body` while holding the exclusive advisory lock on `path`'s sidecar
+/// (`path` followed by `LOCK_FILE_SUFFIX`), retrying a busy lock as the shell
+/// did. Returns `None` when the lock stayed busy or the sidecar could not be
+/// opened (a symlink planted there, for example), in which case the event is
+/// dropped rather than written out of order, as the shell receiver and the
+/// Swift store do. On non-Unix hosts there is no lock and `body` runs
+/// directly.
 pub fn with_record_lock<T>(path: &Path, body: impl FnOnce() -> T) -> Option<T> {
-    let sidecar = PathBuf::from(format!("{}.flock", path.display()));
+    let sidecar = PathBuf::from(format!("{}{LOCK_FILE_SUFFIX}", path.display()));
     if !cfg!(unix) {
         return Some(body());
     }
@@ -267,10 +271,10 @@ pub fn write_worktree_event(
     worktree_path: &str,
     branch: &str,
 ) -> io::Result<()> {
-    let directory = state_directory.join("worktree-events");
+    let directory = state_directory.join(WORKTREE_EVENTS_DIRECTORY);
     ensure_user_only_directory(&directory);
     let name = format!(
-        "{}-{}-{}-create.json",
+        "{}-{}-{}-create{WORKTREE_EVENT_FILE_SUFFIX}",
         limpid_agent_model::unix_seconds(std::time::SystemTime::now()),
         std::process::id(),
         uuid::Uuid::new_v4().simple()
@@ -327,7 +331,13 @@ fn newer_run_record_exists(state_directory: &Path, pane_id: &str, hint_updated: 
     };
     entries.flatten().any(|entry| {
         let path = entry.path();
-        if path.extension().is_none_or(|extension| extension != "json") {
+        // Named the way the writer names a record, which is also what the
+        // shell receiver's glob matches: a dot-prefixed temporary is not one.
+        let is_record = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.ends_with(RUN_RECORD_FILE_SUFFIX) && !name.starts_with('.'));
+        if !is_record {
             return false;
         }
         let Some(record) = read_record(&path) else {
@@ -392,7 +402,9 @@ mod tests {
         }
 
         fn hint(&self, run_id: Option<&str>, updated_at: &str) -> PathBuf {
-            let path = self.0.join(format!("{PANE}.json"));
+            let path = self
+                .0
+                .join(limpid_agent_model::session_hint_file_name(PANE));
             let run = run_id.map_or(String::new(), |run| format!(r#","runId":"{run}""#));
             fs::write(
                 &path,

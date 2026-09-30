@@ -82,8 +82,11 @@ struct WorktreeRoutingHookTests {
             "cwd": scratch.repo.path,
             "tool_input": ["command": "git worktree add -b \(branch) ../elsewhere"]
         ])
+        // Bound first: assigned straight to the optional property, the
+        // requirement type-checks against `URL?` and never fails.
+        let helper = try #require(HookHelperFixture.helperURL)
         let process = Process()
-        process.executableURL = try #require(HookHelperFixture.helperURL)
+        process.executableURL = helper
         process.arguments = ["hook", "claude", "worktree"]
         process.environment = IsolatedProcessEnvironment.make([
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
@@ -104,6 +107,61 @@ struct WorktreeRoutingHookTests {
         return process.terminationStatus
     }
 
+    /// Runs the wrapper the provider calls, asking it for the shell receiver
+    /// kept as the rollback path rather than the helper.
+    private func interceptWithShellReceiver(
+        _ scratch: Scratch,
+        provider: String,
+        branch: String
+    ) throws -> Int32 {
+        let root = try #require(RepoFixture.limpidRoot)
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "cwd": scratch.repo.path,
+            "tool_input": ["command": "git worktree add -b \(branch) ../elsewhere"]
+        ])
+        let prefix = provider == "claude" ? "LIMPID" : "LIMPID_CODEX"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [
+            root.appendingPathComponent("Limpid/Resources/\(provider)-shim/limpid-pretool-worktree-hook").path
+        ]
+        process.environment = IsolatedProcessEnvironment.make([
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": scratch.root.path,
+            "LIMPID_AGENT_HOOK_BACKEND": "shell",
+            "LIMPID_PANE_ID": UUID().uuidString,
+            "\(prefix)_AGENT_STATES_DIR": states(scratch, provider: provider).path,
+            "\(prefix)_SESSIONS_DIR": scratch.support.appendingPathComponent("sessions").path
+        ])
+        let stdin = Pipe()
+        process.standardInput = stdin
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        try stdin.fileHandleForWriting.write(contentsOf: payload)
+        try stdin.fileHandleForWriting.close()
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+
+    private func states(_ scratch: Scratch, provider: String) -> URL {
+        scratch.support.appendingPathComponent(provider == "claude" ? "agent-states" : "codex-agent-states")
+    }
+
+    /// The one worktree event in `states`, found by the names the application
+    /// lists events by, or nil when there is not exactly one.
+    private func event(in states: URL) throws -> [String: Any]? {
+        let directory = try AgentRecordFixtures.worktreeEvents(in: states)
+        let suffix = try AgentRecordFixtures.layout().worktreeEventSuffix
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let events = names.filter { $0.hasSuffix(suffix) && !$0.hasPrefix(".") }
+        guard let name = events.first, events.count == 1 else { return nil }
+        let data = try Data(contentsOf: directory.appendingPathComponent(name))
+        return try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
     @Test("the helper reads the file the application wrote")
     func routedProject_placesTheWorktreeAndRunsBootstrap() async throws {
         let scratch = try await Scratch.make()
@@ -120,6 +178,27 @@ struct WorktreeRoutingHookTests {
         #expect(FileManager.default.fileExists(
             atPath: worktree.appendingPathComponent("bootstrapped.txt").path
         ))
+        // The event is what refreshes the sidebar; one the application does
+        // not list is a worktree it never shows.
+        let event = try #require(try event(in: states(scratch, provider: "claude")))
+        #expect(event["branch"] as? String == "feature/alpha")
+    }
+
+    /// The shell receivers spell the event directory and the file ending
+    /// themselves, so looking for each one's event by the names the
+    /// application lists is what catches a receiver that drifts.
+    @Test("the shell receiver leaves its event where the application looks", arguments: ["claude", "codex"])
+    func shellReceiver_writesTheEventTheApplicationReads(provider: String) async throws {
+        let scratch = try await Scratch.make()
+        defer { scratch.cleanup() }
+        writeRouting(scratch, routeClaude: true)
+
+        let status = try interceptWithShellReceiver(scratch, provider: provider, branch: "feature/\(provider)")
+
+        #expect(status == 2)
+        let event = try #require(try event(in: states(scratch, provider: provider)))
+        #expect(event["event"] as? String == "WorktreeCreate")
+        #expect(event["branch"] as? String == "feature/\(provider)")
     }
 
     @Test("turning the provider off in the application reaches the helper")

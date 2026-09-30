@@ -151,7 +151,7 @@ struct AgentProjectionAdapterTests {
                 "updatedAt": "2026-09-14T12:00:00Z",
                 "runId": Self.run
             ]
-            let hintURL = sessions.appendingPathComponent("\(pane.uuidString).json")
+            let hintURL = try sessions.appendingPathComponent(AgentRecordFixtures.hintFileName(pane.uuidString))
             try JSONSerialization.data(withJSONObject: hint).write(to: hintURL)
 
             let adapter = ProjectionFixture.adapter(
@@ -179,17 +179,16 @@ struct AgentProjectionAdapterTests {
     func worktreeEvents_ignoreWhatIsNotAnEvent() throws {
         try withTempDir { root in
             let harness = try harness(in: root, paneID: UUID())
-            let events = harness.state.appendingPathComponent("worktree-events", isDirectory: true)
+            let events = try AgentRecordFixtures.worktreeEvents(in: harness.state)
             try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
             // The first pass only takes note of what is already there, so the
             // files have to arrive after it for this to reach the rule that
             // consumes them.
             harness.adapter.bootstrap(into: harness.session, attention: AttentionState())
 
-            let planted: Set = [
-                "1757000000-1-a-create.json.flock",
-                ".1757000000-1-a-create.json.tmp.42"
-            ]
+            let event = try "1757000000-1-a-create" + AgentRecordFixtures.layout().worktreeEventSuffix
+            let lock = try AgentRecordFixtures.lockURL(for: events.appendingPathComponent(event))
+            let planted: Set = [lock.lastPathComponent, ".\(event).tmp.42"]
             for name in planted {
                 try Data("{}".utf8).write(to: events.appendingPathComponent(name))
             }
@@ -246,10 +245,10 @@ struct AgentProjectionAdapterTests {
             adapter.startWatching()
             defer { adapter.stopWatching() }
 
-            for directory in [
+            for directory in try [
                 state,
                 sessions,
-                state.appendingPathComponent("worktree-events", isDirectory: true)
+                AgentRecordFixtures.worktreeEvents(in: state)
             ] {
                 var isDirectory: ObjCBool = false
                 let exists = FileManager.default.fileExists(

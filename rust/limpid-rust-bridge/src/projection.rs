@@ -7,7 +7,9 @@
 
 use limpid_agent_core::{on_launch, on_terminate, project};
 use limpid_agent_model::{
-    Command, Instants, LifecycleInput, ProjectionInput, ProjectionState, RUN_RECORD_FILE_SUFFIX,
+    CWD_EVENT_FILE_SUFFIX, Command, Instants, LOCK_FILE_SUFFIX, LifecycleInput, ProjectionInput,
+    ProjectionState, RUN_RECORD_FILE_SUFFIX, SESSION_HINT_FILE_SUFFIX, WORKTREE_EVENT_FILE_SUFFIX,
+    WORKTREE_EVENTS_DIRECTORY,
 };
 use serde::Serialize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -116,13 +118,18 @@ pub unsafe extern "C" fn limpid_projection_install_recipes_v1(
     }
 }
 
-/// How run records are named in every provider's state directory, as
-/// `{ "runRecordSuffix": "<suffix>" }`: a record's file name is its storage id
-/// followed by the suffix.
+/// How the hook runtime names the files in every provider's directories, as
+/// `{ "runRecordSuffix", "sessionHintSuffix", "cwdEventSuffix",
+/// "worktreeEventsDirectory", "worktreeEventSuffix", "lockSuffix" }`. A run
+/// record's file name is its storage id followed by `runRecordSuffix`; a resume
+/// hint's and a cwd event's are the pane id followed by their suffix; worktree
+/// events are the files ending in `worktreeEventSuffix` in the
+/// `worktreeEventsDirectory` of the state directory; and the lock on any of
+/// these files is its path followed by `lockSuffix`.
 ///
-/// The hook runtime writes each record under that name, and the host lists,
-/// rewrites, and retires it by the same name. Reporting it here is what keeps
-/// the host from spelling the name a second time.
+/// The hook runtime writes each file under that name, and the host lists,
+/// rewrites, locks, and deletes it by the same name. Reporting them here is
+/// what keeps the host from spelling the names a second time.
 ///
 /// # Safety
 ///
@@ -139,6 +146,11 @@ pub unsafe extern "C" fn limpid_projection_record_layout_v1(
         }
         let layout = RecordLayout {
             run_record_suffix: RUN_RECORD_FILE_SUFFIX,
+            session_hint_suffix: SESSION_HINT_FILE_SUFFIX,
+            cwd_event_suffix: CWD_EVENT_FILE_SUFFIX,
+            worktree_events_directory: WORKTREE_EVENTS_DIRECTORY,
+            worktree_event_suffix: WORKTREE_EVENT_FILE_SUFFIX,
+            lock_suffix: LOCK_FILE_SUFFIX,
         };
         let body = serde_json::to_vec(&layout).map_err(|_| PROJECTION_INTERNAL)?;
         unsafe { transfer(body, out, out_len) };
@@ -154,6 +166,11 @@ pub unsafe extern "C" fn limpid_projection_record_layout_v1(
 #[serde(rename_all = "camelCase")]
 struct RecordLayout {
     run_record_suffix: &'static str,
+    session_hint_suffix: &'static str,
+    cwd_event_suffix: &'static str,
+    worktree_events_directory: &'static str,
+    worktree_event_suffix: &'static str,
+    lock_suffix: &'static str,
 }
 
 /// Reduces the records the host found into what to show and what to change.
@@ -437,7 +454,7 @@ mod tests {
     }
 
     #[test]
-    fn the_record_layout_names_the_file_the_hook_writes() {
+    fn the_record_layout_names_the_files_the_hook_writes() {
         let mut out: *mut u8 = ptr::null_mut();
         let mut out_len: usize = 0;
         let status = unsafe { limpid_projection_record_layout_v1(&raw mut out, &raw mut out_len) };
@@ -447,7 +464,14 @@ mod tests {
         let layout: Value = serde_json::from_slice(&body).expect("decode");
         assert_eq!(
             layout,
-            serde_json::json!({ "runRecordSuffix": RUN_RECORD_FILE_SUFFIX })
+            serde_json::json!({
+                "runRecordSuffix": RUN_RECORD_FILE_SUFFIX,
+                "sessionHintSuffix": SESSION_HINT_FILE_SUFFIX,
+                "cwdEventSuffix": CWD_EVENT_FILE_SUFFIX,
+                "worktreeEventsDirectory": WORKTREE_EVENTS_DIRECTORY,
+                "worktreeEventSuffix": WORKTREE_EVENT_FILE_SUFFIX,
+                "lockSuffix": LOCK_FILE_SUFFIX,
+            })
         );
 
         let status =

@@ -194,6 +194,11 @@ fi
 # We write into the Codex-side worktree-events dir; the tracker
 # watches both Claude and Codex dirs so this lands in the same
 # pipeline as a Claude-initiated create.
+# The directory and the `.json` ending are the ones `WORKTREE_EVENTS_DIRECTORY`
+# and `WORKTREE_EVENT_FILE_SUFFIX` in limpid-agent-model declare and the app
+# lists events by. A shell script cannot read them from there, so
+# WorktreeRoutingHookTests runs this receiver and looks for the event by the
+# declared names: a drift here fails that suite instead of losing the event.
 NOTIFY_DIR="$LIMPID_CODEX_AGENT_STATES_DIR/worktree-events"
 mkdir -p "$NOTIFY_DIR" 2>/dev/null || true
 EVENT_FILE="$NOTIFY_DIR/$(date +%s)-$$-$RANDOM-create.json"
