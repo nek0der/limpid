@@ -17,6 +17,9 @@ enum ReviewTableKey {
     case comment, close, insert, toggleTerminal
     /// Mark the open file read, or put it back.
     case markViewed
+    /// Open the file in the app chosen for files, at the top of the
+    /// selection, or at the file's first change when nothing is selected.
+    case openInEditor
 
     init?(event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
@@ -50,7 +53,8 @@ enum ReviewTableKey {
         "h": .oldSide, "l": .newSide,
         "n": .nextFile, "p": .previousFile,
         "c": .comment,
-        "v": .markViewed
+        "v": .markViewed,
+        "o": .openInEditor
     ]
 }
 
@@ -65,7 +69,16 @@ final class ReviewTableRowView: NSTableRowView {
 final class ReviewTableView: NSTableView {
     var onKey: ((ReviewTableKey) -> Bool)?
     var onCopyCode: (() -> Bool)?
+    /// The title of the context menu's open item for the row that was
+    /// right-clicked, or nil when there is nothing to open. Asked per menu so
+    /// it names the app chosen now and the line the editor will land on.
+    var openInEditorTitle: ((Int) -> String?)?
+    var onOpenInEditor: ((Int?) -> Void)?
+    /// The row the context menu was built for.
+    private var menuRow: Int?
     var hasTextSelection: (() -> Bool)?
+    /// Whether a row lies inside the text the reader dragged over.
+    var textSelectionCovers: ((Int) -> Bool)?
     var textPosition: ((NSPoint, ReviewTextPosition?) -> ReviewTextPosition?)?
     var onCodePress: ((ReviewTextPosition, Bool) -> Void)?
     var onTextSelection: ((ReviewTextSelection) -> Void)?
@@ -230,24 +243,52 @@ final class ReviewTableView: NSTableView {
         super.keyDown(with: event)
     }
 
-    override func menu(for _: NSEvent) -> NSMenu? {
-        guard !selectedRowIndexes.isEmpty || hasTextSelection?() == true else { return nil }
+    override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
-        let copy = NSMenuItem(
-            title: hasTextSelection?() == true
-                ? String(localized: "Copy Selected Text")
-                : String(localized: "Copy Code"),
-            action: #selector(copySelectedCode(_:)),
-            keyEquivalent: "c"
-        )
-        copy.keyEquivalentModifierMask = .command
-        copy.target = self
-        menu.addItem(copy)
-        return menu
+        let point = convert(event.locationInWindow, from: nil)
+        let clicked = row(at: point)
+        menuRow = clicked >= 0 ? clicked : nil
+        // A right-click outside the selection selects the line first, so
+        // every item acts on the line the reader can see highlighted rather
+        // than some on it and some on the pointer. Dragged text counts as a
+        // selection: a right-click inside it keeps it, which is how Copy
+        // Selected Text is reached. Outside it, the text goes too, as it does
+        // on a left click, or Copy Selected Text would copy another line.
+        if clicked >= 0, !selectedRowIndexes.contains(clicked),
+           textSelectionCovers?(clicked) != true,
+           delegate?.tableView?(self, shouldSelectRow: clicked) ?? true
+        {
+            lastClickX = point.x
+            onTextSelection?(ReviewTextSelection())
+            selectRowIndexes(IndexSet(integer: clicked), byExtendingSelection: false)
+        }
+        if let menuRow, let title = openInEditorTitle?(menuRow) {
+            let open = NSMenuItem(title: title, action: #selector(openRowInEditor(_:)), keyEquivalent: "")
+            open.target = self
+            menu.addItem(open)
+        }
+        if !selectedRowIndexes.isEmpty || hasTextSelection?() == true {
+            let copy = NSMenuItem(
+                title: hasTextSelection?() == true
+                    ? String(localized: "Copy Selected Text")
+                    : String(localized: "Copy Code"),
+                action: #selector(copySelectedCode(_:)),
+                keyEquivalent: "c"
+            )
+            copy.keyEquivalentModifierMask = .command
+            copy.target = self
+            menu.addItem(copy)
+        }
+        return menu.items.isEmpty ? nil : menu
     }
 
     @objc private func copySelectedCode(_: Any?) {
         _ = onCopyCode?()
+    }
+
+    @objc private func openRowInEditor(_: Any?) {
+        guard let menuRow else { return }
+        onOpenInEditor?(menuRow)
     }
 }
 
@@ -338,6 +379,11 @@ struct ReviewDiffTable: NSViewRepresentable {
     /// Toggles the open file's read mark. Here rather than only in the list
     /// because that is where the reader is when they finish a file.
     let onToggleViewed: () -> Void
+    /// The app files open in, which the open item names.
+    let fileApplication: FileApplicationResolution
+    /// Opens the file at a line of the new file. The table works out the
+    /// line; the surface knows the repository and the app.
+    let onOpenLine: (Int) -> Void
     /// Unfolds part of one gap. The store owns how much is showing; this only
     /// says which gap the reader pressed and which way.
     let onExpand: (Int, ReviewGapAction) -> Void
@@ -399,8 +445,17 @@ struct ReviewDiffTable: NSViewRepresentable {
         table.onCopyCode = { [weak coordinator = context.coordinator] in
             coordinator?.copySelectedCode() ?? false
         }
+        table.openInEditorTitle = { [weak coordinator = context.coordinator] row in
+            coordinator?.openInEditorTitle(clickedRow: row)
+        }
+        table.onOpenInEditor = { [weak coordinator = context.coordinator] row in
+            coordinator?.openInEditor(clickedRow: row)
+        }
         table.hasTextSelection = { [weak coordinator = context.coordinator] in
             coordinator?.parent.textSelection.isEmpty == false
+        }
+        table.textSelectionCovers = { [weak coordinator = context.coordinator] row in
+            coordinator?.parent.textSelection.rowRange?.contains(row) == true
         }
         table.textPosition = { [weak coordinator = context.coordinator, weak table] point, anchor in
             guard let coordinator, let table else { return nil }

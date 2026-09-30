@@ -10,6 +10,28 @@ extension ReviewWorkspaceView {
 
     // MARK: - Actions
 
+    /// Opens the reviewed file at `line` of the file as it is on disk. The
+    /// staged and turn layers show a snapshot that later edits can move away
+    /// from; the editor then lands near the line rather than on it, which is
+    /// still where the reader wanted to be.
+    func openInEditor(line: Int) {
+        guard let file = store.diff?.file,
+              let fileURL = ReviewFileAction.fileURL(for: file.path, in: store.root),
+              FileManager.default.fileExists(atPath: fileURL.path)
+        else {
+            toastCenter.show(ToastItem(message: String(localized: "The file doesn’t exist."), undo: nil))
+            return
+        }
+        let application = FileOpener.application(for: settingsStore.settings.advanced.fileApplication)
+        Task {
+            do {
+                try await FileOpener.open(fileURL, at: FilePosition(line: line, column: nil), with: application)
+            } catch {
+                toastCenter.show(ToastItem(message: error.localizedDescription, undo: nil))
+            }
+        }
+    }
+
     func toggleTerminal() {
         if reviewPresentation.isStripCollapsed, let paneID = reviewPresentation.originPaneID {
             registry.updateOcclusion(visibleIDs: [paneID])

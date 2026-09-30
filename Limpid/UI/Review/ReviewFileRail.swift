@@ -552,13 +552,6 @@ struct ReviewFileActionsMenu: View {
         FileOpener.application(for: settingsStore.settings.advanced.fileApplication)
     }
 
-    private var openTitle: String {
-        if let name = application.displayName {
-            return String(localized: "Open in \(name)")
-        }
-        return String(localized: "Open in Default Application")
-    }
-
     var body: some View {
         Button("Copy Relative Path") {
             copy(file.path)
@@ -569,7 +562,7 @@ struct ReviewFileActionsMenu: View {
             }
         }
         .disabled(fileURL == nil)
-        Button(openTitle) {
+        Button(application.openActionTitle) {
             guard let fileURL else { return }
             Task {
                 do {

@@ -41,6 +41,8 @@ extension ReviewDiffTable.Coordinator {
             parent.onCompose()
         case .markViewed:
             parent.onToggleViewed()
+        case .openInEditor:
+            openInEditor(clickedRow: nil)
         default:
             move(key)
         }
@@ -91,8 +93,67 @@ extension ReviewDiffTable.Coordinator {
             moveToFile(forward: true)
         case .previousFile:
             moveToFile(forward: false)
-        case .close, .comment, .markViewed, .insert, .toggleTerminal:
+        case .close, .comment, .markViewed, .insert, .toggleTerminal, .openInEditor:
             break
+        }
+    }
+
+    /// The open item's title, naming the line the editor will land on, or
+    /// nil when there is nothing to open.
+    func openInEditorTitle(clickedRow: Int?) -> String? {
+        guard let row = openTarget(clickedRow: clickedRow), let line = editorLine(forRow: row) else { return nil }
+        return parent.fileApplication.openLineActionTitle(line: line)
+    }
+
+    func openInEditor(clickedRow: Int?) {
+        guard let row = openTarget(clickedRow: clickedRow), let line = editorLine(forRow: row) else { return }
+        parent.onOpenLine(line)
+    }
+
+    /// The row the open action goes to, which is always one the reader can
+    /// see: the top of the selection, since a right-click selects the line
+    /// it lands on first. A line that cannot be selected — one unfolded from
+    /// the file — and a line inside dragged text are their own targets. The
+    /// key uses the line selection, then dragged text, and with neither it
+    /// opens the file's first change rather than doing nothing.
+    private func openTarget(clickedRow: Int?) -> Int? {
+        if let clickedRow, parent.rows.indices.contains(clickedRow) {
+            let side = parent.selection.side
+            guard let lineID = parent.rows[clickedRow].commentableLineID(on: side),
+                  parent.selection.contains(lineID)
+            else { return clickedRow }
+        }
+        return selectionStartRow ?? parent.textSelection.rowRange?.lowerBound ?? firstChangedRow
+    }
+
+    private var selectionStartRow: Int? {
+        guard let start = parent.selection.startLineID else { return nil }
+        let side = parent.selection.side
+        return parent.rows.firstIndex { $0.commentableLineID(on: side) == start }
+    }
+
+    private var firstChangedRow: Int? {
+        parent.rows.firstIndex { row in
+            switch row.kind {
+            case let .code(line):
+                line.kind == .added || line.kind == .removed
+            case let .splitCode(pair):
+                pair.old?.kind == .removed || pair.new?.kind == .added
+            case .notice, .hunk, .comment, .composer, .expander:
+                false
+            }
+        }
+    }
+
+    /// Only rows of code open; a hunk header, a comment, or a folded run has
+    /// no line of its own to go to.
+    private func editorLine(forRow row: Int) -> Int? {
+        guard parent.rows.indices.contains(row) else { return nil }
+        switch parent.rows[row].kind {
+        case .code, .splitCode, .composer:
+            return ReviewEditorLine.line(at: row, in: parent.rows.map(\.editorLineSlot))
+        case .hunk, .notice, .comment, .expander:
+            return nil
         }
     }
 

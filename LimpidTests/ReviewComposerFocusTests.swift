@@ -138,7 +138,9 @@ struct ReviewComposerFocusTests {
             composerIsEditing: false, composerText: .constant("focus-keep"),
             onSelectFile: { _ in }, onCompose: onCompose, onCancelCompose: {}, onCommit: {}, onInsert: {}, onToggleTerminal: {},
             search: ReviewSearch(), onCloseSearch: {}, searchTargetLineID: nil, language: nil,
-            onToggleViewed: {}, onExpand: { _, _ in }, onResolve: { _ in }, onEdit: { _ in }, onDelete: { _ in },
+            onToggleViewed: {}, fileApplication: .macOSDefault, onOpenLine: { _ in }, onExpand: { _, _ in }, onResolve: { _ in },
+            onEdit: { _ in },
+            onDelete: { _ in },
             isOverlayPresented: isOverlayPresented, onCloseOverlay: onCloseOverlay, onClose: onClose
         )
     }

@@ -41,6 +41,14 @@ struct ReviewTextSelection: Equatable {
         self = ReviewTextSelection()
     }
 
+    /// The rows the selection spans, top first, or nil when nothing is
+    /// selected. A drag selects text without moving the line selection, so
+    /// this is what a right-click and the open key check against.
+    var rowRange: ClosedRange<Int>? {
+        guard !isEmpty, let anchor, let head else { return nil }
+        return min(anchor.rowIndex, head.rowIndex)...max(anchor.rowIndex, head.rowIndex)
+    }
+
     /// Re-resolves transient row indexes after cards or expanded context alter
     /// the rendered list. File identity and side remain the durable anchors;
     /// if either endpoint disappeared, keeping the range would select other

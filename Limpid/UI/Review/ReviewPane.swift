@@ -834,6 +834,10 @@ struct ReviewWorkspaceView: View {
                             toggleViewed(fileID)
                         }
                     },
+                    fileApplication: FileOpener.application(
+                        for: settingsStore.settings.advanced.fileApplication
+                    ),
+                    onOpenLine: openInEditor(line:),
                     onExpand: { store.expand($0, $1) },
                     onResolve: { store.setResolved($0.id, true) },
                     onEdit: beginEditing,
