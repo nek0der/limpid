@@ -16,14 +16,14 @@ struct SessionSnapshotTests {
     func decode_legacyTabColumnWidth_adoptsNewDefault() throws {
         // Without this the test would pass vacuously if the default
         // ever moved back onto the legacy value.
-        #expect(SessionSnapshot.legacyTabColumnWidth != Double(LimpidLayout.tabColumnWidth))
+        #expect(SessionSnapshot.legacyTabColumnWidth != Double(SessionLayoutDefaults.tabColumnWidth))
         let session = WindowSession()
         session.tabColumnWidth = CGFloat(SessionSnapshot.legacyTabColumnWidth)
 
         let data = try JSONEncoder().encode(session.makeSnapshot())
         let restored = try JSONDecoder().decode(SessionSnapshot.self, from: data)
 
-        #expect(restored.tabColumnWidth == Double(LimpidLayout.tabColumnWidth))
+        #expect(restored.tabColumnWidth == Double(SessionLayoutDefaults.tabColumnWidth))
     }
 
     @Test("decoding keeps a tab column width the user actually chose")

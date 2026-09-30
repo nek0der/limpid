@@ -278,11 +278,17 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         var env = environment
         if DemoFixture.isDemoActive {
             // Stop the demo shell prompt from baking a real user@host into
-            // the hero screenshot. zsh expands %n@%m via getpwuid/gethostname,
-            // so USER/HOSTNAME alone don't mask it — set PROMPT/PS1 outright.
+            // the hero screenshot. PROMPT/PS1 replace the default prompt;
+            // HOST/HOSTNAME cover a prompt the user's own shell config builds
+            // from them, since zsh's %m reads HOST. They are "localhost"
+            // rather than a made-up name because the shell integration also
+            // sends them as the host of its OSC 7 working-directory reports,
+            // and libghostty drops a report whose host is neither this
+            // machine's name nor "localhost" — every demo pane then had no
+            // working directory.
             env["USER"] = "demo"
-            env["HOSTNAME"] = "limpid"
-            env["HOST"] = "limpid"
+            env["HOSTNAME"] = "localhost"
+            env["HOST"] = "localhost"
             env["PROMPT"] = "demo@limpid %1~ %% "
             env["PS1"] = "demo@limpid \\W $ "
         }

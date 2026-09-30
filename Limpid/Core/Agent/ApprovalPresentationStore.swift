@@ -77,7 +77,7 @@ final class ApprovalPresentationStore {
     private let decisionSender: @Sendable (ApprovalPresentation, ApprovalResolution) async throws -> Void
 
     init(
-        previewDismissDelay: Duration = LimpidLayout.prHoverCardDismissGrace,
+        previewDismissDelay: Duration = PRHoverPresentation.dismissGrace,
         decisionSender: @escaping @Sendable (ApprovalPresentation, ApprovalResolution) async throws -> Void
             = ApprovalPresentationStore.sendDecision
     ) {

@@ -82,7 +82,7 @@ struct SidebarResizeHandle: View {
             setWidth: { session.sidebarWidth = $0 },
             minWidth: LimpidLayout.sidebarMinWidth,
             maxWidth: LimpidLayout.sidebarMaxWidth,
-            defaultWidth: LimpidLayout.containerColumnWidth,
+            defaultWidth: SessionLayoutDefaults.containerColumnWidth,
             hitWidth: LimpidLayout.columnResizeHandleWidth,
             accessibilityLabel: Text("Sidebar Width")
         )
@@ -102,7 +102,7 @@ struct TabColumnResizeHandle: View {
             setWidth: { session.tabColumnWidth = $0 },
             minWidth: minWidth,
             maxWidth: maxWidth,
-            defaultWidth: min(max(LimpidLayout.tabColumnWidth, minWidth), maxWidth),
+            defaultWidth: min(max(SessionLayoutDefaults.tabColumnWidth, minWidth), maxWidth),
             hitWidth: LimpidLayout.columnResizeHandleWidth,
             accessibilityLabel: Text("Tab Column Width")
         )

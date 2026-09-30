@@ -13,6 +13,11 @@ private let log = Logger.limpid("ghostty.events")
 
 @MainActor
 final class GhosttyEventCoordinator {
+    /// Debounce window applied to libghostty SET_TITLE updates so a
+    /// shell that prints "exit" right before terminating doesn't flash
+    /// it onto the tab before close_surface_cb fires.
+    private static let setTitleDebounce: TimeInterval = 0.08
+
     private weak var ghosttyApp: GhosttyApp?
     private weak var session: WindowSession?
     private let registry: any SurfaceViewProviding
@@ -97,9 +102,9 @@ final class GhosttyEventCoordinator {
             handleCloseSurface(view: view)
         case let .mouseOverLink(view, url):
             handleMouseOverLink(view: view, url: url)
-        case let .openUrl(url, source):
+        case let .openUrl(view, url, source):
             if let url {
-                linkOpener.open(url, source: source)
+                linkOpener.open(url, source: source, baseDirectories: linkBaseDirectories(for: view))
             } else {
                 linkOpener.reject(.malformed)
             }
@@ -171,7 +176,7 @@ final class GhosttyEventCoordinator {
         pendingTitleApplies[paneID]?.cancel()
         let tabID = owningTab.id
         pendingTitleApplies[paneID] = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(LimpidLayout.setTitleDebounce))
+            try? await Task.sleep(for: .seconds(Self.setTitleDebounce))
             guard !Task.isCancelled else { return }
             self?.applySetTitle(tabID: tabID, paneID: paneID, title: title)
         }
@@ -397,7 +402,7 @@ final class GhosttyEventCoordinator {
             // darken the visible flash.
             pendingBellFlashes[paneID]?.cancel()
             pendingBellFlashes[paneID] = Task { @MainActor [weak self, weak session] in
-                try? await Task.sleep(nanoseconds: LimpidMotion.bellFlashNanoseconds)
+                try? await Task.sleep(nanoseconds: BellFeatures.paneFlashNanoseconds)
                 guard !Task.isCancelled else { return }
                 session?.setBell(paneID: paneID, ringing: false)
                 self?.pendingBellFlashes.removeValue(forKey: paneID)
@@ -554,6 +559,21 @@ final class GhosttyEventCoordinator {
     }
 
     // MARK: - Link / cursor handlers
+
+    /// A surface outside the pane registry (the quick terminal's) has no
+    /// session entry, so only libghostty's own resolution applies there.
+    private func linkBaseDirectories(for view: SurfaceView?) -> [URL] {
+        guard let view, let session, let paneID = registry.id(for: view) else {
+            log.debug("link bases: hasView=\(view != nil, privacy: .public), no pane")
+            return []
+        }
+        let bases = session.linkBaseDirectories(paneID: paneID)
+        // Whether each base exists is what tells a wrong base from a
+        // missing file when a click is refused; the paths stay private.
+        let existing = bases.map { FileManager.default.fileExists(atPath: $0.path) }
+        log.debug("link bases: count=\(bases.count, privacy: .public) exist=\(existing, privacy: .public)")
+        return bases
+    }
 
     private func handleMouseOverLink(view: SurfaceView, url: String?) {
         view.hoverUrl = url

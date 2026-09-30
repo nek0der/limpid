@@ -592,7 +592,7 @@ struct LimpidApp: App {
                 // can distinguish it from the Settings window when
                 // deciding whether to surface the inline updater UI
                 // vs. fall back to Sparkle's standard alert.
-                .background(LimpidMainWindowMarker())
+                .background(LimpidWindowRoleMarker(role: .main))
                 .environment(state.session)
                 .environment(state.attention)
                 .environment(state.approvalPresentation)

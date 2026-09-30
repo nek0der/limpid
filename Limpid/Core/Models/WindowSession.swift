@@ -74,15 +74,15 @@ final class WindowSession {
     var sidebarWidth: CGFloat
 
     /// Tab column width in points; persisted. Drag-resizable via the
-    /// divider; double-click resets to `LimpidLayout.tabColumnWidth`.
-    var tabColumnWidth: CGFloat = LimpidLayout.tabColumnWidth
+    /// divider; double-click resets to `SessionLayoutDefaults.tabColumnWidth`.
+    var tabColumnWidth: CGFloat = SessionLayoutDefaults.tabColumnWidth
 
     /// Height of the container column Waiting region as a fraction of the slab
     /// height; persisted. The UI writes it only when the user drags the
     /// slab's divider or double-clicks it to reset — a window resize
     /// re-lays the panes but leaves this alone. A fraction (not points) so it
     /// keeps its proportion across window resizes.
-    var attentionHeightFraction: CGFloat = LimpidLayout.attentionHeightFraction
+    var attentionHeightFraction: CGFloat = SessionLayoutDefaults.attentionHeightFraction
 
     /// Whether the sidebar is collapsed.
     var sidebarHidden: Bool = false
@@ -211,7 +211,7 @@ final class WindowSession {
         tabs: [Tab] = [],
         activeTabID: UUID? = nil,
         activeContainerID: ContainerID = .loose,
-        sidebarWidth: CGFloat = LimpidLayout.containerColumnWidth,
+        sidebarWidth: CGFloat = SessionLayoutDefaults.containerColumnWidth,
         recentProjectPaths: [URL] = []
     ) {
         self.groups = groups

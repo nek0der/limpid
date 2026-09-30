@@ -21,8 +21,12 @@ enum TerminalLinkSource: Equatable {
 
 /// The one thing a click is allowed to do.
 enum TerminalLinkAction: Equatable {
-    /// Hand the URL to its default handler.
+    /// Hand the URL to its default handler. Used for web and mail links and
+    /// for folders, which open in Finder.
     case open(URL)
+    /// Open a regular file in the reader's file app, at the position when
+    /// the link carried one.
+    case openFile(URL, FilePosition?)
     /// Show the item in Finder rather than opening it. Used for files that
     /// could execute code, so a click can never launch them.
     case reveal(URL)
@@ -58,16 +62,31 @@ enum TerminalLinkRejection: Equatable {
     }
 }
 
-/// Every terminal link click goes through `action(for:source:)`. The file
-/// rules apply to both sources: a visible path to an application or script
-/// is no safer to launch than a hidden one, because the text on screen was
-/// still written by the program in the pane.
+/// Every terminal link click goes through
+/// `action(for:source:baseDirectories:)`. The file rules apply to both
+/// sources: a visible path to an application or script is no safer to
+/// launch than a hidden one, because the text on screen was still written
+/// by the program in the pane.
 enum TerminalLinkPolicy {
     /// Schemes the reader can reasonably expect to open in a browser or mail
     /// client without side effects beyond showing something.
     private static let webSchemes: Set<String> = ["http", "https"]
 
-    static func action(for text: String, source: TerminalLinkSource) -> TerminalLinkAction {
+    /// The schemes libghostty's link matcher recognizes in plain text
+    /// (`url_schemes` in `vendor/ghostty/src/config/url.zig`). Anything else
+    /// in matched text only looks like a scheme — `notes.txt:12` parses as
+    /// the scheme `notes.txt` — and is read as a path.
+    private static let matchedSchemes: Set<String> = [
+        "http", "https", "mailto", "ftp", "file", "ssh", "git", "tel",
+        "magnet", "ipfs", "ipns", "gemini", "gopher", "news"
+    ]
+
+    /// `baseDirectories` are where a relative path is looked up, in order.
+    static func action(
+        for text: String,
+        source: TerminalLinkSource,
+        baseDirectories: [URL] = []
+    ) -> TerminalLinkAction {
         guard !text.isEmpty else { return .reject(.malformed) }
 
         // Foundation accepts control and formatting characters that AppKit
@@ -77,8 +96,12 @@ enum TerminalLinkPolicy {
             return .reject(.unsafeCharacters)
         }
 
-        guard let url = URL(string: text), let scheme = url.scheme?.lowercased(), !scheme.isEmpty else {
-            return pathAction(for: text, source: source)
+        guard let url = URL(string: text),
+              let scheme = url.scheme?.lowercased(),
+              !scheme.isEmpty,
+              source == .hyperlink || matchedSchemes.contains(scheme)
+        else {
+            return pathAction(for: text, source: source, baseDirectories: baseDirectories)
         }
 
         if webSchemes.contains(scheme) {
@@ -98,8 +121,8 @@ enum TerminalLinkPolicy {
         case "file":
             return fileURLAction(for: url)
         default:
-            // A matched link's scheme comes from libghostty's fixed list and
-            // is spelled out on screen. A hyperlink's can name any handler.
+            // A matched link's scheme is one of libghostty's and is spelled
+            // out on screen. A hyperlink's can name any handler.
             return source == .matchedText ? .open(url) : .confirm(url)
         }
     }
@@ -107,14 +130,26 @@ enum TerminalLinkPolicy {
     /// Scheme-less text is only ever a match; OSC 8 requires a URI. A
     /// hyperlink without a scheme could be reinterpreted by a later layer, so
     /// it is refused.
-    private static func pathAction(for text: String, source: TerminalLinkSource) -> TerminalLinkAction {
+    ///
+    /// libghostty joins a relative match onto the pane's working directory
+    /// only when that exact file exists, so a match carrying a line number
+    /// arrives relative and is looked up here instead.
+    private static func pathAction(
+        for text: String,
+        source: TerminalLinkSource,
+        baseDirectories: [URL]
+    ) -> TerminalLinkAction {
         guard source == .matchedText else { return .reject(.malformed) }
-        // libghostty already joined a relative match onto the pane's working
-        // directory when that file exists, so what is still relative here
-        // names nothing we can locate.
-        let expanded = NSString(string: text).expandingTildeInPath
-        guard expanded.hasPrefix("/") else { return .reject(.missingFile) }
-        return fileAction(for: URL(fileURLWithPath: expanded))
+        for reference in TerminalPathReference.candidates(for: text) {
+            let expanded = NSString(string: reference.path).expandingTildeInPath
+            let locations = expanded.hasPrefix("/")
+                ? [URL(fileURLWithPath: expanded)]
+                : baseDirectories.map { $0.appendingPathComponent(expanded) }
+            if let found = locations.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
+                return fileAction(for: found, position: reference.position)
+            }
+        }
+        return .reject(.missingFile)
     }
 
     private static func fileURLAction(for url: URL) -> TerminalLinkAction {
@@ -131,7 +166,7 @@ enum TerminalLinkPolicy {
 
     /// Classifies the object the path resolves to, not its spelling, so dot
     /// segments and a harmless-looking symlink cannot hide an executable.
-    static func fileAction(for url: URL) -> TerminalLinkAction {
+    static func fileAction(for url: URL, position: FilePosition? = nil) -> TerminalLinkAction {
         let canonical = url.standardizedFileURL.resolvingSymlinksInPath()
         let values: URLResourceValues
         do {
@@ -148,7 +183,10 @@ enum TerminalLinkPolicy {
         guard values.isDirectory == true || values.isRegularFile == true else {
             return .reject(.specialFile)
         }
-        return isUnsafeFile(canonical, values: values) ? .reveal(canonical) : .open(canonical)
+        if isUnsafeFile(canonical, values: values) {
+            return .reveal(canonical)
+        }
+        return values.isDirectory == true ? .open(canonical) : .openFile(canonical, position)
     }
 
     private static func isUnsafeFile(_ url: URL, values: URLResourceValues) -> Bool {
