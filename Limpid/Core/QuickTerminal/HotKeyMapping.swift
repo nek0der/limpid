@@ -32,28 +32,23 @@ enum HotKeyMapping {
     }
 
     /// Named keys (arrows, return, F-keys…) are layout-independent and come
-    /// from the capture table. Everything else is stored as the character
-    /// the layout types, so we scan the layout for the key that types it.
+    /// from `NamedKey`. Everything else is stored as the character the
+    /// layout types, so we scan the layout for the key that types it.
     ///
-    /// Both paths take the lowest keyCode when several match: `return` is
-    /// both 36 and the keypad's 76, and digits exist on the top row and
-    /// the keypad. The main-block key is the one the user pressed in the
-    /// recorder on a keyboard without a keypad, and it has the lower code.
+    /// Return is both the main-block key and the keypad's Enter; we take
+    /// the main-block key, the one the user pressed in the recorder on a
+    /// keyboard without a keypad. A digit exists on the top row and the
+    /// keypad too, and the scan takes the top row's lower code.
     static func keyCode(for key: String, translate: (UInt16) -> String?) -> UInt16? {
-        let named = key == "enter" ? "return" : key
-        if let code = StoredShortcut.keyCodeNames
-            .filter({ $0.value == named })
-            .map(\.key)
-            .min()
-        {
-            return code
+        if let named = NamedKey(storedName: key) {
+            return named.primaryKeyCode
         }
         let wanted = key.lowercased()
         return keyCodeRange.first { code in
             // Skip named keys: the keypad's Enter translates to a control
             // character, and a named key never stands for a layout
             // character.
-            guard StoredShortcut.keyCodeNames[code] == nil else { return false }
+            guard NamedKey(keyCode: code) == nil else { return false }
             return translate(code)?.lowercased() == wanted
         }
     }

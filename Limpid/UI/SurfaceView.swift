@@ -855,8 +855,7 @@ extension SurfaceView {
     /// Used by `scheduleInitialCommandIfNeeded` to submit pasted text
     /// without depending on shell paste-mode quirks.
     private func sendReturnKey(to surface: ghostty_surface_t) {
-        // macOS virtual keycode for Return is 36 (`kVK_Return`).
-        let returnKeyCode: UInt32 = 36
+        let returnKeyCode = UInt32(NamedKey.return.primaryKeyCode)
         for action in [GHOSTTY_ACTION_PRESS, GHOSTTY_ACTION_RELEASE] {
             var key = ghostty_input_key_s()
             key.action = action

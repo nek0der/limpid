@@ -23,7 +23,7 @@ enum ReviewTableKey {
 
     init?(event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-        if modifiers == .command, event.keyCode == 36 {
+        if modifiers == .command, event.namedKey == .return {
             self = .insert
             return
         }
@@ -31,7 +31,7 @@ enum ReviewTableKey {
             self = .toggleTerminal
             return
         }
-        if event.keyCode == 53 {
+        if event.namedKey == .escape {
             self = .close
             return
         }
@@ -54,9 +54,9 @@ enum ReviewTableKey {
     private static func arrow(_ event: NSEvent, modifiers: NSEvent.ModifierFlags) -> ReviewTableKey? {
         guard modifiers.isEmpty || modifiers == .shift else { return nil }
         let isExtending = modifiers == .shift
-        switch event.keyCode {
-        case 125: return isExtending ? .extendNextLine : .nextLine
-        case 126: return isExtending ? .extendPreviousLine : .previousLine
+        switch event.namedKey {
+        case .down: return isExtending ? .extendNextLine : .nextLine
+        case .up: return isExtending ? .extendPreviousLine : .previousLine
         default: return nil
         }
     }

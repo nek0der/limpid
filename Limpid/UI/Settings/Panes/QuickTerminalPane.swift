@@ -3,7 +3,6 @@
 // appears, how large it is, and whether it hides on focus loss.
 
 import AppKit
-import Carbon.HIToolbox
 import SwiftUI
 
 struct QuickTerminalPane: View {
@@ -296,10 +295,10 @@ private struct QuickTerminalHotKeyRecorder: View {
     }
 
     private func handleKey(_ event: NSEvent) {
-        switch Int(event.keyCode) {
-        case kVK_Escape:
+        switch event.namedKey {
+        case .escape:
             stopRecording()
-        case kVK_Delete:
+        case .backspace:
             quickTerminal.hotKey = nil
             rejection = nil
             stopRecording()

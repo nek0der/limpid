@@ -435,12 +435,12 @@ private struct ShortcutRecorder: View {
     @MainActor
     private func handleKey(_ event: NSEvent) {
         // Esc cancels without changing anything.
-        if event.keyCode == 53 {
+        if event.namedKey == .escape {
             stopRecording()
             return
         }
         // Backspace / Delete clears the override (back to default).
-        if event.keyCode == 51 {
+        if event.namedKey == .backspace {
             keyboard.resetOverride(for: action)
             rejection = nil
             stopRecording()

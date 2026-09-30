@@ -516,8 +516,8 @@ private struct ApprovalCardKeyMonitor: NSViewRepresentable {
                       event.window === hostWindow,
                       event.modifierFlags.isDisjoint(with: [.command, .control, .option])
                 else { return event }
-                switch event.keyCode {
-                case 53:
+                switch event.namedKey {
+                case .escape:
                     // Let the active text input client finish or cancel its
                     // marked text before Escape changes approval UI state.
                     if let textInput = hostWindow.firstResponder as? any NSTextInputClient,
@@ -527,7 +527,7 @@ private struct ApprovalCardKeyMonitor: NSViewRepresentable {
                     }
                     onEscape()
                     return nil
-                case 36, 76:
+                case .return:
                     // Measured on macOS 27 with a vertical SwiftUI text field:
                     // the field editor breaks a line on Option-Return, which
                     // the guard above leaves to it, and treats Shift-Return
