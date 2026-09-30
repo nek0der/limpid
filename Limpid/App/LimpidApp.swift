@@ -316,6 +316,7 @@ final class AppState {
         startSettingsConfigSync()
 
         configureTurnReview()
+        configureReviewPasteDenial()
         // Arm the settings.json watcher last so the store + sync
         // hook are both ready before an external edit can fire.
         let watcher = SettingsFileWatcher(store: settingsStore)
