@@ -162,18 +162,9 @@ struct NotificationHistoryView: View {
         HStack(spacing: 6) {
             Text("Notifications")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-            if store.unreadCount > 0 {
-                // Perfect circle for 1-2 digit counts, widening only for
-                // "99+"; the notification bell color (orange) keeps the
-                // popover visually in lockstep with the toolbar badge.
-                Text(UnreadBadge.text(for: store.unreadCount))
-                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 2)
-                    .frame(minWidth: 18, minHeight: 18)
-                    .background(Capsule().fill(LimpidColor.notificationBell))
-            }
+            // The toolbar bell's own badge, so the popover and the bell
+            // that opened it show the count the same way.
+            UnreadCountBadge(count: store.unreadCount)
             Spacer()
             if !store.entries.isEmpty, !isConfirmingClear {
                 Button("Mark All as Read") {
@@ -594,18 +585,9 @@ private struct NotificationHistoryRow: View {
     }
 
     private var deleteButton: some View {
-        Button(action: onDelete) {
-            Image(systemName: "xmark")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Dismiss")
-        .accessibilityLabel(Text("Dismiss"))
-        .opacity(isHovering ? 1 : 0)
-        .allowsHitTesting(isHovering)
+        DismissGlyphButton(label: "Dismiss", action: onDelete)
+            .opacity(isHovering ? 1 : 0)
+            .allowsHitTesting(isHovering)
     }
 
     @ViewBuilder

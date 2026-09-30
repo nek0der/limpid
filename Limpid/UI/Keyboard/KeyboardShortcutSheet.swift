@@ -53,18 +53,9 @@ struct KeyboardShortcutSheet: View {
             Text("Keyboard Shortcuts")
                 .font(LimpidFont.title)
             Spacer()
-            Button {
+            DismissGlyphButton(label: "Close", size: .large) {
                 dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(LimpidColor.secondaryText)
-            .help("Close")
-            .accessibilityLabel(Text("Close"))
         }
     }
 

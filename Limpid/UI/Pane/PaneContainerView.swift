@@ -135,11 +135,9 @@ struct PaneContainerView: View {
                 Button {
                     approvalPresentation.present(approval)
                 } label: {
-                    Image(systemName: "questionmark.circle.fill")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.orange)
-                        .frame(width: 24, height: 24)
-                        .background(.ultraThinMaterial, in: Capsule())
+                    // A pending approval is the needs-input state, so the
+                    // badge is that state's mark.
+                    AgentStateMark(state: .needsInput, placement: .paneBadge)
                 }
                 .buttonStyle(.plain)
                 .padding(8)

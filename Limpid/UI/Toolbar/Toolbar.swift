@@ -285,7 +285,7 @@ struct ToolbarUpdateButton: View {
         } label: {
             badgeIcon
                 .font(.system(size: LimpidLayout.toolbarIconSize, weight: .medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(LimpidColor.onAccent)
                 .frame(
                     width: LimpidLayout.toolbarButtonWidth,
                     height: LimpidLayout.toolbarButtonHeight
@@ -417,10 +417,10 @@ struct ProgressRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.3), lineWidth: 2)
+                .stroke(LimpidColor.onAccent.opacity(0.3), lineWidth: 2)
             Circle()
                 .trim(from: 0, to: max(0.02, progress))
-                .stroke(Color.white, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .stroke(LimpidColor.onAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.easeOut(duration: 0.2), value: progress)
         }

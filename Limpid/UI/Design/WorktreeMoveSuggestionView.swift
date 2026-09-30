@@ -67,7 +67,7 @@ private struct WorktreeMoveSuggestionCapsule: View {
             } label: {
                 Text("Move", comment: "Accept the worktree-move suggestion")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LimpidColor.onAccent)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
                     .background(
@@ -76,22 +76,10 @@ private struct WorktreeMoveSuggestionCapsule: View {
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.return, modifiers: [])
-            Button {
+            DismissGlyphButton(label: "Dismiss", size: .large) {
                 suggester.dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-                    .background(
-                        Circle().fill(Color.primary.opacity(0.06))
-                    )
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             .keyboardShortcut(.escape, modifiers: [])
-            .help("Dismiss")
-            .accessibilityLabel(Text("Dismiss"))
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)

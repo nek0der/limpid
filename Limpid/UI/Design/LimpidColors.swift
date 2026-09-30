@@ -55,6 +55,14 @@ enum LimpidColor {
         dark: Color(white: 0.14)
     )
 
+    /// Text and glyphs drawn on a solid saturated fill: the user's
+    /// accent (selected segments, the Move button, the review's
+    /// add-comment marker), and the status fills that stand in for it
+    /// on a badge — the unread count's bell orange, the update
+    /// button's green and red. The fill's own hue carries the meaning,
+    /// so the mark on top stays neutral.
+    static let onAccent: Color = .white
+
     /// Primary text.
     static let primaryText: Color = .primary
 

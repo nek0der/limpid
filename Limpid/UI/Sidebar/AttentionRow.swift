@@ -43,9 +43,9 @@ struct ApprovalAttentionRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 6) {
-                Image(systemName: "questionmark.circle.fill")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.orange)
+                // A pending approval is the needs-input state, so it
+                // takes that state's mark rather than a look-alike of it.
+                AgentStateMark(state: .needsInput, placement: .waitingList)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: accessibilityTarget)
@@ -154,10 +154,6 @@ struct AttentionRow: View {
         )
     }
 
-    private var stateTint: Color {
-        state.iconColor(isViewedFinished: isViewed) ?? .secondary
-    }
-
     /// One stable detail line. Prompt and tab title used to occupy
     /// separate conditional rows, so fallback titles produced two-line
     /// cells while named tabs produced three-line cells. Preserve both
@@ -178,20 +174,18 @@ struct AttentionRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             // Fixed-width glyph well so every row's text starts at the
-            // same x no matter which state symbol is shown.
-            Image(systemName: state.iconName(isViewedFinished: isViewed) ?? "circle.fill")
-                .font(.system(size: 13))
-                .foregroundStyle(stateTint)
+            // same x no matter which state symbol is shown. The row has
+            // no visible state label because the mark already names the
+            // state, and it speaks the state to VoiceOver too.
+            AgentStateMark(state: state, isViewedFinished: isViewed, placement: .waitingList)
                 .frame(width: 16)
-                // The visible state label is redundant with this glyph,
-                // but VoiceOver still needs the semantic state rather
-                // than the SF Symbol's mechanical name.
-                .accessibilityLabel(Text(state.accessibilityLabel(isViewedFinished: isViewed)))
             VStack(alignment: .leading, spacing: 2) {
                 // Line 1: which container, and how long it has waited.
-                // The right slot shows the wait time, or — on hover, for
-                // finished rows — a dismiss ×. They share one slot so
-                // nothing overlaps.
+                // On hover, finished rows trade the wait time for a
+                // dismiss ×. The × is laid over the time rather than put
+                // in its place: its hit area is taller than this line,
+                // and taking a slot in it would grow the row while the
+                // pointer is on it.
                 HStack(spacing: 0) {
                     Text(containerLabel)
                         .font(.system(size: 12, weight: .medium))
@@ -199,21 +193,17 @@ struct AttentionRow: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 6)
-                    if isHovering, let onDismiss {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color.primary.opacity(0.55))
-                            .contentShape(Rectangle())
-                            .onTapGesture { onDismiss() }
-                            .accessibilityAddTraits(.isButton)
-                            .accessibilityLabel(Text("Dismiss"))
-                    } else {
-                        Text(waitLabel)
-                            .font(.system(size: 11))
-                            .monospacedDigit()
-                            .foregroundStyle(Color.primary.opacity(0.4))
-                            .fixedSize()
-                    }
+                    Text(waitLabel)
+                        .font(.system(size: 11))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.primary.opacity(0.4))
+                        .fixedSize()
+                        .opacity(isHovering && onDismiss != nil ? 0 : 1)
+                        .overlay(alignment: .trailing) {
+                            if isHovering, let onDismiss {
+                                DismissGlyphButton(label: "Dismiss", action: onDismiss)
+                            }
+                        }
                 }
                 // The leading glyph already names the state visually,
                 // so the second line carries the preview and, when it
@@ -310,7 +300,7 @@ private struct WaitingFilterSwitch: View {
         } label: {
             label
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(includeViewed == tag ? Color.white : Color.primary.opacity(0.65))
+                .foregroundStyle(includeViewed == tag ? LimpidColor.onAccent : Color.primary.opacity(0.65))
                 .frame(width: 38, height: 16)
                 .contentShape(Rectangle())
                 .onGeometryChange(for: CGRect.self) { proxy in

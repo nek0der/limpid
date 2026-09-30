@@ -63,6 +63,11 @@ enum ContainerRowKind: Equatable {
     /// no confirmation — one still on disk is merely hidden, and one
     /// already gone leaves nothing to lose — but it is long-lived
     /// enough that a hover slip should not take it off the sidebar.
+    ///
+    /// The hover delete is the shared `DismissGlyphButton`, which always
+    /// draws a ×. That agrees with `closeIcon` for every kind that
+    /// closes outright; a worktree still on disk is only hidden, so
+    /// offering it here would also mean giving the button its glyph.
     var allowsHoverDelete: Bool {
         switch self {
         case .group: true
@@ -109,9 +114,9 @@ extension ContainerRowKind {
         }
     }
 
-    /// SF Symbol paired with `closeLabel`. Both entries that use it —
-    /// the context menu on every kind, the hover delete on Groups —
-    /// take it from here so the two never disagree.
+    /// SF Symbol paired with `closeLabel` in the context menu. The
+    /// hover delete on Groups draws the same × through
+    /// `DismissGlyphButton` — see `allowsHoverDelete`.
     ///
     /// A worktree still on disk is only hidden, so it gets the
     /// eye-with-slash; one already gone, like everything else here,
@@ -287,7 +292,6 @@ struct ContainerRow: View {
 
     @State private var isHovering = false
     @State private var isEditing = false
-    @State private var draft = ""
     @State private var isColorPickerPresented = false
     /// Hover over the marker slot alone, not the row. Drives the
     /// dot → chevron swap, which must not fire from anywhere else on
@@ -351,65 +355,21 @@ struct ContainerRow: View {
             // labels up at the same x, which is what the slot was for
             // to begin with.
             leadingMarker
-            if onRename != nil {
-                // Renameable kinds use `InlineRenameField` (Text↔
-                // SwiftUI-TextField swap — see that file for why the
-                // swap pattern beats a persistent TextField on macOS
-                // 26: the `NSWindow` shared field editor leaks scroll
-                // state between rows when the same `NSTextField` backing
-                // is reused).
-                InlineRenameField(
-                    text: $draft,
-                    isEditing: $isEditing,
-                    font: .system(size: 13, weight: .semibold, design: .rounded),
-                    foregroundColor: labelColor,
-                    onCommit: { value in commitRename(value) },
-                    onCancel: { cancelRename() }
-                )
-                .layoutPriority(1)
-                // `simultaneousGesture` (not `.onTapGesture`) so the
-                // double-tap recognizer doesn't gate single-click
-                // delivery to the inner TextField while editing — same
-                // lesson as PR #50 for the row's activation tap. The
-                // closure still no-ops when already editing.
-                .simultaneousGesture(
-                    TapGesture(count: 2).onEnded {
-                        if !isEditing {
-                            beginRename()
-                        }
-                    }
-                )
-                .onChange(of: label) { _, newValue in
-                    if !isEditing {
-                        draft = newValue
-                    }
-                }
-                .onAppear {
-                    if !isEditing {
-                        draft = label
-                    }
-                }
-            } else {
-                // `maxWidth: .infinity` so the label takes the row's
-                // full free width even when the text itself is short —
-                // otherwise the trailing accessories collapse left
-                // toward the label instead of staying pinned to the
-                // row's right edge.
-                Text(label)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(labelColor)
-                    // The renameable branch above carries this offset
-                    // to line its static label up with the field
-                    // editor. A row that can't be renamed has no field
-                    // editor to match, but it does sit in the same
-                    // list — without the same offset a worktree label
-                    // lands 5pt left of its project's.
-                    .padding(.leading, InlineRenameField.fieldEditorLeadingPadding)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .layoutPriority(1)
-            }
+            // Every kind draws its label through `InlineRenameField`
+            // (Text↔SwiftUI-TextField swap — see that file for why the
+            // swap pattern beats a persistent TextField on macOS 26),
+            // including the ones that cannot be renamed. Their label
+            // then carries the same field-editor offset as a renameable
+            // one; drawn apart, a worktree label landed 5pt left of its
+            // project's.
+            InlineRenameField(
+                name: label,
+                isEditing: $isEditing,
+                font: .system(size: 13, weight: .semibold, design: .rounded),
+                foregroundColor: labelColor,
+                onRename: onRename
+            )
+            .layoutPriority(1)
             trailingAccessory
         }
         .padding(.leading, LimpidLayout.containerColumnIndentTop)
@@ -476,7 +436,7 @@ struct ContainerRow: View {
             }
             if onRename != nil {
                 Button {
-                    beginRename()
+                    isEditing = true
                 } label: {
                     Label("Rename…", systemImage: "pencil")
                 }
@@ -841,26 +801,12 @@ struct ContainerRow: View {
             {
                 prStatusMark(style)
             }
-            if let summary = agentStateSummary,
-               let iconName = summary.state.iconName(isViewedFinished: summary.isViewedFinished),
-               let iconColor = summary.state.iconColor(isViewedFinished: summary.isViewedFinished)
-            {
-                let state = summary.state
-                let tooltip = agentTooltip(for: state)
-                Image(systemName: iconName)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(iconColor)
-                    .frame(width: LimpidLayout.containerColumnTrailingSlot, height: LimpidLayout.containerColumnTrailingSlot)
-                    .help(tooltip)
-                    // Color is the only sighted differentiator (red /
-                    // orange / blue / green). VoiceOver gets nothing
-                    // from the SF Symbol name, so promote the
-                    // tooltip text into the AX label as well — the
-                    // CODING-GUIDELINES rule about color carrying
-                    // meaning applies here twice over.
-                    .accessibilityLabel(Text(summary.isViewedFinished
-                            ? "\(tooltip), \(String(localized: "Viewed"))"
-                            : tooltip))
+            if let summary = agentStateSummary {
+                AgentStateMark(
+                    state: summary.state,
+                    isViewedFinished: summary.isViewedFinished,
+                    tooltip: agentTooltip(for: summary.state)
+                )
             }
             NotificationBell(
                 isUnread: hasUnread,
@@ -875,19 +821,7 @@ struct ContainerRow: View {
             // rest is when the column gets read, so it wins; the hover
             // reflow is the same trade `onCreateWorktree` above makes.
             if let onDelete, kind.allowsHoverDelete, isHovering, !isEditing {
-                Button(action: onDelete) {
-                    Image(systemName: closeIcon)
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(
-                            width: LimpidLayout.containerColumnTrailingSlot,
-                            height: LimpidLayout.containerColumnTrailingSlot
-                        )
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(Text(closeLabel))
-                .accessibilityLabel(Text(closeLabel))
+                DismissGlyphButton(label: closeLabel, action: onDelete)
             }
         }
     }
@@ -909,33 +843,6 @@ struct ContainerRow: View {
         return parts.isEmpty
             ? dominant.localizedLabel
             : parts.joined(separator: " · ")
-    }
-
-    // MARK: - Rename
-
-    private func beginRename() {
-        draft = label
-        isEditing = true
-    }
-
-    private func commitRename(_ value: String) {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            onRename?(trimmed)
-        } else {
-            // Empty / all-whitespace submit means "keep the prior
-            // name". The inner `TextField` already pushed `""` into
-            // `draft`, so without this resync the row would render
-            // blank until something else made `label` change. The
-            // cancel path already does this on its own.
-            draft = label
-        }
-        isEditing = false
-    }
-
-    private func cancelRename() {
-        draft = label
-        isEditing = false
     }
 
     // MARK: - Kind forwarding

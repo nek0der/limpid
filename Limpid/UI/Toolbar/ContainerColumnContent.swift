@@ -49,17 +49,9 @@ struct ToolbarBellButton: View {
                 isHovering: isHovering
             )
             .overlay(alignment: .topTrailing) {
-                if unread > 0 {
-                    Text(UnreadBadge.text(for: unread))
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .frame(minWidth: 14, minHeight: 14)
-                        .background(Capsule().fill(LimpidColor.notificationBell))
-                        .offset(x: -4, y: 2)
-                        .symbolEffect(.bounce, value: session.windowIsRinging)
-                }
+                UnreadCountBadge(count: unread)
+                    .offset(x: -4, y: 2)
+                    .symbolEffect(.bounce, value: session.windowIsRinging)
             }
         }
         .buttonStyle(.plain)
