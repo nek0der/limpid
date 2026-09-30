@@ -500,46 +500,11 @@ struct StoredShortcut: Codable, Hashable {
         return tokens
     }
 
-    /// Single lookup table for every named key Limpid understands.
-    /// Each row pairs the storage string (Ghostty's vocabulary) with
-    /// (a) the glyph macOS shows in menus and (b) SwiftUI's
-    /// `KeyEquivalent` constant — the two surfaces our renderers care
-    /// about. Single-character keys (letters, digits, punctuation)
-    /// aren't in here; they fall through to `key.uppercased()` for
-    /// display and `KeyEquivalent(Character(key))` for SwiftUI.
-    ///
-    /// F-keys (`f1`–`f12`) appear with `swiftUI = nil`: SwiftUI's
-    /// `KeyEquivalent` has no constants for them, so the menu glyph
-    /// is dropped. libghostty's own keybind still fires whenever the
-    /// terminal surface has focus, so the binding works — only the
-    /// menu-visible affordance is missing.
-    private static let namedKeys: [String: (glyph: String, swiftUI: KeyEquivalent?)] = [
-        "return": ("⏎", .return),
-        "enter": ("⏎", .return),
-        "tab": ("⇥", .tab),
-        "space": ("␣", .space),
-        "escape": ("⎋", .escape),
-        "backspace": ("⌫", .delete),
-        "delete": ("⌦", .deleteForward),
-        "left": ("←", .leftArrow),
-        "right": ("→", .rightArrow),
-        "up": ("↑", .upArrow),
-        "down": ("↓", .downArrow),
-        "home": ("↖", .home),
-        "end": ("↘", .end),
-        "page_up": ("⇞", .pageUp),
-        "page_down": ("⇟", .pageDown),
-        "f1": ("F1", nil), "f2": ("F2", nil), "f3": ("F3", nil),
-        "f4": ("F4", nil), "f5": ("F5", nil), "f6": ("F6", nil),
-        "f7": ("F7", nil), "f8": ("F8", nil), "f9": ("F9", nil),
-        "f10": ("F10", nil), "f11": ("F11", nil), "f12": ("F12", nil)
-    ]
-
     /// Map our stored key string to the glyph macOS shows in menus.
     /// Letters get uppercased; named keys (arrows, etc.) get their
     /// canonical symbol; punctuation and digits print as-is.
     private static func displayKey(for key: String) -> String {
-        namedKeys[key]?.glyph ?? key.uppercased()
+        NamedKey(storedName: key)?.glyph ?? key.uppercased()
     }
 }
 
@@ -548,15 +513,63 @@ struct StoredShortcut: Codable, Hashable {
 extension StoredShortcut {
 
     /// Stored key → SwiftUI `KeyEquivalent`. Named keys come from
-    /// `namedKeys`; single-character keys (letters / digits /
+    /// `NamedKey.keyEquivalent`; single-character keys (letters / digits /
     /// punctuation) wrap as `KeyEquivalent(Character(key))`. Returns
-    /// `nil` for stored values SwiftUI can't express — see the
-    /// `namedKeys` doc for which ones (notably F-keys).
+    /// `nil` for stored values SwiftUI can't express — see
+    /// `NamedKey.keyEquivalent` for which ones (notably F-keys).
     var swiftUIKeyEquivalent: KeyEquivalent? {
-        if let entry = Self.namedKeys[key] {
-            return entry.swiftUI
+        if let named = NamedKey(storedName: key) {
+            return named.keyEquivalent
         }
         return key.count == 1 ? KeyEquivalent(Character(key)) : nil
+    }
+}
+
+extension NamedKey {
+    /// The glyph macOS shows for this key in menus.
+    var glyph: String {
+        switch self {
+        case .return: "⏎"
+        case .tab: "⇥"
+        case .space: "␣"
+        case .escape: "⎋"
+        case .backspace: "⌫"
+        case .delete: "⌦"
+        case .left: "←"
+        case .right: "→"
+        case .up: "↑"
+        case .down: "↓"
+        case .home: "↖"
+        case .end: "↘"
+        case .pageUp: "⇞"
+        case .pageDown: "⇟"
+        default: rawValue.uppercased()
+        }
+    }
+
+    /// SwiftUI's constant for this key. `KeyEquivalent` has none for the
+    /// function keys, so a menu item bound to one shows no shortcut and
+    /// the menu never fires it. Only the actions libghostty runs itself
+    /// (those with a `LimpidShortcutAction.ghosttyAction`) still fire, and
+    /// only while a terminal surface has focus.
+    var keyEquivalent: KeyEquivalent? {
+        switch self {
+        case .return: .return
+        case .tab: .tab
+        case .space: .space
+        case .escape: .escape
+        case .backspace: .delete
+        case .delete: .deleteForward
+        case .left: .leftArrow
+        case .right: .rightArrow
+        case .up: .upArrow
+        case .down: .downArrow
+        case .home: .home
+        case .end: .end
+        case .pageUp: .pageUp
+        case .pageDown: .pageDown
+        default: nil
+        }
     }
 }
 

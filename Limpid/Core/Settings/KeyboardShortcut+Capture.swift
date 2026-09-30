@@ -44,28 +44,8 @@ extension StoredShortcut {
         return set
     }
 
-    /// Carbon keyCodes → named-key strings for keys that don't have
-    /// a useful character (arrows, function keys, return, escape…).
-    /// Punctuation and digits intentionally aren't in this table —
-    /// they're captured as their unshifted character via
-    /// `charactersIgnoringModifiers`, which gives us the user's
-    /// layout-specific literal (`=` on US's keyCode 24, `^` on JIS's
-    /// same physical key) without us having to know the layout.
-    /// Internal so the quick terminal's global hotkey can map a stored
-    /// name back to a keyCode.
-    static let keyCodeNames: [UInt16: String] = [
-        36: "return", 76: "return", // return, keypad enter
-        48: "tab", 49: "space", 51: "backspace", 53: "escape",
-        117: "delete", 115: "home", 119: "end",
-        116: "page_up", 121: "page_down",
-        123: "left", 124: "right", 125: "down", 126: "up",
-        122: "f1", 120: "f2", 99: "f3", 118: "f4",
-        96: "f5", 97: "f6", 98: "f7", 100: "f8",
-        101: "f9", 109: "f10", 103: "f11", 111: "f12"
-    ]
-
     /// `NSEvent.keyCode` → stored key string. Named keys come from
-    /// the table above; everything else translates the hardware
+    /// `NamedKey`; everything else translates the hardware
     /// keyCode through the active layout with **all** modifiers
     /// stripped. `charactersIgnoringModifiers` would otherwise still
     /// honor Shift, so a `⇧]` press would capture as `}` and the
@@ -73,8 +53,8 @@ extension StoredShortcut {
     /// expects in its keybind line.
     @MainActor
     private static func ghosttyKey(from event: NSEvent) -> String? {
-        if let named = keyCodeNames[event.keyCode] {
-            return named
+        if let named = event.namedKey {
+            return named.rawValue
         }
         if let translated = translateKeyCodeIgnoringShift(event.keyCode), !translated.isEmpty {
             return translated.lowercased()
@@ -138,5 +118,13 @@ extension StoredShortcut {
             guard status == noErr, actualStringLength > 0 else { return nil }
             return String(utf16CodeUnits: chars, count: actualStringLength)
         }
+    }
+}
+
+extension NSEvent {
+    /// The named key this event is for, or nil for a key that types a
+    /// character.
+    var namedKey: NamedKey? {
+        NamedKey(keyCode: keyCode)
     }
 }

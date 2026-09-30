@@ -72,7 +72,7 @@ struct QuickTerminalTests {
         // Unicode data has no translator; there is nothing to check then.
         guard let translate = StoredShortcut.currentLayoutTranslator() else { return }
         let code = try #require(HotKeyMapping.keyCodeRange.first { code in
-            StoredShortcut.keyCodeNames[code] == nil && translate(code)?.isEmpty == false
+            NamedKey(keyCode: code) == nil && translate(code)?.isEmpty == false
         })
         let character = try #require(translate(code))
         let resolved = try #require(HotKeyMapping.keyCode(for: character, translate: translate))

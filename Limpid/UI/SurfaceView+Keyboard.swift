@@ -165,11 +165,11 @@ extension SurfaceView {
         // navigation, cancel, select), not the terminal. Same `!hasMarkedText()`
         // gate as the control fast-path above.
         if !hasMarkedText(), isNavigationOrFunctionKey(event) {
-            // For ESC (keyCode 53) keep `text=event.characters` so libghostty
-            // can write the bare ESC byte. For other navigation/function keys
-            // suppress text so the keyCode → escape-sequence translation
-            // isn't double-encoded.
-            forward(event, action: GHOSTTY_ACTION_PRESS, suppressText: event.keyCode != 53)
+            // For ESC keep `text=event.characters` so libghostty can write
+            // the bare ESC byte. For other navigation/function keys suppress
+            // text so the keyCode → escape-sequence translation isn't
+            // double-encoded.
+            forward(event, action: GHOSTTY_ACTION_PRESS, suppressText: event.namedKey != .escape)
             return
         }
 
@@ -237,17 +237,15 @@ extension SurfaceView {
     /// Returns true for keys that the input context tends to swallow as
     /// editor selectors but that should go straight to the terminal.
     private func isNavigationOrFunctionKey(_ event: NSEvent) -> Bool {
-        // macOS virtual keycodes for the keys we want to bypass.
-        let bypassKeyCodes: Set<UInt16> = [
-            123, 124, 125, 126, // arrows: left, right, down, up
-            115, 116, 117, 119, 121, // home, page up, fwd-delete, end, page down
-            53, // escape
-            48, // tab
-            96, 97, 98, 99, 100, 101, // F-keys
-            109, 103, 111, 105, 107,
-            113, 106, 64, 79, 80
-        ]
-        return bypassKeyCodes.contains(event.keyCode)
+        guard let key = event.namedKey else { return false }
+        switch key {
+        case .left, .right, .up, .down, .home, .end, .pageUp, .pageDown, .delete, .escape, .tab:
+            return true
+        case .return, .space, .backspace:
+            return false
+        default:
+            return key.isFunctionKey
+        }
     }
 
     /// We compare occurrence times because Dictation can commit asynchronously
@@ -259,14 +257,10 @@ extension SurfaceView {
         timestamp: TimeInterval,
         interval: inout ClosedRange<TimeInterval>?
     ) -> Bool {
-        // macOS virtual keycodes for the keys that commit a composition.
-        let commitKeyCodes: Set<UInt16> = [
-            36, // return
-            76 // keypad enter
-        ]
         defer { interval = nil }
         guard let interval else { return false }
-        return commitKeyCodes.contains(keyCode) && interval.contains(timestamp)
+        // Return and the keypad's Enter both commit a composition.
+        return NamedKey(keyCode: keyCode) == .return && interval.contains(timestamp)
     }
 
     override func keyUp(with event: NSEvent) {

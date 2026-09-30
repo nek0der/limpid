@@ -498,7 +498,7 @@ private struct NotificationHistoryEscapeMonitor: NSViewRepresentable {
                 guard let self,
                       let hostWindow,
                       event.window === hostWindow,
-                      event.keyCode == 53,
+                      event.namedKey == .escape,
                       event.modifierFlags.isDisjoint(with: [.command, .control, .option])
                 else { return event }
                 onEscape()
