@@ -1,7 +1,5 @@
 // GlassSurfaces.swift
-// Limpid — Liquid Glass surface treatments. The flush sidebar is the
-// one in use; `liquidGlassPill` is kept for in-toolbar buttons and
-// search fields but currently has no callers.
+// Limpid — Liquid Glass surface treatments for the flush sidebar.
 //
 // On macOS 26 the sidebar goes through SwiftUI's canonical
 // `.glassEffect(.regular, in:)` — Apple's official Liquid Glass
@@ -28,12 +26,6 @@ extension View {
         solidFill: Color = LimpidColor.sidebarSolidFill
     ) -> some View {
         modifier(FlushGlassSidebarModifier(isSolid: isSolid, solidFill: solidFill))
-    }
-
-    /// Smaller variant used for in-toolbar buttons / search fields —
-    /// thinner stroke, half the shadow, capsule shape.
-    func liquidGlassPill() -> some View {
-        modifier(LiquidGlassPillModifier())
     }
 
     /// Separates a transient leading panel from content it temporarily covers.
@@ -78,17 +70,5 @@ private struct FlushGlassSidebarModifier: ViewModifier {
                     .allowsHitTesting(false)
             }
         }
-    }
-}
-
-private struct LiquidGlassPillModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .background(.thinMaterial, in: Capsule(style: .continuous))
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-            )
-            .shadow(color: Color.black.opacity(0.18), radius: 6, x: 0, y: 2)
     }
 }
