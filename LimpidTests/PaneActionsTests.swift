@@ -83,6 +83,38 @@ struct PaneActionsTests {
         ))
     }
 
+    @Test("an edge drop that frees room fits an area the current tree overflows")
+    func fitsPaneArea_dropThatShrinksTheTree_fitsUndersizedArea() {
+        let a = UUID()
+        let b = UUID()
+        let c = UUID()
+        let row = SplitTree(leafID: a)
+            .insert(at: a, direction: .horizontal, newID: b).tree
+            .insert(at: b, direction: .horizontal, newID: c).tree
+        let stacked = row.inserting(c, beside: b, on: .bottom)
+
+        #expect(PaneActions.fitsPaneArea(
+            stacked,
+            replacing: row,
+            availableSize: CGSize(width: 200, height: 400),
+            minPaneSize: 80
+        ))
+    }
+
+    @Test("a candidate that needs more room than the area and the current tree is rejected")
+    func fitsPaneArea_candidateLargerThanArea_isRejected() {
+        let a = UUID()
+        let tree = SplitTree(leafID: a)
+        let candidate = tree.insert(at: a, direction: .horizontal, newID: UUID()).tree
+
+        #expect(!PaneActions.fitsPaneArea(
+            candidate,
+            replacing: tree,
+            availableSize: CGSize(width: 100, height: 400),
+            minPaneSize: 80
+        ))
+    }
+
     @Test("closeActivePane clears zoom when the zoomed leaf is the one removed")
     func closeActivePane_removesZoomedLeaf_clearsZoom() {
         let (session, tab, _) = WindowSessionFixture.withLooseTab()

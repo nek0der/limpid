@@ -63,8 +63,6 @@ enum PaneActions {
     }
 
     /// Whether replacing a leaf with a split fits the complete pane area.
-    /// An already undersized window may accept a split only when the candidate
-    /// does not increase the tree's requirement on either axis.
     static func hasRoomToSplit(
         tree: SplitTree,
         paneID: UUID,
@@ -72,13 +70,24 @@ enum PaneActions {
         availableSize: CGSize,
         minPaneSize: Double
     ) -> Bool {
-        guard minPaneSize > 0,
-              let currentRoot = tree.root,
-              tree.contains(leafID: paneID)
-        else { return true }
+        guard minPaneSize > 0, tree.contains(leafID: paneID) else { return true }
         let candidate = tree.insert(at: paneID, direction: direction, newID: UUID()).tree
-        guard let candidateRoot = candidate.root else { return false }
+        return fitsPaneArea(candidate, replacing: tree, availableSize: availableSize, minPaneSize: minPaneSize)
+    }
 
+    /// Whether `candidate` fits a pane area of `availableSize` once it replaces
+    /// `tree`. Splitting and dropping a pane on an edge both ask this. An
+    /// already undersized area accepts a candidate only when it does not
+    /// raise the requirement on either axis, so the reader can still
+    /// rearrange a window that has been made too small.
+    static func fitsPaneArea(
+        _ candidate: SplitTree,
+        replacing tree: SplitTree,
+        availableSize: CGSize,
+        minPaneSize: Double
+    ) -> Bool {
+        guard let currentRoot = tree.root else { return true }
+        guard let candidateRoot = candidate.root else { return false }
         let floor = CGFloat(minPaneSize)
         func fits(_ axis: SplitDirection, available: CGFloat) -> Bool {
             let current = currentRoot.minimumExtent(along: axis, leafMinimum: floor)
@@ -100,8 +109,13 @@ enum PaneActions {
             guard let view = registry.view(for: pivotID), view.window != nil else { return nil }
             return view.bounds.size
         }
+        return mountedPaneAreaSize(of: tab.splitTree, registry: registry)
+    }
 
-        let paneIDs = tab.splitTree.allLeafIDs()
+    /// The size of the union of every leaf's view, which includes the
+    /// dividers between them, or nil while any leaf is not in a window.
+    static func mountedPaneAreaSize(of tree: SplitTree, registry: any SurfaceViewProviding) -> CGSize? {
+        let paneIDs = tree.allLeafIDs()
         let rects = paneIDs.compactMap { paneID -> CGRect? in
             guard let view = registry.view(for: paneID), view.window != nil else { return nil }
             return view.convert(view.bounds, to: nil)
