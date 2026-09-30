@@ -21,7 +21,6 @@
 import Foundation
 import Observation
 import OSLog
-import SwiftUI
 
 private let log = Logger.limpid("settings.store")
 

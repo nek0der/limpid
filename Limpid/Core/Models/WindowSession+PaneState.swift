@@ -137,4 +137,21 @@ extension WindowSession {
     func workingDirectory(paneID: UUID) -> String? {
         paneTransients[paneID]?.workingDirectory
     }
+
+    /// Where a relative path printed in `paneID` is looked up, most specific
+    /// first: the shell's current directory, the directory the tab opened
+    /// in, then the container's root. An agent launched from the shell keeps
+    /// the shell's directory, and agents print paths relative to the
+    /// repository they work in, which the container root covers when the
+    /// shell has moved elsewhere.
+    func linkBaseDirectories(paneID: UUID) -> [URL] {
+        let tab = tab(containing: paneID)
+        let candidates: [URL?] = [
+            workingDirectory(paneID: paneID).map { URL(fileURLWithPath: $0) },
+            tab?.workingDirectory.map { URL(fileURLWithPath: $0) },
+            tab.flatMap { rootDirectory(of: $0.container) }
+        ]
+        var seen: Set<String> = []
+        return candidates.compactMap(\.self).filter { seen.insert($0.standardizedFileURL.path).inserted }
+    }
 }

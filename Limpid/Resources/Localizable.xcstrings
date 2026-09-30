@@ -80,6 +80,23 @@
         }
       }
     },
+    "Choose App for Opening Files": {
+      "comment": "Open-panel title and accessibility label for choosing the app that opens files",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose App for Opening Files"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを開くアプリを選択"
+          }
+        }
+      }
+    },
     "Close approval": {
       "localizations": {
         "en": {
@@ -87,6 +104,40 @@
         },
         "ja": {
           "stringUnit": { "state": "translated", "value": "承認を閉じる" }
+        }
+      }
+    },
+    "Editor": {
+      "comment": "Settings search keyword",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editor"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エディタ"
+          }
+        }
+      }
+    },
+    "Files will open in this app automatically when it becomes available again.": {
+      "comment": "General pane explanation for an unavailable app chosen for opening files",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files will open in this app automatically when it becomes available again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリが再び使えるようになると、ファイルは自動的にこのアプリで開きます。"
+          }
         }
       }
     },
@@ -106,6 +157,40 @@
         }
       }
     },
+    "Open Files With": {
+      "comment": "General pane section for the app that opens local files",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Files With"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを開くアプリ"
+          }
+        }
+      }
+    },
+    "Open file in editor": {
+      "comment": "Settings search keyword",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open file in editor"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルをエディタで開く"
+          }
+        }
+      }
+    },
     "Open this link in %@?": {
       "comment": "Title of the prompt before a terminal hyperlink opens another app; the argument is that app's name",
       "localizations": {
@@ -119,6 +204,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "このリンクを %@ で開きますか？"
+          }
+        }
+      }
+    },
+    "Restore Default App for Opening Files": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore Default App for Opening Files"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを開くアプリを初期値に戻す"
           }
         }
       }
@@ -165,6 +266,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "コードを実行できる項目のため、開かずに Finder で表示しました。"
+          }
+        }
+      }
+    },
+    "The app selected for opening files, %@, is no longer available.": {
+      "comment": "Error when the app chosen for opening files cannot be found; the argument is its name",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app selected for opening files, %@, is no longer available."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを開くアプリに選択した %@ が見つかりません。"
           }
         }
       }
@@ -737,12 +855,6 @@
         "ja": { "stringUnit": { "state": "translated", "value": "すべての設定をリセット" } }
       }
     },
-    "Reset review application": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Reset review application" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "レビュー用アプリをリセット" } }
-      }
-    },
     "Reset review instructions": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Reset review instructions" } },
@@ -753,12 +865,6 @@
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Reset shortcuts" } },
         "ja": { "stringUnit": { "state": "translated", "value": "ショートカットをリセット" } }
-      }
-    },
-    "Restore Default Review App": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Restore Default Review App" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "レビュー用アプリを初期値に戻す" } }
       }
     },
     "Restore Default Review Instructions": {
@@ -2323,6 +2429,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "再試行"
+          }
+        }
+      }
+    },
+    "Used when you ⌘-click a file path in the terminal and when you open a file from Review. Visual Studio Code, Cursor, Xcode, Zed, and Sublime Text open at the line.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used when you ⌘-click a file path in the terminal and when you open a file from Review. Visual Studio Code, Cursor, Xcode, Zed, and Sublime Text open at the line."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルでファイルパスを ⌘ クリックしたときと、Review からファイルを開いたときに使います。Visual Studio Code、Cursor、Xcode、Zed、Sublime Text では該当の行で開きます。"
           }
         }
       }
@@ -7202,23 +7324,6 @@
         }
       }
     },
-    "Review Files": {
-      "comment": "Advanced pane section for the application used to open reviewed files",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Review Files"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "レビューファイル"
-          }
-        }
-      }
-    },
     "Review Instructions": {
       "comment": "Advanced pane section for instructions added to review comments",
       "localizations": {
@@ -7355,23 +7460,6 @@
         }
       }
     },
-    "Choose Review App": {
-      "comment": "Advanced pane open-panel title",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose Review App"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "レビュー用アプリを選択"
-          }
-        }
-      }
-    },
     "Default Application": {
       "comment": "Advanced pane label when Review opens files with macOS's default application",
       "localizations": {
@@ -7385,23 +7473,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "デフォルトのアプリケーション"
-          }
-        }
-      }
-    },
-    "Review files will open in this app automatically when it becomes available again.": {
-      "comment": "Advanced pane explanation for an unavailable selected review app",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Review files will open in this app automatically when it becomes available again."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アプリが再び利用可能になると、自動的にこのアプリでレビューファイルを開きます。"
           }
         }
       }
@@ -7487,23 +7558,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "選択したアプリは使用できません。"
-          }
-        }
-      }
-    },
-    "The selected review app, %@, is no longer available.": {
-      "comment": "Review file action error when the configured application cannot be found",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The selected review app, %@, is no longer available."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選択したレビュー用アプリ「%@」は利用できなくなりました。"
           }
         }
       }
