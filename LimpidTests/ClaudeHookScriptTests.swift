@@ -682,6 +682,21 @@ struct ClaudeHookScriptTests {
         #expect(record?["stateEpisodeToken"] as? String == "2")
     }
 
+    @Test(arguments: ["PostToolUse", "PostToolUseFailure"])
+    func completedQuestion_resumesWithoutClearingAnUnrelatedTool(_ event: String) throws {
+        let waiting = [
+            payload("UserPromptSubmit"),
+            payload("PreToolUse", extra: [
+                "tool_name": "AskUserQuestion",
+                "tool_input": ["questions": [["question": "Which color?"]]]
+            ])
+        ]
+        let unrelated = try runHooks(waiting + [payload(event, extra: ["tool_name": "Bash"])])
+        #expect(unrelated?["state"] as? String == "needsInput")
+        let answered = try runHooks(waiting + [payload(event, extra: ["tool_name": "AskUserQuestion"])])
+        #expect(answered?["state"] as? String == "running")
+    }
+
     /// The template is what Claude is actually told to call us on, so it
     /// is the list the receiver has to keep up with. An event subscribed
     /// but never mapped leaves the pane frozen on its last state, and
@@ -690,7 +705,7 @@ struct ClaudeHookScriptTests {
     @Test("every subscribed event maps to a lifecycle state")
     func subscribedEvents_allReachABranch() throws {
         for event in try Self.subscribedEvents()
-            where event != "CwdChanged" && event != "PermissionRequest"
+            where event != "CwdChanged" && event != "PermissionRequest" && event != "SubagentStop"
         {
             let record = try runHooks(midTurn() + [payload(event, extra: Self.extras(for: event))])
             #expect(
@@ -719,11 +734,12 @@ struct ClaudeHookScriptTests {
 
     /// The fields an event needs before it reaches a state at all: a
     /// `Notification` that is not a permission prompt is deliberately
-    /// ignored, and `PreToolUse` keys off the tool name.
+    /// ignored, and tool events key off the tool name.
     private static func extras(for event: String) -> [String: Any] {
         switch event {
         case "Notification": ["notification_type": "permission_prompt", "message": "needs permission"]
         case "PreToolUse": ["tool_name": "Bash"]
+        case "PostToolUse", "PostToolUseFailure": ["tool_name": "AskUserQuestion"]
         case "StopFailure": ["error_type": "overloaded"]
         case "SessionEnd": ["reason": "other"]
         default: [:]
