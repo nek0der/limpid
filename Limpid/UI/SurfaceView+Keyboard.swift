@@ -117,6 +117,17 @@ extension SurfaceView {
             return true
         }
 
+        // We claim Control+Return before AppKit opens its context menu.
+        // Keeping keyDown in the path preserves IME composition and
+        // libghostty's key encoding, including keypad Enter.
+        if event.type == .keyDown,
+           event.modifierFlags.contains(.control),
+           event.namedKey == .return
+        {
+            self.keyDown(with: event)
+            return true
+        }
+
         return super.performKeyEquivalent(with: event)
     }
 
