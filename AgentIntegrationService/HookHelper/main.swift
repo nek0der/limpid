@@ -2,11 +2,12 @@
 // Limpid — signed PermissionRequest bridge to the authenticated approval
 // service, and the process every lifecycle hook runs in.
 //
-// Two subcommands, deliberately separate: `permission-request <provider>`
+// Separate subcommands: `permission-request <provider>`
 // opens the approval service and waits for a decision. `hook <provider>
 // [worktree]` runs the Rust hook runtime in-process without opening an XPC
 // connection, so lifecycle hooks remain independent of approval-service
-// availability.
+// availability. `question-turn-ended` records a Claude turn end without XPC
+// so a terminal answer remains observable across controller startup delays.
 
 import Foundation
 
@@ -91,6 +92,9 @@ func run(input: Data) throws -> Data? {
         )
     }
     let provider = CommandLine.arguments[2]
+    let completion = provider == "claude" ? AgentQuestionTurnCompletion(
+        payload: input, environment: ProcessInfo.processInfo.environment
+    ) : nil
     guard let translated = try RustProviderBridge.approvalRequest(provider: provider, payload: input),
           let request = try JSONSerialization.jsonObject(with: translated) as? [String: Any],
           let toolName = request["tool_name"] as? String,
@@ -121,7 +125,7 @@ func run(input: Data) throws -> Data? {
                 requestID: requestID,
                 provider: provider,
                 sessionID: request["session_id"] as? String,
-                operationID: request["operation_id"] as? String,
+                operationID: completion?.operationID ?? request["operation_id"] as? String,
                 toolName: toolName,
                 summary: request["summary"] as? String,
                 input: requestInput,
@@ -133,15 +137,33 @@ func run(input: Data) throws -> Data? {
     guard submitted["type"] as? String == "approval.result" else {
         throw AgentIntegrationError.invalidResponse
     }
-    let response = try AgentIntegrationApprovalWire.object(from: client.exchange(
-        AgentIntegrationApprovalWire.wait(
-            epoch: epoch,
-            runID: runID,
-            requestID: requestID,
-            maximumWaitMilliseconds: timeoutMilliseconds
-        ),
-        timeoutSeconds: approvalWaitSeconds
-    ))
+    // PermissionRequest has no tool_use_id, so identical inputs cannot
+    // identify a completed question. Only this request's turn end may
+    // release it without a controller decision.
+    let waitDeadline = ProcessInfo.processInfo.systemUptime + Double(timeoutMilliseconds) / 1000
+    var response: [String: Any]
+    repeat {
+        if completion?.hasCompleted() == true {
+            _ = try client.exchange(AgentIntegrationApprovalWire.cancel(
+                epoch: epoch, runID: runID, requestID: requestID
+            ))
+            return nil
+        }
+        response = try AgentIntegrationApprovalWire.object(from: client.exchange(
+            AgentIntegrationApprovalWire.wait(
+                epoch: epoch, runID: runID, requestID: requestID,
+                maximumWaitMilliseconds: completion == nil ? timeoutMilliseconds : 500
+            ),
+            timeoutSeconds: completion == nil ? approvalWaitSeconds : 5
+        ))
+        let state = (response["body"] as? [String: Any])?["state"] as? [String: Any]
+        if state?["status"] as? String != "pending" {
+            break
+        }
+    } while completion != nil && ProcessInfo.processInfo.systemUptime < waitDeadline
+    if completion?.hasCompleted() == true {
+        return nil
+    }
     guard response["type"] as? String == "approval.result",
           let body = response["body"] as? [String: Any],
           let state = body["state"] as? [String: Any],
@@ -207,6 +229,10 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "hook" {
 var input: Data?
 do {
     let boundedInput = try readBoundedStandardInput()
+    if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "question-turn-ended" {
+        try AgentQuestionTurnCompletion.record(payload: boundedInput, environment: ProcessInfo.processInfo.environment)
+        exit(0)
+    }
     input = boundedInput
     if let output = try run(input: boundedInput) {
         FileHandle.standardOutput.write(output)

@@ -144,6 +144,42 @@ fn replay(scratch: &Scratch, provider: &str, payloads: &[Vec<u8>]) -> Vec<HookOu
 }
 
 #[test]
+fn answered_claude_question_resumes_before_the_next_tool_or_stop() {
+    for event in ["PostToolUse", "PostToolUseFailure"] {
+        let scratch = Scratch::new("claude-question-answer");
+        replay(&scratch, "claude", &[
+            br#"{"hook_event_name":"UserPromptSubmit","prompt":"Ask a question"}"#.to_vec(),
+            br#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which color?"}]}}"#.to_vec(),
+        ]);
+        assert_eq!(
+            scratch.record().expect("waiting record").state,
+            RunState::NeedsInput
+        );
+        replay(
+            &scratch,
+            "claude",
+            &[format!(r#"{{"hook_event_name":"{event}","tool_name":"Bash"}}"#).into_bytes()],
+        );
+        assert_eq!(
+            scratch.record().expect("unrelated tool").state,
+            RunState::NeedsInput
+        );
+        replay(
+            &scratch,
+            "claude",
+            &[
+                format!(r#"{{"hook_event_name":"{event}","tool_name":"AskUserQuestion"}}"#)
+                    .into_bytes(),
+            ],
+        );
+        assert_eq!(
+            scratch.record().expect("answered record").state,
+            RunState::Running
+        );
+    }
+}
+
+#[test]
 fn claude_session_basic_writes_a_version_three_record_and_drops_the_hint() {
     let scratch = Scratch::new("claude-basic");
     let payloads = fixture_case("claude", "session-basic");
