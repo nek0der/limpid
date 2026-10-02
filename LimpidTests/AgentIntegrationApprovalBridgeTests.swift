@@ -6,6 +6,40 @@ import Testing
 @testable import Limpid
 
 struct AgentIntegrationApprovalBridgeTests {
+    @Test func requesterCancellationReleasesOnlyItsOwnPendingQuestion() throws {
+        let service = try RustApprovalService(maximumRecords: 8)
+        let runID = UUID()
+        let requestID = UUID()
+        let otherRequestID = UUID()
+        let requester = try service.requesterSession(runID: runID)
+        let controller = try service.controllerSession()
+        let epoch = try completeHello(on: requester)
+        _ = try completeHello(on: controller)
+        for id in [requestID, otherRequestID] {
+            _ = try requester.exchange(AgentIntegrationApprovalWire.submit(
+                epoch: epoch,
+                submission: AgentIntegrationApprovalSubmission(
+                    runID: runID, requestID: id, provider: "claude", sessionID: "session",
+                    operationID: nil, toolName: "AskUserQuestion", summary: nil,
+                    input: ["questions": [["question": "Which color?"]]],
+                    questions: nil, timeoutMilliseconds: 60000
+                )
+            ))
+        }
+        let canceled = try AgentIntegrationApprovalWire.object(from: requester.exchange(
+            AgentIntegrationApprovalWire.cancel(epoch: epoch, runID: runID, requestID: requestID)
+        ))
+        let canceledBody = try #require(canceled["body"] as? [String: Any])
+        let canceledState = try #require(canceledBody["state"] as? [String: Any])
+        #expect(canceledState["status"] as? String == "canceled")
+        let remaining = try AgentIntegrationApprovalWire.object(from: controller.exchange(
+            AgentIntegrationApprovalWire.get(epoch: epoch, runID: runID, requestID: otherRequestID)
+        ))
+        let remainingBody = try #require(remaining["body"] as? [String: Any])
+        let remainingState = try #require(remainingBody["state"] as? [String: Any])
+        #expect(remainingState["status"] as? String == "pending")
+    }
+
     @Test func requesterAndControllerShareRustBroker() throws {
         let service = try RustApprovalService(maximumRecords: 8)
         let runID = UUID()

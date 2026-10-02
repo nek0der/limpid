@@ -1,7 +1,8 @@
 #!/bin/sh
 # Limpid claude hook receiver — invoked by Claude Code on every hook
 # event we subscribe to (SessionStart, UserPromptSubmit, PreToolUse,
-# Notification, PreCompact, Stop, StopFailure, SessionEnd, CwdChanged).
+# PostToolUse, PostToolUseFailure, Notification, PreCompact, Stop,
+# StopFailure, SessionEnd, CwdChanged).
 # Keyed by LIMPID_PANE_ID (= split-tree leaf UUID, one per pane).
 #
 # Three persistence paths:
@@ -274,6 +275,12 @@ case "$hook_event" in
       else
         detail_safe="$tool_safe"
       fi
+    fi
+    ;;
+  PostToolUse | PostToolUseFailure)
+    # Other tools may finish while a question is still awaiting an answer.
+    if [ "$tool_safe" = "AskUserQuestion" ]; then
+      new_state="running"
     fi
     ;;
   Notification)

@@ -302,8 +302,8 @@ struct ApprovalPresentationStoreTests {
         let request = approval(epoch: UUID(), sessionID: "claude-session")
         store.updatePending([request])
 
-        // The pane has not asked for input yet, so the user has not seen the
-        // request in the terminal and nothing may be released.
+        // An active turn alone proves no answer. We keep the request until
+        // the turn ends, even if the needs-input projection is missed.
         store.releaseStaleApprovals(in: session)
         #expect(await recorded.entries.isEmpty)
 
@@ -365,6 +365,66 @@ struct ApprovalPresentationStoreTests {
         #expect(store.resolvingIDs.isEmpty)
         #expect(await recorded.entries.count == 1)
         #expect(store.lastFailureID == nil)
+    }
+
+    @Test func releaseStaleApprovals_releasesAfterRunningWithoutNeedsInput() async {
+        let recorded = Recorder()
+        let store = ApprovalPresentationStore(decisionSender: { approval, resolution in
+            await recorded.append((approval.id, resolution))
+        })
+        let (session, _, paneID) = WindowSessionFixture.withLooseTab()
+        session.applyAcrossTabs { tab in
+            tab.agentSessions[.claude] = [paneID: AgentSessionInfo(sessionId: "session", cwd: nil)]
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .running, updatedAt: Date())]
+        }
+        let request = approval(sessionID: "session", questions: [question])
+        store.updatePending([request])
+        store.releaseStaleApprovals(in: session)
+        #expect(await recorded.entries.isEmpty)
+        session.applyAcrossTabs { tab in
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .finished, updatedAt: Date())]
+        }
+        store.releaseStaleApprovals(in: session)
+        await recorded.waitForCount(1)
+        #expect(await recorded.entries.first?.1 == .delegate)
+    }
+
+    @Test func releaseStaleApprovals_leavesScopedQuestionsToTheirOwnTurnCompletion() async {
+        let recorded = Recorder()
+        let store = ApprovalPresentationStore(decisionSender: { approval, resolution in
+            await recorded.append((approval.id, resolution))
+        })
+        let (session, _, paneID) = WindowSessionFixture.withLooseTab()
+        session.applyAcrossTabs { tab in
+            tab.agentSessions[.claude] = [paneID: AgentSessionInfo(sessionId: "session", cwd: nil)]
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .finished, updatedAt: Date(timeIntervalSince1970: 20))]
+        }
+        let request = approval(
+            sessionID: "session", operationID: AgentQuestionTurnCompletion.operationIDPrefix + "question",
+            questions: [question]
+        )
+        store.updatePending([request])
+        store.releaseStaleApprovals(in: session)
+        await Task.yield()
+        #expect(await recorded.entries.isEmpty)
+    }
+
+    @Test func releaseStaleApprovals_keepsAQuestionIssuedAfterThePreviousTurnEnded() async {
+        let recorded = Recorder()
+        let store = ApprovalPresentationStore(decisionSender: { approval, resolution in
+            await recorded.append((approval.id, resolution))
+        })
+        let (session, _, paneID) = WindowSessionFixture.withLooseTab()
+        session.applyAcrossTabs { tab in
+            tab.agentSessions[.claude] = [paneID: AgentSessionInfo(sessionId: "session", cwd: nil)]
+            tab.agentBadges[.claude] = [paneID: AgentBadge(state: .finished, updatedAt: Date(timeIntervalSince1970: 10))]
+        }
+        let request = approval(sessionID: "session", questions: [question])
+        store.updatePending([request])
+        store.releaseStaleApprovals(in: session)
+        await Task.yield()
+        #expect(await recorded.entries.isEmpty)
+        #expect(store.resolvingIDs.isEmpty)
     }
 
     @Test func releaseFailure_neitherReportsNorRetries() async {
@@ -461,11 +521,12 @@ struct ApprovalPresentationStoreTests {
     private func approval(
         epoch: UUID = UUID(),
         sessionID: String? = nil,
+        operationID: String? = nil,
         questions: [ApprovalQuestion] = []
     ) -> ApprovalPresentation {
         ApprovalPresentation(
             epoch: epoch, runID: UUID(), requestID: UUID(), provider: .claude,
-            sessionID: sessionID, toolName: "Bash", summary: nil, requestDescription: nil,
+            sessionID: sessionID, operationID: operationID, toolName: "Bash", summary: nil, requestDescription: nil,
             inputDescription: "{}",
             deadlineMilliseconds: 0,
             questions: questions
