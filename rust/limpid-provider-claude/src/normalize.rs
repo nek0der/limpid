@@ -35,6 +35,13 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
             cwd,
         },
         "PreToolUse" => pre_tool_use(&object),
+        "PostToolUse" | "PostToolUseFailure"
+            if string(&object, "tool_name") == Some(crate::approval::QUESTION_TOOL) =>
+        {
+            AgentEvent::ToolFinished {
+                tool: Some(crate::approval::QUESTION_TOOL.to_owned()),
+            }
+        }
         "Notification" => match string(&object, "notification_type") {
             Some("permission_prompt") => AgentEvent::ApprovalRequested {
                 detail: string(&object, "message").map(str::to_owned),
@@ -237,6 +244,25 @@ mod tests {
                 detail: Some("AskUserQuestion".into())
             }]
         );
+    }
+
+    #[test]
+    fn question_completion_resumes_without_finishing_other_pending_tools() {
+        for name in ["PostToolUse", "PostToolUseFailure"] {
+            let payload =
+                format!(r#"{{"hook_event_name":"{name}","tool_name":"AskUserQuestion"}}"#);
+            assert_eq!(
+                events(&payload, None),
+                vec![AgentEvent::ToolFinished {
+                    tool: Some("AskUserQuestion".into())
+                }]
+            );
+            let payload = format!(r#"{{"hook_event_name":"{name}","tool_name":"Bash"}}"#);
+            assert!(matches!(
+                events(&payload, None).as_slice(),
+                [AgentEvent::Extension { .. }]
+            ));
+        }
     }
 
     #[test]

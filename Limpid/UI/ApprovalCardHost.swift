@@ -98,11 +98,11 @@ struct ApprovalCardHost: View {
         }
     }
 
-    /// The request stays pending for the terminal dialog, so closing the card
-    /// alone would leave the user hunting for the pane that is asking. The
-    /// Waiting row takes the user to the same pane.
+    /// We settle the native request when the provider takes over the question,
+    /// even if its session has not yet been associated with a pane.
     private func answerInTerminal(_ approval: ApprovalPresentation) {
         let location = approvals.paneLocation(for: approval, in: session)
+        approvals.resolve(approval, .delegate)
         approvals.dismissCard()
         guard let location else { return }
         attention.focusAttention(in: session, registry: registry, tabID: location.0, paneID: location.1)

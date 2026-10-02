@@ -10,6 +10,7 @@ struct ApprovalPresentation: Identifiable, Equatable, Sendable {
     let requestID: UUID
     let provider: AgentKind
     let sessionID: String?
+    let operationID: String?
     let toolName: String
     let summary: String?
     let requestDescription: String?
@@ -19,6 +20,10 @@ struct ApprovalPresentation: Identifiable, Equatable, Sendable {
 
     var isQuestion: Bool {
         !questions.isEmpty
+    }
+
+    var hasQuestionTurnCompletion: Bool {
+        provider == .claude && operationID?.hasPrefix(AgentQuestionTurnCompletion.operationIDPrefix) == true
     }
 
     var id: String {
@@ -57,11 +62,9 @@ final class ApprovalPresentationStore {
     private let previewDismissDelay: Duration
     private var observerTask: Task<Void, Never>?
     private var observerGeneration = UUID()
-    /// Requests whose pane was seen in `needsInput` while they were pending.
-    /// Only those are released when the pane's turn ends; a request that
-    /// arrives while the pane is still `running` has not been shown to the
-    /// user yet, so the pane's state says nothing about it.
-    private var observedNeedsInputIDs: Set<String> = []
+    /// We may miss `needsInput` between broker and runtime projections. Any
+    /// active state establishes that a request preceded the next turn end.
+    private var observedActiveTurnIDs: Set<String> = []
     /// Requests the broker has already accepted a decision for. The broker
     /// projection that drops them can land after the pane's turn ends, and a
     /// second decision for a settled request is rejected as already terminal,
@@ -109,7 +112,7 @@ final class ApprovalPresentationStore {
         answerDrafts = [:]
         previewDismissTask?.cancel()
         previewDismissTask = nil
-        observedNeedsInputIDs = []
+        observedActiveTurnIDs = []
         settledIDs = []
         failedReleaseIDs = []
     }
@@ -146,22 +149,22 @@ final class ApprovalPresentationStore {
     /// nothing for `delegate`; the provider ignores it because the tool has
     /// already run, and the card and Waiting row disappear with the record.
     ///
-    /// We release only once the pane's turn is over. The pane's state is one
-    /// value per session, so a subagent or another tool going back to
-    /// `running` does not mean this dialog was answered; the turn cannot end
-    /// while a dialog is open. The hook helper is no signal either:
-    /// measured with Claude Code 2.1.284, answering in the terminal leaves it
-    /// running until its own timeout. The cost is that a request answered in
-    /// the terminal keeps its row until the turn ends.
+    /// We cannot correlate Claude's PermissionRequest with a tool-use ID, so
+    /// we release only once the pane's turn ends. Other tools can restore
+    /// `running` while a dialog is open; that alone proves no answer.
+    /// Scoped question requesters read their own turn-end receipts instead;
+    /// a pane's turn end may belong to another prompt or a background agent.
     func releaseStaleApprovals(in session: WindowSession) {
         for approval in pending {
-            guard let (tabID, paneID) = paneLocation(for: approval, in: session),
-                  let state = session.tab(tabID)?.agentBadges[approval.provider]?[paneID]?.state
+            guard !approval.hasQuestionTurnCompletion,
+                  let (tabID, paneID) = paneLocation(for: approval, in: session),
+                  let badge = session.tab(tabID)?.agentBadges[approval.provider]?[paneID]
             else { continue }
-            if state == .needsInput {
-                observedNeedsInputIDs.insert(approval.id)
+            let state = badge.state
+            if state == .needsInput || state == .running || state == .compacting {
+                observedActiveTurnIDs.insert(approval.id)
             } else if Self.turnIsOver(state),
-                      observedNeedsInputIDs.contains(approval.id),
+                      observedActiveTurnIDs.contains(approval.id),
                       !resolvingIDs.contains(approval.id),
                       !settledIDs.contains(approval.id),
                       !failedReleaseIDs.contains(approval.id)
@@ -414,6 +417,7 @@ final class ApprovalPresentationStore {
                 requestID: requestID,
                 provider: provider,
                 sessionID: request["session_id"] as? String,
+                operationID: request["operation_id"] as? String,
                 toolName: toolName,
                 summary: request["summary"] as? String,
                 requestDescription: (input as? [String: Any])?["description"] as? String,
@@ -436,7 +440,7 @@ final class ApprovalPresentationStore {
         resolvingIDs = []
         dismissCard()
         rowAnchors = [:]
-        observedNeedsInputIDs = []
+        observedActiveTurnIDs = []
         settledIDs = []
         failedReleaseIDs = []
     }
@@ -459,7 +463,7 @@ final class ApprovalPresentationStore {
             approvals.contains { $0.id == entry.key }
         }
         previewingIDs.formIntersection(approvals.map(\.id))
-        observedNeedsInputIDs = observedNeedsInputIDs.filter { id in approvals.contains { $0.id == id } }
+        observedActiveTurnIDs = observedActiveTurnIDs.filter { id in approvals.contains { $0.id == id } }
         settledIDs = settledIDs.filter { id in approvals.contains { $0.id == id } }
         failedReleaseIDs = failedReleaseIDs.filter { id in approvals.contains { $0.id == id } }
         answerDrafts = answerDrafts.filter { entry in approvals.contains { $0.id == entry.key } }
