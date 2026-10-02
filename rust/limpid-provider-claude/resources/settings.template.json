@@ -20,6 +20,12 @@
     "Notification": [
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ],
+    "PostToolUse": [
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
+    "PostToolUseFailure": [
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
     "PermissionRequest": [
       { "hooks": [{ "type": "command", "command": "@@APPROVAL_HELPER@@ permission-request claude", "timeout": 600 }] }
     ],
@@ -27,10 +33,19 @@
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+      { "hooks": [
+        { "type": "command", "command": "@@HOOK@@" },
+        { "type": "command", "command": "@@APPROVAL_HELPER@@ question-turn-ended" }
+      ] }
     ],
     "StopFailure": [
-      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+      { "hooks": [
+        { "type": "command", "command": "@@HOOK@@" },
+        { "type": "command", "command": "@@APPROVAL_HELPER@@ question-turn-ended" }
+      ] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "@@APPROVAL_HELPER@@ question-turn-ended" }] }
     ],
     "CwdChanged": [
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }

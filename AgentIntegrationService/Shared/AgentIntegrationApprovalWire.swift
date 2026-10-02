@@ -64,6 +64,13 @@ enum AgentIntegrationApprovalWire {
         ])
     }
 
+    static func cancel(epoch: UUID, runID: UUID, requestID: UUID) throws -> Data {
+        try request(type: "approval.cancel", epoch: epoch, body: [
+            "run_id": runID.uuidString,
+            "request_id": requestID.uuidString
+        ])
+    }
+
     static func resolve(
         epoch: UUID,
         runID: UUID,
