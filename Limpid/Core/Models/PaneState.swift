@@ -4,8 +4,8 @@
 // Split into two halves on purpose:
 //
 //   * `PaneState` — persisted on `Tab.paneStates`. Holds `unreadCount`
-//     only; every other per-pane bit is transient and lives on
-//     `paneTransients`. Changes to `PaneState` should drive autosave
+//     and the name the user gave the pane; every other per-pane bit is
+//     transient and lives on `paneTransients`. Changes to `PaneState` should drive autosave
 //     because they represent durable data the user expects to come
 //     back across a relaunch.
 //   * `PaneTransients` — lives on `WindowSession.paneTransients`
@@ -20,6 +20,14 @@ import Foundation
 
 struct PaneState: Codable, Equatable {
     var unreadCount: Int = 0
+
+    /// The name the user gave this pane from its header. Optional because
+    /// most panes are never named and their header derives a label instead,
+    /// and because synthesized `Codable` reads an Optional with
+    /// `decodeIfPresent`, so a session saved before panes had names still
+    /// decodes. Stored already trimmed and never empty; go through
+    /// `WindowSession.renamePane(_:to:)` rather than writing it directly.
+    var name: String?
 
     var hasUnread: Bool {
         unreadCount > 0

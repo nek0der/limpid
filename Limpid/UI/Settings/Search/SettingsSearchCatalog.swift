@@ -90,12 +90,20 @@ enum SettingsSearchCatalog {
                 order: 0
             ),
             makeEntry(
+                "tabs-and-panes.split-pane-headers",
+                .tabsAndPanes,
+                "Pane Headers",
+                "Show headers on split panes",
+                keywords: ["Pane name"],
+                order: 1
+            ),
+            makeEntry(
                 "tabs-and-panes.default-working-directory",
                 .tabsAndPanes,
                 "Quick Tabs",
                 "Default working directory",
                 keywords: ["Quick Tab directory"],
-                order: 1
+                order: 2
             ),
 
             makeEntry(
@@ -303,6 +311,10 @@ enum SettingsSearchCatalog {
 
     static var minimumPaneSize: SettingsSearchEntry {
         requiredEntry("tabs-and-panes.minimum-pane-size")
+    }
+
+    static var splitPaneHeaders: SettingsSearchEntry {
+        requiredEntry("tabs-and-panes.split-pane-headers")
     }
 
     static var defaultWorkingDirectory: SettingsSearchEntry {

@@ -53,7 +53,8 @@ extension SurfaceView: NSDraggingSource {
 
     /// Open an AppKit drag session that carries this pane's id to the
     /// tab column drop targets. Called from `mouseDragged` once the cursor has
-    /// moved far enough from the ⌥⌘-mouseDown anchor.
+    /// moved far enough from the ⌥⌘-mouseDown anchor, and from a split pane's
+    /// header, where a plain drag picks the pane up (`PaneHeaderView`).
     func beginPaneDrag(with event: NSEvent) {
         guard let paneID, let dragState else { return }
 

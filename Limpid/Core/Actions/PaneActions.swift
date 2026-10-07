@@ -25,14 +25,14 @@ enum PaneActions {
         _ session: WindowSession,
         direction: SplitDirection,
         registry: (any SurfaceViewProviding)? = nil,
-        minPaneSize: Double = 0,
+        minPaneSize: PaneMinimumSize = .zero,
         toastCenter: ToastCenter? = nil
     ) {
         guard let tab = session.activeTab else { return }
         let pivotID = tab.splitTree.effectiveFocusedLeafID
         guard let pivotID else { return }
 
-        if let registry, let toastCenter, minPaneSize > 0,
+        if let registry, let toastCenter, minPaneSize.isEnforced,
            let availableSize = renderedPaneAreaSize(
                tab: tab,
                pivotID: pivotID,
@@ -68,9 +68,9 @@ enum PaneActions {
         paneID: UUID,
         direction: SplitDirection,
         availableSize: CGSize,
-        minPaneSize: Double
+        minPaneSize: PaneMinimumSize
     ) -> Bool {
-        guard minPaneSize > 0, tree.contains(leafID: paneID) else { return true }
+        guard minPaneSize.isEnforced, tree.contains(leafID: paneID) else { return true }
         let candidate = tree.insert(at: paneID, direction: direction, newID: UUID()).tree
         return fitsPaneArea(candidate, replacing: tree, availableSize: availableSize, minPaneSize: minPaneSize)
     }
@@ -84,14 +84,13 @@ enum PaneActions {
         _ candidate: SplitTree,
         replacing tree: SplitTree,
         availableSize: CGSize,
-        minPaneSize: Double
+        minPaneSize: PaneMinimumSize
     ) -> Bool {
         guard let currentRoot = tree.root else { return true }
         guard let candidateRoot = candidate.root else { return false }
-        let floor = CGFloat(minPaneSize)
         func fits(_ axis: SplitDirection, available: CGFloat) -> Bool {
-            let current = currentRoot.minimumExtent(along: axis, leafMinimum: floor)
-            let required = candidateRoot.minimumExtent(along: axis, leafMinimum: floor)
+            let current = currentRoot.minimumExtent(along: axis, leafMinimum: minPaneSize)
+            let required = candidateRoot.minimumExtent(along: axis, leafMinimum: minPaneSize)
             return required <= max(available, current) + 0.5
         }
         return fits(.horizontal, available: availableSize.width)

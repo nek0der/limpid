@@ -53,11 +53,27 @@ struct InlineRenameField: View {
     @Binding var isEditing: Bool
     var font: Font
     var foregroundColor: Color
-    /// Receives the submitted name, trimmed and never empty. Nil for a
-    /// label that cannot be renamed: it then never enters editing but is
-    /// still drawn here, so a list that mixes the two keeps every label
-    /// on the same left edge.
+    /// Receives the submitted name, trimmed and never empty unless
+    /// `submitsEmptyName` says otherwise. Nil for a label that cannot be
+    /// renamed: it then never enters editing but is still drawn here, so a
+    /// list that mixes the two keeps every label on the same left edge.
     var onRename: ((String) -> Void)?
+    /// Whether the label claims the row's full width. Rows want it, so a
+    /// double-click anywhere along them starts the rename; a label that
+    /// shares its line with other text (the pane header's directory) sizes
+    /// to its glyphs instead, or it would push that text off the line.
+    var fillsWidth = true
+    /// Whether a blank submit reaches `onRename` as an empty string. Off
+    /// for tabs and containers, whose name cannot be blank; on where the
+    /// name is an override and clearing it hands the label back to a
+    /// derived one, as a pane's name does.
+    var submitsEmptyName = false
+    /// Called by the double-click instead of starting the edit here, for a
+    /// label whose owner decides where the edit happens. The pane header
+    /// uses it to open a floating field when the name would be too narrow
+    /// to edit in place. Nil starts the edit in this field, as the tab and
+    /// container rows do.
+    var onBeginRename: (() -> Void)?
 
     @Environment(\.isEnabled) private var isEnabled
     @FocusState private var fieldFocused: Bool
@@ -74,7 +90,8 @@ struct InlineRenameField: View {
 
     /// What a submit renames to: the draft without surrounding
     /// whitespace, or nil when nothing is left. An empty or all-blank
-    /// submit keeps the prior name rather than clearing it.
+    /// submit keeps the prior name rather than clearing it, unless the
+    /// field sets `submitsEmptyName`, which hands the empty string on.
     nonisolated static func committedName(from draft: String) -> String? {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
@@ -112,7 +129,7 @@ struct InlineRenameField: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .padding(.leading, Self.fieldEditorLeadingPadding)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: fillsWidth ? .infinity : nil, alignment: .leading)
                     // SwiftUI's `Text` hit-tests only the drawn glyphs,
                     // so a double-click to start a rename got a target
                     // the width of the label itself — a one-character
@@ -131,7 +148,10 @@ struct InlineRenameField: View {
         // renamed, so it never sits in that row's gesture arbitration.
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
-                if !isEditing {
+                guard !isEditing else { return }
+                if let onBeginRename {
+                    onBeginRename()
+                } else {
                     isEditing = true
                 }
             },
@@ -151,8 +171,12 @@ struct InlineRenameField: View {
         guard !didFinalize else { return }
         didFinalize = true
         removeOutsideClickMonitor()
-        if commit, let newName = Self.committedName(from: draft) {
-            onRename?(newName)
+        if commit {
+            if let newName = Self.committedName(from: draft) {
+                onRename?(newName)
+            } else if submitsEmptyName {
+                onRename?("")
+            }
         }
         isEditing = false
     }

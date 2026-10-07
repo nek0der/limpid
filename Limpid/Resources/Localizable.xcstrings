@@ -937,6 +937,47 @@
         "ja": { "stringUnit": { "state": "translated", "value": "スタイル" } }
       }
     },
+    "Show headers on split panes": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show headers on split panes" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "分割したペインに見出しを出す" } }
+      }
+    },
+    "Pane Headers": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pane Headers" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ペインの見出し" } }
+      }
+    },
+    "Names each pane of a split tab and shows what it is running. Double-click a pane's name to rename it.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Names each pane of a split tab and shows what it is running. Double-click a pane's name to rename it." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "分割したタブの各ペインに名前と実行中の内容を表示します。ペインの名前をダブルクリックすると名前を変更できます。" } }
+      }
+    },
+    "Pane actions": {
+      "comment": "Help tag and accessibility label of the ellipsis menu on a split pane's header",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pane actions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインの操作"
+          }
+        }
+      }
+    },
+    "Pane name": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pane name" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ペインの名前" } }
+      }
+    },
     "Tabs & Panes": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Tabs & Panes" } },
@@ -3694,6 +3735,12 @@
         }
       }
     },
+    "Rename Pane…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Rename Pane…" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ペインの名前を変更…" } }
+      }
+    },
     "Move Pane to New Tab": {
       "localizations": {
         "ja": {
@@ -5401,8 +5448,14 @@
       }
     },
     "Terminal": {
-      "comment": "Keyboard settings section title for terminal-specific shortcuts",
+      "comment": "Keyboard settings section title for terminal-specific shortcuts; also the name a split pane's header shows before its shell reports a directory",
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",

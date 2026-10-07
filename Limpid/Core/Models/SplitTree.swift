@@ -116,11 +116,13 @@ struct PaneSplit: Codable, Equatable {
 }
 
 extension PaneNode {
-    /// Minimum extent needed by every descendant leaf along one axis.
-    func minimumExtent(along axis: SplitDirection, leafMinimum: CGFloat) -> CGFloat {
+    /// Minimum extent needed by every descendant leaf along one axis. A leaf
+    /// takes the floor for that axis, so a split pane's width and height
+    /// minima apply only along the axis each one bounds.
+    func minimumExtent(along axis: SplitDirection, leafMinimum: PaneMinimumSize) -> CGFloat {
         switch self {
         case .leaf:
-            return leafMinimum
+            return leafMinimum.extent(along: axis)
         case let .split(data):
             let first = data.first.minimumExtent(along: axis, leafMinimum: leafMinimum)
             let second = data.second.minimumExtent(along: axis, leafMinimum: leafMinimum)
@@ -222,7 +224,7 @@ struct SplitTree: Codable, Equatable {
         splitAt path: PaneSplitPath,
         by amount: Double,
         bounds: CGSize,
-        minSize: CGFloat
+        minSize: PaneMinimumSize
     ) -> SplitTree {
         guard let root else { return self }
         let op = ResizeOp(
@@ -240,7 +242,7 @@ struct SplitTree: Codable, Equatable {
         let path: PaneSplitPath
         let amount: Double
         let bounds: CGSize
-        let minSize: CGFloat
+        let minSize: PaneMinimumSize
     }
 
     /// Reset every split in the tree to a 50/50 ratio.

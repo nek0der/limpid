@@ -32,8 +32,8 @@ struct SplitContainerView: View {
     let onEqualize: (PaneSplitPath) -> Void
     /// Smallest each side of a divider may shrink to, in points. Threaded
     /// through to recursive calls so the whole tree shares one floor;
-    /// `PaneAreaView` resolves the value from `terminal.minPaneSize`.
-    let minPaneSize: CGFloat
+    /// `PaneAreaView` resolves the value from `terminal.paneMinimumSize`.
+    let minPaneSize: PaneMinimumSize
 
     var body: some View {
         switch node {

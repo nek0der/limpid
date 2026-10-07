@@ -19,7 +19,7 @@ struct PaneCommands: Commands {
                         state.session,
                         direction: .horizontal,
                         registry: state.registry,
-                        minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
+                        minPaneSize: state.settingsStore.settings.terminal.paneMinimumSize,
                         toastCenter: state.toastCenter
                     )
                 } label: {
@@ -32,7 +32,7 @@ struct PaneCommands: Commands {
                         state.session,
                         direction: .vertical,
                         registry: state.registry,
-                        minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
+                        minPaneSize: state.settingsStore.settings.terminal.paneMinimumSize,
                         toastCenter: state.toastCenter
                     )
                 } label: {

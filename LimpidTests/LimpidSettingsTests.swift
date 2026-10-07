@@ -181,6 +181,16 @@ struct LimpidSettingsTests {
         #expect(aboveRange.minPaneSize == TerminalSettings.minPaneSizeRange.upperBound)
     }
 
+    @Test("a pane minimum saved under the old 40pt floor is raised to 60")
+    func decode_terminalPaneMinimum_belowSixty_raisesToSixty() throws {
+        let saved = try JSONDecoder().decode(
+            TerminalSettings.self,
+            from: Data(#"{"minPaneSize":40}"#.utf8)
+        )
+        #expect(saved.minPaneSize == 60)
+        #expect(TerminalSettings.minPaneSizeRange.lowerBound == 60)
+    }
+
     @Test("unfocused pane opacity is clamped to its supported range")
     func decode_unfocusedPaneOpacity_clampsToSupportedRange() throws {
         let belowRange = try JSONDecoder().decode(
