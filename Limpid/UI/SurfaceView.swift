@@ -305,6 +305,17 @@ final class SurfaceView: NSView {
     /// disabled. Nil means "don't show".
     var canMoveToNewTab: (() -> Bool)?
 
+    /// "Rename Pane…" starts a rename in the pane's header — in place, or
+    /// in the floating panel under it when the header is too narrow — so
+    /// the item shows only while that header is on screen; a hidden header
+    /// would leave the request with nothing to answer it. Nil means
+    /// "don't show".
+    var canRenamePane: (() -> Bool)?
+    /// Asks the pane's header to start that rename. The menu only says
+    /// "start": the header owns the field, so the request goes through the
+    /// window's `PaneRenamePresentation` rather than to the field itself.
+    var onRequestRenamePane: (() -> Void)?
+
     /// The pane this view represents. Set by `PaneHostView`; lets the
     /// AppKit drag-source path write a `pane:<UUID>` payload to the
     /// pasteboard without threading the id through every drag handler.
@@ -328,7 +339,7 @@ final class SurfaceView: NSView {
     /// `paneDragThreshold` so a stationary ⌥⌘-click neither hijacks
     /// libghostty's mouse press nor starts an empty drag.
     var paneDragAnchor: NSPoint?
-    let paneDragThreshold: CGFloat = 4
+    let paneDragThreshold: CGFloat = LimpidLayout.paneDragThreshold
 
     /// `true` between `beginPaneDrag` opening the AppKit dragging
     /// session and `draggingSession(_:endedAt:)` resetting it. Read by

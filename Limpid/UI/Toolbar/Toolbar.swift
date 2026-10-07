@@ -119,7 +119,7 @@ struct ToolbarTerminalColumnSegment: View {
                         session,
                         direction: .horizontal,
                         registry: registry,
-                        minPaneSize: settings.settings.terminal.minPaneSize,
+                        minPaneSize: settings.settings.terminal.paneMinimumSize,
                         toastCenter: toastCenter
                     )
                 }
@@ -133,7 +133,7 @@ struct ToolbarTerminalColumnSegment: View {
                         session,
                         direction: .vertical,
                         registry: registry,
-                        minPaneSize: settings.settings.terminal.minPaneSize,
+                        minPaneSize: settings.settings.terminal.paneMinimumSize,
                         toastCenter: toastCenter
                     )
                 }
@@ -252,7 +252,7 @@ struct ToolbarTerminalColumnSegment: View {
             session,
             direction: direction,
             registry: registry,
-            minPaneSize: settings.settings.terminal.minPaneSize,
+            minPaneSize: settings.settings.terminal.paneMinimumSize,
             toastCenter: toastCenter
         )
     }

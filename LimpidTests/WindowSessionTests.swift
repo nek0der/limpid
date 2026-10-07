@@ -64,6 +64,23 @@ struct WindowSessionTests {
         #expect(s.tab(containing: paneID)?.id == tab.id)
     }
 
+    @Test("tab(containing:) follows a pane merged into another tab when the totals stay the same")
+    func tabContaining_afterMergeKeepingCounts_returnsNewTab() throws {
+        let s = WindowSession()
+        let source = s.openTab(container: .loose)
+        let target = s.openTab(container: .loose)
+        s.setActiveTab(source.id)
+        PaneActions.split(s, direction: .horizontal)
+        let moved = try #require(s.tab(source.id)?.splitTree.allLeafIDs().last)
+        // Prime the index before the move, the way any earlier lookup would.
+        #expect(s.tab(containing: moved)?.id == source.id)
+
+        // Two tabs holding 2 + 1 leaves before and 1 + 2 after.
+        TabActions.mergePaneIntoTab(s, paneID: moved, into: target.id)
+
+        #expect(s.tab(containing: moved)?.id == target.id)
+    }
+
     @Test("tab(containing:) returns nil for an unknown pane id")
     func tabContaining_unknownPane_returnsNil() {
         let s = WindowSession()

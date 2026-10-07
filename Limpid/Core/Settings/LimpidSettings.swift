@@ -397,7 +397,17 @@ struct FontSettings: Codable, Equatable {
 
 struct TerminalSettings: Codable, Equatable {
     static let defaultMinPaneSize: Double = 80
-    static let minPaneSizeRange: ClosedRange<Double> = 40...300
+    /// What one click of the Settings stepper moves the minimum by.
+    static let minPaneSizeStep: Double = 20
+
+    /// The floor is the split pane header's narrowest width (the kind glyph
+    /// and the menu, `PaneHeaderMetrics.minimumWidth`) rounded up to a whole
+    /// stepper step, so a split pane always has room for its header and the
+    /// width minimum can be the user's number as-is. Rounding keeps the
+    /// stepper on its round values. A stored value below it is raised on
+    /// load.
+    static let minPaneSizeRange: ClosedRange<Double> =
+        (Double(PaneHeaderMetrics.minimumWidth) / minPaneSizeStep).rounded(.up) * minPaneSizeStep...300
 
     /// Maximum number of scrollback lines per pane. libghostty
     /// allocates the ring at surface init, so changing this requires
@@ -429,6 +439,12 @@ struct TerminalSettings: Codable, Equatable {
     /// refused.
     var minPaneSize: Double = Self.defaultMinPaneSize
 
+    /// Whether each pane of a split tab carries a one-line header naming
+    /// it. On by default: with two or more panes the tab row names only the
+    /// tab, and the header is what tells the panes apart. Lives beside
+    /// `minPaneSize` because both shape how a split lays out its panes.
+    var showsSplitPaneHeaders: Bool = true
+
     /// See `LimpidSettings.unknownFields`.
     var unknownFields: [String: LimpidJSONValue] = [:]
 
@@ -456,6 +472,10 @@ struct TerminalSettings: Codable, Equatable {
             max(decodedMinPaneSize, Self.minPaneSizeRange.lowerBound),
             Self.minPaneSizeRange.upperBound
         )
+        self.showsSplitPaneHeaders = try c.decodeIfPresent(
+            Bool.self,
+            forKey: .showsSplitPaneHeaders
+        ) ?? true
         self.unknownFields = try CodableSidecar.decodeUnknownFields(
             from: decoder,
             knownKeys: Self.knownKeyStrings
@@ -471,12 +491,13 @@ struct TerminalSettings: Codable, Equatable {
         try c.encode(quickTabCwdMode, forKey: .quickTabCwdMode)
         try c.encodeIfPresent(quickTabCwdPath, forKey: .quickTabCwdPath)
         try c.encode(minPaneSize, forKey: .minPaneSize)
+        try c.encode(showsSplitPaneHeaders, forKey: .showsSplitPaneHeaders)
         try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case scrollbackLines, bellAction, cursorStyle, cursorBlink
-        case quickTabCwdMode, quickTabCwdPath, minPaneSize
+        case quickTabCwdMode, quickTabCwdPath, minPaneSize, showsSplitPaneHeaders
     }
 
     private static let knownKeyStrings: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))

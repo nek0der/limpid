@@ -35,6 +35,15 @@ enum AgentProviderRegistry {
         descriptors[kind.rawValue]?.displayName ?? kind.rawValue
     }
 
+    /// Whether a provider supplies session titles. The tab title rule
+    /// branches on this capability, and a pane header naming the same
+    /// conversation has to branch the same way. The spelling is Rust's
+    /// serialized `Capability::SessionTitle`; an unreadable registry
+    /// answers false, which names a pane by its opening prompt at worst.
+    static func hasSessionTitles(_ kind: AgentKind) -> Bool {
+        descriptors[kind.rawValue]?.capabilities.contains("session_title") == true
+    }
+
     /// Where each provider keeps its records under `root`, as its descriptor
     /// declares. Claude keeps legacy directory names so existing records
     /// survive an upgrade, which is why this is read rather than derived.

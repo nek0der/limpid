@@ -236,6 +236,11 @@ enum DemoFixture {
         )
         editorTab.initialCommands[editorTopPaneID] = editorCommand
         editorTab.initialCommands[editorBottomPaneID] = gitStatusCommand
+        // Named the way a user would name them, so the hero screenshot
+        // shows split-pane headers with names rather than two copies of the
+        // demo home directory.
+        editorTab.paneStates[editorTopPaneID] = PaneState(name: "WindowSession+Containers.swift")
+        editorTab.paneStates[editorBottomPaneID] = PaneState(name: "git status")
 
         var gitTab = singlePaneTab(
             id: gitTabID,

@@ -1,6 +1,6 @@
 // WindowSession+PaneState.swift
-// Limpid — per-pane state mutators. Persisted bits (`unreadCount`)
-// live on `Tab.paneStates`; transient bits (bell-ringing, child-exit
+// Limpid — per-pane state mutators. Persisted bits (`unreadCount`,
+// the pane's name) live on `Tab.paneStates`; transient bits (bell-ringing, child-exit
 // code, and OSC 7 working directory) live on `WindowSession.paneTransients` so changing them
 // doesn't churn the autosave hook. Both sets of verbs live here, plus
 // the `tabID(forPane:)` lookup every mutator funnels through.
@@ -11,9 +11,9 @@ extension WindowSession {
     /// Tab containing the given pane id. Goes through a lazy
     /// paneID→tabID reverse index so libghostty event paths
     /// (focus, occlusion, action routing) stop paying O(N×L)
-    /// per call. The cache stales out when the (tabs × leaves)
-    /// signature changes; on a miss we walk the tabs once,
-    /// rebuild the dict, and proceed in O(1).
+    /// per call. The cache stales out when which leaves each tab
+    /// holds changes (see `paneIndexSignature`); on a miss we walk
+    /// the tabs once, rebuild the dict, and proceed in O(1).
     func tab(containing paneID: UUID) -> Tab? {
         guard let tabID = tabID(forPane: paneID) else { return nil }
         return tabs.first { $0.id == tabID }
@@ -34,17 +34,22 @@ extension WindowSession {
         return map[paneID]
     }
 
-    /// Cheap stale-marker for the reverse-index cache. Adding or
-    /// removing a tab changes `tabs.count`; splitting / closing a
-    /// pane inside an existing tab changes the per-tab leaf count.
-    /// Together they catch every mutation that can move a paneID
-    /// between tabs.
+    /// Stale-marker for the reverse-index cache: a hash of which leaves
+    /// each tab holds. It used to be the tab count plus the leaf count,
+    /// which a move between two existing tabs leaves unchanged — merging a
+    /// pane out of a two-pane tab into a one-pane tab keeps both totals —
+    /// so the cache went on naming the pane's old tab, and every lookup
+    /// through it read and wrote the wrong tab's state for that pane.
+    /// Hashing the ids costs the same walk the counts did.
     private func paneIndexSignature() -> Int {
-        var sum = tabs.count
+        var hasher = Hasher()
         for tab in tabs {
-            sum &+= tab.splitTree.allLeafIDs().count
+            hasher.combine(tab.id)
+            for leaf in tab.splitTree.allLeafIDs() {
+                hasher.combine(leaf)
+            }
         }
-        return sum
+        return hasher.finalize()
     }
 
     func paneState(_ paneID: UUID) -> PaneState {
@@ -91,6 +96,34 @@ extension WindowSession {
             }
         }
         cachedWindowUnreadCount = 0
+    }
+
+    /// Name a pane, or clear its name with nil or a blank string. Goes
+    /// through `Tab.paneStates`, so the name autosaves with the session and
+    /// follows the pane when it moves to another tab. A name equal to the
+    /// stored one writes nothing, which keeps a no-op commit from
+    /// scheduling a save.
+    func renamePane(_ paneID: UUID, to name: String?) {
+        let normalized = PaneHeaderRules.normalizedName(name)
+        guard paneState(paneID).name != normalized else { return }
+        mutatePane(paneID) { $0.name = normalized }
+    }
+
+    /// Apply a rename submitted from a pane header, in place or from the
+    /// floating panel. `shownName` is the name the header showed when the
+    /// edit began; `PaneHeaderRules.nameChange` decides what, if anything,
+    /// that submit writes.
+    func commitPaneRename(_ paneID: UUID, submitted: String, shownName: String) {
+        let change = PaneHeaderRules.nameChange(
+            submitted: submitted,
+            stored: paneState(paneID).name,
+            shown: shownName
+        )
+        switch change {
+        case let .set(name): renamePane(paneID, to: name)
+        case .clear: renamePane(paneID, to: nil)
+        case nil: break
+        }
     }
 
     /// Toggle the bell-ringing highlight for a pane. Writes through

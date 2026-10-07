@@ -295,6 +295,55 @@ enum LimpidLayout {
     /// so it still rounds.
     static let paneBannerCornerRadius: CGFloat = 10
 
+    /// The split pane header's geometry. Core's rules count it too, so the
+    /// values live in `PaneHeaderMetrics`; these names keep the views
+    /// reading from one place with the rest of the layout.
+    static let paneHeaderHeight = PaneHeaderMetrics.height
+    static let paneHeaderHorizontalPadding = PaneHeaderMetrics.horizontalPadding
+    static let paneHeaderItemSpacing = PaneHeaderMetrics.itemSpacing
+    static let paneHeaderGlyphSlot = PaneHeaderMetrics.glyphSlot
+    static let paneHeaderMenuSlot = PaneHeaderMetrics.menuSlot
+
+    /// The header's type, sized to fit one line in `paneHeaderHeight`: the
+    /// kind glyph, the pane's name, and the directory beside it, which is a
+    /// step smaller so the name leads. The "⋯" menu glyph matches the
+    /// directory.
+    static let paneHeaderGlyphFontSize: CGFloat = 10
+    static let paneHeaderNameFontSize: CGFloat = 11.5
+    static let paneHeaderDetailFontSize: CGFloat = 11
+    static let paneHeaderMenuFontSize: CGFloat = 11
+
+    /// The width a header form needs for its name, or for its directory, to
+    /// count as fitting. A few characters are enough to tell panes apart;
+    /// past that the text truncates into whatever the row gives it, and a
+    /// row that cannot spare even this drops the text instead.
+    static let paneHeaderNameFittingWidth: CGFloat = 32
+    static let paneHeaderDetailFittingWidth: CGFloat = 40
+
+    /// How far the pointer moves with the button down before a press turns
+    /// into a pane drag, from the header and from the terminal's ⌥⌘ drag
+    /// alike. Small enough to feel immediate, large enough that a click
+    /// with a slight wobble stays a click.
+    static let paneDragThreshold: CGFloat = 4
+
+    /// The floating rename panel a header narrower than
+    /// `PaneHeaderMetrics.inlineRenameMinimumWidth` opens instead of editing in
+    /// place: wide enough for a name of a few words, on the command
+    /// palette's surface, with the field drawn like a text field so it
+    /// reads as one at a glance.
+    static let paneRenamePanelWidth: CGFloat = 240
+    static let paneRenamePanelPadding: CGFloat = 12
+    static let paneRenamePanelSpacing: CGFloat = 6
+    static let paneRenamePanelCornerRadius: CGFloat = 16
+    static let paneRenameFieldCornerRadius: CGFloat = 6
+    static let paneRenameFieldVerticalPadding: CGFloat = 4
+    static let paneRenameFieldHorizontalPadding: CGFloat = 2
+    static let paneRenameFieldFontSize: CGFloat = 13
+    /// Gap between the header and the panel, and the margin the panel keeps
+    /// from the window's edges.
+    static let paneRenamePanelAnchorGap: CGFloat = 4
+    static let paneRenamePanelWindowMargin: CGFloat = 8
+
     // MARK: - Sidebar
 
     /// Sidebar width clamp (the user can drag the right edge).

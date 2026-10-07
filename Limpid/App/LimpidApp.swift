@@ -120,6 +120,9 @@ final class AppState {
     /// scheduler that fills them. See each type for its own contract.
     let prStatusStore = PRStatusStore()
     let prHoverPresentation = PRHoverPresentation()
+    /// The floating rename field a narrow pane header opens. Per window,
+    /// like the PR card, so it can draw over the whole window.
+    let paneRenamePresentation = PaneRenamePresentation()
     private(set) var prStatusSyncer: PRStatusSyncer?
     /// Set when the on-disk snapshot couldn't be restored at boot.
     /// A version mismatch or decode failure normally just dropped the
@@ -606,6 +609,7 @@ struct LimpidApp: App {
                 .environment(state.reduceTransparencyResolver)
                 .environment(state.prStatusStore)
                 .environment(state.prHoverPresentation)
+                .environment(state.paneRenamePresentation)
                 .environment(\.prStatusSyncer, state.prStatusSyncer)
                 .environment(\.surfaceRegistry, state.registry)
                 .environment(\.reviewStores, state.reviewStores)
@@ -874,6 +878,7 @@ struct ContentView: View {
             WorktreeMoveSuggestionHost()
         }
         .overlay { PRHoverCardHost() }
+        .overlay { PaneRenamePanelHost() }
         .overlay { NotificationHistoryOverlay(state: state) }
         .overlay { ApprovalCardHost() }
         .overlay {
@@ -918,7 +923,7 @@ struct ContentView: View {
                 registry: state.registry,
                 frecencyStore: state.frecencyStore,
                 toastCenter: state.toastCenter,
-                minPaneSize: state.settingsStore.settings.terminal.minPaneSize,
+                minPaneSize: state.settingsStore.settings.terminal.paneMinimumSize,
                 agentProjection: state.agentProjection
             )
         }

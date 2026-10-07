@@ -56,10 +56,10 @@ indirect enum ResolvedSplitNode {
     /// A missing surface can collapse a persisted split during resolution, so
     /// the renderer must calculate from this effective tree rather than the
     /// on-disk shape.
-    func minimumExtent(along axis: SplitDirection, leafMinimum: CGFloat) -> CGFloat {
+    func minimumExtent(along axis: SplitDirection, leafMinimum: PaneMinimumSize) -> CGFloat {
         switch self {
         case .leaf:
-            return leafMinimum
+            return leafMinimum.extent(along: axis)
         case let .split(data):
             let first = data.first.minimumExtent(along: axis, leafMinimum: leafMinimum)
             let second = data.second.minimumExtent(along: axis, leafMinimum: leafMinimum)

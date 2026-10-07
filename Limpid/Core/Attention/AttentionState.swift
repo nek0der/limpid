@@ -113,8 +113,11 @@ extension AttentionState {
     /// filtered through here (a dismissed-finished pane is still a live
     /// session worth confirming before close).
     private func allAgentStates(in tab: Tab) -> [PaneAgentState] {
-        let leaves = Set(tab.splitTree.allLeafIDs())
-        return allRuntimes.filter {
+        allAgentStates(inPanes: Set(tab.splitTree.allLeafIDs()))
+    }
+
+    private func allAgentStates(inPanes leaves: Set<UUID>) -> [PaneAgentState] {
+        allRuntimes.filter {
             !$0.paneIDs.isDisjoint(with: leaves) && !($0.badge.state == .finished && isDismissed($0))
         }.map { PaneAgentState(id: $0.id, state: $0.badge.state, isViewed: isViewed($0)) }
     }
@@ -152,6 +155,24 @@ extension AttentionState {
     /// finished result has already been viewed.
     func aggregateAgentStateSummary(in tab: Tab) -> AgentStateSummary? {
         Self.aggregateDemotingViewed(allAgentStates(in: tab))
+    }
+
+    /// The same summary for one pane, which is what that pane's header
+    /// shows. Reduced the way the tab row reduces its panes, so a pane and
+    /// the row of a tab holding only that pane show the same mark.
+    func aggregateAgentStateSummary(inPane paneID: UUID) -> AgentStateSummary? {
+        Self.aggregateDemotingViewed(allAgentStates(inPanes: [paneID]))
+    }
+
+    /// The agent a pane header speaks for: a runtime attached to the pane
+    /// whose state is known, the most recently updated when the pane shows
+    /// several (a tmux session can carry more than one run). An unknown
+    /// state does not count, matching the tab row's agent glyph, so a pane
+    /// reads as a shell again once its agent is gone.
+    func headerRuntime(inPane paneID: UUID) -> AgentRuntimePresentation? {
+        allRuntimes
+            .filter { $0.paneIDs.contains(paneID) && $0.badge.state != .unknown }
+            .max { $0.badge.updatedAt < $1.badge.updatedAt }
     }
 
     /// Summary and per-state counts across every tab in the given container.

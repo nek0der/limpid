@@ -1,6 +1,7 @@
 // PaneContainerView.swift
 // Limpid — SwiftUI wrapper around `PaneHostView` that adds the
-// "process exited" overlay banner and bell flash overlay. State is
+// header of a split pane, the "process exited" overlay banner and the
+// bell flash overlay. State is
 // read from `WindowSession.paneTransients` via `session.childExitCode`
 // / `session.isBellRinging` — both go through the same `@Observable`
 // parent, so SwiftUI re-renders automatically on every mutation.
@@ -21,6 +22,7 @@ struct PaneContainerView: View {
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settingsStore
     @Environment(ApprovalPresentationStore.self) private var approvalPresentation
+    @Environment(ReviewPresentation.self) private var reviewPresentation
 
     /// `1.0` when this leaf is focused, sits in a single-pane tab, or
     /// is the zoomed leaf; otherwise the user-picked
@@ -40,6 +42,18 @@ struct PaneContainerView: View {
         return tab.splitTree.effectiveFocusedLeafID == paneID
     }
 
+    /// The same predicate the terminal's "Rename Pane…" item reads, so the
+    /// item is offered exactly while this header is drawn. Review's docked
+    /// strip is the only pane mounted while review is up, and it shows the
+    /// pane under a heading of its own, so the predicate leaves it bare.
+    private var showsHeader: Bool {
+        PaneHeaderRules.showsHeader(
+            in: session.tab(containing: paneID),
+            isEnabled: settingsStore.settings.terminal.showsSplitPaneHeaders,
+            isReviewPresented: reviewPresentation.isPresented
+        )
+    }
+
     private var resolvedOpacity: Double {
         isFocusedPane ? 1.0 : settingsStore.settings.appearance.unfocusedPaneOpacity
     }
@@ -53,7 +67,24 @@ struct PaneContainerView: View {
         let bellRinging = session.isBellRinging(paneID: paneID)
         let opacity = resolvedOpacity
 
-        return ZStack {
+        // The header stacks above the terminal instead of floating over it,
+        // so the overlays below stay positioned against the terminal alone.
+        // No transition on it: animating its height would resize the pty on
+        // every frame of the animation.
+        return VStack(spacing: 0) {
+            if showsHeader {
+                PaneHeaderView(paneID: paneID, isFocused: isFocusedPane)
+                    .transition(.identity)
+            }
+            terminal(exitCode: exitCode, bellRinging: bellRinging, opacity: opacity)
+        }
+        // A split or zoom that runs inside `withAnimation` would otherwise
+        // carry the header in with it.
+        .animation(nil, value: showsHeader)
+    }
+
+    private func terminal(exitCode: UInt32?, bellRinging: Bool, opacity: Double) -> some View {
+        ZStack {
             PaneHostView(paneID: paneID, surfaceView: surfaceView)
                 // ZStack would otherwise size to the *banner* when it
                 // appears; force the host to fill the available area so

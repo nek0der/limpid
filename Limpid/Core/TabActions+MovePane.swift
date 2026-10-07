@@ -22,8 +22,15 @@ extension TabActions {
         guard let sourceTab = session.tab(containing: paneID) else { return }
         guard sourceTab.splitTree.allLeafIDs().count > 1 else { return }
 
+        // A pane the user named carries that name to its new tab, pinned
+        // the way a tab rename pins one: the source tab's title belongs to
+        // whatever the source was showing, and an unpinned title would be
+        // replaced by the moved shell's next OSC 2 within a prompt. An
+        // unnamed pane keeps the copied title, as before.
+        let paneName = sourceTab.paneStates[paneID]?.name
         var newTab = Tab(
-            title: sourceTab.title,
+            title: paneName ?? sourceTab.title,
+            titleOverride: paneName,
             workingDirectory: sourceTab.workingDirectory,
             pwd: sourceTab.pwd,
             splitTree: SplitTree(leafID: paneID),

@@ -93,7 +93,7 @@ struct PaneAreaView: View {
                             }
                         },
                         onResize: { splitPath, delta, bounds in
-                            let floor = settings.settings.terminal.minPaneSize
+                            let floor = settings.settings.terminal.paneMinimumSize
                             session.update(tab.id) { t in
                                 t.splitTree = t.splitTree.resize(
                                     splitAt: splitPath,
@@ -199,7 +199,7 @@ struct PaneAreaView: View {
                                 }
                             }
                         },
-                        minPaneSize: settings.settings.terminal.minPaneSize
+                        minPaneSize: settings.settings.terminal.paneMinimumSize
                     )
                 }
             }
@@ -323,7 +323,7 @@ struct PaneAreaView: View {
             candidate,
             replacing: tree,
             availableSize: availableSize,
-            minPaneSize: settings.settings.terminal.minPaneSize
+            minPaneSize: settings.settings.terminal.paneMinimumSize
         )
     }
 

@@ -282,7 +282,7 @@ enum TabActions {
         registry: any SurfaceViewProviding,
         trackers: SessionTrackers,
         toastCenter: ToastCenter,
-        minPaneSize: Double
+        minPaneSize: PaneMinimumSize
     ) {
         switch action.category {
         case .file:
@@ -416,7 +416,7 @@ enum TabActions {
         session: WindowSession,
         registry: any SurfaceViewProviding,
         toastCenter: ToastCenter,
-        minPaneSize: Double
+        minPaneSize: PaneMinimumSize
     ) {
         switch action {
         case .splitRight:

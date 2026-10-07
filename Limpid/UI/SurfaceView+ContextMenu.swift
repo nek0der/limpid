@@ -93,6 +93,14 @@ extension SurfaceView {
             action: #selector(findInSurface(_:)),
             keyEquivalent: ""
         )
+        if canRenamePane?() == true {
+            let rename = menu.addItem(
+                withTitle: String(localized: "Rename Pane…"),
+                action: #selector(renamePaneFromMenu(_:)),
+                keyEquivalent: ""
+            )
+            rename.image = NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
+        }
 
         appendPaneActionItems(to: menu)
 
@@ -185,6 +193,10 @@ extension SurfaceView {
         onRequestMoveToNewTab?()
     }
 
+    @objc func renamePaneFromMenu(_ sender: Any?) {
+        onRequestRenamePane?()
+    }
+
     private func runSurfaceBinding(_ action: String) {
         guard let surface else { return }
         GhosttyFFI.performBindingAction(action, on: surface)
@@ -215,6 +227,8 @@ extension SurfaceView: NSMenuItemValidation {
             return surface != nil
         case #selector(movePaneToNewTab(_:)):
             return surface != nil && canMoveToNewTab?() == true
+        case #selector(renamePaneFromMenu(_:)):
+            return canRenamePane?() == true
         default:
             return true
         }

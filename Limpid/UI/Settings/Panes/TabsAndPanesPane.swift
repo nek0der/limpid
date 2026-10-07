@@ -24,7 +24,7 @@ struct TabsAndPanesPane: View {
                             "Minimum pane size",
                             value: $store.settings.terminal.minPaneSize,
                             in: TerminalSettings.minPaneSizeRange,
-                            step: 20
+                            step: TerminalSettings.minPaneSizeStep
                         )
                         .labelsHidden()
                         .accessibilityLabel(Text("Minimum pane size"))
@@ -37,6 +37,18 @@ struct TabsAndPanesPane: View {
                 Text("Pane Layout")
             } footer: {
                 Text("Splits and divider drags can't push any pane below this floor.")
+            }
+
+            Section {
+                SettingsToggle(
+                    "Show headers on split panes",
+                    isOn: $store.settings.terminal.showsSplitPaneHeaders
+                )
+                .settingsSearchTarget(SettingsSearchCatalog.splitPaneHeaders.id)
+            } header: {
+                Text("Pane Headers")
+            } footer: {
+                Text("Names each pane of a split tab and shows what it is running. Double-click a pane's name to rename it.")
             }
 
             Section {

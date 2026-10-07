@@ -74,7 +74,7 @@ enum CommandPaletteActions {
         registry: any SurfaceViewProviding,
         frecencyStore: FrecencyStore,
         toastCenter: ToastCenter,
-        minPaneSize: Double,
+        minPaneSize: PaneMinimumSize,
         agentProjection: AgentProjectionAdapter? = nil
     ) {
         closeCommandPalette(session)

@@ -39,6 +39,7 @@ struct PaneHostView: View {
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(LimpidDragState.self) private var dragState
     @Environment(ReviewPresentation.self) private var reviewPresentation
+    @Environment(PaneRenamePresentation.self) private var renamePresentation
 
     private var isBeingDragged: Bool {
         dragState.current == .pane && dragState.currentSourceID == paneID.uuidString
@@ -57,6 +58,7 @@ struct PaneHostView: View {
                     toastCenter: toastCenter,
                     dragState: dragState,
                     reviewPresentation: reviewPresentation,
+                    renamePresentation: renamePresentation,
                     size: geo.size
                 )
                 if surfaceView.creationFailed {
@@ -167,6 +169,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
     let toastCenter: ToastCenter
     let dragState: LimpidDragState
     let reviewPresentation: ReviewPresentation
+    let renamePresentation: PaneRenamePresentation
     let size: CGSize
 
     /// SwiftUI honors `Equatable` on representables and skips
@@ -357,7 +360,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
                 session,
                 direction: direction,
                 registry: registry,
-                minPaneSize: settings.settings.terminal.minPaneSize,
+                minPaneSize: settings.settings.terminal.paneMinimumSize,
                 toastCenter: toastCenter
             )
         }
@@ -381,6 +384,17 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
             guard let session else { return false }
             guard let tab = session.tab(containing: paneID) else { return false }
             return tab.splitTree.allLeafIDs().count > 1
+        }
+        view.canRenamePane = { [weak session, settings, weak reviewPresentation] in
+            guard let session else { return false }
+            return PaneHeaderRules.showsHeader(
+                in: session.tab(containing: paneID),
+                isEnabled: settings.settings.terminal.showsSplitPaneHeaders,
+                isReviewPresented: reviewPresentation?.isPresented == true
+            )
+        }
+        view.onRequestRenamePane = { [weak renamePresentation] in
+            renamePresentation?.requestRename(paneID: paneID)
         }
     }
 

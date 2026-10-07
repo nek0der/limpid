@@ -166,6 +166,32 @@ enum LimpidColor {
         dark: Color.white.opacity(0.10)
     )
 
+    /// Fills for the one-line header above each pane of a split tab. Washes
+    /// laid over whatever the pane itself shows rather than solid tones: the
+    /// terminal's background follows the user's theme and window opacity,
+    /// and a fixed tone read as a dark band over the lighter terminals people
+    /// actually run. A wash keeps the header the terminal's own color, a
+    /// step toward the content. The focused pane's header takes one more
+    /// step, so the pane taking keystrokes reads as raised without spending
+    /// the accent on it.
+    static let paneHeaderFill: Color = .init(
+        light: Color.black.opacity(0.03),
+        dark: Color.white.opacity(0.03)
+    )
+    static let paneHeaderFocusedFill: Color = .init(
+        light: Color.black.opacity(0.06),
+        dark: Color.white.opacity(0.07)
+    )
+
+    /// Hairline between a pane header and the terminal below it. Darker than
+    /// both header washes rather than another light wash: drawn over the
+    /// focused header's brighter fill, a light line of nearly the same
+    /// strength vanished, and the focused pane lost its edge.
+    static let paneHeaderDivider: Color = .init(
+        light: Color.black.opacity(0.12),
+        dark: Color.black.opacity(0.35)
+    )
+
     /// Accent palette for groups / projects. Indices are stable —
     /// never reorder, only append, so persisted `paletteIndex` values
     /// stay valid across upgrades. 16 entries laid out as 8×2 in the
