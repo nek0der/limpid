@@ -1,9 +1,9 @@
 // PromptCachePanelTests.swift
 // Limpid — the prompt cache panel's rules (what it says, when its commands
-// may be typed, when it opens by itself, which pane it names, where its
-// arrow points), its presentation's open and close timing and clock
-// registry, and how key presses mark an agent's prompt as holding unsent
-// input.
+// may be typed, when it opens by itself, which pane it names), its
+// presentation's open and close timing and clock registry, and how key
+// presses mark an agent's prompt as holding unsent input. Where the panel
+// and its arrow go is `FloatingPanelPlacementTests`.
 
 import AppKit
 import Foundation
@@ -416,63 +416,6 @@ struct PromptInputEffectTests {
 
 // MARK: - Which pane
 
-struct PromptCacheArrowTests {
-    private let width: CGFloat = 300
-    private let height: CGFloat = 140
-    private let inset: CGFloat = 30
-
-    private func arrow(clock: CGRect, panelAt origin: CGPoint) -> PromptCachePanelPresentation.ArrowPlacement? {
-        PromptCachePanelPresentation.arrowPlacement(
-            anchor: clock,
-            panelOrigin: origin,
-            panelSize: CGSize(width: width, height: height),
-            minimumInset: inset
-        )
-    }
-
-    @Test func belowTheClock_pointsUpAtItsCenter() {
-        let clock = CGRect(x: 400, y: 40, width: 16, height: 16)
-        let placement = arrow(clock: clock, panelAt: CGPoint(x: 258, y: 66))
-        #expect(placement == .init(edge: .top, x: 150))
-    }
-
-    @Test func aboveTheClock_pointsDown() {
-        let clock = CGRect(x: 400, y: 600, width: 16, height: 16)
-        let placement = arrow(clock: clock, panelAt: CGPoint(x: 258, y: 600 - 13 - height))
-        #expect(placement?.edge == .bottom)
-        #expect(placement?.x == 150)
-    }
-
-    @Test func panelClampedToTheWindow_stillPointsAtTheClock() {
-        // A clock near the window's right edge: the panel slid left, so the
-        // arrow moves right within it.
-        let clock = CGRect(x: 772, y: 40, width: 16, height: 16)
-        let placement = arrow(clock: clock, panelAt: CGPoint(x: 492, y: 66))
-        // The clock's center is 288 into the panel, past the trailing inset.
-        #expect(placement == .init(edge: .top, x: width - inset), "kept clear of the corner")
-    }
-
-    @Test func clockPastTheLeadingCorner_keepsTheArrowOffTheRounding() {
-        let clock = CGRect(x: 0, y: 40, width: 16, height: 16)
-        #expect(arrow(clock: clock, panelAt: CGPoint(x: 8, y: 66))?.x == inset)
-    }
-
-    @Test func panelOverTheClock_hasNoArrow() {
-        let clock = CGRect(x: 400, y: 100, width: 16, height: 16)
-        #expect(arrow(clock: clock, panelAt: CGPoint(x: 258, y: 50)) == nil)
-    }
-
-    @Test func panelNarrowerThanBothInsets_centersTheArrow() {
-        let placement = PromptCachePanelPresentation.arrowPlacement(
-            anchor: CGRect(x: 0, y: 0, width: 16, height: 16),
-            panelOrigin: CGPoint(x: 0, y: 30),
-            panelSize: CGSize(width: 40, height: 50),
-            minimumInset: 30
-        )
-        #expect(placement?.x == 20)
-    }
-}
-
 @MainActor
 struct PromptCachePaneLineTests {
     @Test func paneLine_isTheNameThenTheDirectory() {
@@ -524,7 +467,7 @@ struct PromptCacheOpeningTests {
         let place = PromptCacheClockPlace.tabRow(tabID: UUID())
         let clock = UUID()
         presentation.clockMoved(place: place, instance: clock, anchor: frame)
-        presentation.isPointerOpenSuppressed = true
+        presentation.isAnotherSurfaceOpen = true
 
         presentation.clockEntered(place: place, instance: clock, anchor: frame, target: target)
         try await settle()
@@ -540,7 +483,7 @@ struct PromptCacheOpeningTests {
         let clock = UUID()
         presentation.clockMoved(place: place, instance: clock, anchor: frame)
         presentation.clockEntered(place: place, instance: clock, anchor: frame, target: target)
-        presentation.isPointerOpenSuppressed = true
+        presentation.isAnotherSurfaceOpen = true
         try await settle()
         #expect(presentation.request == nil)
     }
@@ -624,30 +567,6 @@ struct PromptCacheAnchorTests {
         #expect(!PromptCacheRules.isAnchorVisible(CGRect(x: 40, y: 900, width: 16, height: 16), in: window))
         #expect(!PromptCacheRules.isAnchorVisible(.zero, in: window))
         #expect(!PromptCacheRules.isAnchorVisible(nil, in: window))
-    }
-
-    @Test func placement_staysInsideTheWindowForAnAnchorAboveIt() {
-        let origin = PaneRenamePresentation.panelOrigin(
-            anchor: CGRect(x: 100, y: -400, width: 300, height: 16),
-            panelSize: CGSize(width: 300, height: 140),
-            container: window.size,
-            margin: 8,
-            gap: 13
-        )
-        #expect(origin.y == 8)
-    }
-
-    @Test func placement_staysInsideTheWindowForAnAnchorBelowIt() {
-        // Below the window, the "above" branch would leave it off the bottom.
-        let origin = PaneRenamePresentation.panelOrigin(
-            anchor: CGRect(x: 100, y: 1400, width: 300, height: 16),
-            panelSize: CGSize(width: 300, height: 140),
-            container: window.size,
-            margin: 8,
-            gap: 13
-        )
-        let lowest: CGFloat = window.height - 140 - 8
-        #expect(abs(origin.y - lowest) < 0.001)
     }
 }
 

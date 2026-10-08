@@ -143,9 +143,6 @@ struct ContainerRowActions {
     /// allow it the hover delete too. Nil means the row can't be
     /// removed.
     var onDelete: (() -> Void)?
-    /// Palette-index setter for the color picker popover. Only Group
-    /// / Project header rows pass a real closure.
-    var onChangePalette: ((Int) -> Void)?
     /// Reorder within the sibling list (single-slot move). Nil hides
     /// that context-menu entry.
     var onMoveUp: (() -> Void)?
@@ -238,10 +235,6 @@ struct ContainerRow: View {
         actions.onDelete
     }
 
-    private var onChangePalette: ((Int) -> Void)? {
-        actions.onChangePalette
-    }
-
     private var onMoveUp: (() -> Void)? {
         actions.onMoveUp
     }
@@ -292,7 +285,10 @@ struct ContainerRow: View {
 
     @State private var isHovering = false
     @State private var isEditing = false
-    @State private var isColorPickerPresented = false
+    /// The color dot's frame in global coordinates, so the color picker
+    /// opens below it and follows it while open.
+    @State private var paletteDotFrame: CGRect = .zero
+    @Environment(ContainerColorPresentation.self) private var colorPresentation
     /// Hover over the marker slot alone, not the row. Drives the
     /// dot → chevron swap, which must not fire from anywhere else on
     /// the row or the dot would flicker as the pointer crossed it.
@@ -426,9 +422,11 @@ struct ContainerRow: View {
                 }
                 Divider()
             }
-            if onChangePalette != nil {
+            // Every Group and Project row has a color to change, and no
+            // other kind has one.
+            if let colorTarget {
                 Button {
-                    isColorPickerPresented = true
+                    colorPresentation.open(container: colorTarget, anchor: paletteDotFrame)
                 } label: {
                     Label("Change Color", systemImage: "paintpalette")
                 }
@@ -578,15 +576,25 @@ struct ContainerRow: View {
     /// click; the dot holds the slot otherwise, being also the head of
     /// the tinted rule spanning this project's children.
     ///
-    /// One tap target can only mean one thing, so recoloring moved to
-    /// the context menu — expanding is daily, recoloring rare. The
-    /// picker's popover still anchors here, attached independently of
-    /// `onToggleExpand` so a group row can be recolored without being
-    /// expandable. `highPriorityGesture` so the tap beats the row's
-    /// own activation rather than racing it.
+    /// One tap target can only mean one thing, and expanding is daily
+    /// where recoloring is rare, so the tap expands and recoloring lives in
+    /// the context menu. The color picker hangs from here all the same,
+    /// since its arrow should point at the color it changes: the dot reports
+    /// its frame whether or not the row expands, so a group row can be
+    /// recolored without being expandable. `highPriorityGesture` so the tap
+    /// beats the row's own activation rather than racing it.
     @ViewBuilder
     private func paletteDot(_ color: Color) -> some View {
         let dot = Circle().fill(color).frame(width: 10, height: 10)
+            // The dot's own frame, not the padded tap target around it, so
+            // the picker's arrow sits the same distance from every row's
+            // dot, expandable or not.
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                paletteDotFrame = frame
+                if let colorTarget {
+                    colorPresentation.updateAnchor(container: colorTarget, anchor: frame)
+                }
+            }
         Group {
             if let onToggleExpand {
                 ZStack {
@@ -613,21 +621,22 @@ struct ContainerRow: View {
                 dot
             }
         }
-        .popover(isPresented: $isColorPickerPresented, arrowEdge: .bottom) {
-            ContainerColorPicker(current: currentPaletteIndex) { idx in
-                onChangePalette?(idx)
-                isColorPickerPresented = false
+        // A picker outlives nothing it recolors: the container removed or
+        // its section collapsed takes the row off screen, and the picker
+        // goes with it.
+        .onDisappear {
+            if let colorTarget {
+                colorPresentation.rowDisappeared(container: colorTarget)
             }
-            .limpidAccentPropagated(limpidAccent)
         }
     }
 
-    /// Palette slot this row currently sits on, so the picker opens
-    /// with the right swatch selected.
-    private var currentPaletteIndex: Int? {
+    /// The container this row's color belongs to, or nil for a row that
+    /// has none.
+    private var colorTarget: GroupOrProjectID? {
         switch kind {
-        case let .group(g, _): g.paletteIndex
-        case let .projectHeader(p, _): p.paletteIndex
+        case let .group(g, _): .group(g.id)
+        case let .projectHeader(p, _): .project(p.id)
         case .loose, .worktree: nil
         }
     }

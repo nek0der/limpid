@@ -104,37 +104,4 @@ final class PaneRenamePresentation {
         current.anchor = anchor
         request = current
     }
-
-    // MARK: - Placement
-
-    /// Where the floating panel's top-leading corner goes, in the same
-    /// coordinates as `anchor` and `container`. Its leading edge follows the
-    /// header's, pulled inside the window by `margin`. It hangs `gap` below
-    /// the header, or sits that far above it when below would run past the
-    /// window's bottom; when neither fits, it is pinned inside the bottom.
-    /// Whatever the branch, the result is kept within `margin` of the
-    /// window's top and bottom, so an anchor that has scrolled or been laid
-    /// out off screen cannot take the panel with it.
-    nonisolated static func panelOrigin(
-        anchor: CGRect,
-        panelSize: CGSize,
-        container: CGSize,
-        margin: CGFloat,
-        gap: CGFloat
-    ) -> CGPoint {
-        let maximumX = container.width - panelSize.width - margin
-        let x = maximumX >= margin ? min(max(anchor.minX, margin), maximumX) : margin
-
-        let below = anchor.maxY + gap
-        let above = anchor.minY - gap - panelSize.height
-        let maximumY = container.height - panelSize.height - margin
-        let y: CGFloat = if below <= maximumY {
-            below
-        } else if above >= margin {
-            above
-        } else {
-            max(margin, maximumY)
-        }
-        return CGPoint(x: x, y: min(max(y, margin), max(margin, maximumY)))
-    }
 }

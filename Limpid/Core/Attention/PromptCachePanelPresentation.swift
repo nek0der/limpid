@@ -57,7 +57,7 @@ final class PromptCachePanelPresentation {
         var frame: CGRect
     }
 
-    struct Request: Equatable {
+    struct Request: Equatable, FloatingPanelRequest {
         /// Minted per open, so a view can tell a reopened panel from the
         /// one it saw before.
         let id: UUID
@@ -77,12 +77,20 @@ final class PromptCachePanelPresentation {
     /// it.
     private(set) var request: Request?
 
-    /// Set while another floating panel is up (the command palette, the
-    /// notification history, the PR card, a rename field). A pointer
-    /// resting on a clock then opens nothing: the pointer is on its way to
-    /// or from that panel, and a second one would cover it. A click still
-    /// opens, since it asks. The host keeps this current.
-    @ObservationIgnored var isPointerOpenSuppressed = false
+    /// Set while something else floats over the window (see
+    /// `FloatingSurfaceKind`). Neither a pointer resting on a clock nor the
+    /// panel that opens by itself opens anything then: the pointer is on its
+    /// way to or from that surface, and a second one would cover it. A click
+    /// still opens, since it asks. Read when the open would happen, not when
+    /// it was scheduled. `FloatingPanelLayer` keeps this current.
+    @ObservationIgnored var isAnotherSurfaceOpen = false
+
+    /// Set while a working surface is up (the command palette, an approval
+    /// card, the notification history, review): no opening at all, a click
+    /// included, so the panel never stands over it or competes with it for
+    /// Escape. See `FloatingSurfaceRules.isOpeningBlocked`.
+    /// `FloatingPanelLayer` keeps this current.
+    @ObservationIgnored var isOpeningBlocked = false
 
     /// How long the pointer rests on a clock before its panel opens: long
     /// enough that sweeping across a column of tab rows does not flash a
@@ -187,13 +195,13 @@ final class PromptCachePanelPresentation {
             return
         }
         cancelShow()
-        guard !isPointerOpenSuppressed else { return }
+        guard !isAnotherSurfaceOpen else { return }
         showTaskPlace = place
         let delay = openDelay
         showTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: delay)
             // A cancelled sleep falls through rather than throwing out.
-            guard !Task.isCancelled, let self, isHovering(place), !isPointerOpenSuppressed else { return }
+            guard !Task.isCancelled, let self, isHovering(place), !isAnotherSurfaceOpen else { return }
             // The clock under the pointer, at its latest frame.
             let clock = clocks[place]?.first { $0.instance == instance }
                 ?? Clock(instance: instance, frame: anchor)
@@ -242,8 +250,7 @@ final class PromptCachePanelPresentation {
             log.debug("prompt cache panel not opened: no clock on screen for its place")
             return false
         }
-        open(target: target, place: place, clock: clock, trigger: trigger)
-        return true
+        return open(target: target, place: place, clock: clock, trigger: trigger)
     }
 
     /// Opens the panel below the first of `places` with a clock on screen.
@@ -258,12 +265,20 @@ final class PromptCachePanelPresentation {
     }
 
     /// Opens the panel below one particular clock.
-    func open(target: PromptCacheTarget, place: PromptCacheClockPlace, clock: Clock, trigger: Trigger) {
+    /// Every opening comes through here, and none happens while a working
+    /// surface is up. False when refused.
+    @discardableResult
+    func open(target: PromptCacheTarget, place: PromptCacheClockPlace, clock: Clock, trigger: Trigger) -> Bool {
         record(clock, at: place)
+        guard !isOpeningBlocked else {
+            log.debug("prompt cache panel not opened: a working surface is up")
+            return false
+        }
         cancelShow()
         dismissTask?.cancel()
         request = Request(id: UUID(), target: target, place: place, clock: clock, trigger: trigger)
         isPanelHovering = false
+        return true
     }
 
     // MARK: - Panel-side events
@@ -306,51 +321,6 @@ final class PromptCachePanelPresentation {
     /// Closes whatever panel is open.
     func close() {
         clear()
-    }
-
-    // MARK: - Placement
-
-    /// Which edge of the panel faces its clock.
-    enum ArrowEdge: Equatable {
-        /// The panel hangs below the clock.
-        case top
-        /// The panel sits above the clock, near the window's bottom.
-        case bottom
-    }
-
-    /// Where the panel's arrow goes: the edge facing the clock, and the
-    /// arrow's center along that edge in the panel's own coordinates.
-    struct ArrowPlacement: Equatable {
-        let edge: ArrowEdge
-        let x: CGFloat
-    }
-
-    /// The arrow for a panel placed at `panelOrigin`, in the same
-    /// coordinates as `anchor`, the clock's frame. The panel is placed and
-    /// clamped to the window first (`PaneRenamePresentation.panelOrigin`);
-    /// the arrow then points at the clock's center from wherever the panel
-    /// ended up, kept `minimumInset` from either corner so it never sits on
-    /// the rounding. Nil when the panel overlaps the clock vertically, which
-    /// only happens when the window is too short for it either side: an
-    /// arrow there would point from inside the clock.
-    nonisolated static func arrowPlacement(
-        anchor: CGRect,
-        panelOrigin: CGPoint,
-        panelSize: CGSize,
-        minimumInset: CGFloat
-    ) -> ArrowPlacement? {
-        let edge: ArrowEdge
-        if panelOrigin.y >= anchor.maxY {
-            edge = .top
-        } else if panelOrigin.y + panelSize.height <= anchor.minY {
-            edge = .bottom
-        } else {
-            return nil
-        }
-        let wanted = anchor.midX - panelOrigin.x
-        let maximum = panelSize.width - minimumInset
-        let x = maximum >= minimumInset ? min(max(wanted, minimumInset), maximum) : panelSize.width / 2
-        return ArrowPlacement(edge: edge, x: x)
     }
 
     // MARK: - Bookkeeping

@@ -35,12 +35,13 @@ struct ContainerSlabView: View {
     // rows below need them, the slab itself does not.
     @Environment(PRStatusStore.self) private var prStatusStore
     @Environment(PRHoverPresentation.self) private var prHoverPresentation
+    @Environment(ContainerColorPresentation.self) private var colorPresentation
     @Environment(SettingsStore.self) private var settingsStore
     @Environment(\.prStatusSyncer) private var prStatusSyncer
 
     /// Container (Project or Group) whose Settings sheet should be
     /// presented, if any. One sheet serves both kinds.
-    @State private var openSettingsFor: ContainerSettingsTarget?
+    @State private var openSettingsFor: GroupOrProjectID?
     /// Pending "Delete Worktree" target. Presents a confirmation alert
     /// before invoking git. Force-retry state lives separately so the
     /// alert can offer a one-click escalation when git rejects the
@@ -102,6 +103,9 @@ struct ContainerSlabView: View {
         removingProject = nil
         removingGroup = nil
         worktreeOperationError = nil
+        // The slab stays mounted offscreen, so its rows never disappear
+        // and the color picker hanging from one would stay behind.
+        colorPresentation.close()
     }
 
     /// Keep delayed operation results while hidden, but do not let the
@@ -431,9 +435,6 @@ struct ContainerSlabView: View {
                                             )
                                         }
                                     },
-                                    onChangePalette: { idx in
-                                        session.setGroupPaletteIndex(group.id, to: idx)
-                                    },
                                     onMoveUp: {
                                         withAnimation(LimpidMotion.reorder) {
                                             session.moveGroupUp(group.id)
@@ -574,6 +575,7 @@ struct ContainerSlabView: View {
             .environment(toastCenter)
             .environment(prStatusStore)
             .environment(prHoverPresentation)
+            .environment(colorPresentation)
             .environment(settingsStore)
             .environment(\.prStatusSyncer, prStatusSyncer)
             .environment(\.surfaceRegistry, registry)
