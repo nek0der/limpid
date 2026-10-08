@@ -102,6 +102,9 @@ mod tests {
         assert!(descriptor.has(Capability::ResumeDefersToOtherLiveSession));
         assert!(!descriptor.has(Capability::SessionTitle));
         assert!(!descriptor.has(Capability::SessionEndDropsSession));
+        // Codex reports no cache expiry today; its adapter fills the same
+        // window once it does.
+        assert!(!descriptor.has(Capability::CacheWindow));
         assert_eq!(descriptor.state_directory, "codex-agent-states");
         assert_eq!(descriptor.session_directory, "codex-sessions");
         assert_eq!(descriptor.cwd_events_directory, None);

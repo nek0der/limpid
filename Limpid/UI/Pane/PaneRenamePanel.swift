@@ -30,7 +30,7 @@ struct PaneRenamePanelHost: View {
                     anchor: anchor,
                     panelSize: CGSize(width: width, height: panelHeight),
                     container: overlayGeo.size,
-                    margin: LimpidLayout.paneRenamePanelWindowMargin,
+                    margin: LimpidLayout.floatingPanelWindowMargin,
                     gap: LimpidLayout.paneRenamePanelAnchorGap
                 )
                 PaneRenamePanel(
@@ -100,7 +100,7 @@ private struct PaneRenamePanel: View {
             )
         }
         .padding(LimpidLayout.paneRenamePanelPadding)
-        .floatingPanelSurface(cornerRadius: LimpidLayout.paneRenamePanelCornerRadius)
+        .floatingPanelSurface(cornerRadius: LimpidLayout.floatingPanelCornerRadius)
         .pointerStyle(.default)
     }
 }

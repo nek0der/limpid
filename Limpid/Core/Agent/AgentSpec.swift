@@ -96,6 +96,12 @@ struct AgentBadge: Codable, Equatable {
     /// `Tab.latestAgentSessionPaneID` compares this across Claude /
     /// Codex panes so the most recent session wins the tab title.
     var sessionStartedAt: Date?
+
+    /// The prompt cache window the last finished turn left. Optional
+    /// because only a provider with the cache window capability reports
+    /// one, a turn may leave it unknown, and a badge persisted before this
+    /// field existed has to keep decoding.
+    var cacheWindow: AgentCacheWindow?
 }
 
 // MARK: - Unified SessionInfo

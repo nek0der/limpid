@@ -75,6 +75,9 @@ extension SurfaceView: @preconcurrency NSTextInputClient {
         default: return
         }
         guard !chars.isEmpty else { return }
+        // Dictation and the character viewer commit text outside any key
+        // press, so `keyDown` alone would miss it.
+        noteTextInput()
 
         if keyTextAccumulator == nil, let compositionStart {
             asynchronousCompositionInterval = compositionStart...commitTime

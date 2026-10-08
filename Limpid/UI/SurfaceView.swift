@@ -279,6 +279,11 @@ final class SurfaceView: NSView {
     /// coordinator without coupling this AppKit boundary to session state.
     var onSecureInputFocusChange: ((Bool) -> Void)?
 
+    /// The user's last input here, and whether text came since the last
+    /// submit; read through `AgentCommandTyping`, kept by `noteKeyInput(_:)`.
+    var lastKeyInputAt: Date?
+    var hasUnsubmittedInput = false
+
     var hasSecureInputFocus: Bool {
         window?.isKeyWindow == true && window?.firstResponder === self
     }
@@ -713,9 +718,8 @@ final class SurfaceView: NSView {
 
         let paths = urls.map { shellEscape($0.path) }
         let joined = paths.joined(separator: " ")
-        joined.withCString { ptr in
-            ghostty_surface_text(surface, ptr, UInt(strlen(ptr)))
-        }
+        joined.withCString { ghostty_surface_text(surface, $0, UInt(strlen($0))) }
+        noteTextInput()
         return true
     }
 
@@ -863,9 +867,9 @@ extension SurfaceView {
     }
 
     /// Synthesize a Return keypress (press + release) on `surface`.
-    /// Used by `scheduleInitialCommandIfNeeded` to submit pasted text
-    /// without depending on shell paste-mode quirks.
-    private func sendReturnKey(to surface: ghostty_surface_t) {
+    /// Used by `scheduleInitialCommandIfNeeded` and `typeAgentCommand(_:)` to
+    /// submit typed text without depending on shell paste-mode quirks.
+    func sendReturnKey(to surface: ghostty_surface_t) {
         let returnKeyCode = UInt32(NamedKey.return.primaryKeyCode)
         for action in [GHOSTTY_ACTION_PRESS, GHOSTTY_ACTION_RELEASE] {
             var key = ghostty_input_key_s()

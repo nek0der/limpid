@@ -201,6 +201,7 @@ fn build_runtimes(
                 event_token,
                 episode_token,
                 id,
+                pid: run.record.pid.clone(),
             }
         })
         .collect();
@@ -290,9 +291,12 @@ fn episode_token(state: &ProjectionState, id: &str, record: &RunRecord) -> Strin
 
 /// Turns a record into what a badge shows. The session title fields only reach
 /// the badge for providers that have session titles; carrying them for one that
-/// does not would let a stale value name a tab.
+/// does not would let a stale value name a tab. The cache window is gated the
+/// same way, so the interface can trust that a window it is handed came from a
+/// provider that declared it can describe one.
 fn badge_from(record: &RunRecord, descriptor: Option<&ProviderDescriptor>) -> Badge {
     let titled = descriptor.is_some_and(|it| it.has(Capability::SessionTitle));
+    let caches = descriptor.is_some_and(|it| it.has(Capability::CacheWindow));
     let present = |value: &Option<String>| value.clone().filter(|it| !it.is_empty());
     Badge {
         state: record.state,
@@ -313,6 +317,7 @@ fn badge_from(record: &RunRecord, descriptor: Option<&ProviderDescriptor>) -> Ba
             .then(|| present(&record.provider_generated_title))
             .flatten(),
         session_started_at: present(&record.session_started_at),
+        cache_window: caches.then(|| record.cache_window.clone()).flatten(),
     }
 }
 
@@ -796,6 +801,49 @@ mod tests {
             .insert(pane, PaneLocation { is_active: true });
         let (_, _, commands) = project(&ProjectionState::default(), &input, &now);
         assert_eq!(viewed_marks(&commands), 1);
+    }
+
+    #[test]
+    fn the_cache_window_reaches_the_badge_only_for_a_provider_that_declares_it() {
+        let pane: Uuid = PANE.parse().expect("pane");
+        let now = Instants {
+            wall: "2026-09-14T12:04:00Z".to_owned(),
+            monotonic_ms: 0,
+        };
+        let window = r#","cacheWindow":{"observedAt":"2026-09-14T12:02:00Z","ttlSeconds":3600,"rewriteTokens":573000,"precision":"estimated"}"#;
+        let mut input = finished_input(None);
+        let content = record(Some(4), "2026-09-14T12:03:00Z", "finished").replace(
+            r#""state":"finished""#,
+            &format!(r#""state":"finished"{window}"#),
+        );
+        input.records = vec![file(Some(content))];
+
+        let (_, projection, _) = project(&ProjectionState::default(), &input, &now);
+        let badge = &projection.badges[&pane][&claude()];
+        assert_eq!(badge.cache_window, None, "no capability, no window");
+        assert!(projection.runtimes[0].badge.cache_window.is_none());
+
+        let mut declaring = descriptor();
+        declaring.capabilities.insert(Capability::CacheWindow);
+        input.providers = [(claude(), declaring)].into_iter().collect();
+        let (_, projection, _) = project(&ProjectionState::default(), &input, &now);
+        let expected = limpid_agent_model::CacheWindow {
+            observed_at: "2026-09-14T12:02:00Z".to_owned(),
+            ttl_seconds: 3600,
+            rewrite_tokens: Some(573_000),
+            precision: limpid_agent_model::CachePrecision::Estimated,
+        };
+        let badge = &projection.badges[&pane][&claude()];
+        assert_eq!(badge.cache_window.as_ref(), Some(&expected));
+        assert_eq!(
+            projection.runtimes[0].badge.cache_window.as_ref(),
+            Some(&expected)
+        );
+        let json = serde_json::to_value(&projection).expect("encode");
+        assert_eq!(
+            json["runtimes"][0]["badge"]["cacheWindow"]["ttlSeconds"],
+            serde_json::json!(3600)
+        );
     }
 
     #[test]

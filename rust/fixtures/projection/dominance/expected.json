@@ -19,7 +19,8 @@
         ],
         "attachment": "attached",
         "eventToken": "4",
-        "episodeToken": "4"
+        "episodeToken": "4",
+        "pid": "4242"
       },
       {
         "id": "codex:BBBBBBBB-2222-4222-8222-BBBBBBBBBBB2",
@@ -40,7 +41,8 @@
         ],
         "attachment": "attached",
         "eventToken": "4",
-        "episodeToken": "4"
+        "episodeToken": "4",
+        "pid": "4242"
       }
     ],
     "badges": {

@@ -33,6 +33,7 @@ extension AttentionState {
     func replaceRuntimes(_ runtimes: [AgentRuntimePresentation], kind: AgentKind) {
         guard runtimesByKind[kind] != runtimes else { return }
         runtimesByKind[kind] = runtimes
+        refreshPromptCacheWindows()
     }
 
     /// Replaces the marks with the set the projection says still applies.

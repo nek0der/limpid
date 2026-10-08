@@ -152,6 +152,7 @@ The core and the UI branch on capabilities, never on provider ids.
 | `approval_protocol` | Approval is requested over a connection. | no | no |
 | `subagents` | The provider emits subagent events. | yes | yes |
 | `turn_snapshot` | A turn snapshot can be captured on prompt submit. | yes | yes |
+| `cache_window` | The provider reports when its prompt cache expires, on `TurnFinished`. | yes | no |
 
 ### Event vocabulary
 
@@ -163,6 +164,69 @@ The core and the UI branch on capabilities, never on provider ids.
 An extension is promoted to a named event only when two providers emit the same
 thing. `CompactionFinished` is the recorded exception: only Codex emits it, but
 it closes the existing `Compacting` event rather than introducing a concept.
+
+### Prompt cache window
+
+`TurnFinished` carries an optional `cache: CacheWindow` with `observed_at` (the
+record timestamp format), `ttl_seconds`, `rewrite_tokens`, and a `precision` of
+`reported` or `estimated`; the record and the projection spell them in
+camelCase on the wire (`observedAt`, `ttlSeconds`, `rewriteTokens`). It is an
+observation attached to the event that ends a turn, not an event of its own:
+it has no moment of its own to report, and attaching it keeps the vocabulary
+rule above intact while only one provider supplies it. `None` means unknown and is never read as "no cache".
+
+The agent caches the conversation prefix on the model provider's servers for a
+fixed time after the last request: an hour on a Claude subscription and five
+minutes with an API key or usage credits. The next message after that re-writes
+the whole prefix at the cache-write rate, which for a large session is the most
+expensive message the user sends. The interface shows the window so the user
+can decide before returning to a pane.
+
+`apply` stores the window on the run record (`cacheWindow`, absent in older
+records) when a turn finishes, and clears it on `PromptSubmitted`, every
+`SessionStarted`, `SessionEnded`, `Compacting`, `CompactionFinished`, `Failed`,
+and `Interrupted`, because after any of those the window no longer describes
+the cache. A window the reader cannot decode costs only the window, never the
+record. `project` passes it to the badge only for a provider with
+`cache_window`, and the interface derives "expiring soon" and "expired" from it
+with its own clock, so the projection does not run on a timer. "Expiring soon"
+starts when a fifth of the TTL is left, at most five minutes ahead: an hour's
+window warns five minutes before it expires, a five-minute window one minute
+before.
+
+Claude Code exposes the expiry only on the status line command's standard input
+(`prompt_cache.expires_at`). We do not install a status line to read it:
+`--settings` outranks the user's settings files, so ours would replace the one
+the user configured, and managed settings can own the key outright. No hook
+field at `Stop`, no plugin API, and no OpenTelemetry attribute carries the
+value; anthropics/claude-code#99905 asks for the plugin API to expose it. The
+Claude adapter therefore estimates the window from the transcript tail it
+already reads on `Stop`: the last main-thread request (lines grouped by
+`requestId`, `isSidechain` lines skipped), anchored at that request's earliest
+line, with the TTL named by the bucket its usage wrote
+(`cache_creation.ephemeral_1h_input_tokens` or `ephemeral_5m_input_tokens`). A
+request that only read the cache inherits the bucket of the nearest earlier
+write; with no known bucket, or no cache counters at all, the window is
+unknown rather than assumed to be five minutes. It is unknown too when a
+main-thread user line, a tool result or a prompt, is newer than the last usage
+line, which means the turn's final response was not yet written when `Stop`
+ran; anchoring on the request before it would show the cache expiring early. `rewrite_tokens`
+follows the plugin API's definition of the prompt the next request re-sends:
+the last main-thread response's input, cache read, cache creation, and output
+tokens.
+
+The interface types the agent's own `/compact` or `/clear` when the user
+answers from the expired clock's panel, so the projection also carries each
+run's recorded `pid`. The host types only when that process, or for a
+tmux-hosted run the tmux client forwarding to the run's active pane, is what
+the pane has in front. A provider's declared process names are the fallback
+for a run with no recorded pid, since an agent can run under an interpreter's
+name.
+
+Codex exposes no expiry today and does not declare `cache_window`. When it
+does, its adapter fills the same struct, with `precision: reported` if the
+value is stated rather than derived, and no record, projection, or interface
+code changes.
 
 ### Rule functions
 

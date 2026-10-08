@@ -44,6 +44,12 @@ enum AgentProviderRegistry {
         descriptors[kind.rawValue]?.capabilities.contains("session_title") == true
     }
 
+    /// The executable names a provider runs as, as its descriptor declares.
+    /// Empty for an unknown provider, so nothing matches it.
+    static func processNames(for kind: AgentKind) -> [String] {
+        descriptors[kind.rawValue]?.processNames ?? []
+    }
+
     /// Where each provider keeps its records under `root`, as its descriptor
     /// declares. Claude keeps legacy directory names so existing records
     /// survive an upgrade, which is why this is read rather than derived.

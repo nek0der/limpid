@@ -5,7 +5,8 @@
 //! from two places: `SessionStart` carries `session_title`, and the
 //! transcript's latest `ai-title` line carries the observed titles that this
 //! adapter reads on prompt submit and stop, because Claude has no live title
-//! event.
+//! event. Stop also reads the transcript for the prompt cache window the turn
+//! left behind (see `cache`).
 
 use limpid_agent_model::{
     AgentEvent, MAX_HOOK_INPUT_BYTES, NormalizeError, RawHookInput, Titles, parse_object,
@@ -53,6 +54,9 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
         },
         "Stop" => AgentEvent::TurnFinished {
             titles: input.transcript.and_then(transcript_titles),
+            cache: input
+                .transcript
+                .and_then(crate::cache::transcript_cache_window),
         },
         "StopFailure" => AgentEvent::Failed {
             // Recorded payloads carry the reason under `error`; the shell
@@ -82,7 +86,8 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
 }
 
 /// Titles are read from the transcript on the two events the shell receiver
-/// read it on: prompt submit and stop.
+/// read it on: prompt submit and stop. Stop reads it for the cache window too,
+/// which needs no extra file read.
 pub(crate) fn transcript_path(input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {
     let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)?;
     if !matches!(
@@ -209,6 +214,7 @@ mod tests {
                     session_title: None,
                     generated_title: Some("second".into()),
                 }),
+                cache: None,
             }]
         );
         assert_eq!(
@@ -216,15 +222,62 @@ mod tests {
                 r#"{"hook_event_name":"Stop"}"#,
                 Some("{\"type\":\"custom-title\",\"customTitle\":\"mine\"}\n")
             ),
-            vec![AgentEvent::TurnFinished { titles: None }]
+            vec![AgentEvent::TurnFinished {
+                titles: None,
+                cache: None
+            }]
         );
         assert_eq!(
             events(
                 r#"{"hook_event_name":"Stop"}"#,
                 Some("{\"type\":\"user\"}\n")
             ),
-            vec![AgentEvent::TurnFinished { titles: None }]
+            vec![AgentEvent::TurnFinished {
+                titles: None,
+                cache: None
+            }]
         );
+    }
+
+    #[test]
+    fn stop_reads_the_cache_window_beside_the_title() {
+        let transcript = concat!(
+            "{\"type\":\"assistant\",\"isSidechain\":false,\"requestId\":\"req_1\",",
+            "\"timestamp\":\"2026-10-07T12:00:00.250Z\",\"message\":{\"id\":\"msg_1\",\"usage\":",
+            "{\"input_tokens\":1,\"cache_read_input_tokens\":10,\"cache_creation_input_tokens\":5,",
+            "\"output_tokens\":4,\"cache_creation\":{\"ephemeral_1h_input_tokens\":5,",
+            "\"ephemeral_5m_input_tokens\":0}}}}\n",
+            "{\"type\":\"ai-title\",\"aiTitle\":\"named\"}\n",
+        );
+        let actual = events(r#"{"hook_event_name":"Stop"}"#, Some(transcript));
+        assert_eq!(
+            actual,
+            vec![AgentEvent::TurnFinished {
+                titles: Some(Titles {
+                    session_title: None,
+                    generated_title: Some("named".into()),
+                }),
+                cache: Some(limpid_agent_model::CacheWindow {
+                    observed_at: "2026-10-07T12:00:00Z".into(),
+                    ttl_seconds: 3600,
+                    rewrite_tokens: Some(20),
+                    precision: limpid_agent_model::CachePrecision::Estimated,
+                }),
+            }]
+        );
+        // Prompt submit reads the transcript for titles only: the window it
+        // would find belongs to the turn this prompt is about to replace.
+        let actual = events(
+            r#"{"hook_event_name":"UserPromptSubmit","prompt":"p"}"#,
+            Some(transcript),
+        );
+        assert!(matches!(
+            actual.as_slice(),
+            [AgentEvent::PromptSubmitted {
+                titles: Some(_),
+                ..
+            }]
+        ));
     }
 
     #[test]

@@ -1,0 +1,53 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for cache-window>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "cache": {
+        "observedAt": "2026-10-07T12:00:02Z",
+        "precision": "estimated",
+        "rewriteTokens": 31642,
+        "ttlSeconds": 3600
+      },
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for cache-window>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "cache": {
+        "observedAt": "2026-10-07T12:20:11Z",
+        "precision": "estimated",
+        "rewriteTokens": 31658,
+        "ttlSeconds": 3600
+      },
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "reason": "prompt_input_exit",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ]
+]

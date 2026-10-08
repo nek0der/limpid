@@ -112,6 +112,9 @@ final class PaneRenamePresentation {
     /// header's, pulled inside the window by `margin`. It hangs `gap` below
     /// the header, or sits that far above it when below would run past the
     /// window's bottom; when neither fits, it is pinned inside the bottom.
+    /// Whatever the branch, the result is kept within `margin` of the
+    /// window's top and bottom, so an anchor that has scrolled or been laid
+    /// out off screen cannot take the panel with it.
     nonisolated static func panelOrigin(
         anchor: CGRect,
         panelSize: CGSize,
@@ -132,6 +135,6 @@ final class PaneRenamePresentation {
         } else {
             max(margin, maximumY)
         }
-        return CGPoint(x: x, y: y)
+        return CGPoint(x: x, y: min(max(y, margin), max(margin, maximumY)))
     }
 }

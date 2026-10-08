@@ -245,18 +245,46 @@ struct PaneHeaderTests {
     // MARK: - Forms
 
     @Test func forms_dropDetailThenNameThenMark() {
-        let forms = PaneHeaderRules.forms(isEditing: false)
+        let forms = PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: false)
         #expect(forms == [.all, .withName, .withMark, .glyphAndMenu])
         #expect(forms.map(\.showsDetail) == [true, false, false, false])
         #expect(forms.map(\.showsName) == [true, true, false, false])
         #expect(forms.map(\.showsMark) == [true, true, true, false])
     }
 
+    @Test func forms_withACacheClock_dropTheMarkBeforeTheClock() {
+        let forms = PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: true)
+        #expect(forms == [.all, .withName, .withMark, .withClock, .glyphAndMenu])
+        #expect(forms.map(\.showsDetail) == [true, false, false, false, false])
+        #expect(forms.map(\.showsName) == [true, true, false, false, false])
+        #expect(forms.map(\.showsMark) == [true, true, true, false, false])
+        #expect(forms.map(\.showsPromptCacheClock) == [true, true, true, true, false])
+    }
+
+    @Test func forms_clockFormOnlyWhileThereIsAClock() {
+        #expect(!PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: false).contains(.withClock))
+        #expect(PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: true).contains(.withClock))
+    }
+
+    @Test func metrics_clockFormIsTheNarrowestFormAndTheClock() {
+        #expect(
+            PaneHeaderMetrics.clockFormWidth
+                == PaneHeaderMetrics.minimumWidth + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.markSlot
+        )
+        #expect(PaneHeaderMetrics.clockFormWidth == 78)
+        // The split floor does not grow for the clock.
+        #expect(PaneHeaderMetrics.minimumWidth < PaneHeaderMetrics.clockFormWidth)
+    }
+
     @Test func forms_whileEditing_keepTheName() {
-        let forms = PaneHeaderRules.forms(isEditing: true)
-        #expect(forms == [.withName])
-        let keepsTheName = forms.allSatisfy(\.showsName)
-        #expect(keepsTheName)
+        for showsClock in [false, true] {
+            let forms = PaneHeaderRules.forms(isEditing: true, showsPromptCacheClock: showsClock)
+            #expect(forms == [.withName])
+            let keepsTheName = forms.allSatisfy(\.showsName)
+            #expect(keepsTheName)
+            let keepsTheClock = forms.allSatisfy(\.showsPromptCacheClock)
+            #expect(keepsTheClock, "the rename threshold counts the clock")
+        }
     }
 
     @Test func metrics_minimumWidthIsGlyphAndMenuWithTheirGaps() {

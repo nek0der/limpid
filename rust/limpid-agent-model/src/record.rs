@@ -7,7 +7,8 @@
 //! than dropped, because an older reader must not erase what a newer writer
 //! recorded.
 
-use serde::{Deserialize, Serialize};
+use crate::cache::CacheWindow;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -133,9 +134,37 @@ pub struct RunRecord {
     pub tmux_server_pid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tmux_server_started_at: Option<String>,
+    /// The prompt cache as the last finished turn left it. Set by the event
+    /// that ends a turn and cleared by everything that starts or ends work,
+    /// so a value here always describes the turn the run is resting after.
+    /// Absent in every record written before the field existed, which reads
+    /// as unknown.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient_cache_window"
+    )]
+    pub cache_window: Option<CacheWindow>,
     /// Fields this version does not model, preserved verbatim.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
+}
+
+/// Reads `cacheWindow` without letting it veto the record. The window is an
+/// estimate behind the interface's cache clock; a newer writer that adds a
+/// precision this build does not know, or a value of the wrong shape, must
+/// cost that estimate and nothing else, never the run's badge.
+///
+/// So an older build that rewrites the record drops a window a newer build
+/// wrote and it could not read, and the clock is gone until the next turn
+/// leaves one. That is acceptable for an estimate: a missing clock misleads
+/// no one, while keeping a value this build cannot check would.
+fn lenient_cache_window<'de, D>(deserializer: D) -> Result<Option<CacheWindow>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
 }
 
 impl RunRecord {
@@ -270,6 +299,8 @@ impl From<RunRecordV2> for RunRecord {
             tmux_pane_id: record.tmux_pane_id,
             tmux_server_pid: record.tmux_server_pid,
             tmux_server_started_at: record.tmux_server_started_at,
+            // The shell receivers never estimated the cache.
+            cache_window: None,
             extra: record.extra,
         }
     }
@@ -337,6 +368,48 @@ mod tests {
         assert!(text.contains("\"schemaVersion\":3"));
         let value: Value = serde_json::from_str(&text).expect("json");
         assert_eq!(value["runStartedAt"], Value::Null);
+    }
+
+    #[test]
+    fn the_cache_window_round_trips_and_its_absence_still_decodes() {
+        let json = V2.replace("\"schemaVersion\":2", "\"schemaVersion\":3");
+        let record = RunRecord::decode(json.as_bytes()).expect("decodes without the field");
+        assert_eq!(record.cache_window, None);
+        let text = String::from_utf8(record.encode().expect("encodes")).expect("utf8");
+        assert!(!text.contains("cacheWindow"), "absent stays absent");
+
+        let window = CacheWindow {
+            observed_at: "2026-09-14T00:00:00Z".to_owned(),
+            ttl_seconds: 3600,
+            rewrite_tokens: Some(573_000),
+            precision: crate::cache::CachePrecision::Estimated,
+        };
+        let with_window = RunRecord {
+            cache_window: Some(window.clone()),
+            ..record
+        };
+        let encoded = with_window.encode().expect("encodes");
+        let text = String::from_utf8(encoded.clone()).expect("utf8");
+        assert!(text.contains(r#""cacheWindow":{"observedAt":"2026-09-14T00:00:00Z","#));
+        let again = RunRecord::decode(&encoded).expect("decodes again");
+        assert_eq!(again.cache_window, Some(window));
+        assert!(!again.extra.contains_key("cacheWindow"));
+    }
+
+    #[test]
+    fn a_cache_window_this_build_cannot_read_costs_only_the_window() {
+        let json = V2.replace("\"schemaVersion\":2", "\"schemaVersion\":3").replace(
+            "\"revision\":1",
+            r#""revision":1,"cacheWindow":{"observedAt":"2026-09-14T00:00:00Z","ttlSeconds":3600,"precision":"measured"}"#,
+        );
+        let record = RunRecord::decode(json.as_bytes()).expect("the record still decodes");
+        assert_eq!(record.cache_window, None);
+        assert_eq!(record.revision, Some(1));
+        let json = V2
+            .replace("\"schemaVersion\":2", "\"schemaVersion\":3")
+            .replace("\"revision\":1", r#""revision":1,"cacheWindow":"soon""#);
+        let record = RunRecord::decode(json.as_bytes()).expect("the record still decodes");
+        assert_eq!(record.cache_window, None);
     }
 
     #[test]

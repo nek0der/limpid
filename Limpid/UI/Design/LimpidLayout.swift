@@ -326,6 +326,12 @@ enum LimpidLayout {
     /// with a slight wobble stays a click.
     static let paneDragThreshold: CGFloat = 4
 
+    /// Panels that float below what opened them — the pane rename field and
+    /// the prompt cache panel — share the command palette's corner radius,
+    /// and keep this far from the window's edges.
+    static let floatingPanelCornerRadius: CGFloat = 16
+    static let floatingPanelWindowMargin: CGFloat = 8
+
     /// The floating rename panel a header narrower than
     /// `PaneHeaderMetrics.inlineRenameMinimumWidth` opens instead of editing in
     /// place: wide enough for a name of a few words, on the command
@@ -334,15 +340,66 @@ enum LimpidLayout {
     static let paneRenamePanelWidth: CGFloat = 240
     static let paneRenamePanelPadding: CGFloat = 12
     static let paneRenamePanelSpacing: CGFloat = 6
-    static let paneRenamePanelCornerRadius: CGFloat = 16
     static let paneRenameFieldCornerRadius: CGFloat = 6
     static let paneRenameFieldVerticalPadding: CGFloat = 4
     static let paneRenameFieldHorizontalPadding: CGFloat = 2
     static let paneRenameFieldFontSize: CGFloat = 13
-    /// Gap between the header and the panel, and the margin the panel keeps
-    /// from the window's edges.
+    /// Gap between the header and the panel.
     static let paneRenamePanelAnchorGap: CGFloat = 4
-    static let paneRenamePanelWindowMargin: CGFloat = 8
+
+    /// The prompt cache clock in a tab row or a pane header: the font of
+    /// `AgentStateMark.rowStatus`, so the clock and the mark beside it are
+    /// one size and one weight.
+    static let promptCacheClockFontSize: CGFloat = 12
+    /// The Waiting row's clock: sized to the wait time it sits beside rather
+    /// than to the row's state glyph, since it qualifies that time and at
+    /// the glyph's size competed with the state for the eye; kept within
+    /// the time's line height so the row never grows for it; and set a
+    /// little apart from the time.
+    static let promptCacheIndicatorFontSize: CGFloat = 10
+    static let promptCacheIndicatorSlot: CGFloat = 12
+    static let promptCacheIndicatorTrailingGap: CGFloat = 2
+
+    /// The panel a prompt cache clock opens, after the design: wide enough
+    /// for its longest Japanese sentence on one line, a title a step above
+    /// its two sentences, and buttons at the sentences' size.
+    static let promptCachePanelWidth: CGFloat = 300
+    static let promptCachePanelPadding: CGFloat = 14
+    /// Between the text block and the buttons.
+    static let promptCachePanelSectionSpacing: CGFloat = 12
+    /// Between the title row and the two sentences.
+    static let promptCachePanelTitleSpacing: CGFloat = 8
+    static let promptCachePanelTitleGlyphSpacing: CGFloat = 6
+    /// The title's clock glyph is drawn in a slot this wide, so the pane
+    /// line under the title can start exactly where the title's text does.
+    static let promptCachePanelTitleGlyphWidth: CGFloat = 13
+    static let promptCachePanelLineSpacing: CGFloat = 2
+    static let promptCachePanelButtonSpacing: CGFloat = 6
+    static let promptCachePanelTitleFontSize: CGFloat = 13
+    static let promptCachePanelTextFontSize: CGFloat = 11
+    /// The arrow on the panel's edge that points at its clock: a square of
+    /// this side turned 45 degrees, half of it showing past the edge.
+    static let promptCachePanelArrowSize: CGFloat = 14
+    /// How far the arrow's tip stands past the panel's edge, and how wide
+    /// its base is either side of its center: half the square's diagonal.
+    static let promptCachePanelArrowHeight: CGFloat = promptCachePanelArrowSize / 2.squareRoot()
+    /// The least distance from the arrow's center to either corner, so its
+    /// base stays clear of the rounding.
+    static let promptCachePanelArrowInset: CGFloat = floatingPanelCornerRadius + promptCachePanelArrowHeight + 4
+    /// Gap between the clock and the panel's edge: room for the arrow, with
+    /// a little air between its tip and the clock.
+    static let promptCachePanelAnchorGap: CGFloat = promptCachePanelArrowHeight + 3
+    /// Between the title row and the line naming the pane.
+    static let promptCachePanelPaneLineSpacing: CGFloat = 2
+    /// The pane line's size, a half step under the panel's sentences, as
+    /// the design has it.
+    static let promptCachePanelPaneLineFontSize: CGFloat = 10.5
+    static let promptCacheButtonCornerRadius: CGFloat = 7
+    static let promptCacheButtonHorizontalPadding: CGFloat = 10
+    /// The two command buttons sit a point taller than the plain one, whose
+    /// missing border would otherwise make it read as the larger.
+    static let promptCacheButtonVerticalPadding: CGFloat = 5
+    static let promptCachePlainButtonVerticalPadding: CGFloat = 4
 
     // MARK: - Sidebar
 

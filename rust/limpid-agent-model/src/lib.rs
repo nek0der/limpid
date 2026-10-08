@@ -10,6 +10,7 @@
 
 mod adapter;
 mod approval;
+mod cache;
 mod command;
 mod event;
 mod layout;
@@ -29,6 +30,7 @@ pub use adapter::{
 pub use approval::{
     ApprovalDecision, ApprovalQuestion, ApprovalQuestionOption, ApprovalRequest, ProviderOutput,
 };
+pub use cache::{CachePrecision, CacheWindow};
 pub use command::{
     Command, CommandOp, CommandOutcome, MAX_PANE_RECORDS, MAX_RETIRED_RECORDS, NotificationKind,
     NotifyCommand, OnMismatch, PaneStoreKind, Patch, Precondition, RETIRED_RECORD_LIFETIME_SECS,

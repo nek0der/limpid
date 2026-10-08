@@ -15,6 +15,10 @@ struct AgentRuntimePresentation: Equatable {
     var stateEpisodeToken: String?
     /// Nil on compatibility fixtures; production always supplies evidence.
     var attachmentResolution: AgentAttachmentResolution?
+    /// The agent's process as its hooks recorded it, or `nil` when they did
+    /// not. Compared with what is in front of a pane before anything is typed
+    /// there; see `AttentionState.isAgentInFront`.
+    var processID: pid_t?
 
     var resolution: AgentAttachmentResolution {
         attachmentResolution ?? (paneIDs.isEmpty ? .unresolved : .attached)

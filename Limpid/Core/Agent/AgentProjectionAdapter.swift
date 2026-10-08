@@ -646,7 +646,8 @@ final class AgentProjectionAdapter {
                 paneLocations[pane].map { (pane, $0) }
             }),
             stateEpisodeToken: runtime.episodeToken,
-            attachmentResolution: resolution
+            attachmentResolution: resolution,
+            processID: runtime.pid.flatMap { pid_t($0) }
         )
     }
 

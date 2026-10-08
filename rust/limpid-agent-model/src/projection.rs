@@ -16,6 +16,7 @@
 //! carry wall timestamps; a pending notification's lifetime is monotonic
 //! uptime, because a clock adjustment must not expire or revive one.
 
+use crate::cache::CacheWindow;
 use crate::command::{CommandOutcome, ResumeIntent};
 use crate::provider::{ProviderDescriptor, ProviderId};
 use crate::record::{RunRecord, RunState};
@@ -301,6 +302,11 @@ pub struct RuntimePresentation {
     /// Identifies a stretch of the same state. What viewed and dismissed marks
     /// are taken against, and what decides a repeat from a new episode.
     pub episode_token: String,
+    /// The agent's process, as its hooks recorded it. The host compares it with
+    /// what is in front of a pane before typing there, which a process name
+    /// cannot settle: one provider can run under an interpreter's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<String>,
 }
 
 /// What a pane's badge shows. Mirrors what the record carries, minus identity
@@ -336,6 +342,11 @@ pub struct Badge {
     pub provider_generated_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_started_at: Option<String>,
+    /// Present only for providers with the cache window capability. The
+    /// interface derives whether the cache is about to expire from this and
+    /// its own clock, so the projection does not have to run on a timer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_window: Option<CacheWindow>,
 }
 
 /// What a pane can resume, taken from the provider's hint.

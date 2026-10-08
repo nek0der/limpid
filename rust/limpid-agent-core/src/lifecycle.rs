@@ -5,7 +5,10 @@
 //! receivers. Every `SessionStarted` clears `lastPrompt` and `runStartedAt`
 //! and refreshes `sessionStartedAt`. A non-compact start also clears
 //! `firstPrompt` and replaces both title fields; a compact start retains those
-//! fields unless it supplies a session title. The function owns no file,
+//! fields unless it supplies a session title. A finished turn records the
+//! prompt cache window it left behind, and every event that starts or ends
+//! work clears it again, because that window no longer describes the cache.
+//! The function owns no file,
 //! clock, or provider branch. Directory names and the git operations behind
 //! `SideWrite` and `TurnSnapshotOp` belong to the runtime.
 
@@ -200,6 +203,10 @@ fn session_transition(
             next.state = RunState::Idle;
             next.run_started_at = None;
             next.last_prompt = None;
+            // A new session, a `/clear`, a resume, and a compaction restart all
+            // begin a different prefix, so the previous window describes a
+            // cache the next message will not read.
+            next.cache_window = None;
             next.session_started_at = Some(now.to_owned());
             if *compact {
                 if let Some(title) = session_title {
@@ -224,6 +231,7 @@ fn session_transition(
         AgentEvent::SessionEnded { reason, session_id } => {
             next.state = RunState::Unknown;
             next.run_started_at = None;
+            next.cache_window = None;
             // Only a provider that takes snapshots has one to remove; the
             // removal runs git, so it is not issued for the others.
             if descriptor.has(Capability::TurnSnapshot) {
@@ -265,6 +273,9 @@ fn turn_transition(
         AgentEvent::PromptSubmitted { prompt, titles, .. } => {
             next.state = RunState::Running;
             next.run_started_at = Some(now.to_owned());
+            // The request this prompt starts refreshes the cache, so the
+            // window is warm by definition until the turn reports a new one.
+            next.cache_window = None;
             let prompt = text_field(prompt);
             if next.first_prompt.is_none() {
                 next.first_prompt.clone_from(&prompt);
@@ -299,23 +310,37 @@ fn turn_transition(
         AgentEvent::Compacting { context_tokens } => {
             next.state = RunState::Compacting;
             next.context_tokens = *context_tokens;
+            next.cache_window = None;
         }
-        AgentEvent::ToolFinished { .. } | AgentEvent::CompactionFinished => {
+        AgentEvent::ToolFinished { .. } => {
             next.state = RunState::Running;
         }
-        AgentEvent::TurnFinished { titles } => {
+        AgentEvent::CompactionFinished => {
+            next.state = RunState::Running;
+            // Compaction replaces the prefix the window was measured on.
+            next.cache_window = None;
+        }
+        AgentEvent::TurnFinished { titles, cache } => {
             next.state = RunState::Finished;
             next.run_started_at = None;
             observe_titles(next, titles.as_ref());
+            // Stored as observed, including `None`: a turn whose window could
+            // not be read leaves the cache unknown rather than describing it
+            // with the previous turn's numbers.
+            next.cache_window.clone_from(cache);
         }
         AgentEvent::Failed { error } => {
             next.state = RunState::Error;
             next.run_started_at = None;
             next.detail = text_field(error);
+            // A failed request may or may not have refreshed the cache; an
+            // unknown window is shown as nothing rather than as a guess.
+            next.cache_window = None;
         }
         AgentEvent::Interrupted => {
             next.state = RunState::Finished;
             next.run_started_at = None;
+            next.cache_window = None;
         }
         AgentEvent::TitleChanged { titles } => observe_titles(next, Some(titles)),
         _ => {}
@@ -376,6 +401,10 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
                 .map(|started| started.to_string())
                 .unwrap_or_default()
         }),
+        // Carried through the events that neither start nor end work, such
+        // as a title change after the turn ended. An idle notification never
+        // reaches here: it arrives as an extension, which writes nothing.
+        cache_window: prev.and_then(|record| record.cache_window.clone()),
         extra: prev.map(|record| record.extra.clone()).unwrap_or_default(),
     }
 }
@@ -633,7 +662,10 @@ mod tests {
 
         let finished = apply(
             Some(&record),
-            &AgentEvent::TurnFinished { titles: None },
+            &AgentEvent::TurnFinished {
+                titles: None,
+                cache: None,
+            },
             &context(),
             &claude(),
             LATER,
@@ -675,6 +707,108 @@ mod tests {
         // Unified reset rule: an error keeps what the notification body needs.
         assert_eq!(failed.last_prompt.as_deref(), Some("second"));
         assert_eq!(failed.session_started_at.as_deref(), Some(NOW));
+    }
+
+    fn window(observed_at: &str) -> limpid_agent_model::CacheWindow {
+        limpid_agent_model::CacheWindow {
+            observed_at: observed_at.to_owned(),
+            ttl_seconds: 3600,
+            rewrite_tokens: Some(573_000),
+            precision: limpid_agent_model::CachePrecision::Estimated,
+        }
+    }
+
+    fn finished_with(observed_at: &str) -> AgentEvent {
+        AgentEvent::TurnFinished {
+            titles: None,
+            cache: Some(window(observed_at)),
+        }
+    }
+
+    #[test]
+    fn a_finished_turn_records_its_cache_window_and_quiet_events_keep_it() {
+        let (record, _, _) = run(
+            &claude(),
+            &[
+                started(None),
+                prompt("first"),
+                finished_with(NOW),
+                // A waiting-for-input event and a late title neither start
+                // nor end work, so the window still describes the cache.
+                AgentEvent::WaitingForInput { detail: None },
+                AgentEvent::TitleChanged {
+                    titles: Titles {
+                        session_title: None,
+                        generated_title: Some("Title".into()),
+                    },
+                },
+            ],
+        );
+        assert_eq!(record.cache_window, Some(window(NOW)));
+        let encoded = String::from_utf8(record.encode().expect("encodes")).expect("utf8");
+        assert!(encoded.contains("\"cacheWindow\":{"));
+
+        // The next turn's window replaces it, and a turn that could not read
+        // one leaves the cache unknown rather than reusing the old numbers.
+        let (record, _, _) = run(
+            &claude(),
+            &[
+                started(None),
+                prompt("first"),
+                finished_with(NOW),
+                prompt("second"),
+                finished_with(LATER),
+            ],
+        );
+        assert_eq!(record.cache_window, Some(window(LATER)));
+        let (record, _, _) = run(
+            &claude(),
+            &[
+                started(None),
+                prompt("first"),
+                finished_with(NOW),
+                AgentEvent::TurnFinished {
+                    titles: None,
+                    cache: None,
+                },
+            ],
+        );
+        assert_eq!(record.cache_window, None);
+    }
+
+    #[test]
+    fn every_event_that_starts_or_ends_work_clears_the_cache_window() {
+        let (finished, _, _) = run(&claude(), &[started(None), prompt("p"), finished_with(NOW)]);
+        assert!(finished.cache_window.is_some());
+        let clearing = [
+            prompt("next"),
+            started(None),
+            AgentEvent::SessionStarted {
+                compact: true,
+                session_id: Some("session-1".into()),
+                session_title: None,
+                cwd: None,
+            },
+            AgentEvent::SessionEnded {
+                reason: Some("exit".into()),
+                session_id: Some("session-1".into()),
+            },
+            AgentEvent::Compacting {
+                context_tokens: Some(1),
+            },
+            AgentEvent::CompactionFinished,
+            AgentEvent::Failed {
+                error: "server_error".into(),
+            },
+            AgentEvent::Interrupted,
+        ];
+        for event in &clearing {
+            let next = apply(Some(&finished), event, &context(), &claude(), LATER)
+                .run
+                .expect("record");
+            assert_eq!(next.cache_window, None, "{event:?} must clear the window");
+            assert_eq!(next.revision, finished.revision.map(|it| it + 1));
+        }
     }
 
     #[test]
@@ -864,7 +998,10 @@ mod tests {
         assert_eq!(record.state_episode_token.as_deref(), Some("3"));
         let finished = apply(
             Some(&record),
-            &AgentEvent::TurnFinished { titles: None },
+            &AgentEvent::TurnFinished {
+                titles: None,
+                cache: None,
+            },
             &context(),
             &claude(),
             LATER,
@@ -936,7 +1073,10 @@ mod tests {
             &claude(),
             &[
                 started(Some("  Safe\u{202e}\n\t title\u{200b}  ")),
-                AgentEvent::TurnFinished { titles: None },
+                AgentEvent::TurnFinished {
+                    titles: None,
+                    cache: None,
+                },
                 AgentEvent::TitleChanged {
                     titles: Titles {
                         session_title: None,
@@ -1021,7 +1161,10 @@ mod tests {
         .expect("decodes");
         let writes = apply(
             Some(&previous),
-            &AgentEvent::TurnFinished { titles: None },
+            &AgentEvent::TurnFinished {
+                titles: None,
+                cache: None,
+            },
             &context(),
             &claude(),
             NOW,

@@ -55,7 +55,10 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
             Some(error) if !error.is_empty() => AgentEvent::Failed {
                 error: error.to_owned(),
             },
-            _ => AgentEvent::TurnFinished { titles: None },
+            _ => AgentEvent::TurnFinished {
+                titles: None,
+                cache: None,
+            },
         },
         _ => AgentEvent::Extension {
             name: event_name.clone(),
@@ -91,7 +94,10 @@ mod tests {
         );
         assert_eq!(
             events(r#"{"hook_event_name":"Stop","error_type":""}"#),
-            vec![AgentEvent::TurnFinished { titles: None }]
+            vec![AgentEvent::TurnFinished {
+                titles: None,
+                cache: None
+            }]
         );
     }
 

@@ -426,6 +426,15 @@ final class GhosttyApp {
                 guard let view = SurfaceView.liveView(forUserdata: ud),
                       let surface = view.surface
                 else { return }
+                // Every paste reaches the terminal through this read: ⌘V,
+                // Edit > Paste, a review insert, and a middle click. So this
+                // is the one place that records it as unsent input at an
+                // agent's prompt, which keeps the prompt cache panel from
+                // typing a command after it. A program's OSC 52 read comes
+                // here too and marks the pane without pasting anything; that
+                // only disables those commands until the next submit, which
+                // is the safe way to be wrong.
+                view.noteClipboardRead(isListing: isListing)
                 // Parked for the length of the call below. A paste that needs
                 // confirming raises the sheet from inside it, and the callback
                 // that raises it cannot reach back to the surface: it hops to
