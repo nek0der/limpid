@@ -326,11 +326,46 @@ enum LimpidLayout {
     /// with a slight wobble stays a click.
     static let paneDragThreshold: CGFloat = 4
 
-    /// Panels that float below what opened them — the pane rename field and
-    /// the prompt cache panel — share the command palette's corner radius,
-    /// and keep this far from the window's edges.
+    /// Panels that float below what opened them — the pane rename field,
+    /// the prompt cache panel and the container color picker — share the
+    /// command palette's corner radius, and keep this far from the window's
+    /// edges.
     static let floatingPanelCornerRadius: CGFloat = 16
     static let floatingPanelWindowMargin: CGFloat = 8
+    /// The inset of a floating panel's content: the rename field's and the
+    /// color picker's. The prompt cache panel keeps its own, a little wider
+    /// for its sentences and full-width buttons.
+    static let floatingPanelPadding: CGFloat = 12
+
+    /// The arrow some floating panels carry on the edge facing what opened
+    /// them (the prompt cache panel, the color picker): a square of this
+    /// side turned 45 degrees, half of it showing past the edge.
+    static let floatingPanelArrowSize: CGFloat = 14
+    /// How far the arrow's tip stands past the panel's edge, and how wide
+    /// its base is either side of its center: half the square's diagonal.
+    static let floatingPanelArrowHeight: CGFloat = floatingPanelArrowSize / 2.squareRoot()
+    /// The least distance from the arrow's center to either corner, so its
+    /// base stays clear of the rounding.
+    static let floatingPanelArrowInset: CGFloat = floatingPanelCornerRadius + floatingPanelArrowHeight + 4
+    /// Gap between an arrowed panel's edge and what it points at: room for
+    /// the arrow, with a little air between its tip and the anchor.
+    static let floatingPanelArrowAnchorGap: CGFloat = floatingPanelArrowHeight + 3
+
+    /// The container color picker: sixteen swatches eight to a row, which
+    /// keeps the grid two rows short beside a sidebar row and every swatch a
+    /// comfortable click; a ring around the current one; under a caption on
+    /// the floating panel surface. The panel's width follows from the grid,
+    /// so placement can know it before the panel is measured.
+    static let containerColorSwatchSize: CGFloat = 20
+    static let containerColorSelectionRingSize: CGFloat = 24
+    static let containerColorSwatchSlot: CGFloat = 26
+    static let containerColorSwatchSpacing: CGFloat = 6
+    static let containerColorSwatchColumns = 8
+    /// Between the caption and the grid.
+    static let containerColorPanelSpacing: CGFloat = 8
+    static let containerColorGridWidth: CGFloat = .init(containerColorSwatchColumns) * containerColorSwatchSlot
+        + CGFloat(containerColorSwatchColumns - 1) * containerColorSwatchSpacing
+    static let containerColorPanelWidth: CGFloat = containerColorGridWidth + floatingPanelPadding * 2
 
     /// The floating rename panel a header narrower than
     /// `PaneHeaderMetrics.inlineRenameMinimumWidth` opens instead of editing in
@@ -338,7 +373,6 @@ enum LimpidLayout {
     /// palette's surface, with the field drawn like a text field so it
     /// reads as one at a glance.
     static let paneRenamePanelWidth: CGFloat = 240
-    static let paneRenamePanelPadding: CGFloat = 12
     static let paneRenamePanelSpacing: CGFloat = 6
     static let paneRenameFieldCornerRadius: CGFloat = 6
     static let paneRenameFieldVerticalPadding: CGFloat = 4
@@ -377,18 +411,6 @@ enum LimpidLayout {
     static let promptCachePanelButtonSpacing: CGFloat = 6
     static let promptCachePanelTitleFontSize: CGFloat = 13
     static let promptCachePanelTextFontSize: CGFloat = 11
-    /// The arrow on the panel's edge that points at its clock: a square of
-    /// this side turned 45 degrees, half of it showing past the edge.
-    static let promptCachePanelArrowSize: CGFloat = 14
-    /// How far the arrow's tip stands past the panel's edge, and how wide
-    /// its base is either side of its center: half the square's diagonal.
-    static let promptCachePanelArrowHeight: CGFloat = promptCachePanelArrowSize / 2.squareRoot()
-    /// The least distance from the arrow's center to either corner, so its
-    /// base stays clear of the rounding.
-    static let promptCachePanelArrowInset: CGFloat = floatingPanelCornerRadius + promptCachePanelArrowHeight + 4
-    /// Gap between the clock and the panel's edge: room for the arrow, with
-    /// a little air between its tip and the clock.
-    static let promptCachePanelAnchorGap: CGFloat = promptCachePanelArrowHeight + 3
     /// Between the title row and the line naming the pane.
     static let promptCachePanelPaneLineSpacing: CGFloat = 2
     /// The pane line's size, a half step under the panel's sentences, as

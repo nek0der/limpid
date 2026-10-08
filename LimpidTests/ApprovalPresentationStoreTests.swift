@@ -25,6 +25,25 @@ struct ApprovalPresentationStoreTests {
         #expect(store.presentedApproval == nil)
     }
 
+    @Test func presentedOnRequest_tellsAClickFromARowHover() {
+        let store = ApprovalPresentationStore()
+        let first = approval()
+        store.updatePending([first])
+
+        store.previewBegan(first)
+        #expect(store.presentedApproval == first)
+        #expect(!store.isPresentedOnRequest, "the pointer resting on a row is a peek")
+
+        store.present(first)
+        #expect(store.isPresentedOnRequest, "a click on the previewed row is a request")
+
+        store.dismissCard()
+        #expect(!store.isPresentedOnRequest)
+
+        store.present(first)
+        #expect(store.isPresentedOnRequest)
+    }
+
     @Test func removedPresentedRequest_doesNotPromoteExistingRequest() {
         let store = ApprovalPresentationStore()
         let epoch = UUID()

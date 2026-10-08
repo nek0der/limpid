@@ -125,6 +125,9 @@ final class AppState {
     let paneRenamePresentation = PaneRenamePresentation()
     /// The prompt cache clocks' panel: which one is open, and below which clock.
     let promptCachePanelPresentation = PromptCachePanelPresentation()
+    /// The Group / Project color picker's floating panel: which row's is
+    /// open, and below which color dot.
+    let containerColorPresentation = ContainerColorPresentation()
     private(set) var prStatusSyncer: PRStatusSyncer?
     /// Set when the on-disk snapshot couldn't be restored at boot.
     /// A version mismatch or decode failure normally just dropped the
@@ -613,6 +616,7 @@ struct LimpidApp: App {
                 .environment(state.prHoverPresentation)
                 .environment(state.paneRenamePresentation)
                 .environment(state.promptCachePanelPresentation)
+                .environment(state.containerColorPresentation)
                 .environment(\.prStatusSyncer, state.prStatusSyncer)
                 .environment(\.surfaceRegistry, state.registry)
                 .environment(\.reviewStores, state.reviewStores)
@@ -881,8 +885,7 @@ struct ContentView: View {
             WorktreeMoveSuggestionHost()
         }
         .overlay { PRHoverCardHost() }
-        .overlay { PaneRenamePanelHost() }
-        .overlay { PromptCachePanelHost() }
+        .overlay { FloatingPanelLayer() }
         .overlay { NotificationHistoryOverlay(state: state) }
         .overlay { ApprovalCardHost() }
         .overlay {

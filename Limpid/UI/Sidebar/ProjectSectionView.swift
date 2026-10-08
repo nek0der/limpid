@@ -22,7 +22,7 @@ struct ProjectSectionView: View {
 
     let project: Project
     @Binding var creatingWorktreeFor: UUID?
-    @Binding var openSettingsFor: ContainerSettingsTarget?
+    @Binding var openSettingsFor: GroupOrProjectID?
     @Binding var deletingWorktree: ContainerSlabView.DeleteWorktreeTarget?
     @Binding var removingProject: ContainerSlabView.RemoveProjectTarget?
     @Binding var worktreeOperationError: String?
@@ -203,9 +203,6 @@ struct ProjectSectionView: View {
                         projectID: project.id,
                         name: project.name
                     )
-                },
-                onChangePalette: { idx in
-                    session.setProjectPaletteIndex(project.id, to: idx)
                 },
                 onMoveUp: {
                     withAnimation(LimpidMotion.reorder) {

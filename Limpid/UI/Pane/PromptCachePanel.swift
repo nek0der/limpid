@@ -2,14 +2,11 @@
 // Limpid — the panel a prompt cache clock opens: what the cache costs now,
 // and, once it has expired, the three ways to go on.
 //
-// Drawn as a scene-root overlay on the command palette's surface rather
-// than through `.popover`. A popover brings its own arrow, frame, and
-// corner radius, none of which can be changed, so it could never match the
-// app's other floating panel; and with one open, a click elsewhere only
-// dismissed it, as `PRHoverCard` records. The clocks are also the wrong
-// place to draw it: the panel is wider than the tab row or the pane header it
-// hangs from, and each of those clips. `ContentView`
-// hosts it with its neighbors, as it does the PR card.
+// One of Limpid's arrowed floating panels (`FloatingPanel.swift`), drawn
+// at scene root rather than through `.popover`. The clocks are the wrong
+// place to draw it: the panel is wider than the tab row or the pane header
+// it hangs from, and each of those clips. `FloatingPanelLayer` hosts it
+// with the other floating panels.
 //
 // What the panel says and when it opens by itself are Core's rules
 // (`PromptCacheRules`, `AttentionState+PromptCache`); this file lays them
@@ -26,17 +23,9 @@ struct PromptCachePanelHost: View {
     @Environment(WindowSession.self) private var session
     @Environment(SettingsStore.self) private var settingsStore
     @Environment(ReviewPresentation.self) private var reviewPresentation
-    @Environment(PaneRenamePresentation.self) private var renamePresentation
-    @Environment(ApprovalPresentationStore.self) private var approvalPresentation
-    @Environment(NotificationHistoryPresentation.self) private var historyPresentation
-    @Environment(PRHoverPresentation.self) private var prHoverPresentation
     @Environment(\.surfaceRegistry) private var registry
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.appearsActive) private var appearsActive
 
-    /// The panel's measured height, for keeping it inside the window. Zero
-    /// until the first layout, which places it below the clock.
-    @State private var panelHeight: CGFloat = 0
     /// The pending look at whether the panel should open by itself; see
     /// `scheduleAutoOpen()`.
     @State private var autoOpenTask: Task<Void, Never>?
@@ -64,77 +53,32 @@ struct PromptCachePanelHost: View {
         return PromptCacheFocusedPane(tabID: tab.id, paneID: paneID)
     }
 
-    /// Another floating panel, or review, is up. The cache panel does not
-    /// open by itself over one: it would cover what the user is working in.
-    private var isAnotherPanelOpen: Bool {
-        session.commandPaletteState != nil
-            || renamePresentation.request != nil
-            || approvalPresentation.presentedID != nil
-            || historyPresentation.isPresented
-            || prHoverPresentation.visible != nil
-            || reviewPresentation.isPresented
-    }
-
     var body: some View {
-        GeometryReader { overlayGeo in
-            if let request = presentation.request, let content = openContent {
-                let overlayOrigin = overlayGeo.frame(in: .global).origin
-                let anchor = request.anchor.offsetBy(dx: -overlayOrigin.x, dy: -overlayOrigin.y)
-                let width = LimpidLayout.promptCachePanelWidth
-                // Centered under the clock, so it reads as hanging from it,
-                // then kept inside the window; near the window's bottom it
-                // opens above the clock instead.
-                let panelSize = CGSize(width: width, height: panelHeight)
-                let origin = PaneRenamePresentation.panelOrigin(
-                    anchor: CGRect(x: anchor.midX - width / 2, y: anchor.minY, width: width, height: anchor.height),
-                    panelSize: panelSize,
-                    container: overlayGeo.size,
-                    margin: LimpidLayout.floatingPanelWindowMargin,
-                    gap: LimpidLayout.promptCachePanelAnchorGap
-                )
-                // Points at the clock from wherever the clamping above put
-                // the panel, so the panel says where it came from even when
-                // it has slid over a neighboring pane.
-                let arrow = PromptCachePanelPresentation.arrowPlacement(
-                    anchor: anchor,
-                    panelOrigin: origin,
-                    panelSize: panelSize,
-                    minimumInset: LimpidLayout.promptCachePanelArrowInset
-                )
-                PromptCachePanelView(
-                    content: content,
-                    paneLine: attention.promptCachePaneLine(for: request.target, in: session)
-                ) { action in
-                    perform(action, request: request, content: content)
+        FloatingArrowPanelHost(
+            request: openContent == nil ? nil : presentation.request,
+            width: LimpidLayout.promptCachePanelWidth,
+            onPointerPressedOutside: { presentation.pointerPressed() },
+            onKey: { key in
+                // Other keys close the panel only while they go to a
+                // terminal, which is typing at a prompt. Keys moving
+                // through the panel's own buttons, as Full Keyboard Access
+                // does, leave it open.
+                guard key.isEscape || key.isTypingInTerminal else { return false }
+                return presentation.keyPressed(isEscape: key.isEscape)
+            },
+            onHover: { presentation.panelHoverChanged($0) },
+            content: { request in
+                if let content = openContent {
+                    PromptCachePanelView(
+                        content: content,
+                        paneLine: attention.promptCachePaneLine(for: request.target, in: session)
+                    ) { action in
+                        perform(action, request: request, content: content)
+                    }
                 }
-                .floatingPanelSurface(in: PromptCachePanelShape(
-                    cornerRadius: LimpidLayout.floatingPanelCornerRadius,
-                    arrow: arrow,
-                    arrowHeight: LimpidLayout.promptCachePanelArrowHeight
-                ))
-                .pointerStyle(.default)
-                .fixedSize()
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { panelHeight = $0 }
-                // Held back until measured: placed with no height, a panel
-                // near the window's bottom would show below its clock for a
-                // frame and then jump above it.
-                .opacity(panelHeight > 0 ? 1 : 0)
-                .onHover { presentation.panelHoverChanged($0) }
-                .background(PromptCachePanelEventMonitor(presentation: presentation))
-                .offset(x: origin.x, y: origin.y)
-                .transition(.opacity)
-                .id(request.id)
             }
-        }
-        .ignoresSafeArea()
+        )
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { windowBounds = $0 }
-        .animation(reduceMotion ? nil : LimpidMotion.paletteToggle, value: presentation.request?.id)
-        // Each panel is measured afresh: the last one's height belongs to
-        // content that may have had another line or no buttons.
-        .onChange(of: presentation.request?.id) { _, _ in panelHeight = 0 }
-        .onChange(of: isAnotherPanelOpen, initial: true) { _, isOpen in
-            presentation.isPointerOpenSuppressed = isOpen
-        }
         // Shown counts once the panel is up for an expired cache: when it
         // opens, and when a panel opened while yellow turns red under the
         // pointer, so neither opens by itself again for that expiry.
@@ -182,7 +126,9 @@ struct PromptCachePanelHost: View {
                         isEnabled: settingsStore.settings.terminal.showsSplitPaneHeaders,
                         isReviewPresented: reviewPresentation.isPresented
                     ),
-                    isAnotherPanelOpen: isAnotherPanelOpen,
+                    // Read now, when the panel would open: a surface that
+                    // came up during the wait counts.
+                    isAnotherPanelOpen: presentation.isAnotherSurfaceOpen,
                     bounds: windowBounds
                 ),
                 presentation: presentation
@@ -305,7 +251,6 @@ struct PromptCachePanelView: View {
             }
         }
         .padding(LimpidLayout.promptCachePanelPadding)
-        .frame(width: LimpidLayout.promptCachePanelWidth, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(verbatim: "\(content.title), \(paneLine)"))
     }
@@ -368,59 +313,6 @@ struct PromptCachePanelView: View {
     }
 }
 
-/// The panel's outline: its rounded rectangle with an arrow on the edge that
-/// faces its clock, drawn as one closed path so the surface fills and
-/// strokes it as one piece, with no seam where the arrow meets the edge. The
-/// arrow stands outside the panel's frame, in the gap left for it.
-struct PromptCachePanelShape: Shape {
-    let cornerRadius: CGFloat
-    /// Nil draws the plain rounded rectangle.
-    let arrow: PromptCachePanelPresentation.ArrowPlacement?
-    /// How far the tip stands out, which is also the half-width of its base,
-    /// as for a square turned 45 degrees.
-    let arrowHeight: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let radius = min(cornerRadius, rect.width / 2, rect.height / 2)
-        let topArrowX = arrow?.edge == .top ? arrow.map { rect.minX + $0.x } : nil
-        let bottomArrowX = arrow?.edge == .bottom ? arrow.map { rect.minX + $0.x } : nil
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX + radius, y: rect.minY))
-        if let x = topArrowX {
-            path.addLine(to: CGPoint(x: x - arrowHeight, y: rect.minY))
-            path.addLine(to: CGPoint(x: x, y: rect.minY - arrowHeight))
-            path.addLine(to: CGPoint(x: x + arrowHeight, y: rect.minY))
-        }
-        path.addArc(
-            tangent1End: CGPoint(x: rect.maxX, y: rect.minY),
-            tangent2End: CGPoint(x: rect.maxX, y: rect.maxY),
-            radius: radius
-        )
-        path.addArc(
-            tangent1End: CGPoint(x: rect.maxX, y: rect.maxY),
-            tangent2End: CGPoint(x: rect.minX, y: rect.maxY),
-            radius: radius
-        )
-        if let x = bottomArrowX {
-            path.addLine(to: CGPoint(x: x + arrowHeight, y: rect.maxY))
-            path.addLine(to: CGPoint(x: x, y: rect.maxY + arrowHeight))
-            path.addLine(to: CGPoint(x: x - arrowHeight, y: rect.maxY))
-        }
-        path.addArc(
-            tangent1End: CGPoint(x: rect.minX, y: rect.maxY),
-            tangent2End: CGPoint(x: rect.minX, y: rect.minY),
-            radius: radius
-        )
-        path.addArc(
-            tangent1End: CGPoint(x: rect.minX, y: rect.minY),
-            tangent2End: CGPoint(x: rect.maxX, y: rect.minY),
-            radius: radius
-        )
-        path.closeSubpath()
-        return path
-    }
-}
-
 /// The panel's buttons: a filled, outlined pair for the two commands, and a
 /// borderless one for leaving things as they are, which does nothing and
 /// should not look like it does as much as the other two.
@@ -459,82 +351,5 @@ private struct PromptCacheButtonStyle: ButtonStyle {
             }
             .opacity(isEnabled ? 1 : Self.disabledOpacity)
             .contentShape(shape)
-    }
-}
-
-/// Watches the window's keys and clicks while the panel is open, so Escape,
-/// typing at the prompt, and a click outside close it. An AppKit monitor
-/// because the keyboard stays with the terminal while the panel is up: the
-/// panel never takes focus, so SwiftUI's own key handling would not see the
-/// keys.
-private struct PromptCachePanelEventMonitor: NSViewRepresentable {
-    let presentation: PromptCachePanelPresentation
-
-    func makeNSView(context _: Context) -> MonitorView {
-        let view = MonitorView()
-        view.presentation = presentation
-        return view
-    }
-
-    func updateNSView(_ view: MonitorView, context _: Context) {
-        view.presentation = presentation
-    }
-
-    static func dismantleNSView(_ view: MonitorView, coordinator _: ()) {
-        view.removeMonitor()
-    }
-
-    @MainActor final class MonitorView: NSView {
-        weak var presentation: PromptCachePanelPresentation?
-        private var monitor: Any?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            if window == nil {
-                removeMonitor()
-            } else {
-                installMonitor()
-            }
-        }
-
-        private func installMonitor() {
-            guard monitor == nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(
-                matching: [.keyDown, .leftMouseDown, .rightMouseDown]
-            ) { [weak self] event in
-                guard let self, let presentation, let window, event.window === window else { return event }
-                guard event.type == .keyDown else {
-                    // A click on the panel itself is for its buttons. Asked
-                    // of the panel's frame rather than of its hover state: a
-                    // panel that opened by itself under a pointer that never
-                    // moved has had no hover, and closing it here would eat
-                    // the click before the button sees it. This view is the
-                    // panel's background, so its bounds are the panel's.
-                    if !bounds.contains(convert(event.locationInWindow, from: nil)) {
-                        presentation.pointerPressed()
-                    }
-                    return event
-                }
-                // An input method composing text owns its keys, Escape
-                // included.
-                if let input = window.firstResponder as? any NSTextInputClient, input.hasMarkedText() {
-                    return event
-                }
-                let isEscape = event.namedKey == .escape
-                    && event.modifierFlags.isDisjoint(with: [.command, .control, .option, .shift])
-                // Other keys close the panel only while they go to a
-                // terminal, which is typing at a prompt. Keys moving through
-                // the panel's own buttons, as Full Keyboard Access does,
-                // leave it open.
-                guard isEscape || window.firstResponder is SurfaceView else { return event }
-                return presentation.keyPressed(isEscape: isEscape) ? nil : event
-            }
-        }
-
-        func removeMonitor() {
-            guard let monitor else { return }
-            NSEvent.removeMonitor(monitor)
-            self.monitor = nil
-        }
     }
 }

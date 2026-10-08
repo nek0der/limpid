@@ -14,26 +14,13 @@
 import AppKit
 import SwiftUI
 
-/// Which container the sheet is editing. Carrying the kind (rather than
-/// a bare UUID) lets one sheet drive both the Project and Group entry
-/// points from a single `.sheet(item:)`.
-enum ContainerSettingsTarget: Identifiable, Equatable {
-    case project(UUID)
-    case group(UUID)
-
-    var id: UUID {
-        switch self {
-        case let .project(id), let .group(id): id
-        }
-    }
-}
-
 struct ContainerSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(WindowSession.self) private var session
-    @Environment(\.limpidAccent) private var limpidAccent
 
-    let target: ContainerSettingsTarget
+    /// The container the sheet edits; one sheet serves both kinds from a
+    /// single `.sheet(item:)`.
+    let target: GroupOrProjectID
 
     @State private var nameDraft: String = ""
     @State private var customParentText: String = ""
@@ -42,7 +29,13 @@ struct ContainerSettingsSheet: View {
     /// per-step `timeout` / `cwd` knobs can hand-edit `state.json`,
     /// which round-trips the detailed `BootstrapItem` form.
     @State private var bootstrapDraft: String = ""
-    @State private var paletteOpen: Bool = false
+    /// The Color row's picker. The sheet is a window of its own, where the
+    /// main window's floating panels cannot draw, so it holds and draws its
+    /// own: the same panel, hanging from the row's color dot.
+    @State private var colorPanel = ContainerColorPresentation()
+    /// The color dot's frame in global coordinates, which here are the
+    /// sheet window's.
+    @State private var colorDotFrame: CGRect = .zero
 
     /// Tag used by the placement Picker. We expand `WorktreePlacement`
     /// to a tag because `.custom(URL)` carries associated data and
@@ -132,6 +125,12 @@ struct ContainerSettingsSheet: View {
             }
         }
         .frame(width: 520, height: 520)
+        .overlay {
+            // The dot toggles the panel itself, so a press on it is left to
+            // the dot rather than closing the panel as a click outside.
+            ContainerColorPanelHost(isAnchorPressLeftToAnchor: true)
+                .environment(colorPanel)
+        }
         .onAppear(perform: loadDrafts)
     }
 
@@ -153,19 +152,21 @@ struct ContainerSettingsSheet: View {
                 Text("Color")
                 Spacer()
                 Button {
-                    paletteOpen.toggle()
+                    if colorPanel.request == nil {
+                        colorPanel.open(container: target, anchor: colorDotFrame)
+                    } else {
+                        colorPanel.close()
+                    }
                 } label: {
                     Circle()
                         .fill(LimpidColor.paletteColor(paletteIndex))
                         .frame(width: 16, height: 16)
                 }
                 .buttonStyle(.plain)
-                .popover(isPresented: $paletteOpen, arrowEdge: .bottom) {
-                    ContainerColorPicker(current: paletteIndex) { idx in
-                        applyPaletteIndex(idx)
-                        paletteOpen = false
-                    }
-                    .limpidAccentPropagated(limpidAccent)
+                .accessibilityLabel(Text("Change Color"))
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                    colorDotFrame = frame
+                    colorPanel.updateAnchor(container: target, anchor: frame)
                 }
             }
             if let project {
@@ -483,14 +484,6 @@ struct ContainerSettingsSheet: View {
             session.renameProject(projectID, to: trimmed)
         } else if let groupID {
             session.renameGroup(groupID, to: trimmed)
-        }
-    }
-
-    private func applyPaletteIndex(_ idx: Int) {
-        if let projectID {
-            session.setProjectPaletteIndex(projectID, to: idx)
-        } else if let groupID {
-            session.setGroupPaletteIndex(groupID, to: idx)
         }
     }
 

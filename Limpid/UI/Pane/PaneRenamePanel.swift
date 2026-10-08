@@ -1,7 +1,7 @@
 // PaneRenamePanel.swift
 // Limpid — the floating rename field for a pane whose header is too narrow
-// to edit in place. Drawn at the scene root by `ContentView`, so it can be
-// wider than the pane and overlap its neighbors; see
+// to edit in place. Drawn at the scene root by `FloatingPanelLayer`, so it
+// can be wider than the pane and overlap its neighbors; see
 // `PaneRenamePresentation` for the request it draws.
 
 import AppKit
@@ -26,7 +26,7 @@ struct PaneRenamePanelHost: View {
                 let overlayOrigin = overlayGeo.frame(in: .global).origin
                 let anchor = request.anchor.offsetBy(dx: -overlayOrigin.x, dy: -overlayOrigin.y)
                 let width = LimpidLayout.paneRenamePanelWidth
-                let origin = PaneRenamePresentation.panelOrigin(
+                let origin = FloatingPanelPlacement.origin(
                     anchor: anchor,
                     panelSize: CGSize(width: width, height: panelHeight),
                     container: overlayGeo.size,
@@ -99,7 +99,7 @@ private struct PaneRenamePanel: View {
                     .stroke(accent, lineWidth: 1)
             )
         }
-        .padding(LimpidLayout.paneRenamePanelPadding)
+        .padding(LimpidLayout.floatingPanelPadding)
         .floatingPanelSurface(cornerRadius: LimpidLayout.floatingPanelCornerRadius)
         .pointerStyle(.default)
     }

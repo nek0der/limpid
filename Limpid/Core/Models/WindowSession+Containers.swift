@@ -107,6 +107,23 @@ extension WindowSession {
         projects[i].paletteIndex = index
     }
 
+    /// Puts `container` on palette slot `paletteIndex`, whichever kind it is.
+    func setPaletteIndex(_ paletteIndex: Int, for container: GroupOrProjectID) {
+        switch container {
+        case let .group(id): setGroupPaletteIndex(id, to: paletteIndex)
+        case let .project(id): setProjectPaletteIndex(id, to: paletteIndex)
+        }
+    }
+
+    /// The palette slot `container` sits on now, or nil when it has none or
+    /// no longer exists.
+    func paletteIndex(of container: GroupOrProjectID) -> Int? {
+        switch container {
+        case let .group(id): groups.first { $0.id == id }?.paletteIndex
+        case let .project(id): projects.first { $0.id == id }?.paletteIndex
+        }
+    }
+
     // MARK: - Group working-directory helpers
 
     /// Update a group's default working-directory strategy. When the

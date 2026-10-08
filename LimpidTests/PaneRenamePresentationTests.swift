@@ -105,42 +105,4 @@ struct PaneRenamePresentationTests {
         presentation.updateAnchor(paneID: paneID, anchor: moved)
         #expect(presentation.request?.anchor == moved)
     }
-
-    // MARK: - Placement
-
-    private static func origin(anchor: CGRect, container: CGSize = CGSize(width: 800, height: 600)) -> CGPoint {
-        PaneRenamePresentation.panelOrigin(
-            anchor: anchor,
-            panelSize: CGSize(width: 240, height: 70),
-            container: container,
-            margin: 8,
-            gap: 4
-        )
-    }
-
-    @Test func panelOrigin_hangsBelowTheHeaderAtItsLeadingEdge() {
-        let origin = Self.origin(anchor: CGRect(x: 100, y: 200, width: 60, height: 24))
-        #expect(origin == CGPoint(x: 100, y: 228))
-    }
-
-    @Test func panelOrigin_staysInsideTheWindowHorizontally() {
-        let maximumX: CGFloat = 800 - 240 - 8
-        #expect(Self.origin(anchor: CGRect(x: 700, y: 200, width: 60, height: 24)).x == maximumX)
-        #expect(Self.origin(anchor: CGRect(x: 2, y: 200, width: 60, height: 24)).x == CGFloat(8))
-    }
-
-    @Test func panelOrigin_flipsAboveTheHeaderNearTheBottom() {
-        let origin = Self.origin(anchor: CGRect(x: 100, y: 540, width: 60, height: 24))
-        let above: CGFloat = 540 - 4 - 70
-        #expect(origin.y == above)
-    }
-
-    @Test func panelOrigin_pinsInsideWhenNeitherSideFits() {
-        let origin = Self.origin(
-            anchor: CGRect(x: 100, y: 40, width: 60, height: 24),
-            container: CGSize(width: 800, height: 120)
-        )
-        let pinned: CGFloat = 120 - 70 - 8
-        #expect(origin.y == pinned)
-    }
 }

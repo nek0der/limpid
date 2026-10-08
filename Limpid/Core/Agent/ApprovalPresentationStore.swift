@@ -43,6 +43,12 @@ final class ApprovalPresentationStore {
     /// The one request whose detail card is visible in this scene.
     /// This is presentation state only; the broker remains the authority.
     private(set) var presentedID: String?
+    /// Whether the visible card was brought up on request (a row click or
+    /// a command) rather than by the pointer resting on its row. Either way
+    /// it then follows the same hover and focus rules; this only tells the
+    /// other floating surfaces whether the user turned to the card, which
+    /// closes them, or the pointer passed over a row, which does not.
+    private(set) var isPresentedOnRequest = false
     /// A row click requests one focus hand-off to the safe Deny action. This
     /// must not double as a pinned-presentation flag: once the hand-off
     /// finishes, visibility follows row/card hover and focus like the PR card.
@@ -102,6 +108,7 @@ final class ApprovalPresentationStore {
         pending = []
         resolvingIDs = []
         presentedID = nil
+        isPresentedOnRequest = false
         cardFocusRequestID = nil
         firstSeenAtByID = [:]
         observedEpoch = nil
@@ -185,6 +192,8 @@ final class ApprovalPresentationStore {
         guard pending.contains(approval) else { return }
         previewDismissTask?.cancel()
         if presentedID == approval.id {
+            // A preview the user then clicked is one they turned to.
+            isPresentedOnRequest = true
             if shouldFocusCard {
                 cardFocusRequestID = approval.id
             }
@@ -193,6 +202,7 @@ final class ApprovalPresentationStore {
         cardIsHovering = false
         cardIsFocused = false
         presentedID = approval.id
+        isPresentedOnRequest = true
         cardFocusRequestID = shouldFocusCard ? approval.id : nil
     }
 
@@ -204,6 +214,7 @@ final class ApprovalPresentationStore {
         cardIsHovering = false
         cardIsFocused = false
         presentedID = approval.id
+        isPresentedOnRequest = false
         cardFocusRequestID = nil
     }
 
@@ -211,6 +222,7 @@ final class ApprovalPresentationStore {
         previewDismissTask?.cancel()
         previewDismissTask = nil
         presentedID = nil
+        isPresentedOnRequest = false
         cardFocusRequestID = nil
         cardIsHovering = false
         cardIsFocused = false
