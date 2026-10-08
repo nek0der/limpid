@@ -27,7 +27,7 @@ final class PaneRenamePresentation {
 
     /// One floating rename. `id` is minted per open so a field that has
     /// been replaced cannot finish the request that replaced it.
-    struct Request: Equatable {
+    struct Request: Equatable, FloatingPanelRequest {
         let id: UUID
         let paneID: UUID
         /// The name the header showed when the edit began, which the field

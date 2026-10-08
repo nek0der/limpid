@@ -101,9 +101,10 @@ struct ContainerColorPanelHost: View {
     @Environment(WindowSession.self) private var session
 
     var body: some View {
-        FloatingArrowPanelHost(
+        FloatingPanelHost(
             request: presentation.request,
             width: LimpidLayout.containerColorPanelWidth,
+            style: .arrowed,
             onPointerPressedOutside: { presentation.pointerPressedOutside() },
             onKey: { presentation.keyPressed(isEscape: $0.isEscape) },
             isAnchorPressLeftToAnchor: isAnchorPressLeftToAnchor,

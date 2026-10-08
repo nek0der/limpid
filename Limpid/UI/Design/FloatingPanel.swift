@@ -1,33 +1,60 @@
 // FloatingPanel.swift
-// Limpid — the pieces Limpid's arrowed floating panels share: the outline
-// with its arrow, the frame that places the panel below or above what opened
-// it, and the monitor that closes it on Escape or a click elsewhere.
+// Limpid — the pieces Limpid's floating panels share: the outline, with an
+// arrow for the panels that point back at what opened them, the frame that
+// places the panel below or above it, and the monitor that closes it on
+// Escape or a click elsewhere.
 //
-// The prompt cache panel and the container color picker are drawn this way,
-// at scene root on the command palette's surface, rather than through
-// `.popover`. A popover's arrow, frame and corner radius cannot be changed,
-// so it could never match the app's other floating panels; and with one
-// open, a click elsewhere only dismissed it (see `PRHoverCard`). Where the
-// panel goes is `FloatingPanelPlacement`'s job; these views lay that out.
+// The pane rename field, the prompt cache panel and the container color
+// picker are drawn this way, at scene root on the command palette's
+// surface, rather than through `.popover`. A popover's arrow, frame and
+// corner radius cannot be changed, so it could never match the app's
+// other floating panels; and with one open, a click elsewhere only
+// dismissed it (see `PRHoverCard`). Where the panel goes is
+// `FloatingPanelPlacement`'s job; these views lay that out.
 
 import AppKit
 import SwiftUI
 
-/// Hosts an arrowed floating panel over a whole window: the request's
-/// panel while one is open, nothing otherwise. Owns what every such host
+/// How Limpid's floating panels hang from what opened them.
+extension FloatingPanelPlacement.Style {
+    /// Centered on a small mark and pointing back at it with an arrow, with
+    /// room in the gap for the arrow: the prompt cache panel, the color
+    /// picker.
+    static var arrowed: Self {
+        Self(
+            alignment: .centered,
+            gap: LimpidLayout.floatingPanelArrowAnchorGap,
+            arrowInset: LimpidLayout.floatingPanelArrowInset
+        )
+    }
+
+    /// Lined up with the leading edge of the header it stands in for, close
+    /// under it and with no arrow: the pane rename field, which reads as the
+    /// header's own name field moved out to where it has room.
+    static var underHeader: Self {
+        Self(alignment: .leading, gap: LimpidLayout.paneRenamePanelAnchorGap, arrowInset: nil)
+    }
+}
+
+/// Hosts a floating panel over a whole window: the request's panel while
+/// one is open, nothing otherwise. Owns what every such host
 /// needs and is easy to get subtly wrong: reading the window's frame, an
 /// identity per opening (which restarts the measurement), the fade and its
 /// Reduce Motion substitute, and reaching past the safe area. Empty regions
 /// pass clicks through to the window, as `PRHoverCardHost`'s do.
-struct FloatingArrowPanelHost<Request: FloatingPanelRequest, Content: View>: View {
+struct FloatingPanelHost<Request: FloatingPanelRequest, Content: View>: View {
     /// The open panel, or nil.
     let request: Request?
     let width: CGFloat
+    /// How the panel hangs from its anchor; every host says.
+    let style: FloatingPanelPlacement.Style
     /// A mouse button went down outside the panel. The click still reaches
-    /// what it landed on.
-    let onPointerPressedOutside: () -> Void
+    /// what it landed on. Nil, as is `onKey`, for a panel whose content
+    /// handles its own keys and clicks (the rename field): a second watcher
+    /// would compete with it.
+    var onPointerPressedOutside: (() -> Void)?
     /// A key went down. True spends it, so it reaches nothing else.
-    let onKey: (FloatingPanelKey) -> Bool
+    var onKey: ((FloatingPanelKey) -> Bool)?
     /// Whether a press on the anchor is left to the anchor's own control,
     /// which then toggles the panel, rather than closing it as a click
     /// outside. For an anchor that is a button opening this panel; without
@@ -43,10 +70,11 @@ struct FloatingArrowPanelHost<Request: FloatingPanelRequest, Content: View>: Vie
     var body: some View {
         GeometryReader { overlay in
             if let request {
-                FloatingArrowPanel(
+                FloatingPanel(
                     anchor: request.anchor,
                     container: overlay.frame(in: .global),
                     width: width,
+                    style: style,
                     onPointerPressedOutside: onPointerPressedOutside,
                     onKey: onKey,
                     isAnchorPressLeftToAnchor: isAnchorPressLeftToAnchor,
@@ -64,22 +92,24 @@ struct FloatingArrowPanelHost<Request: FloatingPanelRequest, Content: View>: Vie
     }
 }
 
-/// An arrowed floating panel: `content` at `width` on the floating panel
-/// surface, centered on `anchor` and hung below it, or above it near the
-/// window's bottom, clamped into the window, with its arrow pointing at the
-/// anchor from wherever it ended up. Watches the window's keys and clicks
-/// while up. Held back until measured, so a panel near the bottom never
+/// A floating panel: `content` at `width` on the floating panel surface,
+/// hung below `anchor` as `style` says, or above it near the window's
+/// bottom, clamped into the window, with an arrow pointing back at the
+/// anchor from wherever it ended up when the style has one. Watches the
+/// window's keys and clicks while up, when given something to do with
+/// them. Held back until measured, so a panel near the bottom never
 /// shows below its anchor for a frame and then jumps above it.
-/// `FloatingArrowPanelHost` gives each opening its own identity, which
+/// `FloatingPanelHost` gives each opening its own identity, which
 /// starts the measurement afresh.
-struct FloatingArrowPanel<Content: View>: View {
+struct FloatingPanel<Content: View>: View {
     /// What the panel hangs from, in global coordinates.
     let anchor: CGRect
     /// The host overlay's frame in global coordinates: the window's content.
     let container: CGRect
     let width: CGFloat
-    let onPointerPressedOutside: () -> Void
-    let onKey: (FloatingPanelKey) -> Bool
+    let style: FloatingPanelPlacement.Style
+    let onPointerPressedOutside: (() -> Void)?
+    let onKey: ((FloatingPanelKey) -> Bool)?
     let isAnchorPressLeftToAnchor: Bool
     let onHover: ((Bool) -> Void)?
     @ViewBuilder let content: Content
@@ -90,35 +120,32 @@ struct FloatingArrowPanel<Content: View>: View {
     var body: some View {
         let local = anchor.offsetBy(dx: -container.minX, dy: -container.minY)
         let size = CGSize(width: width, height: height)
-        let origin = FloatingPanelPlacement.origin(
+        // An arrow points at the anchor from wherever the clamping put the
+        // panel, so the panel says where it came from even when it has slid
+        // over the rows or panes beside it.
+        let (origin, arrow) = FloatingPanelPlacement.layout(
             anchor: local,
             panelSize: size,
             container: container.size,
             margin: LimpidLayout.floatingPanelWindowMargin,
-            gap: LimpidLayout.floatingPanelArrowAnchorGap,
-            alignment: .centered
-        )
-        // Points at the anchor from wherever the clamping above put the
-        // panel, so the panel says where it came from even when it has slid
-        // over the rows or panes beside it.
-        let arrow = FloatingPanelPlacement.arrow(
-            anchor: local,
-            panelOrigin: origin,
-            panelSize: size,
-            minimumInset: LimpidLayout.floatingPanelArrowInset
+            style: style
         )
         content
             .frame(width: width, alignment: .leading)
             .onHover { onHover?($0) }
             // Behind the content and inside the surface's frame, so the
             // monitor's bounds are the panel's own.
-            .background(FloatingPanelEventMonitor(
-                onPointerPressedOutside: onPointerPressedOutside,
-                onKey: onKey,
-                anchorInPanel: isAnchorPressLeftToAnchor
-                    ? local.offsetBy(dx: -origin.x, dy: -origin.y)
-                    : nil
-            ))
+            .background {
+                if onPointerPressedOutside != nil || onKey != nil {
+                    FloatingPanelEventMonitor(
+                        onPointerPressedOutside: { onPointerPressedOutside?() },
+                        onKey: { onKey?($0) ?? false },
+                        anchorInPanel: isAnchorPressLeftToAnchor
+                            ? local.offsetBy(dx: -origin.x, dy: -origin.y)
+                            : nil
+                    )
+                }
+            }
             .floatingPanelSurface(in: FloatingPanelShape(
                 cornerRadius: LimpidLayout.floatingPanelCornerRadius,
                 arrow: arrow,
@@ -136,6 +163,9 @@ struct FloatingArrowPanel<Content: View>: View {
 /// edge that faces its anchor, drawn as one closed path so the surface fills
 /// and strokes it as one piece, with no seam where the arrow meets the edge.
 /// The arrow stands outside the panel's frame, in the gap left for it.
+/// Without an arrow it is exactly the continuous rounded rectangle that
+/// `floatingPanelSurface(cornerRadius:)` draws, so an arrow-less panel looks
+/// the same either way.
 struct FloatingPanelShape: Shape {
     let cornerRadius: CGFloat
     /// Nil draws the plain rounded rectangle.
@@ -145,9 +175,12 @@ struct FloatingPanelShape: Shape {
     let arrowHeight: CGFloat
 
     func path(in rect: CGRect) -> Path {
+        guard let arrow else {
+            return RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).path(in: rect)
+        }
         let radius = min(cornerRadius, rect.width / 2, rect.height / 2)
-        let topArrowX = arrow?.edge == .top ? arrow.map { rect.minX + $0.x } : nil
-        let bottomArrowX = arrow?.edge == .bottom ? arrow.map { rect.minX + $0.x } : nil
+        let topArrowX = arrow.edge == .top ? rect.minX + arrow.x : nil
+        let bottomArrowX = arrow.edge == .bottom ? rect.minX + arrow.x : nil
         var path = Path()
         path.move(to: CGPoint(x: rect.minX + radius, y: rect.minY))
         if let x = topArrowX {
