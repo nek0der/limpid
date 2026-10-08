@@ -49,20 +49,20 @@ extension SurfaceView {
                 withTitle: String(localized: "Copy"),
                 action: #selector(copy(_:)),
                 keyEquivalent: ""
-            )
+            ).showShortcut(menuShortcut(.copy))
         }
         menu.addItem(
             withTitle: String(localized: "Paste"),
             action: #selector(paste(_:)),
             keyEquivalent: ""
-        )
+        ).showShortcut(menuShortcut(.paste))
 
         menu.addItem(.separator())
         menu.addItem(
             withTitle: String(localized: "Select All"),
             action: #selector(selectAll(_:)),
             keyEquivalent: ""
-        )
+        ).showShortcut(menuShortcut(.selectAll))
         menu.addItem(
             withTitle: String(localized: "Clear"),
             action: #selector(clearScreen(_:)),
@@ -92,7 +92,7 @@ extension SurfaceView {
             withTitle: String(localized: "Find…"),
             action: #selector(findInSurface(_:)),
             keyEquivalent: ""
-        )
+        ).showShortcut(menuShortcut(.find))
         if canRenamePane?() == true {
             let rename = menu.addItem(
                 withTitle: String(localized: "Rename Pane…"),
@@ -116,6 +116,7 @@ extension SurfaceView {
             action: #selector(splitRight(_:)),
             keyEquivalent: ""
         )
+        splitRight.showShortcut(menuShortcut(.splitRight))
         splitRight.image = NSImage(
             systemSymbolName: "rectangle.righthalf.inset.filled",
             accessibilityDescription: nil
@@ -125,6 +126,7 @@ extension SurfaceView {
             action: #selector(splitDown(_:)),
             keyEquivalent: ""
         )
+        splitDown.showShortcut(menuShortcut(.splitDown))
         splitDown.image = NSImage(
             systemSymbolName: "rectangle.bottomhalf.inset.filled",
             accessibilityDescription: nil
@@ -142,6 +144,7 @@ extension SurfaceView {
                 action: #selector(zoomPaneFromMenu(_:)),
                 keyEquivalent: ""
             )
+            zoom.showShortcut(menuShortcut(.togglePaneZoom))
             zoom.image = NSImage(
                 systemSymbolName: zoomAction == .zoom
                     ? "arrow.up.left.and.arrow.down.right"
@@ -167,10 +170,19 @@ extension SurfaceView {
             action: #selector(closePaneFromMenu(_:)),
             keyEquivalent: ""
         )
+        close.showShortcut(menuShortcut(.closePane))
         close.image = NSImage(
             systemSymbolName: "xmark.square",
             accessibilityDescription: nil
         )
+    }
+
+    /// The key an item shows; see `MenuCommand`. The menu is built per
+    /// right-click and dropped when it closes, so these keys answer only
+    /// while it is open, and a keystroke made without it reaches the menu
+    /// bar once.
+    private func menuShortcut(_ command: MenuCommand) -> StoredShortcut? {
+        command.shortcut { keyboardSettings?().shortcut(for: $0) }
     }
 
     // MARK: - Action handlers

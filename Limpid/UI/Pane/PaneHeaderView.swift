@@ -22,6 +22,8 @@ struct PaneHeaderView: View {
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.displayScale) private var displayScale
     @Environment(PaneRenamePresentation.self) private var renamePresentation
+    @Environment(SettingsStore.self) private var settingsStore
+    @Environment(\.locale) private var locale
 
     @State private var isEditing = false
     /// The name the header showed when the in-place edit began. The commit
@@ -151,10 +153,12 @@ struct PaneHeaderView: View {
         )
         // Dragging the header picks the pane up, the same drag ⌥⌘ starts
         // from the terminal, where a plain drag has to stay a text
-        // selection. The few points before it starts leave clicks, the
-        // name's double-click, and the menu as they were; while renaming,
-        // a drag selects text in the field instead, and while zoomed there
-        // is no split beside the pane to drop it into.
+        // selection. The few points before it starts leave clicks and the
+        // name's double-click as they were. The "⋯" menu opens on mouse-down
+        // and its tracking takes the rest of the press, so neither this drag
+        // nor the tap above starts from it. While renaming, a drag selects
+        // text in the field instead, and while zoomed there is no split
+        // beside the pane to drop it into.
         .simultaneousGesture(
             DragGesture(minimumDistance: LimpidLayout.paneDragThreshold)
                 .updating($isPointerDragging) { _, state, _ in state = true }
@@ -172,7 +176,7 @@ struct PaneHeaderView: View {
         .accessibilityAddTraits(.isHeader)
         .accessibilityAction { focusPane() }
         .accessibilityAction(named: Text("Rename Pane…")) { beginRename(label: label) }
-        .accessibilityAction(named: zoomActionTitle) { performZoomAction() }
+        .accessibilityAction(named: Text(verbatim: zoomActionTitle.resolved(in: locale))) { performZoomAction() }
         // The ellipsis menu sits inside this single element, so its actions
         // are offered on the header itself as well.
         .accessibilityAction(named: Text("Move Pane to New Tab")) {
@@ -332,10 +336,10 @@ struct PaneHeaderView: View {
         PaneHeaderRules.zoomAction(isZoomed: isZoomed)
     }
 
-    private var zoomActionTitle: Text {
+    private var zoomActionTitle: LocalizedStringResource {
         switch zoomAction {
-        case .zoom: Text("Zoom Pane")
-        case .unzoom: Text("Unzoom Pane")
+        case .zoom: "Zoom Pane"
+        case .unzoom: "Unzoom Pane"
         }
     }
 
@@ -383,34 +387,8 @@ struct PaneHeaderView: View {
     /// header focuses it. Always drawn, so the state mark beside it never
     /// moves, and quiet until the pointer is on the header.
     private func actionsMenu(label: PaneHeaderLabel) -> some View {
-        Menu {
-            Button {
-                beginRename(label: label)
-            } label: {
-                Label("Rename Pane…", systemImage: "pencil")
-            }
-            Divider()
-            Button {
-                performZoomAction()
-            } label: {
-                Label {
-                    zoomActionTitle
-                } icon: {
-                    Image(systemName: zoomActionSymbol)
-                }
-            }
-            Divider()
-            Button {
-                TabActions.movePaneToNewTab(session, paneID: paneID)
-            } label: {
-                Label("Move Pane to New Tab", systemImage: "rectangle.split.2x1")
-            }
-            Divider()
-            Button(role: .destructive) {
-                onSurface { $0.onRequestCloseActivePane?() }
-            } label: {
-                Label("Close Pane", systemImage: "xmark.square")
-            }
+        PopUpMenuButton(title: "Pane actions") {
+            actionsMenuEntries(label: label)
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: LimpidLayout.paneHeaderMenuFontSize, weight: .semibold))
@@ -418,12 +396,40 @@ struct PaneHeaderView: View {
                 .frame(width: LimpidLayout.paneHeaderMenuSlot, height: LimpidLayout.paneHeaderMenuSlot)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
         .fixedSize()
-        .help(Text("Pane actions"))
-        .accessibilityLabel(Text("Pane actions"))
+    }
+
+    /// Built when the menu opens, so the zoom item and the shortcuts are the
+    /// ones current then. Zoom and Close show the keys that do the same to
+    /// the focused pane, which these items make this one first.
+    private func actionsMenuEntries(label: PaneHeaderLabel) -> [PopUpMenuEntry] {
+        let keyboard = settingsStore.settings.keyboard
+        return [
+            .item(PopUpMenuItem(title: "Rename Pane…", systemImage: "pencil") {
+                beginRename(label: label)
+            }),
+            .separator,
+            .item(PopUpMenuItem(
+                title: zoomActionTitle,
+                systemImage: zoomActionSymbol,
+                shortcut: MenuCommand.togglePaneZoom.shortcut(in: keyboard)
+            ) {
+                performZoomAction()
+            }),
+            .separator,
+            .item(PopUpMenuItem(title: "Move Pane to New Tab", systemImage: "rectangle.split.2x1") {
+                TabActions.movePaneToNewTab(session, paneID: paneID)
+            }),
+            .separator,
+            .item(PopUpMenuItem(
+                title: "Close Pane",
+                systemImage: "xmark.square",
+                shortcut: MenuCommand.closePane.shortcut(in: keyboard),
+                isDestructive: true
+            ) {
+                onSurface { $0.onRequestCloseActivePane?() }
+            })
+        ]
     }
 
     /// Runs one of the terminal's own pane actions. Those act on the focused

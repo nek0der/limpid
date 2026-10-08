@@ -445,6 +445,9 @@ struct ContainerRow: View {
                 Button(action: onCreateWorktree) {
                     Label("New Worktree…", systemImage: "arrow.triangle.branch")
                 }
+                // Shown on every row that offers the item, active or not,
+                // as on the tab rows; see `TabRow`'s context menu.
+                .contextMenuShortcut(MenuCommand.newWorktree.shortcut(in: settingsStore.settings.keyboard))
                 .tint(Color.primary)
             }
             if let onShowHiddenWorktrees {

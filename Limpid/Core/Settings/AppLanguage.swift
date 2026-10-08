@@ -48,3 +48,16 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         }
     }
 }
+
+extension LocalizedStringResource {
+    /// This string in `locale`'s language. SwiftUI's `\.locale` carries the
+    /// language chosen in Settings from the moment it is picked, while
+    /// `String(localized:)` alone answers in the language the process
+    /// launched with; text drawn outside SwiftUI, such as an AppKit menu,
+    /// resolves through here to switch with the rest of the window.
+    func resolved(in locale: Locale) -> String {
+        var resource = self
+        resource.locale = locale
+        return String(localized: resource)
+    }
+}

@@ -396,6 +396,9 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         view.onRequestRenamePane = { [weak renamePresentation] in
             renamePresentation?.requestRename(paneID: paneID)
         }
+        view.keyboardSettings = { [settings] in
+            settings.settings.keyboard
+        }
         wireZoomItem(on: view)
     }
 

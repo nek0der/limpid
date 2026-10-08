@@ -26,10 +26,25 @@ extension View {
         _ action: LimpidShortcutAction,
         in store: SettingsStore
     ) -> some View {
-        let resolved = store.settings.keyboard.shortcut(for: action)
-        return Group {
-            if let resolved, let key = resolved.swiftUIKeyEquivalent {
-                self.keyboardShortcut(key, modifiers: resolved.modifiers.swiftUIEventModifiers)
+        applyingShortcut(store.settings.keyboard.shortcut(for: action))
+    }
+
+    /// Show `shortcut` beside an item of a `.contextMenu`, or no key for
+    /// `nil`. See `MenuCommand` for which items show one.
+    ///
+    /// Only inside `.contextMenu`. SwiftUI builds that menu when it opens
+    /// and drops it when it closes, so the item answers its key only while
+    /// the menu is open and the keystroke otherwise reaches the menu bar.
+    /// Inside a `Menu`, SwiftUI keeps the shortcut live in the window after
+    /// the first open, ahead of the menu bar; `PopUpMenuButton` is for those.
+    func contextMenuShortcut(_ shortcut: StoredShortcut?) -> some View {
+        applyingShortcut(shortcut)
+    }
+
+    private func applyingShortcut(_ shortcut: StoredShortcut?) -> some View {
+        Group {
+            if let shortcut, let key = shortcut.swiftUIKeyEquivalent {
+                self.keyboardShortcut(key, modifiers: shortcut.modifiers.swiftUIEventModifiers)
             } else {
                 self
             }
