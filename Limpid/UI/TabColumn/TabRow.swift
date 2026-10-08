@@ -14,7 +14,6 @@ struct TabRow: View {
     let onActivate: () -> Void
     let onClose: () -> Void
     let onRename: (String) -> Void
-    let onUnzoom: () -> Void
     /// Fires when the row enters / leaves inline-rename. The horizontal
     /// tab strip uses this to widen a narrow tab while it's being
     /// edited; the vertical list leaves it unset (no width change).
@@ -38,10 +37,6 @@ struct TabRow: View {
 
     private var isRinging: Bool {
         session.isRinging(in: tab)
-    }
-
-    private var isZoomed: Bool {
-        tab.zoomedLeafID != nil
     }
 
     /// Aggregate agent state across every split leaf in the tab and
@@ -270,25 +265,6 @@ struct TabRow: View {
                         reservesSlot: true
                     )
                 }
-                if isZoomed {
-                    // Always-visible state indicator with a tap target so the
-                    // user can leave zoom mode without remembering ⌘⇧Return.
-                    // Sits between the bell (passive status) and the close
-                    // button (action) since it's an actionable affordance.
-                    Button(action: onUnzoom) {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(
-                                width: LimpidLayout.containerColumnTrailingSlot,
-                                height: LimpidLayout.containerColumnTrailingSlot
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Unzoom Pane")
-                    .accessibilityLabel(Text("Unzoom Pane"))
-                }
                 // Present only while the row is active or hovered, holding
                 // no slot the rest of the time — the trade `ContainerRow`
                 // documents for its own hover delete. Fading a reserved slot
@@ -433,14 +409,6 @@ struct TabsListView: View {
                             },
                             onRename: { newName in
                                 renameTab(tab.id, to: newName)
-                            },
-                            onUnzoom: {
-                                // Activate the tab so the user can see the
-                                // restored split layout, then clear zoom.
-                                session.setActiveTab(tab.id)
-                                session.update(tab.id) { t in
-                                    t.zoomedLeafID = nil
-                                }
                             }
                         )
                         .tabReorderTarget(beforeTabID: tab.id, container: container, session: session)

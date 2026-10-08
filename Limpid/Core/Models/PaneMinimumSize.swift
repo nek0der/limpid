@@ -50,7 +50,9 @@ struct PaneMinimumSize: Equatable {
     /// header never eats into the rows the user asked for. The width needs
     /// no adjustment: `TerminalSettings.minPaneSizeRange` starts at the
     /// header's narrowest form, so any minimum the user can pick already
-    /// leaves room for its glyph and menu.
+    /// leaves room for its glyph and menu. `showsHeaders` is the setting
+    /// alone: a zoomed pane shows its header with the setting off, but it
+    /// is alone on screen and never held to this floor.
     static func resolved(
         minPaneSize: Double,
         showsHeaders: Bool,

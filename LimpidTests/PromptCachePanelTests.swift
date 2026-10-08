@@ -533,8 +533,8 @@ struct PromptCacheReasonTests {
 
 struct PromptCacheHeaderFitTests {
     @Test func inlineRename_keepsAUsableFieldBesideTheClock() {
-        let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false)
-        let withClock = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true)
+        let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, isZoomed: false)
+        let withClock = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true, isZoomed: false)
         #expect(plain == PaneHeaderMetrics.inlineRenameMinimumWidth)
         #expect(withClock - plain == PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.markSlot)
         // Everything but the field, with the clock, still leaves the field
@@ -547,7 +547,7 @@ struct PromptCacheHeaderFitTests {
     }
 
     @Test func inlineRename_endsWhenTheHeaderNarrowsBelowAUsableField() {
-        let threshold = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true)
+        let threshold = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true, isZoomed: false)
         #expect(PaneHeaderRules.shouldEndInlineRename(isEditing: true, headerWidth: threshold - 1, threshold: threshold))
         #expect(!PaneHeaderRules.shouldEndInlineRename(isEditing: true, headerWidth: threshold, threshold: threshold))
         #expect(!PaneHeaderRules.shouldEndInlineRename(isEditing: false, headerWidth: 40, threshold: threshold))

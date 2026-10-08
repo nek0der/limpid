@@ -46,6 +46,14 @@ enum PaneHeaderMetrics {
         + itemSpacing // spacer to menu
         + menuSlot
 
+    /// Width of the narrowest form of a zoomed pane's header: it keeps the
+    /// unzoom button, in a slot the size of the menu's, beside the menu.
+    /// Only a zoomed pane has the button, and a zoomed pane is as wide as
+    /// the window's terminal area, so the split floor stays `minimumWidth`.
+    static let zoomedMinimumWidth: CGFloat = minimumWidth
+        + itemSpacing // unzoom button's gap
+        + menuSlot // the unzoom button
+
     /// Width of the form that keeps the prompt cache clock after the name and
     /// the state mark have gone: the narrowest form and the clock with its
     /// gap. The split floor stays `minimumWidth`; a pane narrower than this
@@ -64,12 +72,14 @@ enum PaneHeaderMetrics {
         + itemSpacing // state mark's gap
         + markSlot
 
-    /// The same, counting the prompt cache clock while the header draws
-    /// one: it shows with the state mark, in a slot of the same size, and
-    /// would otherwise take its width out of the field. The split floor
-    /// reads `minimumWidth`, not this, so the clock never changes how
-    /// narrow a pane may get.
-    static func inlineRenameMinimumWidth(showsPromptCacheClock: Bool) -> CGFloat {
-        inlineRenameMinimumWidth + (showsPromptCacheClock ? itemSpacing + markSlot : 0)
+    /// The same, counting the prompt cache clock while the header draws one
+    /// and the unzoom button while the pane is zoomed: each sits in the row
+    /// beside the field, in a slot of its own, and would otherwise take its
+    /// width out of the field. The split floor reads `minimumWidth`, not
+    /// this, so neither changes how narrow a pane may get.
+    static func inlineRenameMinimumWidth(showsPromptCacheClock: Bool, isZoomed: Bool) -> CGFloat {
+        inlineRenameMinimumWidth
+            + (showsPromptCacheClock ? itemSpacing + markSlot : 0)
+            + (isZoomed ? itemSpacing + menuSlot : 0)
     }
 }
