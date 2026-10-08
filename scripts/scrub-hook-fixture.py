@@ -11,10 +11,13 @@ tested against. The output is re-serialized with sorted keys and indentation
 so a re-recording of the same case produces a readable diff.
 
 Transcript copies (`*.transcript.jsonl`) are line-delimited JSON. The adapter
-only reads the title lines (`ai-title` and `custom-title`), so those are
-scrubbed with the same rules and every other line is reduced to its `type`:
-the fixture still exercises "skip unrelated lines" without carrying the
-conversation. Lines that are not JSON are dropped.
+reads the title lines (`ai-title` and `custom-title`), which are scrubbed with
+the same rules, and the usage of assistant lines, from which it estimates the
+prompt cache window. An assistant line keeps only `isSidechain`, `timestamp`,
+the request and message identifiers (renumbered per file), and the numeric
+usage counters; every other line is reduced to its `type`. The fixture still
+exercises "skip unrelated lines" without carrying the conversation. Lines that
+are not JSON are dropped.
 """
 
 import json
@@ -52,6 +55,15 @@ CORRELATION_KEYS = {
 }
 # Transcript line types the Claude adapter reads for titles.
 TITLE_LINE_TYPES = {"ai-title", "custom-title"}
+# Usage counters the Claude adapter reads to estimate the cache window. Only
+# numbers survive; anything else in `usage` is dropped.
+USAGE_KEYS = {
+    "input_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+    "output_tokens",
+}
+CACHE_CREATION_KEYS = {"ephemeral_1h_input_tokens", "ephemeral_5m_input_tokens"}
 
 
 def scrub_string(value, key, case_name):
@@ -90,8 +102,57 @@ def scrub_json_file(path, case_name):
         handle.write("\n")
 
 
+def numbers(source, keys):
+    if not isinstance(source, dict):
+        return {}
+    return {
+        key: value
+        for key, value in source.items()
+        if key in keys and isinstance(value, int) and not isinstance(value, bool)
+    }
+
+
+def usage_line(record, identifiers):
+    """The fields of an assistant line the cache estimate reads, and no more.
+
+    Request and message identifiers name a request on the provider's side, so
+    each distinct value becomes a per-file ordinal: the adapter only compares
+    them for equality.
+    """
+    message = record.get("message") if isinstance(record.get("message"), dict) else {}
+    usage = message.get("usage")
+    if not isinstance(usage, dict):
+        return {"type": "assistant"}
+    kept_usage = numbers(usage, USAGE_KEYS)
+    creation = numbers(usage.get("cache_creation"), CACHE_CREATION_KEYS)
+    if creation:
+        kept_usage["cache_creation"] = creation
+    line = {"type": "assistant", "message": {"usage": kept_usage}}
+
+    def ordinal(prefix, value):
+        if not isinstance(value, str):
+            return None
+        key = (prefix, value)
+        if key not in identifiers:
+            identifiers[key] = f"{prefix}_{len([k for k in identifiers if k[0] == prefix]) + 1:04d}"
+        return identifiers[key]
+
+    request = ordinal("req", record.get("requestId"))
+    if request is not None:
+        line["requestId"] = request
+    message_id = ordinal("msg", message.get("id"))
+    if message_id is not None:
+        line["message"]["id"] = message_id
+    if isinstance(record.get("isSidechain"), bool):
+        line["isSidechain"] = record["isSidechain"]
+    if isinstance(record.get("timestamp"), str):
+        line["timestamp"] = record["timestamp"]
+    return line
+
+
 def scrub_jsonl_file(path, case_name):
     kept = []
+    identifiers = {}
     with open(path, encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
@@ -103,7 +164,9 @@ def scrub_jsonl_file(path, case_name):
                 continue
             if not isinstance(record, dict):
                 continue
-            if record.get("type") not in TITLE_LINE_TYPES:
+            if record.get("type") == "assistant":
+                record = usage_line(record, identifiers)
+            elif record.get("type") not in TITLE_LINE_TYPES:
                 record = {"type": record.get("type", "unknown")}
             kept.append(json.dumps(scrub(record, None, case_name), ensure_ascii=False, sort_keys=True))
     with open(path, "w", encoding="utf-8") as handle:

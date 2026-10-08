@@ -5,6 +5,7 @@
 //! `CompactionFinished` is the recorded exception because it closes the
 //! existing `Compacting` event rather than introducing a separate concept.
 
+use crate::cache::CacheWindow;
 use serde::{Deserialize, Serialize};
 
 /// Title observations a provider can attach to an event. `None` means "no
@@ -75,6 +76,13 @@ pub enum AgentEvent {
     TurnFinished {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         titles: Option<Titles>,
+        /// The prompt cache as the turn left it. An observation about the
+        /// turn that just ended rather than an event of its own: it has no
+        /// moment of its own to report, and attaching it here keeps it out of
+        /// the vocabulary until a second provider has the same thing to say.
+        /// `None` means unknown, never "no cache".
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<CacheWindow>,
     },
     Failed {
         error: String,
@@ -123,6 +131,12 @@ mod tests {
                     session_title: None,
                     generated_title: Some("t".into()),
                 }),
+                cache: Some(crate::cache::CacheWindow {
+                    observed_at: "2026-09-14T00:00:00Z".into(),
+                    ttl_seconds: 3600,
+                    rewrite_tokens: Some(1_000),
+                    precision: crate::cache::CachePrecision::Estimated,
+                }),
             },
             AgentEvent::Extension {
                 name: "Notification".into(),
@@ -140,5 +154,11 @@ mod tests {
     fn absent_optionals_are_omitted() {
         let json = serde_json::to_string(&AgentEvent::ToolFinished { tool: None }).expect("ok");
         assert_eq!(json, "{\"type\":\"tool_finished\"}");
+        let json = serde_json::to_string(&AgentEvent::TurnFinished {
+            titles: None,
+            cache: None,
+        })
+        .expect("ok");
+        assert_eq!(json, "{\"type\":\"turn_finished\"}");
     }
 }

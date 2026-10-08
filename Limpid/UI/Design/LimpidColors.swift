@@ -134,6 +134,26 @@ enum LimpidColor {
         dark: Color(white: 0.14)
     )
 
+    /// The two command buttons in the expired prompt cache panel. White on
+    /// the light material, where the usual translucent gray turns muddy,
+    /// and a lifted gray with a lighter edge on the dark one.
+    static let promptCacheButtonFill: Color = .init(
+        light: Color.white.opacity(0.9),
+        dark: Color.white.opacity(0.10)
+    )
+    static let promptCacheButtonEdge: Color = .init(
+        light: Color.black.opacity(0.14),
+        dark: Color.white.opacity(0.22)
+    )
+
+    /// The clock on an expired prompt cache. Softer than `error`: it marks
+    /// a cost waiting to be paid, not a failure, and the full system red
+    /// shouted over every other status mark in the row.
+    static let promptCacheExpired: Color = .init(
+        light: Color(red: 0.84, green: 0.33, blue: 0.31),
+        dark: Color(red: 1.00, green: 0.541, blue: 0.502)
+    )
+
     /// Background tint for the tab column (tab list). Slightly lighter
     /// than the toolbar / window root so the column reads as a distinct
     /// surface without using a hairline.

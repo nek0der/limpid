@@ -139,6 +139,7 @@ extension SurfaceView {
         ) {
             return
         }
+        noteKeyInput(event)
         let flags = event.modifierFlags
 
         // Fast path for control-modified terminal input (Ctrl+C,

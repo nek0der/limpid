@@ -242,6 +242,15 @@ struct TabRow: View {
             // status mark and the close sit closer to each other than
             // either does to the title, because they are one thing.
             HStack(spacing: LimpidLayout.containerColumnTrailingSpacing) {
+                // Left of the status mark, and present only while it has
+                // something to say. No slot is reserved otherwise: the
+                // title is leading-aligned and the status mark trailing, so
+                // neither moves when the clock appears, and a reserved slot
+                // would shorten every agent title for the hour a healthy
+                // cache lasts.
+                if let promptCacheMark = attention.promptCacheMark(in: tab) {
+                    PromptCacheMarkView(mark: promptCacheMark, place: .tabRow(tabID: tab.id))
+                }
                 if let summary = aggregateAgentStateSummary, summary.state.hasVisibleBadge {
                     // Agent rows show the lifecycle badge as their single
                     // status mark. The bell is suppressed here so we don't

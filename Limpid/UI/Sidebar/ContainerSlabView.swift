@@ -307,6 +307,7 @@ struct ContainerSlabView: View {
                                     prompt: attentionPreview(entry),
                                     isCurrent: entry.tabID == focusedTab && entry.paneID == focusedPane,
                                     isViewed: entry.isViewed,
+                                    promptCacheMark: attention.promptCacheMark(runtimeID: entry.runtimeID, paneID: entry.paneID),
                                     onDismiss: entry.state == .finished
                                         ? { attention.dismissRuntime(entry.runtimeID) }
                                         : nil

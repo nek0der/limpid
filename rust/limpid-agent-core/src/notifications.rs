@@ -311,11 +311,13 @@ mod tests {
                 provider_session_title: None,
                 provider_generated_title: None,
                 session_started_at: None,
+                cache_window: None,
             },
             panes: vec![pane()],
             attachment: AttachmentResolution::Attached,
             event_token: event_token.to_owned(),
             episode_token: episode_token.to_owned(),
+            pid: None,
         }
     }
 

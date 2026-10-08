@@ -45,29 +45,18 @@ struct PaneHeaderView: View {
         attention.headerRuntime(inPane: paneID)
     }
 
-    private var label: PaneHeaderLabel {
-        let tab = session.tab(containing: paneID)
-        let agent = runtime.map { runtime in
-            PaneHeaderAgent(
-                providerName: AgentProviderRegistry.displayName(for: runtime.kind),
-                title: PaneHeaderRules.agentTitle(
-                    for: runtime.badge,
-                    hasSessionTitles: AgentProviderRegistry.hasSessionTitles(runtime.kind)
-                )
-            )
-        }
-        // The pane's own OSC 7 directory first. Until the shell reports one
-        // (a restored pane, a shell without integration) the tab's latest
-        // directory stands in, then the one the tab opened in.
-        let directory = session.workingDirectory(paneID: paneID)
-            ?? tab?.pwd
-            ?? tab?.workingDirectory
-        return PaneHeaderRules.label(
-            customName: session.paneState(paneID).name,
-            agent: agent,
-            workingDirectory: directory,
-            fallbackName: String(localized: "Terminal")
+    /// The width a usable in-place field needs here, counting the prompt
+    /// cache clock while this header draws one.
+    private var inlineRenameThreshold: CGFloat {
+        PaneHeaderMetrics.inlineRenameMinimumWidth(
+            showsPromptCacheClock: attention.promptCacheMark(paneID: paneID) != nil
         )
+    }
+
+    /// Resolved in Core, where the prompt cache panel reads the same label,
+    /// so the panel names this pane the way this header does.
+    private var label: PaneHeaderLabel {
+        attention.paneHeaderLabel(paneID: paneID, in: session)
     }
 
     /// The mark on the trailing edge, reduced the way the tab row reduces
@@ -88,7 +77,10 @@ struct PaneHeaderView: View {
         // pane is and the menu is how to act on it. While renaming the field
         // is what matters, so the name stays.
         ViewThatFits(in: .horizontal) {
-            ForEach(PaneHeaderRules.forms(isEditing: isEditing), id: \.self) { form in
+            ForEach(PaneHeaderRules.forms(
+                isEditing: isEditing,
+                showsPromptCacheClock: attention.promptCacheMark(paneID: paneID) != nil
+            ), id: \.self) { form in
                 row(label: label, summary: summary, form: form)
             }
         }
@@ -97,11 +89,16 @@ struct PaneHeaderView: View {
         // is narrower than the row's smallest layout. Without it the frame
         // grows to the row's width, the pane centers that wider header, and
         // the glyph slides left past the pane's edge; with it the row keeps
-        // its leading edge and whatever does not fit is cut at the trailing
-        // edge.
+        // its leading edge.
+        //
+        // Not clipped. The split floor never lets a pane get narrower than
+        // the glyph-and-menu form (`PaneHeaderMetrics.minimumWidth`), so
+        // there is nothing to cut. And clipping a row that holds the
+        // AppKit-backed menu makes SwiftUI put the whole row, with every
+        // AppKit view drawn in it such as the cache clock's pointer tracker,
+        // inside an AppKit clip view (`_NSGraphicsView`), for no gain.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .frame(height: LimpidLayout.paneHeaderHeight)
-        .clipped()
         .background(background)
         .overlay(alignment: .bottom) {
             LimpidColor.paneHeaderDivider
@@ -111,6 +108,16 @@ struct PaneHeaderView: View {
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { newFrame in
             headerFrame = newFrame
             renamePresentation.updateAnchor(paneID: paneID, anchor: newFrame)
+            // Narrowed below a usable field mid-edit: the edit ends as a
+            // click elsewhere ends it, by the keyboard going back to the
+            // terminal, which commits what was typed.
+            if PaneHeaderRules.shouldEndInlineRename(
+                isEditing: isEditing,
+                headerWidth: newFrame.width,
+                threshold: inlineRenameThreshold
+            ) {
+                PaneActions.pullKeyboardFocus(to: paneID, registry: registry)
+            }
         }
         // A floating field outlives nothing it renames: a pane closed, a tab
         // switched away, or a zoom elsewhere takes this header off screen,
@@ -164,6 +171,11 @@ struct PaneHeaderView: View {
             TabActions.movePaneToNewTab(session, paneID: paneID)
         }
         .accessibilityAction(named: Text("Close Pane")) { onSurface { $0.onRequestCloseActivePane?() } }
+        .promptCacheAccessibilityAction(attention.promptCacheMark(paneID: paneID)) { _ in
+            // The header's own clock, or, in the narrowest form that draws
+            // none, the tab row's.
+            [.paneHeader(paneID: paneID)] + (session.tab(containing: paneID).map { [.tabRow(tabID: $0.id)] } ?? [])
+        }
         // The terminal's "Rename Pane…" asks through the rename presentation,
         // because the menu lives on the AppKit surface and the field lives
         // here. Only a new ask counts, never one found pending on mount: the
@@ -219,6 +231,9 @@ struct PaneHeaderView: View {
                 detailText(detail)
             }
             Spacer(minLength: LimpidLayout.paneHeaderItemSpacing)
+            if form.showsPromptCacheClock {
+                PromptCachePaneClock(paneID: paneID)
+            }
             if form.showsMark, let summary {
                 AgentStateMark(
                     state: summary.state,
@@ -276,6 +291,10 @@ struct PaneHeaderView: View {
         if let summary {
             pieces.append(summary.state.accessibilityLabel(isViewedFinished: summary.isViewedFinished))
         }
+        // The header is one element, so the clock inside it is heard here.
+        if let mark = attention.promptCacheMark(paneID: paneID) {
+            pieces.append(mark.spokenStatus)
+        }
         return pieces.joined(separator: ", ")
     }
 
@@ -285,7 +304,7 @@ struct PaneHeaderView: View {
     /// header (`PaneHeaderRules.renameStyle`). Either way the commit
     /// compares against the name shown now, when the edit begins.
     private func beginRename(label: PaneHeaderLabel) {
-        switch PaneHeaderRules.renameStyle(headerWidth: headerFrame.width) {
+        switch PaneHeaderRules.renameStyle(headerWidth: headerFrame.width, threshold: inlineRenameThreshold) {
         case .inline:
             editingShownName = label.name
             isEditing = true

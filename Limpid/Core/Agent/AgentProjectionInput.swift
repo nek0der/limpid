@@ -174,11 +174,12 @@ struct AgentProjectedRuntime: Decodable {
     var attachment: String
     var eventToken: String
     var episodeToken: String
+    var pid: String?
 
     private enum CodingKeys: String, CodingKey {
         case id, provider
         case runID = "runId"
-        case revision, badge, panes, attachment, eventToken, episodeToken
+        case revision, badge, panes, attachment, eventToken, episodeToken, pid
     }
 }
 
@@ -197,12 +198,14 @@ struct AgentProjectedBadge: Decodable {
     var providerSessionTitle: String?
     var providerGeneratedTitle: String?
     var sessionStartedAt: String?
+    var cacheWindow: AgentProjectedCacheWindow?
 
     private enum CodingKeys: String, CodingKey {
         case state, detail, runStartedAt, contextTokens, isTmuxHosted, updatedAt
         case lastPrompt, firstPrompt, turnBaseTree, turnRoot
         case conversationID = "conversationId"
         case providerSessionTitle, providerGeneratedTitle, sessionStartedAt
+        case cacheWindow
     }
 
     /// The badge as the interface holds it. An unreadable state shows as
@@ -223,7 +226,40 @@ struct AgentProjectedBadge: Decodable {
             conversationID: conversationID,
             providerSessionTitle: providerSessionTitle,
             providerGeneratedTitle: providerGeneratedTitle,
-            sessionStartedAt: AgentDateParsing.parseOptional(sessionStartedAt)
+            sessionStartedAt: AgentDateParsing.parseOptional(sessionStartedAt),
+            cacheWindow: cacheWindow?.window
+        )
+    }
+}
+
+/// The badge's prompt cache window as the projection spells it. Decoding
+/// never fails: the window feeds the clock marks and their panel, and a shape this
+/// build cannot read must cost that and not the whole projection pass.
+struct AgentProjectedCacheWindow: Decodable {
+    /// `nil` when the value could not be read.
+    var window: AgentCacheWindow?
+
+    private enum CodingKeys: String, CodingKey {
+        case observedAt, ttlSeconds, rewriteTokens, precision
+    }
+
+    init(from decoder: any Decoder) throws {
+        guard let container = try? decoder.container(keyedBy: CodingKeys.self),
+              let observed = try? container.decode(String.self, forKey: .observedAt),
+              let observedAt = AgentDateParsing.parseISO8601(observed),
+              let ttl = try? container.decode(Int.self, forKey: .ttlSeconds),
+              ttl > 0
+        else {
+            window = nil
+            return
+        }
+        let precision = (try? container.decode(String.self, forKey: .precision))
+            .flatMap(AgentCacheWindow.Precision.init(rawValue:)) ?? .unknown
+        window = AgentCacheWindow(
+            observedAt: observedAt,
+            ttlSeconds: ttl,
+            rewriteTokens: (try? container.decodeIfPresent(Int.self, forKey: .rewriteTokens)) ?? nil,
+            precision: precision
         )
     }
 }

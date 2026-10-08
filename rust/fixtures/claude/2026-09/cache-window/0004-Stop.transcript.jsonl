@@ -1,0 +1,8 @@
+{"type": "permission-mode"}
+{"type": "user"}
+{"isSidechain": false, "message": {"id": "msg_0001", "usage": {"cache_creation": {"ephemeral_1h_input_tokens": 31250, "ephemeral_5m_input_tokens": 0}, "cache_creation_input_tokens": 31250, "cache_read_input_tokens": 0, "input_tokens": 4, "output_tokens": 12}}, "requestId": "req_0001", "timestamp": "2026-10-07T12:00:02.481Z", "type": "assistant"}
+{"isSidechain": false, "message": {"id": "msg_0001", "usage": {"cache_creation": {"ephemeral_1h_input_tokens": 31250, "ephemeral_5m_input_tokens": 0}, "cache_creation_input_tokens": 31250, "cache_read_input_tokens": 0, "input_tokens": 4, "output_tokens": 388}}, "requestId": "req_0001", "timestamp": "2026-10-07T12:00:06.902Z", "type": "assistant"}
+{"type": "attachment"}
+{"type": "user"}
+{"isSidechain": false, "message": {"id": "msg_0002", "usage": {"cache_creation": {"ephemeral_1h_input_tokens": 0, "ephemeral_5m_input_tokens": 0}, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 31250, "input_tokens": 6, "output_tokens": 402}}, "requestId": "req_0002", "timestamp": "2026-10-07T12:20:11.044Z", "type": "assistant"}
+{"isSidechain": true, "message": {"id": "msg_0003", "usage": {"cache_creation": {"ephemeral_1h_input_tokens": 0, "ephemeral_5m_input_tokens": 9000}, "cache_creation_input_tokens": 9000, "cache_read_input_tokens": 0, "input_tokens": 3, "output_tokens": 50}}, "requestId": "req_0003", "timestamp": "2026-10-07T12:20:30.000Z", "type": "assistant"}

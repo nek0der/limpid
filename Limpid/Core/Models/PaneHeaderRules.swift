@@ -32,14 +32,19 @@ struct PaneHeaderLabel: Equatable {
 /// How much of a header a row has room for, widest first. The kind glyph
 /// and the "⋯" menu are in every form: the glyph says what the pane is and
 /// the menu is how to act on it. Between them the detail goes first, then
-/// the name, then the state mark.
+/// the name, then the state mark, then the prompt cache clock, which is
+/// what a narrow pane most needs to say while it shows: the next message
+/// will cost a re-write, and the clock is the way to deal with it.
 enum PaneHeaderForm: CaseIterable, Equatable {
-    /// Glyph, name, detail, state mark, menu.
+    /// Glyph, name, detail, cache clock, state mark, menu.
     case all
-    /// Glyph, name (truncating), state mark, menu.
+    /// Glyph, name (truncating), cache clock, state mark, menu.
     case withName
-    /// Glyph, state mark, menu.
+    /// Glyph, cache clock, state mark, menu.
     case withMark
+    /// Glyph, cache clock, menu: `PaneHeaderMetrics.clockFormWidth`. Tried
+    /// only while the pane has a clock to show.
+    case withClock
     /// Glyph and menu: `PaneHeaderMetrics.minimumWidth`.
     case glyphAndMenu
 
@@ -52,6 +57,12 @@ enum PaneHeaderForm: CaseIterable, Equatable {
     }
 
     var showsMark: Bool {
+        self == .all || self == .withName || self == .withMark
+    }
+
+    /// Whether the form has a place for the prompt cache clock; the clock
+    /// itself shows only while the pane has one.
+    var showsPromptCacheClock: Bool {
         self != .glyphAndMenu
     }
 }
@@ -90,9 +101,14 @@ enum PaneHeaderRules {
 
     /// The forms a header tries, widest first, the first that fits winning.
     /// While renaming in place only the form with the name will do, since
-    /// the field is what the user is working in.
-    static func forms(isEditing: Bool) -> [PaneHeaderForm] {
-        isEditing ? [.withName] : PaneHeaderForm.allCases
+    /// the field is what the user is working in. The clock's own form is
+    /// tried only while there is a clock: without one it would be the
+    /// glyph-and-menu form under another name.
+    static func forms(isEditing: Bool, showsPromptCacheClock: Bool) -> [PaneHeaderForm] {
+        if isEditing {
+            return [.withName]
+        }
+        return PaneHeaderForm.allCases.filter { showsPromptCacheClock || $0 != .withClock }
     }
 
     /// Where a rename opens for a header this wide. Below the threshold the
@@ -105,6 +121,20 @@ enum PaneHeaderRules {
         threshold: CGFloat = PaneHeaderMetrics.inlineRenameMinimumWidth
     ) -> PaneRenameStyle {
         headerWidth <= 0 || headerWidth >= threshold ? .inline : .floating
+    }
+
+    /// Whether an in-place rename should end because the header got too
+    /// narrow for it, as when a divider is dragged mid-edit. The header is
+    /// not clipped, and while renaming it keeps the form with the name, so a
+    /// field left open below the threshold would draw into the neighboring
+    /// pane. It ends the way a click elsewhere ends it, committing what was
+    /// typed.
+    static func shouldEndInlineRename(
+        isEditing: Bool,
+        headerWidth: CGFloat,
+        threshold: CGFloat = PaneHeaderMetrics.inlineRenameMinimumWidth
+    ) -> Bool {
+        isEditing && renameStyle(headerWidth: headerWidth, threshold: threshold) == .floating
     }
 
     /// What a submitted rename writes, or nil when it changes nothing.

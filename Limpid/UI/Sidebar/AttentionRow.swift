@@ -126,12 +126,21 @@ struct AttentionRow: View {
     /// Finished rows change from a green filled check to a gray outline after
     /// the user has viewed that exact turn. Other states never set this.
     let isViewed: Bool
+    /// The run's prompt cache mark, when it is about to expire or has.
+    /// Shown before the wait time; it never changes the row's order.
+    var promptCacheMark: PromptCacheMark?
     /// Manual dismiss ("conversation's done"); nil hides the × affordance
     /// (needsInput / error rows clear only when the state resolves).
     let onDismiss: (() -> Void)?
     let onTap: () -> Void
 
     @State private var isHovering = false
+
+    /// The × replaces the wait time while the pointer is on a row that can
+    /// be dismissed.
+    private var showsDismiss: Bool {
+        isHovering && onDismiss != nil
+    }
 
     private var elapsed: TimeInterval {
         max(0, now.timeIntervalSince(timestamp))
@@ -193,12 +202,24 @@ struct AttentionRow: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 6)
+                    if let promptCacheMark {
+                        // Only an indicator here: a click on the row already
+                        // takes the user to the pane, where the header and
+                        // tab row clocks open the panel and an expired one
+                        // opens it by itself. It qualifies the wait time, so
+                        // it gives way to the × along with that time; left in
+                        // view it would float beside the ×, a time's width
+                        // away from it.
+                        PromptCacheIndicator(mark: promptCacheMark)
+                            .padding(.trailing, LimpidLayout.promptCacheIndicatorTrailingGap)
+                            .opacity(showsDismiss ? 0 : 1)
+                    }
                     Text(waitLabel)
                         .font(.system(size: 11))
                         .monospacedDigit()
                         .foregroundStyle(Color.primary.opacity(0.4))
                         .fixedSize()
-                        .opacity(isHovering && onDismiss != nil ? 0 : 1)
+                        .opacity(showsDismiss ? 0 : 1)
                         .overlay(alignment: .trailing) {
                             if isHovering, let onDismiss {
                                 DismissGlyphButton(label: "Dismiss", action: onDismiss)

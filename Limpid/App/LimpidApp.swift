@@ -123,6 +123,8 @@ final class AppState {
     /// The floating rename field a narrow pane header opens. Per window,
     /// like the PR card, so it can draw over the whole window.
     let paneRenamePresentation = PaneRenamePresentation()
+    /// The prompt cache clocks' panel: which one is open, and below which clock.
+    let promptCachePanelPresentation = PromptCachePanelPresentation()
     private(set) var prStatusSyncer: PRStatusSyncer?
     /// Set when the on-disk snapshot couldn't be restored at boot.
     /// A version mismatch or decode failure normally just dropped the
@@ -610,6 +612,7 @@ struct LimpidApp: App {
                 .environment(state.prStatusStore)
                 .environment(state.prHoverPresentation)
                 .environment(state.paneRenamePresentation)
+                .environment(state.promptCachePanelPresentation)
                 .environment(\.prStatusSyncer, state.prStatusSyncer)
                 .environment(\.surfaceRegistry, state.registry)
                 .environment(\.reviewStores, state.reviewStores)
@@ -879,6 +882,7 @@ struct ContentView: View {
         }
         .overlay { PRHoverCardHost() }
         .overlay { PaneRenamePanelHost() }
+        .overlay { PromptCachePanelHost() }
         .overlay { NotificationHistoryOverlay(state: state) }
         .overlay { ApprovalCardHost() }
         .overlay {

@@ -113,6 +113,14 @@ Cases that could not be recorded as planned:
   `custom-title` equivalent). While the shell receiver remains the rollback
   backend, title extraction uses only the latest `ai-title` record; the
   separate `custom-title` line remains here to guard that compatibility rule.
+- `claude/cache-window` reuses the `session-basic` payloads; its transcripts
+  were written by hand in the shape of real Claude Code assistant lines and
+  then passed through the scrubber, because the cases recorded before the
+  cache estimate existed had their usage reduced away. The first `Stop` ends a
+  request streamed as two lines that wrote the one-hour bucket, the second
+  ends a request that only read the cache and is followed by a subagent line,
+  so the golden covers the earliest-line anchor, bucket inheritance, and
+  sidechain exclusion.
 
 ## Scrubbing
 
@@ -131,7 +139,9 @@ place before it is committed:
   strings such as a Notification `message`, `tool_input`, and `tool_response`
   stay, because the adapters read them and their paths are already scrubbed;
 - transcript copies keep only the title lines (`ai-title`, `custom-title`)
-  in full; every other line is reduced to its `type`.
+  in full; an assistant line keeps `isSidechain`, `timestamp`, its request and
+  message identifiers renumbered per file, and the numeric usage counters the
+  cache estimate reads; every other line is reduced to its `type`.
 
 Key names, event names, field types, and file order are never changed.
 Fixtures are reviewed like code: read every recorded file before committing

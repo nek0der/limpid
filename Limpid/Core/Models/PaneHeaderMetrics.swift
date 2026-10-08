@@ -46,6 +46,14 @@ enum PaneHeaderMetrics {
         + itemSpacing // spacer to menu
         + menuSlot
 
+    /// Width of the form that keeps the prompt cache clock after the name and
+    /// the state mark have gone: the narrowest form and the clock with its
+    /// gap. The split floor stays `minimumWidth`; a pane narrower than this
+    /// drops the clock rather than growing for it.
+    static let clockFormWidth: CGFloat = minimumWidth
+        + itemSpacing // clock's gap
+        + markSlot // the clock, in the state mark's slot size
+
     /// Header width at which the name is edited in place: the narrowest
     /// form, the field with its gap, and the state mark with its gap, which
     /// an agent pane keeps while renaming. Narrower headers open the
@@ -55,4 +63,13 @@ enum PaneHeaderMetrics {
         + inlineRenameFieldMinimumWidth
         + itemSpacing // state mark's gap
         + markSlot
+
+    /// The same, counting the prompt cache clock while the header draws
+    /// one: it shows with the state mark, in a slot of the same size, and
+    /// would otherwise take its width out of the field. The split floor
+    /// reads `minimumWidth`, not this, so the clock never changes how
+    /// narrow a pane may get.
+    static func inlineRenameMinimumWidth(showsPromptCacheClock: Bool) -> CGFloat {
+        inlineRenameMinimumWidth + (showsPromptCacheClock ? itemSpacing + markSlot : 0)
+    }
 }

@@ -9262,6 +9262,329 @@
           }
         }
       }
+    },
+    "Cache expired": {
+      "comment": "Title of the panel a prompt cache clock opens when the cache has expired",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache expired"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャッシュの期限切れ"
+          }
+        }
+      }
+    },
+    "Available when the agent is what this pane is running.": {
+      "comment": "Shown on the prompt cache panel while something other than the agent is in front of the pane",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available when the agent is what this pane is running."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペインで動いているのがエージェントのときに使えます。"
+          }
+        }
+      }
+    },
+    "You typed in this pane during or after the last turn. Type /compact or /clear yourself.": {
+      "comment": "Shown on the prompt cache panel when the pane may hold input the user has not sent",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You typed in this pane during or after the last turn. Type /compact or /clear yourself."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回のターン中かその後に、このペインで入力がありました。/compact か /clear を直接入力してください。"
+          }
+        }
+      }
+    },
+    "Reads the whole conversation once; later turns are light.": {
+      "comment": "Tooltip on the Summarize and continue button of the expired prompt cache panel",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reads the whole conversation once; later turns are light."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話全体を 1 回読みます。以後のターンは軽くなります。"
+          }
+        }
+      }
+    },
+    "No re-write cost. Return with /resume.": {
+      "comment": "Tooltip on the Continue in a new conversation button of the expired prompt cache panel",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No re-write cost. Return with /resume."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き直しの費用はかかりません。/resume で戻れます。"
+          }
+        }
+      }
+    },
+    "Cache expires soon": {
+      "comment": "Title of the panel a prompt cache clock opens when the cache is about to expire",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache expires soon"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャッシュの期限が近い"
+          }
+        }
+      }
+    },
+    "Expires in %@.": {
+      "comment": "First line of the expiring prompt cache panel; the argument is a duration such as 2m",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expires in %@."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あと%@で切れます。"
+          }
+        }
+      }
+    },
+    "Once expired, continuing re-writes about %@ tokens.": {
+      "comment": "Second line of the expiring prompt cache panel; the argument is a token count such as 612k",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Once expired, continuing re-writes about %@ tokens."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切れると約 %@ トークンを書き直します。"
+          }
+        }
+      }
+    },
+    "Show Prompt Cache": {
+      "comment": "VoiceOver action on a tab row, Waiting row, or pane header that opens its prompt cache panel",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Prompt Cache"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロンプトキャッシュを表示"
+          }
+        }
+      }
+    },
+    "Available while the agent waits at its prompt.": {
+      "comment": "Shown on the prompt cache panel while its agent is busy, asking, or out of sight",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available while the agent waits at its prompt."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが入力待ちのときに使えます。"
+          }
+        }
+      }
+    },
+    "Shows the ways to go on": {
+      "comment": "VoiceOver hint on the expired prompt cache clock",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows the ways to go on"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "続け方を選べます。"
+          }
+        }
+      }
+    },
+    "Continuing as is re-writes about %@ tokens.": {
+      "comment": "Second line of the expired prompt cache panel; the argument is a token count such as 573k",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuing as is re-writes about %@ tokens."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このまま続けると約 %@ トークンを書き直します。"
+          }
+        }
+      }
+    },
+    "Expired %@ ago.": {
+      "comment": "First line of the expired prompt cache panel; the argument is a duration such as 56m",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expired %@ ago."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@前に切れました。"
+          }
+        }
+      }
+    },
+    "Prompt cache expired": {
+      "comment": "Spoken label of the red prompt cache clock on a tab row, Waiting row, or pane header",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prompt cache expired"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロンプトキャッシュの期限が切れています"
+          }
+        }
+      }
+    },
+    "Prompt cache expires soon": {
+      "comment": "Spoken label of the yellow prompt cache clock on a tab row, Waiting row, or pane header",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prompt cache expires soon"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロンプトキャッシュの期限が近づいています"
+          }
+        }
+      }
+    },
+    "Summarize and continue": {
+      "comment": "Expired prompt cache panel button that sends /compact to the agent",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summarize and continue"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要約して続ける"
+          }
+        }
+      }
+    },
+    "Continue in a new conversation": {
+      "comment": "Expired prompt cache panel button that sends /clear to the agent",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue in a new conversation"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい会話で続ける"
+          }
+        }
+      }
+    },
+    "Continue as is": {
+      "comment": "Expired prompt cache panel button that clears the clock without typing anything",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue as is"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのまま続ける"
+          }
+        }
+      }
+    },
+    "Re-writes about %@ tokens.": {
+      "comment": "Tooltip on the Continue as is button of the expired prompt cache panel; the argument is a token count such as 573k",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Re-writes about %@ tokens."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "約 %@ トークンを書き直します。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -104,6 +104,9 @@ pub enum Capability {
     Subagents,
     /// A turn snapshot can be captured on prompt submit.
     TurnSnapshot,
+    /// The provider reports when its prompt cache expires, on the event that
+    /// ends a turn.
+    CacheWindow,
 }
 
 /// What the platform needs to know about a provider without linking its
@@ -290,5 +293,7 @@ mod tests {
     fn capabilities_serialize_as_snake_case() {
         let json = serde_json::to_string(&Capability::ResumeDefersToOtherLiveSession).expect("ok");
         assert_eq!(json, "\"resume_defers_to_other_live_session\"");
+        let json = serde_json::to_string(&Capability::CacheWindow).expect("ok");
+        assert_eq!(json, "\"cache_window\"");
     }
 }

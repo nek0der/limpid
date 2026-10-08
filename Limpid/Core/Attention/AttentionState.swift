@@ -42,6 +42,10 @@ final class AttentionState {
     var isTurnReviewEnabled: () -> Bool = { false }
     var onFinishedTurnFocused: ((UUID, String, String) -> Void)?
     var selectedRuntimeID: String?
+    /// The clock and the answers behind the prompt cache marks. Owned
+    /// here because the windows ride the runtimes this class already holds,
+    /// and every view that shows a mark already reads attention.
+    let promptCache = PromptCacheMonitor()
 
     /// Container column Waiting list filter — when false, viewed-finished rows are
     /// hidden so the list shows only "next to deal with". `needsInput` /

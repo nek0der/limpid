@@ -4,6 +4,7 @@
 //! them to run records.
 
 mod approval;
+mod cache;
 mod descriptor;
 mod normalize;
 

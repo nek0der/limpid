@@ -31,6 +31,8 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
             Capability::ApprovalHook,
             Capability::Subagents,
             Capability::TurnSnapshot,
+            // Estimated from the transcript on Stop; see `cache`.
+            Capability::CacheWindow,
         ]),
         // The Claude receiver historically ran a slow sweep; Codex needs a
         // faster one because it emits no Stop when killed mid-turn.
@@ -89,6 +91,7 @@ mod tests {
         assert!(descriptor.has(Capability::SessionTitle));
         assert!(descriptor.has(Capability::CwdEvents));
         assert!(!descriptor.has(Capability::ResumeDefersToOtherLiveSession));
+        assert!(descriptor.has(Capability::CacheWindow));
         assert_eq!(descriptor.state_directory, "agent-states");
         assert_eq!(
             descriptor.cwd_events_directory.as_deref(),

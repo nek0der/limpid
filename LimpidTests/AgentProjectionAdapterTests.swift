@@ -175,6 +175,46 @@ struct AgentProjectionAdapterTests {
         }
     }
 
+    @Test("the projection's recorded pid reaches the runtime as a process id")
+    func projectedPID_becomesTheRuntimeProcessID() throws {
+        try withTempDir { root in
+            let state = root.appendingPathComponent("agent-states", isDirectory: true)
+            let sessions = root.appendingPathComponent("sessions", isDirectory: true)
+            for directory in [state, sessions] {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+            let (session, _, pane) = WindowSessionFixture.withLooseTab()
+            let record: [String: Any] = [
+                "schemaVersion": 3,
+                "paneId": pane.uuidString,
+                "runId": Self.run,
+                "revision": 4,
+                "stateEpisodeToken": "4",
+                "state": "finished",
+                "updatedAt": "2026-09-14T12:00:00Z",
+                "pid": "4242"
+            ]
+            try JSONSerialization.data(withJSONObject: record)
+                .write(to: state.appendingPathComponent(AgentRecordFixtures.recordFileName(Self.run)))
+            let adapter = ProjectionFixture.adapter(
+                provider: "claude",
+                state: state,
+                sessions: sessions,
+                processStatus: { _ in .alive }
+            )
+            let attention = AttentionState()
+
+            adapter.bootstrap(into: session, attention: attention)
+
+            // The cache panel types a command only when this pid is what the
+            // pane has in front, so a pid lost on the way in would quietly
+            // fall back to matching names.
+            #expect(adapter.lastFailure == nil)
+            let runtime = try #require(attention.runtimesByKind[.claude]?.first)
+            #expect(runtime.processID == 4242)
+        }
+    }
+
     @Test("a lock file beside the worktree events is not read as an event")
     func worktreeEvents_ignoreWhatIsNotAnEvent() throws {
         try withTempDir { root in

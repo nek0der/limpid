@@ -47,6 +47,107 @@ def transcript_titles(path):
     return None
 
 
+def count(source, key):
+    value = source.get(key) if isinstance(source, dict) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def transcript_seconds(value):
+    """Mirrors the adapter: whole seconds of `YYYY-MM-DDTHH:MM:SS[.fff]Z`."""
+    import datetime
+    import re
+
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z", value):
+        return None
+    try:
+        moment = datetime.datetime.strptime(value[:19], "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        return None
+    return moment.replace(tzinfo=datetime.timezone.utc)
+
+
+def is_main_user_line(line):
+    try:
+        record = json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(record, dict) and record.get("type") == "user" and record.get("isSidechain") is not True
+
+
+def transcript_cache(path):
+    """Mirrors `limpid-provider-claude`'s cache estimate for the golden."""
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        lines = handle.read().split("\n")
+    observations = []
+    for line in reversed(lines):
+        # A main-thread user line (a prompt or a tool result) newer than any
+        # usage means the final response is missing, and the estimate
+        # reports nothing. Checked before the usage filter, since a
+        # subagent's result carries the subagent's usage.
+        if not observations and '"user"' in line and is_main_user_line(line):
+            return None
+        if '"usage"' not in line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict) or record.get("type") != "assistant":
+            continue
+        if record.get("isSidechain") is True:
+            continue
+        message = record.get("message")
+        if not isinstance(message, dict) or not isinstance(message.get("usage"), dict):
+            continue
+        usage = message["usage"]
+        request = string(record, "requestId") or string(message, "id")
+        started = transcript_seconds(record.get("timestamp"))
+        if request is None or started is None:
+            continue
+        creation = usage.get("cache_creation")
+        ttl = 3600 if count(creation, "ephemeral_1h_input_tokens") > 0 else (
+            300 if count(creation, "ephemeral_5m_input_tokens") > 0 else None
+        )
+        observations.append({
+            "request": request,
+            "started": started,
+            "input": count(usage, "input_tokens"),
+            "read": count(usage, "cache_read_input_tokens"),
+            "creation": count(usage, "cache_creation_input_tokens"),
+            "output": count(usage, "output_tokens"),
+            "ttl": ttl,
+        })
+    if not observations:
+        return None
+    last = dict(observations[0])
+    earlier_ttl = None
+    for observation in observations[1:]:
+        if observation["request"] == last["request"]:
+            last["started"] = min(last["started"], observation["started"])
+            for key in ("input", "read", "creation", "output"):
+                last[key] = max(last[key], observation[key])
+            last["ttl"] = last["ttl"] or observation["ttl"]
+            continue
+        if last["ttl"] is not None or last["read"] == 0:
+            break
+        if observation["ttl"] is not None:
+            earlier_ttl = observation["ttl"]
+            break
+    if last["read"] == 0 and last["creation"] == 0:
+        return None
+    ttl = last["ttl"] or (earlier_ttl if last["read"] > 0 else None)
+    if ttl is None:
+        return None
+    return {
+        "observedAt": last["started"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "ttlSeconds": ttl,
+        "rewriteTokens": last["input"] + last["read"] + last["creation"] + last["output"],
+        "precision": "estimated",
+    }
+
+
 def optional(event, key, value):
     if value is not None:
         event[key] = value
@@ -100,6 +201,7 @@ def claude_event(obj, transcript_path):
     if name == "Stop":
         event = {"type": "turn_finished"}
         optional(event, "titles", transcript_titles(transcript_path))
+        optional(event, "cache", transcript_cache(transcript_path))
         return event
     if name == "StopFailure":
         return {"type": "failed", "error": string(obj, "error") or string(obj, "error_type") or "error"}
