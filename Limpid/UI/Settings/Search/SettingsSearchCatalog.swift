@@ -94,7 +94,7 @@ enum SettingsSearchCatalog {
                 .tabsAndPanes,
                 "Pane Headers",
                 "Show headers on split panes",
-                keywords: ["Pane name"],
+                keywords: ["Pane name", "Pane header"],
                 order: 1
             ),
             makeEntry(

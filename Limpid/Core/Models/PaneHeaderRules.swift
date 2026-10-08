@@ -45,7 +45,9 @@ enum PaneHeaderForm: CaseIterable, Equatable {
     /// Glyph, cache clock, menu: `PaneHeaderMetrics.clockFormWidth`. Tried
     /// only while the pane has a clock to show.
     case withClock
-    /// Glyph and menu: `PaneHeaderMetrics.minimumWidth`.
+    /// Glyph and menu: `PaneHeaderMetrics.minimumWidth`, or
+    /// `zoomedMinimumWidth` with the unzoom button a zoomed pane keeps
+    /// beside its menu in every form.
     case glyphAndMenu
 
     var showsName: Bool {
@@ -74,6 +76,12 @@ enum PaneRenameStyle: Equatable {
     case floating
 }
 
+/// What the header's zoom item does.
+enum PaneZoomAction: Equatable {
+    case zoom
+    case unzoom
+}
+
 /// What committing a pane rename writes.
 enum PaneNameChange: Equatable {
     case set(String)
@@ -82,18 +90,20 @@ enum PaneNameChange: Equatable {
 
 enum PaneHeaderRules {
     /// Whether the panes of a tab show headers. A single pane is named by
-    /// its tab row already, and a zoomed tab shows one pane, so the header
-    /// would repeat what is on screen beside it; it earns its height only
-    /// when two or more panes are visible at once.
+    /// its tab row already, so the header would repeat it; a split tab's
+    /// panes carry one each while the setting is on. A zoomed pane of a
+    /// split tab shows its header whatever the setting says: the header's
+    /// unzoom button is the way back to the split, and without it a zoomed
+    /// pane looks like a tab with one pane.
     static func showsHeaders(leafCount: Int, isZoomed: Bool, isEnabled: Bool) -> Bool {
-        isEnabled && !isZoomed && leafCount > 1
+        leafCount > 1 && (isZoomed || isEnabled)
     }
 
-    /// Whether `paneID`'s header is on screen: the one predicate the header
-    /// itself and the terminal's "Rename Pane…" item both read, so the item
-    /// never offers a rename with no header to take it. Review replaces the
-    /// split with its own surface and docks the pane under a heading of its
-    /// own, so no split header shows while it is up.
+    /// Whether `paneID`'s header is on screen, zoomed or not: the one
+    /// predicate the header itself and the terminal's "Rename Pane…" item
+    /// both read, so the item never offers a rename with no header to take
+    /// it. Review replaces the split with its own surface and docks the pane
+    /// under a heading of its own, so no split header shows while it is up.
     static func showsHeader(in tab: Tab?, isEnabled: Bool, isReviewPresented: Bool) -> Bool {
         guard let tab, !isReviewPresented else { return false }
         return showsHeaders(in: tab, isEnabled: isEnabled)
@@ -155,16 +165,50 @@ enum PaneHeaderRules {
         return submittedName.map(PaneNameChange.set) ?? .clear
     }
 
-    /// The same rule read off a tab. Zoom counts only while the zoomed
-    /// leaf is still in the tree, because that is when `PaneAreaView`
-    /// renders the zoomed pane alone; a stale id falls back to the split.
+    /// The same rule read off a tab.
     static func showsHeaders(in tab: Tab, isEnabled: Bool) -> Bool {
-        let isZoomed = tab.zoomedLeafID.map { tab.splitTree.contains(leafID: $0) } ?? false
-        return showsHeaders(
+        showsHeaders(
             leafCount: tab.splitTree.allLeafIDs().count,
-            isZoomed: isZoomed,
+            isZoomed: isZoomed(tab),
             isEnabled: isEnabled
         )
+    }
+
+    /// Whether `paneID` is the pane its tab shows zoomed. Zoom counts only
+    /// while the zoomed leaf is still in the tree, because that is when
+    /// `PaneAreaView` renders the zoomed pane alone; a stale id falls back
+    /// to the split.
+    static func isZoomed(_ paneID: UUID, in tab: Tab?) -> Bool {
+        guard let tab, tab.zoomedLeafID == paneID else { return false }
+        return tab.splitTree.contains(leafID: paneID)
+    }
+
+    /// Whether the tab shows one of its panes zoomed; see `isZoomed(_:in:)`.
+    static func isZoomed(_ tab: Tab) -> Bool {
+        tab.zoomedLeafID.map { isZoomed($0, in: tab) } ?? false
+    }
+
+    /// What the header's zoom item, and its VoiceOver action, do: zoom this
+    /// pane, or, while it is zoomed, go back to the split.
+    static func zoomAction(isZoomed: Bool) -> PaneZoomAction {
+        isZoomed ? .unzoom : .zoom
+    }
+
+    /// What the terminal's zoom item does for `paneID`, or nil when its tab
+    /// has a single pane and there is nothing to zoom out of. The item
+    /// follows the header's, so the menu offers the same flip whether or
+    /// not a header is on screen.
+    static func menuZoomAction(for paneID: UUID, in tab: Tab?) -> PaneZoomAction? {
+        guard let tab, tab.splitTree.allLeafIDs().count > 1 else { return nil }
+        return zoomAction(isZoomed: isZoomed(paneID, in: tab))
+    }
+
+    /// Whether a drag on the header picks the pane up. Not while renaming in
+    /// place, where a drag selects text in the field, and not while zoomed,
+    /// where the pane is alone on screen and there is no split to drop it
+    /// into beside it.
+    static func dragsPane(isEditing: Bool, isZoomed: Bool) -> Bool {
+        !isEditing && !isZoomed
     }
 
     /// A name as it is stored: on one line, without surrounding

@@ -303,12 +303,13 @@ final class SurfaceView: NSView {
     var onRequestCloseActivePane: (() -> Void)?
     var onRequestBeginSearch: (() -> Void)?
     var onRequestMoveToNewTab: (() -> Void)?
+    var onRequestZoomAction: (() -> Void)?
 
-    /// Lets the host gate the "Move Pane to New Tab" item by counting the
-    /// owning tab's leaves — moving the lone pane in a 1-leaf tab is a
-    /// no-op, so we hide the item entirely instead of leaving it
-    /// disabled. Nil means "don't show".
+    /// Gate the "Move Pane to New Tab" and "Zoom Pane" items, hidden when
+    /// nil and in a 1-leaf tab, where both are no-ops. The zoom answer
+    /// also says which way that item flips.
     var canMoveToNewTab: (() -> Bool)?
+    var paneZoomAction: (() -> PaneZoomAction?)?
 
     /// "Rename Pane…" starts a rename in the pane's header — in place, or
     /// in the floating panel under it when the header is too narrow — so

@@ -44,6 +44,8 @@ struct PaneHeaderTests {
 
     @Test func showsHeaders_singlePane_hidden() {
         #expect(!PaneHeaderRules.showsHeaders(leafCount: 1, isZoomed: false, isEnabled: true))
+        // A tab with one pane cannot be zoomed, and its tab row names it.
+        #expect(!PaneHeaderRules.showsHeaders(leafCount: 1, isZoomed: true, isEnabled: false))
     }
 
     @Test func showsHeaders_twoOrMorePanes_shown() {
@@ -51,29 +53,106 @@ struct PaneHeaderTests {
         #expect(PaneHeaderRules.showsHeaders(leafCount: 4, isZoomed: false, isEnabled: true))
     }
 
-    @Test func showsHeaders_zoomed_hidden() {
-        #expect(!PaneHeaderRules.showsHeaders(leafCount: 3, isZoomed: true, isEnabled: true))
-    }
-
-    @Test func showsHeaders_settingOff_hidden() {
+    @Test func showsHeaders_settingOff_hiddenUnlessZoomed() {
         #expect(!PaneHeaderRules.showsHeaders(leafCount: 3, isZoomed: false, isEnabled: false))
+        #expect(PaneHeaderRules.showsHeaders(leafCount: 3, isZoomed: true, isEnabled: false))
     }
 
-    @Test func showsHeadersInTab_readsLeavesAndZoom() throws {
+    @Test func showsHeaderInTab_zoomedPaneKeepsItsHeaderWhateverTheSetting() throws {
         let singleTab = WindowSessionFixture.withLooseTab().tab
-        #expect(!PaneHeaderRules.showsHeaders(in: singleTab, isEnabled: true))
+        #expect(!PaneHeaderRules.showsHeader(in: singleTab, isEnabled: true, isReviewPresented: false))
 
         let (session, tab) = try Self.splitTab()
-        #expect(PaneHeaderRules.showsHeaders(in: tab, isEnabled: true))
+        #expect(!PaneHeaderRules.showsHeader(in: tab, isEnabled: false, isReviewPresented: false))
+
+        // Zoomed, the header is the way back to the split, so it shows with
+        // the setting off too, and goes again once the tab unzooms.
+        let zoomed = try #require(tab.splitTree.allLeafIDs().first)
+        session.update(tab.id) { $0.zoomedLeafID = zoomed }
+        let zoomedTab = try #require(session.tab(tab.id))
+        #expect(PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: true, isReviewPresented: false))
+        #expect(PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: false, isReviewPresented: false))
+
+        PaneActions.unzoom(session, tabID: tab.id)
+        let unzoomedTab = try #require(session.tab(tab.id))
+        #expect(!PaneHeaderRules.showsHeader(in: unzoomedTab, isEnabled: false, isReviewPresented: false))
+    }
+
+    @Test func showsHeaderInTab_reviewHidesItEvenWhileZoomed() throws {
+        let (session, tab) = try Self.splitTab()
+        #expect(!PaneHeaderRules.showsHeader(in: tab, isEnabled: true, isReviewPresented: true))
 
         let zoomed = try #require(tab.splitTree.allLeafIDs().first)
         session.update(tab.id) { $0.zoomedLeafID = zoomed }
-        #expect(try !PaneHeaderRules.showsHeaders(in: #require(session.tab(tab.id)), isEnabled: true))
+        let zoomedTab = try #require(session.tab(tab.id))
+        #expect(!PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: true, isReviewPresented: true))
+        #expect(!PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: false, isReviewPresented: true))
+    }
 
+    @Test func showsHeaderInTab_staleZoomIDFollowsTheSetting() throws {
+        let (session, tab) = try Self.splitTab()
         // A zoom id that no longer names a leaf renders the split, so the
-        // headers come back with it.
+        // setting decides as it does unzoomed.
         session.update(tab.id) { $0.zoomedLeafID = UUID() }
-        #expect(try PaneHeaderRules.showsHeaders(in: #require(session.tab(tab.id)), isEnabled: true))
+        let staleTab = try #require(session.tab(tab.id))
+        #expect(!PaneHeaderRules.showsHeader(in: staleTab, isEnabled: false, isReviewPresented: false))
+    }
+
+    @Test func isZoomed_onlyTheZoomedLeafStillInTheTree() throws {
+        let (session, tab) = try Self.splitTab()
+        let leaves = tab.splitTree.allLeafIDs()
+        let zoomed = try #require(leaves.first)
+        let other = try #require(leaves.last)
+        #expect(!PaneHeaderRules.isZoomed(zoomed, in: tab))
+
+        session.update(tab.id) { $0.zoomedLeafID = zoomed }
+        let zoomedTab = try #require(session.tab(tab.id))
+        #expect(PaneHeaderRules.isZoomed(zoomed, in: zoomedTab))
+        #expect(!PaneHeaderRules.isZoomed(other, in: zoomedTab))
+        #expect(PaneHeaderRules.isZoomed(zoomedTab))
+        #expect(!PaneHeaderRules.isZoomed(zoomed, in: nil))
+
+        // A zoom id that no longer names a leaf renders the split.
+        session.update(tab.id) { $0.zoomedLeafID = UUID() }
+        #expect(try !PaneHeaderRules.isZoomed(#require(session.tab(tab.id))))
+    }
+
+    @Test func zoomAction_flipsWhileZoomed() {
+        #expect(PaneHeaderRules.zoomAction(isZoomed: false) == .zoom)
+        #expect(PaneHeaderRules.zoomAction(isZoomed: true) == .unzoom)
+    }
+
+    @Test func menuZoomAction_flipsWhileZoomedAndHidesOnASinglePane() throws {
+        let single = WindowSessionFixture.withLooseTab().tab
+        let lone = try #require(single.splitTree.allLeafIDs().first)
+        #expect(PaneHeaderRules.menuZoomAction(for: lone, in: single) == nil)
+        #expect(PaneHeaderRules.menuZoomAction(for: lone, in: nil) == nil)
+
+        let (session, tab) = try Self.splitTab()
+        let zoomed = try #require(tab.splitTree.allLeafIDs().first)
+        #expect(PaneHeaderRules.menuZoomAction(for: zoomed, in: tab) == .zoom)
+
+        session.update(tab.id) { $0.zoomedLeafID = zoomed }
+        let zoomedTab = try #require(session.tab(tab.id))
+        #expect(PaneHeaderRules.menuZoomAction(for: zoomed, in: zoomedTab) == .unzoom)
+    }
+
+    @Test func headerDrag_picksThePaneUpOnlyWhenNotRenamingOrZoomed() {
+        #expect(PaneHeaderRules.dragsPane(isEditing: false, isZoomed: false))
+        #expect(!PaneHeaderRules.dragsPane(isEditing: true, isZoomed: false))
+        #expect(!PaneHeaderRules.dragsPane(isEditing: false, isZoomed: true))
+        #expect(!PaneHeaderRules.dragsPane(isEditing: true, isZoomed: true))
+    }
+
+    @Test func metrics_zoomedHeaderKeepsTheUnzoomButtonBesideTheMenu() {
+        #expect(
+            PaneHeaderMetrics.zoomedMinimumWidth
+                == PaneHeaderMetrics.minimumWidth + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.menuSlot
+        )
+        let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, isZoomed: false)
+        let zoomed = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, isZoomed: true)
+        #expect(zoomed - plain == PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.menuSlot)
+        #expect(plain == PaneHeaderMetrics.inlineRenameMinimumWidth)
     }
 
     @Test func splitPaneHeadersSetting_defaultsOnAndDecodesWithoutKey() throws {

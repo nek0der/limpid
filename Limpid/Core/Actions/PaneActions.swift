@@ -338,6 +338,15 @@ enum PaneActions {
 
     // MARK: - Zoom + layout
 
+    /// Leaves zoom on `tabID`: the tab comes forward, so the restored split
+    /// is what the user sees, and its zoom clears. Unlike `toggleZoom` it
+    /// never zooms, so a button that means "back to the split" cannot zoom
+    /// another pane if the tab has unzoomed under it.
+    static func unzoom(_ session: WindowSession, tabID: UUID) {
+        session.setActiveTab(tabID)
+        session.update(tabID) { $0.zoomedLeafID = nil }
+    }
+
     /// Toggle full-screen "zoom" for the focused pane within its tab.
     /// tmux Prefix+z — while zoomed, the terminal column pane area
     /// renders only the zoomed leaf; the rest of the SplitTree stays

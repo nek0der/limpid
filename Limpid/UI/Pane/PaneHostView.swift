@@ -396,6 +396,29 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         view.onRequestRenamePane = { [weak renamePresentation] in
             renamePresentation?.requestRename(paneID: paneID)
         }
+        wireZoomItem(on: view)
+    }
+
+    /// The right-click menu's "Zoom Pane" item, which flips the way the
+    /// header's does. Split out of `wireContextMenuCallbacks` to keep that
+    /// under the complexity cap.
+    @MainActor
+    private func wireZoomItem(on view: SurfaceView) {
+        let paneID = paneID
+        view.paneZoomAction = { [weak session] in
+            guard let session else { return nil }
+            return PaneHeaderRules.menuZoomAction(for: paneID, in: session.tab(containing: paneID))
+        }
+        view.onRequestZoomAction = { [weak session] in
+            guard let session, let tab = session.tab(containing: paneID) else { return }
+            switch PaneHeaderRules.menuZoomAction(for: paneID, in: tab) {
+            // The right-click already focused this pane, so it is the one
+            // `toggleZoom` zooms.
+            case .zoom: PaneActions.toggleZoom(session)
+            case .unzoom: PaneActions.unzoom(session, tabID: tab.id)
+            case nil: break
+            }
+        }
     }
 
     /// Pick the initial shell command for a freshly-created surface.

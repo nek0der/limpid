@@ -940,19 +940,36 @@
     "Show headers on split panes": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Show headers on split panes" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "分割したペインに見出しを出す" } }
+        "ja": { "stringUnit": { "state": "translated", "value": "分割したペインにヘッダーを表示" } }
       }
     },
     "Pane Headers": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Pane Headers" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "ペインの見出し" } }
+        "ja": { "stringUnit": { "state": "translated", "value": "ペインのヘッダー" } }
       }
     },
-    "Names each pane of a split tab and shows what it is running. Double-click a pane's name to rename it.": {
+    "Pane header": {
+      "comment": "Settings search keyword for the split pane header toggle, matching the header's earlier Japanese name",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Names each pane of a split tab and shows what it is running. Double-click a pane's name to rename it." } },
-        "ja": { "stringUnit": { "state": "translated", "value": "分割したタブの各ペインに名前と実行中の内容を表示します。ペインの名前をダブルクリックすると名前を変更できます。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pane header"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインの見出し"
+          }
+        }
+      }
+    },
+    "Names each pane of a split tab and shows what it is running. Double-click a pane's name to rename it. A zoomed pane shows its header even when this is off.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Names each pane of a split tab and shows what it is running. Double-click a pane's name to rename it. A zoomed pane shows its header even when this is off." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "分割したタブの各ペインに名前と実行中の内容を表示します。ペインの名前をダブルクリックすると名前を変更できます。最大化したペインには、オフのときもヘッダーを表示します。" } }
       }
     },
     "Pane actions": {
@@ -5777,7 +5794,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペインのズームを解除"
+            "value": "ペインの最大化を解除"
           }
         }
       }

@@ -45,11 +45,18 @@ struct PaneHeaderView: View {
         attention.headerRuntime(inPane: paneID)
     }
 
+    /// Whether this pane is the one its tab shows zoomed.
+    private var isZoomed: Bool {
+        PaneHeaderRules.isZoomed(paneID, in: session.tab(containing: paneID))
+    }
+
     /// The width a usable in-place field needs here, counting the prompt
-    /// cache clock while this header draws one.
+    /// cache clock while this header draws one and the unzoom button while
+    /// the pane is zoomed.
     private var inlineRenameThreshold: CGFloat {
         PaneHeaderMetrics.inlineRenameMinimumWidth(
-            showsPromptCacheClock: attention.promptCacheMark(paneID: paneID) != nil
+            showsPromptCacheClock: attention.promptCacheMark(paneID: paneID) != nil,
+            isZoomed: isZoomed
         )
     }
 
@@ -146,12 +153,13 @@ struct PaneHeaderView: View {
         // from the terminal, where a plain drag has to stay a text
         // selection. The few points before it starts leave clicks, the
         // name's double-click, and the menu as they were; while renaming,
-        // a drag selects text in the field instead.
+        // a drag selects text in the field instead, and while zoomed there
+        // is no split beside the pane to drop it into.
         .simultaneousGesture(
             DragGesture(minimumDistance: LimpidLayout.paneDragThreshold)
                 .updating($isPointerDragging) { _, state, _ in state = true }
                 .onChanged { _ in startPaneDrag() },
-            including: isEditing ? .subviews : .all
+            including: PaneHeaderRules.dragsPane(isEditing: isEditing, isZoomed: isZoomed) ? .all : .subviews
         )
         .onChange(of: isPointerDragging) { _, dragging in
             if !dragging {
@@ -164,7 +172,7 @@ struct PaneHeaderView: View {
         .accessibilityAddTraits(.isHeader)
         .accessibilityAction { focusPane() }
         .accessibilityAction(named: Text("Rename Pane…")) { beginRename(label: label) }
-        .accessibilityAction(named: Text("Zoom Pane")) { zoomPane() }
+        .accessibilityAction(named: zoomActionTitle) { performZoomAction() }
         // The ellipsis menu sits inside this single element, so its actions
         // are offered on the header itself as well.
         .accessibilityAction(named: Text("Move Pane to New Tab")) {
@@ -241,6 +249,11 @@ struct PaneHeaderView: View {
                     tooltip: stateTooltip(for: summary.state)
                 )
             }
+            // In every form while zoomed, beside the menu: the way back to
+            // the split, where the eye looks for the pane's own controls.
+            if isZoomed {
+                unzoomButton
+            }
             actionsMenu(label: label)
         }
     }
@@ -313,12 +326,55 @@ struct PaneHeaderView: View {
         }
     }
 
-    /// Zoom this pane. The header shows only while nothing is zoomed, so the
-    /// toggle here always zooms in; focusing first makes this pane the one
-    /// it zooms.
-    private func zoomPane() {
-        focusPane()
-        PaneActions.toggleZoom(session)
+    /// The header's zoom item: zoom this pane, or, while it is zoomed, go
+    /// back to the split.
+    private var zoomAction: PaneZoomAction {
+        PaneHeaderRules.zoomAction(isZoomed: isZoomed)
+    }
+
+    private var zoomActionTitle: Text {
+        switch zoomAction {
+        case .zoom: Text("Zoom Pane")
+        case .unzoom: Text("Unzoom Pane")
+        }
+    }
+
+    private var zoomActionSymbol: String {
+        switch zoomAction {
+        case .zoom: "arrow.up.left.and.arrow.down.right"
+        case .unzoom: "arrow.down.right.and.arrow.up.left"
+        }
+    }
+
+    /// Zooms this pane, focusing it first so it is the one zoomed, or goes
+    /// back to the split.
+    private func performZoomAction() {
+        switch zoomAction {
+        case .zoom:
+            focusPane()
+            PaneActions.toggleZoom(session)
+        case .unzoom:
+            if let tab = session.tab(containing: paneID) {
+                PaneActions.unzoom(session, tabID: tab.id)
+            }
+        }
+    }
+
+    /// The way back from zoom, in a slot the size of the menu's beside it.
+    private var unzoomButton: some View {
+        Button {
+            performZoomAction()
+        } label: {
+            Image(systemName: "arrow.down.right.and.arrow.up.left")
+                .font(.system(size: LimpidLayout.paneHeaderMenuFontSize, weight: .semibold))
+                .foregroundStyle(isHovering ? .secondary : .tertiary)
+                .frame(width: LimpidLayout.paneHeaderMenuSlot, height: LimpidLayout.paneHeaderMenuSlot)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help(Text("Unzoom Pane"))
+        .accessibilityLabel(Text("Unzoom Pane"))
     }
 
     /// What can be done to this pane alone, reachable without knowing the
@@ -335,9 +391,13 @@ struct PaneHeaderView: View {
             }
             Divider()
             Button {
-                zoomPane()
+                performZoomAction()
             } label: {
-                Label("Zoom Pane", systemImage: "arrow.up.left.and.arrow.down.right")
+                Label {
+                    zoomActionTitle
+                } icon: {
+                    Image(systemName: zoomActionSymbol)
+                }
             }
             Divider()
             Button {
@@ -381,7 +441,8 @@ struct PaneHeaderView: View {
     /// mouse event AppKit is delivering, which is the current one while the
     /// gesture updates.
     private func startPaneDrag() {
-        guard !hasStartedPaneDrag,
+        guard PaneHeaderRules.dragsPane(isEditing: isEditing, isZoomed: isZoomed),
+              !hasStartedPaneDrag,
               let event = NSApp.currentEvent,
               event.type == .leftMouseDragged,
               let view = registry.view(for: paneID)

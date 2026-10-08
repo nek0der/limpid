@@ -107,7 +107,7 @@ extension SurfaceView {
         return menu
     }
 
-    /// Split / promote / close section — split out of `menu(for:)` so the
+    /// Split / zoom / promote / close section — split out of `menu(for:)` so the
     /// builder stays under the function-body-length lint cap.
     private func appendPaneActionItems(to menu: NSMenu) {
         menu.addItem(.separator())
@@ -130,8 +130,26 @@ extension SurfaceView {
             accessibilityDescription: nil
         )
 
-        if canMoveToNewTab?() == true {
+        let zoomAction = paneZoomAction?()
+        if zoomAction != nil || canMoveToNewTab?() == true {
             menu.addItem(.separator())
+        }
+        if let zoomAction {
+            let zoom = menu.addItem(
+                withTitle: zoomAction == .zoom
+                    ? String(localized: "Zoom Pane")
+                    : String(localized: "Unzoom Pane"),
+                action: #selector(zoomPaneFromMenu(_:)),
+                keyEquivalent: ""
+            )
+            zoom.image = NSImage(
+                systemSymbolName: zoomAction == .zoom
+                    ? "arrow.up.left.and.arrow.down.right"
+                    : "arrow.down.right.and.arrow.up.left",
+                accessibilityDescription: nil
+            )
+        }
+        if canMoveToNewTab?() == true {
             let promote = menu.addItem(
                 withTitle: String(localized: "Move Pane to New Tab"),
                 action: #selector(movePaneToNewTab(_:)),
@@ -197,6 +215,10 @@ extension SurfaceView {
         onRequestRenamePane?()
     }
 
+    @objc func zoomPaneFromMenu(_ sender: Any?) {
+        onRequestZoomAction?()
+    }
+
     private func runSurfaceBinding(_ action: String) {
         guard let surface else { return }
         GhosttyFFI.performBindingAction(action, on: surface)
@@ -229,6 +251,8 @@ extension SurfaceView: NSMenuItemValidation {
             return surface != nil && canMoveToNewTab?() == true
         case #selector(renamePaneFromMenu(_:)):
             return canRenamePane?() == true
+        case #selector(zoomPaneFromMenu(_:)):
+            return surface != nil && paneZoomAction?() != nil
         default:
             return true
         }

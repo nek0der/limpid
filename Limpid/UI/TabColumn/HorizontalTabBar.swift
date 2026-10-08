@@ -83,12 +83,6 @@ struct HorizontalTabBar: View {
                         )
                     },
                     onRename: { newName in renameTab(tab.id, to: newName) },
-                    onUnzoom: {
-                        session.setActiveTab(tab.id)
-                        session.update(tab.id) { t in
-                            t.zoomedLeafID = nil
-                        }
-                    },
                     onEditingChanged: { editing in
                         editingTabID = editing ? tab.id : (editingTabID == tab.id ? nil : editingTabID)
                     },
