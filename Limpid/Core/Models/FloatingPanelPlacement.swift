@@ -39,6 +39,41 @@ enum FloatingPanelPlacement {
         let x: CGFloat
     }
 
+    /// How a panel hangs from its anchor: lined up how, how far off, and
+    /// whether it carries an arrow pointing back. The sizes come from the
+    /// interface; the rules here only apply them.
+    struct Style: Equatable {
+        let alignment: Alignment
+        /// Between the anchor and the panel's near edge.
+        let gap: CGFloat
+        /// The least distance from the arrow's center to either corner, or
+        /// nil for a panel with no arrow.
+        let arrowInset: CGFloat?
+    }
+
+    /// Where a panel of `style` and `panelSize` goes, and its arrow if the
+    /// style has one: `origin`, then `arrow` from wherever that put it.
+    static func layout(
+        anchor: CGRect,
+        panelSize: CGSize,
+        container: CGSize,
+        margin: CGFloat,
+        style: Style
+    ) -> (origin: CGPoint, arrow: Arrow?) {
+        let placed = Self.origin(
+            anchor: anchor,
+            panelSize: panelSize,
+            container: container,
+            margin: margin,
+            gap: style.gap,
+            alignment: style.alignment
+        )
+        let pointing = style.arrowInset.flatMap { inset in
+            Self.arrow(anchor: anchor, panelOrigin: placed, panelSize: panelSize, minimumInset: inset)
+        }
+        return (placed, pointing)
+    }
+
     /// Where the panel's top-leading corner goes, in the same coordinates as
     /// `anchor` and `container`. Horizontally it follows `alignment`, pulled
     /// inside the window by `margin`. It hangs `gap` below the anchor, or

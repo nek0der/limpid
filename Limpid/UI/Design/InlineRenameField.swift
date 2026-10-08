@@ -120,7 +120,7 @@ struct InlineRenameField: View {
                     }
                     .onDisappear { removeOutsideClickMonitor() }
                     .onChange(of: fieldFocused) { _, focused in
-                        if !focused, !didFinalize {
+                        if Self.commitsOnFocusLoss(isFocused: focused, didFinalize: didFinalize) {
                             finalize(commit: true)
                         }
                     }
@@ -157,6 +157,18 @@ struct InlineRenameField: View {
             },
             including: onRename == nil ? .subviews : .all
         )
+        // An edit its owner closed (a floating field whose request was
+        // dropped or replaced) is abandoned, not committed: the owner's
+        // promise is that it goes without committing. Without this the
+        // field, still mounted while its panel fades out, would commit what
+        // was typed when it later lost the keyboard.
+        .onChange(of: isEditing) { _, editing in
+            if Self.abandonsWhenClosedByOwner(isEditing: editing, didFinalize: didFinalize) {
+                didFinalize = true
+                removeOutsideClickMonitor()
+                fieldFocused = false
+            }
+        }
         .onChange(of: isEnabled) { _, enabled in
             // An offscreen sidebar remains mounted for its slide animation.
             // Finalize explicitly so its shared field editor and event
@@ -165,6 +177,20 @@ struct InlineRenameField: View {
                 finalize(commit: true)
             }
         }
+    }
+
+    /// Whether losing the keyboard commits the edit: only while it is
+    /// still open. Once it has ended, by a submit, a cancel, or its owner
+    /// closing it, losing the keyboard is just the field going away.
+    nonisolated static func commitsOnFocusLoss(isFocused: Bool, didFinalize: Bool) -> Bool {
+        !isFocused && !didFinalize
+    }
+
+    /// Whether `isEditing` turning false, from outside, abandons the edit.
+    /// An edit this field ended itself has already finalized; any other
+    /// way it closes is its owner dropping it.
+    nonisolated static func abandonsWhenClosedByOwner(isEditing: Bool, didFinalize: Bool) -> Bool {
+        !isEditing && !didFinalize
     }
 
     private func finalize(commit: Bool) {
@@ -178,6 +204,11 @@ struct InlineRenameField: View {
                 onRename?("")
             }
         }
+        // The keyboard goes as the edit ends, before the owner learns it
+        // ended. A field kept on screen a moment longer, as a floating panel
+        // fading out keeps it, must not still hold the keyboard when the
+        // owner hands it back to the terminal.
+        fieldFocused = false
         isEditing = false
     }
 

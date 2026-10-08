@@ -54,9 +54,10 @@ struct PromptCachePanelHost: View {
     }
 
     var body: some View {
-        FloatingArrowPanelHost(
+        FloatingPanelHost(
             request: openContent == nil ? nil : presentation.request,
             width: LimpidLayout.promptCachePanelWidth,
+            style: .arrowed,
             onPointerPressedOutside: { presentation.pointerPressed() },
             onKey: { key in
                 // Other keys close the panel only while they go to a

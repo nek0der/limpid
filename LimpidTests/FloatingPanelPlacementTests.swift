@@ -132,23 +132,6 @@ struct FloatingPanelArrowTests {
         )
         #expect(placement?.x == 20)
     }
-
-    @Test func originThenArrow_pointAtTheAnchorTogether() {
-        // The two rules as a host runs them: place, then point.
-        let anchor = CGRect(x: 600, y: 200, width: 10, height: 10)
-        let size = CGSize(width: width, height: height)
-        let origin = FloatingPanelPlacement.origin(
-            anchor: anchor,
-            panelSize: size,
-            container: CGSize(width: 1200, height: 800),
-            margin: 8,
-            gap: 13,
-            alignment: .centered
-        )
-        let placement = FloatingPanelPlacement.arrow(anchor: anchor, panelOrigin: origin, panelSize: size, minimumInset: inset)
-        #expect(placement?.edge == .top)
-        #expect(placement.map { origin.x + $0.x } == anchor.midX)
-    }
 }
 
 struct FloatingPanelAnchorPressTests {
@@ -186,5 +169,57 @@ struct FloatingPanelAnchorPressTests {
             panelHeight: 100,
             isFlipped: true
         ))
+    }
+}
+
+/// The two ways Limpid's panels hang, as hosts lay them out: the presets,
+/// with their sizes from `LimpidLayout`. Where the origin rule itself lands
+/// is `FloatingPanelOriginTests`; these check what each preset adds.
+@MainActor
+struct FloatingPanelLayoutTests {
+    private let container = CGSize(width: 800, height: 600)
+    private let panel = CGSize(width: LimpidLayout.paneRenamePanelWidth, height: 70)
+
+    private func layout(
+        _ anchor: CGRect,
+        style: FloatingPanelPlacement.Style
+    ) -> (origin: CGPoint, arrow: FloatingPanelPlacement.Arrow?) {
+        FloatingPanelPlacement.layout(
+            anchor: anchor,
+            panelSize: panel,
+            container: container,
+            margin: LimpidLayout.floatingPanelWindowMargin,
+            style: style
+        )
+    }
+
+    @Test func underHeader_hangsCloseUnderTheHeadersLeadingEdgeWithNoArrow() {
+        let header = CGRect(x: 100, y: 200, width: 160, height: 24)
+        let placed = layout(header, style: .underHeader)
+        #expect(placed.origin.x == header.minX)
+        #expect(placed.origin.y == header.maxY + LimpidLayout.paneRenamePanelAnchorGap)
+        #expect(placed.arrow == nil)
+    }
+
+    @Test func underHeader_nearTheBottom_sitsAboveWithNoArrow() {
+        let header = CGRect(x: 100, y: 540, width: 160, height: 24)
+        let placed = layout(header, style: .underHeader)
+        #expect(placed.origin.y == header.minY - LimpidLayout.paneRenamePanelAnchorGap - panel.height)
+        #expect(placed.arrow == nil)
+    }
+
+    @Test func arrowed_centersOnTheAnchorAndPointsBackAtIt() throws {
+        let dot = CGRect(x: 300, y: 200, width: 10, height: 10)
+        let placed = layout(dot, style: .arrowed)
+        #expect(placed.origin.y == dot.maxY + LimpidLayout.floatingPanelArrowAnchorGap)
+        let arrow = try #require(placed.arrow)
+        #expect(arrow.edge == .top)
+        #expect(placed.origin.x + arrow.x == dot.midX)
+    }
+
+    @Test func arrowed_nearTheBottom_pointsDown() throws {
+        let dot = CGRect(x: 300, y: 560, width: 10, height: 10)
+        let arrow = try #require(layout(dot, style: .arrowed).arrow)
+        #expect(arrow.edge == .bottom)
     }
 }
