@@ -15,9 +15,10 @@ struct KeyboardShortcutCatalogTests {
 
     private func sections(
         keyboard: KeyboardSettings = KeyboardSettings(),
-        quickTerminalHotKey: StoredShortcut? = nil
+        quickTerminalHotKey: StoredShortcut? = nil,
+        locale: Locale = Locale(identifier: "en")
     ) -> [KeyboardShortcutSection] {
-        KeyboardShortcutCatalog.sections(keyboard: keyboard, quickTerminalHotKey: quickTerminalHotKey)
+        KeyboardShortcutCatalog.sections(keyboard: keyboard, quickTerminalHotKey: quickTerminalHotKey, locale: locale)
     }
 
     private func entries(_ sections: [KeyboardShortcutSection]) -> [KeyboardShortcutEntry] {

@@ -65,7 +65,7 @@ struct PaneHeaderView: View {
     /// Resolved in Core, where the prompt cache panel reads the same label,
     /// so the panel names this pane the way this header does.
     private var label: PaneHeaderLabel {
-        attention.paneHeaderLabel(paneID: paneID, in: session)
+        attention.paneHeaderLabel(paneID: paneID, in: session, locale: locale)
     }
 
     /// The mark on the trailing edge, reduced the way the tab row reduces
@@ -290,11 +290,7 @@ struct PaneHeaderView: View {
     /// Hover text for the state mark: the state, then what the agent is
     /// doing when the badge says, as the tab row phrases a single pane.
     private func stateTooltip(for state: AgentState) -> String {
-        var pieces = [state.localizedLabel]
-        if let detail = runtime?.badge.detail, !detail.isEmpty {
-            pieces.append("· \(detail)")
-        }
-        return pieces.joined(separator: " ")
+        AgentStatusText.pane(state: state, detail: runtime?.badge.detail, locale: locale)
     }
 
     private func accessibilityDescription(_ label: PaneHeaderLabel, summary: AgentStateSummary?) -> String {
@@ -306,13 +302,13 @@ struct PaneHeaderView: View {
             pieces.append(detail)
         }
         if let summary {
-            pieces.append(summary.state.accessibilityLabel(isViewedFinished: summary.isViewedFinished))
+            pieces.append(summary.state.accessibilityLabel(isViewedFinished: summary.isViewedFinished, locale: locale))
         }
         // The header is one element, so the clock inside it is heard here.
         if let mark = attention.promptCacheMark(paneID: paneID) {
-            pieces.append(mark.spokenStatus)
+            pieces.append(mark.spokenStatus.resolved(in: locale))
         }
-        return pieces.joined(separator: ", ")
+        return AgentStatusText.spokenList(pieces, locale: locale)
     }
 
     /// Start a rename from the name's double-click, the menu, the

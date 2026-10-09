@@ -44,20 +44,20 @@ enum TerminalLinkRejection: Equatable {
     case missingFile
     case specialFile
 
-    var message: String {
+    var message: LocalizedStringResource {
         switch self {
         case .malformed:
-            String(localized: "The link isn’t a valid address.")
+            "The link isn’t a valid address."
         case .unsafeCharacters:
-            String(localized: "The link contains invisible or line-breaking characters.")
+            "The link contains invisible or line-breaking characters."
         case .invalidWebURL:
-            String(localized: "The web link has no host.")
+            "The web link has no host."
         case .remoteFile:
-            String(localized: "The link points to a file on another computer.")
+            "The link points to a file on another computer."
         case .missingFile:
-            String(localized: "The file doesn’t exist.")
+            "The file doesn’t exist."
         case .specialFile:
-            String(localized: "The link points to something that isn’t a file or folder.")
+            "The link points to something that isn’t a file or folder."
         }
     }
 }

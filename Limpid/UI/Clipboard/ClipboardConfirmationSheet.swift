@@ -72,41 +72,39 @@ struct ClipboardConfirmationSheet: View {
         .frame(minWidth: 460)
     }
 
-    private var title: String {
+    private var title: LocalizedStringResource {
         switch request.kind {
-        case .osc52Read: String(localized: "Allow clipboard read?")
-        case .osc52Write: String(localized: "Allow clipboard write?")
-        case .unsafePaste: String(localized: "Paste this text?")
+        case .osc52Read: "Allow clipboard read?"
+        case .osc52Write: "Allow clipboard write?"
+        case .unsafePaste: "Paste this text?"
         }
     }
 
-    private var message: String {
+    private var message: LocalizedStringResource {
         switch request.kind {
         case .osc52Read:
-            String(
-                localized: """
-                The terminal is requesting to read the contents of your clipboard. \
-                Only allow this if you recognise the program that issued the request.
-                """
-            )
+            """
+            The terminal is requesting to read the contents of your clipboard. \
+            Only allow this if you recognise the program that issued the request.
+            """
         case .osc52Write:
-            String(localized: "The terminal is requesting to replace your clipboard with the text shown below.")
+            "The terminal is requesting to replace your clipboard with the text shown below."
         case .unsafePaste:
-            String(localized: "The text you are about to paste looks like it may execute commands. Review it carefully before allowing.")
+            "The text you are about to paste looks like it may execute commands. Review it carefully before allowing."
         }
     }
 
-    private var allowLabel: String {
+    private var allowLabel: LocalizedStringResource {
         switch request.kind {
-        case .osc52Read, .osc52Write: String(localized: "Allow")
-        case .unsafePaste: String(localized: "Paste")
+        case .osc52Read, .osc52Write: "Allow"
+        case .unsafePaste: "Paste"
         }
     }
 
-    private var denyLabel: String {
+    private var denyLabel: LocalizedStringResource {
         switch request.kind {
-        case .osc52Read, .osc52Write: String(localized: "Deny")
-        case .unsafePaste: String(localized: "Cancel")
+        case .osc52Read, .osc52Write: "Deny"
+        case .unsafePaste: "Cancel"
         }
     }
 }

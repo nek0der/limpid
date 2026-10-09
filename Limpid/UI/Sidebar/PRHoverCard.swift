@@ -295,7 +295,7 @@ struct PRHoverCardContent: View {
                 // Forge-specific noun here too, so a GitLab row never
                 // reports "no checks" for a thing GitLab calls a
                 // pipeline.
-                Text("No \(String(localized: info.forge.checksNoun))")
+                Text("No \(info.forge.checksNoun)")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
@@ -312,10 +312,11 @@ struct PRHoverCardContent: View {
                 // into two catalog entries so a third forge doesn't
                 // need a new translation round — and so a GitLab user
                 // is never told to "open on GitHub".
-                Label(
-                    String(localized: "Open on \(info.forge.displayName)"),
-                    systemImage: "arrow.up.right.square"
-                )
+                Label {
+                    Text("Open on \(info.forge.displayName)")
+                } icon: {
+                    Image(systemName: "arrow.up.right.square")
+                }
             }
             .buttonStyle(.borderless)
             .pointerStyle(.link)
@@ -386,9 +387,10 @@ struct PRHoverCardContent: View {
     private func checksText(_ checks: PRChecks) -> Text {
         // Each branch is one complete sentence in the catalog rather
         // than fragments concatenated at runtime, so a translator sees
-        // the whole phrase and can reorder it. `noun` arrives as an
-        // already-localized String because it varies per forge.
-        let noun = String(localized: info.forge.checksNoun)
+        // the whole phrase and can reorder it. `noun` varies per forge and is
+        // interpolated as a resource, so it resolves in the same locale as
+        // the sentence around it.
+        let noun = info.forge.checksNoun
         guard let counts = checks.counts else {
             return switch checks.conclusion {
             case .success: Text("\(noun) passed")

@@ -16,7 +16,7 @@ struct ReviewPane: View {
 
     @Environment(\.reviewStores) private var reviewStores
     @State private var store: ReviewStore?
-    @State private var failure: String?
+    @State private var failure: DisplayText?
     /// Bumped by Try Again. The open is keyed on it as well as on the
     /// directory, so asking again re-runs it without the reader having to
     /// close review and come back.
@@ -54,7 +54,7 @@ struct ReviewPane: View {
     private var loadingView: some View {
         VStack(spacing: 16) {
             if let failure {
-                Text(verbatim: failure)
+                Text(display: failure)
                 HStack(spacing: 12) {
                     // The messages that land here name a retry — "Refresh to
                     // try again" — and this screen had nothing but Close on it.
@@ -112,7 +112,7 @@ struct ReviewPane: View {
             // the message below is drawn where the store is not, so without
             // this it was never shown at all.
             store = nil
-            failure = error.localizedDescription
+            failure = DisplayText(error: error)
         }
     }
 }
@@ -148,6 +148,7 @@ struct ReviewWorkspaceView: View {
     @Environment(ToastCenter.self) var toastCenter
     @Environment(SettingsStore.self) var settingsStore
     @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @Environment(\.locale) var locale
     @State var fileID: String?
     /// The line run a comment will cover and the text dragged for copying,
     /// held together so that only one of them is highlighted at a time.
@@ -415,7 +416,8 @@ struct ReviewWorkspaceView: View {
         return (try? ReviewPromptBuilder.build(
             root: store.root,
             comments: store.insertableComments,
-            instructions: settingsStore.settings.advanced.reviewInstructions
+            instructions: settingsStore.settings.advanced.reviewInstructions,
+            locale: settingsStore.appLocale
         ))?.text ?? ""
     }
 
@@ -482,7 +484,7 @@ struct ReviewWorkspaceView: View {
             if let error = store.errorMessage {
                 ReviewBanner(
                     systemImage: "exclamationmark.triangle.fill",
-                    message: Text(verbatim: error),
+                    message: Text(display: error),
                     tint: LimpidColor.error
                 )
             }
@@ -736,7 +738,7 @@ struct ReviewWorkspaceView: View {
         let committed = store.comments
         let resolved = before - openComments.count
         toastCenter.show(ToastItem(
-            message: String(localized: "Resolved \(resolved) comments."),
+            message: .localized("Resolved \(resolved) comments."),
             undo: { store.restore(previous, from: committed) }
         ))
     }
@@ -856,7 +858,8 @@ struct ReviewWorkspaceView: View {
                     onDelete: { store.remove($0.id) },
                     isOverlayPresented: isCompactFileRailPresented,
                     onCloseOverlay: dismissCompactFileRail,
-                    onClose: onClose
+                    onClose: onClose,
+                    locale: locale
                 )
             }
         }

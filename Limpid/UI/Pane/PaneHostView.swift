@@ -399,6 +399,9 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         view.keyboardSettings = { [settings] in
             settings.settings.keyboard
         }
+        view.appLocale = { [settings] in
+            settings.appLocale
+        }
         wireZoomItem(on: view)
     }
 

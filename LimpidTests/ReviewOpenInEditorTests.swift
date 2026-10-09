@@ -30,7 +30,8 @@ struct ReviewOpenInEditorTests {
         selecting ids: [Int],
         text: ReviewTextSelection = ReviewTextSelection(),
         opened: Opened,
-        live: Live? = nil
+        live: Live? = nil,
+        locale: Locale = Locale(identifier: "en")
     ) -> ReviewDiffTable {
         let file = ReviewFile(path: "a.swift", layer: .unstaged, status: .modified)
         var selection = ReviewDiffSelection()
@@ -57,7 +58,8 @@ struct ReviewOpenInEditorTests {
             search: ReviewSearch(), onCloseSearch: {}, searchTargetLineID: nil, language: nil,
             onToggleViewed: {}, fileApplication: .macOSDefault, onOpenLine: { opened.line = $0 },
             onExpand: { _, _ in }, onResolve: { _ in }, onEdit: { _ in }, onDelete: { _ in },
-            isOverlayPresented: false, onCloseOverlay: {}, onClose: {}
+            isOverlayPresented: false, onCloseOverlay: {}, onClose: {},
+            locale: locale
         )
     }
 
@@ -95,12 +97,17 @@ struct ReviewOpenInEditorTests {
     /// the editor opens.
     @Test func titleNamesTheLineAndTheApp() {
         let coordinator = makeTable(selecting: [1], opened: Opened()).makeCoordinator()
-        // Compared through the same builder because the test host may run in
-        // either language; what is pinned is the line, 11.
-        #expect(
-            coordinator.openInEditorTitle(clickedRow: 1)
-                == FileApplicationResolution.macOSDefault.openLineActionTitle(line: 11)
-        )
+        #expect(coordinator.openInEditorTitle(clickedRow: 1) == "Open Line 11 in Default Application")
+    }
+
+    /// The menu is AppKit, outside SwiftUI's environment, so it is written
+    /// in the locale the table is handed rather than the launch language.
+    @Test func titleFollowsTheTablesLocale() {
+        let ja = Locale(identifier: "ja")
+        let coordinator = makeTable(selecting: [1], opened: Opened(), locale: ja).makeCoordinator()
+        let title = coordinator.openInEditorTitle(clickedRow: 1)
+        #expect(title == FileApplicationResolution.macOSDefault.openLineActionTitle(line: 11).resolved(in: ja))
+        #expect(title != "Open Line 11 in Default Application")
     }
 
     /// Text dragged over rows 2 and 3.

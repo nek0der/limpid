@@ -72,14 +72,14 @@ enum AgentState: String, Codable, Equatable, CaseIterable {
     /// `needsInput`) into the tooltip even in ja. Resolving through
     /// the catalog at the model layer keeps the two tooltip sites in
     /// lockstep.
-    var localizedLabel: String {
+    var localizedLabel: LocalizedStringResource {
         switch self {
-        case .error: String(localized: "Error", comment: "Agent state label")
-        case .needsInput: String(localized: "Needs input", comment: "Agent state label")
-        case .finished: String(localized: "Finished", comment: "Agent state label")
-        case .running, .compacting: String(localized: "Running", comment: "Agent state label")
-        case .idle: String(localized: "Idle", comment: "Agent state label")
-        case .unknown: String(localized: "Unknown", comment: "Agent state label")
+        case .error: LocalizedStringResource("Error", comment: "Agent state label")
+        case .needsInput: LocalizedStringResource("Needs input", comment: "Agent state label")
+        case .finished: LocalizedStringResource("Finished", comment: "Agent state label")
+        case .running, .compacting: LocalizedStringResource("Running", comment: "Agent state label")
+        case .idle: LocalizedStringResource("Idle", comment: "Agent state label")
+        case .unknown: LocalizedStringResource("Unknown", comment: "Agent state label")
         }
     }
 }

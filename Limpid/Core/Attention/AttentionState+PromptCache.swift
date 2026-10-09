@@ -20,10 +20,10 @@ struct PromptCacheMark: Equatable {
 
     /// What the clock is called aloud: its own label, and a part of the
     /// pane header's when the header speaks for the clock inside it.
-    var spokenStatus: String {
+    var spokenStatus: LocalizedStringResource {
         status == .expired
-            ? String(localized: "Prompt cache expired", comment: "Spoken label of the red prompt cache clock")
-            : String(localized: "Prompt cache expires soon", comment: "Spoken label of the yellow prompt cache clock")
+            ? LocalizedStringResource("Prompt cache expired", comment: "Spoken label of the red prompt cache clock")
+            : LocalizedStringResource("Prompt cache expires soon", comment: "Spoken label of the yellow prompt cache clock")
     }
 }
 
@@ -152,8 +152,8 @@ extension AttentionState {
     /// `PromptCacheRules.paneLine(for:)`. The same label the pane header
     /// shows, read the same way for a single-pane tab, which has no header,
     /// so a panel opened from the tab row names its pane too.
-    func promptCachePaneLine(for target: PromptCacheTarget, in session: WindowSession) -> String {
-        PromptCacheRules.paneLine(for: paneHeaderLabel(paneID: target.paneID, in: session))
+    func promptCachePaneLine(for target: PromptCacheTarget, in session: WindowSession, locale: Locale) -> String {
+        PromptCacheRules.paneLine(for: paneHeaderLabel(paneID: target.paneID, in: session, locale: locale))
     }
 
     /// Records that `target`'s panel is on screen. An expired panel the

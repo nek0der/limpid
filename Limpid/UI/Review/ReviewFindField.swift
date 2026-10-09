@@ -29,7 +29,6 @@ struct ReviewFindField: NSViewRepresentable {
         field.drawsBackground = false
         field.focusRingType = .none
         field.font = .systemFont(ofSize: 11)
-        field.placeholderString = String(localized: "Find in file")
         field.lineBreakMode = .byTruncatingTail
         field.cell?.usesSingleLineMode = true
         field.stringValue = text
@@ -38,6 +37,12 @@ struct ReviewFindField: NSViewRepresentable {
 
     func updateNSView(_ field: NSTextField, context: Context) {
         context.coordinator.parent = self
+        // Here rather than in `makeNSView`, so a language switch reaches a
+        // find bar that is already open.
+        let placeholder = LocalizedStringResource("Find in file").resolved(in: context.environment.locale)
+        if field.placeholderString != placeholder {
+            field.placeholderString = placeholder
+        }
         // Only when they disagree: assigning while the reader is typing moves
         // the insertion point to the end of what they have written.
         if (field.currentEditor() as? NSTextView)?.hasMarkedText() != true, field.stringValue != text {

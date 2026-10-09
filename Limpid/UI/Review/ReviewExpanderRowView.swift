@@ -36,25 +36,12 @@ final class ReviewExpanderRowView: NSView {
         count.textColor = .tertiaryLabelColor
         count.lineBreakMode = .byTruncatingTail
         addSubview(count)
-        configure(button: up, symbol: "chevron.up", action: #selector(expandUp), label: String(localized: "Expand Up"))
-        configure(
-            button: down,
-            symbol: "chevron.down",
-            action: #selector(expandDown),
-            label: String(localized: "Expand Down")
-        )
-        configure(
-            button: all,
-            symbol: "arrow.up.and.line.horizontal.and.arrow.down",
-            action: #selector(expandAll),
-            label: String(localized: "Expand All")
-        )
-        configure(
-            button: fold,
-            symbol: "arrow.down.and.line.horizontal.and.arrow.up",
-            action: #selector(collapse),
-            label: String(localized: "Collapse Context")
-        )
+        // Labels are set in `configure`, not here: these rows are pooled, so
+        // one built before a language switch would keep the old words.
+        configure(button: up, action: #selector(expandUp))
+        configure(button: down, action: #selector(expandDown))
+        configure(button: all, action: #selector(expandAll))
+        configure(button: fold, action: #selector(collapse))
         // A stack, because the controls come and go: a gap has both
         // neighbours only in the middle of a file, and a fully unfolded one
         // offers nothing but the way back. Constrained individually, a hidden
@@ -90,15 +77,26 @@ final class ReviewExpanderRowView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private func configure(button: NSButton, symbol: String, action: Selector, label: String) {
+    private func configure(button: NSButton, action: Selector) {
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
         button.imagePosition = .imageOnly
         button.bezelStyle = .inline
         button.isBordered = false
         button.contentTintColor = .secondaryLabelColor
         button.target = self
         button.action = action
+    }
+
+    /// The glyph carries its label as its description, so it is rebuilt with
+    /// the label whenever the row is configured.
+    private static func label(
+        _ button: NSButton,
+        symbol: String,
+        _ resource: LocalizedStringResource,
+        in locale: Locale
+    ) {
+        let label = resource.resolved(in: locale)
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
         button.setAccessibilityLabel(label)
         button.toolTip = label
     }
@@ -123,12 +121,18 @@ final class ReviewExpanderRowView: NSView {
         NSColor.labelColor.withAlphaComponent(0.03)
     }
 
-    func configure(_ expander: ReviewExpander, numberWidth: CGFloat, layout: ReviewDiffLayout) {
+    /// `locale` is the table's, handed down on every reload.
+    func configure(_ expander: ReviewExpander, numberWidth: CGFloat, layout: ReviewDiffLayout, locale: Locale) {
         labelLeading?.constant = ReviewRowMetrics.gutterTotal(numberWidth: numberWidth, layout: layout)
             + ReviewRowMetrics.expanderLeadingInset
-        let text = expander.hidden > 0
-            ? String(localized: "\(expander.hidden) hidden lines")
-            : String(localized: "Expanded")
+        Self.label(up, symbol: "chevron.up", "Expand Up", in: locale)
+        Self.label(down, symbol: "chevron.down", "Expand Down", in: locale)
+        Self.label(all, symbol: "arrow.up.and.line.horizontal.and.arrow.down", "Expand All", in: locale)
+        Self.label(fold, symbol: "arrow.down.and.line.horizontal.and.arrow.up", "Collapse Context", in: locale)
+        let resource: LocalizedStringResource = expander.hidden > 0
+            ? "\(expander.hidden) hidden lines"
+            : "Expanded"
+        let text = resource.resolved(in: locale)
         count.stringValue = text
         up.isHidden = !expander.canExpandUp || expander.hidden == 0
         down.isHidden = !expander.canExpandDown || expander.hidden == 0
@@ -178,7 +182,8 @@ final class ReviewNoticeRowView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(_ text: String) {
+    func configure(_ notice: LocalizedStringResource, locale: Locale) {
+        let text = notice.resolved(in: locale)
         label.stringValue = text
         label.setAccessibilityLabel(text)
     }

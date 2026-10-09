@@ -521,6 +521,7 @@ private struct NotificationHistoryRow: View {
     let onTap: () -> Void
     let onDelete: () -> Void
 
+    @Environment(\.locale) private var locale
     @State private var isHovering = false
 
     var body: some View {
@@ -658,14 +659,14 @@ private struct NotificationHistoryRow: View {
     private var kindAccessibilityLabel: String? {
         if let state = entry.kind.agentState {
             return state.accessibilityLabel(
-                isViewedFinished: isViewedFinished
+                isViewedFinished: isViewedFinished,
+                locale: locale
             )
         }
         switch entry.kind {
         case .commandFinished:
-            return hasFailed
-                ? String(localized: "Failed")
-                : String(localized: "Finished")
+            let label: LocalizedStringResource = hasFailed ? "Failed" : "Finished"
+            return label.resolved(in: locale)
         case .desktop, .bell, .agentFinished, .agentNeedsInput, .agentError:
             return nil
         }
@@ -688,7 +689,7 @@ private struct NotificationHistoryRow: View {
             pieces.append(container)
         }
         if !isDestinationAlive {
-            pieces.append(String(localized: "Source pane was closed"))
+            pieces.append(LocalizedStringResource("Source pane was closed").resolved(in: locale))
         }
         return pieces.isEmpty ? nil : pieces.joined(separator: " · ")
     }
@@ -706,17 +707,19 @@ private struct NotificationHistoryRow: View {
         let now = Date()
         let delta = now.timeIntervalSince(entry.timestamp)
         if delta < 60 {
-            return String(localized: "now")
+            return LocalizedStringResource("now").resolved(in: locale)
         }
         if delta < 86400 {
             // Recent entries get a locale-aware abbreviated relative
-            // form ("5 min. ago" / "5分前"). `Date.RelativeFormatStyle`
-            // honors `Locale.current` for the unit suffix.
-            return entry.timestamp.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
+            // form ("5 min. ago" / "5分前"), in the window's locale rather
+            // than `Locale.current`, whose language is the launch one.
+            return entry.timestamp.formatted(
+                .relative(presentation: .numeric, unitsStyle: .abbreviated).locale(locale)
+            )
         }
         // Older entries hand off to the locale's own short date — no
         // hand-pinned `"MM/dd"` so ja users see e.g. `2026/06/04` and
         // long-form locales see their own shape.
-        return entry.timestamp.formatted(date: .abbreviated, time: .omitted)
+        return entry.timestamp.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(locale))
     }
 }

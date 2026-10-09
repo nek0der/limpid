@@ -14,6 +14,7 @@ struct ReviewAgentStripHeader: View {
     @Environment(WindowSession.self) private var session
     @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(\.surfaceRegistry) private var registry
+    @Environment(\.locale) private var locale
     /// Height when the drag started. Without it every delta would compound.
     @State private var dragOrigin: CGFloat?
 
@@ -47,7 +48,7 @@ struct ReviewAgentStripHeader: View {
     private var paneTitle: String {
         panes.first { $0.paneID == paneID }?.title
             ?? session.tab(containing: paneID)?.title
-            ?? String(localized: "Pane")
+            ?? LocalizedStringResource("Pane").resolved(in: locale)
     }
 
     private var isCollapsed: Bool {
@@ -285,12 +286,14 @@ struct ReviewDestinationChip: View {
     var isResolving = false
 
     @Environment(\.limpidAccent) private var accent
+    @Environment(\.locale) private var locale
 
     private var name: String {
         if let destination {
             return destination.title
         }
-        return isResolving ? String(localized: "Checking…") : String(localized: "No terminal")
+        let placeholder: LocalizedStringResource = isResolving ? "Checking…" : "No terminal"
+        return placeholder.resolved(in: locale)
     }
 
     /// The command in front, when it adds anything. An agent pane is usually

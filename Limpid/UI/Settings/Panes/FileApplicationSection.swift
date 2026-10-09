@@ -14,7 +14,7 @@ struct FileApplicationSection: View {
     var body: some View {
         Section {
             HStack(spacing: 12) {
-                Text(applicationName)
+                Text(display: applicationName)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 12)
@@ -57,15 +57,21 @@ struct FileApplicationSection: View {
         }
     }
 
-    private var applicationName: String {
+    private var applicationName: DisplayText {
         FileOpener.application(for: store.settings.advanced.fileApplication).displayName
-            ?? String(localized: "Default Application")
+            .map { .verbatim($0) } ?? .localized("Default Application")
     }
 
     private func chooseApplication() {
         let panel = NSOpenPanel()
+        // AppKit localizes the open panel's own buttons and sidebar in the
+        // language the process launched with, so our title and prompt do too: a
+        // panel half in each language would read worse than one that waits
+        // for the relaunch the menu bar also waits for.
+        // swiftlint:disable launch_language_lookup
         panel.title = String(localized: "Choose App for Opening Files")
         panel.prompt = String(localized: "Choose")
+        // swiftlint:enable launch_language_lookup
         panel.allowedContentTypes = [.applicationBundle]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false

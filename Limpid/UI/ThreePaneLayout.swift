@@ -18,6 +18,7 @@ struct ThreePaneLayout: View {
     let app: GhosttyApp
     @Environment(ReduceTransparencyResolver.self) private var reduceTransparencyResolver
     @Environment(\.limpidAccent) private var limpidAccent
+    @Environment(\.locale) private var locale
     /// Compact windows overlay the container slab instead of reserving a
     /// column for it. This is presentation-only so narrowing a window never
     /// overwrites the user's persisted sidebar preference.
@@ -164,6 +165,7 @@ struct ThreePaneLayout: View {
         )) { wrapped in
             CreateWorktreeSheet(projectID: wrapped.id)
                 .environment(state.session)
+                .environment(\.locale, locale)
                 .limpidAccentPropagated(limpidAccent)
         }
         // Handled here rather than in the toolbar segment because the two

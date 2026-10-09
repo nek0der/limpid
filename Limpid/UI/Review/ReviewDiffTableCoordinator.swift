@@ -86,6 +86,8 @@ extension ReviewDiffTable {
         var hasComposerRow = false
         /// The accent this table last drew with. See `updateNSView`.
         var appliedAccent: Color?
+        /// The locale this table's rows were last built in. See `updateNSView`.
+        var appliedLocale: Locale?
         private var lastWidth: CGFloat = 0
         private var lastHeight: CGFloat = 0
         /// The viewport observer's token. `nonisolated(unsafe)` because the
@@ -537,7 +539,7 @@ extension ReviewDiffTable {
             switch parent.rows[row].kind {
             case let .notice(text):
                 let view = reuse(tableView, "review-notice", ReviewNoticeRowView.init)
-                view.configure(text)
+                view.configure(text, locale: parent.locale)
                 return view
             case let .hunk(line):
                 let view = reuse(tableView, "review-hunk", ReviewHunkRowView.init)
@@ -545,7 +547,7 @@ extension ReviewDiffTable {
                 return view
             case let .expander(expander):
                 let view = reuse(tableView, "review-expander", ReviewExpanderRowView.init)
-                view.configure(expander, numberWidth: parent.numberWidth, layout: parent.layout)
+                view.configure(expander, numberWidth: parent.numberWidth, layout: parent.layout, locale: parent.locale)
                 view.onExpand = { [weak self] direction in self?.parent.onExpand(expander.gap, direction) }
                 return view
             case let .code(line):
@@ -557,7 +559,8 @@ extension ReviewDiffTable {
                     language: parent.language,
                     match: parent.search.query,
                     intralineRanges: parent.intralineHighlights[line.id],
-                    selectedRange: parent.selection.text.range(in: line, at: row, on: nil)
+                    selectedRange: parent.selection.text.range(in: line, at: row, on: nil),
+                    locale: parent.locale
                 )
                 return view
             case let .splitCode(pair):
@@ -571,13 +574,14 @@ extension ReviewDiffTable {
                     numberWidth: parent.numberWidth,
                     codeOffset: codeOffset,
                     match: parent.search.query,
-                    language: parent.language
+                    language: parent.language,
+                    locale: parent.locale
                 ))
                 view.onAddComment = { [weak self] in self?.parent.onCompose() }
                 return view
             case let .comment(comment):
                 let view = reuse(tableView, "review-comment", ReviewCommentRowView.init)
-                view.configure(comment, metrics: cardMetrics(in: tableView))
+                view.configure(comment, metrics: cardMetrics(in: tableView), locale: parent.locale)
                 view.onResolve = { [weak self] in self?.parent.onResolve(comment) }
                 view.onEdit = { [weak self] in self?.parent.onEdit(comment) }
                 view.onDelete = { [weak self] in self?.parent.onDelete(comment) }
@@ -588,7 +592,8 @@ extension ReviewDiffTable {
                     start: parent.composerStartLine,
                     text: parent.composerText,
                     isEditing: parent.composerIsEditing,
-                    metrics: cardMetrics(in: tableView)
+                    metrics: cardMetrics(in: tableView),
+                    locale: parent.locale
                 )
                 pendingComposerFocus = line.id
                 hasComposerRow = true

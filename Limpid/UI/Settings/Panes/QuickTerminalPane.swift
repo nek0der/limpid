@@ -34,7 +34,7 @@ struct QuickTerminalPane: View {
                 .settingsSearchTarget(SettingsSearchCatalog.quickTerminalPosition.id)
                 Picker("Size", selection: $store.settings.quickTerminal.sizePercent) {
                     ForEach(QuickTerminalSettings.allowedSizePercents, id: \.self) { percent in
-                        Text((Double(percent) / 100).formatted(.percent)).tag(percent)
+                        Text(Double(percent) / 100, format: .percent).tag(percent)
                     }
                 }
                 .settingsSearchTarget(SettingsSearchCatalog.quickTerminalSize.id)
@@ -113,54 +113,17 @@ private struct QuickTerminalHotKeyRow: View {
 
     /// Caution about the saved hotkey that does not stop it from working.
     /// Only shown when there is no error, which is the more urgent line.
-    private var warning: String? {
+    private var warning: LocalizedStringResource? {
         guard let hotKey = quickTerminal.hotKey,
               QuickTerminalSettings.mayOverlapAppCommands(hotKey)
         else { return nil }
-        return String(localized: "Other apps may use this combination for their own commands.")
+        return QuickTerminalSettings.appCommandOverlapWarning
     }
 
     /// A recorder rejection wins over a registration problem: it describes
     /// the key the user just pressed, not the one already saved.
-    private var message: String? {
-        if let rejection, let text = Self.rejectionMessage(rejection) {
-            return text
-        }
-        guard let problem = hotKeyCenter?.problem else { return nil }
-        return Self.problemMessage(problem)
-    }
-
-    private static func rejectionMessage(_ rejection: QuickTerminalHotKeyValidation) -> String? {
-        switch rejection {
-        case .ok:
-            return nil
-        case .missingPrimaryModifier:
-            return String(localized: "Hotkey must include ⌘ or ⌃.")
-        case .reserved:
-            return String(localized: "Limpid reserves this combination for its own use.")
-        case .takenBySystem:
-            return String(localized: "macOS uses this combination.")
-        case let .conflictsWithMenu(action):
-            let name = String(localized: action.localizedTitle)
-            return String(localized: "Already bound to \(name)")
-        }
-    }
-
-    private static func problemMessage(_ problem: QuickTerminalHotKeyProblem) -> String {
-        switch problem {
-        case .terminalUnavailable:
-            String(localized: "The terminal failed to start, so the hotkey is off.")
-        case .keyNotOnLayout:
-            String(localized: "No key on the current keyboard layout types this hotkey.")
-        case let .registrationFailed(status) where status == QuickTerminalHotKeyProblem.alreadyTakenStatus:
-            String(localized: "Another app already uses this hotkey.")
-        case let .registrationFailed(status):
-            String(localized: "The hotkey could not be registered (error \(Int(status))).")
-        case let .conflictsWithMenu(action):
-            String(localized: "The hotkey is off because \(String(localized: action.localizedTitle)) uses the same keys.")
-        case .takenBySystem:
-            String(localized: "The hotkey is off because macOS uses the same keys.")
-        }
+    private var message: LocalizedStringResource? {
+        rejection?.message ?? hotKeyCenter?.problem?.message
     }
 }
 
@@ -193,7 +156,7 @@ private struct QuickTerminalHotKeyRecorder: View {
                 startRecording()
             }
         } label: {
-            Text(label)
+            Text(display: label)
                 .font(.system(.body, design: .default).monospacedDigit())
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -210,7 +173,7 @@ private struct QuickTerminalHotKeyRecorder: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("Quick Terminal hotkey"))
-        .accessibilityValue(Text(label))
+        .accessibilityValue(Text(display: label))
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { _, newValue in
@@ -224,11 +187,11 @@ private struct QuickTerminalHotKeyRecorder: View {
         }
     }
 
-    private var label: String {
+    private var label: DisplayText {
         if isRecording {
-            return String(localized: "Press a key…")
+            return .localized("Press a key…")
         }
-        return quickTerminal.hotKey?.displayString ?? String(localized: "Unbound")
+        return quickTerminal.hotKey.map { .verbatim($0.displayString) } ?? .localized("Unbound")
     }
 
     private func startRecording() {

@@ -102,6 +102,7 @@ extension EnvironmentValues {
 /// and ReadyToInstall states.
 private struct UpdateMetadata: View {
     let item: UpdateDisplayItem
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -126,14 +127,12 @@ private struct UpdateMetadata: View {
     private var formattedSize: String? {
         let bytes = item.contentLength
         guard bytes > 0 else { return nil }
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: Int64(bytes))
+        return Int64(bytes).formatted(.byteCount(style: .file).locale(locale))
     }
 
     private var formattedDate: String? {
         guard let date = item.date else { return nil }
-        return date.formatted(date: .long, time: .omitted)
+        return date.formatted(Date.FormatStyle(date: .long, time: .omitted).locale(locale))
     }
 }
 
@@ -241,6 +240,7 @@ private struct AvailableView: View {
 
 private struct DownloadingView: View {
     @Environment(\.updatePopoverMetrics) private var metrics
+    @Environment(\.locale) private var locale
     let item: UpdateDisplayItem
     let expected: UInt64?
     let received: UInt64
@@ -270,11 +270,8 @@ private struct DownloadingView: View {
     }
 
     private func progressText(received: UInt64, expected: UInt64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        let r = formatter.string(fromByteCount: Int64(received))
-        let e = formatter.string(fromByteCount: Int64(expected))
-        return "\(r) / \(e)"
+        let style = ByteCountFormatStyle(style: .file).locale(locale)
+        return "\(Int64(received).formatted(style)) / \(Int64(expected).formatted(style))"
     }
 }
 

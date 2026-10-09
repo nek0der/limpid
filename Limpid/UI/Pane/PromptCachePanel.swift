@@ -25,6 +25,7 @@ struct PromptCachePanelHost: View {
     @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.locale) private var locale
 
     /// The pending look at whether the panel should open by itself; see
     /// `scheduleAutoOpen()`.
@@ -72,7 +73,7 @@ struct PromptCachePanelHost: View {
                 if let content = openContent {
                     PromptCachePanelView(
                         content: content,
-                        paneLine: attention.promptCachePaneLine(for: request.target, in: session)
+                        paneLine: attention.promptCachePaneLine(for: request.target, in: session, locale: locale)
                     ) { action in
                         perform(action, request: request, content: content)
                     }
@@ -182,9 +183,11 @@ private struct PromptCacheShownState: Equatable {
 struct PromptCachePanelView: View {
     let content: PromptCachePanelContent
     /// The pane the panel is about, by its header's name and directory; see
-    /// `AttentionState.promptCachePaneLine(for:in:)`.
+    /// `AttentionState.promptCachePaneLine(for:in:locale:)`.
     let paneLine: String
     let onAction: (PromptCacheAction) -> Void
+
+    @Environment(\.locale) private var locale
 
     var body: some View {
         // Once a minute, so "expired 12m ago" keeps up while it is open.
@@ -203,7 +206,7 @@ struct PromptCachePanelView: View {
                             .foregroundStyle(content.isExpired ? LimpidColor.promptCacheExpired : LimpidColor.warning)
                             .frame(width: LimpidLayout.promptCachePanelTitleGlyphWidth)
                             .accessibilityHidden(true)
-                        Text(verbatim: content.title)
+                        Text(content.title)
                             .font(.system(size: LimpidLayout.promptCachePanelTitleFontSize, weight: .semibold))
                             .foregroundStyle(LimpidColor.primaryText)
                             .accessibilityAddTraits(.isHeader)
@@ -224,8 +227,8 @@ struct PromptCachePanelView: View {
                         .accessibilityHidden(true)
                 }
                 VStack(alignment: .leading, spacing: LimpidLayout.promptCachePanelLineSpacing) {
-                    ForEach(content.lines(now: now), id: \.self) { line in
-                        Text(verbatim: line)
+                    ForEach(Array(content.lines(now: now, locale: locale).enumerated()), id: \.offset) { _, line in
+                        Text(line)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -238,7 +241,7 @@ struct PromptCachePanelView: View {
                     // disabled button's tooltip does not reliably show on
                     // macOS, so the help alone would leave them unexplained.
                     if let block = content.commandBlock {
-                        Text(verbatim: block.reason)
+                        Text(block.reason)
                             .font(.system(size: LimpidLayout.promptCachePanelTextFontSize))
                             .foregroundStyle(LimpidColor.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -253,7 +256,7 @@ struct PromptCachePanelView: View {
         }
         .padding(LimpidLayout.promptCachePanelPadding)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text(verbatim: "\(content.title), \(paneLine)"))
+        .accessibilityLabel(Text(verbatim: "\(content.title.resolved(in: locale)), \(paneLine)"))
     }
 
     @ViewBuilder
@@ -298,7 +301,7 @@ struct PromptCachePanelView: View {
     /// it is busy or not in front, or the prompt may hold unsent text. The
     /// same checks run again when it is pressed.
     private func command(_ title: Text, help: Text, action: PromptCacheAction) -> some View {
-        let reason = content.commandBlock.map { Text(verbatim: $0.reason) } ?? help
+        let reason = content.commandBlock.map { Text($0.reason) } ?? help
         return Button {
             onAction(action)
         } label: {

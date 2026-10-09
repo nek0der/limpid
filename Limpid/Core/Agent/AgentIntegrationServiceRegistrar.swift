@@ -134,18 +134,18 @@ struct AgentIntegrationServiceIssue: Identifiable, Equatable, Sendable {
         return Self(reason: .reconciliationFailed, diagnostic: String(describing: error))
     }
 
-    var title: String {
-        String(localized: "Native approvals are unavailable")
+    var title: LocalizedStringResource {
+        "Native approvals are unavailable"
     }
 
-    var detail: String {
+    var detail: LocalizedStringResource {
         switch reason {
         case .requiresApproval:
-            String(localized: "Enable Limpid in System Settings → General → Login Items & Extensions, then return to Limpid.")
+            "Enable Limpid in System Settings → General → Login Items & Extensions, then return to Limpid."
         case .serviceNotFound:
-            String(localized: "The bundled approval service could not be found. Reinstall Limpid and try again.")
+            "The bundled approval service could not be found. Reinstall Limpid and try again."
         case .reconciliationFailed:
-            String(localized: "Limpid could not start its approval service. Claude and Codex will use their native permission prompts.")
+            "Limpid could not start its approval service. Claude and Codex will use their native permission prompts."
         }
     }
 }

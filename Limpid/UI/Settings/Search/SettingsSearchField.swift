@@ -47,7 +47,7 @@ struct SettingsSearchField: NSViewRepresentable {
 
     private var searchLabel: String {
         let resource: LocalizedStringResource = "Search Settings"
-        return resource.settingsResolved(locale: locale)
+        return resource.resolved(in: locale)
     }
 
     @MainActor

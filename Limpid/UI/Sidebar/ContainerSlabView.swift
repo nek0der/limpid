@@ -38,6 +38,7 @@ struct ContainerSlabView: View {
     @Environment(ContainerColorPresentation.self) private var colorPresentation
     @Environment(SettingsStore.self) private var settingsStore
     @Environment(\.prStatusSyncer) private var prStatusSyncer
+    @Environment(\.locale) var locale
 
     /// Container (Project or Group) whose Settings sheet should be
     /// presented, if any. One sheet serves both kinds.
@@ -56,7 +57,7 @@ struct ContainerSlabView: View {
     /// Shared error surface for any worktree operation (create /
     /// rename / delete / hide). One alert, one state — keeps the
     /// failure UI honest no matter which pipeline threw.
-    @State private var worktreeOperationError: String?
+    @State private var worktreeOperationError: DisplayText?
 
     var body: some View {
         VerticalSplitView(
@@ -81,6 +82,10 @@ struct ContainerSlabView: View {
         .sheet(item: presentationBinding($openSettingsFor)) { target in
             ContainerSettingsSheet(target: target)
                 .environment(session)
+                // Re-applied like the accent: macOS presents the sheet in a
+                // detached window, and its text must follow the language
+                // the window shows.
+                .environment(\.locale, locale)
                 .limpidAccentPropagated(limpidAccent)
         }
         .worktreeOperationAlerts(
@@ -306,7 +311,7 @@ struct ContainerSlabView: View {
                                     timestamp: entry.updatedAt,
                                     now: context.date,
                                     state: entry.state,
-                                    containerLabel: session.containerLabel(for: tab.container),
+                                    containerLabel: session.containerLabel(for: tab.container, locale: locale),
                                     tabTitle: tab.displayTitle,
                                     prompt: attentionPreview(entry),
                                     isCurrent: entry.tabID == focusedTab && entry.paneID == focusedPane,
@@ -634,8 +639,14 @@ struct ContainerSlabView: View {
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
+        // AppKit localizes the open panel's own buttons and sidebar in the
+        // language the process launched with, so our text does too: a
+        // panel half in each language would read worse than one that waits
+        // for the relaunch the menu bar also waits for.
+        // swiftlint:disable launch_language_lookup
         panel.prompt = String(localized: "Open")
         panel.message = String(localized: "Choose a folder to open as a Project.")
+        // swiftlint:enable launch_language_lookup
         panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory())
         // Non-blocking variant of `runModal`; the completion fires on
         // main once the user dismisses the panel. See

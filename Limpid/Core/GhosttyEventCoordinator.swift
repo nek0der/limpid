@@ -305,20 +305,21 @@ final class GhosttyEventCoordinator {
 
         let owningTab = session?.tab(containing: paneID)
         let title = owningTab?.displayTitle ?? "Limpid"
+        let locale = notificationManager.appLocale()
         let exitFragment: String = {
             if exit < 0 {
                 return ""
             }
-            return String(
-                localized: " (exit \(exit))",
+            return LocalizedStringResource(
+                " (exit \(exit))",
                 comment: "Command-finished notification — exit code fragment"
-            )
+            ).resolved(in: locale)
         }()
-        let durationLabel = formatDuration(durationSeconds)
-        let body = String(
-            localized: "Finished in \(durationLabel)\(exitFragment)",
+        let durationLabel = formatDuration(durationSeconds, locale: locale)
+        let body = LocalizedStringResource(
+            "Finished in \(durationLabel)\(exitFragment)",
             comment: "Command-finished notification body — duration + optional exit fragment"
-        )
+        ).resolved(in: locale)
 
         if config.channels.contains(.notify) {
             notificationManager.send(
@@ -330,7 +331,7 @@ final class GhosttyEventCoordinator {
                 requireFocus: config.mode == .unfocused,
                 kind: .commandFinished,
                 tabTitleSnapshot: owningTab?.displayTitle,
-                containerLabel: owningTab.map { session?.containerLabel(for: $0.container) } ?? nil,
+                containerLabel: owningTab.map { session?.containerLabel(for: $0.container, locale: locale) } ?? nil,
                 exitCode: exit >= 0 ? exit : nil,
                 durationSeconds: durationSeconds
             )
@@ -348,17 +349,20 @@ final class GhosttyEventCoordinator {
     /// `String(format: "%.1fs", …)` which pinned the C locale's `.`
     /// decimal separator and English unit suffixes — comma-decimal
     /// locales would have read "1,5s" as "15s" and ja users saw "1.5s"
-    /// inline with otherwise translated copy.
-    private func formatDuration(_ seconds: Double) -> String {
+    /// inline with otherwise translated copy. `locale` is the one the
+    /// sentence around it is resolved in.
+    private func formatDuration(_ seconds: Double, locale: Locale) -> String {
         if seconds < 60 {
             return Duration.seconds(seconds).formatted(
                 .units(allowed: [.seconds], width: .narrow, fractionalPart: .show(length: 1))
+                    .locale(locale)
             )
         }
         let m = Int(seconds) / 60
         let s = Int(seconds) % 60
         return Duration.seconds(m * 60 + s).formatted(
             .units(allowed: [.minutes, .seconds], width: .narrow)
+                .locale(locale)
         )
     }
 
@@ -454,7 +458,7 @@ final class GhosttyEventCoordinator {
             requireFocus: true,
             kind: .desktop,
             tabTitleSnapshot: owningTab?.displayTitle,
-            containerLabel: owningTab.map { session.containerLabel(for: $0.container) }
+            containerLabel: owningTab.map { session.containerLabel(for: $0.container, locale: notificationManager.appLocale()) }
         )
 
         let isFocusedSource = LimpidNotificationDelegate.isViewFocused(view)

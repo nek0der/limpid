@@ -400,13 +400,6 @@ extension WindowSession {
         }
 
         guard droppedTabs > 0 || resetContainer else { return nil }
-        var parts: [String] = []
-        if droppedTabs > 0 {
-            parts.append("\(droppedTabs) tab(s) with duplicate pane IDs were dropped")
-        }
-        if resetContainer {
-            parts.append("the active container no longer existed")
-        }
-        return .decodeFailed(message: "Recovered a corrupt session: \(parts.joined(separator: "; ")).")
+        return .recovered(droppedTabCount: droppedTabs, didResetActiveContainer: resetContainer)
     }
 }

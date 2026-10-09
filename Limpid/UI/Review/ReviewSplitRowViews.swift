@@ -20,6 +20,8 @@ struct ReviewSplitRowContext {
     let match: String
     /// The language the file is written in, or `nil` for one we do not color.
     let language: ReviewSyntax.Language?
+    /// The table's locale, which the spoken description is resolved in.
+    let locale: Locale
 }
 
 /// One row of the side-by-side layout: the old file's line on the left, the new
@@ -87,14 +89,15 @@ final class ReviewSplitCodeRowView: NSView {
         language = context.language
         let old = pair.old.map { "\($0.oldLine.map(String.init) ?? "-") \($0.text)" } ?? ""
         let new = pair.new.map { "\($0.newLine.map(String.init) ?? "-") \($0.text)" } ?? ""
-        setAccessibilityLabel(String(localized: "Old \(old) → new \(new)"))
+        let position = LocalizedStringResource("Old \(old) → new \(new)").resolved(in: context.locale)
+        setAccessibilityLabel(position)
         // A static text element is read from its value, not its label.
-        setAccessibilityValue(String(localized: "Old \(old) → new \(new)"))
+        setAccessibilityValue(position)
         let hasIntraline = [pair.old, pair.new].compactMap(\.self).contains {
             !intralineHighlights[$0.id].isEmpty
         }
         setAccessibilityHelp(
-            hasIntraline ? String(localized: "Changed characters are highlighted.") : nil
+            hasIntraline ? LocalizedStringResource("Changed characters are highlighted.").resolved(in: context.locale) : nil
         )
         needsDisplay = true
         window?.invalidateCursorRects(for: self)

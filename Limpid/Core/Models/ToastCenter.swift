@@ -57,12 +57,12 @@ final class ToastCenter {
 /// mid-flight.
 struct ToastItem: Identifiable {
     let id = UUID()
-    /// Pre-localized message. Callers must run the catalog lookup
-    /// themselves (typically via `String(localized: "Hid worktree
-    /// “\(label)”")`) before constructing the item — `Text(String)`
-    /// is not auto-localized, so threading a raw key through here
-    /// would silently bypass the String Catalog.
-    let message: String
+    /// The message, kept unresolved: a literal is a catalog string
+    /// (`"Hid worktree “\(label)”"`), which `ToastView` draws in the
+    /// window's locale, so a toast already on screen switches with the
+    /// display language. `.verbatim` is for text we cannot localize, such
+    /// as a system error's own message; `DisplayText(error:)` picks.
+    let message: DisplayText
     /// Closure run when the user clicks Undo. The toast is dismissed
     /// before this fires, so the closure can safely re-enter the
     /// model layer. `nil` for info-only toasts whose message has

@@ -79,6 +79,21 @@ struct SessionSnapshotTests {
         #expect(restored.activeContainerID == .group(g.id))
     }
 
+    @Test("an active container that no longer exists is reported as a repair")
+    func restore_missingActiveContainer_reportsRecovery() {
+        let s = WindowSession()
+        _ = s.openTab(container: .loose)
+        var snap = s.makeSnapshot()
+        snap.activeTabID = nil
+        snap.activeContainerID = .group(UUID())
+
+        let restored = WindowSession()
+        let issue = restored.restore(from: snap)
+
+        #expect(issue == .recovered(droppedTabCount: 0, didResetActiveContainer: true))
+        #expect(restored.activeContainerID == .loose)
+    }
+
     @Test("a legacy groups/projects payload yields a fresh session")
     func restore_legacyShapedPayload_yieldsFreshSession() {
         // Pre-v5 state.json carried separate `groups[]` / `projects[]` keys

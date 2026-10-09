@@ -70,9 +70,11 @@ struct PromptCacheRulesTests {
             isAnswered: false,
             commandBlock: nil
         ))
-        let expiredLines = expired.lines(now: anchor.addingTimeInterval(3600 + 56 * 60))
+        let en = Locale(identifier: "en")
+        let expiredLines = expired.lines(now: anchor.addingTimeInterval(3600 + 56 * 60), locale: en)
+            .map { $0.resolved(in: en) }
         #expect(expiredLines.count == 2)
-        #expect(expiredLines[0].contains(PromptCacheFormatting.duration(56 * 60)))
+        #expect(expiredLines[0].contains(PromptCacheFormatting.duration(56 * 60, locale: en)))
         #expect(expiredLines[1].contains("573k"))
 
         let soon = try #require(PromptCacheRules.panelContent(
@@ -81,9 +83,9 @@ struct PromptCacheRulesTests {
             isAnswered: false,
             commandBlock: nil
         ))
-        let soonLines = soon.lines(now: anchor.addingTimeInterval(3600 - 120))
-        #expect(soonLines == [soon.timeLine(now: anchor.addingTimeInterval(3600 - 120))], "no size, no cost line")
-        #expect(soonLines[0].contains(PromptCacheFormatting.duration(120)))
+        let soonLines = soon.lines(now: anchor.addingTimeInterval(3600 - 120), locale: en)
+        #expect(soonLines == [soon.timeLine(now: anchor.addingTimeInterval(3600 - 120), locale: en)], "no size, no cost line")
+        #expect(soonLines[0].resolved(in: en).contains(PromptCacheFormatting.duration(120, locale: en)))
         #expect(soon.costLine == nil)
     }
 
@@ -439,13 +441,14 @@ struct PromptCachePaneLineTests {
         )], kind: .claude)
 
         // The same label the header resolves, whichever clock opened it.
-        let header = attention.paneHeaderLabel(paneID: paneID, in: session)
-        #expect(attention.promptCachePaneLine(for: target, in: session) == PromptCacheRules.paneLine(for: header))
-        #expect(attention.promptCachePaneLine(for: target, in: session).hasSuffix(" · ~/work/tamurakanto"))
+        let en = Locale(identifier: "en")
+        let header = attention.paneHeaderLabel(paneID: paneID, in: session, locale: en)
+        #expect(attention.promptCachePaneLine(for: target, in: session, locale: en) == PromptCacheRules.paneLine(for: header))
+        #expect(attention.promptCachePaneLine(for: target, in: session, locale: en).hasSuffix(" · ~/work/tamurakanto"))
 
         // A name the user gave the pane wins over the agent's title.
         session.renamePane(paneID, to: "review")
-        #expect(attention.promptCachePaneLine(for: target, in: session) == "review · ~/work/tamurakanto")
+        #expect(attention.promptCachePaneLine(for: target, in: session, locale: en) == "review · ~/work/tamurakanto")
     }
 }
 
@@ -509,8 +512,9 @@ struct PromptCacheOpeningTests {
         let window = AgentCacheWindow(observedAt: Date(), ttlSeconds: 3600, rewriteTokens: nil, precision: .estimated)
         let expired = PromptCacheMark(status: .expired, window: window, target: target)
         let soon = PromptCacheMark(status: .expiringSoon, window: window, target: target)
-        #expect(!expired.spokenStatus.isEmpty)
-        #expect(expired.spokenStatus != soon.spokenStatus)
+        let en = Locale(identifier: "en")
+        #expect(!expired.spokenStatus.resolved(in: en).isEmpty)
+        #expect(expired.spokenStatus.resolved(in: en) != soon.spokenStatus.resolved(in: en))
     }
 }
 
@@ -520,14 +524,15 @@ struct PromptCacheReasonTests {
             PromptCacheCommandBlock.notAtPrompt,
             .notInFront,
             .unsubmittedInput
-        ].map(\.reason)
+        ].map { $0.reason.resolved(in: Locale(identifier: "en")) }
         #expect(Set(reasons).count == 3, "a shell in front is not the agent being busy")
     }
 
     @Test func unsentInput_pointsAtWhatStillWorks() {
         // The panel cannot type here until the next turn, so the advice is
         // to type the command, not to clear the prompt.
-        #expect(PromptCacheCommandBlock.unsubmittedInput.reason.contains("/compact"))
+        #expect(PromptCacheCommandBlock.unsubmittedInput.reason.resolved(in: Locale(identifier: "en")).contains("/compact"))
+        #expect(PromptCacheCommandBlock.unsubmittedInput.reason.resolved(in: Locale(identifier: "ja")).contains("/compact"))
     }
 }
 

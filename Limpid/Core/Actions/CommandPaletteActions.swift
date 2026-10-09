@@ -42,13 +42,14 @@ enum CommandPaletteActions {
             NotificationCenter.default.post(name: .limpidCommandPaletteFocus, object: nil)
             return
         }
-        let state = CommandPaletteState()
+        let state = CommandPaletteState(locale: settings.appLocale)
         state.allItems = CommandPaletteCatalog.buildItems(
             session: session,
             settings: settings,
             attention: attention,
             registry: registry,
-            reviewPresentation: reviewPresentation
+            reviewPresentation: reviewPresentation,
+            locale: state.locale
         )
         state.initialQuery = initialQuery.isEmpty ? nil : initialQuery
         state.applyFilter(query: "", frecencyStore: frecencyStore)

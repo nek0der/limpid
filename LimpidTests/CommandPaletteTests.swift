@@ -150,7 +150,7 @@ struct CommandPaletteTests {
         let session = WindowSession()
         let settings = SettingsStore()
         let items = CommandPaletteCatalog.buildItems(
-            session: session, settings: settings, attention: AttentionState()
+            session: session, settings: settings, attention: AttentionState(), locale: Locale(identifier: "en")
         )
         let shortcutItems = items.filter { $0.category == .actions }
         #expect(shortcutItems.count == LimpidShortcutAction.allCases.count)
@@ -166,7 +166,8 @@ struct CommandPaletteTests {
             var items = CommandPaletteCatalog.buildItems(
                 session: session,
                 settings: settings,
-                attention: attention
+                attention: attention,
+                locale: Locale(identifier: "en")
             )
             #expect(items.first(where: { $0.id == "shortcut.reviewTurn" })?.isEnabled == false)
             #expect(items.first(where: { $0.id == "shortcut.reviewChanges" })?.isEnabled == false)
@@ -183,7 +184,8 @@ struct CommandPaletteTests {
             items = CommandPaletteCatalog.buildItems(
                 session: session,
                 settings: settings,
-                attention: attention
+                attention: attention,
+                locale: Locale(identifier: "en")
             )
             #expect(items.first(where: { $0.id == "shortcut.reviewTurn" })?.isEnabled == true)
             #expect(items.first(where: { $0.id == "shortcut.reviewChanges" })?.isEnabled == true)
@@ -207,7 +209,7 @@ struct CommandPaletteTests {
         let (session, _, _) = WindowSessionFixture.withLooseTab()
         let settings = SettingsStore()
         let items = CommandPaletteCatalog.buildItems(
-            session: session, settings: settings, attention: AttentionState()
+            session: session, settings: settings, attention: AttentionState(), locale: Locale(identifier: "en")
         )
         let tabItems = items.filter {
             if case .jumpToTab = $0.action {
@@ -223,7 +225,7 @@ struct CommandPaletteTests {
         let (session, group, _) = WindowSessionFixture.withGroupAndOneTab()
         let settings = SettingsStore()
         let items = CommandPaletteCatalog.buildItems(
-            session: session, settings: settings, attention: AttentionState()
+            session: session, settings: settings, attention: AttentionState(), locale: Locale(identifier: "en")
         )
         let groupItems = items.filter {
             if case let .activateGroup(id) = $0.action {
@@ -274,7 +276,7 @@ struct CommandPaletteTests {
 
     @Test("selectedIndex clamps to results range")
     func state_clampSelection() {
-        let state = CommandPaletteState()
+        let state = CommandPaletteState(locale: Locale(identifier: "en"))
         state.selectedIndex = 10
         state.results = [
             CommandPaletteState.ScoredItem(

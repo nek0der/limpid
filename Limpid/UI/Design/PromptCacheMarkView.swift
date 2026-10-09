@@ -22,7 +22,7 @@ private extension PromptCacheMark {
     }
 
     var accessibilityLabel: Text {
-        Text(verbatim: spokenStatus)
+        Text(spokenStatus)
     }
 
     /// The cost sentence alone. Not the time: SwiftUI reads the value when
@@ -30,12 +30,13 @@ private extension PromptCacheMark {
     /// thresholds, so a time here would be stale for most of an hour. The
     /// panel says how long ago or how soon.
     var accessibilityValue: Text {
-        Text(verbatim: PromptCacheRules.panelContent(
+        let costLine = PromptCacheRules.panelContent(
             status: status,
             window: window,
             isAnswered: false,
             commandBlock: nil
-        )?.costLine ?? "")
+        )?.costLine
+        return costLine.map { Text($0) } ?? Text(verbatim: "")
     }
 }
 

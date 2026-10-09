@@ -12,16 +12,22 @@ private let log = Logger.limpid("links")
 final class TerminalLinkOpener {
     /// Shows a one-line explanation when a click does something other than
     /// open the target. A closure so Core does not own the toast view state.
-    private let notify: (String) -> Void
+    private let notify: (DisplayText) -> Void
     /// Read at click time so a change in Settings applies to the next click.
     private let fileApplication: () -> FileApplication?
+    /// The app locale, read when the confirmation is built. An `NSAlert`
+    /// is outside SwiftUI's environment, so it would otherwise answer in
+    /// the language the process launched with.
+    private let locale: @MainActor () -> Locale
 
     init(
-        notify: @escaping (String) -> Void,
-        fileApplication: @escaping () -> FileApplication? = { nil }
+        notify: @escaping (DisplayText) -> Void,
+        fileApplication: @escaping () -> FileApplication? = { nil },
+        locale: @escaping @MainActor () -> Locale
     ) {
         self.notify = notify
         self.fileApplication = fileApplication
+        self.locale = locale
     }
 
     func open(_ text: String, source: TerminalLinkSource, baseDirectories: [URL] = []) {
@@ -43,17 +49,17 @@ final class TerminalLinkOpener {
                 do {
                     try await FileOpener.open(url, at: position, with: application)
                 } catch {
-                    notify(error.localizedDescription)
+                    notify(DisplayText(error: error))
                 }
             }
         case let .reveal(url):
             NSWorkspace.shared.activateFileViewerSelecting([url])
-            notify(String(localized: "Shown in Finder instead of opened, because it can run code."))
+            notify(.localized("Shown in Finder instead of opened, because it can run code."))
         case let .confirm(url):
             confirmAndOpen(url)
         case let .reject(reason):
             log.notice("rejected terminal link: \(String(describing: reason), privacy: .public)")
-            notify(reason.message)
+            notify(.localized(reason.message))
         }
     }
 
@@ -64,19 +70,20 @@ final class TerminalLinkOpener {
     /// keystroke cannot accept the prompt.
     private func confirmAndOpen(_ url: URL) {
         guard let handler = NSWorkspace.shared.urlForApplication(toOpen: url) else {
-            notify(String(localized: "No app can open this link."))
+            notify(.localized("No app can open this link."))
             return
         }
         let appName = FileManager.default.displayName(atPath: handler.path)
         let target = TerminalLinkPolicy.displayString(for: url)
+        let locale = locale()
         let alert = NSAlert()
-        alert.messageText = String(localized: "Open this link in \(appName)?")
-        alert.informativeText = String(
-            localized: "A program in the terminal chose this link, and it may not match the text you clicked.\n\n\(target)"
-        )
+        alert.messageText = LocalizedStringResource("Open this link in \(appName)?").resolved(in: locale)
+        alert.informativeText = LocalizedStringResource(
+            "A program in the terminal chose this link, and it may not match the text you clicked.\n\n\(target)"
+        ).resolved(in: locale)
         alert.alertStyle = .warning
-        alert.addButton(withTitle: String(localized: "Cancel"))
-        alert.addButton(withTitle: String(localized: "Open"))
+        alert.addButton(withTitle: LocalizedStringResource("Cancel").resolved(in: locale))
+        alert.addButton(withTitle: LocalizedStringResource("Open").resolved(in: locale))
         guard alert.runModal() == .alertSecondButtonReturn else { return }
         NSWorkspace.shared.open(url)
     }

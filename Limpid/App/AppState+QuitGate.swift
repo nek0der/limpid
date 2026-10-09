@@ -9,6 +9,50 @@
 import AppKit
 import Foundation
 
+/// The words of a quit or close confirmation, kept unresolved so the alert
+/// is built in the app locale at the moment it opens. Pure, so the copy each
+/// request gets can be checked without running a modal.
+struct DestructiveAlertText: Equatable {
+    let title: LocalizedStringResource
+    /// `nil` when the title alone carries the intent, so an `always` prompt
+    /// with no live agent does not show agent-specific copy.
+    let message: LocalizedStringResource?
+    let confirmLabel: LocalizedStringResource
+    var cancelLabel: LocalizedStringResource = "Cancel"
+
+    static func quit(hasAgent: Bool) -> Self {
+        Self(
+            title: "Quit Limpid?",
+            message: hasAgent ? "Active agents may lose unsaved work." : nil,
+            confirmLabel: "Quit"
+        )
+    }
+
+    static func close(_ kind: CloseConfirmer.Kind, hasAgent: Bool) -> Self {
+        let title: LocalizedStringResource = switch kind {
+        case .tab: "Close tab?"
+        case .allTabs: "Close all tabs?"
+        case .pane: "Close pane?"
+        }
+        return Self(
+            title: title,
+            message: hasAgent ? agentBody(for: kind) : nil,
+            confirmLabel: "Close"
+        )
+    }
+
+    /// Agent-specific body copy. `.allTabs` reuses the quit dialog's
+    /// wording because it's the same "multiple agents may lose work"
+    /// situation, just scoped to one container instead of the app.
+    private static func agentBody(for kind: CloseConfirmer.Kind) -> LocalizedStringResource {
+        switch kind {
+        case .tab: "An agent is active in this tab."
+        case .allTabs: "Active agents may lose unsaved work."
+        case .pane: "An agent is active in this pane."
+        }
+    }
+}
+
 extension AppState {
     /// Consulted by `LimpidAppDelegate.applicationShouldTerminate`.
     /// Returns true when terminate should proceed.
@@ -17,13 +61,7 @@ extension AppState {
         let policy = settingsStore.settings.confirmations.quit
         let hasAgent = session.hasLiveAgentAnywhere()
         guard shouldConfirm(policy: policy, hasAgent: hasAgent) else { return true }
-        return runDestructiveAlert(
-            title: String(localized: "Quit Limpid?"),
-            message: hasAgent
-                ? String(localized: "Active agents may lose unsaved work.")
-                : nil,
-            confirmLabel: String(localized: "Quit")
-        )
+        return runDestructiveAlert(.quit(hasAgent: hasAgent))
     }
 
     /// Consulted by `CloseConfirmer.allow(...)`. Returns true when the
@@ -36,28 +74,7 @@ extension AppState {
         let policy = closePolicy(for: request)
         let hasAgent = session.hasLiveAgent(inAnyOf: request.paneIDs)
         guard shouldConfirm(policy: policy, hasAgent: hasAgent) else { return true }
-        let title = switch request.kind {
-        case .tab: String(localized: "Close tab?")
-        case .allTabs: String(localized: "Close all tabs?")
-        case .pane: String(localized: "Close pane?")
-        }
-        let message: String? = hasAgent ? agentBody(for: request.kind) : nil
-        return runDestructiveAlert(
-            title: title,
-            message: message,
-            confirmLabel: String(localized: "Close")
-        )
-    }
-
-    /// Agent-specific body copy. `.allTabs` reuses the quit dialog's
-    /// wording because it's the same "multiple agents may lose work"
-    /// situation, just scoped to one container instead of the app.
-    private func agentBody(for kind: CloseConfirmer.Kind) -> String {
-        switch kind {
-        case .tab: String(localized: "An agent is active in this tab.")
-        case .allTabs: String(localized: "Active agents may lose unsaved work.")
-        case .pane: String(localized: "An agent is active in this pane.")
-        }
+        return runDestructiveAlert(.close(request.kind, hasAgent: hasAgent))
     }
 
     /// Resolve the policy bucket the user wired up for this request.
@@ -93,23 +110,20 @@ extension AppState {
     /// through `quitGate`, which both land here. The alert is synchronous
     /// because those callers gate their work on the answer. The
     /// destructive button is the default so Return confirms; Escape
-    /// cancels. `message` is `nil` when the title alone carries the
-    /// intent, so an `always` prompt with no live agent does not show
-    /// agent-specific copy.
+    /// cancels. The text is resolved in the app locale: an `NSAlert` is
+    /// outside SwiftUI's environment, and would otherwise answer in the
+    /// language the process launched with.
     @MainActor
-    private func runDestructiveAlert(
-        title: String,
-        message: String?,
-        confirmLabel: String
-    ) -> Bool {
+    private func runDestructiveAlert(_ text: DestructiveAlertText) -> Bool {
+        let locale = settingsStore.appLocale
         let alert = NSAlert()
-        alert.messageText = title
-        if let message {
-            alert.informativeText = message
+        alert.messageText = text.title.resolved(in: locale)
+        if let message = text.message {
+            alert.informativeText = message.resolved(in: locale)
         }
         alert.alertStyle = .warning
-        alert.addButton(withTitle: confirmLabel)
-        alert.addButton(withTitle: String(localized: "Cancel"))
+        alert.addButton(withTitle: text.confirmLabel.resolved(in: locale))
+        alert.addButton(withTitle: text.cancelLabel.resolved(in: locale))
         // A Dock right-click "Quit" (or any terminate while we are in the
         // background) routes through here while another app is frontmost.
         // At the normal window level a background app's window stays behind

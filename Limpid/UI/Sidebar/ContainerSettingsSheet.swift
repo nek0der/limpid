@@ -239,7 +239,7 @@ struct ContainerSettingsSheet: View {
                             chooseCustomParent()
                         } label: {
                             Label {
-                                Text(displayCustomParent)
+                                Text(display: displayCustomParent)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             } icon: {
@@ -288,12 +288,12 @@ struct ContainerSettingsSheet: View {
         )
     }
 
-    private var displayCustomParent: String {
+    private var displayCustomParent: DisplayText {
         let trimmed = customParentText.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            return String(localized: "Choose…")
+            return .localized("Choose…")
         }
-        return PathFormatting.abbreviateHome(trimmed)
+        return .verbatim(PathFormatting.abbreviateHome(trimmed))
     }
 
     // MARK: - Routed agents (Project only)
@@ -317,9 +317,9 @@ struct ContainerSettingsSheet: View {
         let onClaudeChange: (Bool) -> Void
         let onCodexChange: (Bool) -> Void
 
-        private static func label(for kind: AgentKind) -> String {
+        private static func label(for kind: AgentKind) -> LocalizedStringResource {
             let name = AgentProviderRegistry.displayName(for: kind)
-            return String(localized: "\(name) CLI", comment: "Toggle label; the agent's name")
+            return LocalizedStringResource("\(name) CLI", comment: "Toggle label; the agent's name")
         }
 
         var body: some View {
@@ -520,6 +520,11 @@ struct ContainerSettingsSheet: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
+        // AppKit localizes the open panel's own buttons and sidebar in the
+        // language the process launched with, so our prompt does too: a
+        // panel half in each language would read worse than one that waits
+        // for the relaunch the menu bar also waits for.
+        // swiftlint:disable:next launch_language_lookup
         panel.prompt = String(localized: "Choose")
         if !customParentText.isEmpty {
             panel.directoryURL = URL(

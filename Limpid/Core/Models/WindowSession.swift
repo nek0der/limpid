@@ -273,11 +273,13 @@ final class WindowSession {
 
     /// Human-friendly label for the container. Used by the
     /// NotificationHistoryView and snapshotted onto entries so closed
-    /// panes still surface "Servers" / "myapp / main".
-    func containerLabel(for container: ContainerID) -> String {
+    /// panes still surface "Servers" / "myapp / main". Quick Tabs is the
+    /// one name we supply, resolved in `locale`: the window's for a view,
+    /// the app locale for a notification.
+    func containerLabel(for container: ContainerID, locale: Locale) -> String {
         switch container {
         case .loose:
-            return String(localized: "Quick Tabs")
+            return LocalizedStringResource("Quick Tabs").resolved(in: locale)
         case let .group(gid):
             return group(gid)?.name ?? "Group"
         case let .project(pid):

@@ -100,9 +100,9 @@ struct SettingsSearchResultList: View {
     }
 
     private func accessibilityLabel(for entry: SettingsSearchEntry) -> Text {
-        let title = entry.title.settingsResolved(locale: locale)
-        let section = entry.section.title.settingsResolved(locale: locale)
-        let group = entry.groupTitle.settingsResolved(locale: locale)
+        let title = entry.title.resolved(in: locale)
+        let section = entry.section.title.resolved(in: locale)
+        let group = entry.groupTitle.resolved(in: locale)
         return Text(verbatim: "\(title), \(section), \(group)")
     }
 }

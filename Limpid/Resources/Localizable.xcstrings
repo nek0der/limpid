@@ -242,6 +242,84 @@
         }
       }
     },
+    "Previous session repaired": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回のセッションを修復しました"
+          }
+        }
+      }
+    },
+    "Removed %lld tabs with duplicate pane IDs.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Removed %lld tab with duplicate pane IDs."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Removed %lld tabs with duplicate pane IDs."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ペイン ID が重複していたタブを %lld 個削除しました。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Removed %lld tabs with duplicate pane IDs. The selected sidebar item could not be restored, so another one is selected.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Removed %lld tab with duplicate pane IDs. The selected sidebar item could not be restored, so another one is selected."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Removed %lld tabs with duplicate pane IDs. The selected sidebar item could not be restored, so another one is selected."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ペイン ID が重複していたタブを %lld 個削除しました。サイドバーで選んでいた項目を復元できなかったため、別の項目を選んでいます。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Restore Default App for Opening Files": {
       "localizations": {
         "en": {
@@ -397,6 +475,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "リンク先はファイルでもフォルダでもありません。"
+          }
+        }
+      }
+    },
+    "The selected sidebar item could not be restored, so another one is selected.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーで選んでいた項目を復元できなかったため、別の項目を選んでいます。"
           }
         }
       }
@@ -6629,28 +6717,6 @@
         }
       }
     },
-    "(%lld of %lld panes)": {
-      "comment": "Agent state tooltip — match count out of total panes",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "(%lld / %lld ペイン)"
-          }
-        }
-      }
-    },
-    "· %llds": {
-      "comment": "Agent state tooltip — elapsed seconds suffix",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "· %lld 秒"
-          }
-        }
-      }
-    },
     "Finished in %@%@": {
       "comment": "Command-finished notification body — duration + optional exit fragment",
       "localizations": {
@@ -9599,6 +9665,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "約 %@ トークンを書き直します。"
+          }
+        }
+      }
+    },
+    "%@, Viewed": {
+      "comment": "Spoken label of a finished turn the user has looked at; argument: the state or the pane breakdown",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, Viewed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@、確認済み"
+          }
+        }
+      }
+    },
+    "%@ · %@": {
+      "comment": "Separates two facts in an agent tooltip; arguments: what came before, the next fact",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%lld %@": {
+      "comment": "Agent breakdown tooltip entry; arguments: a pane count, an agent state",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld %2$@"
+          }
+        }
+      }
+    },
+    "%@ (%lld of %lld panes)": {
+      "comment": "Agent state tooltip; arguments: the state, the panes in it, the panes in the tab",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (%2$lld of %3$lld panes)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (%2$lld / %3$lld ペイン)"
           }
         }
       }

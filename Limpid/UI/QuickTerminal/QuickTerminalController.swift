@@ -94,6 +94,7 @@ final class QuickTerminalController {
         observeScreenChanges()
         observeClipboard(clipboard)
         observeLayoutSettings()
+        observeAppLocale()
     }
 
     deinit {
@@ -328,6 +329,9 @@ final class QuickTerminalController {
             guard let view else { return }
             secureInputManager?.focusDidChange(for: view, isFocused: isFocused)
         }
+        view.appLocale = { [settingsStore] in
+            settingsStore.appLocale
+        }
         content.surfaceView = view
         // `creationFailed` is set on the main thread by `createSurface`,
         // which is where KVO delivers the change.
@@ -407,6 +411,18 @@ final class QuickTerminalController {
 
     /// With hide-on-focus-loss off the panel can be up while Settings is used, so a
     /// new position or size applies at once, without animation.
+    /// The panel's title is read by assistive technologies whether or not
+    /// the panel is on screen, so it follows the app locale as it changes.
+    private func observeAppLocale() {
+        panel.applyTitle(locale: settingsStore.appLocale)
+        observeRepeatedly { [weak self] in
+            _ = self?.settingsStore.appLocale
+        } onChange: { [weak self] in
+            guard let self else { return }
+            panel.applyTitle(locale: settingsStore.appLocale)
+        }
+    }
+
     private func observeLayoutSettings() {
         observeRepeatedly { [weak self] in
             _ = self?.settingsStore.settings.quickTerminal.position

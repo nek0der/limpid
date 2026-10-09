@@ -303,6 +303,7 @@ struct ContainerRow: View {
     @Environment(PRStatusStore.self) private var prStatusStore
     @Environment(\.prStatusSyncer) private var prStatusSyncer
     @Environment(SettingsStore.self) private var settingsStore
+    @Environment(\.locale) private var locale
 
     // MARK: - Body
 
@@ -648,7 +649,7 @@ struct ContainerRow: View {
 
     private var label: String {
         switch kind {
-        case .loose: String(localized: "Quick Tabs")
+        case .loose: LocalizedStringResource("Quick Tabs").resolved(in: locale)
         case let .group(g, _): g.name
         case let .projectHeader(p, _): p.name
         case let .worktree(_, w): w.label
@@ -838,23 +839,10 @@ struct ContainerRow: View {
         }
     }
 
-    /// Build the "1 error · 2 needs input · 1 running · 3 idle" tooltip
-    /// from `agentBreakdown`. 0-count states are omitted so the string
-    /// stays scannable. Each per-state label and the bullet separator
-    /// route through the catalog so a ja user reads "1 エラー · 2 入力待ち"
-    /// instead of the raw Swift case identifiers the earlier version
-    /// leaked.
+    /// The "1 error · 2 needs input · 1 running" tooltip from
+    /// `agentBreakdown`; see `AgentStatusText.breakdown`.
     private func agentTooltip(for dominant: AgentState) -> String {
-        let order: [AgentState] = [.error, .needsInput, .finished, .running, .compacting, .idle, .unknown]
-        var parts: [String] = []
-        for state in order {
-            let count = agentBreakdown[state] ?? 0
-            guard count > 0 else { continue }
-            parts.append("\(count) \(state.localizedLabel)")
-        }
-        return parts.isEmpty
-            ? dominant.localizedLabel
-            : parts.joined(separator: " · ")
+        AgentStatusText.breakdown(agentBreakdown, dominant: dominant, locale: locale)
     }
 
     // MARK: - Kind forwarding

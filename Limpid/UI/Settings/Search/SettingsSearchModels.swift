@@ -41,11 +41,3 @@ struct SettingsSearchEntry: Identifiable, Equatable {
         self.order = order
     }
 }
-
-extension LocalizedStringResource {
-    func settingsResolved(locale: Locale) -> String {
-        var resource = self
-        resource.locale = locale
-        return String(localized: resource)
-    }
-}

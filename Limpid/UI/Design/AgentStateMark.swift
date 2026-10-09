@@ -37,6 +37,8 @@ struct AgentStateMark: View {
     /// tells VoiceOver nothing.
     var tooltip: String?
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
         if let symbol = state.iconName(isViewedFinished: isViewedFinished),
            let tint = state.iconColor(isViewedFinished: isViewedFinished)
@@ -50,7 +52,7 @@ struct AgentStateMark: View {
             // text shows nothing.
             .help(tooltip ?? "")
             .accessibilityLabel(Text(
-                state.accessibilityLabel(isViewedFinished: isViewedFinished, description: tooltip)
+                state.accessibilityLabel(isViewedFinished: isViewedFinished, description: tooltip, locale: locale)
             ))
         }
     }

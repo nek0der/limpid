@@ -6,10 +6,10 @@ import AppKit
 /// Where a line sits, for the reader who cannot see the gutter. Old and new
 /// are named rather than separated by a slash: the order is not something a
 /// punctuation mark can say.
-private func reviewLinePosition(_ line: ReviewLine) -> String {
+private func reviewLinePosition(_ line: ReviewLine, locale: Locale) -> String {
     let old = line.oldLine.map(String.init) ?? "-"
     let new = line.newLine.map(String.init) ?? "-"
-    return String(localized: "Old \(old) → new \(new)")
+    return LocalizedStringResource("Old \(old) → new \(new)").resolved(in: locale)
 }
 
 /// One line of code in the unified layout, on the fill its kind gives it.
@@ -71,7 +71,8 @@ final class ReviewCodeRowView: NSView {
         language: ReviewSyntax.Language? = nil,
         match: String = "",
         intralineRanges: [NSRange] = [],
-        selectedRange: NSRange? = nil
+        selectedRange: NSRange? = nil,
+        locale: Locale
     ) {
         codeLeading?.constant = ReviewRowMetrics.gutterTotal(numberWidth: numberWidth)
             + ReviewRowMetrics.codeLeadingInset
@@ -98,9 +99,9 @@ final class ReviewCodeRowView: NSView {
         code.textColor = .labelColor
         appearanceInput = (line.kind, isSelected)
         needsDisplay = true
-        code.setAccessibilityLabel(reviewLinePosition(line))
+        code.setAccessibilityLabel(reviewLinePosition(line, locale: locale))
         code.setAccessibilityHelp(
-            intralineRanges.isEmpty ? nil : String(localized: "Changed characters are highlighted.")
+            intralineRanges.isEmpty ? nil : LocalizedStringResource("Changed characters are highlighted.").resolved(in: locale)
         )
         window?.invalidateCursorRects(for: self)
     }

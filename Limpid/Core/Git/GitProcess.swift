@@ -23,34 +23,35 @@ struct GitResult {
     }
 }
 
-enum GitProcessError: Error, LocalizedError {
+enum GitProcessError: LimpidLocalizedError {
     case launchFailed(String)
     /// `git` exited with a non-zero status. `result.stderr` is
     /// included as a hint.
     case nonZeroExit(GitResult)
 
-    /// User-facing description. Without `LocalizedError`, the alert
-    /// host would read `error.localizedDescription` and get the
-    /// `String(describing:)` synthesis (`"GitProcessError(launchFailed:
-    /// posix_spawn failed: …)"`) — readable to a maintainer, opaque
-    /// to a user. `CreateWorktreeError` / `DeleteWorktreeError`
-    /// already conform; bring this enum into the same posture so the
-    /// existing alert call sites pick up the localized strings
-    /// without any downstream changes.
-    var errorDescription: String? {
+    /// What the worktree alerts show. An error with no message of its own
+    /// would reach them as the `String(describing:)` synthesis
+    /// (`"GitProcessError(launchFailed: posix_spawn failed: …)"`), which is
+    /// readable to a maintainer and opaque to a user. git's own stderr is
+    /// shown as is.
+    var message: DisplayText {
         switch self {
         case let .launchFailed(message):
-            String(
-                localized: "Could not launch git: \(message). Is git installed?",
+            .localized(LocalizedStringResource(
+                "Could not launch git: \(message). Is git installed?",
                 comment: "Worktree-operation error — git binary failed to launch"
-            )
+            ))
         case let .nonZeroExit(result):
-            result.stderr.isEmpty
-                ? String(
-                    localized: "git exited with code \(result.exitCode).",
+            if result.stderr.isEmpty {
+                .localized(LocalizedStringResource(
+                    // Widened to `Int`: an `Int32` would make the key `%d`,
+                    // which the catalog's `%lld` entry does not match.
+                    "git exited with code \(Int(result.exitCode)).",
                     comment: "Worktree-operation error — git exited with non-zero code (no stderr)"
-                )
-                : result.stderr
+                ))
+            } else {
+                .verbatim(result.stderr)
+            }
         }
     }
 }

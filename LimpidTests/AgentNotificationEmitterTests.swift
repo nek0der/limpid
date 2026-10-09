@@ -41,7 +41,7 @@ struct AgentNotificationEmitterTests {
     private func emitter(_ history: NotificationHistoryStore) -> AgentNotificationEmitter {
         AgentNotificationEmitter(
             kind: .claude,
-            notificationManager: LimpidNotificationManager(historyStore: history),
+            notificationManager: LimpidNotificationManager(historyStore: history, appLocale: { Locale(identifier: "en") }),
             suppressWhenPaneFocused: true,
             runtimeID: "claude:RUN",
             eventToken: "4"
@@ -82,7 +82,7 @@ struct AgentNotificationEmitterTests {
             // Both agents set a generic terminal title, so the localized
             // sentence naming the agent is the only thing left to say.
             let entry = try #require(history.entries.first)
-            #expect(entry.body == AgentKind.claude.needsInputTitle)
+            #expect(entry.body == AgentKind.claude.needsInputTitle.resolved(in: Locale(identifier: "en")))
             #expect(entry.kind == .agentNeedsInput)
         }
     }

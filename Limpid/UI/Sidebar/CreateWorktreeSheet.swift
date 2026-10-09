@@ -33,7 +33,7 @@ struct CreateWorktreeSheet: View {
     // Async / error state
     @State private var isLoadingBranches = true
     @State private var isCreating = false
-    @State private var errorMessage: String?
+    @State private var errorMessage: DisplayText?
 
     private var project: Project? {
         session.projects.first(where: { $0.id == projectID })
@@ -96,9 +96,13 @@ struct CreateWorktreeSheet: View {
 
                 if let errorMessage {
                     Section {
-                        Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                            .textSelection(.enabled)
+                        Label {
+                            Text(display: errorMessage)
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                        }
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
                     }
                 }
             }
@@ -208,7 +212,7 @@ struct CreateWorktreeSheet: View {
                             chooseCustomParent()
                         } label: {
                             Label {
-                                Text(displayCustomParent)
+                                Text(display: displayCustomParent)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             } icon: {
@@ -233,10 +237,10 @@ struct CreateWorktreeSheet: View {
         }
     }
 
-    private var displayCustomParent: String {
+    private var displayCustomParent: DisplayText {
         let trimmed = customParentText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return String(localized: "Choose…") }
-        return PathFormatting.abbreviateHome(trimmed)
+        guard !trimmed.isEmpty else { return .localized("Choose…") }
+        return .verbatim(PathFormatting.abbreviateHome(trimmed))
     }
 
     // MARK: - Branch loading
@@ -287,6 +291,11 @@ struct CreateWorktreeSheet: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
+        // AppKit localizes the open panel's own buttons and sidebar in the
+        // language the process launched with, so our prompt does too: a
+        // panel half in each language would read worse than one that waits
+        // for the relaunch the menu bar also waits for.
+        // swiftlint:disable:next launch_language_lookup
         panel.prompt = String(localized: "Choose")
         let trimmed = customParentText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
@@ -325,7 +334,7 @@ struct CreateWorktreeSheet: View {
             dismiss()
         } catch {
             isCreating = false
-            errorMessage = error.localizedDescription
+            errorMessage = DisplayText(error: error)
         }
     }
 }

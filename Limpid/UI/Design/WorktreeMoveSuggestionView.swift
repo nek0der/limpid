@@ -96,25 +96,16 @@ private struct WorktreeMoveSuggestionCapsule: View {
         .frame(minWidth: 380)
     }
 
-    private var headline: String {
-        String(
-            localized: "Move to worktree “\(suggestion.displayLabel)”?",
-            comment: "Worktree move suggestion banner headline"
-        )
+    private var headline: LocalizedStringResource {
+        LocalizedStringResource("Move to worktree “\(suggestion.displayLabel)”?", comment: "Worktree move suggestion banner headline")
     }
 
-    private var subhead: String {
+    private var subhead: LocalizedStringResource {
         switch suggestion.kind {
         case .reparentToRegistered:
-            String(
-                localized: "Move this tab there.",
-                comment: "Subhead when the worktree is already registered"
-            )
+            LocalizedStringResource("Move this tab there.", comment: "Subhead when the worktree is already registered")
         case .reparentAfterAttach:
-            String(
-                localized: "Register the worktree and move this tab there.",
-                comment: "Subhead when the worktree is new to Limpid"
-            )
+            LocalizedStringResource("Register the worktree and move this tab there.", comment: "Subhead when the worktree is new to Limpid")
         }
     }
 }

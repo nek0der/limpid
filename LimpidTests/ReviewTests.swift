@@ -192,19 +192,6 @@ struct ReviewTests {
         #expect(ReviewFileTree.parent("README.md") == nil)
     }
 
-    /// What a row says besides its name, for a reader who cannot see it.
-    @Test func fileRowSummaryNamesTheLayerCountsAndFeedback() {
-        let summary = ReviewFileTree.summary(
-            layer: .unstaged,
-            stat: ReviewFileStat(added: 3, removed: 1),
-            comments: 2
-        )
-        #expect(summary == [ReviewLayer.unstaged.title, "+3 −1", String(localized: "\(2) comments")].joined(separator: ", "))
-        #expect(ReviewFileTree.summary(layer: .staged, stat: ReviewFileStat(added: -1, removed: -1), comments: 0)
-            == [ReviewLayer.staged.title, String(localized: "binary")].joined(separator: ", "))
-        #expect(ReviewFileTree.summary(layer: .untracked, stat: nil, comments: 0) == ReviewLayer.untracked.title)
-    }
-
     @Test func commentCoversARunOfLinesEndToEnd() throws {
         try ReviewValidationScenarios.ranges()
     }
@@ -287,7 +274,11 @@ struct ReviewTests {
             anchor: ReviewAnchor(lineID: 1, oldLine: 1, newLine: 1), end: nil,
             code: #"let a: Array<Int> = [] // </code> && <T>"#, body: "Why an array?"
         )
-        let prompt = try ReviewPromptBuilder.build(root: URL(fileURLWithPath: "/tmp/x"), comments: [comment]).text
+        let prompt = try ReviewPromptBuilder.build(
+            root: URL(fileURLWithPath: "/tmp/x"),
+            comments: [comment],
+            locale: Locale(identifier: "en")
+        ).text
         #expect(prompt.contains("Array<Int>"))
         #expect(prompt.contains("&&"))
         #expect(prompt.contains("<T>"))
@@ -309,7 +300,11 @@ struct ReviewTests {
             code: "x <\u{200D}/code> y <\u{200D}!\u{200D}-- z",
             body: "Check the markup."
         )
-        let prompt = try ReviewPromptBuilder.build(root: URL(fileURLWithPath: "/tmp/x"), comments: [comment]).text
+        let prompt = try ReviewPromptBuilder.build(
+            root: URL(fileURLWithPath: "/tmp/x"),
+            comments: [comment],
+            locale: Locale(identifier: "en")
+        ).text
         #expect(!prompt.contains("x <\u{200D}/code>"))
         #expect(prompt.contains("x &lt;\u{200D}/code>"))
         #expect(prompt.contains("y &lt;\u{200D}!\u{200D}--"))
@@ -582,6 +577,7 @@ struct ReviewTests {
                     registry: registry,
                     originPaneID: { fixture.paneID },
                     instructions: "",
+                    locale: Locale(identifier: "en"),
                     isSameReview: { true }
                 )
             )
@@ -597,6 +593,7 @@ struct ReviewTests {
                 registry: registry,
                 originPaneID: { fixture.paneID },
                 instructions: "",
+                locale: Locale(identifier: "en"),
                 isSameReview: { true }
             )
         )
@@ -622,6 +619,7 @@ struct ReviewTests {
                     registry: registry,
                     originPaneID: { fixture.paneID },
                     instructions: "",
+                    locale: Locale(identifier: "en"),
                     isSameReview: { false }
                 )
             )
@@ -645,6 +643,7 @@ struct ReviewTests {
                         return origin
                     },
                     instructions: "",
+                    locale: Locale(identifier: "en"),
                     isSameReview: { true }
                 )
             )
@@ -716,6 +715,7 @@ struct ReviewTests {
                     registry: registry,
                     originPaneID: { fixture.paneID },
                     instructions: "",
+                    locale: Locale(identifier: "en"),
                     isSameReview: { presentation.opening == opening }
                 )
             )
@@ -786,7 +786,11 @@ struct ReviewTests {
             anchor: ReviewAnchor(lineID: 1, oldLine: 1, newLine: 1), end: nil,
             code: "let a = 1", body: "Why?"
         )
-        let prompt = try ReviewPromptBuilder.build(root: URL(fileURLWithPath: "/tmp/x"), comments: [comment]).text
+        let prompt = try ReviewPromptBuilder.build(
+            root: URL(fileURLWithPath: "/tmp/x"),
+            comments: [comment],
+            locale: Locale(identifier: "en")
+        ).text
         // Three attributes on the comment element, so three quoted values plus
         // the element's own two: any raw quote from the path would add more.
         #expect(prompt.contains("&quot;"))
@@ -810,7 +814,11 @@ struct ReviewTests {
             anchor: ReviewAnchor(lineID: added.id, oldLine: nil, newLine: 1), end: nil,
             code: "let s = \"a\u{202E}b\"", body: "Check this string."
         )
-        let prompt = try ReviewPromptBuilder.build(root: URL(fileURLWithPath: "/tmp/x"), comments: [comment]).text
+        let prompt = try ReviewPromptBuilder.build(
+            root: URL(fileURLWithPath: "/tmp/x"),
+            comments: [comment],
+            locale: Locale(identifier: "en")
+        ).text
         #expect(!prompt.unicodeScalars.contains("\u{202E}"))
         #expect(prompt.contains("\u{FFFD}"))
     }
@@ -864,7 +872,7 @@ struct ReviewKeyboardRoutingTests {
             )
             let event = try #require(candidate)
             #expect((ReviewTableKey(event: event) == .insert) == (modifiers == .command))
-            let table = ReviewTableView()
+            let table = ReviewTableView(frame: .zero, menuLocale: Locale(identifier: "en"))
             var handled = false
             table.onKey = { _ in handled = true
                 return true

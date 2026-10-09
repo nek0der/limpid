@@ -55,6 +55,7 @@ struct ReviewHeader: View {
     let onJump: (ReviewComment) -> Void
 
     @Environment(\.limpidAccent) private var accent
+    @Environment(\.locale) private var locale
 
     /// Measured from the native Close button, so the insert button beside or
     /// below it can be drawn the same width; a prominent button narrower than
@@ -358,6 +359,7 @@ struct ReviewHeader: View {
         .help(Text("Preview what will be inserted"))
         .popover(isPresented: $isShowingPrompt, arrowEdge: .bottom) {
             ReviewPromptPreview(store: store, prompt: prompt, onJump: onJump)
+                .environment(\.locale, locale)
         }
     }
 }
@@ -726,27 +728,27 @@ struct ReviewFooterHints: View {
 
     private var hints: some View {
         HStack(spacing: 14) {
-            hint("j / k", String(localized: "Line"))
-            hint("⇧J / ⇧K", String(localized: "Extend"))
-            hint("] / [", String(localized: "Hunk"))
+            hint("j / k", "Line")
+            hint("⇧J / ⇧K", "Extend")
+            hint("] / [", "Hunk")
             if reviewPresentation.diffLayout == .sideBySide {
-                hint("h / l", String(localized: "Column"))
+                hint("h / l", "Column")
             }
-            hint("n / p", String(localized: "File"))
-            hint("c", String(localized: "Comment"))
-            hint("v", String(localized: "Viewed"))
-            hint("o", String(localized: "Open"))
-            hint("⌘↩", String(localized: "Insert"))
-            hint("⌘⇧E", String(localized: "Terminal"))
+            hint("n / p", "File")
+            hint("c", "Comment")
+            hint("v", "Viewed")
+            hint("o", "Open")
+            hint("⌘↩", "Insert")
+            hint("⌘⇧E", "Terminal")
         }
     }
 
-    private func hint(_ key: String, _ label: String) -> some View {
+    private func hint(_ key: String, _ label: LocalizedStringResource) -> some View {
         HStack(spacing: 4) {
             Text(verbatim: key)
                 .font(.caption2.monospaced())
                 .foregroundStyle(LimpidColor.secondaryText)
-            Text(verbatim: label)
+            Text(label)
                 .font(.caption2)
                 .foregroundStyle(LimpidColor.tertiaryText)
         }
@@ -884,11 +886,11 @@ struct ReviewFileBar: View {
                         .help(Text("Changed lines"))
                 }
             }
-            Text(verbatim: file.layer.title)
+            Text(file.layer.title)
                 .font(LimpidFont.caption)
                 .foregroundStyle(LimpidColor.tertiaryText)
                 .contentShape(Rectangle())
-                .help(Text(verbatim: file.layer.detail))
+                .help(Text(file.layer.detail))
             viewedToggle
             picker
         }

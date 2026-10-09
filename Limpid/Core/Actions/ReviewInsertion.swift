@@ -54,6 +54,8 @@ enum ReviewInsertion {
         let originPaneID: () -> UUID?
         /// The reader's own opening, empty for the default.
         let instructions: String
+        /// The app locale, which the default opening is written in.
+        let locale: Locale
         /// Whether this is still the review the insert was started from.
         /// Checked after the repository answers, because the reader can close
         /// it — and open it again — inside that wait.
@@ -130,7 +132,12 @@ enum ReviewInsertion {
         else { throw ReviewError.targetUnavailable }
         // The prompt names the worktree it was written against. A container-
         // owned review therefore does not require its pane to be sitting in it.
-        let prompt = try ReviewPromptBuilder.build(root: root, comments: sending, instructions: target.instructions)
+        let prompt = try ReviewPromptBuilder.build(
+            root: root,
+            comments: sending,
+            instructions: target.instructions,
+            locale: target.locale
+        )
         try ReviewAgents.insert(
             prompt,
             into: destination,

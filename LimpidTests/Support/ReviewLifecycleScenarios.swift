@@ -37,7 +37,10 @@ extension ReviewValidationScenarios {
         try require(lines.count >= 2, "The seed needs two commentable lines")
         store.add(line: lines[0], body: "First.")
         store.add(line: lines[1], body: "Second.")
-        try require(store.comments.count == 2, "Setup failed: \(store.errorMessage ?? "")")
+        try require(
+            store.comments.count == 2,
+            "Setup failed: \(store.errorMessage.map { $0.resolved(in: Locale(identifier: "en")) } ?? "")"
+        )
         // A draft written before either timestamp existed reads as unsent and
         // unresolved, which is what an old draft on disk has to become.
         try require(
@@ -75,7 +78,7 @@ extension ReviewValidationScenarios {
         let remaining = try await store.insertable(store.comments)
         try require(remaining.count == 1 && remaining[0].id != resolved, "A resolved comment was sent")
         try require(
-            ReviewPromptBuilder.build(root: root, comments: remaining).text.contains("Second."),
+            ReviewPromptBuilder.build(root: root, comments: remaining, locale: Locale(identifier: "en")).text.contains("Second."),
             "The prompt lost the comment that still stands"
         )
         store.setResolved(store.comments[1].id, true)
@@ -149,7 +152,7 @@ extension ReviewValidationScenarios {
         try require(store.viewed[file.id]?.fingerprint != nil, "An open file was marked without its fingerprint")
         try require(
             ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage)).viewed[file.id] != nil,
-            "The mark did not persist: \(store.errorMessage ?? "")"
+            "The mark did not persist: \(store.errorMessage.map { $0.resolved(in: Locale(identifier: "en")) } ?? "")"
         )
         // A refresh that finds the file unchanged leaves the mark alone.
         await store.refresh()
@@ -219,7 +222,10 @@ extension ReviewValidationScenarios {
         guard let line = store.diff?.lines.first else { throw ReviewValidationFailure(message: "Line missing") }
         store.add(line: line, body: "Written before the dates existed.")
         store.markInserted(store.comments.map(\.id))
-        try require(store.comments.count == 1, "Setup failed: \(store.errorMessage ?? "")")
+        try require(
+            store.comments.count == 1,
+            "Setup failed: \(store.errorMessage.map { $0.resolved(in: Locale(identifier: "en")) } ?? "")"
+        )
         let saved = try require(
             FileManager.default.contentsOfDirectory(at: storage, includingPropertiesForKeys: nil).first,
             "Saved draft missing"
@@ -235,7 +241,10 @@ extension ReviewValidationScenarios {
         draft["comments"] = comments
         try JSONSerialization.data(withJSONObject: draft).write(to: saved)
         let reopened = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage))
-        try require(reopened.comments.count == 1, "An old draft did not reload: \(reopened.errorMessage ?? "")")
+        try require(
+            reopened.comments.count == 1,
+            "An old draft did not reload: \(reopened.errorMessage.map { $0.resolved(in: Locale(identifier: "en")) } ?? "")"
+        )
         try require(
             reopened.comments[0].insertedAt == nil && !reopened.comments[0].isResolved,
             "An old comment did not read as unsent and unresolved"

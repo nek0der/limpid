@@ -507,15 +507,16 @@ final class ReviewCommentRowView: NSView {
         state.textColor = .tertiaryLabelColor
         title.font = .systemFont(ofSize: 11.5, weight: .semibold)
         title.textColor = .secondaryLabelColor
-        title.stringValue = String(localized: "Comment")
         position.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
         position.textColor = .tertiaryLabelColor
         position.alignment = .right
         body.font = ReviewRowMetrics.commentFont
         body.isSelectable = true
-        configure(button: resolveButton, title: String(localized: "Resolve"), action: #selector(resolve))
-        configure(button: editButton, title: String(localized: "Edit"), action: #selector(edit))
-        configure(button: deleteButton, title: String(localized: "Delete"), action: #selector(remove))
+        // Titles are set in `configure`, not here: these rows are pooled, so
+        // one built before a language switch would keep the old words.
+        configure(button: resolveButton, action: #selector(resolve))
+        configure(button: editButton, action: #selector(edit))
+        configure(button: deleteButton, action: #selector(remove))
         installConstraints()
     }
 
@@ -524,17 +525,20 @@ final class ReviewCommentRowView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private func configure(button: NSButton, title: String, action: Selector) {
+    private func configure(button: NSButton, action: Selector) {
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.title = title
         button.bezelStyle = .inline
         button.isBordered = false
         button.font = ReviewRowMetrics.labelFont
         button.contentTintColor = ReviewRowPainter.accent
         button.target = self
         button.action = action
-        button.setAccessibilityLabel(title)
         card.addSubview(button)
+    }
+
+    private static func setTitle(_ button: NSButton, _ title: LocalizedStringResource, in locale: Locale) {
+        button.title = title.resolved(in: locale)
+        button.setAccessibilityLabel(button.title)
     }
 
     private func installConstraints() {
@@ -586,7 +590,9 @@ final class ReviewCommentRowView: NSView {
         ])
     }
 
-    func configure(_ comment: ReviewComment, metrics: ReviewCardMetrics) {
+    /// `locale` is the table's, handed down on every reload, so a row taken
+    /// from the pool after a language switch speaks the new language.
+    func configure(_ comment: ReviewComment, metrics: ReviewCardMetrics, locale: Locale) {
         cardLeading?.constant = ReviewRowMetrics.cardInset(
             numberWidth: metrics.numberWidth,
             layout: metrics.layout
@@ -596,9 +602,13 @@ final class ReviewCommentRowView: NSView {
             numberWidth: metrics.numberWidth,
             layout: metrics.layout
         )
-        position.stringValue = "\(comment.file.layer.title) · \(comment.oldSpan) / \(comment.newSpan)"
+        title.stringValue = LocalizedStringResource("Comment").resolved(in: locale)
+        Self.setTitle(resolveButton, "Resolve", in: locale)
+        Self.setTitle(editButton, "Edit", in: locale)
+        Self.setTitle(deleteButton, "Delete", in: locale)
+        position.stringValue = "\(comment.file.layer.title.resolved(in: locale)) · \(comment.oldSpan) / \(comment.newSpan)"
         body.stringValue = comment.body
-        state.stringValue = comment.insertedAt == nil ? "" : String(localized: "Inserted")
+        state.stringValue = comment.insertedAt == nil ? "" : LocalizedStringResource("Inserted").resolved(in: locale)
         // Re-applied rather than left from construction: these rows are pooled,
         // so one built under the previous accent comes back tinted with it.
         for button in [resolveButton, editButton, deleteButton] {
@@ -656,16 +666,11 @@ final class ReviewComposerRowView: NSView {
             card.addSubview(field)
         }
         title.font = .systemFont(ofSize: 11.5, weight: .semibold)
-        title.stringValue = String(localized: "Comment")
         position.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
         position.textColor = .tertiaryLabelColor
         position.alignment = .right
         placeholder.font = ReviewRowMetrics.commentFont
         placeholder.textColor = .tertiaryLabelColor
-        // A hint, not a question: a form that asks the reader something reads
-        // as waiting for an answer, and a comment is as often an observation
-        // or a question of its own as it is a change request.
-        placeholder.stringValue = String(localized: "Leave a comment")
         textView.font = ReviewRowMetrics.commentFont
         textView.isRichText = false
         textView.allowsUndo = true
@@ -673,7 +678,6 @@ final class ReviewComposerRowView: NSView {
         textView.onCompositionChanged = { [weak self] in self?.updateEnabled() }
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 2, height: 2)
-        textView.setAccessibilityLabel(String(localized: "Review comment"))
         field.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(field)
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -683,11 +687,13 @@ final class ReviewComposerRowView: NSView {
         scroll.borderType = .noBorder
         field.addSubview(scroll)
         card.isActive = true
-        style(cancelButton, title: String(localized: "Cancel"), action: #selector(cancel))
+        // Every word on the card is set in `configure`, which runs again after
+        // a language switch; the composer lives as long as the table does.
+        style(cancelButton, action: #selector(cancel))
         cancelButton.bezelStyle = .inline
         cancelButton.isBordered = false
         cancelButton.contentTintColor = .secondaryLabelColor
-        style(addButton, title: String(localized: "Add"), action: #selector(commit))
+        style(addButton, action: #selector(commit))
         addButton.bezelStyle = .rounded
         installConstraints()
     }
@@ -697,14 +703,12 @@ final class ReviewComposerRowView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private func style(_ button: NSButton, title: String, action: Selector) {
+    private func style(_ button: NSButton, action: Selector) {
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.title = title
         button.controlSize = .small
         button.font = ReviewRowMetrics.labelFont
         button.target = self
         button.action = action
-        button.setAccessibilityLabel(title)
         card.addSubview(button)
     }
 
@@ -772,13 +776,16 @@ final class ReviewComposerRowView: NSView {
     }
 
     /// `start` is the first line of the run when more than one line is
-    /// selected; the composer is always drawn under the last one.
-    func configure(
+    /// selected; the composer is always drawn under the last one. `locale`
+    /// is the table's: the composer outlives a language switch, so every
+    /// word on it is set here rather than once at construction.
+    func configure( // swiftlint:disable:this function_parameter_count
         _ line: ReviewLine,
         start: ReviewLine?,
         text: String,
         isEditing: Bool,
-        metrics: ReviewCardMetrics
+        metrics: ReviewCardMetrics,
+        locale: Locale
     ) {
         cardLeading?.constant = ReviewRowMetrics.cardInset(
             numberWidth: metrics.numberWidth,
@@ -794,25 +801,31 @@ final class ReviewComposerRowView: NSView {
         icon.contentTintColor = ReviewRowPainter.accent
         // Both headings name the action, so they read as a pair rather than as
         // one action and one noun.
-        title.stringValue = isEditing
-            ? String(localized: "Edit comment")
-            : String(localized: "Add comment")
+        let heading: LocalizedStringResource = isEditing ? "Edit comment" : "Add comment"
+        title.stringValue = heading.resolved(in: locale)
+        // A hint, not a question: a form that asks the reader something reads
+        // as waiting for an answer, and a comment is as often an observation
+        // or a question of its own as it is a change request.
+        placeholder.stringValue = LocalizedStringResource("Leave a comment").resolved(in: locale)
+        textView.setAccessibilityLabel(LocalizedStringResource("Review comment").resolved(in: locale))
+        cancelButton.title = LocalizedStringResource("Cancel").resolved(in: locale)
+        cancelButton.setAccessibilityLabel(cancelButton.title)
         // The button says only the verb: the card it sits in holds one comment
         // and says so directly above, and the object repeated three inches
         // below the heading that already carried it read as boilerplate. The
         // full phrase stays on the button for anyone reading it out of that
         // context.
-        addButton.title = isEditing ? String(localized: "Save") : String(localized: "Add")
+        let verb: LocalizedStringResource = isEditing ? "Save" : "Add"
+        addButton.title = verb.resolved(in: locale)
         // Spoken as well as drawn: set once at construction, VoiceOver went on
         // calling it Add while it said Save.
         addButton.setAccessibilityLabel(addButton.title)
-        addButton.setAccessibilityTitle(
-            isEditing ? String(localized: "Save Comment") : String(localized: "Add Comment")
-        )
+        let phrase: LocalizedStringResource = isEditing ? "Save Comment" : "Add Comment"
+        addButton.setAccessibilityTitle(phrase.resolved(in: locale))
         let first = start ?? line
         let old = ReviewComment.span(first.oldLine, line.oldLine)
         let new = ReviewComment.span(first.newLine, line.newLine)
-        position.stringValue = String(localized: "Old \(old) → new \(new)")
+        position.stringValue = LocalizedStringResource("Old \(old) → new \(new)").resolved(in: locale)
         if !textView.hasMarkedText(), textView.string != text {
             textView.string = text
         }

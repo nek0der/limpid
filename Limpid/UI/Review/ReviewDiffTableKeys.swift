@@ -106,7 +106,7 @@ extension ReviewDiffTable.Coordinator {
     /// nil when there is nothing to open.
     func openInEditorTitle(clickedRow: Int?) -> String? {
         guard let row = openTarget(clickedRow: clickedRow), let line = editorLine(forRow: row) else { return nil }
-        return parent.fileApplication.openLineActionTitle(line: line)
+        return parent.fileApplication.openLineActionTitle(line: line).resolved(in: parent.locale)
     }
 
     func openInEditor(clickedRow: Int?) {
