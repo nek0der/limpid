@@ -298,6 +298,7 @@ struct ToolbarUpdateButton: View {
 
     @Environment(UpdateStateModel.self) private var model
     @Environment(\.limpidAccent) private var accent
+    @Environment(\.locale) private var locale
     @State private var isOpen = false
     @State private var isHovering = false
 
@@ -328,8 +329,8 @@ struct ToolbarUpdateButton: View {
         // voice as the glyph name ("shippingbox.fill, button") instead
         // of the actual state. Mirror the tooltip text into the AX
         // label so both surfaces stay in sync from one call site.
-        // `helpText` already routes through the string catalog, so
-        // ja users get the translated state.
+        // `helpText` is a catalog resource, so the label follows the
+        // window's language.
         .accessibilityLabel(Text(helpText))
         // During `.downloading` / `.extracting` the percentage in the
         // ring is the actually-useful number — voice it as the AX
@@ -340,6 +341,7 @@ struct ToolbarUpdateButton: View {
             UpdatePopover(updater: updater) {
                 isOpen = false
             }
+            .environment(\.locale, locale)
             .limpidAccentPropagated(accent)
         }
     }
@@ -382,28 +384,28 @@ struct ToolbarUpdateButton: View {
         }
     }
 
-    private var helpText: String {
+    private var helpText: LocalizedStringResource {
         switch model.state {
         case .idle:
             ""
         case .checking:
-            String(localized: "Checking for updates…")
+            "Checking for updates…"
         case let .available(item, _):
-            String(localized: "Update available: \(item.displayVersion)")
+            "Update available: \(item.displayVersion)"
         case let .downloading(item, _, _, _):
-            String(localized: "Downloading \(item.displayVersion)…")
+            "Downloading \(item.displayVersion)…"
         case .extracting:
-            String(localized: "Preparing update…")
+            "Preparing update…"
         case let .readyToInstall(item, _):
-            String(localized: "Ready to install \(item.displayVersion)")
+            "Ready to install \(item.displayVersion)"
         case .installing:
-            String(localized: "Installing update…")
+            "Installing update…"
         case .installed:
-            String(localized: "Update installed")
+            "Update installed"
         case .notFound:
-            String(localized: "You're up to date")
+            "You're up to date"
         case .error:
-            String(localized: "Update failed")
+            "Update failed"
         }
     }
 
@@ -421,9 +423,9 @@ struct ToolbarUpdateButton: View {
         switch model.state {
         case let .downloading(_, expected, received, _):
             ratio(received: received, expected: expected)
-                .formatted(.percent.precision(.fractionLength(0)))
+                .formatted(.percent.precision(.fractionLength(0)).locale(locale))
         case let .extracting(progress):
-            progress.formatted(.percent.precision(.fractionLength(0)))
+            progress.formatted(.percent.precision(.fractionLength(0)).locale(locale))
         default:
             ""
         }
@@ -466,12 +468,12 @@ struct ToolbarContainerTitle: View {
                 .font(.system(size: 12))
                 .foregroundStyle(presentation.tint)
             VStack(alignment: .leading, spacing: 1) {
-                Text(presentation.title)
+                Text(display: presentation.title)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .lineLimit(1)
                     .foregroundStyle(.primary)
                 if let subtitle = presentation.subtitle {
-                    Text(subtitle)
+                    Text(display: subtitle)
                         .font(.system(size: 10, weight: .regular))
                         .lineLimit(1)
                         .truncationMode(.middle)

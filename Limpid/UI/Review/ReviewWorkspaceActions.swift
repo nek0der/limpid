@@ -19,7 +19,7 @@ extension ReviewWorkspaceView {
               let fileURL = ReviewFileAction.fileURL(for: file.path, in: store.root),
               FileManager.default.fileExists(atPath: fileURL.path)
         else {
-            toastCenter.show(ToastItem(message: String(localized: "The file doesn’t exist."), undo: nil))
+            toastCenter.show(ToastItem(message: .localized("The file doesn’t exist."), undo: nil))
             return
         }
         let application = FileOpener.application(for: settingsStore.settings.advanced.fileApplication)
@@ -27,7 +27,7 @@ extension ReviewWorkspaceView {
             do {
                 try await FileOpener.open(fileURL, at: FilePosition(line: line, column: nil), with: application)
             } catch {
-                toastCenter.show(ToastItem(message: error.localizedDescription, undo: nil))
+                toastCenter.show(ToastItem(message: DisplayText(error: error), undo: nil))
             }
         }
     }
@@ -195,6 +195,7 @@ extension ReviewWorkspaceView {
                         registry: registry,
                         originPaneID: { reviewPresentation.originPaneID },
                         instructions: settingsStore.settings.advanced.reviewInstructions,
+                        locale: settingsStore.appLocale,
                         isSameReview: { reviewPresentation.opening == opening },
                         requiresMatchingRepository: reviewPresentation.transientOwnerPaneID != nil,
                         isTmuxHosted: reviewPresentation.isTransientOwnerTmuxHosted
@@ -211,12 +212,11 @@ extension ReviewWorkspaceView {
                 // single line for it, and review usually goes away in the same
                 // breath. Without this the reader is left in front of a
                 // terminal with no way to tell whether anything arrived.
+                let message: LocalizedStringResource = outcome.held > 0
+                    ? "Review inserted. \(outcome.held) comments were held back and stay in this review."
+                    : "Review inserted. Press Return to send it."
                 toastCenter.show(ToastItem(
-                    message: outcome.held > 0
-                        ? String(
-                            localized: "Review inserted. \(outcome.held) comments were held back and stay in this review."
-                        )
-                        : String(localized: "Review inserted. Press Return to send it."),
+                    message: .localized(message),
                     undo: nil
                 ))
                 onInserted?(outcome.paneID)

@@ -37,7 +37,9 @@ final class ReviewStore {
     /// before the first Git read completes.
     private(set) var hasLoaded = false
     /// Errors remain visible until the next explicit operation succeeds.
-    private(set) var errorMessage: String?
+    /// Kept unresolved, so a banner already on screen switches with the
+    /// display language; the pane draws it in the window's locale.
+    private(set) var errorMessage: DisplayText?
     /// Whether the last change-list refresh failed. Loading a file or saving a
     /// comment says nothing about whether the list on screen is current, and
     /// letting either clear the message hid a failed refresh behind the first
@@ -50,7 +52,7 @@ final class ReviewStore {
     /// not to restore it: an operation that failed in between overwrote the
     /// message, and when that operation later succeeded the banner it left was
     /// the one that no longer applied.
-    private var listRefreshMessage: String?
+    private var listRefreshMessage: DisplayText?
     /// Whether the draft on disk could not be read when this store opened.
     ///
     /// Its own flag, like `hasListRefreshFailed`: the message is raised before
@@ -125,7 +127,7 @@ final class ReviewStore {
             viewed = draft.viewed ?? [:]
             lastFileID = draft.lastFileID
         } catch {
-            errorMessage = ReviewError.draftUnreadable.localizedDescription
+            errorMessage = DisplayText(error: ReviewError.draftUnreadable)
             hasUnreadableDraft = true
         }
     }
@@ -188,13 +190,13 @@ final class ReviewStore {
             guard listGeneration == token else { return }
             offerTurnScope(nextScope)
             await refresh(scope: .uncommitted)
-            errorMessage = ReviewError.turnBaseMissing.localizedDescription
+            errorMessage = DisplayText(error: ReviewError.turnBaseMissing)
         } catch {
             guard listGeneration == token else { return }
             hasLoaded = true
             hasListRefreshFailed = true
-            listRefreshMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            listRefreshMessage = DisplayText(error: error)
+            errorMessage = DisplayText(error: error)
         }
     }
 
@@ -249,22 +251,22 @@ final class ReviewStore {
             offerTurnScope(targetScope)
             let result = await reload(scope: .uncommitted, selectedFileID: selectedFileID)
             if case .applied = result {
-                errorMessage = ReviewError.turnBaseMissing.localizedDescription
+                errorMessage = DisplayText(error: ReviewError.turnBaseMissing)
             }
             return result
         } catch {
             guard listGeneration == token, diffGeneration == token else { return .superseded }
             hasLoaded = true
             hasListRefreshFailed = true
-            listRefreshMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            listRefreshMessage = DisplayText(error: error)
+            errorMessage = DisplayText(error: error)
             return .failed
         }
     }
 
     private func applyFileLoadError(_ error: (any Error)?) {
         if let error {
-            errorMessage = error.localizedDescription
+            errorMessage = DisplayText(error: error)
         } else {
             clearOperationError()
         }
@@ -301,7 +303,7 @@ final class ReviewStore {
             // Another file took over, or the surface went away.
         } catch {
             guard diffGeneration == token else { return }
-            errorMessage = error.localizedDescription
+            errorMessage = DisplayText(error: error)
         }
     }
 
@@ -417,15 +419,15 @@ final class ReviewStore {
         // so there is nothing for the reader to act on.
         guard !text.isEmpty else { return true }
         guard comments.count(where: { !$0.isResolved }) < Self.maxComments else {
-            errorMessage = ReviewError.commentLimitReached.localizedDescription
+            errorMessage = DisplayText(error: ReviewError.commentLimitReached)
             return false
         }
         guard text.utf8.count <= Self.maxCommentBytes else {
-            errorMessage = ReviewError.commentTooLong.localizedDescription
+            errorMessage = DisplayText(error: ReviewError.commentTooLong)
             return false
         }
         do { try ReviewPromptBuilder.validate(text) } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = DisplayText(error: error)
             return false
         }
         let isRange = run.count > 1
@@ -502,11 +504,11 @@ final class ReviewStore {
         let text = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return true }
         guard text.utf8.count <= Self.maxCommentBytes else {
-            errorMessage = ReviewError.commentTooLong.localizedDescription
+            errorMessage = DisplayText(error: ReviewError.commentTooLong)
             return false
         }
         do { try ReviewPromptBuilder.validate(text) } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = DisplayText(error: error)
             return false
         }
         var next = comments
@@ -771,7 +773,7 @@ final class ReviewStore {
         // that `init` refuses to load, which took the whole draft with it.
         if !isResolved, next[index].isResolved {
             guard next.count(where: { !$0.isResolved }) < Self.maxComments else {
-                errorMessage = ReviewError.commentLimitReached.localizedDescription
+                errorMessage = DisplayText(error: ReviewError.commentLimitReached)
                 return
             }
         }
@@ -861,14 +863,14 @@ final class ReviewStore {
     /// that notice and leave the reader with no sign that their comments were
     /// set aside.
     func clearError() {
-        errorMessage = hasUnreadableDraft ? ReviewError.draftUnreadable.localizedDescription : nil
+        errorMessage = hasUnreadableDraft ? DisplayText(error: ReviewError.draftUnreadable) : nil
     }
 
     /// Puts a failure the surface handled — building the prompt, reaching the
     /// pane — where the same banner can carry it, since to the reader it is
     /// the review that did not work.
     func report(_ error: any Error) {
-        errorMessage = error.localizedDescription
+        errorMessage = DisplayText(error: error)
     }
 
     /// Clears the message an operation is entitled to clear, and puts back the
@@ -885,7 +887,7 @@ final class ReviewStore {
             errorMessage = listRefreshMessage
             return
         }
-        errorMessage = hasUnreadableDraft ? ReviewError.draftUnreadable.localizedDescription : nil
+        errorMessage = hasUnreadableDraft ? DisplayText(error: ReviewError.draftUnreadable) : nil
     }
 
     private func updateNavigationMarks(_ marks: [String: ReviewViewMark]) {
@@ -912,7 +914,7 @@ final class ReviewStore {
                 // A newer navigation or a synchronous edit owns persistence now.
             } catch {
                 guard navigationGeneration == token, !Task.isCancelled else { return }
-                errorMessage = (error as? ReviewError ?? .storageFailed).localizedDescription
+                errorMessage = DisplayText(error: error as? ReviewError ?? .storageFailed)
             }
         }
     }
@@ -952,10 +954,10 @@ final class ReviewStore {
             clearOperationError()
             return true
         } catch let error as ReviewError {
-            errorMessage = error.localizedDescription
+            errorMessage = DisplayText(error: error)
             return false
         } catch {
-            errorMessage = ReviewError.storageFailed.localizedDescription
+            errorMessage = DisplayText(error: ReviewError.storageFailed)
             return false
         }
     }

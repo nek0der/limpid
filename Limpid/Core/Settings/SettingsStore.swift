@@ -2,9 +2,10 @@
 // Limpid — single source of truth for user preferences. Splits into
 // two backings on purpose:
 //
-//   - `@AppStorage("appLanguage")` for the language picker. AppKit's
-//     menu bar reads UserDefaults at launch, so we keep the language
-//     in plist territory to influence the bar without a JSON loader.
+//   - UserDefaults (`appLanguage`, mirrored into `AppleLanguages`) for
+//     the language picker. AppKit's menu bar reads UserDefaults at
+//     launch, so we keep the language in plist territory to influence
+//     the bar without a JSON loader.
 //
 //   - `<LimpidPaths app support>/settings.json` for everything that
 //     drives the terminal (font, theme, opacity, bell, scrollback…).
@@ -35,9 +36,9 @@ final class SettingsStore {
 
     // MARK: - Language (UserDefaults / AppKit-visible)
 
-    /// User-facing app language. `.system` reads OS Region prefs.
-    /// Changes apply to the SwiftUI tree immediately (via locale env);
-    /// AppKit menu bar follows on next launch.
+    /// User-facing app language. `.system` follows the OS-wide preferred
+    /// language list. Changes apply to in-app text immediately (through `appLocale`);
+    /// the AppKit menu bar follows on next launch.
     ///
     /// We avoid `@AppStorage` here on purpose: `@AppStorage` is a
     /// `DynamicProperty` designed for `View` types, and combining it
@@ -52,17 +53,61 @@ final class SettingsStore {
     var appLanguage: AppLanguage {
         didSet {
             guard appLanguage != oldValue else { return }
-            UserDefaults.standard.set(appLanguage.rawValue, forKey: Self.appLanguageDefaultsKey)
+            languageSources.defaults.set(appLanguage.rawValue, forKey: Self.appLanguageDefaultsKey)
             applyAppleLanguages(for: appLanguage)
+            refreshAppLocale()
         }
+    }
+
+    /// The locale every piece of in-app text uses: SwiftUI receives it as
+    /// `\.locale` at each window root, and text built outside SwiftUI
+    /// (AppKit menus and alerts, notifications, the agent prompt) resolves
+    /// with it. Its language is never `Locale.current`'s, which is the one
+    /// the process launched with; the rest of the user's locale (region,
+    /// calendar, number format) is kept. Stored rather than computed so the
+    /// preferences read happens once per change, not once per row.
+    private(set) var appLocale: Locale
+
+    /// Where the language picker reads and writes, and what `.system`
+    /// follows. Injected so tests run without the host Mac's preferences
+    /// and without writing to them.
+    @ObservationIgnored
+    private let languageSources: AppLanguageSources
+
+    /// The `currentLocaleDidChangeNotification` registration. Kept so
+    /// `deinit` can hand it back. `nonisolated(unsafe)` because the
+    /// nonisolated `deinit` reads it: it is written once in `init` on the
+    /// main actor and read only in `deinit`, when no other reference to the
+    /// store remains, so the two accesses cannot overlap.
+    @ObservationIgnored
+    private nonisolated(unsafe) var localeObserver: (any NSObjectProtocol)?
+
+    /// Recomputes `appLocale` from the picker and the sources. Also runs
+    /// when the OS language list or region changes while Limpid runs, so
+    /// System Default and the kept region stay current without a relaunch.
+    private func refreshAppLocale() {
+        let locale = Self.locale(for: appLanguage, sources: languageSources)
+        if locale != appLocale {
+            appLocale = locale
+        }
+    }
+
+    /// The locale for `language`. Demo mode starts from plain English so the
+    /// hero screenshot formats dates and numbers the same on every
+    /// contributor's Mac.
+    private static func locale(for language: AppLanguage, sources: AppLanguageSources) -> Locale {
+        language.resolvedLocale(
+            preferredLanguages: sources.systemPreferredLanguages(),
+            base: DemoFixture.isDemoActive ? Locale(identifier: "en") : sources.currentLocale()
+        )
     }
 
     private func applyAppleLanguages(for lang: AppLanguage) {
         let key = "AppleLanguages"
         if let value = lang.appleLanguagesValue {
-            UserDefaults.standard.set(value, forKey: key)
+            languageSources.defaults.set(value, forKey: key)
         } else {
-            UserDefaults.standard.removeObject(forKey: key)
+            languageSources.defaults.removeObject(forKey: key)
         }
     }
 
@@ -124,9 +169,10 @@ final class SettingsStore {
         self.init(directory: LimpidPaths.applicationSupportDirectory())
     }
 
-    init(directory: URL) {
+    init(directory: URL, languageSources: AppLanguageSources = .live) {
         self.directory = directory
-        let raw = UserDefaults.standard.string(forKey: Self.appLanguageDefaultsKey)
+        self.languageSources = languageSources
+        let raw = languageSources.defaults.string(forKey: Self.appLanguageDefaultsKey)
             ?? AppLanguage.system.rawValue
         let stored = AppLanguage(rawValue: raw) ?? .system
         // Demo mode pins the SwiftUI tree to English so the README hero
@@ -135,7 +181,9 @@ final class SettingsStore {
         // preference survives a `LIMPID_DEMO=1` run. AppKit menu bar
         // still follows `AppleLanguages` (untouched here) — capture
         // pipelines crop to the SwiftUI window content.
-        self.appLanguage = DemoFixture.isDemoActive ? .english : stored
+        let language = DemoFixture.isDemoActive ? AppLanguage.english : stored
+        self.appLanguage = language
+        self.appLocale = Self.locale(for: language, sources: languageSources)
         var loaded = Self.loadFromDiskOrDefault(at: Self.settingsFileURL(in: directory))
         // The hero screenshot pipeline runs under `LIMPID_DEMO=1`.
         // Force the toolbar opaque there so the captured PNG doesn't
@@ -165,6 +213,21 @@ final class SettingsStore {
             loaded.advanced.showPRStatusOnlyWhenAttention = false
         }
         self.settings = loaded
+        localeObserver = NotificationCenter.default.addObserver(
+            forName: NSLocale.currentLocaleDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshAppLocale()
+            }
+        }
+    }
+
+    deinit {
+        if let localeObserver {
+            NotificationCenter.default.removeObserver(localeObserver)
+        }
     }
 
     // MARK: - Persistence
@@ -274,4 +337,24 @@ final class SettingsStore {
         suppressNextSave = false
     }
 
+}
+
+/// The inputs the app language is resolved from. `live` reads and writes
+/// the real preferences; tests pass their own so the host Mac's language
+/// list never decides a result and nothing is written to `~/Library`.
+struct AppLanguageSources {
+    /// Where the picker's choice and the `AppleLanguages` mirror live.
+    var defaults: UserDefaults
+    /// The OS-wide preferred language list `.system` follows.
+    var systemPreferredLanguages: () -> [String]
+    /// The user's own locale, whose region and format choices are kept.
+    var currentLocale: () -> Locale
+
+    static var live: Self {
+        Self(
+            defaults: .standard,
+            systemPreferredLanguages: AppLanguage.systemPreferredLanguages,
+            currentLocale: { .current }
+        )
+    }
 }

@@ -22,6 +22,8 @@ struct ReviewPromptPreview: View {
     let prompt: String
     let onJump: (ReviewComment) -> Void
 
+    @Environment(\.locale) private var locale
+
     /// Comments grouped by the file they sit in, in the order they were
     /// written. Repeating one file name down a list of five comments on it
     /// spends the width that the comments themselves need.
@@ -153,7 +155,7 @@ struct ReviewPromptPreview: View {
             .buttonStyle(.plain)
             .disabled(!isReachable)
             .help(help(comment, isStale: isStale))
-            .accessibilityLabel(Text(verbatim: helpText(comment, isStale: isStale) + " " + comment.body))
+            .accessibilityLabel(Text(verbatim: helpText(comment, isStale: isStale).resolved(in: locale) + " " + comment.body))
             promptEntryFooter(comment, isStale: isStale)
         }
         .padding(10)
@@ -166,19 +168,19 @@ struct ReviewPromptPreview: View {
     /// as resolved before it reads as stale, and neither offers to take the
     /// reader anywhere, because neither is drawn in the diff to arrive at.
     private func help(_ comment: ReviewComment, isStale: Bool) -> Text {
-        Text(verbatim: helpText(comment, isStale: isStale))
+        Text(helpText(comment, isStale: isStale))
     }
 
-    /// The same phrase as a string, so the accessibility label can carry it
+    /// The same phrase, which the accessibility label resolves to carry it
     /// with the comment's own text. `Text` addition is deprecated as of macOS
     /// 26, and the two read as one sentence anyway.
-    private func helpText(_ comment: ReviewComment, isStale: Bool) -> String {
+    private func helpText(_ comment: ReviewComment, isStale: Bool) -> LocalizedStringResource {
         if comment.isResolved {
-            String(localized: "Resolved.")
+            "Resolved."
         } else if isStale {
-            String(localized: "The code this was written against has changed.")
+            "The code this was written against has changed."
         } else {
-            String(localized: "Go to comment")
+            "Go to comment"
         }
     }
 

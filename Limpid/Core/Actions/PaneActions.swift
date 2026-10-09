@@ -47,7 +47,7 @@ enum PaneActions {
            )
         {
             toastCenter.show(ToastItem(
-                message: String(localized: "Not enough room to split"),
+                message: .localized("Not enough room to split"),
                 undo: nil
             ))
             return

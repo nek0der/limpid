@@ -95,16 +95,6 @@ private struct ConfirmationsSection: View {
     }
 }
 
-extension ConfirmPolicy {
-    var localizedTitle: String {
-        switch self {
-        case .never: String(localized: "Never")
-        case .onlyWhenAgent: String(localized: "Only when an agent is active")
-        case .always: String(localized: "Always")
-        }
-    }
-}
-
 /// Footer card that mirrors what the standard About panel shows. Lets
 /// users grab the version for bug reports without leaving Settings.
 private struct AboutSection: View {

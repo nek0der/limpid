@@ -28,13 +28,19 @@ final class QuickTerminalPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = true
         animationBehavior = .none
-        // Borderless windows have no visible title, but assistive
-        // technologies read it as the window's name.
-        title = String(localized: "Quick Terminal", comment: "Name of the quick terminal panel")
-        setAccessibilityLabel(title)
         // Tiling window managers treat the floating subrole as a window
         // they should leave where it is.
         setAccessibilitySubrole(.floatingWindow)
+    }
+
+    /// Borderless windows have no visible title, but assistive technologies
+    /// read it as the window's name. The controller applies it in the app
+    /// locale when the panel is made and again whenever that changes.
+    func applyTitle(locale: Locale) {
+        title = LocalizedStringResource("Quick Terminal", comment: "Name of the quick terminal panel")
+            .resolved(in: locale)
+        setAccessibilityTitle(title)
+        setAccessibilityLabel(title)
     }
 
     /// A borderless window refuses key status by default; the terminal
@@ -255,9 +261,10 @@ struct QuickTerminalContent: View {
                 onAllow: { model.clipboard.allow() },
                 onDeny: { model.clipboard.deny() }
             )
+            .environment(\.locale, model.settingsStore.appLocale)
             .limpidAccentPropagated(accent)
         }
-        .environment(\.locale, model.settingsStore.appLanguage.locale ?? .current)
+        .environment(\.locale, model.settingsStore.appLocale)
         .limpidAccentPropagated(accent)
     }
 

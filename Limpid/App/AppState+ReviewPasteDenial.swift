@@ -18,7 +18,7 @@ extension AppState {
             // and a second request arriving while one is already up — took the
             // comments back in silence.
             toastCenter.show(ToastItem(
-                message: String(localized: "Review was not delivered. The comments stay in this review."),
+                message: .localized("Review was not delivered. The comments stay in this review."),
                 undo: nil
             ))
         }

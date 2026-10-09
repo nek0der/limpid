@@ -305,6 +305,10 @@ final class SurfaceView: NSView {
     /// Paste and Select All keep the Edit menu's fixed keys and Clear and
     /// the scroll items have none.
     var keyboardSettings: (() -> KeyboardSettings)?
+    /// The app locale, read each time the menu opens or VoiceOver asks for
+    /// the label, so a language switch shows at once. Installed by the host
+    /// (`PaneHostView`, the quick terminal) the way `keyboardSettings` is.
+    var appLocale: (@MainActor () -> Locale)?
 
     /// The pane this view represents. Set by `PaneHostView`; lets the
     /// AppKit drag-source path write a `pane:<UUID>` payload to the
@@ -475,7 +479,8 @@ final class SurfaceView: NSView {
     }
 
     override func accessibilityLabel() -> String? {
-        String(localized: "Terminal", comment: "VoiceOver label for the libghostty surface view")
+        LocalizedStringResource("Terminal", comment: "VoiceOver label for the libghostty surface view")
+            .resolved(in: resolvedAppLocale)
     }
 
     // MARK: - Layer backing

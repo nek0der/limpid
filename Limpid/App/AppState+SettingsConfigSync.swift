@@ -91,6 +91,9 @@ extension AppState {
                 },
                 fileApplication: { [settingsStore] in
                     settingsStore.settings.advanced.fileApplication
+                },
+                locale: { [settingsStore] in
+                    settingsStore.appLocale
                 }
             )
         )

@@ -27,14 +27,21 @@ enum CommandPaletteCatalog {
         let attention: AttentionState
         let registry: (any SurfaceViewProviding)?
         let reviewPresentation: ReviewPresentation?
+        let locale: Locale
     }
 
+    /// Item titles are `String`s, because fuzzy matching and its highlight
+    /// work on characters, so they are resolved here in `locale`: the app
+    /// locale, which the palette's window is drawn in. The list is rebuilt
+    /// every time the palette opens, so a language switch shows up on the
+    /// next open.
     static func buildItems(
         session: WindowSession,
         settings: SettingsStore,
         attention: AttentionState,
         registry: (any SurfaceViewProviding)? = nil,
-        reviewPresentation: ReviewPresentation? = nil
+        reviewPresentation: ReviewPresentation? = nil,
+        locale: Locale
     ) -> [CommandPaletteItem] {
         var items: [CommandPaletteItem] = []
         items.reserveCapacity(80)
@@ -45,7 +52,8 @@ enum CommandPaletteCatalog {
                 settings: settings,
                 attention: attention,
                 registry: registry,
-                reviewPresentation: reviewPresentation
+                reviewPresentation: reviewPresentation,
+                locale: locale
             )
         )
         appendTabs(to: &items, session: session)
@@ -53,7 +61,7 @@ enum CommandPaletteCatalog {
         appendProjects(to: &items, session: session)
         appendClosedTabs(to: &items, session: session)
         appendRecentProjects(to: &items, session: session)
-        appendSettings(to: &items)
+        appendSettings(to: &items, locale: locale)
         return items
     }
 
@@ -105,10 +113,8 @@ enum CommandPaletteCatalog {
         for action in LimpidShortcutAction.allCases {
             let shortcut = dependencies.settings.settings.keyboard.shortcut(for: action)
             let enabled = isActionEnabled(action, context: context)
-            let localizedTitle = String(localized: action.localizedTitle)
-            var englishResource = action.localizedTitle
-            englishResource.locale = Locale(identifier: "en")
-            let englishTitle = String(localized: englishResource)
+            let localizedTitle = action.localizedTitle.resolved(in: dependencies.locale)
+            let englishTitle = action.localizedTitle.resolved(in: .english)
             items.append(CommandPaletteItem(
                 id: "shortcut.\(action.rawValue)",
                 category: .actions,
@@ -241,12 +247,10 @@ enum CommandPaletteCatalog {
 
     // MARK: - Settings
 
-    private static func appendSettings(to items: inout [CommandPaletteItem]) {
+    private static func appendSettings(to items: inout [CommandPaletteItem], locale: Locale) {
         let resource: LocalizedStringResource = "Open Settings"
-        let localizedTitle = String(localized: resource)
-        var englishResource = resource
-        englishResource.locale = Locale(identifier: "en")
-        let englishTitle = String(localized: englishResource)
+        let localizedTitle = resource.resolved(in: locale)
+        let englishTitle = resource.resolved(in: .english)
         items.append(CommandPaletteItem(
             id: "settings.open",
             category: .settings,

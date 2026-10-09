@@ -43,3 +43,31 @@ disabled_rules:
   - todo
   - trailing_comma
   - opening_brace
+
+# `String(localized:)` and its relatives answer in the language the process
+# launched with, so their result stays in the old language after the user
+# switches Display Language in Settings. Models carry
+# `LocalizedStringResource`, views hand it to SwiftUI, and text that has to be
+# a `String` goes through `resolved(in:)` with the environment or app locale
+# (`Limpid/Core/Localization/LocalizedStringResource+Resolved.swift`, the one
+# file allowed the raw lookup). A deliberate launch-language lookup (the
+# `NSOpenPanel` prompts) says why beside a
+# `swiftlint:disable:next launch_language_lookup`. The bare `.init(localized:`
+# form is safe to flag: `LocalizedStringResource` has no such initializer, so
+# it only ever names `String` or `AttributedString`.
+custom_rules:
+  launch_language_lookup:
+    name: "Launch-language string lookup"
+    regex: '\b(?:String|AttributedString)(?:\.init)?\(\s*localized:|(?<![\w.])\.init\(\s*localized:|\bNSLocalizedString\(|\.localizedString\(forKey:|\bByteCountFormatter\(\)'
+    excluded: 'Limpid/Core/Localization/LocalizedStringResource\+Resolved\.swift$'
+    excluded_match_kinds:
+      - comment
+      - comment.mark
+      - comment.url
+      - doccomment
+      - doccomment.field
+    message: >-
+      Resolves in the language the app launched with. Hand SwiftUI the
+      LocalizedStringResource, or use resolved(in:) with the environment or
+      app locale.
+    severity: error

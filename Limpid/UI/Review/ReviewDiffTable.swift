@@ -91,6 +91,11 @@ final class ReviewTableView: NSTableView {
     /// it names the app chosen now and the line the editor will land on.
     var openInEditorTitle: ((Int) -> String?)?
     var onOpenInEditor: ((Int?) -> Void)?
+    /// The language the context menu is written in: the representable's
+    /// `locale`, handed in when it makes the table and set again when it
+    /// changes. Required at init, so no table can show a menu in a
+    /// language nobody chose.
+    var menuLocale: Locale
     /// The row the context menu was built for.
     private var menuRow: Int?
     var hasTextSelection: (() -> Bool)?
@@ -126,6 +131,16 @@ final class ReviewTableView: NSTableView {
     /// runs only after those handlers have released the table.
     private nonisolated(unsafe) var textAutoscrollTimer: Timer?
     private var consumesMouseUp = false
+
+    init(frame: NSRect, menuLocale: Locale) {
+        self.menuLocale = menuLocale
+        super.init(frame: frame)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     override var acceptsFirstResponder: Bool {
         true
@@ -291,10 +306,9 @@ final class ReviewTableView: NSTableView {
             menu.addItem(open)
         }
         if (offersLineCopy && !selectedRowIndexes.isEmpty) || hasTextSelection?() == true {
+            let copyTitle: LocalizedStringResource = hasTextSelection?() == true ? "Copy Selected Text" : "Copy Code"
             let copy = NSMenuItem(
-                title: hasTextSelection?() == true
-                    ? String(localized: "Copy Selected Text")
-                    : String(localized: "Copy Code"),
+                title: copyTitle.resolved(in: menuLocale),
                 action: #selector(copySelectedCode(_:)),
                 keyEquivalent: ""
             )
@@ -419,6 +433,11 @@ struct ReviewDiffTable: NSViewRepresentable {
     let isOverlayPresented: Bool
     let onCloseOverlay: () -> Void
     let onClose: () -> Void
+    /// The language the rows and the context menu are written in: the
+    /// pane's `\.locale`, handed in rather than read here because the rows
+    /// are AppKit, configured outside SwiftUI's environment, and the
+    /// coordinator reads it whenever AppKit asks for a row.
+    let locale: Locale
     /// Read here and handed to the painter: the rows are AppKit, and the
     /// system accent they used instead is not the one the picker sets.
     @Environment(\.limpidAccent) private var accent
@@ -428,7 +447,7 @@ struct ReviewDiffTable: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> ReviewScrollView {
-        let table = ReviewTableView()
+        let table = ReviewTableView(frame: .zero, menuLocale: locale)
         table.headerView = nil
         // Plain, and with no inset of its own: the surface supplies the
         // padding, and the automatic style added a strip above the first row.
@@ -449,7 +468,7 @@ struct ReviewDiffTable: NSViewRepresentable {
         // carry one: shift-click and shift-drag are the pointer half of ⇧J/⇧K.
         table.allowsMultipleSelection = true
         table.usesAutomaticRowHeights = false
-        table.setAccessibilityLabel(String(localized: "Review diff"))
+        table.setAccessibilityLabel(LocalizedStringResource("Review diff").resolved(in: locale))
         let column = NSTableColumn(identifier: .init("review"))
         // The one column is sized by hand, from the viewport and the file's
         // longest line. Left to AppKit, `.lastColumnOnlyAutoresizingStyle`
@@ -573,10 +592,18 @@ struct ReviewDiffTable: NSViewRepresentable {
         if hasNewAccent {
             coordinator.invalidateGutter()
         }
+        // The same reload for a language switch: the rows resolve their words
+        // when they are configured, and pooled ones keep them until then.
+        let hasNewLocale = coordinator.appliedLocale != locale
+        coordinator.appliedLocale = locale
+        if hasNewLocale {
+            table.menuLocale = locale
+            table.setAccessibilityLabel(LocalizedStringResource("Review diff").resolved(in: locale))
+        }
         // Side by side sizes its column to the viewport, so there is nothing
         // to scroll to and a scroller would sit there permanently disabled.
         scroll.hasHorizontalScroller = layout == .unified
-        if previousKey != contentKey || table.numberOfRows != rows.count || hasNewAccent {
+        if previousKey != contentKey || table.numberOfRows != rows.count || hasNewAccent || hasNewLocale {
             let hadComposer = coordinator.hasComposerRow
             coordinator.appliedKey = contentKey
             coordinator.applyColumnWidth(to: table)

@@ -22,7 +22,7 @@ struct TerminalPane: View {
                     Text("1,000,000 lines").tag(1_000_000)
                     let current = store.settings.terminal.scrollbackLines
                     if ![1000, 10000, 100_000, 1_000_000].contains(current) {
-                        Text("\(current.formatted()) lines (custom)").tag(current)
+                        Text("\(current, format: .number) lines (custom)").tag(current)
                     }
                 }
                 .settingsSearchTarget(SettingsSearchCatalog.scrollback.id)

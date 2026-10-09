@@ -21,7 +21,7 @@ struct WorktreeOperationAlerts: ViewModifier {
     @Binding var forceDeleteWorktree: ContainerSlabView.ForceDeleteWorktreeTarget?
     @Binding var removingProject: ContainerSlabView.RemoveProjectTarget?
     @Binding var removingGroup: ContainerSlabView.RemoveGroupTarget?
-    @Binding var worktreeOperationError: String?
+    @Binding var worktreeOperationError: DisplayText?
 
     func body(content: Content) -> some View {
         content
@@ -135,7 +135,7 @@ struct WorktreeOperationAlerts: ViewModifier {
             ) { _ in
                 Button("OK", role: .cancel) { worktreeOperationError = nil }
             } message: { msg in
-                Text(msg)
+                Text(display: msg)
             }
     }
 
@@ -160,7 +160,7 @@ struct WorktreeOperationAlerts: ViewModifier {
         } catch DeleteWorktreeError.submodulesNeedForce {
             forceDeleteWorktree = .init(target: target, reason: .initializedSubmodules)
         } catch {
-            worktreeOperationError = error.localizedDescription
+            worktreeOperationError = DisplayText(error: error)
         }
     }
 }
@@ -171,7 +171,7 @@ extension View {
         forceDeleteWorktree: Binding<ContainerSlabView.ForceDeleteWorktreeTarget?>,
         removingProject: Binding<ContainerSlabView.RemoveProjectTarget?>,
         removingGroup: Binding<ContainerSlabView.RemoveGroupTarget?>,
-        worktreeOperationError: Binding<String?>
+        worktreeOperationError: Binding<DisplayText?>
     ) -> some View {
         modifier(WorktreeOperationAlerts(
             deletingWorktree: deletingWorktree,

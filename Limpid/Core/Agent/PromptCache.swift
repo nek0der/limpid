@@ -151,10 +151,10 @@ enum PromptCacheFormatting {
         return String(format: "%.1fM", millions)
     }
 
-    /// The largest whole unit of `interval`, localized: `4m`, `45s`, `2h`.
-    /// Rounded down so "expires in 5m" never appears while under five
-    /// minutes remain, which the mark's color already says.
-    static func duration(_ interval: TimeInterval) -> String {
+    /// The largest whole unit of `interval`, localized in `locale`: `4m`,
+    /// `45s`, `2h`. Rounded down so "expires in 5m" never appears while
+    /// under five minutes remain, which the mark's color already says.
+    static func duration(_ interval: TimeInterval, locale: Locale) -> String {
         let seconds = max(0, Int(interval))
         let floored = if seconds >= 86400 {
             seconds / 86400 * 86400
@@ -167,6 +167,7 @@ enum PromptCacheFormatting {
         }
         return Duration.seconds(floored).formatted(
             .units(allowed: [.days, .hours, .minutes, .seconds], width: .narrow, maximumUnitCount: 1)
+                .locale(locale)
         )
     }
 }

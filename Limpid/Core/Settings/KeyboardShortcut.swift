@@ -33,8 +33,9 @@ enum LimpidShortcutCategory: Int, CaseIterable, Identifiable {
     /// Kept as `LocalizedStringKey` rather than the broader
     /// `LocalizedStringResource` because category titles are only
     /// ever rendered inside the Settings pane — we never need to
-    /// concatenate them or feed them to `String(localized:)`. The
-    /// action vocabulary uses `LocalizedStringResource` instead.
+    /// concatenate them or resolve them to a `String`. Surfaces that do
+    /// (the cheat sheet, Settings search) use `resourceTitle`, and the
+    /// action vocabulary uses `LocalizedStringResource` throughout.
     var sectionTitle: LocalizedStringKey {
         switch self {
         case .file: "File"

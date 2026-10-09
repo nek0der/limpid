@@ -23,7 +23,7 @@ struct ReviewSettingsPane: View {
                 TextField(
                     "",
                     text: $store.settings.advanced.reviewInstructions,
-                    prompt: Text(verbatim: ReviewPromptBuilder.defaultInstructions),
+                    prompt: Text(ReviewPromptBuilder.defaultInstructions),
                     axis: .vertical
                 )
                 .lineLimit(6...16)

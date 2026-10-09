@@ -28,16 +28,18 @@ struct ContainerPresentation {
     /// worktrees, group palette color for groups, neutral elsewhere.
     let tint: Color
     /// User-facing label (group / project name, worktree branch, etc).
-    let title: String
+    /// The user's own names are verbatim; the fallbacks we supply are
+    /// localized and drawn in the toolbar's locale.
+    let title: DisplayText
     /// Optional one-line caption (path / count / branch).
-    let subtitle: String?
+    let subtitle: DisplayText?
 
     init(container: ContainerID, session: WindowSession) {
         switch container {
         case .loose:
             self.icon = ContainerSymbol.quickTabs
             self.tint = .secondary
-            self.title = String(localized: "Quick Tabs")
+            self.title = .localized("Quick Tabs")
             self.subtitle = Self.tabCount(container, session)
 
         case let .group(gid):
@@ -49,7 +51,7 @@ struct ContainerPresentation {
             // kind of thing with one filled in.
             self.icon = ContainerSymbol.group
             self.tint = Self.palette(group?.paletteIndex)
-            self.title = group?.name ?? String(localized: "Group")
+            self.title = group.map { .verbatim($0.name) } ?? .localized("Group")
             self.subtitle = Self.tabCount(container, session)
 
         case let .project(pid):
@@ -61,26 +63,26 @@ struct ContainerPresentation {
             // reads without being taught.
             self.icon = ContainerSymbol.project
             self.tint = Self.palette(project?.paletteIndex)
-            self.title = project?.name ?? String(localized: "Project")
+            self.title = project.map { .verbatim($0.name) } ?? .localized("Project")
             // Subtitle = current branch of the project's main
             // checkout. Falls back to the rootURL basename for
             // non-git projects (no branch). `mainBranchName` is
             // populated by GitSyncCoordinator after the first
             // `git worktree list` for this project lands.
-            self.subtitle = project?.mainBranchName
-                ?? project?.rootURL.lastPathComponent
+            self.subtitle = (project?.mainBranchName ?? project?.rootURL.lastPathComponent)
+                .map(DisplayText.verbatim)
 
         case let .worktree(pid, wid):
             let project = session.project(pid)
             let wt = session.worktree(projectID: pid, worktreeID: wid)
             self.icon = ContainerSymbol.worktree
             self.tint = Self.palette(project?.paletteIndex)
-            self.title = wt?.label ?? project?.name ?? String(localized: "Worktree")
+            self.title = (wt?.label ?? project?.name).map(DisplayText.verbatim) ?? .localized("Worktree")
             // Subtitle = current branch in this worktree. We pair it
             // with the basename title so the user sees both "where on
             // disk" (title) and "which branch is checked out"
             // (subtitle) without a redundant duplicate path.
-            self.subtitle = wt?.gitRef?.branchName ?? Self.tabCount(container, session)
+            self.subtitle = (wt?.gitRef?.branchName).map(DisplayText.verbatim) ?? Self.tabCount(container, session)
         }
     }
 
@@ -93,12 +95,15 @@ struct ContainerPresentation {
         return LimpidColor.defaultAccent
     }
 
-    private static func tabCount(_ container: ContainerID, _ session: WindowSession) -> String? {
+    private static func tabCount(_ container: ContainerID, _ session: WindowSession) -> DisplayText? {
         let n = session.tabs(in: container).count
         // Route through the string catalog so the locale's plural rule
-        // wins instead of a hand-pinned `"s"` suffix; `String(localized:)`
-        // picks the plural variation matching `Locale.current`.
-        return String(localized: "\(n) sessions", comment: "Toolbar container subtitle: count of tabs inside the active container.")
+        // wins instead of a hand-pinned `"s"` suffix; SwiftUI picks the
+        // plural variation for the toolbar's locale when it draws it.
+        return .localized(LocalizedStringResource(
+            "\(n) sessions",
+            comment: "Toolbar container subtitle: count of tabs inside the active container."
+        ))
     }
 }
 

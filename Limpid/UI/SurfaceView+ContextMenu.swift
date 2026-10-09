@@ -42,147 +42,26 @@ extension SurfaceView {
             sendRightMousePressForMenu(with: event)
         }
 
-        let menu = NSMenu()
-
-        if let surface, ghostty_surface_has_selection(surface) {
-            menu.addItem(
-                withTitle: String(localized: "Copy"),
-                action: #selector(copy(_:)),
-                keyEquivalent: ""
-            ).showShortcut(menuShortcut(.copy))
-        }
-        menu.addItem(
-            withTitle: String(localized: "Paste"),
-            action: #selector(paste(_:)),
-            keyEquivalent: ""
-        ).showShortcut(menuShortcut(.paste))
-
-        menu.addItem(.separator())
-        menu.addItem(
-            withTitle: String(localized: "Select All"),
-            action: #selector(selectAll(_:)),
-            keyEquivalent: ""
-        ).showShortcut(menuShortcut(.selectAll))
-        menu.addItem(
-            withTitle: String(localized: "Clear"),
-            action: #selector(clearScreen(_:)),
-            keyEquivalent: ""
-        )
-
-        menu.addItem(.separator())
-        menu.addItem(
-            withTitle: String(localized: "Scroll to Top"),
-            action: #selector(scrollToTop(_:)),
-            keyEquivalent: ""
-        )
-        menu.addItem(
-            withTitle: String(localized: "Scroll to Bottom"),
-            action: #selector(scrollToBottom(_:)),
-            keyEquivalent: ""
-        )
-
-        // Find, split, and close act through callbacks the pane host
-        // installs. A surface outside any pane (the quick terminal) has
-        // none of them, so we leave the items out rather than offer ones
-        // that do nothing.
-        guard paneID != nil else { return menu }
-
-        menu.addItem(.separator())
-        menu.addItem(
-            withTitle: String(localized: "Find…"),
-            action: #selector(findInSurface(_:)),
-            keyEquivalent: ""
-        ).showShortcut(menuShortcut(.find))
-        if canRenamePane?() == true {
-            let rename = menu.addItem(
-                withTitle: String(localized: "Rename Pane…"),
-                action: #selector(renamePaneFromMenu(_:)),
-                keyEquivalent: ""
-            )
-            rename.image = NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
-        }
-
-        appendPaneActionItems(to: menu)
-
-        return menu
-    }
-
-    /// Split / zoom / promote / close section — split out of `menu(for:)` so the
-    /// builder stays under the function-body-length lint cap.
-    private func appendPaneActionItems(to menu: NSMenu) {
-        menu.addItem(.separator())
-        let splitRight = menu.addItem(
-            withTitle: String(localized: "Split Right"),
-            action: #selector(splitRight(_:)),
-            keyEquivalent: ""
-        )
-        splitRight.showShortcut(menuShortcut(.splitRight))
-        splitRight.image = NSImage(
-            systemSymbolName: "rectangle.righthalf.inset.filled",
-            accessibilityDescription: nil
-        )
-        let splitDown = menu.addItem(
-            withTitle: String(localized: "Split Down"),
-            action: #selector(splitDown(_:)),
-            keyEquivalent: ""
-        )
-        splitDown.showShortcut(menuShortcut(.splitDown))
-        splitDown.image = NSImage(
-            systemSymbolName: "rectangle.bottomhalf.inset.filled",
-            accessibilityDescription: nil
-        )
-
-        let zoomAction = paneZoomAction?()
-        if zoomAction != nil || canMoveToNewTab?() == true {
-            menu.addItem(.separator())
-        }
-        if let zoomAction {
-            let zoom = menu.addItem(
-                withTitle: zoomAction == .zoom
-                    ? String(localized: "Zoom Pane")
-                    : String(localized: "Unzoom Pane"),
-                action: #selector(zoomPaneFromMenu(_:)),
-                keyEquivalent: ""
-            )
-            zoom.showShortcut(menuShortcut(.togglePaneZoom))
-            zoom.image = NSImage(
-                systemSymbolName: zoomAction == .zoom
-                    ? "arrow.up.left.and.arrow.down.right"
-                    : "arrow.down.right.and.arrow.up.left",
-                accessibilityDescription: nil
-            )
-        }
-        if canMoveToNewTab?() == true {
-            let promote = menu.addItem(
-                withTitle: String(localized: "Move Pane to New Tab"),
-                action: #selector(movePaneToNewTab(_:)),
-                keyEquivalent: ""
-            )
-            promote.image = NSImage(
-                systemSymbolName: "rectangle.split.2x1",
-                accessibilityDescription: nil
-            )
-        }
-
-        menu.addItem(.separator())
-        let close = menu.addItem(
-            withTitle: String(localized: "Close Pane"),
-            action: #selector(closePaneFromMenu(_:)),
-            keyEquivalent: ""
-        )
-        close.showShortcut(menuShortcut(.closePane))
-        close.image = NSImage(
-            systemSymbolName: "xmark.square",
-            accessibilityDescription: nil
+        return SurfaceContextMenu.make(
+            SurfaceContextMenuState(
+                hasSelection: surface.map { ghostty_surface_has_selection($0) } ?? false,
+                isInPane: paneID != nil,
+                canRenamePane: canRenamePane?() == true,
+                zoomAction: paneZoomAction?(),
+                canMoveToNewTab: canMoveToNewTab?() == true,
+                shortcut: { [keyboardSettings] command in
+                    command.shortcut { keyboardSettings?().shortcut(for: $0) }
+                }
+            ),
+            locale: resolvedAppLocale
         )
     }
 
-    /// The key an item shows; see `MenuCommand`. The menu is built per
-    /// right-click and dropped when it closes, so these keys answer only
-    /// while it is open, and a keystroke made without it reaches the menu
-    /// bar once.
-    private func menuShortcut(_ command: MenuCommand) -> StoredShortcut? {
-        command.shortcut { keyboardSettings?().shortcut(for: $0) }
+    /// The app locale the host installed, for the text this view puts
+    /// outside SwiftUI. A surface no host has wired never reaches the
+    /// screen, so its fallback is never read.
+    var resolvedAppLocale: Locale {
+        appLocale?() ?? .current
     }
 
     // MARK: - Action handlers
@@ -234,6 +113,112 @@ extension SurfaceView {
     private func runSurfaceBinding(_ action: String) {
         guard let surface else { return }
         GhosttyFFI.performBindingAction(action, on: surface)
+    }
+}
+
+/// What the right-click menu offers, read from the surface each time it
+/// opens.
+struct SurfaceContextMenuState {
+    var hasSelection: Bool
+    /// Find, split, and close act through callbacks the pane host
+    /// installs. A surface outside any pane (the quick terminal) has none
+    /// of them, so the menu leaves those items out rather than offer ones
+    /// that do nothing.
+    var isInPane: Bool
+    var canRenamePane: Bool
+    var zoomAction: PaneZoomAction?
+    var canMoveToNewTab: Bool
+    /// The key an item shows; see `MenuCommand`. The menu is built per
+    /// right-click and dropped when it closes, so these keys answer only
+    /// while it is open, and a keystroke made without it reaches the menu
+    /// bar once.
+    var shortcut: (MenuCommand) -> StoredShortcut?
+}
+
+/// Builds the terminal's right-click menu. Kept apart from the view so the
+/// titles can be checked in a given language without a live surface. The
+/// items carry no target: they travel the responder chain to the surface,
+/// which `menu(for:)` has just made first responder.
+@MainActor
+enum SurfaceContextMenu {
+    /// `locale` is the app locale: an AppKit menu is outside SwiftUI's
+    /// environment, and would otherwise answer in the launch language.
+    static func make(_ state: SurfaceContextMenuState, locale: Locale) -> NSMenu {
+        let menu = NSMenu()
+        func add(_ title: LocalizedStringResource, _ action: Selector, _ command: MenuCommand? = nil) -> NSMenuItem {
+            let item = menu.addItem(withTitle: title.resolved(in: locale), action: action, keyEquivalent: "")
+            if let command {
+                item.showShortcut(state.shortcut(command))
+            }
+            return item
+        }
+
+        if state.hasSelection {
+            _ = add("Copy", #selector(SurfaceView.copy(_:)), .copy)
+        }
+        _ = add("Paste", #selector(SurfaceView.paste(_:)), .paste)
+
+        menu.addItem(.separator())
+        _ = add("Select All", #selector(SurfaceView.selectAll(_:)), .selectAll)
+        _ = add("Clear", #selector(SurfaceView.clearScreen(_:)))
+
+        menu.addItem(.separator())
+        _ = add("Scroll to Top", #selector(SurfaceView.scrollToTop(_:)))
+        _ = add("Scroll to Bottom", #selector(SurfaceView.scrollToBottom(_:)))
+
+        guard state.isInPane else { return menu }
+
+        menu.addItem(.separator())
+        _ = add("Find…", #selector(SurfaceView.findInSurface(_:)), .find)
+        if state.canRenamePane {
+            add("Rename Pane…", #selector(SurfaceView.renamePaneFromMenu(_:)))
+                .image = NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
+        }
+
+        appendPaneActionItems(state, add: add, to: menu)
+        return menu
+    }
+
+    /// Split / zoom / promote / close section — split out of `make` so the
+    /// builder stays under the function-body-length lint cap.
+    private static func appendPaneActionItems(
+        _ state: SurfaceContextMenuState,
+        add: (LocalizedStringResource, Selector, MenuCommand?) -> NSMenuItem,
+        to menu: NSMenu
+    ) {
+        menu.addItem(.separator())
+        add("Split Right", #selector(SurfaceView.splitRight(_:)), .splitRight).image = NSImage(
+            systemSymbolName: "rectangle.righthalf.inset.filled",
+            accessibilityDescription: nil
+        )
+        add("Split Down", #selector(SurfaceView.splitDown(_:)), .splitDown).image = NSImage(
+            systemSymbolName: "rectangle.bottomhalf.inset.filled",
+            accessibilityDescription: nil
+        )
+
+        if state.zoomAction != nil || state.canMoveToNewTab {
+            menu.addItem(.separator())
+        }
+        if let zoomAction = state.zoomAction {
+            let isZoom = zoomAction == .zoom
+            add(isZoom ? "Zoom Pane" : "Unzoom Pane", #selector(SurfaceView.zoomPaneFromMenu(_:)), .togglePaneZoom)
+                .image = NSImage(
+                    systemSymbolName: isZoom ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left",
+                    accessibilityDescription: nil
+                )
+        }
+        if state.canMoveToNewTab {
+            add("Move Pane to New Tab", #selector(SurfaceView.movePaneToNewTab(_:)), nil).image = NSImage(
+                systemSymbolName: "rectangle.split.2x1",
+                accessibilityDescription: nil
+            )
+        }
+
+        menu.addItem(.separator())
+        add("Close Pane", #selector(SurfaceView.closePaneFromMenu(_:)), .closePane).image = NSImage(
+            systemSymbolName: "xmark.square",
+            accessibilityDescription: nil
+        )
     }
 }
 

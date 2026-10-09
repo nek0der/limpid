@@ -26,12 +26,13 @@ struct AgentNotificationEmitter {
     /// the project or worktree path is the only thing that says which one
     /// finished.
     func deliver(_ payload: AgentNotifyPayload, tab: Tab, session: WindowSession) {
+        let locale = notificationManager.appLocale()
         let fallback = switch payload.kind {
-        case .finished: kind.finishedTitle
-        case .needsInput: kind.needsInputTitle
-        case .failed: kind.errorTitle
+        case .finished: kind.finishedTitle.resolved(in: locale)
+        case .needsInput: kind.needsInputTitle.resolved(in: locale)
+        case .failed: kind.errorTitle.resolved(in: locale)
         }
-        let containerLabel = session.containerLabel(for: tab.container)
+        let containerLabel = session.containerLabel(for: tab.container, locale: locale)
         let entryKind: NotificationEntry.Kind = switch payload.kind {
         case .finished: .agentFinished
         case .needsInput: .agentNeedsInput
@@ -46,7 +47,8 @@ struct AgentNotificationEmitter {
             ),
             tab: tab,
             paneID: payload.pane,
-            session: session
+            session: session,
+            locale: locale
         )
     }
 
@@ -63,7 +65,8 @@ struct AgentNotificationEmitter {
         _ delivery: Delivery,
         tab: Tab,
         paneID: UUID,
-        session: WindowSession
+        session: WindowSession,
+        locale: Locale
     ) {
         notificationManager.send(
             title: delivery.title,
@@ -74,7 +77,7 @@ struct AgentNotificationEmitter {
             requireFocus: suppressWhenPaneFocused,
             kind: delivery.kind,
             tabTitleSnapshot: tab.displayTitle,
-            containerLabel: session.containerLabel(for: tab.container),
+            containerLabel: session.containerLabel(for: tab.container, locale: locale),
             runtimeID: runtimeID,
             eventToken: eventToken,
             presentsBanner: delivery.presentsBanner
@@ -114,22 +117,22 @@ extension AgentKind {
     /// finished` transition fires. The provider names itself through the
     /// registry, so adding one adds no string here; only the sentence around
     /// the name is translated.
-    var finishedTitle: String {
+    var finishedTitle: LocalizedStringResource {
         let name = AgentProviderRegistry.displayName(for: self)
-        return String(localized: "\(name) finished", comment: "Notification title; the agent's name")
+        return LocalizedStringResource("\(name) finished", comment: "Notification title; the agent's name")
     }
 
     /// macOS notification title used when a pane transitions into
     /// `.needsInput` from any non-needsInput state.
-    var needsInputTitle: String {
+    var needsInputTitle: LocalizedStringResource {
         let name = AgentProviderRegistry.displayName(for: self)
-        return String(localized: "\(name) needs input", comment: "Notification title; the agent's name")
+        return LocalizedStringResource("\(name) needs input", comment: "Notification title; the agent's name")
     }
 
     /// History-row title used when a pane transitions into `.error`
     /// and there is no container label to anchor on.
-    var errorTitle: String {
+    var errorTitle: LocalizedStringResource {
         let name = AgentProviderRegistry.displayName(for: self)
-        return String(localized: "\(name) hit an error", comment: "History row title; the agent's name")
+        return LocalizedStringResource("\(name) hit an error", comment: "History row title; the agent's name")
     }
 }

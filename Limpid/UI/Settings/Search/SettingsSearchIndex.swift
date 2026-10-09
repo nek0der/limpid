@@ -30,15 +30,15 @@ struct SettingsSearchIndex {
     }
 
     private func fields(for entry: SettingsSearchEntry) -> [SearchField] {
-        let currentTitle = entry.title.settingsResolved(locale: locale)
-        let englishTitle = entry.title.settingsResolved(locale: Locale(identifier: "en"))
-        let currentGroup = entry.groupTitle.settingsResolved(locale: locale)
-        let englishGroup = entry.groupTitle.settingsResolved(locale: Locale(identifier: "en"))
+        let currentTitle = entry.title.resolved(in: locale)
+        let englishTitle = entry.title.resolved(in: .english)
+        let currentGroup = entry.groupTitle.resolved(in: locale)
+        let englishGroup = entry.groupTitle.resolved(in: .english)
         let currentSection = sectionTitle(for: entry.section, locale: locale)
-        let englishSection = sectionTitle(for: entry.section, locale: Locale(identifier: "en"))
-        let currentKeywords = entry.keywords.map { $0.settingsResolved(locale: locale) }
+        let englishSection = sectionTitle(for: entry.section, locale: .english)
+        let currentKeywords = entry.keywords.map { $0.resolved(in: locale) }
         let englishKeywords = entry.keywords.map {
-            $0.settingsResolved(locale: Locale(identifier: "en"))
+            $0.resolved(in: .english)
         }
 
         return [
@@ -54,7 +54,7 @@ struct SettingsSearchIndex {
     }
 
     private func score(for entry: SettingsSearchEntry, query: String, fields: [SearchField]) -> Int {
-        let currentTitle = entry.title.settingsResolved(locale: locale)
+        let currentTitle = entry.title.resolved(in: locale)
         if let titleRange = currentTitle.localizedStandardRange(of: query) {
             if titleRange == currentTitle.startIndex..<currentTitle.endIndex {
                 return 0
@@ -70,7 +70,7 @@ struct SettingsSearchIndex {
     }
 
     private func sectionTitle(for section: SettingsSection, locale: Locale) -> String {
-        section.title.settingsResolved(locale: locale)
+        section.title.resolved(in: locale)
     }
 
     private struct SearchField {

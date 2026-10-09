@@ -252,7 +252,7 @@ final class AppState {
         self.historyStore = historyStore
         attention.onPaneFocused = { [weak historyStore] in historyStore?.markRead(forPanes: [$0]) }
         self.frecencyStore = FrecencyStore()
-        let notificationManager = LimpidNotificationManager(historyStore: historyStore)
+        let notificationManager = LimpidNotificationManager(historyStore: historyStore) { [settingsStore] in settingsStore.appLocale }
         self.notificationManager = notificationManager
         // Cwd-change → worktree-move suggestion pipeline. Every fresh
         // record hands off to the suggester which decides whether the
@@ -626,7 +626,7 @@ struct LimpidApp: App {
                 .environment(\.notificationManager, state.notificationManager)
                 .environment(\.sparkleUpdater, updaterStack.updater)
                 .environment(updaterStack.stateModel)
-                .environment(\.locale, state.settingsStore.appLanguage.locale ?? .current)
+                .environment(\.locale, state.settingsStore.appLocale)
                 // Inject the user's accent as both `\.limpidAccent`
                 // (Limpid toolbar) and SwiftUI's `\.tint` (its own
                 // Toggle / Slider / etc.). Sheets and popovers re-apply
@@ -962,6 +962,7 @@ struct ContentView: View {
                 onAllow: { state.clipboardConfirmation.allow() },
                 onDeny: { state.clipboardConfirmation.deny() }
             )
+            .environment(\.locale, state.settingsStore.appLocale)
             .limpidAccentPropagated(
                 LimpidColor.accent(for: state.settingsStore.settings.appearance.accentColor)
             )
@@ -979,7 +980,7 @@ struct ContentView: View {
             }
         }
         .alert(
-            loadIssue?.title ?? "",
+            Text(loadIssue?.title ?? ""),
             isPresented: Binding(
                 get: { loadIssue != nil },
                 set: {
@@ -992,7 +993,7 @@ struct ContentView: View {
         ) { _ in
             Button("OK", role: .cancel) { loadIssue = nil }
         } message: { issue in
-            Text(issue.detail)
+            Text(display: issue.detail)
         }
         .agentIntegrationServiceAlert(state.agentIntegrationServiceRegistrar)
     }

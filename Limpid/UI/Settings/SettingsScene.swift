@@ -74,18 +74,12 @@ struct SettingsScene: View {
         }
         .ignoresSafeArea(.all)
         .frame(minWidth: 720, minHeight: 480)
-        .environment(\.locale, settings.appLanguage.locale ?? .current)
+        // No rebuild on a language switch: `Text`, `Toggle`, `Picker`
+        // and the rest resolve their resources against `\.locale` and
+        // redraw in place when it changes. Text that has to be a
+        // `String` resolves with this same locale.
+        .environment(\.locale, settings.appLocale)
         .environment(\.settingsRevealRequest, revealRequest)
-        // Force the entire Settings tree to rebuild when the user
-        // picks a new language. `.environment(\.locale, …)` on its
-        // own isn't enough on macOS 26 — already-rendered Text
-        // nodes (especially Form labels and `String(localized:)`
-        // pre-resolved strings like `AppLanguage.localizedTitle`)
-        // don't re-look-up their `LocalizedStringKey` on locale
-        // change, so the Settings window keeps showing the old
-        // language until reopened. `.id(appLanguage)` makes SwiftUI
-        // tear down + rebuild the subtree with the fresh locale.
-        .id(settings.appLanguage)
         .focusedSceneValue(
             \.settingsSearchFocusAction,
             SettingsSearchFocusAction {
@@ -124,7 +118,7 @@ struct SettingsScene: View {
 
     private var searchResults: [SettingsSearchEntry] {
         SettingsSearchIndex(
-            locale: settings.appLanguage.locale ?? .current
+            locale: settings.appLocale
         ).search(searchText)
     }
 

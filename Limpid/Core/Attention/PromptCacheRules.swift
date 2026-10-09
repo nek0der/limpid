@@ -59,24 +59,24 @@ enum PromptCacheCommandBlock: Equatable {
     /// What the disabled buttons say instead of their usual help, and the
     /// line above them. Each says what is true of the pane and, where the
     /// panel cannot help, what the user can do instead.
-    var reason: String {
+    var reason: LocalizedStringResource {
         switch self {
         case .notAtPrompt:
-            String(
-                localized: "Available while the agent waits at its prompt.",
+            LocalizedStringResource(
+                "Available while the agent waits at its prompt.",
                 comment: "Shown on the prompt cache panel while its agent is busy, asking, or out of sight"
             )
         case .notInFront:
-            String(
-                localized: "Available when the agent is what this pane is running.",
+            LocalizedStringResource(
+                "Available when the agent is what this pane is running.",
                 comment: "Shown on the prompt cache panel while something other than the agent is in front of the pane"
             )
         case .unsubmittedInput:
             // Not "clear the prompt": a key after the turn blocks until the
             // next turn whatever the prompt holds now, so that advice would
             // not work. Typing the command is what does.
-            String(
-                localized: "You typed in this pane during or after the last turn. Type /compact or /clear yourself.",
+            LocalizedStringResource(
+                "You typed in this pane during or after the last turn. Type /compact or /clear yourself.",
                 comment: "Shown on the prompt cache panel when the pane may hold input the user has not sent"
             )
         }
@@ -108,40 +108,42 @@ struct PromptCachePanelContent: Equatable {
     }
 
     /// The panel's title, beside the clock.
-    var title: String {
+    var title: LocalizedStringResource {
         isExpired
-            ? String(localized: "Cache expired", comment: "Title of the expired prompt cache panel")
-            : String(localized: "Cache expires soon", comment: "Title of the expiring prompt cache panel")
+            ? LocalizedStringResource("Cache expired", comment: "Title of the expired prompt cache panel")
+            : LocalizedStringResource("Cache expires soon", comment: "Title of the expiring prompt cache panel")
     }
 
-    /// When: how long ago it expired, or how soon it will, at `now`.
-    func timeLine(now: Date) -> String {
+    /// When: how long ago it expired, or how soon it will, at `now`. The
+    /// duration is formatted in `locale`, which must be the one the line is
+    /// drawn in, so its unit and the sentence around it agree.
+    func timeLine(now: Date, locale: Locale) -> LocalizedStringResource {
         if isExpired {
-            let ago = PromptCacheFormatting.duration(now.timeIntervalSince(window.expiresAt))
-            return String(
-                localized: "Expired \(ago) ago.",
+            let ago = PromptCacheFormatting.duration(now.timeIntervalSince(window.expiresAt), locale: locale)
+            return LocalizedStringResource(
+                "Expired \(ago) ago.",
                 comment: "Expired prompt cache panel; argument: a duration such as 56m"
             )
         }
-        let remaining = PromptCacheFormatting.duration(window.expiresAt.timeIntervalSince(now))
-        return String(
-            localized: "Expires in \(remaining).",
+        let remaining = PromptCacheFormatting.duration(window.expiresAt.timeIntervalSince(now), locale: locale)
+        return LocalizedStringResource(
+            "Expires in \(remaining).",
             comment: "Expiring prompt cache panel; argument: a duration such as 2m"
         )
     }
 
     /// What going on costs, or nil when the provider did not report the
     /// size: "about ? tokens" would say nothing the title has not.
-    var costLine: String? {
+    var costLine: LocalizedStringResource? {
         guard let rewriteTokens = window.rewriteTokens else { return nil }
         let size = PromptCacheFormatting.tokens(rewriteTokens)
         return isExpired
-            ? String(
-                localized: "Continuing as is re-writes about \(size) tokens.",
+            ? LocalizedStringResource(
+                "Continuing as is re-writes about \(size) tokens.",
                 comment: "Expired prompt cache panel; argument: a token count such as 573k"
             )
-            : String(
-                localized: "Once expired, continuing re-writes about \(size) tokens.",
+            : LocalizedStringResource(
+                "Once expired, continuing re-writes about \(size) tokens.",
                 comment: "Expiring prompt cache panel; argument: a token count such as 612k"
             )
     }
@@ -150,8 +152,8 @@ struct PromptCachePanelContent: Equatable {
     /// lines rather than one wrapped run, so a wrap cannot land inside a
     /// word, nor in Japanese before a long-vowel mark, which a line must not
     /// start with.
-    func lines(now: Date) -> [String] {
-        [timeLine(now: now)] + (costLine.map { [$0] } ?? [])
+    func lines(now: Date, locale: Locale) -> [LocalizedStringResource] {
+        [timeLine(now: now, locale: locale)] + (costLine.map { [$0] } ?? [])
     }
 }
 

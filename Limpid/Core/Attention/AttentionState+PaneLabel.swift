@@ -12,8 +12,10 @@ import Foundation
 extension AttentionState {
     /// The label `paneID`'s header shows: the name the user gave the pane,
     /// else its agent's conversation title, else its directory's last
-    /// component, with the directory beside it.
-    func paneHeaderLabel(paneID: UUID, in session: WindowSession) -> PaneHeaderLabel {
+    /// component, with the directory beside it. `locale` names a pane that
+    /// has none of those; callers pass the window's, so the fallback
+    /// switches with the display language.
+    func paneHeaderLabel(paneID: UUID, in session: WindowSession, locale: Locale) -> PaneHeaderLabel {
         let tab = session.tab(containing: paneID)
         let agent = headerRuntime(inPane: paneID).map { runtime in
             PaneHeaderAgent(
@@ -34,7 +36,7 @@ extension AttentionState {
             customName: session.paneState(paneID).name,
             agent: agent,
             workingDirectory: directory,
-            fallbackName: String(localized: "Terminal")
+            fallbackName: LocalizedStringResource("Terminal").resolved(in: locale)
         )
     }
 }

@@ -10,6 +10,7 @@ import SwiftUI
 struct KeyboardShortcutSheet: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.locale) private var locale
 
     /// Sheet height when the window has room; `minimumHeight` is the
     /// floor below which the list is too short to be useful. The host
@@ -30,7 +31,8 @@ struct KeyboardShortcutSheet: View {
         KeyboardShortcutCatalog.filter(
             KeyboardShortcutCatalog.sections(
                 keyboard: settings.settings.keyboard,
-                quickTerminalHotKey: settings.settings.quickTerminal.hotKey
+                quickTerminalHotKey: settings.settings.quickTerminal.hotKey,
+                locale: locale
             ),
             query: query
         )

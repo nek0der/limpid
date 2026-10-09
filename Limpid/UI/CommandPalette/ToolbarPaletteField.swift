@@ -102,7 +102,7 @@ private struct ActivePill: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
-            TextField(String(localized: state.placeholder), text: $state.query)
+            TextField(state.placeholder, text: $state.query)
                 .textFieldStyle(.plain)
                 .font(LimpidFont.bodySecondary)
                 .focused($fieldFocused)

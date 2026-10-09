@@ -12,7 +12,8 @@ import Foundation
 /// One row: a localized title and the keycap tokens to draw next to it.
 struct KeyboardShortcutEntry: Identifiable, Equatable {
     let id: String
-    /// Already localized for display; the sheet renders it verbatim.
+    /// Resolved in the sheet's locale, because the search matches against
+    /// it; the sheet renders it verbatim and rebuilds it on every body.
     let title: String
     /// Extra strings the search matches against: the English title
     /// when the display language is not English (so a Japanese user
@@ -32,10 +33,12 @@ enum KeyboardShortcutCatalog {
 
     /// Builds every section from the effective bindings. `keyboard`
     /// carries the user's overrides so a rebound action shows what
-    /// the user actually presses, not the shipped default.
+    /// the user actually presses, not the shipped default. Titles are
+    /// resolved in `locale`, the sheet's.
     static func sections(
         keyboard: KeyboardSettings,
-        quickTerminalHotKey: StoredShortcut?
+        quickTerminalHotKey: StoredShortcut?,
+        locale: Locale
     ) -> [KeyboardShortcutSection] {
         var out: [KeyboardShortcutSection] = []
         for category in LimpidShortcutCategory.allCases {
@@ -46,7 +49,8 @@ enum KeyboardShortcutCatalog {
                     return entry(
                         id: "action.\(action.rawValue)",
                         title: action.localizedTitle,
-                        tokens: shortcut.displayTokens
+                        tokens: shortcut.displayTokens,
+                        locale: locale
                     )
                 }
             // ⇧⏎ is a forced libghostty keybind (`GhosttyConfigBridge`),
@@ -54,22 +58,27 @@ enum KeyboardShortcutCatalog {
             // under Terminal keeps the sheet honest about a key TUIs
             // and agents rely on.
             if category == .terminal {
-                entries.append(entry(id: "fixed.insertNewline", title: "Insert Newline", tokens: ["⇧", "⏎"]))
+                entries.append(entry(
+                    id: "fixed.insertNewline",
+                    title: "Insert Newline",
+                    tokens: ["⇧", "⏎"],
+                    locale: locale
+                ))
             }
             guard !entries.isEmpty else { continue }
             out.append(KeyboardShortcutSection(
                 id: "category.\(category.rawValue)",
-                title: String(localized: category.resourceTitle),
+                title: category.resourceTitle.resolved(in: locale),
                 entries: entries
             ))
         }
 
         out.append(KeyboardShortcutSection(
             id: "fixed.tabsAndSections",
-            title: String(localized: "Tabs & Sections"),
+            title: LocalizedStringResource("Tabs & Sections").resolved(in: locale),
             entries: [
-                entry(id: "fixed.goToTab", title: "Go to Tab 1–9", tokens: ["⌘", "1–9"]),
-                entry(id: "fixed.goToSection", title: "Go to Section 1–9", tokens: ["⌃", "⌘", "1–9"])
+                entry(id: "fixed.goToTab", title: "Go to Tab 1–9", tokens: ["⌘", "1–9"], locale: locale),
+                entry(id: "fixed.goToSection", title: "Go to Section 1–9", tokens: ["⌃", "⌘", "1–9"], locale: locale)
             ]
         ))
         // The app menu is not named in the sheet: "Limpid" is the
@@ -78,18 +87,19 @@ enum KeyboardShortcutCatalog {
             id: "fixed.app",
             title: "Limpid",
             entries: [
-                entry(id: "fixed.settings", title: "Settings…", tokens: ["⌘", ","])
+                entry(id: "fixed.settings", title: "Settings…", tokens: ["⌘", ","], locale: locale)
             ]
         ))
         if let quickTerminalHotKey {
             out.append(KeyboardShortcutSection(
                 id: "fixed.systemWide",
-                title: String(localized: "System-wide"),
+                title: LocalizedStringResource("System-wide").resolved(in: locale),
                 entries: [
                     entry(
                         id: "fixed.quickTerminal",
                         title: "Quick Terminal hotkey",
-                        tokens: quickTerminalHotKey.displayTokens
+                        tokens: quickTerminalHotKey.displayTokens,
+                        locale: locale
                     )
                 ]
             ))
@@ -134,12 +144,11 @@ enum KeyboardShortcutCatalog {
     private static func entry(
         id: String,
         title: LocalizedStringResource,
-        tokens: [String]
+        tokens: [String],
+        locale: Locale
     ) -> KeyboardShortcutEntry {
-        let localized = String(localized: title)
-        var englishResource = title
-        englishResource.locale = Locale(identifier: "en")
-        let english = String(localized: englishResource)
+        let localized = title.resolved(in: locale)
+        let english = title.resolved(in: .english)
         // Fuzzy matching is order-sensitive, so offer the glyphs both in
         // HIG order (⇧⌘T, what the sheet shows) and with ⌘ first (⌘⇧T,
         // how people tend to type them).

@@ -29,7 +29,7 @@ struct WorkingDirectoryField: View {
     @Binding var path: URL?
 
     var body: some View {
-        Picker(String(localized: label), selection: Binding(
+        Picker(label, selection: Binding(
             get: { mode },
             set: { applyMode($0) }
         )) {
@@ -43,7 +43,7 @@ struct WorkingDirectoryField: View {
                     chooseDirectory()
                 } label: {
                     Label {
-                        Text(displayPath)
+                        Text(display: displayPath)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     } icon: {
@@ -56,11 +56,11 @@ struct WorkingDirectoryField: View {
         }
     }
 
-    private var displayPath: String {
+    private var displayPath: DisplayText {
         guard let path, !path.path.isEmpty else {
-            return String(localized: "Choose…")
+            return .localized("Choose…")
         }
-        return PathFormatting.abbreviateHome(path.path)
+        return .verbatim(PathFormatting.abbreviateHome(path.path))
     }
 
     private func applyMode(_ newMode: WorkingDirectoryMode) {
@@ -94,6 +94,11 @@ struct WorkingDirectoryField: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
+        // AppKit localizes the open panel's own buttons and sidebar in the
+        // language the process launched with, so our prompt does too: a
+        // panel half in each language would read worse than one that waits
+        // for the relaunch the menu bar also waits for.
+        // swiftlint:disable:next launch_language_lookup
         panel.prompt = String(localized: "Choose")
         if let path {
             panel.directoryURL = path

@@ -503,7 +503,7 @@ enum ReviewGit {
                 file: file,
                 fingerprint: "",
                 lines: [],
-                notice: String(localized: "Resolve merge conflicts before reviewing this file.")
+                notice: LocalizedStringResource("Resolve merge conflicts before reviewing this file.")
             )
         }
         return try await patchFingerprint(file, root: root, scope: scope).diff()
@@ -596,7 +596,7 @@ enum ReviewGit {
                     file: file,
                     fingerprint: fingerprint,
                     lines: [],
-                    notice: String(localized: "This file cannot be reviewed as text.")
+                    notice: LocalizedStringResource("This file cannot be reviewed as text.")
                 )
             }
             // Git answering with nothing, and Git answering with a patch that
@@ -613,21 +613,27 @@ enum ReviewGit {
             // patch does not parse to an empty list, so the row count cannot
             // tell these apart.
             let hasVanished = selectedPatch.isEmpty
-            let notice: String? = if hasVanished {
-                String(localized: "This file is no longer changed. Refresh the list.")
-            } else if lines.contains(where: \.isCommentable) {
-                nil
-            } else {
-                String(localized: "No reviewable text changes in this file.")
-            }
             return ReviewDiff(
                 file: file,
                 fingerprint: fingerprint,
                 lines: lines,
-                notice: notice,
+                notice: patchNotice(hasVanished: hasVanished, lines: lines),
                 hasVanished: hasVanished
             )
         }
+    }
+
+    /// What the pane says in place of a patch's rows, or `nil` when it has
+    /// rows to comment on. Early returns rather than an `if` expression: the
+    /// string catalog's extraction reads only the first branch of one.
+    private static func patchNotice(hasVanished: Bool, lines: [ReviewLine]) -> LocalizedStringResource? {
+        if hasVanished {
+            return LocalizedStringResource("This file is no longer changed. Refresh the list.")
+        }
+        if lines.contains(where: \.isCommentable) {
+            return nil
+        }
+        return LocalizedStringResource("No reviewable text changes in this file.")
     }
 
     /// A rename pathspec can also include a newly created file at the old path.
@@ -769,7 +775,7 @@ enum ReviewGit {
             file: file,
             fingerprint: ReviewDiff.hash(data),
             lines: lines,
-            notice: lines.isEmpty ? String(localized: "No reviewable text changes in this file.") : nil
+            notice: lines.isEmpty ? LocalizedStringResource("No reviewable text changes in this file.") : nil
         )
     }
 

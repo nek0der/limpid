@@ -20,9 +20,15 @@ final class LimpidNotificationManager {
     private let center = UNUserNotificationCenter.current()
     private var rateLimiter = RateLimiter(maxPerSecond: 5)
     private let historyStore: NotificationHistoryStore
+    /// The app locale, which every notification's text is written in. A
+    /// banner and its history row are text outside SwiftUI, written once,
+    /// so the producers resolve them in the language the app shows at the
+    /// moment of the event; reading it here gives them all one source.
+    let appLocale: @MainActor () -> Locale
 
-    init(historyStore: NotificationHistoryStore) {
+    init(historyStore: NotificationHistoryStore, appLocale: @escaping @MainActor () -> Locale) {
         self.historyStore = historyStore
+        self.appLocale = appLocale
         requestPermission()
     }
 

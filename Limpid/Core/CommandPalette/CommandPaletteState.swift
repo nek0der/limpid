@@ -16,6 +16,13 @@ final class CommandPaletteState {
     var initialQuery: String?
     var results: [ScoredItem] = []
     var allItems: [CommandPaletteItem] = []
+    /// The language the palette's rows are resolved in, fixed for the
+    /// palette's lifetime like `allItems`; see `CommandPaletteCatalog`.
+    let locale: Locale
+
+    init(locale: Locale) {
+        self.locale = locale
+    }
 
     struct ScoredItem: Identifiable, Equatable {
         let item: CommandPaletteItem
@@ -50,7 +57,7 @@ final class CommandPaletteState {
                         id: "help.\(mode.character)",
                         category: .actions,
                         title: String(mode.character),
-                        subtitle: String(localized: mode.description),
+                        subtitle: mode.description.resolved(in: locale),
                         icon: "questionmark.circle",
                         shortcutDisplay: nil,
                         action: .insertPrefix(mode)

@@ -8,7 +8,7 @@ private struct AgentIntegrationServiceAlertModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.alert(
-            registrar.issue?.title ?? "",
+            Text(registrar.issue?.title ?? ""),
             isPresented: Binding(
                 get: { registrar.issue != nil },
                 set: {

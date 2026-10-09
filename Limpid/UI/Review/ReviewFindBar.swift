@@ -41,7 +41,7 @@ struct ReviewFindBar: View {
                 // keystroke made every keystroke scan every row.
                 search.index = 0
             }
-            Text(verbatim: summary)
+            Text(display: summary)
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(LimpidColor.tertiaryText)
             Button {
@@ -79,9 +79,9 @@ struct ReviewFindBar: View {
 
     /// Blank until there is something to count, so an empty field does not
     /// answer "0" to a question nobody asked.
-    private var summary: String {
-        guard search.isActive else { return "" }
-        guard hitCount > 0 else { return String(localized: "No matches") }
-        return "\(position + 1)/\(hitCount)"
+    private var summary: DisplayText {
+        guard search.isActive else { return .verbatim("") }
+        guard hitCount > 0 else { return .localized("No matches") }
+        return .verbatim("\(position + 1)/\(hitCount)")
     }
 }

@@ -103,15 +103,23 @@ struct PromptCacheStatusTests {
     }
 
     @Test func duration_roundsDownToTheLargestUnit() {
+        let locale = Locale(identifier: "en_US")
         let style = Duration.UnitsFormatStyle.units(
             allowed: [.days, .hours, .minutes, .seconds],
             width: .narrow,
             maximumUnitCount: 1
-        )
-        #expect(PromptCacheFormatting.duration(299) == Duration.seconds(240).formatted(style))
-        #expect(PromptCacheFormatting.duration(45) == Duration.seconds(45).formatted(style))
-        #expect(PromptCacheFormatting.duration(7199) == Duration.seconds(3600).formatted(style))
-        #expect(PromptCacheFormatting.duration(-5) == Duration.seconds(0).formatted(style))
+        ).locale(locale)
+        #expect(PromptCacheFormatting.duration(299, locale: locale) == Duration.seconds(240).formatted(style))
+        #expect(PromptCacheFormatting.duration(45, locale: locale) == Duration.seconds(45).formatted(style))
+        #expect(PromptCacheFormatting.duration(7199, locale: locale) == Duration.seconds(3600).formatted(style))
+        #expect(PromptCacheFormatting.duration(-5, locale: locale) == Duration.seconds(0).formatted(style))
+    }
+
+    /// The unit follows the locale it is handed, not the one the process
+    /// launched with, so the panel's duration matches the sentence around it.
+    @Test func duration_isFormattedInTheGivenLocale() {
+        #expect(PromptCacheFormatting.duration(240, locale: Locale(identifier: "en_US")) == "4m")
+        #expect(PromptCacheFormatting.duration(240, locale: Locale(identifier: "ja_JP")) == "4分")
     }
 }
 

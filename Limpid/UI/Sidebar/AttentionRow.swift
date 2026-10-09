@@ -19,6 +19,7 @@ struct ApprovalAttentionRow: View {
     let onPreviewEnd: () -> Void
     let onTap: () -> Void
     let onAnchorChange: (CGRect) -> Void
+    @Environment(\.locale) private var locale
     @State private var isHovering = false
     @FocusState private var isFocused: Bool
 
@@ -30,14 +31,14 @@ struct ApprovalAttentionRow: View {
         return "\(approval.provider.rawValue.capitalized) — \(header ?? approval.toolName)"
     }
 
-    private var waitLabel: String {
+    private var waitLabel: DisplayText {
         let elapsed = max(0, now.timeIntervalSince(timestamp))
         if elapsed < 60 {
-            return String(localized: "just now")
+            return .localized("just now")
         }
-        return Duration.seconds(elapsed).formatted(
-            .units(allowed: [.days, .hours, .minutes], width: .narrow, maximumUnitCount: 1)
-        )
+        return .verbatim(Duration.seconds(elapsed).formatted(
+            .units(allowed: [.days, .hours, .minutes], width: .narrow, maximumUnitCount: 1).locale(locale)
+        ))
     }
 
     var body: some View {
@@ -59,7 +60,7 @@ struct ApprovalAttentionRow: View {
                     }
                 }
                 Spacer(minLength: 4)
-                Text(verbatim: waitLabel)
+                Text(display: waitLabel)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                 Image(systemName: "chevron.right")
@@ -133,6 +134,7 @@ struct AttentionRow: View {
     /// (needsInput / error rows clear only when the state resolves).
     let onDismiss: (() -> Void)?
     let onTap: () -> Void
+    @Environment(\.locale) private var locale
 
     @State private var isHovering = false
 
@@ -154,13 +156,13 @@ struct AttentionRow: View {
     /// reads as noise in a calm toolbar). From a minute onward
     /// `Duration`'s units style gives us locale-aware "4m" / "4分"
     /// instead of pinned English.
-    private var waitLabel: String {
+    private var waitLabel: DisplayText {
         if elapsed < 60 {
-            return String(localized: "just now")
+            return .localized("just now")
         }
-        return Duration.seconds(elapsed).formatted(
-            .units(allowed: [.days, .hours, .minutes], width: .narrow, maximumUnitCount: 1)
-        )
+        return .verbatim(Duration.seconds(elapsed).formatted(
+            .units(allowed: [.days, .hours, .minutes], width: .narrow, maximumUnitCount: 1).locale(locale)
+        ))
     }
 
     /// One stable detail line. Prompt and tab title used to occupy
@@ -214,7 +216,7 @@ struct AttentionRow: View {
                             .padding(.trailing, LimpidLayout.promptCacheIndicatorTrailingGap)
                             .opacity(showsDismiss ? 0 : 1)
                     }
-                    Text(waitLabel)
+                    Text(display: waitLabel)
                         .font(.system(size: 11))
                         .monospacedDigit()
                         .foregroundStyle(Color.primary.opacity(0.4))
@@ -415,7 +417,8 @@ extension ContainerSlabView {
                 HStack(spacing: 4) {
                     ForEach(counts) { pill in
                         let accessibilityLabel = pill.state.accessibilityLabel(
-                            isViewedFinished: pill.isViewedFinished
+                            isViewedFinished: pill.isViewedFinished,
+                            locale: locale
                         )
                         HStack(spacing: 2) {
                             Image(systemName: pill.state.iconName(

@@ -35,20 +35,30 @@ struct AgentStateTests {
         }
     }
 
+    private let en = Locale(identifier: "en")
+
     @Test func accessibilityLabel_description_replacesStateName() {
-        #expect(AgentState.running.accessibilityLabel(isViewedFinished: false, description: "2 Running")
+        #expect(AgentState.running.accessibilityLabel(isViewedFinished: false, description: "2 Running", locale: en)
             == "2 Running")
-        #expect(AgentState.error.accessibilityLabel(isViewedFinished: false) == AgentState.error.localizedLabel)
+        #expect(AgentState.error.accessibilityLabel(isViewedFinished: false, locale: en) == "Error")
     }
 
     @Test func accessibilityLabel_viewedSuffix_onlyOnFinished() {
-        let viewed = String(localized: "Viewed")
-        #expect(AgentState.finished.accessibilityLabel(isViewedFinished: true, description: "1 Finished")
-            == "1 Finished, \(viewed)")
-        #expect(AgentState.finished.accessibilityLabel(isViewedFinished: true)
-            == "\(AgentState.finished.localizedLabel), \(viewed)")
-        #expect(AgentState.needsInput.accessibilityLabel(isViewedFinished: true, description: "Needs input")
+        #expect(AgentState.finished.accessibilityLabel(isViewedFinished: true, description: "1 Finished", locale: en)
+            == "1 Finished, Viewed")
+        #expect(AgentState.finished.accessibilityLabel(isViewedFinished: true, locale: en)
+            == "Finished, Viewed")
+        #expect(AgentState.needsInput.accessibilityLabel(isViewedFinished: true, description: "Needs input", locale: en)
             == "Needs input")
+    }
+
+    /// Spoken in the locale the row hands it, not the launch language.
+    @Test func accessibilityLabel_followsTheGivenLocale() {
+        let ja = Locale(identifier: "ja")
+        #expect(AgentState.finished.accessibilityLabel(isViewedFinished: true, locale: ja)
+            == "\(AgentState.finished.localizedLabel.resolved(in: ja))、確認済み")
+        #expect(AgentState.finished.accessibilityLabel(isViewedFinished: true, locale: ja)
+            != AgentState.finished.accessibilityLabel(isViewedFinished: true, locale: en))
     }
 
     @Test("aggregateAgentState picks the highest priority entry")

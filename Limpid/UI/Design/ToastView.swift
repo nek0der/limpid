@@ -41,7 +41,7 @@ private struct ToastCapsule: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(item.message)
+            Text(display: item.message)
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundStyle(.primary)
                 .lineLimit(2)

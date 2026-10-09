@@ -39,6 +39,7 @@ struct ReviewFileRail: View {
     var onClose: (() -> Void)?
 
     @Environment(\.limpidAccent) private var accent
+    @Environment(\.locale) private var locale
     /// Read here rather than passed in: the width changes on every frame of a
     /// divider drag, and a workspace that read it would rebuild the diff table
     /// beside this list on each one.
@@ -271,7 +272,8 @@ struct ReviewFileRail: View {
     /// written once against this.
     private struct RailSection: Identifiable, Equatable {
         let id: String
-        let title: String
+        /// A layer's name, or a directory path shown as is.
+        let title: DisplayText
         let files: [ReviewFile]
     }
 
@@ -283,7 +285,7 @@ struct ReviewFileRail: View {
                 guard !layerFiles.isEmpty else { return nil }
                 return RailSection(
                     id: "layer:" + layer.rawValue,
-                    title: layer.title,
+                    title: .localized(layer.title),
                     files: layerFiles
                 )
             }
@@ -291,7 +293,7 @@ struct ReviewFileRail: View {
         return ReviewFileTree.directories(ordered).map { group in
             RailSection(
                 id: "dir:" + group.path,
-                title: group.path.isEmpty ? String(localized: "Repository root") : group.path,
+                title: group.path.isEmpty ? .localized("Repository root") : .verbatim(group.path),
                 files: group.files
             )
         }
@@ -346,7 +348,7 @@ struct ReviewFileRail: View {
                 // the same and sit in the same column, and one of them not
                 // answering a click read as a heading that had failed rather than
                 // one that was never meant to.
-                Text(verbatim: title)
+                Text(display: title)
                     .lineLimit(1)
                     .truncationMode(.head)
                 Text(verbatim: "\(count)")
@@ -371,9 +373,9 @@ struct ReviewFileRail: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(Text(verbatim: title))
+        .help(Text(display: title))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(verbatim: title))
+        .accessibilityLabel(Text(display: title))
         .accessibilityValue(Text(isCollapsed ? "Collapsed" : "Expanded"))
         .accessibilityAddTraits(.isHeader)
     }
@@ -474,8 +476,10 @@ struct ReviewFileRail: View {
         .accessibilityValue(Text(verbatim: ReviewFileTree.summary(
             layer: file.layer,
             stat: stats[file.id],
-            comments: count
-        ) + (isViewed ? " " + String(localized: "Viewed") : "")))
+            comments: count,
+            isViewed: isViewed,
+            locale: locale
+        )))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
@@ -558,7 +562,7 @@ struct ReviewFileActionsMenu: View {
                 do {
                     try await FileOpener.open(fileURL, with: application)
                 } catch {
-                    toastCenter.show(ToastItem(message: error.localizedDescription, undo: nil))
+                    toastCenter.show(ToastItem(message: DisplayText(error: error), undo: nil))
                 }
             }
         }

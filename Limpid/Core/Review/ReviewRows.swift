@@ -11,7 +11,7 @@ import Foundation
 /// nothing a reader needs and is dropped here.
 struct ReviewRow: Identifiable, Equatable {
     enum Kind: Equatable {
-        case notice(String)
+        case notice(LocalizedStringResource)
         case hunk(ReviewLine)
         case code(ReviewLine)
         /// One row of the side-by-side layout: the old file on the left, the

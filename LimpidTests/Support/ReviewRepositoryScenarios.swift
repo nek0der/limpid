@@ -26,7 +26,10 @@ extension ReviewValidationScenarios {
         await store.load(file)
         guard let line = store.diff?.lines.first else { throw ReviewValidationFailure(message: "Line missing") }
         store.add(line: line, body: "Add a test.")
-        try require(store.comments.count == 1, "First save failed: \(store.errorMessage ?? "")")
+        try require(
+            store.comments.count == 1,
+            "First save failed: \(store.errorMessage.map { $0.resolved(in: Locale(identifier: "en")) } ?? "")"
+        )
         // A comment over a run keeps both ends through a round-trip.
         let run = store.diff?.lines.filter(\.isCommentable) ?? []
         try require(run.count > 1, "The fixture needs a run of at least two commentable lines")
@@ -62,7 +65,9 @@ extension ReviewValidationScenarios {
         try require(replacement.contains { $0.oldLine == nil }, "The replacement has no new-only line")
         store.add(lines: replacement, side: .new, body: "Quote the new side only.")
         guard let sided = store.comments.last, sided.side == .new else {
-            throw ReviewValidationFailure(message: "Side comment missing: \(store.errorMessage ?? "")")
+            throw ReviewValidationFailure(
+                message: "Side comment missing: \(store.errorMessage.map { $0.resolved(in: Locale(identifier: "en")) } ?? "")"
+            )
         }
         let quoted = Set(sided.code.split(separator: "\n").map(String.init))
         try require(

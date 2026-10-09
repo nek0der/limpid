@@ -228,7 +228,7 @@ private struct ApprovalQuestionTabs: View {
                         .font(.system(size: 9, weight: .semibold))
                         .accessibilityHidden(true)
                 }
-                Text(verbatim: question.header ?? String(localized: "Question"))
+                Text(display: question.header.map(DisplayText.verbatim) ?? .localized("Question"))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }

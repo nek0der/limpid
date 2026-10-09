@@ -61,7 +61,7 @@ private struct KeyboardShortcutSheetHost: ViewModifier {
                     NotificationCenter.default.post(name: .limpidOpenSettings, object: nil)
                 }
                 .environment(state.settingsStore)
-                .environment(\.locale, state.settingsStore.appLanguage.locale ?? .current)
+                .environment(\.locale, state.settingsStore.appLocale)
                 .limpidAccentPropagated(
                     LimpidColor.accent(for: state.settingsStore.settings.appearance.accentColor)
                 )

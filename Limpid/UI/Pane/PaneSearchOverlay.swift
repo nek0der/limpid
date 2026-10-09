@@ -190,8 +190,8 @@ struct PaneSearchOverlay: View {
         .buttonStyle(.borderless)
         .help(
             forward
-                ? String(localized: "Next match (⏎)")
-                : String(localized: "Previous match (⇧⏎)")
+                ? Text("Next match (⏎)")
+                : Text("Previous match (⇧⏎)")
         )
         .accessibilityLabel(
             forward
@@ -294,7 +294,9 @@ struct PaneSearchOverlay: View {
     }
 }
 
-private struct PaneSearchTextField: NSViewRepresentable {
+/// Internal rather than private so a test can host it and watch the
+/// placeholder follow `\.locale`.
+struct PaneSearchTextField: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
     let onChange: (String) -> Void
@@ -309,19 +311,24 @@ private struct PaneSearchTextField: NSViewRepresentable {
         let field = PaneSearchNSTextField()
         field.delegate = context.coordinator
         field.stringValue = text
-        field.placeholderString = String(localized: "Search")
         field.isBezeled = false
         field.drawsBackground = false
         field.focusRingType = .none
         field.font = .systemFont(ofSize: 12)
         field.lineBreakMode = .byClipping
         field.cell?.usesSingleLineMode = true
-        field.setAccessibilityLabel(String(localized: "Search"))
         return field
     }
 
     func updateNSView(_ field: PaneSearchNSTextField, context: Context) {
         context.coordinator.parent = self
+        // Here rather than in `makeNSView`, so a language switch reaches a
+        // search field that is already open.
+        let label = LocalizedStringResource("Search").resolved(in: context.environment.locale)
+        if field.placeholderString != label {
+            field.placeholderString = label
+            field.setAccessibilityLabel(label)
+        }
         let editor = field.currentEditor() as? NSTextView
         if editor?.hasMarkedText() != true, field.stringValue != text {
             field.stringValue = text
@@ -382,7 +389,7 @@ private struct PaneSearchTextField: NSViewRepresentable {
     }
 }
 
-private final class PaneSearchNSTextField: NSTextField {
+final class PaneSearchNSTextField: NSTextField {
     /// Recreated by AppKit whenever the field's visible bounds change.
     private var cursorTrackingArea: NSTrackingArea?
 

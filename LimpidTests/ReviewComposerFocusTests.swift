@@ -11,7 +11,7 @@ struct ReviewComposerFocusTests {
     @Test func aLazilyCreatedComposerTakesFocusAfterItJoinsTheWindow() async throws {
         let parent = makeTable()
         let coordinator = parent.makeCoordinator()
-        let table = ReviewTableView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let table = ReviewTableView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), menuLocale: Locale(identifier: "en"))
         let column = NSTableColumn(identifier: .init("review"))
         table.addTableColumn(column)
         table.dataSource = coordinator
@@ -44,8 +44,17 @@ struct ReviewComposerFocusTests {
 
     @Test func markedTextHidesThePlaceholderBeforeTheTextChangeNotification() throws {
         let composer = ReviewComposerRowView()
+        let en = Locale(identifier: "en")
+        composer.configure(
+            ReviewLine(id: 0, kind: .added, text: "new", oldLine: nil, newLine: 1),
+            start: nil,
+            text: "",
+            isEditing: false,
+            metrics: ReviewCardMetrics(viewport: 600, numberWidth: 26, layout: .unified),
+            locale: en
+        )
         let placeholderCandidate = descendants(of: composer).compactMap { $0 as? NSTextField }
-            .first { $0.stringValue == String(localized: "Leave a comment") }
+            .first { $0.stringValue == "Leave a comment" }
         let placeholder = try #require(placeholderCandidate)
         #expect(!placeholder.isHidden)
         composer.textView.setMarkedText(
@@ -92,7 +101,7 @@ struct ReviewComposerFocusTests {
     @Test func textDragPastDocumentEndClampsToTheLastCodeRow() {
         let parent = makeTable()
         let coordinator = parent.makeCoordinator()
-        let table = ReviewTableView(frame: NSRect(x: 0, y: 0, width: 600, height: 200))
+        let table = ReviewTableView(frame: NSRect(x: 0, y: 0, width: 600, height: 200), menuLocale: Locale(identifier: "en"))
         let column = NSTableColumn(identifier: .init("review"))
         column.width = 600
         table.addTableColumn(column)
@@ -141,7 +150,8 @@ struct ReviewComposerFocusTests {
             onToggleViewed: {}, fileApplication: .macOSDefault, onOpenLine: { _ in }, onExpand: { _, _ in }, onResolve: { _ in },
             onEdit: { _ in },
             onDelete: { _ in },
-            isOverlayPresented: isOverlayPresented, onCloseOverlay: onCloseOverlay, onClose: onClose
+            isOverlayPresented: isOverlayPresented, onCloseOverlay: onCloseOverlay, onClose: onClose,
+            locale: Locale(identifier: "en")
         )
     }
 }

@@ -63,15 +63,28 @@ enum ReviewFileTree {
         return parts.isEmpty ? nil : parts.joined(separator: "/")
     }
 
-    /// What a row shows besides its name, spoken rather than drawn.
-    static func summary(layer: ReviewLayer, stat: ReviewFileStat?, comments: Int) -> String {
-        var parts = [layer.title]
+    /// What a row shows besides its name, spoken rather than drawn: one
+    /// `String` in `locale`, the rail's, listed in that locale's own style
+    /// ("a, b" / "a、b").
+    static func summary(
+        layer: ReviewLayer,
+        stat: ReviewFileStat?,
+        comments: Int,
+        isViewed: Bool = false,
+        locale: Locale
+    ) -> String {
+        var parts = [layer.title.resolved(in: locale)]
         if let stat {
-            parts.append(stat.isBinary ? String(localized: "binary") : "+\(stat.added) −\(stat.removed)")
+            parts.append(
+                stat.isBinary ? LocalizedStringResource("binary").resolved(in: locale) : "+\(stat.added) −\(stat.removed)"
+            )
         }
         if comments > 0 {
-            parts.append(String(localized: "\(comments) comments"))
+            parts.append(LocalizedStringResource("\(comments) comments").resolved(in: locale))
         }
-        return parts.joined(separator: ", ")
+        if isViewed {
+            parts.append(LocalizedStringResource("Viewed").resolved(in: locale))
+        }
+        return parts.formatted(.list(type: .and, width: .narrow).locale(locale))
     }
 }

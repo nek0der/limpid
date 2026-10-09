@@ -79,7 +79,7 @@ struct KeyboardPane: View {
                         selectedSectionRaw = SettingsSection.quickTerminal.rawValue
                     } label: {
                         HStack(spacing: 4) {
-                            Text(store.settings.quickTerminal.hotKey?.displayString ?? String(localized: "Unbound"))
+                            Text(display: store.settings.quickTerminal.hotKey.map { .verbatim($0.displayString) } ?? .localized("Unbound"))
                                 .font(.system(.body, design: .default).monospacedDigit())
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .center)
@@ -166,8 +166,8 @@ private struct ShortcutRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(action.localizedTitle)
-                if let rejection {
-                    Text(rejectionMessage(for: rejection))
+                if let message = rejection?.message {
+                    Text(message)
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
@@ -204,25 +204,6 @@ private struct ShortcutRow: View {
             }
         }
         .settingsControlRow(controlHeight: LimpidLayout.settingsRecorderPillHeight)
-    }
-
-    private func rejectionMessage(for rejection: ShortcutValidation) -> String {
-        switch rejection {
-        case .ok:
-            return ""
-        case let .conflict(other):
-            // Interpolate into a single localized template so
-            // translators can reorder (ja wants the noun before
-            // the verb: "X に既に割当済み" rather than "X に X を").
-            let name = String(localized: other.localizedTitle)
-            return String(localized: "Already bound to \(name)")
-        case .reserved:
-            return String(localized: "Reserved by Limpid (⌘1–⌘9, ⌘⌃1–⌘⌃9)")
-        case .missingModifier:
-            return String(localized: "Shortcut must include ⌘, ⌥, ⌃, or ⇧")
-        case .quickTerminalConflict:
-            return String(localized: "Already used by the Quick Terminal hotkey")
-        }
     }
 }
 
@@ -272,7 +253,7 @@ private struct ShortcutRecorder: View {
                 startRecording()
             }
         } label: {
-            Text(label)
+            Text(display: label)
                 .font(.system(.body, design: .default).monospacedDigit())
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -297,7 +278,7 @@ private struct ShortcutRecorder: View {
         // here and report the shortcut as the value, the same way the
         // Quick Terminal recorder does.
         .accessibilityLabel(Text(action.localizedTitle))
-        .accessibilityValue(Text(label))
+        .accessibilityValue(Text(display: label))
         // `.onGeometryChange` fires on any geometric change — size OR
         // position. The previous `GeometryReader { .onChange(of: proxy.size) }`
         // shape only fired when size changed, so scrolling Settings
@@ -337,11 +318,11 @@ private struct ShortcutRecorder: View {
         }
     }
 
-    private var label: String {
+    private var label: DisplayText {
         if isRecording {
-            return String(localized: "Press a key…")
+            return .localized("Press a key…")
         }
-        return displayedShortcut?.displayString ?? String(localized: "Unbound")
+        return displayedShortcut.map { .verbatim($0.displayString) } ?? .localized("Unbound")
     }
 
     // MARK: - Monitor lifecycle

@@ -25,7 +25,7 @@ struct ProjectSectionView: View {
     @Binding var openSettingsFor: GroupOrProjectID?
     @Binding var deletingWorktree: ContainerSlabView.DeleteWorktreeTarget?
     @Binding var removingProject: ContainerSlabView.RemoveProjectTarget?
-    @Binding var worktreeOperationError: String?
+    @Binding var worktreeOperationError: DisplayText?
 
     /// `true` when there's nothing to nest under the project header —
     /// either the project isn't a git repository or `GitSyncCoordinator`
@@ -430,7 +430,7 @@ struct ProjectSectionView: View {
             session.hideWorktree(projectID: projectID, worktreeID: worktreeID)
         }
         toastCenter.show(ToastItem(
-            message: String(localized: "Hid worktree \u{201C}\(label)\u{201D}"),
+            message: .localized("Hid worktree \u{201C}\(label)\u{201D}"),
             undo: { [session] in
                 withAnimation(LimpidMotion.reorder) {
                     session.unhideWorktree(projectID: projectID, worktreeID: worktreeID)

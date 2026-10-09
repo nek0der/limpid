@@ -337,6 +337,7 @@ struct ReviewContinuityTests {
                     registry: registry,
                     originPaneID: { fixture.paneID },
                     instructions: "",
+                    locale: Locale(identifier: "en"),
                     isSameReview: { true },
                     requiresMatchingRepository: true
                 )
@@ -538,7 +539,7 @@ struct ReviewStoreRegressionTests {
 
         #expect(result != .failed)
         #expect(store.scope == .uncommitted)
-        #expect(store.errorMessage == ReviewError.turnBaseMissing.localizedDescription)
+        #expect(store.errorMessage == DisplayText(error: ReviewError.turnBaseMissing))
         #expect(repository.fileScopes.last == .uncommitted)
     }
 
@@ -760,14 +761,14 @@ struct ReviewStoreRegressionTests {
         )
 
         _ = await store.reload(selectedFileID: nil)
-        #expect(store.errorMessage == ReviewError.gitFailed.localizedDescription)
+        #expect(store.errorMessage == DisplayText(error: ReviewError.gitFailed))
 
         repository.failingDiffs = []
         let lines = try ReviewDiffParser.parse("@@ -1,1 +1,1 @@\n-old\n+new")
         repository.diffs[file.id] = ReviewDiff(file: file, fingerprint: "current", lines: lines)
         _ = await store.reload(selectedFileID: nil)
 
-        #expect(store.errorMessage == ReviewError.draftUnreadable.localizedDescription)
+        #expect(store.errorMessage == DisplayText(error: ReviewError.draftUnreadable))
     }
 
     @Test func initialReloadResumesTheSavedFileFromTheIncomingList() async throws {
@@ -824,7 +825,7 @@ struct ReviewStoreRegressionTests {
         let comment = try #require(store.comments.first)
         #expect(comment.code.utf8.count <= ReviewStore.maxCodeExcerpt)
         #expect(!comment.code.contains("\u{FFFD}"))
-        _ = try ReviewPromptBuilder.build(root: store.root, comments: store.comments)
+        _ = try ReviewPromptBuilder.build(root: store.root, comments: store.comments, locale: Locale(identifier: "en"))
     }
 
     @Test func nonTmuxForegroundKeepsTheSurfaceTTY() {
@@ -842,7 +843,10 @@ struct ReviewParserRegressionTests {
         #expect(throws: ReviewError.invalidDiff) { try ReviewDiffParser.parse(patch) }
     }
 
-    @Test func maximumCommentBodiesStillFitAfterMarkupEscaping() throws {
+    /// In both languages: the default opening and the boundary are written
+    /// in the app's language, and the Japanese ones take more bytes.
+    @Test(arguments: ["en", "ja"])
+    func maximumCommentBodiesStillFitAfterMarkupEscaping(_ language: String) throws {
         let file = ReviewFile(path: "a.swift", layer: .unstaged, status: .modified)
         let comments = (0..<ReviewStore.maxComments).map { index in
             ReviewComment(
@@ -851,8 +855,13 @@ struct ReviewParserRegressionTests {
                 body: String(repeating: "<!", count: ReviewStore.maxCommentBytes / 2)
             )
         }
-        let prompt = try ReviewPromptBuilder.build(root: URL(fileURLWithPath: "/tmp/review"), comments: comments)
+        let prompt = try ReviewPromptBuilder.build(
+            root: URL(fileURLWithPath: "/tmp/review"),
+            comments: comments,
+            locale: Locale(identifier: language)
+        )
         #expect(prompt.text.utf8.count <= ReviewPromptBuilder.maxBytes)
+        #expect(prompt.text.contains(ReviewPromptBuilder.defaultInstructions.resolved(in: Locale(identifier: language))))
     }
 
     @Test func parserBoundsTheRowCount() {

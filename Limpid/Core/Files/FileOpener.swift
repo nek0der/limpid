@@ -32,30 +32,30 @@ enum FileApplicationResolution: Equatable {
 
     /// The label of an action that opens a file, naming the app when one is
     /// chosen. Shared by Review's file menu and its line menu.
-    var openActionTitle: String {
+    var openActionTitle: LocalizedStringResource {
         if let displayName {
-            return String(localized: "Open in \(displayName)")
+            return "Open in \(displayName)"
         }
-        return String(localized: "Open in Default Application")
+        return "Open in Default Application"
     }
 
     /// The same label for one line, which says where the editor will land.
     /// That matters most for a removed line, which opens where it used to be.
-    func openLineActionTitle(line: Int) -> String {
+    func openLineActionTitle(line: Int) -> LocalizedStringResource {
         if let displayName {
-            return String(localized: "Open Line \(line) in \(displayName)")
+            return "Open Line \(line) in \(displayName)"
         }
-        return String(localized: "Open Line \(line) in Default Application")
+        return "Open Line \(line) in Default Application"
     }
 }
 
-enum FileOpenerError: LocalizedError {
+enum FileOpenerError: LimpidLocalizedError {
     case configuredApplicationMissing(FileApplication)
 
-    var errorDescription: String? {
+    var message: DisplayText {
         switch self {
         case let .configuredApplicationMissing(application):
-            String(localized: "The app selected for opening files, \(application.lastKnownDisplayName), is no longer available.")
+            .localized("The app selected for opening files, \(application.lastKnownDisplayName), is no longer available.")
         }
     }
 }

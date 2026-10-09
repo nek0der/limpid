@@ -11,6 +11,7 @@ struct TabRow: View {
     @Environment(TmuxPanePresence.self) private var tmuxPresence
     @Environment(LimpidDragState.self) private var dragState
     @Environment(SettingsStore.self) private var settingsStore
+    @Environment(\.locale) private var locale
     let tab: Tab
     let onActivate: () -> Void
     let onClose: () -> Void
@@ -132,32 +133,18 @@ struct TabRow: View {
         let dominant = matching.max { lhs, rhs in
             lhs.updatedAt < rhs.updatedAt
         }
-        let stateLabel = switch state {
-        case .running, .compacting, .needsInput, .error, .finished: state.localizedLabel
-        case .idle, .unknown: ""
-        }
-        var pieces: [String] = [stateLabel]
-        if matching.count > 1 {
-            pieces.append(String(
-                localized: "(\(matching.count) of \(badges.count) panes)",
-                comment: "Agent state tooltip — match count out of total panes"
-            ))
-        }
-        if let detail = dominant?.detail, !detail.isEmpty {
-            pieces.append("· \(detail)")
-        }
-        if state == .running || state == .compacting,
-           let started = dominant?.runStartedAt
-        {
+        var elapsedSeconds: Int?
+        if state == .running || state == .compacting, let started = dominant?.runStartedAt {
             let elapsed = Int(Date().timeIntervalSince(started))
-            if elapsed >= 0 {
-                pieces.append(String(
-                    localized: "· \(elapsed)s",
-                    comment: "Agent state tooltip — elapsed seconds suffix"
-                ))
-            }
+            elapsedSeconds = elapsed >= 0 ? elapsed : nil
         }
-        return pieces.joined(separator: " ")
+        return AgentStatusText.tab(
+            state: state,
+            panes: (matching: matching.count, total: badges.count),
+            detail: dominant?.detail.flatMap { $0.isEmpty ? nil : $0 },
+            elapsedSeconds: elapsedSeconds,
+            locale: locale
+        )
     }
 
     /// Content inset from the pill's leading edge, and its trailing
