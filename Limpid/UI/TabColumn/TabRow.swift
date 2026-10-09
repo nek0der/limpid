@@ -10,6 +10,7 @@ struct TabRow: View {
     @Environment(AttentionState.self) private var attention
     @Environment(TmuxPanePresence.self) private var tmuxPresence
     @Environment(LimpidDragState.self) private var dragState
+    @Environment(SettingsStore.self) private var settingsStore
     let tab: Tab
     let onActivate: () -> Void
     let onClose: () -> Void
@@ -320,16 +321,22 @@ struct TabRow: View {
             }
         )
         .contextMenu {
+            // Every row shows the keys, the active one or not. While the menu
+            // is open a key runs this row's item, as its title says; once it
+            // closes, the key acts on the active tab, which is what it is for.
+            let keyboard = settingsStore.settings.keyboard
             Button {
                 isEditing = true
             } label: {
                 Label("Rename…", systemImage: "pencil")
             }
+            .contextMenuShortcut(MenuCommand.renameTab.shortcut(in: keyboard))
             .tint(Color.primary)
             Divider()
             Button(role: .destructive, action: onClose) {
                 Label("Close", systemImage: "xmark")
             }
+            .contextMenuShortcut(MenuCommand.closeTab.shortcut(in: keyboard))
             .tint(Color.primary)
         }
         // `limpidDraggable` wraps SwiftUI's `.draggable` — macOS 26

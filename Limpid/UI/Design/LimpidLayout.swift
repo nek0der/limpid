@@ -313,6 +313,10 @@ enum LimpidLayout {
     static let paneHeaderDetailFontSize: CGFloat = 11
     static let paneHeaderMenuFontSize: CGFloat = 11
 
+    /// The gap between a "⋯" button and the top of the menu it opens,
+    /// which is about where AppKit's own pull-down menus sit.
+    static let popUpMenuGap: CGFloat = 4
+
     /// The width a header form needs for its name, or for its directory, to
     /// count as fitting. A few characters are enough to tell panes apart;
     /// past that the text truncates into whatever the row gives it, and a

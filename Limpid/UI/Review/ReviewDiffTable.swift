@@ -237,12 +237,8 @@ final class ReviewTableView: NSTableView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-        if window?.firstResponder === self,
-           event.type == .keyDown,
-           modifiers == .command,
-           event.charactersIgnoringModifiers?.lowercased() == "c"
-        {
+        // The key the context menu's Copy item shows, from the same constant.
+        if window?.firstResponder === self, StandardEditShortcut.copy.isPressed(in: event) {
             return onCopyCode?() ?? false
         }
         guard window?.firstResponder === self, event.type == .keyDown,
@@ -300,9 +296,11 @@ final class ReviewTableView: NSTableView {
                     ? String(localized: "Copy Selected Text")
                     : String(localized: "Copy Code"),
                 action: #selector(copySelectedCode(_:)),
-                keyEquivalent: "c"
+                keyEquivalent: ""
             )
-            copy.keyEquivalentModifierMask = .command
+            // The Edit menu's Copy key, which `performKeyEquivalent` answers
+            // with this same copy while the table has focus.
+            copy.showShortcut(StandardEditShortcut.copy)
             copy.target = self
             menu.addItem(copy)
         }

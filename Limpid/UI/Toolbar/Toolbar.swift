@@ -181,70 +181,92 @@ struct ToolbarTerminalColumnSegment: View {
     }
 
     /// One stable overflow owns secondary actions. Compact mode puts frequent
-    /// navigation and split commands ahead of the destructive tab action.
+    /// navigation and split commands at the top, and Close All Tabs, the one
+    /// destructive item, stays last.
     private func actionsMenu(density: ToolbarDensity) -> some View {
         ToolbarIconMenuButton(systemImage: "ellipsis", help: "Actions") {
-            if density == .compact {
-                Button {
+            actionsMenuEntries(density: density)
+        }
+    }
+
+    /// Built when the menu opens, so the enabled states and the shortcuts
+    /// are the ones current then.
+    private func actionsMenuEntries(density: ToolbarDensity) -> [PopUpMenuEntry] {
+        let keyboard = settings.settings.keyboard
+        var entries: [PopUpMenuEntry] = []
+        if density == .compact {
+            entries += [
+                .item(PopUpMenuItem(
+                    title: "Go Back",
+                    systemImage: "chevron.backward",
+                    isEnabled: session.canNavigateBack
+                ) {
                     session.navigateBack()
-                } label: {
-                    Label("Go Back", systemImage: "chevron.backward")
-                }
-                .disabled(!session.canNavigateBack)
-                Button {
+                }),
+                .item(PopUpMenuItem(
+                    title: "Go Forward",
+                    systemImage: "chevron.forward",
+                    isEnabled: session.canNavigateForward
+                ) {
                     session.navigateForward()
-                } label: {
-                    Label("Go Forward", systemImage: "chevron.forward")
-                }
-                .disabled(!session.canNavigateForward)
-                Divider()
-                Button {
+                }),
+                .separator,
+                .item(PopUpMenuItem(
+                    title: "Split Right",
+                    systemImage: "rectangle.split.2x1",
+                    shortcut: MenuCommand.splitRight.shortcut(in: keyboard),
+                    isEnabled: session.activeTab != nil
+                ) {
                     split(.horizontal)
-                } label: {
-                    Label("Split Right", systemImage: "rectangle.split.2x1")
-                }
-                .disabled(session.activeTab == nil)
-                Button {
+                }),
+                .item(PopUpMenuItem(
+                    title: "Split Down",
+                    systemImage: "rectangle.split.1x2",
+                    shortcut: MenuCommand.splitDown.shortcut(in: keyboard),
+                    isEnabled: session.activeTab != nil
+                ) {
                     split(.vertical)
-                } label: {
-                    Label("Split Down", systemImage: "rectangle.split.1x2")
-                }
-                .disabled(session.activeTab == nil)
-                Divider()
-            }
-            Button {
+                }),
+                .separator
+            ]
+        }
+        entries += [
+            .item(PopUpMenuItem(title: "Mark All as Read", systemImage: "checkmark.circle") {
                 NotificationReadSync.markAllRead(
                     historyStore: historyStore,
                     attention: attention,
                     session: session
                 )
-            } label: {
-                Label("Mark All as Read", systemImage: "checkmark.circle")
-            }
-            Divider()
+            }),
+            .separator,
             // The only toolbar entry to the cheat sheet. It lives in the
             // overflow rather than as its own icon: the toolbar is already
             // full and a reference sheet is not a daily action.
-            Button {
+            .item(PopUpMenuItem(
+                title: "Keyboard Shortcuts",
+                systemImage: "keyboard",
+                shortcut: MenuCommand.keyboardShortcuts.shortcut(in: keyboard)
+            ) {
                 NotificationCenter.default.post(
                     name: .limpidToggleKeyboardShortcuts,
                     object: session
                 )
-            } label: {
-                Label("Keyboard Shortcuts", systemImage: "keyboard")
-            }
-            Divider()
-            Button(role: .destructive) {
+            }),
+            .separator,
+            .item(PopUpMenuItem(
+                title: "Close All Tabs",
+                systemImage: "xmark",
+                isEnabled: !session.tabs(in: session.activeContainerID).isEmpty,
+                isDestructive: true
+            ) {
                 TabActions.closeAllTabsInActiveContainer(
                     session,
                     registry: registry,
                     agentProjection: agentProjection
                 )
-            } label: {
-                Label("Close All Tabs", systemImage: "xmark")
-            }
-            .disabled(session.tabs(in: session.activeContainerID).isEmpty)
-        }
+            })
+        ]
+        return entries
     }
 
     private func split(_ direction: SplitDirection) {
@@ -518,31 +540,26 @@ struct ToolbarIconButton: View {
 /// Menu-triggering twin of `ToolbarIconButton`. Uses the same
 /// `ToolbarIconLabel` so the visual footprint (size, color, hover)
 /// stays identical to its tap-action siblings, while the click pops
-/// open a `Menu`.
-struct ToolbarIconMenuButton<MenuContent: View>: View {
+/// open a menu. A `PopUpMenuButton` rather than a SwiftUI `Menu`, so the
+/// shortcuts its items show stay with the menu bar; `help` is its tooltip
+/// and the name VoiceOver gives the menu button.
+struct ToolbarIconMenuButton: View {
     let systemImage: String
-    let help: LocalizedStringKey
-    @ViewBuilder let menuContent: () -> MenuContent
+    let help: LocalizedStringResource
+    let entries: () -> [PopUpMenuEntry]
 
     @State private var isHovering = false
 
     var body: some View {
-        Menu {
-            menuContent()
-        } label: {
+        PopUpMenuButton(title: help, entries: entries) {
             ToolbarIconLabel(
                 systemImage: systemImage,
                 isEnabled: true,
                 isHovering: isHovering
             )
         }
-        .buttonStyle(.plain)
-        .menuStyle(.button)
-        .menuIndicator(.hidden)
         .fixedSize()
         .onHover { isHovering = $0 }
-        .help(help)
-        .accessibilityLabel(Text(help))
     }
 }
 

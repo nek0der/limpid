@@ -8,28 +8,6 @@ import OSLog
 
 private let log = Logger.limpid("surface.view")
 
-/// One-shot matcher for the title a shell reports immediately before running
-/// an app-injected command. Nonmatching prompt titles leave it armed because a
-/// slow shell can finish initialization after the command has been submitted.
-struct InjectedCommandTitleGuard {
-    private var pendingTitle: String?
-
-    mutating func arm(_ title: String) {
-        pendingTitle = GhosttyActionRouter.sanitizeInjectedCommandTitle(title)
-    }
-
-    mutating func consumeIfMatching(_ title: String) -> Bool {
-        guard let pendingTitle else { return false }
-        guard GhosttyActionRouter.sanitizeTitle(title) == pendingTitle else { return false }
-        self.pendingTitle = nil
-        return true
-    }
-
-    mutating func clear() {
-        pendingTitle = nil
-    }
-}
-
 /// `NSView` hosting one libghostty terminal surface.
 ///
 /// Drawing is delegated entirely to libghostty (Metal-backed); we just
@@ -321,6 +299,12 @@ final class SurfaceView: NSView {
     /// "start": the header owns the field, so the request goes through the
     /// window's `PaneRenamePresentation` rather than to the field itself.
     var onRequestRenamePane: (() -> Void)?
+    /// The user's shortcuts, read each time the right-click menu opens so a
+    /// rebinding shows at once. Nil outside a pane (the quick terminal):
+    /// there the menu has no item a Limpid shortcut performs, since Copy,
+    /// Paste and Select All keep the Edit menu's fixed keys and Clear and
+    /// the scroll items have none.
+    var keyboardSettings: (() -> KeyboardSettings)?
 
     /// The pane this view represents. Set by `PaneHostView`; lets the
     /// AppKit drag-source path write a `pane:<UUID>` payload to the
