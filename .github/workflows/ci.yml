@@ -182,6 +182,11 @@ jobs:
       - name: Archive Release unsigned and check it can be distributed
         run: make release-check
 
+      # The guardrail job has no build, so the notices check proves what the
+      # app links only here, from the archive and its dSYM. It must not skip.
+      - name: Check the archive against THIRD-PARTY-NOTICES
+        run: LIMPID_NOTICES_REQUIRE_BINARY=1 scripts/check-notices-coverage.sh
+
   format:
     name: SwiftFormat
     runs-on: macos-26

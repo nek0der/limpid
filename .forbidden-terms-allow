@@ -11,6 +11,10 @@
 THIRD-PARTY-NOTICES:Kitty
 THIRD-PARTY-NOTICES:kitty
 
+# CC BY 4.0 attribution for the Codicons glyph set inside the embedded Symbols
+# Nerd Font requires naming its source repository.
+THIRD-PARTY-NOTICES:microsoft/vscode-codicons
+
 # The attribution-coverage manifest lists "Kitty" as a component to verify.
 scripts/check-notices-coverage.sh:Kitty
 
