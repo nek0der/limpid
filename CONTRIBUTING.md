@@ -23,7 +23,6 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
   ```bash
   brew install xcodegen zig@0.16 rustup
   export PATH="$(brew --prefix rustup)/bin:$PATH"
-  rustup show active-toolchain
   ```
   `zig@0.16` is keg-only; the build script invokes it by its full path
   (`/opt/homebrew/opt/zig@0.16/bin/zig`), so no `PATH` change is required.
@@ -61,7 +60,9 @@ cd limpid
 # 3. Build libghostty as an xcframework (10–20 min on first run; cached after)
 make ghostty
 
-# 4. Verify the pinned Rust workspace
+# 4. Install the Rust toolchain rust-toolchain.toml pins, then verify the
+# workspace with it
+rustup toolchain install
 make rust-test
 
 # 5. Generate the Xcode project

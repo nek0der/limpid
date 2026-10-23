@@ -142,8 +142,8 @@ jobs:
       - name: Install tooling
         run: brew install xcodegen zig@0.16 create-dmg
 
-      - name: Select pinned Rust toolchain
-        run: rustup show active-toolchain
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install --no-self-update
 
       # The cache key names the vendor/ghostty commit the superproject pins.
       # Hashing build files and .gitmodules missed a bump that changed only
