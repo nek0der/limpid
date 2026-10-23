@@ -50,7 +50,10 @@ struct ConversationMenuLayoutTests {
         } trailing: {
             Button("Refresh") {}
         }
+        // At the top of the window, as the tab draws it at the top of its
+        // column; centered, the menu would move with the notes' height.
         .frame(width: width, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .top)
         .environment(\.locale, Locale(identifier: "en"))
         return try await settled(view, width: width) { recorder.frame }
     }
@@ -110,7 +113,9 @@ struct ConversationMenuLayoutTests {
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { recorder.frame = $0 }
         }
         .padding(LimpidLayout.Supervision.changesHeadInsets)
+        // At the top of the window, as the panel draws its head.
         .frame(width: width, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .top)
         .environment(\.locale, Locale(identifier: "en"))
 
         let (window, host) = hostedInWindow(view, width: width, height: 240)

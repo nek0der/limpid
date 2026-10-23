@@ -9,6 +9,11 @@ import SwiftUI
 /// but AppKit only lays a hosting view out at its window's size once it has
 /// one. The caller closes the window when done (`defer { window.close() }`);
 /// it is not released on close, so the host stays readable until then.
+///
+/// The window keeps that size. By default a hosting view resizes its window
+/// to its content after a layout pass (a 240pt window became 16pt), so a
+/// value read before that pass and one read after it differed, and a slow
+/// machine could settle on the first.
 @MainActor
 func hostedInWindow<Content: View>(
     _ view: Content,
@@ -23,6 +28,7 @@ func hostedInWindow<Content: View>(
     )
     window.isReleasedWhenClosed = false
     let host = NSHostingView(rootView: view)
+    host.sizingOptions = []
     window.contentView = host
     return (window, host)
 }
