@@ -6,7 +6,7 @@ import SwiftUI
 import Testing
 @testable import Limpid
 
-@Suite("Review card layout")
+@Suite("Review card layout", .hostsWindows)
 @MainActor
 struct ReviewCardLayoutTests {
     private let en = Locale(identifier: "en")

@@ -9,6 +9,7 @@ import Testing
 /// Two panes of a split meet at a seam one device pixel wide, with no gutter
 /// between them, and the band that takes the pointer for a resize lies over
 /// both panes' edges, terminal views included.
+@Suite(.hostsWindows)
 @MainActor
 struct SplitSeamGeometryTests {
     private let size = CGSize(width: 400, height: 300)

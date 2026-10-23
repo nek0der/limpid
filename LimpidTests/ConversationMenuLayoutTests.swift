@@ -11,6 +11,7 @@ import Testing
 /// menu from under the pointer. The changes panel's filter lists every
 /// conversation of the worktree, and holds still however long the counts
 /// above it read.
+@Suite(.hostsWindows)
 @MainActor
 struct ConversationMenuLayoutTests {
     private static func key(_ id: String) -> ConversationKey {

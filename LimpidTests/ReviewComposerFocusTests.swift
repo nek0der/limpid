@@ -6,6 +6,7 @@ import SwiftUI
 import Testing
 @testable import Limpid
 
+@Suite(.hostsWindows)
 @MainActor
 struct ReviewComposerFocusTests {
     @Test func aLazilyCreatedComposerTakesFocusAfterItJoinsTheWindow() async throws {

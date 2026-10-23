@@ -59,6 +59,7 @@ enum WorktreeSetup {
         _ items: [BootstrapItem],
         in worktree: URL,
         path: String?,
+        steps: RunningSteps = RunningSteps(),
         onStep: @Sendable (Int) async -> Void = { _ in }
     ) async throws -> Failure? {
         for (offset, item) in items.enumerated() {
@@ -83,7 +84,7 @@ enum WorktreeSetup {
                 log.warning("bootstrap step not run — \(reason, privacy: .private)")
                 return Failure(offset: offset, command: item.cmd, reason: .exited(logTail: reason))
             }
-            let logTail = await runStep(item, at: directory, path: path)
+            let logTail = await runStep(item, at: directory, path: path, steps: steps)
             // A step stopped by the cancel exits non-zero; that is not its
             // failure.
             try Task.checkCancellation()
@@ -94,24 +95,44 @@ enum WorktreeSetup {
         return nil
     }
 
-    /// Stops every step that runs, before Limpid exits: each group gets
-    /// SIGTERM, a moment to end (`quitGrace`), and SIGKILL if anything of
-    /// it is left. Synchronous, as it runs inside `willTerminate`: the
-    /// SIGKILL a cancel schedules (`RunningStep.stop`) comes seconds
-    /// later, after the process that would send it is gone, and a step
-    /// that ignores SIGTERM would go on in a worktree no one watches.
-    static func stopRunningStepsBeforeExit() {
-        let groups = RunningStep.groups.all
-        guard !groups.isEmpty else { return }
-        for group in groups {
-            kill(-group, SIGTERM)
+    /// The process groups of the steps one owner has running, for that
+    /// owner to stop when Limpid quits. `SessionLaunchStore` keeps its own.
+    /// One list shared by every run let a quit stop steps it never started:
+    /// two stores in one process, as tests running side by side have,
+    /// killed each other's steps. A run given no list keeps its steps to
+    /// itself (`run`'s default).
+    final class RunningSteps: @unchecked Sendable {
+        private let lock = NSLock()
+        private var groups: Set<pid_t> = []
+
+        func insert(_ group: pid_t) {
+            _ = lock.withLock { groups.insert(group) }
         }
-        let deadline = ContinuousClock.now + quitGrace
-        while groups.contains(where: RunningStep.isRunning(group:)), ContinuousClock.now < deadline {
-            usleep(20000)
+
+        func remove(_ group: pid_t) {
+            _ = lock.withLock { groups.remove(group) }
         }
-        for group in groups where RunningStep.isRunning(group: group) {
-            kill(-group, SIGKILL)
+
+        /// Stops every step on the list, before Limpid exits: each group
+        /// gets SIGTERM, a moment to end (`quitGrace`), and SIGKILL if
+        /// anything of it is left. Synchronous, as it runs inside
+        /// `willTerminate`: the SIGKILL a cancel schedules
+        /// (`RunningStep.stop`) comes seconds later, after the process that
+        /// would send it is gone, and a step that ignores SIGTERM would go on
+        /// in a worktree no one watches.
+        func stopBeforeExit() {
+            let groups = lock.withLock { self.groups }
+            guard !groups.isEmpty else { return }
+            for group in groups {
+                kill(-group, SIGTERM)
+            }
+            let deadline = ContinuousClock.now + WorktreeSetup.quitGrace
+            while groups.contains(where: RunningStep.isRunning(group:)), ContinuousClock.now < deadline {
+                usleep(20000)
+            }
+            for group in groups where RunningStep.isRunning(group: group) {
+                kill(-group, SIGKILL)
+            }
         }
     }
 
@@ -207,7 +228,7 @@ enum WorktreeSetup {
     /// backends, which must change with it so the path a worktree was made
     /// by cannot change what its setup does. A step that hangs holds the
     /// setup until the task waiting for it is canceled.
-    private static func runStep(_ item: BootstrapItem, at directory: URL, path: String?) async -> String? {
+    private static func runStep(_ item: BootstrapItem, at directory: URL, path: String?, steps: RunningSteps) async -> String? {
         let logURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("limpid-setup-\(UUID().uuidString).log")
         // Without a file the step still runs; only its words are lost.
@@ -228,7 +249,7 @@ enum WorktreeSetup {
             environment["PATH"] = path
             process.environment = environment
         }
-        let running = RunningStep()
+        let running = RunningStep(steps: steps)
         let outcome: StepOutcome = await withTaskCancellationHandler {
             await withCheckedContinuation { (cont: CheckedContinuation<StepOutcome, Never>) in
                 process.terminationHandler = { proc in
@@ -306,25 +327,12 @@ private enum StepOutcome: Sendable {
 /// and the one resume of its continuation. A lock rather than an actor:
 /// the handler is synchronous and must not suspend.
 private final class RunningStep: @unchecked Sendable {
-    /// The process groups of the steps that run now, for a quit to stop
-    /// (`WorktreeSetup.stopRunningStepsBeforeExit`).
-    static let groups = Groups()
+    /// The list of the run's owner, for its quit to stop this step
+    /// (`WorktreeSetup.RunningSteps.stopBeforeExit`).
+    private let steps: WorktreeSetup.RunningSteps
 
-    final class Groups: @unchecked Sendable {
-        private let lock = NSLock()
-        private var running: Set<pid_t> = []
-
-        var all: Set<pid_t> {
-            lock.withLock { running }
-        }
-
-        func insert(_ group: pid_t) {
-            _ = lock.withLock { running.insert(group) }
-        }
-
-        func remove(_ group: pid_t) {
-            _ = lock.withLock { running.remove(group) }
-        }
+    init(steps: WorktreeSetup.RunningSteps) {
+        self.steps = steps
     }
 
     private let lock = NSLock()
@@ -346,7 +354,7 @@ private final class RunningStep: @unchecked Sendable {
     func launched() {
         let target: Process? = lock.withLock {
             if let process {
-                Self.groups.insert(process.processIdentifier)
+                steps.insert(process.processIdentifier)
             }
             return isCancelled ? process : nil
         }
@@ -360,7 +368,7 @@ private final class RunningStep: @unchecked Sendable {
     func finished() {
         lock.withLock {
             if let process, process.processIdentifier > 0 {
-                Self.groups.remove(process.processIdentifier)
+                steps.remove(process.processIdentifier)
             }
         }
     }

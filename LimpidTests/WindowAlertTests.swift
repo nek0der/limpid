@@ -7,6 +7,7 @@ import Foundation
 import Testing
 @testable import Limpid
 
+@Suite(.hostsWindows)
 struct WindowAlertTests {
     /// A sheet only on a visible window with no sheet up: a second sheet
     /// would wait, unseen, until the first is answered.

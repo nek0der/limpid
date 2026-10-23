@@ -11,6 +11,7 @@ import Testing
 /// when the label is empty. A command or a path is read from its start, so
 /// each list row's field spans the row and starts at its leading edge, as
 /// System Settings' lists and Xcode's build phases set theirs.
+@Suite(.hostsWindows)
 @MainActor
 struct EditableRowListLayoutTests {
     private static let width: CGFloat = 520

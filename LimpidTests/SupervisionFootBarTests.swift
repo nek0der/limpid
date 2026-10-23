@@ -8,7 +8,7 @@ import SwiftUI
 import Testing
 @testable import Limpid
 
-@Suite("Supervision foot bar")
+@Suite("Supervision foot bar", .hostsWindows)
 @MainActor
 struct SupervisionFootBarTests {
     typealias Layout = LimpidLayout.Supervision

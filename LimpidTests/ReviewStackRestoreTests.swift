@@ -13,6 +13,7 @@ import Testing
 /// the find bar's match. Where a place goes when its line is gone is the
 /// stack's own rule (`ReviewStackTests`); the table puts any row back the
 /// same way.
+@Suite(.hostsWindows)
 @MainActor
 struct ReviewStackRestoreTests {
     private static let en = Locale(identifier: "en")

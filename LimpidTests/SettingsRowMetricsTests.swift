@@ -12,6 +12,7 @@ import Testing
 /// pop-ups and steppers 24pt tall, the regular ones; and steps its rows about
 /// 38pt apart. These hold Limpid's rows to the same, beside a native grouped
 /// form's rows hosted next to them.
+@Suite(.hostsWindows)
 @MainActor
 struct SettingsRowMetricsTests {
     /// A switch row, a value row at its default (the ↺'s room empty), one
