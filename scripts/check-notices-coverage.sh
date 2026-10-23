@@ -16,11 +16,14 @@
 #      `Component: <name> <version>` header and a line of its license text.
 #      Re-derive the list when the vendor/ghostty pin moves; the header
 #      comment of the list says how.
-#   4. Rust crates. Every registry crate the bridge staticlib links, at the
-#      version Cargo.lock pins, needs a `Crate: <name> <version>` header in
-#      THIRD-PARTY-NOTICES followed by its MIT text, and no header may name a
-#      crate that no longer ships. The set comes from Cargo.lock alone, so the
-#      check needs neither network access nor a Rust toolchain.
+#   4. Rust crates. The committed file leaves them to a marker line, and
+#      scripts/write-notices.sh fills it from `cargo metadata` when the app is
+#      built, so a Dependabot bump needs no hand edit. Every check here reads
+#      that filled-in copy, which takes cargo and, unless Cargo's registry
+#      already holds the crates, network access. The generator itself refuses
+#      a crate without an MIT text; here the committed file must hold no
+#      `Crate:` header of its own, and a built app must carry exactly the copy
+#      this checkout generates.
 #   5. The Rust standard library. The staticlib also bundles std and the
 #      crates std depends on. Their list is tied to the toolchain that
 #      rust-toolchain.toml pins, so a toolchain bump fails here until the
@@ -48,7 +51,6 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 notices="THIRD-PARTY-NOTICES"
-lockfile="Cargo.lock"
 
 # Every non-Rust third-party component that ships inside Limpid.app / the DMG.
 required=(
@@ -98,7 +100,6 @@ texts=(
   "Script: bash-preexec 0.6.0 |Copyright (c) 2017 Ryan Caloras and contributors (see https://github.com/rcaloras/bash-preexec)"
   "Script: bash-preexec 0.6.0 |Permission is hereby granted, free of charge, to any person obtaining a copy"
   "Octicons|Copyright (c) 2026 GitHub Inc."
-  "Unicode data in unicode-ident |UNICODE LICENSE V3"
   "GNU General Public License, version 3|                    GNU GENERAL PUBLIC LICENSE"
   "GNU General Public License, version 3|                       Version 3, 29 June 2007"
   "GNU General Public License, version 3|                     END OF TERMS AND CONDITIONS"
@@ -171,24 +172,11 @@ ghostty_components=(
   "z2d 0.12.1 |  * Neither the name of the copyright holder nor the names of its"
 )
 
-# Crates that Cargo.lock reaches from the bridge but that never link into it,
-# so the walk below does not descend into them. Each needs a reason, and the
-# cargo cross-check at the end fails if one of them is in fact a normal
-# dependency.
-not_linked=(
-  "cbindgen"     # build-dependency of limpid-rust-bridge (generates the C header)
-  "tempfile"     # dev-dependency of the workspace crates (tests only)
-  "r-efi"        # getrandom's backend for UEFI targets only
-  "js-sys"       # uuid's backend for wasm32 targets only
-  "wasm-bindgen" # uuid's backend for wasm32 targets only
-)
-
-# The license grant every crate's reproduced text must contain. Each crate in
-# the bridge is offered under MIT (alone or as one choice), and we elect it.
+# The license grant every standard-library crate's reproduced text must
+# contain. Each is offered under MIT (alone or as one choice), and we elect it.
 crate_grant="Permission is hereby granted, free of charge, to any"
 
-# Bridge staticlib crates, and the targets Xcode builds them for.
-bridge_root="limpid-rust-bridge"
+# The targets Xcode builds the bridge staticlib for.
 rust_targets=("aarch64-apple-darwin")
 
 # The Rust standard library the bridge links, for the toolchain below. To
@@ -275,7 +263,7 @@ missing_in_blocks() {
         else if (!found[i]) print label ": " want[i]
       }
     }
-  ' - "$notices"
+  ' - "$shipped"
 }
 
 if [[ ! -f "$notices" ]]; then
@@ -283,11 +271,20 @@ if [[ ! -f "$notices" ]]; then
   exit 1
 fi
 
+# The copy that ships: the committed file with its Rust crate section filled
+# in. Every check below reads it, and messages name the file it comes from.
+shipped="$(mktemp)"
+trap 'rm -f "$shipped"' EXIT
+if ! scripts/write-notices.sh "$shipped"; then
+  echo "✗ scripts/write-notices.sh could not fill in the Rust crates of $notices." >&2
+  exit 1
+fi
+
 # -- 1. Named components -------------------------------------------------------
 
 missing=()
 for name in "${required[@]}"; do
-  grep -qiF -- "$name" "$notices" || missing+=("$name")
+  grep -qiF -- "$name" "$shipped" || missing+=("$name")
 done
 if (( ${#missing[@]} )); then
   {
@@ -328,14 +325,16 @@ if [[ -n "$missing_texts" ]]; then
   fail=1
 fi
 
-# The texts only reach recipients if both packaging paths copy the file.
-if ! grep -qE '^ *- path: THIRD-PARTY-NOTICES$' project.yml; then
-  echo "✗ project.yml no longer copies $notices into the app bundle." >&2
+# The texts only reach recipients if the build writes the filled-in copy into
+# the app bundle and the DMG takes that copy.
+# shellcheck disable=SC2016 # the variable is the literal text we look for
+if ! grep -qF '"$SRCROOT/scripts/write-notices.sh"' project.yml; then
+  echo "✗ project.yml no longer writes $notices into the app bundle." >&2
   fail=1
 fi
 # shellcheck disable=SC2016 # the variables are the literal text we look for
-if ! grep -qF 'cp "${REPO_ROOT}/THIRD-PARTY-NOTICES" "${DMG_STAGING}/"' scripts/package-dmg.sh; then
-  echo "✗ scripts/package-dmg.sh no longer copies $notices to the DMG root." >&2
+if ! grep -qF 'cp "${APP_PATH}/Contents/Resources/THIRD-PARTY-NOTICES" "${DMG_STAGING}/"' scripts/package-dmg.sh; then
+  echo "✗ scripts/package-dmg.sh no longer copies the app's $notices to the DMG root." >&2
   fail=1
 fi
 
@@ -356,7 +355,7 @@ while IFS= read -r header; do
     [[ "$header" == "Component: $prefix"* ]] && known=1
   done
   (( known )) || missing+=("unlisted header: $header")
-done < <(grep '^Component: ' "$notices" || true)
+done < <(grep '^Component: ' "$shipped" || true)
 if (( ${#missing[@]} )); then
   {
     echo "✗ libghostty components incomplete in $notices:"
@@ -370,156 +369,19 @@ fi
 
 # -- 4. Rust crates ------------------------------------------------------------
 
-if [[ ! -f "$lockfile" ]]; then
-  echo "✗ $lockfile not found." >&2
-  exit 1
-fi
-
-# Walk Cargo.lock from the bridge and print every registry crate it reaches
-# as "name version". Workspace crates have no `source` line and are ours.
-# Cargo.lock does not record edge kinds, so `not_linked` prunes the build-,
-# dev- and other-target-only branches.
-locked_crates() {
-  awk -v root="$bridge_root" -v prune="${not_linked[*]}" '
-    function unquote(s) { gsub(/"/, "", s); return s }
-    BEGIN {
-      split(prune, list, " ")
-      for (i in list) pruned[list[i]] = 1
-    }
-    /^\[\[package\]\]$/ { n++; in_deps = 0; next }
-    /^name = /          { name[n] = unquote($3); next }
-    /^version = /       { version[n] = unquote($3); next }
-    /^source = /        { registry[n] = 1; next }
-    /^dependencies = \[$/ { in_deps = 1; next }
-    in_deps && /^\]$/   { in_deps = 0; next }
-    in_deps {
-      line = $0
-      gsub(/[",]/, "", line)
-      sub(/^ +/, "", line)
-      deps[n] = deps[n] "\n" line
-      next
-    }
-    END {
-      for (i = 1; i <= n; i++) count[name[i]]++
-      for (i = 1; i <= n; i++) if (name[i] == root) queue[++tail] = i
-      while (head < tail) {
-        p = queue[++head]
-        if (seen[p]++) continue
-        if (registry[p]) print name[p], version[p]
-        m = split(deps[p], items, "\n")
-        for (j = 1; j <= m; j++) {
-          if (items[j] == "") continue
-          k = split(items[j], parts, " ")
-          dep = parts[1]
-          if (dep in pruned) continue
-          for (q = 1; q <= n; q++) {
-            if (name[q] != dep) continue
-            if (k >= 2 && version[q] != parts[2]) continue
-            queue[++tail] = q
-          }
-        }
-      }
-    }
-  ' "$lockfile" | LC_ALL=C sort -u
-}
-
-# Every `Crate:` header in THIRD-PARTY-NOTICES, as "name version", after
-# confirming each header block is followed by a license grant before the next
-# block starts. Prints "!name version" for a header with no text under it.
-noticed_crates() {
-  awk -v grant="$crate_grant" '
-    function close_block() {
-      # A header still open here never reached its text.
-      if ((in_header || in_body) && !covered) for (c in pending) print "!" c
-      for (c in pending) delete pending[c]
-      in_header = 0; in_body = 0; covered = 0
-    }
-    /^Crate: / {
-      if (in_body) close_block()
-      in_header = 1
-      key = $2 " " $3
-      pending[key] = 1
-      print key
-      next
-    }
-    # Literal runs rather than {20,}: older mawk has no interval expressions.
-    /^--------------------+$/ {
-      if (in_header) { in_header = 0; in_body = 1; covered = 0 }
-      else if (in_body) close_block()
-      next
-    }
-    /^====================+$/ { close_block(); next }
-    in_body && index($0, grant) { covered = 1 }
-    END { close_block() }
-  ' "$notices" | LC_ALL=C sort -u
-}
-
-locked="$(locked_crates)"
-noticed_all="$(noticed_crates)"
-noticed="$(printf '%s\n' "$noticed_all" | grep -v '^!' || true)"
-without_text="$(printf '%s\n' "$noticed_all" | grep '^!' | sed 's/^!//' || true)"
-
-if [[ -z "$locked" ]]; then
-  echo "✗ Found no registry crates under $bridge_root in $lockfile; the walk is broken." >&2
-  fail=1
-fi
-
-unlisted="$(LC_ALL=C comm -23 <(printf '%s\n' "$locked") <(printf '%s\n' "$noticed") | sed '/^$/d')"
-stale="$(LC_ALL=C comm -13 <(printf '%s\n' "$locked") <(printf '%s\n' "$noticed") | sed '/^$/d')"
-
-if [[ -n "$unlisted" ]]; then
+# A header in the committed file would ship beside the generated one, and the
+# next bump would leave it naming a version the app no longer links.
+if grep -q '^Crate: ' "$notices"; then
   {
-    echo "✗ Rust crates linked into the bridge but missing from $notices"
-    echo "  (name and version as $lockfile pins them):"
-    printf '%s\n' "$unlisted" | sed 's/^/  - /'
-    echo
-    echo "Add a 'Crate: <name> <version> (<license>) <repository>' header and the"
-    echo "crate's LICENSE-MIT from ~/.cargo/registry/src, or, if the crate never"
-    echo "links into the app, add it to not_linked in this script with the reason."
+    echo "✗ $notices names Rust crates itself; scripts/generate-crate-notices.py writes them:"
+    grep '^Crate: ' "$notices" | sed 's/^/  - /'
   } >&2
   fail=1
 fi
-if [[ -n "$stale" ]]; then
-  {
-    echo "✗ $notices names Rust crates the bridge no longer links at that version:"
-    printf '%s\n' "$stale" | sed 's/^/  - /'
-  } >&2
+crate_count="$(grep -c '^Crate: ' "$shipped" || true)"
+if (( crate_count == 0 )); then
+  echo "✗ The filled-in $notices names no Rust crates; the generator found none under the bridge." >&2
   fail=1
-fi
-if [[ -n "$without_text" ]]; then
-  {
-    echo "✗ Rust crates in $notices without a license text under their header:"
-    printf '%s\n' "$without_text" | sed 's/^/  - /'
-  } >&2
-  fail=1
-fi
-
-# Cross-check the Cargo.lock walk against cargo's own normal-edge graph when a
-# toolchain and the registry cache are already on this machine. It never
-# installs or downloads anything, so CI without them skips it.
-cargo_bin="$(command -v cargo || true)"
-if [[ -z "$cargo_bin" && -x /opt/homebrew/opt/rustup/bin/cargo ]]; then
-  cargo_bin=/opt/homebrew/opt/rustup/bin/cargo
-fi
-if [[ -n "$cargo_bin" ]]; then
-  for target in "${rust_targets[@]}"; do
-    if tree="$(PATH="$(dirname "$cargo_bin"):$PATH" RUSTUP_AUTO_INSTALL=0 "$cargo_bin" tree --locked --offline --quiet \
-      --package "$bridge_root" --edges normal --target "$target" \
-      --prefix none 2>/dev/null)"; then
-      # Path crates print their directory, as "(/...)", after the version.
-      from_cargo="$(printf '%s\n' "$tree" | awk 'NF >= 2 && !index($0, "(/") { sub(/^v/, "", $2); print $1, $2 }' | LC_ALL=C sort -u)"
-      if [[ "$from_cargo" != "$locked" ]]; then
-        {
-          echo "✗ The Cargo.lock walk disagrees with cargo tree for $target"
-          echo "  (< walk only, > cargo only); fix not_linked in this script:"
-          diff <(printf '%s\n' "$locked") <(printf '%s\n' "$from_cargo") | grep '^[<>]' | sed 's/^/  /'
-        } >&2
-        fail=1
-      fi
-    else
-      echo "• cargo tree is unavailable offline here; skipped the cross-check for $target."
-    fi
-  done
 fi
 
 # -- 5. The Rust standard library ---------------------------------------------
@@ -548,7 +410,7 @@ while IFS= read -r header; do
   done
   (( known )) || missing_std="${missing_std:+$missing_std
 }unlisted header: $header"
-done < <(grep '^Std crate: ' "$notices" || true)
+done < <(grep '^Std crate: ' "$shipped" || true)
 if [[ -n "$missing_std" ]]; then
   {
     echo "✗ Rust standard-library crates incomplete in $notices:"
@@ -648,6 +510,15 @@ if (( ${#binaries[@]} )) && command -v nm >/dev/null 2>&1; then
       fail=1
       continue
     fi
+    # The app must carry the copy this checkout fills in, not the committed
+    # file with its marker line, nor a copy from an older Cargo.lock.
+    if [[ "$binary" == */Contents/MacOS/* ]]; then
+      bundled="${binary%/Contents/MacOS/*}/Contents/Resources/THIRD-PARTY-NOTICES"
+      if ! cmp -s "$bundled" "$shipped"; then
+        echo "✗ $bundled is missing or differs from the $notices this checkout fills in; rebuild the app." >&2
+        fail=1
+      fi
+    fi
     # Built as a whole array so bash 3.2 never expands an empty one.
     nm_args=(-m)
     if lipo -archs "$binary" 2>/dev/null | grep -qw arm64; then
@@ -719,5 +590,4 @@ fi
 if (( fail )); then
   exit 1
 fi
-crate_count="$(printf '%s\n' "$locked" | sed '/^$/d' | wc -l | tr -d ' ')"
 echo "✓ check-notices-coverage: ${#required[@]} bundled components, ${#texts[@]} license texts, ${#listed_prefixes[@]} libghostty license lines, ${crate_count} Rust crates and ${#rust_std_crates[@]} Rust ${rust_std_toolchain} standard-library crates are acknowledged; ${checked_rlibs} toolchain rlibs and ${checked_binaries} built binaries checked."

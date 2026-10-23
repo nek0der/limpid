@@ -269,9 +269,8 @@ targets:
       # Ship the license + third-party attribution inside the app bundle so
       # the MIT / GPL notices travel with the distributed .app, satisfying the
       # "include the copyright notice in all copies" requirement — not just
-      # in the source repo.
-      - path: THIRD-PARTY-NOTICES
-        buildPhase: resources
+      # in the source repo. THIRD-PARTY-NOTICES is written by a post-build
+      # script below, because its Rust crate section comes from Cargo.lock.
       - path: LICENSE
         buildPhase: resources
     # Explicit Info.plist (not the GENERATE_INFOPLIST_FILE auto-version)
@@ -449,6 +448,21 @@ targets:
         basedOnDependencyAnalysis: false
         inputFiles:
           - $(SRCROOT)/rust/limpid-provider-claude/resources/settings.template.json
+      # The committed file with its Rust crate section filled in from
+      # Cargo.lock, so a dependency bump needs no hand edit. It runs offline:
+      # the bridge build before it has put every crate in Cargo's registry.
+      - name: Write THIRD-PARTY-NOTICES
+        script: |
+          set -euo pipefail
+          LIMPID_NOTICES_OFFLINE=1 "$SRCROOT/scripts/write-notices.sh" \
+            "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/THIRD-PARTY-NOTICES"
+        inputFiles:
+          - $(SRCROOT)/THIRD-PARTY-NOTICES
+          - $(SRCROOT)/Cargo.lock
+          - $(SRCROOT)/scripts/write-notices.sh
+          - $(SRCROOT)/scripts/generate-crate-notices.py
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/THIRD-PARTY-NOTICES
 
   LimpidTests:
     type: bundle.unit-test
