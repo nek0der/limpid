@@ -53,5 +53,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Self-test the crate notice generator (and what it refuses)
+        run: scripts/test-generate-crate-notices.sh
+      # The check fills in the Rust crate section from `cargo metadata`.
+      - name: Select pinned Rust toolchain
+        run: rustup show active-toolchain
       - name: Verify every bundled dependency is acknowledged
         run: scripts/check-notices-coverage.sh

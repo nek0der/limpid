@@ -117,7 +117,7 @@ PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.m
 
 ## Acknowledgements
 
-Built on [Ghostty](https://github.com/ghostty-org/ghostty) (libghostty) and [Sparkle](https://github.com/sparkle-project/Sparkle). The full third-party list is in [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES).
+Built on [Ghostty](https://github.com/ghostty-org/ghostty) (libghostty) and [Sparkle](https://github.com/sparkle-project/Sparkle). The full third-party list is in [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES); the build fills in its Rust crates from `Cargo.lock`, and the copy inside Limpid.app carries them.
 
 ## License
 

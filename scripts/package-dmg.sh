@@ -77,7 +77,9 @@ DMG_STAGING="$(mktemp -d)"
 # volume so the copy is effectively free.
 cp -R "${APP_PATH}" "${DMG_STAGING}/"
 [ -f "${REPO_ROOT}/LICENSE" ] && cp "${REPO_ROOT}/LICENSE" "${DMG_STAGING}/"
-[ -f "${REPO_ROOT}/THIRD-PARTY-NOTICES" ] && cp "${REPO_ROOT}/THIRD-PARTY-NOTICES" "${DMG_STAGING}/"
+# The notices come from the app, not the repository: the build fills in their
+# Rust crate section, which the committed file leaves to a marker line.
+cp "${APP_PATH}/Contents/Resources/THIRD-PARTY-NOTICES" "${DMG_STAGING}/"
 create-dmg \
   --volname "Limpid ${VERSION}" \
   --window-size 540 380 \
