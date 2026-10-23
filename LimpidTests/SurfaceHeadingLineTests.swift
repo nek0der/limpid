@@ -6,7 +6,7 @@ import SwiftUI
 import Testing
 @testable import Limpid
 
-@Suite("Surface heading line")
+@Suite("Surface heading line", .hostsWindows)
 @MainActor
 struct SurfaceHeadingLineTests {
     private typealias Layout = LimpidLayout.Supervision

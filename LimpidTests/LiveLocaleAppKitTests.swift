@@ -12,7 +12,7 @@ import SwiftUI
 import Testing
 @testable import Limpid
 
-@Suite("Live display language in AppKit")
+@Suite("Live display language in AppKit", .hostsWindows)
 @MainActor
 struct LiveLocaleAppKitTests {
     private let en = Locale(identifier: "en")

@@ -642,6 +642,7 @@ extension WorkspaceSession {
         worktreeID: UUID,
         from stepIndex: Int = 0,
         path: WorktreeSetup.PathSource = WorktreeSetup.loginShellPath,
+        runningSteps: WorktreeSetup.RunningSteps = WorktreeSetup.RunningSteps(),
         onStep: @escaping @MainActor @Sendable (Int) -> Void = { _ in }
     ) async throws {
         guard let project = project(projectID), let worktree = worktree(projectID: projectID, worktreeID: worktreeID) else {
@@ -651,7 +652,7 @@ extension WorkspaceSession {
         guard items.indices.contains(stepIndex) else { return }
         let steps = Array(items[stepIndex...])
         let resolvedPath = try await path()
-        let failure = try await WorktreeSetup.run(steps, in: worktree.workingDirectory, path: resolvedPath) { offset in
+        let failure = try await WorktreeSetup.run(steps, in: worktree.workingDirectory, path: resolvedPath, steps: runningSteps) { offset in
             await onStep(stepIndex + offset)
         }
         guard let failure else { return }

@@ -220,7 +220,11 @@ enum AgentRecordFixtures {
         private let descriptor: Int32
 
         init(on url: URL) throws {
-            descriptor = try open(AgentRecordFixtures.lockURL(for: url).path, O_CREAT | O_RDWR, 0o600)
+            // Close-on-exec, as the app's own lock (`AgentFileLock`): the
+            // tests run in parallel, and a child another test started
+            // meanwhile would inherit the descriptor and hold the lock on
+            // after this releases it.
+            descriptor = try open(AgentRecordFixtures.lockURL(for: url).path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
             #expect(descriptor >= 0)
             #expect(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
         }

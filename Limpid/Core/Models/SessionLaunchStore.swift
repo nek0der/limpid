@@ -169,6 +169,9 @@ final class SessionLaunchStore {
     @ObservationIgnored private let startTimeout: Duration
     /// The most the copied files may come to.
     @ObservationIgnored private let copyByteLimit: Int64
+    /// The setup steps this store has running, which `cancelAll` stops
+    /// when Limpid quits, and no other store's.
+    @ObservationIgnored private let runningSteps = WorktreeSetup.RunningSteps()
 
     init(
         path: @escaping WorktreeSetup.PathSource = WorktreeSetup.loginShellPath,
@@ -412,7 +415,7 @@ final class SessionLaunchStore {
             task.cancel()
         }
         tasks = [:]
-        WorktreeSetup.stopRunningStepsBeforeExit()
+        runningSteps.stopBeforeExit()
     }
 
     /// Copies the ignored files `patterns` pick from the project's folder,
@@ -494,9 +497,16 @@ final class SessionLaunchStore {
         }
         noteStep(stepIndex, of: id, steps: steps)
         let path = path
+        let runningSteps = runningSteps
         tasks[id] = Task { [weak self] in
             do {
-                try await session.runSetup(projectID: launch.projectID, worktreeID: id, from: stepIndex, path: path) { index in
+                try await session.runSetup(
+                    projectID: launch.projectID,
+                    worktreeID: id,
+                    from: stepIndex,
+                    path: path,
+                    runningSteps: runningSteps
+                ) { index in
                     self?.noteStep(index, of: id, steps: steps)
                 }
             } catch is CancellationError {

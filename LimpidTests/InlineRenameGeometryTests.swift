@@ -7,7 +7,7 @@ import Testing
 @testable import Limpid
 
 @MainActor
-@Suite("InlineRenameField geometry")
+@Suite("InlineRenameField geometry", .hostsWindows)
 struct InlineRenameGeometryTests {
     /// How far into the window the label starts, past a white gutter that
     /// stands for the badge or glyph beside it.

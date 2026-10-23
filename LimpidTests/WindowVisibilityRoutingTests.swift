@@ -6,6 +6,7 @@ import Foundation
 import Testing
 @testable import Limpid
 
+@Suite(.hostsWindows)
 @MainActor
 struct WindowVisibilityRoutingTests {
     @Test func aReport_reachesTheTerminals() {

@@ -149,7 +149,7 @@ struct PaneStripTabWidthsTests {
 /// The strip's real tabs, the review's among them, in the strip's own
 /// scroll view (`PaneStripScrollingTabs`), which measures the width they
 /// share and keeps the selected tab in view, at a few widths.
-@Suite("Pane strip tab layout")
+@Suite("Pane strip tab layout", .hostsWindows)
 @MainActor
 struct PaneStripTabsLayoutTests {
     private static let longTitles = [

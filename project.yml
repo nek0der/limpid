@@ -496,8 +496,14 @@ schemes:
         Limpid: all
         LimpidTests: [test]
     test:
+      # Swift Testing runs the tests in parallel only when the scheme lets it.
+      # The width caps how many run at once: at its default, twice the cores,
+      # the tests that wait on a deadline or a timer ran late and failed.
       targets:
-        - LimpidTests
+        - name: LimpidTests
+          parallelizable: true
+      environmentVariables:
+        SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH: "8"
     run:
       config: Debug
     profile:
