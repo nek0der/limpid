@@ -78,9 +78,9 @@ struct LiveLocaleAppKitTests {
 
     @Test func reviewNoticeRow_followsTheLocale() {
         let notice = ReviewNoticeRowView()
-        notice.configure("This file cannot be reviewed as text.", locale: ja)
-        let english = LocalizedStringResource("This file cannot be reviewed as text.").resolved(in: en)
-        #expect(labels(in: notice) == [LocalizedStringResource("This file cannot be reviewed as text.").resolved(in: ja)])
+        notice.configure("This file can’t be reviewed as text.", locale: ja)
+        let english = LocalizedStringResource("This file can’t be reviewed as text.").resolved(in: en)
+        #expect(labels(in: notice) == [LocalizedStringResource("This file can’t be reviewed as text.").resolved(in: ja)])
         #expect(labels(in: notice) != [english])
     }
 
@@ -116,23 +116,15 @@ struct LiveLocaleAppKitTests {
     // MARK: - Hosted views updated by SwiftUI
 
     @Test func reviewTable_reloadsItsRowsWhenTheLocaleChanges() async throws {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 900, height: 500),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
-        window.isReleasedWhenClosed = false
+        let (window, host) = hostedInWindow(makeTable(locale: ja), width: 900, height: 500)
         defer { window.close() }
-        let host = NSHostingView(rootView: makeTable(locale: ja))
-        window.contentView = host
-        await settle(host)
+        await settle(host) { !commentButtonTitles(in: host).isEmpty }
         let table = try #require(descendants(of: host).compactMap { $0 as? ReviewTableView }.first)
         #expect(table.menuLocale == ja)
         #expect(commentButtonTitles(in: host) == ["解決済みにする", "編集", "削除"])
 
         host.rootView = makeTable(locale: en)
-        await settle(host)
+        await settle(host) { table.menuLocale == en && commentButtonTitles(in: host).first == "Resolve" }
         #expect(table.menuLocale == en)
         #expect(commentButtonTitles(in: host) == ["Resolve", "Edit", "Delete"])
     }
@@ -142,14 +134,14 @@ struct LiveLocaleAppKitTests {
             ReviewFindField(text: .constant(""), onMove: { _ in }, onCancel: {}, focusRequest: 0)
         })
         host.frame = NSRect(x: 0, y: 0, width: 300, height: 30)
-        await settle(host)
+        await settle(host) { descendants(of: host).contains { $0 is NSTextField } }
         let field = try #require(descendants(of: host).compactMap { $0 as? NSTextField }.first)
         #expect(field.placeholderString == "ファイル内を検索")
 
         host.rootView = Localized(locale: en) {
             ReviewFindField(text: .constant(""), onMove: { _ in }, onCancel: {}, focusRequest: 0)
         }
-        await settle(host)
+        await settle(host) { field.placeholderString == "Find in file" }
         #expect(field.placeholderString == "Find in file")
     }
 
@@ -159,52 +151,38 @@ struct LiveLocaleAppKitTests {
         ) }
         let host = NSHostingView(rootView: Localized(locale: ja, content: field))
         host.frame = NSRect(x: 0, y: 0, width: 300, height: 30)
-        await settle(host)
+        await settle(host) { descendants(of: host).contains { $0 is PaneSearchNSTextField } }
         let textField = try #require(descendants(of: host).compactMap { $0 as? PaneSearchNSTextField }.first)
         #expect(textField.placeholderString == "検索")
         #expect(textField.accessibilityLabel() == "検索")
 
         host.rootView = Localized(locale: en, content: field)
-        await settle(host)
+        await settle(host) { textField.placeholderString == "Search" }
         #expect(textField.placeholderString == "Search")
     }
 
     @Test func quickTerminalPanel_titleFollowsTheAppLocale() async throws {
-        // Never created: the test changes no setting, so the store has no
-        // reason to write `settings.json` there.
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let defaults = try #require(InMemoryDefaults())
-        let store = SettingsStore(directory: directory, languageSources: AppLanguageSources(
-            defaults: defaults,
-            systemPreferredLanguages: { ["en-US"] },
-            currentLocale: { Locale(identifier: "en_US") }
-        ))
-        let controller = QuickTerminalController(
-            settingsStore: store,
-            reduceTransparencyResolver: ReduceTransparencyResolver(),
-            clipboard: ClipboardConfirmationCoordinator(),
-            secureInputManager: SecureInputManager(),
-            surfaceFactory: { nil }
-        )
-        #expect(controller.panel.title == "Quick Terminal")
+        try await withTempDir { directory in
+            let store = try SettingsStore.inEnglish(in: directory)
+            let controller = QuickTerminalController(
+                settingsStore: store,
+                reduceTransparencyResolver: ReduceTransparencyResolver(),
+                clipboard: ClipboardConfirmationCoordinator(),
+                secureInputManager: SecureInputManager(),
+                surfaceFactory: { nil }
+            )
+            #expect(controller.panel.title == "Quick Terminal")
 
-        store.appLanguage = .japanese
-        for _ in 0..<50 where controller.panel.title == "Quick Terminal" {
-            try await Task.sleep(for: .milliseconds(10))
+            store.appLanguage = .japanese
+            await pollUntil(timeout: .milliseconds(500), interval: .milliseconds(10)) {
+                controller.panel.title != "Quick Terminal"
+            }
+            #expect(controller.panel.title == "クイックターミナル")
+            #expect(controller.panel.accessibilityTitle() == "クイックターミナル")
         }
-        #expect(controller.panel.title == "クイックターミナル")
-        #expect(controller.panel.accessibilityTitle() == "クイックターミナル")
     }
 
     // MARK: - Helpers
-
-    /// Lets SwiftUI run its update and AppKit lay out the rows it asked for.
-    private func settle(_ host: NSView) async {
-        for _ in 0..<3 {
-            host.layoutSubtreeIfNeeded()
-            try? await Task.sleep(for: .milliseconds(20))
-        }
-    }
 
     private func commentButtonTitles(in view: NSView) -> [String] {
         descendants(of: view).compactMap { $0 as? ReviewCommentRowView }.first.map(buttonTitles(in:)) ?? []
@@ -217,26 +195,16 @@ struct LiveLocaleAppKitTests {
             file: file, fingerprint: "f", anchor: ReviewAnchor(lineID: 0, oldLine: nil, newLine: 1),
             code: "+new", codeMarkers: "+", body: "Fix this."
         )
-        return ReviewDiffTable(
+        return ReviewTableFixture.table(
+            file,
             rows: [ReviewRow(id: 0, kind: .code(line)), ReviewRow(id: 1, kind: .comment(comment))],
-            diffLines: [line], intralineHighlights: ReviewIntralineHighlights(),
-            contentKey: "locale", widthKey: "locale", layout: .unified,
-            files: [file], lineCommentCounts: [0: 1], numberWidth: 26, expandedFileID: file.id, contentIdentity: file.id,
-            isInteractionEnabled: true,
+            lines: [line],
+            counts: [0: 1],
+            key: "locale",
             selection: .constant(ReviewDiffSelection()),
-            composerLineID: nil, composerStartLine: nil,
-            composerIsEditing: false, composerText: .constant(""),
-            onSelectFile: { _ in }, onCompose: {}, onCancelCompose: {}, onCommit: {}, onInsert: {}, onToggleTerminal: {},
-            search: ReviewSearch(), onCloseSearch: {}, searchTargetLineID: nil, language: nil,
-            onToggleViewed: {}, fileApplication: .macOSDefault, onOpenLine: { _ in }, onExpand: { _, _ in },
-            onResolve: { _ in }, onEdit: { _ in }, onDelete: { _ in },
-            isOverlayPresented: false, onCloseOverlay: {}, onClose: {},
+            composer: .closed,
             locale: locale
         )
-    }
-
-    private func descendants(of view: NSView) -> [NSView] {
-        view.subviews.flatMap { [$0] + descendants(of: $0) }
     }
 
     private func buttonTitles(in view: NSView) -> [String] {

@@ -8,6 +8,48 @@ import SwiftUI
 struct PaneCommands: Commands {
     let state: AppState
 
+    /// The window the menu acts in: its active tab is the one split,
+    /// zoomed, or stepped through. `nil` while no main window is key
+    /// (Settings in front), where every item is off.
+    private var target: ProjectWindowState? {
+        state.windowRegistry.commandTarget
+    }
+
+    /// This is the window whose panes the split, zoom, and focus items act
+    /// on. It is `nil` while the window's review stands where the terminal
+    /// was, as those items would change its panes out of sight
+    /// (`ProjectWindowState.arePanesHidden`). The palette's rows ask the
+    /// same.
+    private var paneTarget: ProjectWindowState? {
+        target.flatMap { $0.arePanesHidden ? nil : $0 }
+    }
+
+    /// This is the active tab of `paneTarget`, which the pane items act on.
+    /// It is `nil` while no main window is key.
+    private var paneTab: Tab? {
+        paneTarget.flatMap { state.session.activeTab(in: $0.id) }
+    }
+
+    /// ⇧⌘[ ⇧⌘]: the review tab is one of the tabs they step through.
+    private func cycleTab(forward: Bool) {
+        guard let window = target else { return }
+        ReviewTabActions.cycleTab(
+            forward: forward,
+            window: window,
+            session: state.session,
+            registry: state.registry,
+            paneVisibility: PaneVisibilityReporter(windowID: window.id, registry: state.windowRegistry)
+        )
+    }
+
+    /// Whether there is another tab to step to, as the palette decides.
+    private var canCycleTab: Bool {
+        guard let target else { return false }
+        let facts = SupervisionPaletteFacts(window: target, session: state.session)
+        let tabCount = state.session.tabs(in: target.selection.activeContainerID).count
+        return SupervisionPaletteFacts.canCycleTab(tabCount: tabCount, facts: facts)
+    }
+
     var body: some Commands {
         CommandMenu("Pane") {
             // Splits, zoom, and focus act on the main window's active tab.
@@ -15,42 +57,32 @@ struct PaneCommands: Commands {
             // aside while it has the keyboard.
             MainWindowCommandItems(state.quickTerminal) {
                 Button {
-                    PaneActions.split(
-                        state.session,
-                        direction: .horizontal,
-                        registry: state.registry,
-                        minPaneSize: state.settingsStore.settings.terminal.paneMinimumSize,
-                        toastCenter: state.toastCenter
-                    )
+                    split(.horizontal)
                 } label: {
                     Label("Split Right", systemImage: "rectangle.split.2x1")
                 }
                 .limpidShortcut(.splitRight, in: state.settingsStore)
-                .disabled(state.session.activeTab == nil)
+                .disabled(paneTab == nil)
                 Button {
-                    PaneActions.split(
-                        state.session,
-                        direction: .vertical,
-                        registry: state.registry,
-                        minPaneSize: state.settingsStore.settings.terminal.paneMinimumSize,
-                        toastCenter: state.toastCenter
-                    )
+                    split(.vertical)
                 } label: {
                     Label("Split Down", systemImage: "rectangle.split.1x2")
                 }
                 .limpidShortcut(.splitDown, in: state.settingsStore)
-                .disabled(state.session.activeTab == nil)
+                .disabled(paneTab == nil)
                 Button {
-                    PaneActions.equalizeSplits(state.session)
+                    guard let paneTarget else { return }
+                    PaneActions.equalizeSplits(state.session, in: paneTarget.id)
                 } label: {
                     Label("Equalize Splits", systemImage: "rectangle.split.2x1.slash")
                 }
                 .limpidShortcut(.equalizeSplits, in: state.settingsStore)
-                .disabled(state.session.activeTab?.splitTree.isSplit != true)
+                .disabled(paneTab?.splitTree.isSplit != true)
                 Button {
-                    PaneActions.toggleZoom(state.session)
+                    guard let paneTarget else { return }
+                    PaneActions.toggleZoom(state.session, in: paneTarget.id)
                 } label: {
-                    if state.session.activeTab?.zoomedLeafID != nil {
+                    if paneTab?.zoomedLeafID != nil {
                         Label("Unzoom Pane", systemImage: "arrow.down.right.and.arrow.up.left")
                     } else {
                         Label("Zoom Pane", systemImage: "arrow.up.left.and.arrow.down.right")
@@ -59,11 +91,11 @@ struct PaneCommands: Commands {
                 // ⌘⇧↩ is the conventional "maximize pane" chord.
                 // ⌘⇧Z would steal the system Redo shortcut.
                 .limpidShortcut(.toggleSplitZoom, in: state.settingsStore)
-                .disabled(state.session.activeTab?.splitTree.isSplit != true)
+                .disabled(paneTab?.splitTree.isSplit != true)
 
                 // ⌥⌘+arrow focuses the neighbor. Moving a pane to another
-                // slot now uses ⌥⌘ + drag instead of a directional shortcut —
-                // see `MoveDropDelegate` for the drop side.
+                // slot is ⌥⌘ + drag, not a directional shortcut —
+                // see `PaneSwapDropOverlay` for the drop side.
                 Divider()
                 paneDirectionButton(.focusPaneLeft, .left, perform: focus)
                 paneDirectionButton(.focusPaneRight, .right, perform: focus)
@@ -72,27 +104,27 @@ struct PaneCommands: Commands {
 
                 Divider()
                 Button {
-                    NavActions.cycleTab(state.session, forward: true)
+                    cycleTab(forward: true)
                 } label: {
                     Label("Next Tab", systemImage: "arrow.right")
                 }
                 .limpidShortcut(.nextTab, in: state.settingsStore)
-                .disabled(state.session.tabs(in: state.session.activeContainerID).count <= 1)
+                .disabled(!canCycleTab)
                 Button {
-                    NavActions.cycleTab(state.session, forward: false)
+                    cycleTab(forward: false)
                 } label: {
                     Label("Previous Tab", systemImage: "arrow.left")
                 }
                 .limpidShortcut(.previousTab, in: state.settingsStore)
-                .disabled(state.session.tabs(in: state.session.activeContainerID).count <= 1)
+                .disabled(!canCycleTab)
             }
         }
     }
 
-    /// One Focus/Move menu item for `direction`. Title + icon come from the
+    /// One Focus menu item for `direction`. Title + icon come from the
     /// shortcut action; the item disables itself when no neighbor is
     /// reachable that way (single source of truth: `PaneActions.adjacentLeaf`),
-    /// so an edge pane greys out the directions it can't reach rather than
+    /// so an edge pane grays out the directions it can't reach rather than
     /// offering a silent no-op.
     private func paneDirectionButton(
         _ action: LimpidShortcutAction,
@@ -109,14 +141,25 @@ struct PaneCommands: Commands {
             }
         }
         .limpidShortcut(action, in: state.settingsStore)
-        .disabled(PaneActions.adjacentLeaf(
-            state.session,
-            registry: state.registry,
-            direction: direction
-        ) == nil)
+        .disabled(paneTarget.flatMap { window in
+            PaneActions.adjacentLeaf(state.session, registry: state.registry, direction: direction, in: window.id)
+        } == nil)
     }
 
     private func focus(_ direction: SpatialDirection) {
-        PaneActions.focusPane(state.session, registry: state.registry, direction: direction)
+        guard let paneTarget else { return }
+        PaneActions.focusPane(state.session, registry: state.registry, direction: direction, in: paneTarget.id)
+    }
+
+    private func split(_ direction: SplitDirection) {
+        guard let paneTarget else { return }
+        PaneActions.split(
+            state.session,
+            direction: direction,
+            registry: state.registry,
+            minPaneSize: state.settingsStore.settings.terminal.paneMinimumSize,
+            toastCenter: state.toastCenter,
+            in: paneTarget.id
+        )
     }
 }

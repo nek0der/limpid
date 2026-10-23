@@ -145,6 +145,8 @@ name = "limpid-agent-core"
 version = "0.1.0"
 dependencies = [
  "limpid-agent-model",
+ "limpid-provider-claude",
+ "limpid-provider-codex",
  "serde",
  "serde_json",
  "uuid",
@@ -161,6 +163,7 @@ dependencies = [
  "limpid-provider-codex",
  "serde",
  "serde_json",
+ "tempfile",
  "uuid",
 ]
 
@@ -190,6 +193,7 @@ version = "0.1.0"
 dependencies = [
  "limpid-agent-model",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -198,6 +202,8 @@ version = "0.1.0"
 dependencies = [
  "limpid-agent-model",
  "serde_json",
+ "tempfile",
+ "uuid",
 ]
 
 [[package]]
@@ -211,6 +217,7 @@ dependencies = [
  "limpid-agent-protocol",
  "serde",
  "serde_json",
+ "tempfile",
  "uuid",
 ]
 

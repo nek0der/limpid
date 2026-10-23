@@ -42,18 +42,6 @@ struct PRInfo: Equatable {
     var checks: PRChecks?
 }
 
-/// Subset of forge states we render distinctly. Draft-vs-open is a
-/// boolean flag on the parent rather than its own case because both
-/// forges model it that way.
-///
-/// GitLab's `locked` maps to `.open`: it means the discussion is
-/// locked, not that the request is finished.
-enum PRState {
-    case open
-    case closed
-    case merged
-}
-
 /// CI status attached to a pull request.
 ///
 /// The two forges disagree on shape. GitHub returns a *list* of checks
@@ -118,25 +106,5 @@ enum PRChecksConclusion {
             // canceling / manual / scheduled.
             self = .pending
         }
-    }
-}
-
-extension PRInfo {
-    /// True when the request is in a state worth flagging on the row
-    /// even by someone who has asked for fewer marks.
-    ///
-    /// The sidebar marks every request by default. This predicate is
-    /// what remains visible once `showPRStatusOnlyWhenAttention` is
-    /// on, for a user who would rather the column stayed sparse. The
-    /// hover card is unaffected either way — it reports every
-    /// request.
-    ///
-    /// A failing check is the only such state today. Review state
-    /// belongs here too but is not fetched yet. The Settings footer
-    /// names the members of this set outright, in both languages, so
-    /// widening it means editing `Localizable.xcstrings` in the same
-    /// change.
-    var needsAttention: Bool {
-        checks?.conclusion == .failure
     }
 }

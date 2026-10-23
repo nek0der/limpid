@@ -12,7 +12,8 @@
           "lastPrompt": "<prompt for session-basic>",
           "firstPrompt": "<prompt for session-basic>",
           "conversationId": "00000000-0000-4000-8000-000000000001",
-          "sessionStartedAt": "2026-09-14T12:00:00Z"
+          "sessionStartedAt": "2026-09-14T12:00:00Z",
+          "hasPrompt": true
         },
         "panes": [
           "11111111-1111-4111-8111-111111111111"
@@ -20,7 +21,13 @@
         "attachment": "attached",
         "eventToken": "4",
         "episodeToken": "4",
-        "pid": "4242"
+        "pid": "4242",
+        "sessionId": "00000000-0000-4000-8000-000000000001",
+        "conversation": {
+          "provider": "claude",
+          "conversationId": "00000000-0000-4000-8000-000000000001",
+          "isFallback": false
+        }
       },
       {
         "id": "claude:DDDDDDDD-4444-4444-8444-DDDDDDDDDDD4",
@@ -35,7 +42,8 @@
           "lastPrompt": "<prompt for session-basic>",
           "firstPrompt": "<prompt for session-basic>",
           "conversationId": "00000000-0000-4000-8000-000000000001",
-          "sessionStartedAt": "2026-09-14T12:05:00Z"
+          "sessionStartedAt": "2026-09-14T12:05:00Z",
+          "hasPrompt": true
         },
         "panes": [
           "11111111-1111-4111-8111-111111111111"
@@ -43,7 +51,13 @@
         "attachment": "attached",
         "eventToken": "3",
         "episodeToken": "2",
-        "pid": "4343"
+        "pid": "4343",
+        "sessionId": "00000000-0000-4000-8000-000000000001",
+        "conversation": {
+          "provider": "claude",
+          "conversationId": "00000000-0000-4000-8000-000000000001",
+          "isFallback": false
+        }
       }
     ],
     "badges": {
@@ -54,7 +68,8 @@
           "lastPrompt": "<prompt for session-basic>",
           "firstPrompt": "<prompt for session-basic>",
           "conversationId": "00000000-0000-4000-8000-000000000001",
-          "sessionStartedAt": "2026-09-14T12:00:00Z"
+          "sessionStartedAt": "2026-09-14T12:00:00Z",
+          "hasPrompt": true
         }
       }
     },
@@ -70,14 +85,14 @@
       "9f9f9f9f-0000-4000-8000-9f9f9f9f9f9f": "<prompt for session-basic>"
     },
     "marksToKeep": {
-      "viewed": {},
-      "dismissed": {}
+      "viewed": {}
     },
     "resumeCandidates": {
       "11111111-1111-4111-8111-111111111111": [
         "claude"
       ]
-    }
+    },
+    "conversations": []
   },
   "commands": [
     {

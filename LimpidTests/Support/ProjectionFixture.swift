@@ -6,27 +6,71 @@
 // answer.
 
 import Foundation
+import Synchronization
 @testable import Limpid
 
 @MainActor
 enum ProjectionFixture {
-    /// An adapter reading one provider's records out of `state` and its resume
-    /// hints out of `sessions`, with liveness answered by `processStatus`.
+    /// Makes an adapter reading one provider's records out of `state`, its resume
+    /// hints out of `sessions`, and its cwd moves out of `cwdEvents`, with
+    /// liveness answered by `processStatus`. `writesFiles: false` reads as
+    /// demo mode does, writing nothing. `turnCollector`, `turnDeletionsURL`,
+    /// `declinedWaits`, and `engine` default to what the adapter itself
+    /// defaults to, so a suite names only the one it observes or makes fail.
     static func adapter(
         provider: String = "codex",
         state: URL,
         sessions: URL,
+        cwdEvents: URL? = nil,
         resumeIntents: AgentResumeIntentStore? = nil,
-        processStatus: @escaping (String?) -> AgentProcessStatus = AgentProcessStatus.inspect
+        writesFiles: Bool = true,
+        forgottenHintsURL: URL? = nil,
+        turnDeletionsURL: URL? = nil,
+        processStatus: @escaping (String?) -> AgentProcessStatus = AgentProcessStatus.inspect,
+        turnCollector: TurnGarbageCollector = TurnGarbageCollector(),
+        declinedWaits: DeclinedWaitCloser = DeclinedWaitCloser(),
+        engine: any ProjectionPassing = LimpidProjectionBridge.Engine()
     ) -> AgentProjectionAdapter {
         AgentProjectionAdapter(
-            directories: [provider: AgentDirectories(state: state, sessions: sessions, cwdEvents: nil)],
+            directories: [provider: AgentDirectories(state: state, sessions: sessions, cwdEvents: cwdEvents)],
             descriptors: AgentProviderRegistry.descriptors.filter { $0.key == provider },
             resumeIntents: resumeIntents
                 ?? AgentResumeIntentStore(
                     directory: state.appendingPathComponent("resume-intents", isDirectory: true)
                 ),
-            processStatus: processStatus
+            writesFiles: writesFiles,
+            forgottenHintsURL: forgottenHintsURL,
+            turnDeletionsURL: turnDeletionsURL,
+            processStatus: processStatus,
+            turnCollector: turnCollector,
+            declinedWaits: declinedWaits,
+            engine: engine
         )
+    }
+}
+
+/// The real engine, with its passes made to fail on demand: what the adapter
+/// does with a pass the rules could not answer.
+final class FailingEngine: ProjectionPassing {
+    private let engine = LimpidProjectionBridge.Engine()
+    private let isFailing = Mutex(false)
+
+    func fails(_ isFailing: Bool) {
+        self.isFailing.withLock { $0 = isFailing }
+    }
+
+    func pass(input: Data, now: Data) throws -> LimpidProjectionPass {
+        if isFailing.withLock({ $0 }) {
+            throw LimpidProjectionError.rust(-1)
+        }
+        return try engine.pass(input: input, now: now)
+    }
+
+    func commit(_ proposal: UInt64) throws {
+        try engine.commit(proposal)
+    }
+
+    func turnsTaken(change: Data, now: Data) throws -> Int {
+        try engine.turnsTaken(change: change, now: now)
     }
 }

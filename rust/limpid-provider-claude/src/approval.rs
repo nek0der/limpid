@@ -91,8 +91,8 @@ pub(crate) fn approval_request(bytes: &[u8]) -> Result<Option<ApprovalRequest>, 
     } else {
         Vec::new()
     };
-    // The Waiting row shows the summary, so a question shows its first prompt
-    // instead of a command that does not exist.
+    // The attention item and the banner show the summary, so a question shows
+    // its first prompt instead of a command that does not exist.
     let summary = questions
         .first()
         .map(|question| question.prompt.clone())
@@ -203,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn output_bytes_match_the_swift_adapter() {
+    fn decisions_render_the_hook_output_the_agent_reads() {
         let allow = approval_output(&ApprovalDecision::AllowOnce, &Value::Null)
             .stdout
             .expect("bytes");

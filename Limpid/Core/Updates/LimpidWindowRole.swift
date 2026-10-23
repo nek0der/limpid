@@ -25,6 +25,7 @@ enum LimpidWindowRole {
 
     private nonisolated(unsafe) static let mainKey = makeKey()
     private nonisolated(unsafe) static let settingsKey = makeKey()
+    fileprivate nonisolated(unsafe) static let updateControlKey = makeKey()
 
     private static func makeKey() -> UnsafeRawPointer {
         let p = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
@@ -42,7 +43,7 @@ extension NSWindow {
         (objc_getAssociatedObject(self, role.associatedKey) as? NSNumber)?.boolValue == true
     }
 
-    /// `true` when the window hosts a Limpid main `ContentView`, not the
+    /// `true` when the window is a Limpid main window, not the
     /// Settings scene or a Sparkle alert window.
     var isLimpidMainWindow: Bool {
         isLimpid(.main)
@@ -52,5 +53,23 @@ extension NSWindow {
     /// an inline `UpdatePopover` for the Update affordance on `GeneralPane`.
     var isLimpidSettingsWindow: Bool {
         isLimpid(.settings)
+    }
+}
+
+extension NSWindow {
+    /// Whether the window's update control is out of sight because its
+    /// rails are hidden. The updater then shows Sparkle's own dialog
+    /// rather than an inline popover no one could open. Set by the
+    /// supervision window's `UpdateControlVisibilityMarker`.
+    var hidesUpdateControl: Bool {
+        get { (objc_getAssociatedObject(self, LimpidWindowRole.updateControlKey) as? NSNumber)?.boolValue == true }
+        set {
+            objc_setAssociatedObject(
+                self,
+                LimpidWindowRole.updateControlKey,
+                NSNumber(value: newValue),
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
     }
 }

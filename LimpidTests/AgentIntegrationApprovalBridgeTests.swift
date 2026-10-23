@@ -40,6 +40,38 @@ struct AgentIntegrationApprovalBridgeTests {
         #expect(remainingState["status"] as? String == "pending")
     }
 
+    /// The broker refuses a field it does not know, so the run that asked
+    /// has to travel under a name it reads, and come back out of it.
+    @Test func theAskingAgentRun_reachesTheControllersRequest() throws {
+        let service = try RustApprovalService(maximumRecords: 8)
+        let runID = UUID()
+        let requestID = UUID()
+        let agentRunID = UUID()
+        let requester = try service.requesterSession(runID: runID)
+        let controller = try service.controllerSession()
+        let epoch = try completeHello(on: requester)
+        _ = try completeHello(on: controller)
+        let submitted = try AgentIntegrationApprovalWire.object(from: requester.exchange(
+            AgentIntegrationApprovalWire.submit(
+                epoch: epoch,
+                submission: AgentIntegrationApprovalSubmission(
+                    runID: runID, requestID: requestID, provider: "claude", sessionID: "session",
+                    operationID: nil, toolName: "Bash", summary: nil, input: ["command": "ls"],
+                    questions: nil, timeoutMilliseconds: 60000, agentRunID: agentRunID
+                )
+            )
+        ))
+        #expect(submitted["type"] as? String == "approval.result")
+
+        let detail = try AgentIntegrationApprovalWire.object(from: controller.exchange(
+            AgentIntegrationApprovalWire.get(epoch: epoch, runID: runID, requestID: requestID)
+        ))
+        let request = try ApprovalControllerConnection.presentation(
+            from: detail, epoch: epoch, runID: runID, requestID: requestID
+        )
+        #expect(request.agentRunID == agentRunID)
+    }
+
     @Test func requesterAndControllerShareRustBroker() throws {
         let service = try RustApprovalService(maximumRecords: 8)
         let runID = UUID()
@@ -189,6 +221,14 @@ struct AgentIntegrationApprovalBridgeTests {
         let denyDecision = try #require(denyBody["decision"] as? [String: Any])
         #expect(denyDecision["decision"] as? String == "deny")
         #expect(denyDecision["answers"] == nil)
+    }
+
+    @Test func fitsDecisionLimit_countsEncodedBytesNotCharacters() {
+        #expect(ApprovalResolution.answer(["Which color?": "Red"]).fitsDecisionLimit)
+        #expect(ApprovalResolution.answer(["q": String(repeating: "a", count: 8000)]).fitsDecisionLimit)
+        // 3,000 characters, but 9,000 UTF-8 bytes on the wire.
+        #expect(!ApprovalResolution.answer(["q": String(repeating: "あ", count: 3000)]).fitsDecisionLimit)
+        #expect(ApprovalResolution.delegate.fitsDecisionLimit)
     }
 
     /// The card refuses to send an answer `fitsDecisionLimit` rejects, so its

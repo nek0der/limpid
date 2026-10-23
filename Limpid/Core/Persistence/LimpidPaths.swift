@@ -15,14 +15,24 @@ enum LimpidPaths {
     }
 
     /// `true` when the running binary is the Xcode test host. Used to
-    /// route data directory lookups into a sandboxed name so a test
-    /// that forgets to inject `init(directory:)` doesn't reach into
-    /// the user's real Application Support folder. Detected via the
-    /// XCTest framework class — `Bundle.main.bundleIdentifier` is
-    /// the host app's id during tests, not the test bundle's.
+    /// move the data directory out of `~/Library` and to arm
+    /// `TestWriteGuard`, so a test that forgets to inject
+    /// `init(directory:)` cannot reach the user's real data.
+    /// `Bundle.main.bundleIdentifier` is the host app's id during tests,
+    /// not the test bundle's, so it cannot tell.
     static var isRunningInTests: Bool {
-        NSClassFromString("XCTestCase") != nil || NSClassFromString("XCTest") != nil
+        isTestHostByEnvironment || NSClassFromString("XCTestCase") != nil || NSClassFromString("XCTest") != nil
     }
+
+    /// The variables Xcode sets on the test host before it starts. The
+    /// XCTest classes are loaded only once the test bundle is injected, so
+    /// the host app's launch could ask before they exist and save into the
+    /// real folder; the environment is there from the first instruction.
+    static let isTestHostByEnvironment: Bool = {
+        let environment = ProcessInfo.processInfo.environment
+        return ["XCTestConfigurationFilePath", "XCTestBundlePath", "XCTestSessionIdentifier"]
+            .contains { environment[$0] != nil }
+    }()
 
     /// `true` when the running binary is a Debug build (suffix `.dev`).
     /// Drives both the data directory name and Sparkle's auto-check
@@ -37,19 +47,22 @@ enum LimpidPaths {
     /// (`notifications.json`), scrollback dumps, review drafts
     /// (`reviews/`), and `settings.json`
     /// live. Different per build so a Release crash can't corrupt the
-    /// in-progress Debug session and vice versa; tests route into a
-    /// separate sandbox so a missed `init(directory:)` injection can't
-    /// trash production data.
+    /// in-progress Debug session and vice versa.
     static var applicationSupportDirectoryName: String {
-        if isRunningInTests {
-            return "Limpid Tests Stray"
-        }
-        return isDevBuild ? "Limpid Dev" : "Limpid"
+        isDevBuild ? "Limpid Dev" : "Limpid"
     }
 
     /// Absolute URL of the per-build Application Support directory.
     /// Created on demand by the caller (`SecureFileWrite.ensureUserOnlyDirectory`).
+    /// Under the test host it is a folder of this process in the temporary
+    /// directory instead: the host app runs its whole launch during a test
+    /// run and saves its session, and `TestWriteGuard` refuses a
+    /// `SecureFileWrite` change inside `~/Library`. A fresh folder per run
+    /// also keeps one run's saved session from being restored into the next.
     static func applicationSupportDirectory() -> URL {
+        if isRunningInTests {
+            return testRunDirectory
+        }
         let fm = FileManager.default
         let base = (try? fm.url(
             for: .applicationSupportDirectory,
@@ -59,4 +72,11 @@ enum LimpidPaths {
         )) ?? URL(fileURLWithPath: NSHomeDirectory())
         return base.appendingPathComponent(applicationSupportDirectoryName, isDirectory: true)
     }
+
+    /// Where the test host keeps what it would keep in Application Support.
+    /// Fixed for the process so every store and the host app agree on it.
+    /// Named by a UUID rather than the process id, which the system reuses,
+    /// so no run finds an earlier run's session.
+    private static let testRunDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("Limpid Tests \(UUID().uuidString)", isDirectory: true)
 }

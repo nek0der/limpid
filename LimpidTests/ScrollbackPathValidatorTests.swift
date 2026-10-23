@@ -1,5 +1,5 @@
 // ScrollbackPathValidatorTests.swift
-// Limpid — `WindowSession.validatedScrollbackPath(_:)` is the gate
+// Limpid — `ScrollbackFiles.validatedPath(_:)` is the gate
 // between a freshly-restored `state.json` and libghostty's scrollback
 // replay path. A tampered file could otherwise point at arbitrary
 // targets (`~/.ssh/id_rsa`, `/etc/passwd`) and libghostty would
@@ -8,84 +8,86 @@
 //
 // The validator only lets a path through when both:
 //   - the extension is `.vt` (the format ghostty itself emits), and
-//   - the path resolves under `scrollbackDir()`, the
-//     Application-Support sandbox Limpid owns.
+//   - the path resolves under the scrollback folder the session was
+//     handed (`WorkspaceSession.scrollbackFiles`).
 //
 // Anything else returns nil. The tests below pin that contract
-// against the obvious exfiltration shapes.
+// against the obvious exfiltration shapes, each in a folder of its own.
 
 import Foundation
 import Testing
 @testable import Limpid
 
-@MainActor
 struct ScrollbackPathValidatorTests {
-    /// Build a `.vt` file path that lives inside the real
-    /// scrollback sandbox — the only shape the validator should
-    /// accept.
-    private func sandboxedPath(name: String = "pane.vt") -> String {
-        WindowSession.scrollbackDir()
-            .appendingPathComponent(name)
-            .path
+    /// A `.vt` file path in the folder: the only shape the validator
+    /// should accept.
+    fileprivate static func sandboxedPath(_ files: ScrollbackFiles, name: String = "pane.vt") -> String {
+        files.directory.appendingPathComponent(name).path
+    }
+
+    /// Runs `body` with a scrollback folder of its own, which exists,
+    /// spelled as the validator hands a path on (`/var/…`, links followed).
+    private func withFiles(_ body: (ScrollbackFiles) throws -> Void) throws {
+        try withTempDir { dir in
+            let directory = dir.appendingPathComponent("scrollback", isDirectory: true).resolvingSymlinksInPath()
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try body(ScrollbackFiles(directory: directory))
+        }
     }
 
     @Test("a `.vt` file inside the scrollback sandbox passes through unchanged")
-    func sandboxedVtFile_accepted() {
-        let path = sandboxedPath()
-        #expect(WindowSession.validatedScrollbackPath(path) == path)
-    }
-
-    @Test("a non-`.vt` extension is rejected even inside the sandbox")
-    func sandboxedNonVtFile_rejected() {
-        let badExt = WindowSession.scrollbackDir()
-            .appendingPathComponent("pane.txt")
-            .path
-        #expect(WindowSession.validatedScrollbackPath(badExt) == nil)
-    }
-
-    @Test("an absolute path outside the sandbox is rejected")
-    func absoluteOutsidePath_rejected() {
-        #expect(WindowSession.validatedScrollbackPath("/etc/passwd") == nil)
-        #expect(
-            WindowSession.validatedScrollbackPath(
-                ("~/.ssh/id_rsa" as NSString).expandingTildeInPath
-            ) == nil
-        )
-    }
-
-    @Test("a `..` traversal back to a sibling directory is rejected")
-    func parentTraversal_rejected() {
-        // Build `<scrollbackDir>/../leaked.vt` so the literal path
-        // starts with the sandbox prefix but `standardizedFileURL`
-        // pulls it back out. The validator must follow that
-        // standardization rather than relying on the unresolved
-        // string.
-        let escaping = WindowSession.scrollbackDir()
-            .appendingPathComponent("..")
-            .appendingPathComponent("leaked.vt")
-            .path
-        #expect(WindowSession.validatedScrollbackPath(escaping) == nil)
-    }
-
-    @Test("a prefix-only collision is rejected (no trailing slash boundary)")
-    func prefixCollision_rejected() {
-        // `<scrollback>foo/pane.vt` shares the sandbox-directory
-        // prefix character-for-character but lives in a sibling
-        // directory. The validator must include the trailing `/` in
-        // its comparison so this case doesn't pass.
-        var sandboxParent = WindowSession.scrollbackDir().path
-        // Strip trailing slash if present so we can append the
-        // adjacent-directory probe directly.
-        while sandboxParent.hasSuffix("/") {
-            sandboxParent.removeLast()
+    func sandboxedVtFile_accepted() throws {
+        try withFiles { files in
+            let path = Self.sandboxedPath(files)
+            #expect(files.validatedPath(path) == path)
         }
-        let adjacent = sandboxParent + "-evil/pane.vt"
-        #expect(WindowSession.validatedScrollbackPath(adjacent) == nil)
     }
 
-    @Test("a malformed path string is rejected without crashing")
-    func emptyString_rejected() {
-        #expect(WindowSession.validatedScrollbackPath("") == nil)
+    /// A path shape the validator turns away, built in the given folder.
+    enum Rejected: CaseIterable, Sendable {
+        /// Not `.vt`, though inside the sandbox.
+        case otherExtension
+        /// An absolute path outside the sandbox.
+        case outside
+        /// `<scrollback>/../leaked.vt`: the literal path starts with the
+        /// sandbox prefix but `standardizedFileURL` pulls it back out, so
+        /// the validator must follow that standardization rather than
+        /// relying on the unresolved string.
+        case parentTraversal
+        /// `<scrollback>-evil/pane.vt` shares the sandbox's prefix
+        /// character for character but lives in a sibling folder, so the
+        /// comparison must include the trailing `/`.
+        case prefixCollision
+        /// A malformed path string, rejected without crashing.
+        case empty
+
+        func paths(in files: ScrollbackFiles) -> [String] {
+            switch self {
+            case .otherExtension:
+                return [ScrollbackPathValidatorTests.sandboxedPath(files, name: "pane.txt")]
+            case .outside:
+                return ["/etc/passwd", ("~/.ssh/id_rsa" as NSString).expandingTildeInPath]
+            case .parentTraversal:
+                return [files.directory.appendingPathComponent("..").appendingPathComponent("leaked.vt").path]
+            case .prefixCollision:
+                var sandbox = files.directory.path
+                while sandbox.hasSuffix("/") {
+                    sandbox.removeLast()
+                }
+                return [sandbox + "-evil/pane.vt"]
+            case .empty:
+                return [""]
+            }
+        }
+    }
+
+    @Test(arguments: Rejected.allCases)
+    func aPathShapeOutsideTheContract_isRejected(_ shape: Rejected) throws {
+        try withFiles { files in
+            for path in shape.paths(in: files) {
+                #expect(files.validatedPath(path) == nil, "\(path)")
+            }
+        }
     }
 
     /// A `.vt` symlink that lives lexically inside the sandbox but
@@ -97,22 +99,14 @@ struct ScrollbackPathValidatorTests {
     /// would survive every other shape this suite already pins.
     @Test("a `.vt` symlink whose target is outside the sandbox is rejected")
     func symlinkOutsideSandbox_rejected() throws {
-        let fm = FileManager.default
-        try fm.createDirectory(
-            at: WindowSession.scrollbackDir(),
-            withIntermediateDirectories: true
-        )
-        let targetURL = fm.temporaryDirectory
-            .appendingPathComponent("limpid-symlink-victim-\(UUID().uuidString)")
-        let linkURL = WindowSession.scrollbackDir()
-            .appendingPathComponent("leak-\(UUID().uuidString).vt")
-        try Data("secret".utf8).write(to: targetURL)
-        defer {
-            try? fm.removeItem(at: linkURL)
-            try? fm.removeItem(at: targetURL)
-        }
-        try fm.createSymbolicLink(at: linkURL, withDestinationURL: targetURL)
+        try withFiles { files in
+            let fm = FileManager.default
+            let targetURL = files.directory.deletingLastPathComponent().appendingPathComponent("victim")
+            let linkURL = files.directory.appendingPathComponent("leak.vt")
+            try Data("secret".utf8).write(to: targetURL)
+            try fm.createSymbolicLink(at: linkURL, withDestinationURL: targetURL)
 
-        #expect(WindowSession.validatedScrollbackPath(linkURL.path) == nil)
+            #expect(files.validatedPath(linkURL.path) == nil)
+        }
     }
 }

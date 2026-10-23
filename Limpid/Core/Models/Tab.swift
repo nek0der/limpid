@@ -1,8 +1,7 @@
 // Tab.swift
 // Limpid — a tab is one work session. Every tab belongs to exactly one
-// container (Loose / Group / Project-direct / Worktree). The container
-// drives where the tab appears in the container column sidebar and which list it
-// shows up in inside tab column.
+// container (the scratch tabs, a project's own tabs, or a worktree's). The
+// container decides where the tab shows up in the sidebar.
 
 import Foundation
 
@@ -38,23 +37,40 @@ struct Tab: Codable, Equatable, Identifiable {
     /// the auto title in the UI.
     var titleOverride: String?
 
-    /// cwd the tab was opened in.
+    /// Put before the title: the name of the group a scratch tab was
+    /// moved from, so "prod · ssh" still says where it came from. Survives
+    /// title changes from the terminal; a rename replaces it (`rename`).
+    var namePrefix: String?
+
+    /// The tab's color as an index into the project palette, drawn as a
+    /// mark at its leading edge: the color of the group it was moved from.
+    var paletteIndex: Int?
+
+    /// Where the tab's new panes start (`newPaneWorkingDirectory`): the
+    /// default of the group it was moved from. `nil` for any other tab,
+    /// whose new panes start where the tab did.
+    var cwdMode: WorkingDirectoryMode?
+    /// The directory `cwdMode` `.fixed` names.
+    var cwdPath: URL?
+
+    /// The folder the tab was opened in, where its new panes start unless
+    /// `cwdMode` says otherwise (`newPaneWorkingDirectory`). `nil` leaves
+    /// the start folder to libghostty (the home folder by default).
     var workingDirectory: String?
 
     /// Latest pwd reported by libghostty's PWD action.
     var pwd: String?
 
-    /// Pane layout inside the tab.
     var splitTree: SplitTree
 
-    /// When non-nil, the terminal column pane area renders only this leaf at full size
+    /// When non-nil, the session area's pane area renders only this leaf at full size
     /// instead of `splitTree`. tmux Prefix+z equivalent. Persisted so a
     /// zoomed tab survives quit/restore. Cleared automatically when the
     /// referenced pane goes away (split, close, etc.).
     var zoomedLeafID: UUID?
 
     /// Per-pane persisted state (unread count). Transient bits (bell
-    /// flash, last child-exit code) live on `WindowSession.paneTransients`
+    /// flash, last child-exit code) live on `WorkspaceSession.paneTransients`
     /// so flipping them doesn't reassign `tabs[idx]` and trip autosave.
     var paneStates: [UUID: PaneState] = [:]
 
@@ -70,13 +86,35 @@ struct Tab: Codable, Equatable, Identifiable {
     /// surface registry caches `SurfaceView` instances per paneID, so
     /// `createSurface` (and therefore the command send) only fires
     /// once per process launch — re-mounts return the existing view.
-    /// Used by demo mode to stage a reproducible hero screenshot; a
-    /// future "open new tab running `claude`" feature plugs into the
-    /// same slot.
+    /// Used by demo mode to stage a reproducible hero screenshot, and by
+    /// the pane strip's "+" to open a tab running `claude` or `codex`.
+    /// Consumed when the pane's surface is made, so it runs once.
     var initialCommands: [UUID: String] = [:]
 
-    /// Where this tab lives. Drives container column selection routing and tab column list
-    /// membership.
+    /// Per-pane path of the 0600 file holding a first instruction an
+    /// earlier build's new session staged (`InitialPromptFile`), handed to
+    /// the pane's shell as `LIMPID_INITIAL_PROMPT_FILE` with its staged
+    /// command. The agent's shim takes the file on its first launch;
+    /// consumed with the command. This build writes no new one: it keeps,
+    /// moves, and saves only what a restored tab already had, for one
+    /// release (`InitialPromptFile` says when it goes).
+    var initialPromptFiles: [UUID: String] = [:]
+
+    /// Per-pane agent executable the new worktree sheet found, put in the
+    /// environment of the pane's shell as the agent's `LIMPID_FOUND_*`
+    /// with its staged command (`AgentCatalogEntry.foundExecutableVariable`),
+    /// and removed from here with the command once the pane is made. The
+    /// shell keeps the variable while the pane is open, and the agent's
+    /// shim takes it only when the shell's `PATH` has no agent; the shim
+    /// takes it out of what it hands on, so the agent and a tmux server
+    /// it starts never carry it. Never saved, unlike the command: a pane
+    /// restored at the next launch searches afresh rather than holding a
+    /// path read in an earlier one, which an update or uninstall may have
+    /// moved.
+    var initialAgentExecutables: [UUID: AgentInstallation] = [:]
+
+    /// Where this tab lives. Drives which sidebar row selects it and which
+    /// container's pane strip lists it.
     var container: ContainerID
 
     /// Per-pane resume hints, by provider. Keyed by split-tree leaf UUID
@@ -93,7 +131,7 @@ struct Tab: Codable, Equatable, Identifiable {
 
     /// Per-pane lifecycle badges, by provider, on the same terms. Mirrors the
     /// state records the selected receiver writes on every subscribed event;
-    /// `TabRow` / `ContainerRow` aggregate them for the status icons.
+    /// the tab and sidebar rows aggregate them for the status icons.
     var agentBadges: [AgentKind: [UUID: AgentBadge]] = [:]
 
     /// Which providers may auto-resume in each pane, as the projection decided
@@ -103,6 +141,13 @@ struct Tab: Codable, Equatable, Identifiable {
     /// mounts, and the answer depends on the hints on disk, not on the tab.
     var agentResumeCandidates: [UUID: Set<AgentKind>] = [:]
 
+    /// The agent each pane runs in front, read from its terminal's job at
+    /// a command's start and end (`PaneAgentInFrontFollower`), or staged
+    /// by "+" as the tab opened: the badge a pane wears before its run has
+    /// a record. Not persisted: a pane restored at launch starts a fresh
+    /// shell, and what it runs is read again.
+    var agentsInFront: [UUID: PaneAgentInFront] = [:]
+
     /// Which tmux session each pane was showing when Limpid last quit,
     /// read off the pane's tty rather than reported by the shell. A pane
     /// that was at its own prompt has no entry, so restoring it brings
@@ -111,6 +156,24 @@ struct Tab: Codable, Equatable, Identifiable {
     /// default = `[:]` so an existing `state.json` decodes without a
     /// snapshot version bump.
     var tmuxBindings: [UUID: TmuxBinding] = [:]
+
+    /// The first agent conversation that ran in the tab, by the name it
+    /// last had while it ran (`ConversationName`). What names the tab's
+    /// session row: unlike `title`, which the agent, the shell, and
+    /// OSC 2 keep changing, it stays when the agent leaves, so a row keeps
+    /// the name it is found by. It is the person's content (often their
+    /// first prompt) and is kept until the tab closes. Optional because a
+    /// tab no agent has named yet has none, and a `state.json` from before
+    /// it decodes without it. A build from before it ignores the key, and
+    /// if it saves the session, the name is gone; the next pass of a newer
+    /// build names the tab again only while its agent still runs.
+    var conversationName: ConversationName?
+
+    /// Keys a newer build wrote on the tab that this one does not know,
+    /// written back as they were (`LimpidSettings.unknownFields` has the
+    /// pattern), so a round trip through this build keeps them. Empty for a
+    /// tab this build made.
+    var unknownFields: [String: LimpidJSONValue] = [:]
 
     init(
         id: UUID = UUID(),
@@ -145,12 +208,16 @@ struct Tab: Codable, Equatable, Identifiable {
     /// Written and read explicitly because the decoder accepts a shape this
     /// build no longer writes: the four per-provider fields an older file
     /// carries. Auto-synthesis would not know those names.
-    private enum CodingKeys: String, CodingKey {
-        case id, kind, title, titleOverride, workingDirectory, pwd, splitTree
-        case zoomedLeafID, paneStates, scrollbackPaths, initialCommands, container
-        case agentSessions, agentBadges, tmuxBindings
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case id, kind, title, titleOverride, namePrefix, paletteIndex, cwdMode, cwdPath, workingDirectory, pwd, splitTree
+        case zoomedLeafID, paneStates, scrollbackPaths, initialCommands, initialPromptFiles, container
+        case agentSessions, agentBadges, tmuxBindings, conversationName
         case claudeSessions, claudeAgentBadges, codexSessions, codexAgentBadges
     }
+
+    /// Every key the decoder reads, the older ones it no longer writes
+    /// among them, so those are dropped rather than carried as unknown.
+    private static let knownKeyStrings: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))
 
     /// Folds an older file's two fields into one map, dropping a provider
     /// that had nothing so an empty entry is never mistaken for a reading.
@@ -214,6 +281,12 @@ struct Tab: Codable, Equatable, Identifiable {
         self.kind = try c.decodeIfPresent(Kind.self, forKey: .kind) ?? .terminal
         self.title = try c.decode(String.self, forKey: .title)
         self.titleOverride = try c.decodeIfPresent(String.self, forKey: .titleOverride)
+        self.namePrefix = try c.decodeIfPresent(String.self, forKey: .namePrefix)
+        self.paletteIndex = try c.decodeIfPresent(Int.self, forKey: .paletteIndex)
+        // A mode a later build added reads as none: new panes then start
+        // where the tab did.
+        self.cwdMode = try? c.decodeIfPresent(WorkingDirectoryMode.self, forKey: .cwdMode)
+        self.cwdPath = try c.decodeIfPresent(URL.self, forKey: .cwdPath)
         self.workingDirectory = try c.decodeIfPresent(String.self, forKey: .workingDirectory)
         self.pwd = try c.decodeIfPresent(String.self, forKey: .pwd)
         self.splitTree = try c.decode(SplitTree.self, forKey: .splitTree)
@@ -221,6 +294,7 @@ struct Tab: Codable, Equatable, Identifiable {
         self.paneStates = try c.decodeIfPresent([UUID: PaneState].self, forKey: .paneStates) ?? [:]
         self.scrollbackPaths = try c.decodeIfPresent([UUID: String].self, forKey: .scrollbackPaths) ?? [:]
         self.initialCommands = try c.decodeIfPresent([UUID: String].self, forKey: .initialCommands) ?? [:]
+        self.initialPromptFiles = try c.decodeIfPresent([UUID: String].self, forKey: .initialPromptFiles) ?? [:]
         self.container = try c.decode(ContainerID.self, forKey: .container)
         // A file written before the two maps existed keeps one field per
         // provider. Both are read so an upgrade does not blank the badges and
@@ -239,26 +313,70 @@ struct Tab: Codable, Equatable, Identifiable {
             [UUID: TmuxBinding].self,
             forKey: .tmuxBindings
         ) ?? [:]
+        // A name of a shape this build cannot read (a provider a newer build
+        // knows) costs the name, not the tab: the row then reads as its
+        // branch until an agent names it again.
+        self.conversationName = (try? c.decodeIfPresent(ConversationName.self, forKey: .conversationName)) ?? nil
+        self.unknownFields = try CodableSidecar.decodeUnknownFields(from: decoder, knownKeys: Self.knownKeyStrings)
     }
 
-    /// Title actually rendered in the UI. Honors a manual override; falls
-    /// back to whatever libghostty last reported.
+    /// Title actually rendered in the UI: a manual override, else whatever
+    /// libghostty last reported, after the name prefix either way. A
+    /// name given after the move to the scratch tabs has no prefix, since
+    /// a rename drops it.
     var displayTitle: String {
-        if let override = titleOverride, !override.isEmpty {
-            return override
-        }
-        return title
+        guard let namePrefix, !namePrefix.isEmpty else { return name }
+        return "\(namePrefix) · \(name)"
     }
 
-    /// Only the current shape is written. An older build reading it finds no
-    /// badges or hints and rebuilds both from the records on its next pass,
-    /// which is what it does at every launch anyway.
+    /// The tab's own name, without the name prefix: a manual override, else
+    /// the terminal's title. What names a session row, which never carries
+    /// a group's name.
+    var name: String {
+        titleOverride.flatMap { $0.isEmpty ? nil : $0 } ?? title
+    }
+
+    /// Names the tab as the person typed it: the name prefix goes with the
+    /// old name. An empty name goes back to the terminal's title. A
+    /// submit that changes nothing never reaches here
+    /// (`InlineRenameField.submission`).
+    mutating func rename(_ name: String) {
+        titleOverride = name.isEmpty ? nil : name
+        namePrefix = nil
+    }
+
+    /// The directory a pane of this tab starts in: the tab's own
+    /// default when it has one (a scratch tab moved from a group keeps the
+    /// group's), else the directory the tab opened in. Also where its
+    /// panes start again after a relaunch: with "continue where you are",
+    /// that is the folder the tab was last in.
+    var newPaneWorkingDirectory: String? {
+        switch cwdMode {
+        case nil:
+            workingDirectory
+        case .home:
+            FileManager.default.homeDirectoryForCurrentUser.path
+        case .inheritPrevious:
+            pwd ?? workingDirectory
+        case .fixed:
+            cwdPath?.path ?? workingDirectory
+        }
+    }
+
+    /// Only the current shape is written, and the keys a newer build added.
+    /// An older build reading it finds no badges or hints and rebuilds both
+    /// from the records on its next pass, which is what it does at every
+    /// launch anyway.
     func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id)
         try c.encode(kind, forKey: .kind)
         try c.encode(title, forKey: .title)
         try c.encodeIfPresent(titleOverride, forKey: .titleOverride)
+        try c.encodeIfPresent(namePrefix, forKey: .namePrefix)
+        try c.encodeIfPresent(paletteIndex, forKey: .paletteIndex)
+        try c.encodeIfPresent(cwdMode, forKey: .cwdMode)
+        try c.encodeIfPresent(cwdPath, forKey: .cwdPath)
         try c.encodeIfPresent(workingDirectory, forKey: .workingDirectory)
         try c.encodeIfPresent(pwd, forKey: .pwd)
         try c.encode(splitTree, forKey: .splitTree)
@@ -266,10 +384,18 @@ struct Tab: Codable, Equatable, Identifiable {
         try c.encode(paneStates, forKey: .paneStates)
         try c.encode(scrollbackPaths, forKey: .scrollbackPaths)
         try c.encode(initialCommands, forKey: .initialCommands)
+        try c.encode(initialPromptFiles, forKey: .initialPromptFiles)
         try c.encode(container, forKey: .container)
         try c.encode(Self.encodedByProvider(agentSessions), forKey: .agentSessions)
         try c.encode(Self.encodedByProvider(agentBadges), forKey: .agentBadges)
         try c.encode(tmuxBindings, forKey: .tmuxBindings)
+        try c.encodeIfPresent(conversationName, forKey: .conversationName)
+        // A known key is written from its field alone, as
+        // `SessionSnapshot.encode(to:)` does at the root.
+        try CodableSidecar.encodeUnknownFields(
+            unknownFields.filter { !Self.knownKeyStrings.contains($0.key) },
+            to: encoder
+        )
     }
 
     /// Pane whose agent session started most recently — the "owner" of
@@ -312,25 +438,20 @@ struct Tab: Codable, Equatable, Identifiable {
 
 // MARK: - ContainerID
 
-/// Which container a Tab belongs to. The four cases map 1:1 to the
-/// rows the user can select in container column.
+/// Which container a Tab belongs to.
 ///
-/// - `.loose`    : the implicit "Loose Tabs" pseudo-container (top of
-///                 container column). Tabs that aren't filed under a Group or Project.
-/// - `.group`    : labelled bucket, no path, no git.
-/// - `.project`  : a Project's "direct" tabs — sit under the Project
-///                 header itself, not under any worktree (shown as the
-///                 "general" leaf in container column).
+/// - `.loose`    : the scratch tabs, in no project.
+/// - `.project`  : a Project's own tabs, in its root folder rather than
+///                 in any worktree.
 /// - `.worktree` : inside a specific worktree of a Project.
 ///
-/// Forward-compat: a future container kind (`.workspace`, …) added by
-/// a newer Limpid lands in an older build's `state.json` and gets
-/// folded back to `.loose` via the defensive decoder rather than
-/// quarantining the whole snapshot. Same shape `Tab.Kind` /
-/// `ConfirmPolicy` already follow.
+/// Forward-compat: a kind this build does not know lands on `.loose`
+/// via the defensive decoder rather than quarantining the whole
+/// snapshot: a future one (`.workspace`, …) a newer Limpid wrote, or a
+/// group's, which earlier builds wrote before groups became scratch
+/// tabs. Same shape `Tab.Kind` / `ConfirmPolicy` already follow.
 enum ContainerID: Codable, Hashable {
     case loose
-    case group(UUID)
     case project(UUID)
     case worktree(projectID: UUID, worktreeID: UUID)
 
@@ -343,20 +464,13 @@ enum ContainerID: Codable, Hashable {
         switch self {
         case let .project(pid): pid
         case let .worktree(pid, _): pid
-        default: nil
+        case .loose: nil
         }
     }
 
     var worktreeID: UUID? {
         if case let .worktree(_, wid) = self {
             return wid
-        }
-        return nil
-    }
-
-    var groupID: UUID? {
-        if case let .group(gid) = self {
-            return gid
         }
         return nil
     }
@@ -415,13 +529,6 @@ enum ContainerID: Codable, Hashable {
         switch key.stringValue {
         case "loose":
             self = .loose
-        case "group":
-            let nested = try outer.nestedContainer(keyedBy: PositionalKey.self, forKey: key)
-            guard let id = try? nested.decode(UUID.self, forKey: ._0) else {
-                self = .unknownFallback
-                return
-            }
-            self = .group(id)
         case "project":
             let nested = try outer.nestedContainer(keyedBy: PositionalKey.self, forKey: key)
             guard let id = try? nested.decode(UUID.self, forKey: ._0) else {
@@ -439,9 +546,9 @@ enum ContainerID: Codable, Hashable {
             }
             self = .worktree(projectID: pid, worktreeID: wid)
         default:
-            // Unknown discriminator from a newer Limpid — forward-compat
-            // fallback. Tab moves to Loose rather than dropping out of
-            // the snapshot.
+            // A discriminator this build does not know: a newer Limpid's,
+            // or a group's. The tab moves to the scratch tabs rather than
+            // dropping out of the snapshot.
             self = .unknownFallback
         }
     }
@@ -458,9 +565,5 @@ extension Tab {
 
     var worktreeID: UUID? {
         container.worktreeID
-    }
-
-    var groupID: UUID? {
-        container.groupID
     }
 }

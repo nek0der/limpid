@@ -1,8 +1,14 @@
 //! The environment the shim sets for a pane, read as data.
 
-use limpid_agent_model::{InstallRecipe, RecipePlaceholder, TmuxEndpoint};
+use limpid_agent_model::{InstallRecipe, ProviderDescriptor, RecipePlaceholder, TmuxEndpoint};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// The variable the application sets to the pane's id in every pane it
+/// starts (`PaneShellEnvironment` on the Swift side), which tells the hook it
+/// runs in a Limpid pane and which one. The two sides check the name against
+/// `rust/fixtures/contract/shared-values.json`.
+pub const PANE_ID_VARIABLE: &str = "LIMPID_PANE_ID";
 
 /// A snapshot of the process environment. A map rather than live lookups so
 /// tests can build one and so one call sees one consistent view.
@@ -67,7 +73,7 @@ impl HookEnv {
     /// most 64 characters) so a hostile value cannot traverse directories.
     #[must_use]
     pub fn pane_id(&self) -> Option<String> {
-        let value = self.get("LIMPID_PANE_ID")?;
+        let value = self.get(PANE_ID_VARIABLE)?;
         let shaped = value.len() <= 64
             && value
                 .bytes()
@@ -82,6 +88,13 @@ impl HookEnv {
         uuid::Uuid::parse_str(value)
             .ok()
             .map(|uuid| uuid.hyphenated().to_string().to_uppercase())
+    }
+
+    /// The id the shim minted for this hook call, when it is a UUID. The
+    /// shim keeps it across its retries of the call.
+    #[must_use]
+    pub fn invocation_id(&self) -> Option<uuid::Uuid> {
+        uuid::Uuid::parse_str(self.get("LIMPID_HOOK_INVOCATION_ID")?).ok()
     }
 
     /// The directories named by the recipe's placeholders. `None` when the
@@ -104,6 +117,24 @@ impl HookEnv {
             session,
             cwd_events: named(RecipePlaceholder::CwdEventsDirectory),
         })
+    }
+
+    /// The provider's configuration directory: what `variable` names when
+    /// the provider has one and it is set, else the descriptor's default
+    /// home under `HOME`. `None` when neither is set.
+    #[must_use]
+    pub fn provider_home(
+        &self,
+        variable: Option<&str>,
+        descriptor: &ProviderDescriptor,
+    ) -> Option<PathBuf> {
+        variable
+            .and_then(|variable| self.get(variable))
+            .map(PathBuf::from)
+            .or_else(|| {
+                self.get("HOME")
+                    .map(|home| descriptor.default_home(Path::new(home)))
+            })
     }
 
     /// The directory raw payloads are copied into for fixture recording.
@@ -181,6 +212,32 @@ mod tests {
         );
         let env = HookEnv::from_pairs([("LIMPID_AGENT_RUN_ID", "nope")]);
         assert_eq!(env.run_id(), None);
+    }
+
+    #[test]
+    fn provider_home_prefers_the_variable_and_falls_back_to_the_default() {
+        let descriptor = |id: &str| crate::adapter_for(id).expect("installed").descriptor();
+        let env = HookEnv::from_pairs([("CODEX_HOME", "/opt/codex"), ("HOME", "/Users/me")]);
+        assert_eq!(
+            env.provider_home(Some("CODEX_HOME"), descriptor("codex"))
+                .as_deref(),
+            Some(Path::new("/opt/codex"))
+        );
+        let env = HookEnv::from_pairs([("HOME", "/Users/me")]);
+        assert_eq!(
+            env.provider_home(Some("CODEX_HOME"), descriptor("codex"))
+                .as_deref(),
+            Some(Path::new("/Users/me/.codex"))
+        );
+        assert_eq!(
+            env.provider_home(None, descriptor("claude")).as_deref(),
+            Some(Path::new("/Users/me/.claude"))
+        );
+        let env = HookEnv::from_pairs([("CODEX_HOME", "")]);
+        assert_eq!(
+            env.provider_home(Some("CODEX_HOME"), descriptor("codex")),
+            None
+        );
     }
 
     #[test]

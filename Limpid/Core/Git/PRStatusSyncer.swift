@@ -7,21 +7,17 @@
 //   - Pull-request state moves on the forge's clock, not the local
 //     repo's, so the cadence is time-driven rather than
 //     mutation-driven.
-//   - The feature is opt-in via Settings. Disabled means no timer and
-//     no CLI calls, independent of the always-on git sync.
+//   - It has no setting: pull requests show wherever `gh`
+//     or `glab` can read them, and a CLI that is absent or signed out is
+//     found out by the lookup itself.
 //
 // Lifecycle:
-//   - `init` takes every collaborator rather than reaching for the
-//     session or the store through a global.
-//   - `start()` arms a focus observer and a settings observer, and —
-//     only while the feature is on — a recurring task. The observers
-//     stay armed either way, because noticing the switch being turned
-//     on is their job; every path they lead to consults the live
-//     setting before issuing a CLI call.
-//   - Turning the feature off clears the store rather than leaving
-//     stale entries behind. The sidebar would hide them either way,
-//     but a cleared store means re-enabling cannot flash a stale
-//     entry before the first fetch lands.
+//   - `init` takes every collaborator, and where the requests come from
+//     (`PRStatusSource`), rather than reaching for the session, the
+//     store, or the demo flag through a global.
+//   - `start()` arms a focus observer and a recurring task for the forge
+//     CLIs; a fixture is written to the store once and nothing is
+//     scheduled.
 
 import AppKit
 import Foundation
@@ -29,17 +25,42 @@ import OSLog
 
 private let log = Logger.limpid("git.pr.sync")
 
+/// Where `PRStatusSyncer` learns each row's request. The app chooses it
+/// at launch (`AppState`), so the syncer reads no demo flag itself.
+enum PRStatusSource {
+    /// Asks the forge CLI for each row, on the syncer's cadence. The
+    /// syncer builds its fetcher from these two, so the resolver a manual
+    /// refresh invalidates is always the one its lookups read.
+    case forgeCLI(resolver: ForgeResolver, locator: ToolLocator)
+    /// Shows these requests and asks nothing, for demo mode: the hero
+    /// screenshot has to look the same on every contributor's Mac, and a
+    /// CLI answers from whatever is on disk under whatever credentials
+    /// happen to be present. No forge is recorded either, as for a folder
+    /// whose CLI is not installed.
+    case fixture([ContainerID: PRInfo])
+
+    /// The forge CLIs, found through `locator`.
+    static func live(locator: ToolLocator) -> PRStatusSource {
+        .forgeCLI(resolver: ForgeResolver(locator: locator), locator: locator)
+    }
+}
+
 @MainActor
 final class PRStatusSyncer {
-    private weak var session: WindowSession?
+    private weak var session: WorkspaceSession?
     private weak var store: PRStatusStore?
-    private weak var settings: SettingsStore?
-    private weak var hoverPresentation: PRHoverPresentation?
 
-    /// Owned rather than reached for globally, per the dependency
-    /// policy stated on `AppState`.
-    private let fetcher: PRStatusFetcher
-    private let resolver: ForgeResolver
+    /// A fixture's requests, written once by `start()`. `nil` for the
+    /// forge CLIs, which `fetcher` asks instead.
+    private let fixture: [ContainerID: PRInfo]?
+    /// Built from the source's resolver and locator. Optional because a
+    /// fixture asks no CLI, so it has nothing to fetch with.
+    private let fetcher: (any PRStatusLookups)?
+    /// What the new worktree sheet reads a pull request with, on the
+    /// same resolver and locator, so the sheet and the marks agree on the
+    /// forge and a manual refresh resets both. `nil` for a fixture, which
+    /// asks no CLI.
+    let pullRequests: (any PullRequestReading)?
 
     /// Cadence while nothing is in flight. Long on purpose: a merged
     /// or approved request does not change on a schedule the user
@@ -60,9 +81,7 @@ final class PRStatusSyncer {
     /// is not applied to the recurring tick — see `tick`.
     private let activeInterval: Duration = PRStatusSyncer.pollGranularity
 
-    /// Single source of truth for the idle cadence. The Settings
-    /// footer quotes this rather than repeating the number, so
-    /// changing the interval can't leave the UI describing the old one.
+    /// The idle cadence, in minutes.
     static let refreshIntervalMinutes = 5
 
     /// Whichever cadence the current state calls for.
@@ -83,9 +102,43 @@ final class PRStatusSyncer {
     /// spawn a process per row per alt-tab.
     private var lastFetchAt: [ContainerID: Date] = [:]
 
-    /// Last value of the Settings flag we acted on. See
-    /// `observeSetting` for why the comparison is needed.
-    private var lastKnownEnabled = false
+    /// The containers with a lookup running, and whether another was asked
+    /// for while it ran. At most one runs per container: the triggers start
+    /// independently, and two lookups of one row in flight could answer in
+    /// either order, a slow earlier one putting back the CI state a later
+    /// one had replaced. A request that finds one running asks for one
+    /// lookup after it rather than its own, since the running one may have
+    /// asked before whatever the request is about (a push, a merge).
+    private var inFlight: [ContainerID: FollowUp] = [:]
+
+    /// What was asked of a running lookup's container while it ran.
+    private struct FollowUp {
+        var isRequested = false
+        /// Whether a manual refresh asked for it, which re-reads the forge.
+        var invalidatesForges = false
+    }
+
+    /// The token of each container's latest lookup, taken from
+    /// `nextLookupToken`. An answer is kept only while its token is still
+    /// the container's: dropping a container drops its token, so an
+    /// answer that lands after a prune cannot put the row back, even if a
+    /// row with the same identity has come back since.
+    private var lookupTokens: [ContainerID: UInt64] = [:]
+    private var nextLookupToken: UInt64 = 0
+
+    /// The branch each kept answer was asked for. The store keys a request
+    /// by the row alone, and a checkout switched to another branch keeps
+    /// its row, so this is what tells the previous branch's request from
+    /// the current one's (`recheckLeftBranches`).
+    private var answeredHeads: [ContainerID: CheckoutHead] = [:]
+
+    /// Rows whose answer named another branch than the row shows, with the
+    /// branch the row showed then. The fetcher already gives no answer for a
+    /// checkout that switched while it ran, so a mismatch means Git has not
+    /// been read again for the row since its checkout moved; asking again
+    /// before it is would get the same mismatch. A wake looks such a row up
+    /// only once the branch it shows has changed (`recheckLeftBranches`).
+    private var leftBranches: [ContainerID: CheckoutHead] = [:]
 
     private var recurringTask: Task<Void, Never>?
 
@@ -100,20 +153,37 @@ final class PRStatusSyncer {
     /// paid at teardown — same posture as `GitSyncCoordinator`.
     private nonisolated(unsafe) var focusObserver: (any NSObjectProtocol)?
 
-    init(
-        session: WindowSession,
+    convenience init(
+        session: WorkspaceSession,
         store: PRStatusStore,
-        settings: SettingsStore,
-        hoverPresentation: PRHoverPresentation,
-        resolver: ForgeResolver,
-        locator: ToolLocator
+        source: PRStatusSource
+    ) {
+        switch source {
+        case let .forgeCLI(resolver, locator):
+            self.init(
+                session: session,
+                store: store,
+                fetcher: PRStatusFetcher(resolver: resolver, locator: locator),
+                pullRequests: ForgePullRequests(resolver: resolver, locator: locator)
+            )
+        case let .fixture(requests):
+            self.init(session: session, store: store, fetcher: nil, pullRequests: nil, fixture: requests)
+        }
+    }
+
+    /// Takes the fetcher itself, for the tests that script its answers.
+    init(
+        session: WorkspaceSession,
+        store: PRStatusStore,
+        fetcher: (any PRStatusLookups)?,
+        pullRequests: (any PullRequestReading)? = nil,
+        fixture: [ContainerID: PRInfo]? = nil
     ) {
         self.session = session
         self.store = store
-        self.settings = settings
-        self.hoverPresentation = hoverPresentation
-        self.resolver = resolver
-        self.fetcher = PRStatusFetcher(resolver: resolver, locator: locator)
+        self.fetcher = fetcher
+        self.pullRequests = pullRequests
+        self.fixture = fixture
     }
 
     deinit {
@@ -125,27 +195,15 @@ final class PRStatusSyncer {
     // MARK: - Lifecycle
 
     func start() {
-        // Demo mode takes `DemoFixture` as the whole truth and never
-        // reaches a CLI. Letting the live path run would make the hero
-        // screenshot depend on the contributor's checkouts and forge
-        // credentials, which is the one thing that pipeline promises
-        // it does not. The agent projection stops at the same door for
-        // the same reason.
-        guard !DemoFixture.isDemoActive else {
-            for (container, info) in DemoFixture.prStatus {
+        // A fixture is the whole truth and never reaches a CLI, so
+        // nothing is scheduled to refetch it.
+        if let requests = fixture {
+            for (container, info) in requests {
                 store?.update(container: container, info: info)
             }
             return
         }
-        lastKnownEnabled = isEnabled()
         observeFocus()
-        observeSetting()
-        // Only armed while the feature is on. The recurring task wakes
-        // often enough (see `pollGranularity`) that leaving it running
-        // for a switched-off feature would be a timer firing on the
-        // main actor every 45s to decide it has nothing to do — for
-        // every user who never turns this on, which is the default.
-        guard isEnabled() else { return }
         scheduleRecurring()
         // start() runs on @MainActor, so the implicit Task isolation
         // is also @MainActor — no need to re-annotate.
@@ -155,51 +213,6 @@ final class PRStatusSyncer {
     }
 
     // MARK: - Triggers
-
-    /// React to the Settings toggle immediately. Settings is a
-    /// separate window of the same app, so closing it raises no
-    /// `didBecomeActive` — without this the user would flip the switch
-    /// on and stare at an unchanged sidebar until the next scheduled
-    /// tick.
-    ///
-    /// Observation tracks `SettingsStore.settings` as one value, so
-    /// this fires for every preference the user touches, font size
-    /// included. We diff against the last seen flag because the work
-    /// below is not free: `invalidate()` throws away the host cache,
-    /// and rebuilding it costs an auth probe per host — a network
-    /// round trip on the GitLab path. Same reason
-    /// `startSettingsConfigSync` keeps `lastAppliedSettings`.
-    private func observeSetting() {
-        observeRepeatedly { [weak self] in
-            _ = self?.settings?.settings.advanced.showPRStatusInSidebar
-        } onChange: { [weak self] in
-            guard let self else { return }
-            let current = isEnabled()
-            guard current != lastKnownEnabled else { return }
-            lastKnownEnabled = current
-            if current {
-                scheduleRecurring()
-                // Remotes may have been added, or a CLI authenticated,
-                // since we last looked. Re-reading is cheap next to
-                // making the user restart.
-                Task {
-                    await resolver.invalidate()
-                    await self.tick(reason: .settingChanged)
-                }
-            } else {
-                // Drop everything so re-enabling starts from a clean
-                // slate and no stale entry can flash before the first
-                // fetch lands. The presentation reset also removes a
-                // card that happens to be open at this moment — its
-                // anchor row is about to stop explaining it.
-                recurringTask?.cancel()
-                recurringTask = nil
-                store?.clear()
-                hoverPresentation?.reset()
-                lastFetchAt.removeAll()
-            }
-        }
-    }
 
     private func observeFocus() {
         // The user often comes back to Limpid expecting "what I did
@@ -227,11 +240,11 @@ final class PRStatusSyncer {
     /// A single long sleep can't answer a cadence change that happens
     /// while it is under way: a focus tick that finds a run in flight
     /// wants the fast rhythm now, not when the idle sleep it already
-    /// committed to expires. Cancelling and re-arming the task would
+    /// committed to expires. Canceling and re-arming the task would
     /// shorten it, but cancellation reaches whatever `tick` that task
-    /// is running, and a cancelled `runTool` reports the same nil as a
-    /// CLI that found no request — so the tick would erase the very
-    /// rows it was refreshing. Waking often and deciding cheaply has
+    /// is running, and a canceled `runTool` gives no answer — so the
+    /// tick would leave the very rows it was refreshing as they were.
+    /// Waking often and deciding cheaply has
     /// no such edge: nothing is interrupted, and a wake that does not
     /// tick costs one comparison.
     private func scheduleRecurring() {
@@ -244,6 +257,9 @@ final class PRStatusSyncer {
                 // does not hold the syncer alive across it.
                 guard !Task.isCancelled, let self else { return }
                 waited += Self.pollGranularity
+                // Every wake rather than on the cadence: a request shown for
+                // a branch the checkout has left is wrong, not just old.
+                await recheckLeftBranches()
                 // Re-read every wake: the cadence moves in both
                 // directions as runs start and finish.
                 guard waited >= currentInterval else { continue }
@@ -259,22 +275,17 @@ final class PRStatusSyncer {
         case initial
         case recurring
         case focus
-        case settingChanged
     }
 
     private func tick(reason: Reason) async {
-        guard isEnabled() else { return }
-        guard let session else { return }
+        guard let session, fetcher != nil else { return }
         let now = Date()
         let targets = Self.enumerableTargets(session: session)
         var attempted = 0
         for target in targets {
             // The floor is for the one trigger whose rate the user
             // sets: alt-tabbing back. The others pace themselves —
-            // `.recurring` *is* the pace, `.initial` runs once, and
-            // `.settingChanged` arrives having just cleared
-            // `lastFetchAt` on its way through the disable path, so a
-            // floor would see no stamps to compare against anyway.
+            // `.recurring` *is* the pace, and `.initial` runs once.
             //
             // Flooring `.recurring` would also put the active cadence
             // out of reach: 45s rounds against a 60s floor refetch
@@ -283,25 +294,24 @@ final class PRStatusSyncer {
             if reason == .focus, !shouldFetch(container: target.container, now: now) {
                 continue
             }
-            lastFetchAt[target.container] = now
-            let info = await fetcher.fetch(workingDirectory: target.workingDirectory)
-            // Re-check after the await. Two ways this tick can have
-            // been overtaken: the user switched the feature off, in
-            // which case writing would resurrect state the disable path
-            // just cleared; or this task was cancelled, in which case
-            // `fetch` reports the same nil a CLI reports for "no
-            // request" and writing it would erase a row that has one.
-            guard isEnabled(), !Task.isCancelled, let store else { return }
-            store.update(container: target.container, info: info)
+            // The other worktrees on their own, slower pace, whatever woke
+            // the tick (`Target.isOccasional`).
+            if target.isOccasional,
+               let last = lastFetchAt[target.container],
+               now.timeIntervalSince(last) < Self.occasionalInterval
+            {
+                continue
+            }
+            // One CLI at a time per tick: the lookup is awaited unless one
+            // for the row was already running, which then runs once more
+            // instead.
+            await requestLookup(target.container, invalidatesForges: false)
+            // Re-check after the await: a canceled task ends the tick
+            // rather than going on to the next row.
+            guard !Task.isCancelled else { return }
             attempted += 1
         }
-        // Rows come and go. Recomputed rather than reusing the snapshot
-        // above because the loop awaited a CLI per row, and a worktree
-        // added in that window would otherwise be pruned the moment it
-        // appeared.
-        let live = Set(Self.enumerableTargets(session: session).map(\.container))
-        lastFetchAt = lastFetchAt.filter { live.contains($0.key) }
-        store?.prune(keeping: live)
+        forgetGoneRows()
         let total = targets.count
         log.debug("""
         PR sync (\(reason.rawValue, privacy: .public)): \
@@ -309,11 +319,37 @@ final class PRStatusSyncer {
         """)
     }
 
+    /// Drop what is kept for rows we no longer fetch for, at the end of
+    /// every tick. Internal so the tests can run it without a whole tick.
+    func forgetGoneRows() {
+        guard let session else { return }
+        // Rows come and go. Recomputed rather than reusing a tick's
+        // snapshot because the tick awaited a CLI per row, and a worktree
+        // added in that window would otherwise be pruned the moment it
+        // appeared.
+        let live = Set(Self.enumerableTargets(session: session).map(\.container))
+        lastFetchAt = lastFetchAt.filter { live.contains($0.key) }
+        lookupTokens = lookupTokens.filter { live.contains($0.key) }
+        answeredHeads = answeredHeads.filter { live.contains($0.key) }
+        leftBranches = leftBranches.filter { live.contains($0.key) }
+        store?.prune(keeping: live)
+    }
+
     /// One entry per sidebar row we are willing to fetch for.
     struct Target {
         let container: ContainerID
         let workingDirectory: URL
+        /// One of the other worktrees, folded away: a worktree Git
+        /// only reported, with no tab in it. Read at most every
+        /// `occasionalInterval`, here and by `GitFactsStore`: a repository
+        /// whose agents left fifty of them would otherwise run Git and the
+        /// forge's CLI fifty times a cycle for rows nobody looks at. Opening
+        /// one admits it, and it is read on the next cycle as any row is.
+        var isOccasional = false
     }
+
+    /// The least time between two reads of one of the other worktrees.
+    static let occasionalInterval: TimeInterval = 300
 
     /// Snapshot the rows we fetch for, taken under MainActor.
     ///
@@ -332,22 +368,72 @@ final class PRStatusSyncer {
     /// Static and internal so tests can pin that row set without
     /// standing up a syncer and its six collaborators — same reason
     /// `ForgeResolver.classify` is reachable.
-    static func enumerableTargets(session: WindowSession) -> [Target] {
+    static func enumerableTargets(session: WorkspaceSession) -> [Target] {
         session.projects.flatMap { project -> [Target] in
             let main = Target(
                 container: .project(project.id),
                 workingDirectory: project.rootURL
             )
             let worktrees = project.worktrees
-                .filter { !$0.isMissing && !$0.isHidden && $0.origin == .gitWorktree }
-                .map {
-                    Target(
-                        container: .worktree(projectID: project.id, worktreeID: $0.id),
-                        workingDirectory: $0.workingDirectory
+                .filter(isFetchable)
+                .map { worktree in
+                    let container = ContainerID.worktree(projectID: project.id, worktreeID: worktree.id)
+                    return Target(
+                        container: container,
+                        workingDirectory: worktree.workingDirectory,
+                        isOccasional: SidebarSectionRule.isUnopened(
+                            admission: worktree.admission,
+                            hasTabs: !session.tabs(in: container).isEmpty
+                        )
                     )
                 }
             return [main] + worktrees
         }
+    }
+
+    /// Whether a worktree row is one `enumerableTargets` fetches for.
+    private static func isFetchable(_ worktree: Worktree) -> Bool {
+        !worktree.isMissing && !worktree.isHidden && worktree.origin == .gitWorktree
+    }
+
+    /// Where `container` is fetched, while it is a row `enumerableTargets`
+    /// fetches for; `nil` once it is not. Looked up directly rather than
+    /// by scanning every row, since every lookup asks it twice.
+    static func workingDirectory(of container: ContainerID, in session: WorkspaceSession) -> URL? {
+        switch container {
+        case .loose:
+            nil
+        case let .project(projectID):
+            session.project(projectID)?.rootURL
+        case let .worktree(projectID, worktreeID):
+            session.worktree(projectID: projectID, worktreeID: worktreeID)
+                .flatMap { isFetchable($0) ? $0.workingDirectory : nil }
+        }
+    }
+
+    /// The branch the row for `container` shows, which an answer has to
+    /// have been asked for to be kept (`CheckoutHead.admits`).
+    static func head(of container: ContainerID, in session: WorkspaceSession) -> CheckoutHead {
+        let branch: String?
+        let commit: String?
+        switch container {
+        case .loose:
+            return .unknown
+        case let .project(projectID):
+            let project = session.project(projectID)
+            branch = project.flatMap { CheckoutName.of($0) }
+            commit = project?.mainHeadSHA
+        case let .worktree(projectID, worktreeID):
+            let worktree = session.worktree(projectID: projectID, worktreeID: worktreeID)
+            branch = worktree.flatMap { CheckoutName.branch(of: $0) }
+            commit = worktree?.gitRef?.headSHA
+        }
+        if let branch {
+            return .branch(branch)
+        }
+        // A commit with no branch is a detached HEAD; neither is a row Git
+        // has not been read for yet.
+        return commit.map { $0.isEmpty ? .unknown : .detached } ?? .unknown
     }
 
     // MARK: - Manual refresh
@@ -358,26 +444,127 @@ final class PRStatusSyncer {
     /// one fetch, and silently doing nothing because they refreshed 40
     /// seconds ago would read as the command being broken.
     func refreshNow(container: ContainerID) {
-        // Same door as `start()`: the menu entry exists in demo mode
-        // because the feature is switched on there, but it must not
-        // reach a CLI either.
-        guard !DemoFixture.isDemoActive else { return }
-        guard isEnabled(), let session, let store else { return }
-        let match = Self.enumerableTargets(session: session)
-            .first { $0.container == container }
-        guard let target = match else { return }
-        let fetcher = fetcher
-        let resolver = resolver
         Task { [weak self] in
-            // A manual refresh is also the moment to re-read remotes:
-            // the user may have just added one, or authenticated a
-            // CLI, and this is the only affordance that says "look
-            // again" out loud.
-            await resolver.invalidate()
-            let info = await fetcher.fetch(workingDirectory: target.workingDirectory)
-            guard let self, isEnabled() else { return }
+            await self?.refresh(container: container)
+        }
+    }
+
+    /// `refreshNow`, returning once its lookup has answered, or at once
+    /// when it joined one already running as that lookup's follow-up.
+    func refresh(container: ContainerID) async {
+        // A manual refresh is also the moment to re-read remotes: the user
+        // may have just added one, or authenticated a CLI, and this is the
+        // only affordance that says "look again" out loud.
+        await requestLookup(container, invalidatesForges: true)
+    }
+
+    // MARK: - Lookup
+
+    /// Look `container`'s request up, or, while a lookup for it is running,
+    /// ask that one to run once more when it ends. Requests made while it
+    /// runs come to one more lookup, however many there were.
+    ///
+    /// Returns once the lookups this call ran have answered, follow-ups
+    /// included. Each one starts only while the container is still a row
+    /// we fetch for, so a row that went away stops launching the CLI.
+    private func requestLookup(_ container: ContainerID, invalidatesForges: Bool) async {
+        // The menu entry shows for a fixture's requests too, and refetches
+        // nothing for them: a fixture never reaches a CLI.
+        guard let fetcher else { return }
+        if inFlight[container] != nil {
+            inFlight[container]?.isRequested = true
+            if invalidatesForges {
+                inFlight[container]?.invalidatesForges = true
+            }
+            return
+        }
+        inFlight[container] = FollowUp()
+        defer { inFlight[container] = nil }
+        var isInvalidating = invalidatesForges
+        while let session, let directory = Self.workingDirectory(of: container, in: session) {
+            nextLookupToken &+= 1
+            let token = nextLookupToken
+            lookupTokens[container] = token
             lastFetchAt[container] = Date()
-            store.update(container: container, info: info)
+            if isInvalidating {
+                await fetcher.invalidate()
+            }
+            let lookup = await fetcher.lookup(workingDirectory: directory)
+            // A canceled task gives no answer and starts nothing more of its
+            // own. A follow-up someone else asked for still runs, on a task
+            // of its own: the caller that asked has already returned.
+            guard !Task.isCancelled else {
+                if let followUp = inFlight[container], followUp.isRequested {
+                    Task { [weak self] in
+                        await self?.requestLookup(container, invalidatesForges: followUp.invalidatesForges)
+                    }
+                }
+                return
+            }
+            publish(lookup, for: container, token: token)
+            guard let followUp = inFlight[container], followUp.isRequested else { return }
+            isInvalidating = followUp.invalidatesForges
+            inFlight[container] = FollowUp()
+        }
+    }
+
+    /// Write `lookup` into the store if it still describes the row: its
+    /// lookup is the container's latest, the row is still one we fetch for,
+    /// and the row's checkout is on the branch the lookup asked about.
+    private func publish(_ lookup: PRStatusFetcher.Lookup, for container: ContainerID, token: UInt64) {
+        // No answer keeps what was known (`PRStatusFetcher.Lookup`).
+        guard lookup.isAnswered, let session, let store else { return }
+        guard lookupTokens[container] == token,
+              Self.workingDirectory(of: container, in: session) != nil
+        else {
+            log.debug("PR lookup answered for a row that is gone; dropped")
+            return
+        }
+        let rowHead = Self.head(of: container, in: session)
+        guard rowHead.admits(lookup.head) else {
+            log.debug("PR lookup answered for a branch the row does not show; cleared")
+            // The checkout and the row disagree on the branch, so whatever
+            // the row shows may be the other branch's request. Showing none
+            // until an answer agrees offers less, never a second "Create PR"
+            // or a "Clean Up Worktree…" for a request of another branch.
+            forget(container, in: store)
+            leftBranches[container] = rowHead
+            return
+        }
+        store.update(container: container, info: lookup.info, forge: lookup.forge)
+        answeredHeads[container] = lookup.head
+        leftBranches[container] = nil
+    }
+
+    private func forget(_ container: ContainerID, in store: PRStatusStore) {
+        answeredHeads[container] = nil
+        store.update(container: container, info: nil, forge: nil)
+    }
+
+    /// Clear each row whose shown request was answered for a branch the
+    /// row no longer shows, and look those rows up again, with the rows a
+    /// branch mismatch left waiting (`leftBranches`) whose branch has moved
+    /// since.
+    ///
+    /// A checkout switched to another branch keeps its row and so its
+    /// stored request, and the next tick can be five minutes away; until
+    /// then the row would show the previous branch's request, number, and
+    /// CI. Checked on every wake, since it compares maps and runs the CLI
+    /// only for the rows whose branch moved, once per move.
+    func recheckLeftBranches() async {
+        guard let session, let store, fetcher != nil else { return }
+        var due: [ContainerID] = []
+        for (container, answered) in answeredHeads where !Self.head(of: container, in: session).admits(answered) {
+            forget(container, in: store)
+            due.append(container)
+        }
+        for (container, shown) in leftBranches where Self.head(of: container, in: session) != shown {
+            leftBranches[container] = nil
+            due.append(container)
+        }
+        for container in due {
+            await requestLookup(container, invalidatesForges: false)
+            guard !Task.isCancelled else { return }
         }
     }
 
@@ -386,9 +573,4 @@ final class PRStatusSyncer {
         return now.timeIntervalSince(last) >= perContainerMinInterval
     }
 
-    // MARK: - Settings
-
-    private func isEnabled() -> Bool {
-        settings?.settings.advanced.showPRStatusInSidebar ?? false
-    }
 }

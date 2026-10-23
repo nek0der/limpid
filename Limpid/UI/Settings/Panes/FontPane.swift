@@ -1,44 +1,67 @@
 // FontPane.swift
-// Limpid — Settings → Font. Monospace families enumerated from
-// `NSFontManager`; size + line height via shared `SliderRowInt`.
+// Limpid — Settings → Font: the monospace family, size, and line spacing.
+//
+// The families are enumerated from `NSFontManager`; size and line spacing
+// are numbers (`SettingsNumberRow`).
 
 import AppKit
 import SwiftUI
 
 struct FontPane: View {
     @Environment(SettingsStore.self) private var store
+    /// The typeface "Default" draws with (`GhosttyUserConfig`).
+    @State private var defaultFamily = GhosttyUserConfig.builtInFontFamily
+
+    /// The sizes a terminal draws legibly, in the half points the field
+    /// and stepper move by. `font.size` is a `Double`, so a half point in
+    /// settings.json is kept.
+    static let sizeRange: ClosedRange<Double> = 6...72
+    /// Pixels added to or taken from a cell's height (`adjust-cell-height`).
+    static let lineSpacingRange: ClosedRange<Double> = -4...10
 
     var body: some View {
         @Bindable var store = store
         SettingsForm(title: "Font", section: .font) {
             Section {
-                FontFamilyPicker(family: $store.settings.font.family)
+                FontFamilyPicker(family: $store.settings.font.family, defaultFamily: defaultFamily)
                     .settingsSearchTarget(SettingsSearchCatalog.fontFamily.id)
-                SliderRowInt(
+                    // Read once, and again when the Ghostty config is
+                    // turned on or off, rather than on every redraw.
+                    .task(id: store.settings.advanced.ghosttyConfig.isOn) {
+                        defaultFamily = GhosttyUserConfig.defaultFontFamily(
+                            readsGhosttyConfig: store.settings.advanced.ghosttyConfig.isOn
+                        ) {
+                            GhosttyUserConfig.existingFiles().compactMap { try? String(contentsOf: $0, encoding: .utf8) }
+                        }
+                    }
+                SettingsNumberRow(
                     title: "Size",
-                    value: Binding(
-                        get: { Int(store.settings.font.size) },
-                        set: { store.settings.font.size = Double($0) }
-                    ),
-                    range: 8...24,
-                    suffix: "pt"
+                    value: $store.settings.font.size,
+                    range: Self.sizeRange,
+                    step: 0.5,
+                    unit: "pt",
+                    defaultValue: FontSettings().size
                 )
                 .settingsSearchTarget(SettingsSearchCatalog.fontSize.id)
+            } header: {
+                // A heading over the first group, as in Appearance. The
+                // pane is already titled Font, so the group is named for
+                // what its rows pick.
+                Text("Typeface")
             } footer: {
-                Text("Size applies live. Family applies on new terminals only.")
+                SettingsFootnote("Size applies live. Family applies on new terminals only.")
             }
 
             Section {
                 SettingsToggle("Ligatures", isOn: $store.settings.font.ligatures)
                     .settingsSearchTarget(SettingsSearchCatalog.ligatures.id)
-                SliderRowInt(
-                    title: "Line height",
-                    value: Binding(
-                        get: { Int(store.settings.font.lineHeight) },
-                        set: { store.settings.font.lineHeight = Double($0) }
-                    ),
-                    range: -2...6,
-                    suffix: "px"
+                SettingsNumberRow(
+                    title: "Line spacing",
+                    value: $store.settings.font.lineHeight,
+                    range: Self.lineSpacingRange,
+                    unit: "px",
+                    zeroMeaning: "Default",
+                    defaultValue: FontSettings().lineHeight
                 )
                 .settingsSearchTarget(SettingsSearchCatalog.lineHeight.id)
             } header: {
@@ -53,11 +76,14 @@ struct FontPane: View {
 /// on every body re-eval.
 private struct FontFamilyPicker: View {
     @Binding var family: String?
+    /// What "Default" draws with now, named in its item so the choice says
+    /// which typeface it is.
+    let defaultFamily: String
     @State private var monoFamilies: [String] = []
 
     var body: some View {
         Picker("Family", selection: $family) {
-            Text("Default").tag(String?.none)
+            Text("Default (\(defaultFamily))").tag(String?.none)
             if !monoFamilies.isEmpty {
                 Divider()
                 ForEach(monoFamilies, id: \.self) { name in

@@ -8,6 +8,8 @@
 // connection, so lifecycle hooks remain independent of approval-service
 // availability. `question-turn-ended` records a Claude turn end without XPC
 // so a terminal answer remains observable across controller startup delays.
+// `watch-codex-usage <codex pid> <offset> <session> <rollout>` runs the watcher a Codex
+// session start leaves (`CodexUsageLimitWatch`).
 
 import Foundation
 
@@ -78,6 +80,13 @@ func runLifecycleHook(provider: String, kind: RustProviderBridge.HookKind) -> Ne
         if let message = outcome.message, outcome.exitCode != 0 {
             FileHandle.standardError.write(Data((message + "\n").utf8))
         }
+        if provider == "codex", kind == .lifecycle, outcome.outcome == "applied" {
+            CodexUsageLimitWatch.start(
+                after: input,
+                environment: ProcessInfo.processInfo.environment,
+                helper: URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+            )
+        }
         exit(outcome.exitCode)
     } catch {
         logHookDiagnostic("Limpid hook helper: \(error)")
@@ -130,7 +139,10 @@ func run(input: Data) throws -> Data? {
                 summary: request["summary"] as? String,
                 input: requestInput,
                 questions: request["questions"],
-                timeoutMilliseconds: timeoutMilliseconds
+                timeoutMilliseconds: timeoutMilliseconds,
+                // The shim that started the agent minted it; the hook that
+                // started us inherited it.
+                agentRunID: ProcessInfo.processInfo.environment["LIMPID_AGENT_RUN_ID"].flatMap(UUID.init(uuidString:))
             )
         )
     ))
@@ -185,38 +197,19 @@ func run(input: Data) throws -> Data? {
 
 func publishCodexLifecycleFallback(input: Data) {
     guard CommandLine.arguments.last == "codex" else { return }
-    // With the Rust backend the lifecycle record is written in-process; the
-    // shell receiver is only re-run while the shell backend is selected. An
-    // unset variable means the default backend, as the wrappers read it.
-    let backend = ProcessInfo.processInfo.environment[AgentHookBackend.environmentKey]
-    if backend != AgentHookBackend.shell.rawValue {
-        _ = try? RustProviderBridge.runHook(
-            provider: "codex",
-            kind: .lifecycle,
-            payload: input,
-            environment: ProcessInfo.processInfo.environment
-        )
-        return
-    }
-    guard let script = AgentApprovalHookFallback.codexLifecycleScript(
-        forExecutableURL: URL(fileURLWithPath: CommandLine.arguments[0])
-            .resolvingSymlinksInPath()
-    ) else { return }
-    let process = Process()
-    let standardInput = Pipe()
-    process.executableURL = URL(fileURLWithPath: "/bin/sh")
-    process.arguments = [script.path]
-    process.standardInput = standardInput
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    do {
-        try process.run()
-        try standardInput.fileHandleForWriting.write(contentsOf: input)
-        try standardInput.fileHandleForWriting.close()
-        process.waitUntilExit()
-    } catch {
-        // A failed observer fallback must not affect the provider decision.
-    }
+    // Codex calls this helper instead of `limpid-hook` for a permission
+    // request, so the lifecycle record is written here, in-process.
+    _ = try? RustProviderBridge.runHook(
+        provider: "codex",
+        kind: .lifecycle,
+        payload: input,
+        environment: ProcessInfo.processInfo.environment
+    )
+}
+
+if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == CodexUsageLimitWatch.subcommand {
+    CodexUsageLimitWatch.run(arguments: CommandLine.arguments.dropFirst(2), environment: ProcessInfo.processInfo.environment)
+    exit(0)
 }
 
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "hook" {

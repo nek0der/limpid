@@ -1,6 +1,6 @@
 ## Summary
 
-<!-- 1-3 sentences: what changed and why. -->
+<!-- One to three sentences: what changed and why. -->
 
 ## Related issue
 
@@ -10,21 +10,21 @@
 
 <!-- Required for user-visible changes. Otherwise write "Build + tests only."
      Examples:
-       - "Launched Debug build, dragged a pane onto a tab, confirmed it merges."
-       - "Ran make screenshot, waiting list still renders correctly in demo mode." -->
+       - "Launched a Debug build, dragged a pane onto a tab, and confirmed it merges."
+       - "Ran make screenshot; the Needs Attention list still renders correctly in demo mode." -->
 
 ## Screenshots / video
 
-<!-- Required for any UI change. Drop a still + a short clip if motion matters. -->
+<!-- Required for any UI change. Attach a still, plus a short clip if motion matters. -->
 
 ## Checklist
 
 <!-- Tick what applies; leave the rest unchecked (no need to explain why). -->
 
-- [ ] `make lint` clean locally
+- [ ] `make lint` passes locally
 - [ ] `make test` passes
 - [ ] `make review-core` passes (its own CI job; `make test` does not cover it)
 - [ ] Tests added or updated where applicable
-- [ ] User-facing strings added to `Localizable.xcstrings` with both en and ja
+- [ ] User-facing strings added to `Localizable.xcstrings` with both `en` and `ja`
 - [ ] Verified manually on macOS 26 or later — see "How verified" above
 - [ ] Code comments are in English

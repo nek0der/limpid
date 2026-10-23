@@ -16,12 +16,12 @@ struct ClipboardConfirmationSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 12) {
+        VStack(alignment: .leading, spacing: LimpidLayout.Supervision.spaceL) {
+            HStack(alignment: .top, spacing: LimpidLayout.Supervision.spaceM) {
                 Image(systemName: "exclamationmark.shield.fill")
-                    .foregroundStyle(.orange)
-                    .font(.system(size: 28))
-                VStack(alignment: .leading, spacing: 4) {
+                    .foregroundStyle(SupervisionTokens.waiting.color)
+                    .font(.supervision(.symbolHero))
+                VStack(alignment: .leading, spacing: LimpidLayout.Supervision.spaceXS) {
                     Text(title)
                         .font(LimpidFont.title)
                     Text(message)
@@ -36,7 +36,7 @@ struct ClipboardConfirmationSheet: View {
                     .font(.system(.body, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
+                    .padding(LimpidLayout.Supervision.spaceS)
             }
             .frame(minHeight: 80, maxHeight: 200)
             .background(LimpidColor.terminalColumnBackground)
@@ -68,7 +68,7 @@ struct ClipboardConfirmationSheet: View {
                 .buttonStyle(.borderedProminent)
             }
         }
-        .padding(20)
+        .padding(LimpidLayout.Supervision.spaceXL)
         .frame(minWidth: 460)
     }
 
@@ -85,7 +85,7 @@ struct ClipboardConfirmationSheet: View {
         case .osc52Read:
             """
             The terminal is requesting to read the contents of your clipboard. \
-            Only allow this if you recognise the program that issued the request.
+            Allow this only if you recognize the program that asked.
             """
         case .osc52Write:
             "The terminal is requesting to replace your clipboard with the text shown below."

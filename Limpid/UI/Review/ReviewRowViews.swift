@@ -28,15 +28,15 @@ enum ReviewRowMetrics {
     /// Computed rather than stored: `NSFont` is not `Sendable`, and a stored
     /// static of a non-Sendable type is a global mutable reference under Swift 6.
     static var font: NSFont {
-        .monospacedSystemFont(ofSize: 11.5, weight: .regular)
+        .monospacedSystemFont(ofSize: LimpidFont.Supervision.Size.meta.rawValue, weight: .regular)
     }
 
     static var commentFont: NSFont {
-        .systemFont(ofSize: 12)
+        .systemFont(ofSize: LimpidFont.Supervision.Size.row.rawValue)
     }
 
     static var labelFont: NSFont {
-        .systemFont(ofSize: 11)
+        .systemFont(ofSize: LimpidFont.Supervision.Size.caption.rawValue)
     }
 
     static var digitWidth: CGFloat {
@@ -109,9 +109,8 @@ enum ReviewRowMetrics {
     static let composerFieldPadding: CGFloat = 6
     /// Where a line's text starts after the frozen gutter, and where it stops
     /// before the right edge. Named because the split layout draws with them
-    /// and the horizontal scroll limit is computed from their sum: the limit
-    /// used to repeat that sum as one number of its own, so moving the text
-    /// left moved what the reader could scroll to and not the other way.
+    /// and the horizontal scroll limit is computed from their sum, so moving
+    /// the text moves what the reader can scroll to with it.
     static let codeLeadingInset: CGFloat = 6
     static let codeTrailingInset: CGFloat = 4
     /// The expander's controls sit where a line's text would, less the bezel
@@ -120,130 +119,107 @@ enum ReviewRowMetrics {
     /// Slack past the longest line, so the last character is not against the
     /// right edge when the column is scrolled to its end.
     static let columnTrailingSlack: CGFloat = 24
-    /// How far one keyboard step resizes the terminal strip. Larger than a
-    /// point so the key is worth pressing, smaller than a row so it can be
-    /// aimed.
-    static let strideForResize: CGFloat = 24
 
-    /// The narrowest viewport a card is measured against. A window dragged
-    /// smaller than this measures as if it were this wide rather than
-    /// answering with a height for a width nothing is drawn at.
-    static let minimumMeasurementWidth: CGFloat = 320
+    /// The width a card keeps beside the frozen strip. In a column narrower
+    /// than the strip plus this, the card steps left over the strip rather
+    /// than shrink further: the strip is numbers the card's own header
+    /// repeats, and the comment is what the reader is there for.
+    static let cardComfortableWidth: CGFloat = 280
+    /// Where a card that has stepped over the strip stops: clear of the
+    /// viewport's leading edge, as it is clear of the trailing one.
+    static let cardEdgeInset: CGFloat = 8
 
-    /// A card is as wide as the visible area allows, never as wide as the
-    /// column: the column is sized to the file's longest line.
-    static func cardWidth(in viewport: CGFloat, numberWidth: CGFloat, layout: ReviewDiffLayout) -> CGFloat {
-        max(viewport - cardInset(numberWidth: numberWidth, layout: layout) - cardTrailing, 280)
+    /// Where a card starts in the visible area, and how wide it is.
+    ///
+    /// As wide as the visible area allows, never as wide as the column: the
+    /// column is sized to the file's longest line. And never wider than the
+    /// visible area either. A 280pt floor on the width did that in a narrow
+    /// column under a long file's gutter, and the card's trailing edge — its
+    /// Add button and its position — went past the edge the reader could
+    /// see. The leading steps over the strip first; past that, the card
+    /// narrows with the viewport.
+    static func cardFrame(
+        viewport: CGFloat,
+        numberWidth: CGFloat,
+        layout: ReviewDiffLayout
+    ) -> (leading: CGFloat, width: CGFloat) {
+        let inset = cardInset(numberWidth: numberWidth, layout: layout)
+        let leading = min(inset, max(cardEdgeInset, viewport - cardTrailing - cardComfortableWidth))
+        return (leading, max(viewport - leading - cardTrailing, 0))
     }
 
     /// The composer grows with the text: a comment worth several lines was
-    /// being written through a two-line window.
-    static func composerHeight(
-        for text: String,
-        width: CGFloat,
-        numberWidth: CGFloat,
-        layout: ReviewDiffLayout
-    ) -> CGFloat {
-        let usable = max(cardWidth(in: width, numberWidth: numberWidth, layout: layout) - composerTextInset, 120)
+    /// being written through a two-line window. Measured at the width the
+    /// card is drawn at, with no floor of its own: a wider one answered with
+    /// fewer lines than the text view wrapped to, and the card cut off its
+    /// buttons.
+    static func composerHeight(for text: String, header: ReviewCardHeader, metrics: ReviewCardMetrics) -> CGFloat {
+        let width = metrics.frame.width
         let measured = (text as NSString).boundingRect(
-            with: NSSize(width: usable, height: .greatestFiniteMagnitude),
+            with: NSSize(width: max(width - composerTextInset, 1), height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: commentFont]
         ).height
-        return min(max(composerMinimum, ceil(measured) + composerChrome), composerMaximum)
+        // Added after the clamp, so the header's second line takes nothing
+        // from the field: under the minimum it would have been absorbed.
+        let wrap = header.wraps(inCardWidth: width) ? cardHeaderWrapHeight : 0
+        return min(max(composerMinimum, ceil(measured) + composerChrome), composerMaximum) + wrap
     }
 
     /// Comment bodies wrap, so their row height depends on the text. We measure
-    /// with the same font and inset the table will draw with.
-    static func commentHeight(
-        for body: String,
-        width: CGFloat,
-        numberWidth: CGFloat,
-        layout: ReviewDiffLayout
-    ) -> CGFloat {
-        let usable = max(cardWidth(in: width, numberWidth: numberWidth, layout: layout) - commentBodyInset, 120)
+    /// with the same font, inset and width the table will draw with.
+    static func commentHeight(for body: String, header: ReviewCardHeader, metrics: ReviewCardMetrics) -> CGFloat {
+        let width = metrics.frame.width
         let bounds = (body as NSString).boundingRect(
-            with: NSSize(width: usable, height: .greatestFiniteMagnitude),
+            with: NSSize(width: max(width - commentBodyInset, 1), height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: commentFont]
         )
-        return max(commentMinimum, ceil(bounds.height) + cardChrome)
-    }
-}
-
-/// Rounded container shared by the comment and composer rows, so a saved
-/// comment and the one being written read as the same object.
-final class ReviewCardView: NSView {
-    /// A card being written into is the one thing on the surface that takes
-    /// input. Drawn identically to a saved comment, the two were impossible to
-    /// tell apart at a glance.
-    var isActive = false {
-        didSet {
-            guard isActive != oldValue else { return }
-            needsDisplay = true
-        }
+        let wrap = header.wraps(inCardWidth: width) ? cardHeaderWrapHeight : 0
+        return max(commentMinimum, ceil(bounds.height) + cardChrome) + wrap
     }
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.cornerRadius = 10
-        layer?.borderWidth = 1
-        applyColors()
+    // MARK: - Card header
+
+    static var cardTitleFont: NSFont {
+        .systemFont(ofSize: LimpidFont.Supervision.Size.meta.rawValue, weight: .semibold)
     }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+    static var cardDetailFont: NSFont {
+        .monospacedSystemFont(ofSize: LimpidFont.Supervision.Size.micro.rawValue, weight: .regular)
     }
 
-    /// Layer colors do not follow an appearance change on their own, and
-    /// `updateLayer` is only called for a view that asks to draw that way.
-    override var wantsUpdateLayer: Bool {
-        true
+    /// Where the title starts: the icon's inset, the icon, and the gap after
+    /// it. The constraints that draw the header read the same numbers.
+    static let cardIconLeading: CGFloat = 10
+    static let cardIconSize: CGFloat = 13
+    static let cardIconGap: CGFloat = 6
+    static var cardTitleLeading: CGFloat {
+        cardIconLeading + cardIconSize + cardIconGap
     }
 
-    override func updateLayer() {
-        applyColors()
+    static let cardHeaderTrailing: CGFloat = 10
+    /// The least space between the title side of the header and the
+    /// position; and between a saved comment's title and its state.
+    static let cardHeaderGap: CGFloat = 8
+    static let cardStateGap: CGFloat = 6
+    /// The position's own line, when it does not fit beside the title, and
+    /// the gap above it. Fixed rather than left to the label: the row's
+    /// height is computed before the row is built, and has to come out as
+    /// tall as the line drawn.
+    static let cardDetailLineHeight: CGFloat = 14
+    static let cardDetailLineGap: CGFloat = 3
+    static var cardHeaderWrapHeight: CGFloat {
+        cardDetailLineHeight + cardDetailLineGap
     }
 
-    private func applyColors() {
-        layer?.borderColor = isActive
-            ? ReviewRowPainter.accent.withAlphaComponent(0.75).cgColor
-            : NSColor.separatorColor.cgColor
-        layer?.backgroundColor = isActive
-            ? ReviewRowPainter.accent.withAlphaComponent(0.08).cgColor
-            : NSColor.labelColor.withAlphaComponent(0.05).cgColor
-    }
-}
-
-/// The composer's text area: a bordered field, so the empty space in it reads
-/// as somewhere to type rather than as padding.
-final class ReviewFieldView: NSView {
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.borderWidth = 1
-        applyColors()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override var wantsUpdateLayer: Bool {
-        true
-    }
-
-    override func updateLayer() {
-        applyColors()
-    }
-
-    private func applyColors() {
-        layer?.borderColor = NSColor.separatorColor.cgColor
-        layer?.backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.65).cgColor
+    /// How wide a label is with `text` in `font`. A label adds nothing
+    /// around its text: its intrinsic width is the text's, rounded up to
+    /// the half point, and an empty one is zero wide. Rounded up to the
+    /// whole point here, so a header measured as fitting never has a label
+    /// that then truncates.
+    static func labelWidth(_ text: String, font: NSFont) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
 }
 
@@ -260,6 +236,11 @@ final class ReviewGutterView: NSView {
     var selection = ReviewSelection()
     var commentCounts: [Int: Int] = [:]
     var numberWidth = ReviewRowMetrics.defaultNumberWidth
+    /// Whether the cards' rows are left uncovered: in a column too narrow
+    /// for a card beside the strip, the card steps over it
+    /// (`ReviewRowMetrics.cardFrame`), and the strip drawn on top would cut
+    /// off its icon and title.
+    var leavesCardsUncovered = false
     /// Pressed on the marker of the selected run. The composer belongs to the
     /// surface, so opening it goes back through the table's coordinator.
     var onAddComment: (() -> Void)?
@@ -339,6 +320,23 @@ final class ReviewGutterView: NSView {
         ))
         guard range.length > 0 else { return }
         for row in range.location..<(range.location + range.length) where rows.indices.contains(row) {
+            // A file's header starts at the left edge, with its checkbox, and
+            // a notice ("Loading changes…", why a file cannot be shown) a
+            // little way in; the strip leaves both uncovered rather than cut
+            // off their first words. A hunk's header is an opaque band across
+            // the row (`ReviewHunkRowView`), which the strip over its start
+            // split in two; it carries no numbers.
+            let isUncovered = switch rows[row].kind {
+            case .file, .notice, .hunk: true
+            case .comment, .composer: leavesCardsUncovered
+            default: false
+            }
+            if isUncovered {
+                let frame = table.rect(ofRow: row)
+                NSColor.clear.setFill()
+                NSRect(x: 0, y: frame.minY, width: bounds.width, height: frame.height).intersection(area).fill(using: .copy)
+                continue
+            }
             guard case let .code(line) = rows[row].kind else { continue }
             let frame = table.rect(ofRow: row)
             let strip = NSRect(
@@ -393,18 +391,38 @@ final class ReviewGutterView: NSView {
 /// real change five rows down.
 final class ReviewHunkRowView: NSView {
     private let label = NSTextField(labelWithString: "")
+    /// The header's buttons, drawn in SwiftUI so "Discard" looks like
+    /// every other destructive action; empty where the header offers
+    /// nothing.
+    private let actions = NSHostingView(rootView: ReviewHosted(
+        environment: .init(),
+        content: ReviewHunkActionsView(action: nil, isCommentable: false)
+    ))
     /// The hunk header sits beside the frozen strip, which is as wide as the
     /// file's line numbers need.
     private var labelLeading: NSLayoutConstraint?
+    /// Whether the hunk was discarded, which the header shows in the hover
+    /// gray.
+    private var isDiscarded = false
+    /// The surface's opacity (`ReviewDiffTable.surfaceOpacity`), which the
+    /// header's ground takes; its buttons take it with the rest of what the
+    /// table hands over (`ReviewHosted`).
+    private var surfaceOpacity: Double = 1
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-        label.textColor = .tertiaryLabelColor
+        // In the supervision window's tokens: its words in `muted`, which
+        // reads at 4.5:1 on the header's ground.
+        label.font = .monospacedSystemFont(ofSize: LimpidFont.Supervision.Size.detail.rawValue, weight: .regular)
+        label.textColor = SupervisionTokens.muted.nsColor
         label.lineBreakMode = .byTruncatingTail
         addSubview(label)
+        actions.translatesAutoresizingMaskIntoConstraints = false
+        actions.setContentHuggingPriority(.required, for: .horizontal)
+        actions.setContentCompressionResistancePriority(.required, for: .horizontal)
+        addSubview(actions)
         let leading = label.leadingAnchor.constraint(
             equalTo: leadingAnchor,
             constant: ReviewRowMetrics.gutterTotal(numberWidth: ReviewRowMetrics.defaultNumberWidth) + 6
@@ -412,8 +430,10 @@ final class ReviewHunkRowView: NSView {
         labelLeading = leading
         NSLayoutConstraint.activate([
             leading,
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor)
+            label.trailingAnchor.constraint(lessThanOrEqualTo: actions.leadingAnchor, constant: -8),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            actions.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            actions.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
     }
 
@@ -431,7 +451,7 @@ final class ReviewHunkRowView: NSView {
     }
 
     override func updateLayer() {
-        layer?.backgroundColor = Self.background.cgColor
+        layer?.backgroundColor = background.cgColor
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -439,11 +459,21 @@ final class ReviewHunkRowView: NSView {
         needsDisplay = true
     }
 
-    private static var background: NSColor {
-        NSColor.labelColor.withAlphaComponent(0.04)
+    /// Neutral rather than the unread blue: a hunk is what is read, not a
+    /// state. A step lighter than the file's header (`sidebar`) so the
+    /// two levels read apart, and as see-through as the surface.
+    private var background: NSColor {
+        (isDiscarded ? SupervisionTokens.hover : SupervisionTokens.column).nsColor
+            .withAlphaComponent(surfaceOpacity)
     }
 
-    func configure(_ line: ReviewLine, numberWidth: CGFloat, layout: ReviewDiffLayout) {
+    func configure(
+        _ line: ReviewLine,
+        numberWidth: CGFloat,
+        layout: ReviewDiffLayout,
+        surfaceOpacity: Double = 1
+    ) {
+        self.surfaceOpacity = surfaceOpacity
         // The left column's code, in either layout. Side by side has one number
         // per column, so the unified inset would start the header a whole
         // number's width past the code under it.
@@ -453,440 +483,29 @@ final class ReviewHunkRowView: NSView {
         needsDisplay = true
         label.setAccessibilityLabel(line.text)
     }
-}
 
-/// What a card needs from the table to place itself: the width the reader can
-/// actually see, and the frozen strip it has to start clear of.
-struct ReviewCardMetrics {
-    let viewport: CGFloat
-    let numberWidth: CGFloat
-    /// Cards stay full width in both layouts, but where they start depends on
-    /// the layout: they line up with the left column's code.
-    let layout: ReviewDiffLayout
-}
-
-/// A saved comment, drawn under the last line of the run it covers. It used to
-/// live in a horizontal strip at the bottom of the surface, where nothing
-/// connected it to its lines.
-final class ReviewCommentRowView: NSView {
-    private let card = ReviewCardView()
-    private let icon = NSImageView()
-    private let title = NSTextField(labelWithString: "")
-    private let position = NSTextField(labelWithString: "")
-    private let body = NSTextField(wrappingLabelWithString: "")
-    /// Says whether this comment has already gone to an agent. Only two of the
-    /// three states can appear on a card — a resolved comment is not drawn in
-    /// the diff at all — so one label carries it.
-    private let state = NSTextField(labelWithString: "")
-    private let resolveButton = NSButton()
-    private let editButton = NSButton()
-    private let deleteButton = NSButton()
-    var onResolve: (() -> Void)?
-    var onEdit: (() -> Void)?
-    var onDelete: (() -> Void)?
-    private var cardWidth: NSLayoutConstraint?
-    private var cardLeading: NSLayoutConstraint?
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        card.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(card)
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        icon.image = NSImage(
-            systemSymbolName: "text.bubble",
-            accessibilityDescription: nil
-        )
-        icon.contentTintColor = .secondaryLabelColor
-        card.addSubview(icon)
-        for label in [title, position, body, state] {
-            label.translatesAutoresizingMaskIntoConstraints = false
-            card.addSubview(label)
-        }
-        state.font = ReviewRowMetrics.labelFont
-        state.textColor = .tertiaryLabelColor
-        title.font = .systemFont(ofSize: 11.5, weight: .semibold)
-        title.textColor = .secondaryLabelColor
-        position.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-        position.textColor = .tertiaryLabelColor
-        position.alignment = .right
-        body.font = ReviewRowMetrics.commentFont
-        body.isSelectable = true
-        // Titles are set in `configure`, not here: these rows are pooled, so
-        // one built before a language switch would keep the old words.
-        configure(button: resolveButton, action: #selector(resolve))
-        configure(button: editButton, action: #selector(edit))
-        configure(button: deleteButton, action: #selector(remove))
-        installConstraints()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    private func configure(button: NSButton, action: Selector) {
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.bezelStyle = .inline
-        button.isBordered = false
-        button.font = ReviewRowMetrics.labelFont
-        button.contentTintColor = ReviewRowPainter.accent
-        button.target = self
-        button.action = action
-        card.addSubview(button)
-    }
-
-    private static func setTitle(_ button: NSButton, _ title: LocalizedStringResource, in locale: Locale) {
-        button.title = title.resolved(in: locale)
-        button.setAccessibilityLabel(button.title)
-    }
-
-    private func installConstraints() {
-        // Width comes from the viewport rather than the row: the column is as
-        // wide as the file's longest line, and a card that followed it put the
-        // comment body on one endless line off the right edge.
-        let width = card.widthAnchor.constraint(equalToConstant: 400)
-        cardWidth = width
-        let leading = card.leadingAnchor.constraint(
-            equalTo: leadingAnchor,
-            constant: ReviewRowMetrics.cardInset(
-                numberWidth: ReviewRowMetrics.defaultNumberWidth,
-                layout: .unified
-            )
-        )
-        cardLeading = leading
-        NSLayoutConstraint.activate([
-            leading,
-            width,
-            card.topAnchor.constraint(equalTo: topAnchor, constant: ReviewRowMetrics.cardGap),
-            card.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -ReviewRowMetrics.cardGap),
-            icon.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 10),
-            icon.topAnchor.constraint(equalTo: card.topAnchor, constant: 8),
-            icon.widthAnchor.constraint(equalToConstant: 13),
-            icon.heightAnchor.constraint(equalToConstant: 13),
-            title.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
-            title.centerYAnchor.constraint(equalTo: icon.centerYAnchor),
-            state.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 6),
-            state.centerYAnchor.constraint(equalTo: icon.centerYAnchor),
-            position.leadingAnchor.constraint(greaterThanOrEqualTo: state.trailingAnchor, constant: 8),
-            position.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -10),
-            position.centerYAnchor.constraint(equalTo: icon.centerYAnchor),
-            body.leadingAnchor.constraint(
-                equalTo: card.leadingAnchor,
-                constant: ReviewRowMetrics.commentBodyInset / 2
-            ),
-            body.trailingAnchor.constraint(
-                equalTo: card.trailingAnchor,
-                constant: -ReviewRowMetrics.commentBodyInset / 2
-            ),
-            body.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 6),
-            deleteButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
-            editButton.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -12),
-            resolveButton.trailingAnchor.constraint(equalTo: editButton.leadingAnchor, constant: -12),
-            resolveButton.centerYAnchor.constraint(equalTo: editButton.centerYAnchor),
-            editButton.topAnchor.constraint(greaterThanOrEqualTo: body.bottomAnchor, constant: 2),
-            deleteButton.centerYAnchor.constraint(equalTo: editButton.centerYAnchor),
-            editButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -6)
-        ])
-    }
-
-    /// `locale` is the table's, handed down on every reload, so a row taken
-    /// from the pool after a language switch speaks the new language.
-    func configure(_ comment: ReviewComment, metrics: ReviewCardMetrics, locale: Locale) {
-        cardLeading?.constant = ReviewRowMetrics.cardInset(
-            numberWidth: metrics.numberWidth,
-            layout: metrics.layout
-        )
-        cardWidth?.constant = ReviewRowMetrics.cardWidth(
-            in: metrics.viewport,
-            numberWidth: metrics.numberWidth,
-            layout: metrics.layout
-        )
-        title.stringValue = LocalizedStringResource("Comment").resolved(in: locale)
-        Self.setTitle(resolveButton, "Resolve", in: locale)
-        Self.setTitle(editButton, "Edit", in: locale)
-        Self.setTitle(deleteButton, "Delete", in: locale)
-        position.stringValue = "\(comment.file.layer.title.resolved(in: locale)) · \(comment.oldSpan) / \(comment.newSpan)"
-        body.stringValue = comment.body
-        state.stringValue = comment.insertedAt == nil ? "" : LocalizedStringResource("Inserted").resolved(in: locale)
-        // Re-applied rather than left from construction: these rows are pooled,
-        // so one built under the previous accent comes back tinted with it.
-        for button in [resolveButton, editButton, deleteButton] {
-            button.contentTintColor = ReviewRowPainter.accent
-        }
-        body.setAccessibilityLabel([position.stringValue, state.stringValue, comment.body]
-            .filter { !$0.isEmpty }
-            .joined(separator: " "))
-    }
-
-    @objc private func resolve() {
-        onResolve?()
-    }
-
-    @objc private func edit() {
-        onEdit?()
-    }
-
-    @objc private func remove() {
-        onDelete?()
-    }
-}
-
-/// The composer, opened in place under the run it covers. An `NSTextView`
-/// rather than SwiftUI's `TextEditor` because this is where Japanese prose is
-/// written and the input method has to behave.
-final class ReviewComposerRowView: NSView {
-    private let card = ReviewCardView()
-    private let icon = NSImageView()
-    private let title = NSTextField(labelWithString: "")
-    private let position = NSTextField(labelWithString: "")
-    private let field = ReviewFieldView()
-    private let scroll = NSScrollView()
-    let textView = ReviewComposerTextView()
-    private let placeholder = NSTextField(labelWithString: "")
-    private let cancelButton = NSButton()
-    private let addButton = NSButton()
-    var onCommit: (() -> Void)?
-    var onCancel: (() -> Void)?
-    var onTextChange: ((String) -> Void)?
-    private var cardWidth: NSLayoutConstraint?
-    private var cardLeading: NSLayoutConstraint?
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        card.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(card)
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        icon.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: nil)
-        icon.contentTintColor = ReviewRowPainter.accent
-        card.addSubview(icon)
-        for field in [title, position, placeholder] {
-            field.translatesAutoresizingMaskIntoConstraints = false
-            card.addSubview(field)
-        }
-        title.font = .systemFont(ofSize: 11.5, weight: .semibold)
-        position.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-        position.textColor = .tertiaryLabelColor
-        position.alignment = .right
-        placeholder.font = ReviewRowMetrics.commentFont
-        placeholder.textColor = .tertiaryLabelColor
-        textView.font = ReviewRowMetrics.commentFont
-        textView.isRichText = false
-        textView.allowsUndo = true
-        textView.delegate = self
-        textView.onCompositionChanged = { [weak self] in self?.updateEnabled() }
-        textView.drawsBackground = false
-        textView.textContainerInset = NSSize(width: 2, height: 2)
-        field.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(field)
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.documentView = textView
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
-        scroll.borderType = .noBorder
-        field.addSubview(scroll)
-        card.isActive = true
-        // Every word on the card is set in `configure`, which runs again after
-        // a language switch; the composer lives as long as the table does.
-        style(cancelButton, action: #selector(cancel))
-        cancelButton.bezelStyle = .inline
-        cancelButton.isBordered = false
-        cancelButton.contentTintColor = .secondaryLabelColor
-        style(addButton, action: #selector(commit))
-        addButton.bezelStyle = .rounded
-        installConstraints()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    private func style(_ button: NSButton, action: Selector) {
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.controlSize = .small
-        button.font = ReviewRowMetrics.labelFont
-        button.target = self
-        button.action = action
-        card.addSubview(button)
-    }
-
-    private func installConstraints() {
-        let width = card.widthAnchor.constraint(equalToConstant: 400)
-        cardWidth = width
-        let leading = card.leadingAnchor.constraint(
-            equalTo: leadingAnchor,
-            constant: ReviewRowMetrics.cardInset(
-                numberWidth: ReviewRowMetrics.defaultNumberWidth,
-                layout: .unified
-            )
-        )
-        cardLeading = leading
-        NSLayoutConstraint.activate([
-            leading,
-            width,
-            card.topAnchor.constraint(equalTo: topAnchor, constant: ReviewRowMetrics.cardGap),
-            card.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -ReviewRowMetrics.cardGap),
-            icon.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 10),
-            icon.topAnchor.constraint(equalTo: card.topAnchor, constant: 8),
-            icon.widthAnchor.constraint(equalToConstant: 13),
-            icon.heightAnchor.constraint(equalToConstant: 13),
-            title.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
-            title.centerYAnchor.constraint(equalTo: icon.centerYAnchor),
-            position.leadingAnchor.constraint(greaterThanOrEqualTo: title.trailingAnchor, constant: 8),
-            position.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -10),
-            position.centerYAnchor.constraint(equalTo: icon.centerYAnchor),
-            field.leadingAnchor.constraint(
-                equalTo: card.leadingAnchor,
-                constant: ReviewRowMetrics.composerTextInset / 2 - ReviewRowMetrics.composerFieldPadding
-            ),
-            field.trailingAnchor.constraint(
-                equalTo: card.trailingAnchor,
-                constant: -(ReviewRowMetrics.composerTextInset / 2 - ReviewRowMetrics.composerFieldPadding)
-            ),
-            field.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 6),
-            scroll.leadingAnchor.constraint(equalTo: field.leadingAnchor, constant: 6),
-            scroll.trailingAnchor.constraint(equalTo: field.trailingAnchor, constant: -6),
-            scroll.topAnchor.constraint(equalTo: field.topAnchor, constant: 4),
-            scroll.bottomAnchor.constraint(equalTo: field.bottomAnchor, constant: -4),
-            placeholder.leadingAnchor.constraint(equalTo: scroll.leadingAnchor, constant: 4),
-            placeholder.topAnchor.constraint(equalTo: scroll.topAnchor, constant: 2),
-            addButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -10),
-            cancelButton.trailingAnchor.constraint(equalTo: addButton.leadingAnchor, constant: -10),
-            cancelButton.centerYAnchor.constraint(equalTo: addButton.centerYAnchor),
-            addButton.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 8),
-            addButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -8)
-        ])
-    }
-
-    /// Take a new width without being rebuilt. The composer is one instance
-    /// that holds live text and first responder, so a viewport change has to
-    /// reach it this way rather than through a reload.
-    func resize(to metrics: ReviewCardMetrics) {
-        cardLeading?.constant = ReviewRowMetrics.cardInset(
-            numberWidth: metrics.numberWidth,
-            layout: metrics.layout
-        )
-        cardWidth?.constant = ReviewRowMetrics.cardWidth(
-            in: metrics.viewport,
-            numberWidth: metrics.numberWidth,
-            layout: metrics.layout
-        )
-    }
-
-    /// `start` is the first line of the run when more than one line is
-    /// selected; the composer is always drawn under the last one. `locale`
-    /// is the table's: the composer outlives a language switch, so every
-    /// word on it is set here rather than once at construction.
-    func configure( // swiftlint:disable:this function_parameter_count
-        _ line: ReviewLine,
-        start: ReviewLine?,
-        text: String,
-        isEditing: Bool,
-        metrics: ReviewCardMetrics,
-        locale: Locale
+    /// What the header offers (`ReviewHunkAction`, and "Comment" where the
+    /// hunk has lines to comment on), and what its buttons do.
+    func configureActions(
+        _ action: ReviewHunkAction?,
+        isCommentable: Bool,
+        environment: ReviewHostedEnvironment,
+        handlers: ReviewHunkActionsView.Handlers
     ) {
-        cardLeading?.constant = ReviewRowMetrics.cardInset(
-            numberWidth: metrics.numberWidth,
-            layout: metrics.layout
-        )
-        cardWidth?.constant = ReviewRowMetrics.cardWidth(
-            in: metrics.viewport,
-            numberWidth: metrics.numberWidth,
-            layout: metrics.layout
-        )
-        // The composer is one long-lived view rather than a pooled row, so
-        // nothing else would ever put a new accent on it.
-        icon.contentTintColor = ReviewRowPainter.accent
-        // Both headings name the action, so they read as a pair rather than as
-        // one action and one noun.
-        let heading: LocalizedStringResource = isEditing ? "Edit comment" : "Add comment"
-        title.stringValue = heading.resolved(in: locale)
-        // A hint, not a question: a form that asks the reader something reads
-        // as waiting for an answer, and a comment is as often an observation
-        // or a question of its own as it is a change request.
-        placeholder.stringValue = LocalizedStringResource("Leave a comment").resolved(in: locale)
-        textView.setAccessibilityLabel(LocalizedStringResource("Review comment").resolved(in: locale))
-        cancelButton.title = LocalizedStringResource("Cancel").resolved(in: locale)
-        cancelButton.setAccessibilityLabel(cancelButton.title)
-        // The button says only the verb: the card it sits in holds one comment
-        // and says so directly above, and the object repeated three inches
-        // below the heading that already carried it read as boilerplate. The
-        // full phrase stays on the button for anyone reading it out of that
-        // context.
-        let verb: LocalizedStringResource = isEditing ? "Save" : "Add"
-        addButton.title = verb.resolved(in: locale)
-        // Spoken as well as drawn: set once at construction, VoiceOver went on
-        // calling it Add while it said Save.
-        addButton.setAccessibilityLabel(addButton.title)
-        let phrase: LocalizedStringResource = isEditing ? "Save Comment" : "Add Comment"
-        addButton.setAccessibilityTitle(phrase.resolved(in: locale))
-        let first = start ?? line
-        let old = ReviewComment.span(first.oldLine, line.oldLine)
-        let new = ReviewComment.span(first.newLine, line.newLine)
-        position.stringValue = LocalizedStringResource("Old \(old) → new \(new)").resolved(in: locale)
-        if !textView.hasMarkedText(), textView.string != text {
-            textView.string = text
+        actions.rootView = ReviewHosted(environment: environment, content: ReviewHunkActionsView(
+            action: action,
+            isCommentable: isCommentable,
+            header: label.stringValue,
+            handlers: handlers
+        ))
+        actions.isHidden = action == nil && !isCommentable
+        let isDiscarded = switch action {
+        case .discarded, .uncertain: true
+        default: false
         }
-        updateEnabled()
-    }
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard window?.firstResponder === textView, !textView.hasMarkedText(),
-              event.type == .keyDown, ReviewTableKey(event: event) == .insert
-        else {
-            return super.performKeyEquivalent(with: event)
+        if self.isDiscarded != isDiscarded {
+            self.isDiscarded = isDiscarded
+            needsDisplay = true
         }
-        if addButton.isEnabled {
-            onCommit?()
-        }
-        return true
-    }
-
-    @discardableResult
-    func focusText(restoring selection: NSRange? = nil) -> Bool {
-        guard let window else { return false }
-        if window.firstResponder === textView {
-            return true
-        }
-        guard window.makeFirstResponder(textView) else { return false }
-        // UTF-16 units, which is what `NSRange` counts: a character count puts
-        // the caret short of the end as soon as the text holds an emoji.
-        let length = (textView.string as NSString).length
-        let location = min(selection?.location ?? length, length)
-        textView.setSelectedRange(NSRange(location: location, length: min(selection?.length ?? 0, length - location)))
-        return true
-    }
-
-    private func updateEnabled() {
-        let trimmed = textView.string.trimmingCharacters(in: .whitespacesAndNewlines)
-        addButton.isEnabled = !trimmed.isEmpty && !textView.hasMarkedText()
-        placeholder.isHidden = !textView.string.isEmpty || textView.hasMarkedText()
-    }
-
-    @objc private func commit() {
-        onCommit?()
-    }
-
-    @objc private func cancel() {
-        onCancel?()
-    }
-}
-
-extension ReviewComposerRowView: NSTextViewDelegate {
-    func textDidChange(_: Notification) {
-        updateEnabled()
-        onTextChange?(textView.string)
-    }
-
-    func textView(_: NSTextView, doCommandBy selector: Selector) -> Bool {
-        // Return inserts a newline; the comment is committed with ⌘↩ so a
-        // multi-line comment can be written without a modifier per line.
-        if selector == #selector(NSResponder.cancelOperation(_:)) {
-            onCancel?()
-            return true
-        }
-        return false
     }
 }

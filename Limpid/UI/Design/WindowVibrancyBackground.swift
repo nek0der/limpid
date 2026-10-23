@@ -12,7 +12,7 @@
 // Reminders sidebars all rely on this primitive underneath their
 // `.glassEffect` slabs; Ghostty uses the same bridge for its
 // About window. We promote the bridge to a top-level type so both
-// the main window (`ThreePaneLayout`) and the Settings window
+// the main window (`WindowBaseFill`) and the Settings window
 // (`SettingsScene`) share one implementation.
 
 import AppKit

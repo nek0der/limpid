@@ -3,15 +3,6 @@
 
 import AppKit
 
-/// Where a line sits, for the reader who cannot see the gutter. Old and new
-/// are named rather than separated by a slash: the order is not something a
-/// punctuation mark can say.
-private func reviewLinePosition(_ line: ReviewLine, locale: Locale) -> String {
-    let old = line.oldLine.map(String.init) ?? "-"
-    let new = line.newLine.map(String.init) ?? "-"
-    return LocalizedStringResource("Old \(old) → new \(new)").resolved(in: locale)
-}
-
 /// One line of code in the unified layout, on the fill its kind gives it.
 /// The numbers and markers belong to the floating gutter beside this view.
 final class ReviewCodeRowView: NSView {
@@ -99,7 +90,9 @@ final class ReviewCodeRowView: NSView {
         code.textColor = .labelColor
         appearanceInput = (line.kind, isSelected)
         needsDisplay = true
-        code.setAccessibilityLabel(reviewLinePosition(line, locale: locale))
+        // Where the line sits, for the reader who cannot see the gutter,
+        // and whether it was added or removed, which only its fill shows.
+        code.setAccessibilityLabel(line.spokenPosition(locale: locale))
         code.setAccessibilityHelp(
             intralineRanges.isEmpty ? nil : LocalizedStringResource("Changed characters are highlighted.").resolved(in: locale)
         )

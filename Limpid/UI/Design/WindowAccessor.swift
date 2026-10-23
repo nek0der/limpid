@@ -15,43 +15,41 @@ private let log = Logger.limpid("window.toolbar")
 /// this as a `.background(WindowAccessor { ... })` and the closure fires
 /// once the view is in a window.
 ///
-/// **One-shot semantics:** both `configure` and `repositionsTrafficLights`
+/// **One-shot semantics:** both `configure` and `trafficLightStripHeight`
 /// are captured at init time and consumed exactly once from
 /// `viewDidMoveToWindow`. A SwiftUI re-render that passes a fresh
 /// closure / flag is **not** observed — the previously-applied values
 /// keep running. Pass stable closures only.
 struct WindowAccessor: NSViewRepresentable {
     let configure: (NSWindow) -> Void
-    /// When `true`, the view observes `didResizeNotification` and
-    /// re-applies `repositionTrafficLights` after every resize. Leave
-    /// it `false` for a window whose traffic lights should keep
-    /// AppKit's own placement.
-    let repositionsTrafficLights: Bool
+    /// The height of the strip the traffic lights center on. When set,
+    /// the view observes `didResizeNotification` and re-applies
+    /// `repositionTrafficLights` after every resize. `nil` for a window
+    /// whose traffic lights should keep AppKit's own placement.
+    let trafficLightStripHeight: CGFloat?
 
-    init(repositionsTrafficLights: Bool = false, configure: @escaping (NSWindow) -> Void) {
-        self.repositionsTrafficLights = repositionsTrafficLights
+    init(trafficLightStripHeight: CGFloat? = nil, configure: @escaping (NSWindow) -> Void) {
+        self.trafficLightStripHeight = trafficLightStripHeight
         self.configure = configure
     }
 
     func makeNSView(context: Context) -> NSView {
         let view = AccessorView()
         view.configure = configure
-        view.repositionsTrafficLights = repositionsTrafficLights
+        view.trafficLightStripHeight = trafficLightStripHeight
         return view
     }
 
     func updateNSView(_: NSView, context _: Context) {
         // No-op by design. `viewDidMoveToWindow` runs `configure`
-        // exactly once; the post-init re-assignment that used to be
-        // here was never observed (the closure isn't re-invoked, the
-        // flag isn't re-read). Drop the misleading write so the
-        // type's one-shot semantics read as intentional.
+        // exactly once: a re-assignment here would never be observed
+        // (the closure isn't re-invoked, the flag isn't re-read).
     }
 
     @MainActor
     private final class AccessorView: NSView {
         var configure: ((NSWindow) -> Void)?
-        var repositionsTrafficLights: Bool = false
+        var trafficLightStripHeight: CGFloat?
         private var didConfigure = false
         private var resizeObserver: Any?
 
@@ -60,7 +58,7 @@ struct WindowAccessor: NSViewRepresentable {
             guard !didConfigure, let window else { return }
             didConfigure = true
             configure?(window)
-            guard repositionsTrafficLights else { return }
+            guard let stripHeight = trafficLightStripHeight else { return }
             // AppKit re-lays out the traffic lights back to their
             // default position on every resize, and we override their
             // vertical placement, so re-apply after every resize.
@@ -71,7 +69,7 @@ struct WindowAccessor: NSViewRepresentable {
             ) { [weak window] _ in
                 guard let window else { return }
                 MainActor.assumeIsolated {
-                    repositionTrafficLights(in: window)
+                    repositionTrafficLights(in: window, stripHeight: stripHeight)
                 }
             }
         }
@@ -93,10 +91,11 @@ struct WindowAccessor: NSViewRepresentable {
     }
 }
 
-/// Place the three traffic-light buttons: pushed down onto the top
-/// strip's midline so their row shares a center with the toolbar
-/// content beside it (both land at `topStripMidline`, 26 from the
-/// window top, and the buttons occupy 19–33), and moved right so the
+/// Place the three traffic-light buttons: pushed down onto the midline
+/// of the strip along the window top, so their row shares a center with
+/// the toolbar content beside it (for Settings' 52pt strip both land 26
+/// from the window top, and the buttons occupy 19–33; the main window's
+/// title bar is 48pt), and moved right so the
 /// row carries the same left margin as the sidebar rows below it — see
 /// `trafficLightOriginX`. The strip is the input and the buttons
 /// follow, not the other way round.
@@ -104,12 +103,12 @@ struct WindowAccessor: NSViewRepresentable {
 /// The spacing is AppKit's own rather than a number of our own: we are
 /// moving the row, not re-laying it out.
 @MainActor
-func repositionTrafficLights(in window: NSWindow) {
+func repositionTrafficLights(in window: NSWindow, stripHeight: CGFloat) {
     // AppKit measures a titlebar subview from the titlebar's bottom, so
     // the arithmetic below turns this into the button's top edge in
     // window coordinates. Centering the row on the strip's midline puts
     // it on the same line as the toolbar content beside it.
-    let originY = LimpidLayout.topStripMidline
+    let originY = stripHeight / 2
         - LimpidLayout.trafficLightButtonSize / 2
     let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
     for (index, type) in buttons.enumerated() {
@@ -130,19 +129,17 @@ extension View {
     /// the toolbar content in each column. Pair with the resize-aware
     /// observer in `WindowAccessor` so the offset survives AppKit's
     /// re-layouts.
-    func limpidWindowToolbar(onWindow: ((NSWindow) -> Void)? = nil) -> some View {
-        background(WindowAccessor(repositionsTrafficLights: true) { window in
-            onWindow?(window)
+    func limpidWindowToolbar(stripHeight: CGFloat) -> some View {
+        background(WindowAccessor(trafficLightStripHeight: stripHeight) { window in
             applyTransparentTitleToolbar(to: window, clearBackground: true)
-            repositionTrafficLights(in: window)
+            repositionTrafficLights(in: window, stripHeight: stripHeight)
         })
     }
 
     /// Flush-sidebar toolbar for the Settings window. Same transparent
     /// title bar as the main window so the toolbar strip blends with
-    /// the sidebar, but the window stays opaque — Settings has no
-    /// terminal painting its own background, so a clear `NSWindow` would
-    /// show through in Mission Control / Exposé snapshots. The traffic
+    /// the sidebar, and the window is cleared as well, so the body's
+    /// behind-window material reads the wallpaper. The traffic
     /// lights go through the same `repositionTrafficLights` the main
     /// window uses, so they land on the strip's midline and at the
     /// sidebar's own left margin here too. Settings' sidebar is
@@ -150,7 +147,7 @@ extension View {
     /// margin the buttons align to is the row indent, which both
     /// windows share.
     func limpidSettingsToolbar(onWindow: ((NSWindow) -> Void)? = nil) -> some View {
-        background(WindowAccessor(repositionsTrafficLights: true) { window in
+        background(WindowAccessor(trafficLightStripHeight: LimpidLayout.topStripHeight) { window in
             onWindow?(window)
             // `clearBackground: true` so the SwiftUI body's
             // behind-window `NSVisualEffectView` (see
@@ -158,16 +155,17 @@ extension View {
             // the wallpaper. An opaque `NSWindow` would block the VEV
             // and we'd see a flat fill instead of Liquid Glass.
             applyTransparentTitleToolbar(to: window, clearBackground: true)
-            repositionTrafficLights(in: window)
+            repositionTrafficLights(in: window, stripHeight: LimpidLayout.topStripHeight)
         })
     }
 }
 
 /// Shared toolbar setup: transparent title bar so the SwiftUI content
-/// (sidebar, panes, glass slabs) flows into the toolbar area.
+/// (sidebar, panes, glass surfaces) flows into the title bar area.
 /// `clearBackground` controls whether the underlying `NSWindow` is made
 /// see-through. The terminal window needs it (libghostty paints its own
-/// background); Settings does not (the desktop would leak through).
+/// background), and so does Settings, whose behind-window material has
+/// to read the wallpaper.
 @MainActor
 private func applyTransparentTitleToolbar(to window: NSWindow, clearBackground: Bool = true) {
     if clearBackground {

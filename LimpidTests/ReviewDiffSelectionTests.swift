@@ -70,9 +70,9 @@ struct ReviewDiffSelectionTests {
     /// nor dragged text lets go of them, and the text sits beside them.
     @Test func keptLinesStayBesideText() {
         var selection = selecting(0)
-        let didRelease = selection.pressCode(keepingLines: true)
+        let didRelease = selection.pressCode(keepsLines: true)
         #expect(!didRelease)
-        selection.selectText(draggedText, keepingLines: true)
+        selection.selectText(draggedText, keepsLines: true)
         #expect(selection.lines.startLineID == 0)
         #expect(selection.text == draggedText)
     }
@@ -80,7 +80,7 @@ struct ReviewDiffSelectionTests {
     /// Once the composer closes, the text is the newer of the two and stays.
     @Test func closingTheComposerLeavesOnlyTheText() {
         var selection = selecting(0)
-        selection.selectText(draggedText, keepingLines: true)
+        selection.selectText(draggedText, keepsLines: true)
         selection.composerDidClose()
         #expect(selection.lines.isEmpty)
         #expect(selection.text == draggedText)
@@ -105,7 +105,7 @@ struct ReviewDiffSelectionTests {
     /// goes.
     @Test func textBesideKeptLinesOnlyGoes() {
         var selection = selecting(0)
-        selection.selectText(draggedText, keepingLines: true)
+        selection.selectText(draggedText, keepsLines: true)
         selection.takeTextAsLines(rows: rows, diffLines: lines)
         #expect(selection.lines.startLineID == 0)
         #expect(selection.lines.endLineID == 0)

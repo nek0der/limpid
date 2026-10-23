@@ -4,30 +4,14 @@
 import AppKit
 import SwiftUI
 
-/// A line on screen, and where it sits in the viewport.
-///
-/// Its own type rather than one nested in the coordinator, which is already a
-/// type inside a type.
-struct ReviewScrollAnchor {
-    let lineID: Int
-    let offset: CGFloat
-}
-
 extension ReviewDiffTable {
     @MainActor
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         var parent: ReviewDiffTable
         var isUpdating = false
         var appliedKey = ""
-        /// The file the scroll position belongs to. A different file starts at
-        /// its own top-left: the table is reused across files, and an offset
-        /// left over from a wide one put the reader past the end of every line
-        /// in the next, where the frozen numbers still drew and the code did
-        /// not.
-        var appliedFileID: String?
-        /// The diff the last row list was built from, which is what says
-        /// whether a row id still names the same code.
-        var appliedIdentity: String?
+        /// The last `ReviewDiffTable.focusRequest` acted on.
+        var appliedFocusRequest = 0
         /// The height the composer row was last given, so a keystroke that does
         /// not change it costs nothing.
         var appliedComposerHeight: CGFloat = 0
@@ -54,6 +38,15 @@ extension ReviewDiffTable {
         /// is no composer in it.
         var composerRowIndex: Int?
         var appliedComposerKey: String?
+        /// The row list `hunkRowsKey` names, and what each hunk header
+        /// offered when it was last configured: a discard changes what a
+        /// header offers without changing the rows, so those rows are
+        /// configured again on their own.
+        var hunkRowsKey: String?
+        var appliedHunkActions: [Int: ReviewHunkAction] = [:]
+        /// The surface opacity the headers were last configured with, `nil`
+        /// before the first update (`refreshHeaderFills`).
+        var appliedSurfaceOpacity: Double?
         /// The query the visible rows were last drawn for.
         private var appliedSearch = ""
         /// The match the table was last scrolled to.
@@ -64,6 +57,30 @@ extension ReviewDiffTable {
         private var hadSearchBar = false
         /// What the gutter was last drawn for.
         private var appliedGutterKey: String?
+        /// The last `ReviewDiffTable.scrollRequest` acted on.
+        var appliedScrollSerial = 0
+        /// Each stacked file's longest lines, by what its rows were built
+        /// from (`stackCandidates`).
+        var sectionWidths: [String: [(cells: Int, text: String)]] = [:]
+        /// Each stacked file's language, by file id: a row asks for it every
+        /// time it is drawn.
+        var languages: [String: ReviewSyntax.Language?] = [:]
+        /// Waits for the wheel to stop before saying which file is being
+        /// read; a mouse wheel scrolls notch by notch.
+        var wheelSettle: Task<Void, Never>?
+        /// The live-scroll observer's token, `nonisolated(unsafe)` on the
+        /// same argument as `widthObserver`.
+        nonisolated(unsafe) var liveScrollObserver: (any NSObjectProtocol)?
+        /// The token of the observer that hears a live scroll start,
+        /// `nonisolated(unsafe)` on the same argument as `widthObserver`.
+        nonisolated(unsafe) var liveScrollStartObserver: (any NSObjectProtocol)?
+        /// The `ReviewDiffTable.stackRestore` put back or given up, so it is
+        /// not put back again before the surface lets go of it.
+        var finishedStackRestore: ReviewScrollAnchor?
+        /// The find bar as a place kept for the review tab was taken, while
+        /// the match is not scrolled to: the place comes first on arrival,
+        /// until the person moves or searches again (`revealSearchTarget`).
+        var searchHeldForRestore: ReviewSearch?
 
         /// Make the next `refreshGutter` redraw whatever the key says.
         ///
@@ -79,6 +96,9 @@ extension ReviewDiffTable {
         /// divider between them is a fixed part of the row.
         var codeOffset: CGFloat = 0
         private var lastScrollOffset: CGFloat = 0
+        /// How far the column was scrolled sideways when the cards were last
+        /// placed (`placeCards(in:)`).
+        private var lastHorizontalOffset: CGFloat = 0
         private var cachedWidest: CGFloat?
         private var cachedWidestKey: String?
         /// Whether the previous row list carried a composer, so the reload that
@@ -100,9 +120,10 @@ extension ReviewDiffTable {
         /// The composer this coordinator has already handed the keyboard to.
         ///
         /// The cell is rebuilt whenever the row list is — a refresh, a stale
-        /// mark arriving, a wider line number — and every rebuild used to ask
-        /// for focus again. With the find bar open that took the keyboard out
-        /// of the field mid-word and put the rest of the query in the draft.
+        /// mark arriving, a wider line number — and a rebuild must not ask for
+        /// focus again: with the find bar open, that would take the keyboard
+        /// out of the field mid-word and put the rest of the query in the
+        /// draft.
         private var focusedComposer: Int?
         /// We preserve selection only when the same composer is remounted.
         private var composerSelectionToRestore: (lineID: Int, range: NSRange)?
@@ -120,6 +141,7 @@ extension ReviewDiffTable {
             view.onCommit = { [weak self] in self?.parent.onCommit() }
             view.onCancel = { [weak self] in self?.parent.onCancelCompose() }
             view.onTextChange = { [weak self] in self?.parent.composerText = $0 }
+            view.onInputMethodText = { [weak self] in self?.parent.onComposerInputMethodText($0) }
             return view
         }()
 
@@ -151,6 +173,12 @@ extension ReviewDiffTable {
             if let scrollObserver {
                 NotificationCenter.default.removeObserver(scrollObserver)
             }
+            if let liveScrollObserver {
+                NotificationCenter.default.removeObserver(liveScrollObserver)
+            }
+            if let liveScrollStartObserver {
+                NotificationCenter.default.removeObserver(liveScrollStartObserver)
+            }
         }
 
         /// The gutter floats horizontally but travels with the content
@@ -164,6 +192,18 @@ extension ReviewDiffTable {
             ) { [weak self, weak scroll] _ in
                 MainActor.assumeIsolated {
                     guard let self, let scroll else { return }
+                    // The stacked files about to come on screen are read
+                    // while the reader is still scrolling toward them.
+                    if let table = scroll.documentView as? NSTableView {
+                        self.requestDiffs(in: scroll, table: table)
+                        // The cards are pinned to what the reader sees, so a
+                        // long line scrolled past moves them back into view.
+                        let horizontal = scroll.contentView.bounds.origin.x
+                        if abs(horizontal - self.lastHorizontalOffset) > 0.5 {
+                            self.lastHorizontalOffset = horizontal
+                            self.placeCards(in: table)
+                        }
+                    }
                     // Vertical only. The strip is pinned against horizontal
                     // scrolling, so nothing in it changes when a long line
                     // slides past — and redrawing it per scroll event meant
@@ -189,6 +229,11 @@ extension ReviewDiffTable {
             gutter.selection = parent.selection.lines
             gutter.commentCounts = parent.lineCommentCounts
             gutter.numberWidth = parent.numberWidth
+            gutter.leavesCardsUncovered = ReviewRowMetrics.cardFrame(
+                viewport: visibleWidth(of: table),
+                numberWidth: parent.numberWidth,
+                layout: parent.layout
+            ).leading < ReviewRowMetrics.gutterTotal(numberWidth: parent.numberWidth)
             gutter.frame = NSRect(
                 x: 0, y: 0,
                 width: ReviewRowMetrics.gutterTotal(numberWidth: parent.numberWidth),
@@ -206,9 +251,10 @@ extension ReviewDiffTable {
                 parent.selection.lines.side?.rawValue ?? "",
                 // The composer's height moves every row under it. `contentKey`
                 // does not carry it — the row list is the same — so without it
-                // the numbers stayed where the rows used to be.
+                // the numbers would stay where the rows were before it moved.
                 String(describing: appliedComposerHeight),
-                String(describing: gutter.frame)
+                String(describing: gutter.frame),
+                String(gutter.leavesCardsUncovered)
             ].joined(separator: "|")
             guard key != appliedGutterKey else { return }
             appliedGutterKey = key
@@ -269,7 +315,7 @@ extension ReviewDiffTable {
         }
 
         /// Where the composer sits in the current row list, if it is open.
-        private func composerRowIndex(in table: NSTableView) -> Int? {
+        func composerRowIndex(in table: NSTableView) -> Int? {
             guard let lineID = parent.composerLineID,
                   let index = parent.rows.firstIndex(where: {
                       if case let .composer(line) = $0.kind {
@@ -297,22 +343,7 @@ extension ReviewDiffTable {
             // Top eight in one pass. Sorting every line to take the first few
             // of them is the same answer for a great deal more work, and this
             // runs for a diff that can be a hundred thousand lines long.
-            // How many of the longest lines are measured properly. The scan
-            // keeps this many by cell count and then asks the font about them;
-            // the sample size and the index of its last entry were two
-            // literals, and changing one left the other reading past the end.
-            let sampleSize = 8
-            var candidates: [(cells: Int, text: String)] = []
-            for text in parent.rows.lazy.flatMap(\.texts) {
-                let cells = ReviewRowPainter.cells(in: text)
-                if candidates.count < sampleSize {
-                    candidates.append((cells, text))
-                    candidates.sort { $0.cells > $1.cells }
-                } else if cells > candidates[sampleSize - 1].cells {
-                    candidates[sampleSize - 1] = (cells, text)
-                    candidates.sort { $0.cells > $1.cells }
-                }
-            }
+            let candidates = stackCandidates(parent.stack)
             let attributes: [NSAttributedString.Key: Any] = [.font: ReviewRowMetrics.font]
             let width = candidates.reduce(0.0) { widest, candidate in
                 max(widest, ceil((candidate.text as NSString).size(withAttributes: attributes).width))
@@ -388,13 +419,13 @@ extension ReviewDiffTable {
             guard range.length > 0 else { return nil }
             var fallback: ReviewScrollAnchor?
             for index in range.location..<range.location + range.length {
-                guard parent.rows.indices.contains(index), let line = parent.rows[index].anchorLine else { continue }
-                let anchor = ReviewScrollAnchor(lineID: line.id, offset: table.rect(ofRow: index).minY - visible.minY)
+                guard parent.rows.indices.contains(index), let key = anchorKey(atRow: index) else { continue }
+                let anchor = ReviewScrollAnchor(key: key, offset: table.rect(ofRow: index).minY - visible.minY)
                 // A line out of the patch by preference: an unfolded one is
                 // gone the moment its gap is folded back, and an anchor that
                 // no longer exists holds nothing. The whole viewport is
                 // unfolded lines only where the reader opened a gap whole.
-                guard line.isExpansion else { return anchor }
+                guard parent.rows[index].anchorLine?.isExpansion == true else { return anchor }
                 fallback = fallback ?? anchor
             }
             return fallback
@@ -406,13 +437,8 @@ extension ReviewDiffTable {
         /// that have nothing to do with unfolding, and moving the scroll to
         /// approximately the right place would be worse than leaving it.
         func restore(_ anchor: ReviewScrollAnchor, in scroll: NSScrollView, table: NSTableView) {
-            guard let index = parent.rows.firstIndex(where: { $0.anchorLine?.id == anchor.lineID }),
-                  index < table.numberOfRows
-            else { return }
-            let target = max(table.rect(ofRow: index).minY - anchor.offset, 0)
-            guard abs(target - scroll.documentVisibleRect.minY) > 0.5 else { return }
-            scroll.contentView.scroll(to: NSPoint(x: scroll.documentVisibleRect.minX, y: target))
-            scroll.reflectScrolledClipView(scroll.contentView)
+            guard let index = parent.stack.row(forAnchorKey: anchor.key) else { return }
+            self.scroll(toRow: index, offset: anchor.offset, in: scroll, table: table)
         }
 
         /// Repaints what the reader can see when the query changes.
@@ -464,6 +490,16 @@ extension ReviewDiffTable {
         func revealSearchTarget(in table: NSTableView) {
             guard appliedSearchTarget != parent.searchTargetLineID else { return }
             appliedSearchTarget = parent.searchTargetLineID
+            // A review tab that came back with its find bar open is put back
+            // where it was, not on its match, until the person moves or
+            // searches again (`applyStackRestore`).
+            // Searching again is the person moving: a place still waiting
+            // for its file is given up, rather than taking them from the
+            // match they went to once the file is read.
+            if let held = searchHeldForRestore {
+                guard held != parent.search else { return }
+                readerMoved()
+            }
             // Asked of both columns. `anchorLine` answers with the new side of
             // a replaced pair, so a match on the old side of one named a row
             // that no scan could find — counted and marked in the margin, and
@@ -475,48 +511,39 @@ extension ReviewDiffTable {
             table.scrollRowToVisible(index)
         }
 
-        func scrollToOrigin(of scroll: NSScrollView) {
-            codeOffset = 0
-            if let table = scroll.documentView as? NSTableView {
-                // The rows on screen were drawn with the old offset, and the
-                // reload that follows may reuse them: without this the code
-                // stayed scrolled sideways while the coordinator believed it
-                // was back at the left edge.
-                applyCodeOffset(in: table)
-            }
-            guard let document = scroll.documentView else { return }
-            let top = document.isFlipped
-                ? 0
-                : max(0, document.bounds.height - scroll.contentSize.height)
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: top))
-            scroll.reflectScrolledClipView(scroll.contentView)
-        }
-
         func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
             guard parent.rows.indices.contains(row) else { return ReviewRowMetrics.code }
             switch parent.rows[row].kind {
             case .notice: return ReviewRowMetrics.notice
+            case .file: return LimpidLayout.Supervision.reviewFileHeaderHeight
             case .hunk: return ReviewRowMetrics.hunk
             case .expander: return ReviewRowMetrics.hunk
             case .code, .splitCode: return ReviewRowMetrics.code
-            case .composer:
-                return ReviewRowMetrics.composerHeight(
-                    for: parent.composerText,
-                    width: max(visibleWidth(of: tableView), ReviewRowMetrics.minimumMeasurementWidth),
-                    numberWidth: parent.numberWidth,
-                    layout: parent.layout
-                )
+            case let .composer(line):
+                return composerHeight(for: line, in: tableView)
             case let .comment(comment):
                 // The column can be far wider than the viewport when a file has
                 // long lines; comments wrap to what is actually visible.
-                let visible = tableView.enclosingScrollView?.contentSize.width
-                    ?? tableView.bounds.width
                 return ReviewRowMetrics.commentHeight(
                     for: comment.body,
-                    width: max(visible, ReviewRowMetrics.minimumMeasurementWidth),
-                    numberWidth: parent.numberWidth,
-                    layout: parent.layout
+                    header: ReviewCommentRowView.header(for: comment, locale: parent.locale),
+                    metrics: cardMetrics(in: tableView)
                 )
+            }
+        }
+
+        /// Move the cards to where the reader is looking, after a sideways
+        /// scroll. Every row the table holds, not only the visible ones: it
+        /// keeps rows prepared above and below the visible area, and one of
+        /// those scrolled into view later is shown as it is, without being
+        /// configured again — with its card where the previous offset left
+        /// it. A row built later is configured with the offset of its own
+        /// moment.
+        func placeCards(in table: NSTableView) {
+            let metrics = cardMetrics(in: table)
+            composer.resize(to: metrics)
+            table.enumerateAvailableRowViews { rowView, _ in
+                (rowView.view(atColumn: 0) as? ReviewCommentRowView)?.place(metrics)
             }
         }
 
@@ -541,10 +568,10 @@ extension ReviewDiffTable {
                 let view = reuse(tableView, "review-notice", ReviewNoticeRowView.init)
                 view.configure(text, locale: parent.locale)
                 return view
+            case let .file(header):
+                return fileHeaderRow(tableView, header: header)
             case let .hunk(line):
-                let view = reuse(tableView, "review-hunk", ReviewHunkRowView.init)
-                view.configure(line, numberWidth: parent.numberWidth, layout: parent.layout)
-                return view
+                return hunkRow(tableView, line: line, row: row)
             case let .expander(expander):
                 let view = reuse(tableView, "review-expander", ReviewExpanderRowView.init)
                 view.configure(expander, numberWidth: parent.numberWidth, layout: parent.layout, locale: parent.locale)
@@ -556,7 +583,7 @@ extension ReviewDiffTable {
                     line,
                     isSelected: parent.selection.lines.contains(line.id),
                     numberWidth: parent.numberWidth,
-                    language: parent.language,
+                    language: language(forRow: row),
                     match: parent.search.query,
                     intralineRanges: parent.intralineHighlights[line.id],
                     selectedRange: parent.selection.text.range(in: line, at: row, on: nil),
@@ -574,7 +601,7 @@ extension ReviewDiffTable {
                     numberWidth: parent.numberWidth,
                     codeOffset: codeOffset,
                     match: parent.search.query,
-                    language: parent.language,
+                    language: language(forRow: row),
                     locale: parent.locale
                 ))
                 view.onAddComment = { [weak self] in self?.parent.onCompose() }
@@ -607,20 +634,7 @@ extension ReviewDiffTable {
             }
         }
 
-        /// What the reader can actually see, which is what a card is sized to.
-        private func visibleWidth(of table: NSTableView) -> CGFloat {
-            table.enclosingScrollView?.contentSize.width ?? table.bounds.width
-        }
-
-        private func cardMetrics(in table: NSTableView) -> ReviewCardMetrics {
-            ReviewCardMetrics(
-                viewport: visibleWidth(of: table),
-                numberWidth: parent.numberWidth,
-                layout: parent.layout
-            )
-        }
-
-        private func reuse<T: NSView>(
+        func reuse<T: NSView>(
             _ tableView: NSTableView,
             _ name: String,
             _ make: () -> T
@@ -813,6 +827,9 @@ extension ReviewDiffTable {
                     if abs(scroll.contentSize.height - self.lastHeight) > 1 {
                         self.lastHeight = scroll.contentSize.height
                         self.refreshGutter(in: table)
+                        // The first layout with a height is the first time
+                        // the stacked diff can say what is on screen.
+                        self.requestDiffs(in: scroll, table: table)
                     }
                     guard abs(scroll.contentSize.width - self.lastWidth) > 1 else { return }
                     self.lastWidth = scroll.contentSize.width
@@ -825,10 +842,11 @@ extension ReviewDiffTable {
                     // failing here.
                     let commentRows = rows.indices.filter {
                         guard $0 < table.numberOfRows else { return false }
-                        if case .comment = rows[$0].kind {
-                            return true
+                        switch rows[$0].kind {
+                        // A file's header spans what can be seen, as a card does.
+                        case .comment, .file: return true
+                        default: return false
                         }
-                        return false
                     }
                     if !commentRows.isEmpty {
                         let indexes = IndexSet(commentRows)

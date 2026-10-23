@@ -18,8 +18,7 @@
   "marks": {
     "viewed": {
       "claude:AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1": "4"
-    },
-    "dismissed": {}
+    }
   },
   "presence": {
     "attachments": {},

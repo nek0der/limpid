@@ -20,8 +20,8 @@ extension ReviewValidationScenarios {
         let fileURL = root.appendingPathComponent("new.txt")
         try "one\ntwo\n".write(to: fileURL, atomically: true, encoding: .utf8)
         let storage = directory.appendingPathComponent("drafts")
-        let store = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage))
-        await store.refresh()
+        let store = ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage))
+        await store.refreshAsTheAppDoes()
         guard let file = store.files.first else { throw ReviewValidationFailure(message: "File missing") }
         await store.load(file)
         guard let line = store.diff?.lines.first else { throw ReviewValidationFailure(message: "Line missing") }
@@ -39,7 +39,7 @@ extension ReviewValidationScenarios {
         }
         try require(ranged.end?.lineID == run[1].id, "Range end not recorded")
         try require(
-            ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage)).comments.last?.end?.lineID == run[1].id,
+            ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage)).comments.last?.end?.lineID == run[1].id,
             "Range did not round-trip"
         )
         store.remove(ranged.id)
@@ -55,7 +55,7 @@ extension ReviewValidationScenarios {
             cwd: root
         )
         try "gamma\ndelta\n".write(to: tracked, atomically: true, encoding: .utf8)
-        await store.refresh()
+        await store.refreshAsTheAppDoes()
         guard let replaced = store.files.first(where: { $0.path == "tracked.txt" }) else {
             throw ReviewValidationFailure(message: "The replacement is not in the change list")
         }
@@ -79,11 +79,11 @@ extension ReviewValidationScenarios {
             "A new-side comment took an old-side position"
         )
         try require(
-            ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage)).comments.last?.side == .new,
+            ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage)).comments.last?.side == .new,
             "The column did not round-trip"
         )
         store.remove(sided.id)
-        let restored = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage))
+        let restored = ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage))
         try require(restored.comments == store.comments, "Draft did not round-trip")
         try await require(
             store.insertable(store.comments).count == store.comments.count,
@@ -99,14 +99,14 @@ extension ReviewValidationScenarios {
         try require(store.staleCommentIDs.count == 1, "Editing must not re-anchor a stale comment")
         let id = store.comments[0].id
         store.remove(id)
-        try require(ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage)).comments.isEmpty, "Deletion not persisted")
+        try require(ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage)).comments.isEmpty, "Deletion not persisted")
         let files = try FileManager.default.contentsOfDirectory(at: storage, includingPropertiesForKeys: nil)
         guard let saved = files.first else { throw ReviewValidationFailure(message: "Saved file missing") }
         let attributes = try FileManager.default.attributesOfItem(atPath: saved.path)
         try require((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600, "Draft permissions")
         try Data("corrupt".utf8).write(to: saved)
-        let broken = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage))
-        await broken.refresh()
+        let broken = ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage))
+        await broken.refreshAsTheAppDoes()
         await broken.load(file)
         guard let recovered = broken.diff?.lines.first else {
             throw ReviewValidationFailure(message: "The reopened store has no diff to comment on")
@@ -123,7 +123,7 @@ extension ReviewValidationScenarios {
         try require(Data(contentsOf: quarantined) == Data("corrupt".utf8), "Unreadable draft was not kept verbatim")
         try require(broken.comments.count == 1, "A comment written after an unreadable draft was refused")
         try require(
-            ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage)).comments.count == 1,
+            ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage)).comments.count == 1,
             "The draft written after an unreadable one did not persist"
         )
     }
@@ -138,8 +138,6 @@ extension ReviewValidationScenarios {
     /// that is most of them.
     static func fingerprints(at directory: URL) async throws {
         try await seed(directory)
-        _ = try await checkedGit(["config", "user.email", "test@limpid.invalid"], cwd: directory)
-        _ = try await checkedGit(["config", "user.name", "Limpid Test"], cwd: directory)
         let root = try await ReviewGit.root(at: directory)
         try "one\ntwo\n".write(to: root.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
         _ = try await checkedGit(["add", "tracked.txt"], cwd: root)
@@ -203,8 +201,6 @@ extension ReviewValidationScenarios {
     /// silently missing from the review.
     static func branchScope(at directory: URL) async throws {
         try await seed(directory)
-        _ = try await checkedGit(["config", "user.email", "test@limpid.invalid"], cwd: directory)
-        _ = try await checkedGit(["config", "user.name", "Limpid Test"], cwd: directory)
         let root = try await ReviewGit.root(at: directory)
         // Ten lines rather than one so the base and the branch can each change
         // a different end of the file. Written on one line apiece, the two
@@ -275,119 +271,12 @@ extension ReviewValidationScenarios {
         try require(moved != before, "A moved merge base left the branch fingerprint unchanged")
     }
 
-    /// A turn compares two working-tree snapshots, so commits between them do
-    /// not change what is selected and edits already present at the prompt do
-    /// not leak into the result.
-    static func turnScope(at directory: URL) async throws {
-        try await seed(directory)
-        for (path, contents) in [
-            ("dirty-before.txt", "base\n"),
-            ("modified.txt", "base\n"),
-            ("deleted.txt", "delete me\n"),
-            ("rename-old.txt", "rename me\n")
-        ] {
-            try contents.write(to: directory.appendingPathComponent(path), atomically: true, encoding: .utf8)
-        }
-        try "ignored.txt\n".write(
-            to: directory.appendingPathComponent(".gitignore"), atomically: true, encoding: .utf8
-        )
-        try await checkedGit(["add", "-A"], cwd: directory)
-        try await checkedGit(["commit", "-m", "base"], cwd: directory)
-
-        try "base\npre-snapshot\n".write(
-            to: directory.appendingPathComponent("dirty-before.txt"), atomically: true, encoding: .utf8
-        )
-        try "base\npre-snapshot\n".write(
-            to: directory.appendingPathComponent("modified.txt"), atomically: true, encoding: .utf8
-        )
-        let scratchIndex = directory.appendingPathComponent(".git/turn-test.index")
-        try FileManager.default.copyItem(at: directory.appendingPathComponent(".git/index"), to: scratchIndex)
-        let snapshotEnvironment = ["GIT_INDEX_FILE": scratchIndex.path]
-        try await checkedGit(["add", "-A"], cwd: directory, environment: snapshotEnvironment)
-        let tree = try await checkedGit(["write-tree"], cwd: directory, environment: snapshotEnvironment)
-            .stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        let scope = ReviewScope.turn(baseTree: tree, paneID: UUID())
-        try await require(ReviewGit.files(at: directory, scope: scope).isEmpty, "A no-op turn listed changes")
-
-        try "base\npre-snapshot\npost-snapshot one\n".write(
-            to: directory.appendingPathComponent("modified.txt"), atomically: true, encoding: .utf8
-        )
-        try FileManager.default.createDirectory(
-            at: directory.appendingPathComponent("new-directory"), withIntermediateDirectories: true
-        )
-        try "new\n".write(
-            to: directory.appendingPathComponent("new-directory/added.txt"), atomically: true, encoding: .utf8
-        )
-        try FileManager.default.removeItem(at: directory.appendingPathComponent("deleted.txt"))
-        try await checkedGit(["mv", "rename-old.txt", "rename-new.txt"], cwd: directory)
-        try "ignored\n".write(
-            to: directory.appendingPathComponent("ignored.txt"), atomically: true, encoding: .utf8
-        )
-        try "committed addition\n".write(
-            to: directory.appendingPathComponent("committed-add.txt"), atomically: true, encoding: .utf8
-        )
-        try await checkedGit(["add", "committed-add.txt"], cwd: directory)
-        try await checkedGit(["commit", "-m", "partial turn"], cwd: directory)
-        try "base\npre-snapshot\npost-snapshot one\npost-snapshot two\n".write(
-            to: directory.appendingPathComponent("modified.txt"), atomically: true, encoding: .utf8
-        )
-
-        let files = try await ReviewGit.files(at: directory, scope: scope)
-        let actual = files.map { ($0.status.rawValue, $0.path) }
-        try require(actual.map(\.0).sorted() == ["A", "A", "D", "M", "R"], "Turn statuses differ: \(actual)")
-        try require(!files.contains { $0.path == "ignored.txt" }, "Ignored file was listed")
-        try require(!files.contains { $0.path == "dirty-before.txt" }, "Pre-snapshot edit was listed")
-        guard let modified = files.first(where: { $0.path == "modified.txt" }) else {
-            throw ReviewValidationFailure(message: "Modified file missing")
-        }
-        let diff = try await ReviewGit.diff(modified, root: directory, scope: scope)
-        let patchText = diff.lines.map(\.text).joined(separator: "\n")
-        try require(patchText.contains("post-snapshot one"), "Post-snapshot edit missing")
-        try require(
-            !diff.lines.contains { $0.kind == .added && $0.text == "pre-snapshot" },
-            "Pre-snapshot line leaked into the diff"
-        )
-        try await require(
-            ReviewGit.fingerprint(modified, root: directory, scope: scope) == diff.fingerprint,
-            "Turn fingerprint and diff disagree"
-        )
-        try await require(ReviewGit.stats(at: directory, scope: scope).count == 5, "Turn stats differ")
-
-        // A poll compares an unpublished index. The index that supplied this
-        // diff and its unfoldable source remains authoritative until an
-        // explicit files refresh publishes a new snapshot.
-        try "base\npre-snapshot\npost-snapshot one\npost-snapshot two\nafter-display-snapshot\n".write(
-            to: directory.appendingPathComponent("modified.txt"), atomically: true, encoding: .utf8
-        )
-        try await require(
-            ReviewGit.hasChanges(at: directory, scope: scope, comparedTo: files, currentDiff: diff),
-            "A newer turn worktree was not detected"
-        )
-        let source = await ReviewGit.source(modified, root: directory, scope: scope)
-        try require(!source.contains("after-display-snapshot"), "Polling replaced the displayed turn source")
-        let retainedDiff = try await ReviewGit.diff(modified, root: directory, scope: scope)
-        try require(
-            retainedDiff.fingerprint == diff.fingerprint,
-            "Polling replaced the displayed turn diff"
-        )
-
-        do {
-            _ = try await ReviewGit.files(
-                at: directory,
-                scope: .turn(baseTree: String(repeating: "0", count: 40), paneID: UUID())
-            )
-            throw ReviewValidationFailure(message: "A missing turn base was accepted")
-        } catch ReviewError.turnBaseMissing {}
-    }
-
     static func conflictAndLimits(at directory: URL) async throws {
         try await seed(directory)
         let path = directory.appendingPathComponent("conflict.txt")
         try "base\n".write(to: path, atomically: true, encoding: .utf8)
         try await checkedGit(["add", "."], cwd: directory)
         try await checkedGit(["commit", "-qm", "base"], cwd: directory)
-        let baseTree = try await checkedGit(["rev-parse", "HEAD^{tree}"], cwd: directory)
-            .stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         try await checkedGit(["checkout", "-qb", "other"], cwd: directory)
         try "other\n".write(to: path, atomically: true, encoding: .utf8)
         try await checkedGit(["commit", "-qam", "other"], cwd: directory)
@@ -401,23 +290,6 @@ extension ReviewValidationScenarios {
         let diff = try await ReviewGit.diff(conflicts[0], root: directory)
         try require(diff.lines.isEmpty && diff.notice != nil, "A conflict must explain why it has no diff")
         try await require(ReviewGit.fingerprint(conflicts[0], root: directory) == diff.fingerprint, "Conflict fingerprint agreement")
-        let turnScope = ReviewScope.turn(baseTree: baseTree, paneID: UUID())
-        let turnConflicts = try await ReviewGit.files(at: directory, scope: turnScope).filter { $0.path == "conflict.txt" }
-        try require(
-            turnConflicts.count == 1 && turnConflicts[0].status == .unmerged,
-            "A turn conflict must remain unmerged"
-        )
-        let turnDiff = try await ReviewGit.diff(turnConflicts[0], root: directory, scope: turnScope)
-        try require(turnDiff.lines.isEmpty && turnDiff.notice != nil, "A turn conflict must not be reviewable")
-        try await require(
-            !ReviewGit.hasChanges(
-                at: directory,
-                scope: turnScope,
-                comparedTo: turnConflicts,
-                currentDiff: turnDiff
-            ),
-            "An unchanged turn conflict must not raise the pending-change banner"
-        )
         let huge = ReviewFile(path: "huge.txt", layer: .untracked, status: .untracked)
         try String(repeating: "x\n", count: ReviewDiffParser.maxRows + 1)
             .write(to: directory.appendingPathComponent(huge.path), atomically: true, encoding: .utf8)
@@ -452,8 +324,7 @@ extension ReviewValidationScenarios {
     /// We isolate repository identity and configuration without changing the developer's environment.
     static func fixtureGit(
         _ arguments: [String],
-        cwd: URL,
-        environment additions: [String: String] = [:]
+        cwd: URL
     ) async throws -> GitResult {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -466,9 +337,6 @@ extension ReviewValidationScenarios {
                     environment["GIT_CONFIG_NOSYSTEM"] = "1"
                     environment["GIT_CONFIG_GLOBAL"] = "/dev/null"
                     environment["LC_ALL"] = "C"
-                    for (key, value) in additions {
-                        environment[key] = value
-                    }
                     process.environment = environment
                     process.standardInput = FileHandle.nullDevice
                     let stdout = Pipe()
@@ -490,24 +358,16 @@ extension ReviewValidationScenarios {
     @discardableResult
     static func checkedGit(
         _ arguments: [String],
-        cwd: URL,
-        environment: [String: String] = [:]
+        cwd: URL
     ) async throws -> GitResult {
-        let result = try await fixtureGit(arguments, cwd: cwd, environment: environment)
+        let result = try await fixtureGit(arguments, cwd: cwd)
         try require(result.succeeded, "Git fixture command failed: \(arguments.joined(separator: " ")): \(result.stderr)")
         return result
     }
 
+    /// An empty repository in `directory`, kept apart from the developer's
+    /// git configuration as every fixture repository is.
     static func seed(_ directory: URL) async throws {
-        let result = try await fixtureGit(["-c", "init.templateDir=", "init", "-q", "-b", "main"], cwd: directory)
-        try require(result.succeeded, "git init failed")
-        for (key, value) in [
-            ("core.autocrlf", "false"), ("commit.gpgsign", "false"),
-            ("core.excludesFile", "/dev/null"), ("core.hooksPath", "/dev/null"),
-            ("user.email", "review@example.com"), ("user.name", "Review")
-        ] {
-            let result = try await fixtureGit(["config", key, value], cwd: directory)
-            try require(result.succeeded, "Git fixture configuration failed: \(result.stderr)")
-        }
+        try await TempGitRepo.initialize(directory)
     }
 }

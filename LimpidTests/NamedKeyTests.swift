@@ -43,18 +43,7 @@ struct NamedKeyTests {
     func capture_f13_storesName() throws {
         let scalar = try #require(UnicodeScalar(UInt16(NSF13FunctionKey)))
         let f13 = String(Character(scalar))
-        let event = try #require(NSEvent.keyEvent(
-            with: .keyDown,
-            location: .zero,
-            modifierFlags: [],
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            characters: f13,
-            charactersIgnoringModifiers: f13,
-            isARepeat: false,
-            keyCode: 105
-        ))
+        let event = try NSEvent.testKeyDown(keyCode: 105, characters: f13)
 
         #expect(StoredShortcut.capture(from: event)?.key == "f13")
         #expect(HotKeyMapping.keyCode(for: "f13", translate: { _ in nil }) == 105)
@@ -124,18 +113,7 @@ struct NamedKeyTests {
 
     private static func keyDown(_ key: NamedKey, modifiers: NSEvent.ModifierFlags) throws -> NSEvent {
         let text = String(key.keyEquivalent.character)
-        return try #require(NSEvent.keyEvent(
-            with: .keyDown,
-            location: .zero,
-            modifierFlags: modifiers.union(.function),
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            characters: text,
-            charactersIgnoringModifiers: text,
-            isARepeat: false,
-            keyCode: key.primaryKeyCode
-        ))
+        return try NSEvent.testKeyDown(keyCode: key.primaryKeyCode, modifiers: modifiers.union(.function), characters: text)
     }
 }
 

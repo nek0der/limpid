@@ -179,13 +179,11 @@ struct AgentCommandExecutorTests {
 
             // Somebody is mid-write, so the snapshot this was decided from is
             // already stale even though the command said to continue.
-            let lockPath = try AgentRecordFixtures.lockURL(for: fixture.hint).path
-            let descriptor = open(lockPath, O_CREAT | O_RDWR, 0o600)
-            #expect(descriptor >= 0)
-            #expect(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
-            defer { close(descriptor) }
+            let held = try AgentRecordFixtures.HeldLock(on: fixture.hint)
 
-            let outcomes = try fixture.executor.run(commands(retirementChain(hintRunID: Self.run)))
+            let outcomes = try withExtendedLifetime(held) {
+                try fixture.executor.run(commands(retirementChain(hintRunID: Self.run)))
+            }
             #expect(outcomes.count == 1)
             #expect(FileManager.default.fileExists(atPath: fixture.record.path))
         }
@@ -198,8 +196,8 @@ struct AgentCommandExecutorTests {
             try writeRecord(fixture)
             let retired = fixture.state.appendingPathComponent("retired", isDirectory: true)
             try FileManager.default.createDirectory(at: retired, withIntermediateDirectories: true)
-            // Recent stamps, so the count cap is what decides rather than the
-            // age cap; the age rule has its own reach in the rules.
+            // Recent stamps, so the count cap decides rather than the age
+            // cap.
             let stamp = Int(Date().timeIntervalSince1970)
             let directories = AgentDirectories(state: fixture.state, sessions: fixture.sessions, cwdEvents: nil)
             for index in 0..<5 {
@@ -250,6 +248,66 @@ struct AgentCommandExecutorTests {
 
             #expect(FileManager.default.fileExists(atPath: fixture.hint.path))
             #expect(!FileManager.default.fileExists(atPath: closedHint.path))
+        }
+    }
+
+    /// "Start New Conversation" ends the stopped session for good: its hint
+    /// goes, so no relaunch restores or resumes it. A hint a newer session
+    /// wrote in the meantime is the new conversation's, and stays.
+    @Test("forgetting a session drops its hint, and only its")
+    func forgetSessionHint_dropsOnlyTheNamedSession() throws {
+        try withTempDir { root in
+            let fixture = try fixture(in: root)
+            try writeHint(fixture, runID: Self.run)
+            let pane = try #require(UUID(uuidString: Self.pane))
+            let newer = fixture.executor.forgetSessionHint(provider: "claude", pane: pane, sessionID: "other")
+            #expect(newer == .superseded)
+            #expect(FileManager.default.fileExists(atPath: fixture.hint.path))
+
+            let forgotten = fixture.executor.forgetSessionHint(provider: "claude", pane: pane, sessionID: "S")
+            #expect(forgotten == .deleted)
+            #expect(!FileManager.default.fileExists(atPath: fixture.hint.path))
+            #expect(fixture.executor.forgetSessionHint(provider: "claude", pane: pane, sessionID: "S") == .notFound)
+        }
+    }
+
+    /// How a hint can stand in the way of being forgotten.
+    enum UnreadableHint: CaseIterable, Sendable {
+        /// Its folder will not let the file go.
+        case cannotBeRemoved
+        /// It is there but cannot be read.
+        case cannotBeRead
+        /// Its JSON is cut short, as a write caught midway leaves it.
+        case cannotBeDecoded
+    }
+
+    /// A hint that cannot be removed, read, or decoded failed, which is not
+    /// a newer session's hint: what it names is unknown, not absent, so the
+    /// request is tried again rather than settled and dropped.
+    @Test("a hint that cannot be removed, read, or decoded failed, and is not settled", arguments: UnreadableHint.allCases)
+    func forgetSessionHint_thatCannotBeHandled_failsUnsettled(hint: UnreadableHint) throws {
+        try withTempDir { root in
+            let fixture = try fixture(in: root)
+            let pane = try #require(UUID(uuidString: Self.pane))
+            switch hint {
+            case .cannotBeRemoved:
+                try writeHint(fixture, runID: Self.run)
+                try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.sessions.path)
+            case .cannotBeRead:
+                try writeHint(fixture, runID: Self.run)
+                try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: fixture.hint.path)
+            case .cannotBeDecoded:
+                try Data(#"{"sessionId": "S", "runId"#.utf8).write(to: fixture.hint)
+            }
+            defer {
+                try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.sessions.path)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fixture.hint.path)
+            }
+
+            let outcome = fixture.executor.forgetSessionHint(provider: "claude", pane: pane, sessionID: "S")
+            #expect(outcome == .failed)
+            #expect(!outcome.isSettled)
+            #expect(FileManager.default.fileExists(atPath: fixture.hint.path))
         }
     }
 

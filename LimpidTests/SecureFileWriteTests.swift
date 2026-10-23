@@ -33,14 +33,15 @@ struct SecureFileWriteTests {
         }
     }
 
-    @MainActor @Test func moveSettingsFileAside_leavesNoSettingsFileBehind() throws {
+    @Test func writeAtomic_overAWorldReadableFile_leavesItUserOnly() throws {
         try withTempDir { dir in
-            let file = dir.appendingPathComponent("settings.json")
-            try Data("{}".utf8).write(to: file)
-            SettingsStore.moveSettingsFileAside(at: file)
-            let entries = try FileManager.default.contentsOfDirectory(atPath: dir.path)
-            #expect(entries.count == 1)
-            #expect(entries.first?.hasPrefix("settings.json.bak-init-failure-") == true)
+            let file = dir.appendingPathComponent("state.json")
+            try Data("old".utf8).write(to: file)
+            try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+            try SecureFileWrite.writeAtomic(Data("new".utf8), to: file)
+            let mode = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int
+            #expect(mode == 0o600)
+            #expect(try Data(contentsOf: file) == Data("new".utf8))
         }
     }
 }

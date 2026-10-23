@@ -19,27 +19,41 @@ final class TerminalLinkOpener {
     /// is outside SwiftUI's environment, so it would otherwise answer in
     /// the language the process launched with.
     private let locale: @MainActor () -> Locale
+    /// Shows the confirmation on the terminal's window, or on its own when
+    /// it has none, and hands the answer on. The app's (`WindowAlert`), so
+    /// Core does not decide how a window presents an alert.
+    private let presentAlert: AlertPresenter
+
+    typealias AlertPresenter = @MainActor (
+        NSAlert,
+        NSWindow?,
+        @escaping @MainActor (NSApplication.ModalResponse) -> Void
+    ) -> Void
 
     init(
         notify: @escaping (DisplayText) -> Void,
         fileApplication: @escaping () -> FileApplication? = { nil },
-        locale: @escaping @MainActor () -> Locale
+        locale: @escaping @MainActor () -> Locale,
+        presentAlert: @escaping AlertPresenter
     ) {
         self.notify = notify
         self.fileApplication = fileApplication
         self.locale = locale
+        self.presentAlert = presentAlert
     }
 
-    func open(_ text: String, source: TerminalLinkSource, baseDirectories: [URL] = []) {
-        perform(TerminalLinkPolicy.action(for: text, source: source, baseDirectories: baseDirectories))
+    /// `window` is the window of the terminal the link was clicked in,
+    /// where a confirmation is shown.
+    func open(_ text: String, source: TerminalLinkSource, baseDirectories: [URL] = [], window: NSWindow?) {
+        perform(TerminalLinkPolicy.action(for: text, source: source, baseDirectories: baseDirectories), window: window)
     }
 
     /// For a click whose target could not be read at all.
     func reject(_ reason: TerminalLinkRejection) {
-        perform(.reject(reason))
+        perform(.reject(reason), window: nil)
     }
 
-    private func perform(_ action: TerminalLinkAction) {
+    private func perform(_ action: TerminalLinkAction, window: NSWindow?) {
         switch action {
         case let .open(url):
             NSWorkspace.shared.open(url)
@@ -56,7 +70,7 @@ final class TerminalLinkOpener {
             NSWorkspace.shared.activateFileViewerSelecting([url])
             notify(.localized("Shown in Finder instead of opened, because it can run code."))
         case let .confirm(url):
-            confirmAndOpen(url)
+            confirmAndOpen(url, window: window)
         case let .reject(reason):
             log.notice("rejected terminal link: \(String(describing: reason), privacy: .public)")
             notify(.localized(reason.message))
@@ -67,8 +81,9 @@ final class TerminalLinkOpener {
     /// prompt names both the target and that application, and only a click
     /// on Open dispatches it. NSAlert gives a button titled Cancel the Escape
     /// key instead of Return, so neither button answers Return and a stray
-    /// keystroke cannot accept the prompt.
-    private func confirmAndOpen(_ url: URL) {
+    /// keystroke cannot accept the prompt. Shown on the terminal's window, so
+    /// the prompt says which window's terminal asked.
+    private func confirmAndOpen(_ url: URL, window: NSWindow?) {
         guard let handler = NSWorkspace.shared.urlForApplication(toOpen: url) else {
             notify(.localized("No app can open this link."))
             return
@@ -84,7 +99,9 @@ final class TerminalLinkOpener {
         alert.alertStyle = .warning
         alert.addButton(withTitle: LocalizedStringResource("Cancel").resolved(in: locale))
         alert.addButton(withTitle: LocalizedStringResource("Open").resolved(in: locale))
-        guard alert.runModal() == .alertSecondButtonReturn else { return }
-        NSWorkspace.shared.open(url)
+        presentAlert(alert, window) { response in
+            guard response == .alertSecondButtonReturn else { return }
+            NSWorkspace.shared.open(url)
+        }
     }
 }

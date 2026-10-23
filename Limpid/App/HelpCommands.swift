@@ -13,11 +13,12 @@ struct HelpCommands: Commands {
             // The sheet attaches to the main window, so the item steps
             // aside while the quick terminal has the keyboard.
             MainWindowCommandItems(state.quickTerminal) {
+                // Help is for whoever asks, Settings in front included: the
+                // sheet opens in the key main window, else the one the
+                // person was last in.
                 Button {
-                    NotificationCenter.default.post(
-                        name: .limpidToggleKeyboardShortcuts,
-                        object: state.session
-                    )
+                    let window = state.windowRegistry.commandTarget ?? state.windowRegistry.backgroundCommandTarget
+                    window.commands.send(.toggleKeyboardShortcuts)
                 } label: {
                     Label("Keyboard Shortcuts", systemImage: "keyboard")
                 }

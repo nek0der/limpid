@@ -11,14 +11,14 @@ import SwiftUI
 /// beside the hosts they apply to. Empty regions of every host pass clicks
 /// through to the window.
 struct FloatingPanelLayer: View {
-    @Environment(WindowSession.self) private var session
+    @Environment(WorkspaceSession.self) private var session
     @Environment(PaneRenamePresentation.self) private var renamePresentation
     @Environment(PromptCachePanelPresentation.self) private var promptCachePresentation
     @Environment(ContainerColorPresentation.self) private var colorPresentation
     @Environment(ApprovalPresentationStore.self) private var approvalPresentation
     @Environment(NotificationHistoryPresentation.self) private var historyPresentation
     @Environment(PRHoverPresentation.self) private var prHoverPresentation
-    @Environment(ReviewPresentation.self) private var reviewPresentation
+    @Environment(ProjectWindowState.self) private var window
     @Environment(\.surfaceRegistry) private var registry
 
     var body: some View {
@@ -36,20 +36,29 @@ struct FloatingPanelLayer: View {
         }
     }
 
-    /// Every floating surface that is up now.
+    /// This window's approval card.
+    private var card: WindowApprovalCard {
+        window.approvalCard
+    }
+
+    /// Every floating surface that is up now in this window.
     private var openSurfaces: Set<FloatingSurfaceKind> {
         let states: [(FloatingSurfaceKind, Bool)] = [
-            (.commandPalette, session.commandPaletteState != nil),
+            (.commandPalette, session.commandPaletteState?.windowID == window.id),
             (.paneRename, renamePresentation.request != nil),
             (.promptCache, promptCachePresentation.request != nil),
             (.containerColor, colorPresentation.request != nil),
-            // A card the user turned to is a working surface; one shown
-            // only while the pointer rests on its row is a hover peek.
-            (.approvalCard, approvalPresentation.presentedID != nil && approvalPresentation.isPresentedOnRequest),
-            (.approvalPreview, approvalPresentation.presentedID != nil && !approvalPresentation.isPresentedOnRequest),
+            // A card is a working surface while it has the keyboard. A card
+            // the person left for the terminal is not counted at all, so it
+            // holds nothing back, the prompt cache panel's own opening
+            // included.
+            (.approvalCard, card.isOpen(in: approvalPresentation) && card.isFocused),
             (.notificationHistory, historyPresentation.isPresented),
             (.prCard, prHoverPresentation.visible != nil),
-            (.review, reviewPresentation.isPresented)
+            // The review tab while it is in front: behind a terminal tab it
+            // holds no surface back.
+            (.review, window.review?.isShown == true),
+            (.titleBarMenu, window.titleBarMenu != nil)
         ]
         return Set(states.filter(\.1).map(\.0))
     }
@@ -64,7 +73,8 @@ struct FloatingPanelLayer: View {
                 if let paneID = renamePresentation.request?.paneID {
                     PaneActions.pullKeyboardFocus(to: paneID, registry: registry)
                 }
-            }
+            },
+            closeTitleBarMenu: { [window] in window.titleBarMenu = nil }
         )
     }
 }

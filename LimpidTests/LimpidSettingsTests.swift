@@ -65,9 +65,10 @@ struct LimpidSettingsTests {
         settings.font.ligatures = true
         settings.font.lineHeight = 2
         settings.terminal.scrollbackLines = 25000
-        settings.advanced.showPRStatusInSidebar = true
-        settings.advanced.showPRStatusOnlyWhenAttention = true
+        settings.terminal.quickTabCwdMode = .fixed
+        settings.terminal.quickTabCwdPath = URL(fileURLWithPath: "/tmp/limpid-quicktab")
         settings.advanced.hostsAgentsInTmux = true
+        settings.advanced.holdsApprovalsWhileHidden = false
         settings.advanced.reviewInstructions = "Fix these."
         settings.advanced.fileApplication = FileApplication(
             bundleIdentifier: "com.example.Editor",
@@ -123,11 +124,10 @@ struct LimpidSettingsTests {
 
     // MARK: - Forward compatibility (unknown enum cases / missing fields)
 
-    @Test("decoder falls back to defaults when a leaf field is missing from JSON")
-    func decode_missingLeafField_fallsBackToDefault() throws {
-        // JSON with just schemaVersion — every sub-struct is absent.
-        // Decoder should fail (each section is non-optional)? Verify
-        // what current behavior is rather than asserting permissively.
+    /// A file that holds only the schema version is not settings, and is
+    /// refused rather than read as every default.
+    @Test("a file without its sections does not decode")
+    func decode_missingSections_throws() throws {
         let partial = Data(#"{"schemaVersion": 1}"#.utf8)
         #expect(throws: (any Error).self) {
             _ = try JSONDecoder().decode(LimpidSettings.self, from: partial)
@@ -166,29 +166,32 @@ struct LimpidSettingsTests {
         #expect(decoded.terminal.quickTabCwdPath == nil)
     }
 
-    @Test("terminal pane minimum is clamped to the supported settings range")
-    func decode_terminalPaneMinimum_clampsToSupportedRange() throws {
-        let belowRange = try JSONDecoder().decode(
-            TerminalSettings.self,
-            from: Data(#"{"minPaneSize":1}"#.utf8)
-        )
-        let aboveRange = try JSONDecoder().decode(
-            TerminalSettings.self,
-            from: Data(#"{"minPaneSize":1000}"#.utf8)
-        )
+    @Test func splitPaneHeadersSetting_defaultsOnAndDecodesWithoutKey() throws {
+        #expect(TerminalSettings().showsSplitPaneHeaders)
+        let decoded = try JSONDecoder().decode(TerminalSettings.self, from: Data("{}".utf8))
+        #expect(decoded.showsSplitPaneHeaders)
 
-        #expect(belowRange.minPaneSize == TerminalSettings.minPaneSizeRange.lowerBound)
-        #expect(aboveRange.minPaneSize == TerminalSettings.minPaneSizeRange.upperBound)
+        var off = TerminalSettings()
+        off.showsSplitPaneHeaders = false
+        let roundTripped = try JSONDecoder().decode(
+            TerminalSettings.self,
+            from: JSONEncoder().encode(off)
+        )
+        #expect(!roundTripped.showsSplitPaneHeaders)
     }
 
-    @Test("a pane minimum saved under the old 40pt floor is raised to 60")
-    func decode_terminalPaneMinimum_belowSixty_raisesToSixty() throws {
-        let saved = try JSONDecoder().decode(
+    /// A pane minimum saved under the old 40pt floor is raised to 60, the
+    /// range's lower bound.
+    @Test(
+        "terminal pane minimum is clamped to the supported settings range",
+        arguments: [(1, 60), (40, 60), (1000, 300)] as [(Int, Double)]
+    )
+    func decode_terminalPaneMinimum_clampsToSupportedRange(written: Int, read: Double) throws {
+        let decoded = try JSONDecoder().decode(
             TerminalSettings.self,
-            from: Data(#"{"minPaneSize":40}"#.utf8)
+            from: Data(#"{"minPaneSize":\#(written)}"#.utf8)
         )
-        #expect(saved.minPaneSize == 60)
-        #expect(TerminalSettings.minPaneSizeRange.lowerBound == 60)
+        #expect(decoded.minPaneSize == read)
     }
 
     @Test("unfocused pane opacity is clamped to its supported range")
@@ -206,44 +209,86 @@ struct LimpidSettingsTests {
         #expect(aboveRange.unfocusedPaneOpacity == 1.0)
     }
 
-    /// Every `settings.json` written before the pull-request feature
-    /// existed lacks both keys, which is every existing user's file.
-    /// If the fallback flipped to `true`, the feature would switch
-    /// itself on for all of them and start spawning `gh` / `glab` per
-    /// sidebar row — the one thing being opt-in is meant to prevent.
-    @Test("advanced section without the PR keys decodes with the feature off")
-    func decode_advancedMissingPRKeys_defaultsToOff() throws {
-        let data = Data(#"""
-        {"schemaVersion":1,
-         "appearance":{"accentColor":"default","backgroundOpacity":0.92,"transparency":"on"},
-         "font":{"size":13,"ligatures":false,"lineHeight":0},
-         "terminal":{},
-         "advanced":{"ghosttyConfig":"off"}}
-        """#.utf8)
+    /// Holding is the default, so the key is written only when someone
+    /// turned it off; a file that never had it keeps holding.
+    @Test func approvalHold_isWrittenOnlyWhenTurnedOff() throws {
+        var advanced = AdvancedSettings()
+        let untouched = try JSONSerialization.jsonObject(with: JSONEncoder().encode(advanced)) as? [String: Any]
+        #expect(untouched?["approvalHoldWhileHidden"] == nil)
+
+        advanced.holdsApprovalsWhileHidden = false
+        let written = try JSONSerialization.jsonObject(with: JSONEncoder().encode(advanced)) as? [String: Any]
+        #expect(written?["approvalHoldWhileHidden"] as? Bool == false)
+
+        let legacy = try JSONDecoder().decode(AdvancedSettings.self, from: Data("{}".utf8))
+        #expect(legacy.holdsApprovalsWhileHidden)
+    }
+
+    /// A key a newer build added survives a round trip through this one,
+    /// next to the hold setting.
+    @Test func approvalHold_keepsUnknownAdvancedKeys() throws {
+        let data = Data(#"{"approvalHoldWhileHidden":false,"futureKey":1}"#.utf8)
+        let decoded = try JSONDecoder().decode(AdvancedSettings.self, from: data)
+        let written = try JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any]
+
+        #expect(decoded.holdsApprovalsWhileHidden == false)
+        #expect(written?["futureKey"] as? Int == 1)
+    }
+
+    /// Earlier builds wrote both pull-request switches into every
+    /// settings file. This build reads neither (pull requests show
+    /// wherever `gh` or `glab` can read them), and writes both back as
+    /// they were, so a build that still reads them finds the person's
+    /// value after a rollback.
+    @Test func removedPRToggles_areKeptInUnknownFieldsAndIgnored() throws {
+        func file(schemaVersion: Int) -> Data {
+            Data("""
+            {"schemaVersion":\(schemaVersion),
+             "appearance":{"accentColor":"default","backgroundOpacity":0.92,"transparency":"on"},
+             "font":{"size":13,"ligatures":false,"lineHeight":0},
+             "terminal":{},
+             "advanced":{"ghosttyConfig":"off",
+                         "showPRStatusInSidebar":true,
+                         "showPRStatusOnlyWhenAttention":false}}
+            """.utf8)
+        }
+        let data = file(schemaVersion: 2)
         let decoded = try JSONDecoder().decode(LimpidSettings.self, from: data)
-        #expect(decoded.advanced.showPRStatusInSidebar == false)
-        #expect(decoded.advanced.showPRStatusOnlyWhenAttention == false)
-    }
 
-    @Test("terminal quickTab cwd fields round-trip", .tags(.persistence))
-    func quickTabCwd_roundTrips() throws {
-        var s = LimpidSettings.default
-        s.terminal.quickTabCwdMode = .fixed
-        s.terminal.quickTabCwdPath = URL(fileURLWithPath: "/tmp/limpid-quicktab")
-        let decoded = try JSONDecoder().decode(
-            LimpidSettings.self, from: JSONEncoder().encode(s)
-        )
-        #expect(decoded.terminal.quickTabCwdMode == .fixed)
-        #expect(decoded.terminal.quickTabCwdPath == URL(fileURLWithPath: "/tmp/limpid-quicktab"))
-    }
+        // Ignored: they are only carried, and every setting the type reads
+        // is its default.
+        #expect(decoded.advanced.unknownFields == [
+            "showPRStatusInSidebar": .bool(true),
+            "showPRStatusOnlyWhenAttention": .bool(false)
+        ])
+        var typed = decoded.advanced
+        typed.unknownFields = [:]
+        #expect(typed == AdvancedSettings())
 
-    // MARK: - Equatable sanity
+        // Written back unchanged.
+        let written = try JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any]
+        let advanced = try #require(written?["advanced"] as? [String: Any])
+        #expect(advanced["showPRStatusInSidebar"] as? Bool == true)
+        #expect(advanced["showPRStatusOnlyWhenAttention"] as? Bool == false)
 
-    @Test("mutating any field breaks Equatable equality with the default")
-    func equatable_anyMutation_breaksEquality() {
-        var s = LimpidSettings.default
-        s.font.size = 13.5
-        #expect(s != .default)
+        // An existing person's file is schema 1, which reaches this build
+        // through the migration; the keys come out of it as they went in.
+        guard case let .migrated(from, migrated) = try VersionedDocumentMigrator.settings.migrate(file(schemaVersion: 1)) else {
+            Issue.record("a schema 1 file is migrated")
+            return
+        }
+        #expect(from == 1)
+        let migratedFile = try JSONSerialization.jsonObject(with: migrated) as? [String: Any]
+        #expect(migratedFile?["schemaVersion"] as? Int == LimpidSettings.currentSchemaVersion)
+        let migratedAdvanced = try #require(migratedFile?["advanced"] as? [String: Any])
+        #expect(migratedAdvanced["showPRStatusInSidebar"] as? Bool == true)
+        #expect(migratedAdvanced["showPRStatusOnlyWhenAttention"] as? Bool == false)
+
+        // A file that never had them does not grow them.
+        let fresh = try JSONSerialization.jsonObject(with: JSONEncoder().encode(LimpidSettings.default)) as? [String: Any]
+        let freshAdvanced = try #require(fresh?["advanced"] as? [String: Any])
+        #expect(freshAdvanced["showPRStatusInSidebar"] == nil)
+        #expect(freshAdvanced["showPRStatusOnlyWhenAttention"] == nil)
     }
 
     // MARK: - Forward-compat decoders
@@ -305,5 +350,121 @@ struct LimpidSettingsTests {
         let reencoded = try JSONEncoder().encode(decoded)
         let asAny = try JSONSerialization.jsonObject(with: reencoded) as? [String: Any]
         #expect(asAny?["futureDarkModeAccent"] as? String == "#ff00aa")
+    }
+
+    // MARK: - Review
+
+    @Test func theReviewSection_isOptional_andRoundTrips_keepingWhatANewerBuildWrote() throws {
+        #expect(LimpidSettings().review.externalDiffCommand.isEmpty)
+        // A file from before the section reads with its default.
+        var withoutReview = try JSONSerialization.jsonObject(with: JSONEncoder().encode(LimpidSettings())) as? [String: Any] ?? [:]
+        withoutReview.removeValue(forKey: "review")
+        let older = try JSONDecoder().decode(LimpidSettings.self, from: JSONSerialization.data(withJSONObject: withoutReview))
+        #expect(older.review == ReviewSettings())
+
+        var settings = LimpidSettings()
+        settings.review.externalDiffCommand = "tig --all"
+        let decoded = try JSONDecoder().decode(LimpidSettings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded.review.externalDiffCommand == "tig --all")
+
+        let later = try JSONDecoder().decode(ReviewSettings.self, from: Data(#"{"externalDiffCommand":"tig","fromLater":1}"#.utf8))
+        let again = try JSONDecoder().decode(ReviewSettings.self, from: JSONEncoder().encode(later))
+        #expect(again == later)
+        #expect(again.unknownFields["fromLater"] != nil)
+    }
+
+    // MARK: - General, new session, and retention sections
+
+    @Test func theNewSettings_startAtTheirDefaults() {
+        let settings = LimpidSettings.default
+
+        #expect(settings.general.showMenuBarExtra)
+        #expect(!settings.general.notifyOnUsageLimitReset)
+        #expect(settings.newSession.lastAgent == nil)
+        #expect(settings.advanced.turnRetention.days == 14)
+        #expect(settings.advanced.turnRetention.turns == 200)
+        #expect(settings.advanced.turnRetention.limits == TurnRetentionLimits.standard)
+    }
+
+    @Test func aFileWrittenBeforeThem_readsTheDefaults() throws {
+        var object = try LimpidSettingsJSON.object(.default)
+        object.removeValue(forKey: "general")
+        object.removeValue(forKey: "newSession")
+        var advanced = try #require(object["advanced"] as? [String: Any])
+        advanced.removeValue(forKey: "turnRetention")
+        object["advanced"] = advanced
+
+        let settings = try LimpidSettingsJSON.decode(object)
+
+        #expect(settings.general == GeneralSettings())
+        #expect(settings.newSession == NewSessionSettings())
+        #expect(settings.advanced.turnRetention == TurnRetentionSettings())
+    }
+
+    @Test func theNewSettings_roundTrip() throws {
+        var settings = LimpidSettings.default
+        settings.general.showMenuBarExtra = false
+        settings.general.notifyOnUsageLimitReset = true
+        settings.newSession.lastAgent = "codex"
+        settings.advanced.turnRetention = TurnRetentionSettings(days: 30, turns: 120)
+
+        let decoded = try JSONDecoder().decode(LimpidSettings.self, from: JSONEncoder().encode(settings))
+
+        #expect(decoded == settings)
+    }
+
+    @Test func keysALaterBuildAdded_toTheNewSections_areWrittenBack() throws {
+        var object = try LimpidSettingsJSON.object(.default)
+        object["general"] = ["showMenuBarExtra": false, "laterKey": 1]
+        object["newSession"] = ["laterKey": "x"]
+        var advanced = try #require(object["advanced"] as? [String: Any])
+        advanced["turnRetention"] = ["days": 20, "turns": 100, "laterKey": true]
+        object["advanced"] = advanced
+
+        let written = try LimpidSettingsJSON.object(LimpidSettingsJSON.decode(object))
+
+        #expect((written["general"] as? [String: Any])?["laterKey"] as? Int == 1)
+        #expect((written["newSession"] as? [String: Any])?["laterKey"] as? String == "x")
+        let retention = (written["advanced"] as? [String: Any])?["turnRetention"] as? [String: Any]
+        #expect(retention?["laterKey"] as? Bool == true)
+        #expect(retention?["days"] as? Int == 20)
+    }
+
+    /// Settings an earlier build wrote with the moved groups' count still
+    /// read, and the count is not written back.
+    @Test func settingsWithTheMovedGroups_read_andDropThem() throws {
+        let written = Data(#"{"showMenuBarExtra":true,"movedGroups":{"groups":2,"tabs":4},"later":1}"#.utf8)
+        let general = try JSONDecoder().decode(GeneralSettings.self, from: written)
+        #expect(general.showMenuBarExtra)
+        #expect(general.unknownFields == ["later": .int(1)], "a later build's key is still kept")
+        let saved = try #require(String(data: JSONEncoder().encode(general), encoding: .utf8))
+        #expect(!saved.contains("movedGroups"))
+        #expect(saved.contains("later"))
+    }
+
+    /// The first-run guide's flag from a build that showed it is carried
+    /// as it was, so going back a build does not show the guide again, and
+    /// a file this build starts never gains it.
+    @Test func theFirstRunGuidesFlag_isCarried_andNeverStarted() throws {
+        let written = Data(#"{"showMenuBarExtra":true,"isFirstRunGuideDismissed":true}"#.utf8)
+        let general = try JSONDecoder().decode(GeneralSettings.self, from: written)
+        #expect(general.unknownFields == ["isFirstRunGuideDismissed": .bool(true)])
+        let saved = try #require(String(data: JSONEncoder().encode(general), encoding: .utf8))
+        #expect(saved.contains(#""isFirstRunGuideDismissed":true"#))
+
+        let fresh = try #require(String(data: JSONEncoder().encode(GeneralSettings()), encoding: .utf8))
+        #expect(!fresh.contains("isFirstRunGuideDismissed"))
+    }
+}
+
+/// A settings file as the JSON object it is written as, for tests that
+/// take a key out or put one in before reading it back.
+enum LimpidSettingsJSON {
+    static func decode(_ object: [String: Any]) throws -> LimpidSettings {
+        try JSONDecoder().decode(LimpidSettings.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    static func object(_ settings: LimpidSettings) throws -> [String: Any] {
+        try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
     }
 }

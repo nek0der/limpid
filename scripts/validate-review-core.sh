@@ -20,10 +20,11 @@ swiftc -Xfrontend -disable-sandbox -emit-module -emit-library \
     -enable-upcoming-feature ExistentialAny \
     -module-cache-path "$review_output/modules" \
     Limpid/Core/Review/ReviewTerminalProbe.swift \
+    Limpid/Core/Process/ProcessNames.swift \
     Limpid/Core/Tmux/TmuxBinding.swift Limpid/Core/Tmux/TmuxClientProbe.swift \
     Limpid/Core/Tmux/TmuxTopology.swift \
     Limpid/Core/Tmux/TmuxSocketPath.swift \
-    Limpid/Core/Tmux/TmuxCommand.swift \
+    Limpid/Core/Tmux/TmuxCommand.swift Limpid/Core/Git/ProcessDrain.swift \
     Limpid/Core/Logging/LimpidLogger.swift \
     -o "$review_output/libLimpid.dylib"
 cat > "$review_output/RunScenarios.swift" <<'SWIFT'
@@ -40,7 +41,7 @@ SWIFT
 swiftc -swift-version 6 -enable-upcoming-feature ExistentialAny \
     -module-cache-path "$review_output/modules" \
     -I "$review_output" -L "$review_output" -lLimpid -Xlinker -rpath -Xlinker "$review_output" \
-    LimpidTests/Support/ReviewScenarioFailure.swift \
-    LimpidTests/Support/ReviewProbeScenarios.swift \
+    LimpidTests/Support/ReviewValidationFailure.swift \
+    LimpidTests/Support/ReviewProbeScenarios.swift LimpidTests/Support/TestProcess.swift \
     "$review_output/RunScenarios.swift" -o "$review_output/run"
 "$review_output/run" | tee "$review_output/scenarios.log"

@@ -12,7 +12,9 @@
 //! are only reachable with a controlled clock.
 //!
 //! Run it with `scripts/derive-projection-corpus.sh`. The generated records are
-//! committed and reviewed like the `expected.json` goldens they feed.
+//! committed and reviewed like the `expected.json` goldens they feed, and
+//! `tests/projection_corpus_records.rs` replays every case again under
+//! `cargo test`, so a record the runtime no longer writes fails there.
 
 use limpid_agent_hook::{HookEnv, HookOutcome, HookRuntime, NoSnapshots, run_hook};
 use limpid_agent_model::LOCK_FILE_SUFFIX;
@@ -58,7 +60,7 @@ struct Step {
 
 /// The directories a generated case owns. Everything else in the case
 /// directory is hand-authored and left alone.
-const GENERATED: [&str; 5] = [
+pub(crate) const GENERATED: [&str; 5] = [
     "agent-states",
     "codex-agent-states",
     "sessions",
@@ -66,24 +68,41 @@ const GENERATED: [&str; 5] = [
     "cwd-events",
 ];
 
-fn main() -> ExitCode {
-    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures");
+/// The recorded hook fixtures every scenario replays.
+pub(crate) fn fixtures() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures")
+}
+
+/// Every projection case that owns a `scenario.json`, in name order.
+///
+/// # Errors
+///
+/// When the projection directory cannot be read.
+pub(crate) fn cases(fixtures: &Path) -> Result<Vec<PathBuf>, String> {
     let projection = fixtures.join("projection");
-    let mut cases: Vec<PathBuf> = match fs::read_dir(&projection) {
-        Ok(entries) => entries
-            .flatten()
-            .map(|entry| entry.path())
-            .filter(|path| path.join("scenario.json").is_file())
-            .collect(),
+    let mut cases: Vec<PathBuf> = fs::read_dir(&projection)
+        .map_err(|error| format!("cannot read {}: {error}", projection.display()))?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.join("scenario.json").is_file())
+        .collect();
+    cases.sort();
+    Ok(cases)
+}
+
+#[allow(dead_code)] // The records test includes this file and calls `derive` alone.
+fn main() -> ExitCode {
+    let fixtures = fixtures();
+    let cases = match cases(&fixtures) {
+        Ok(cases) => cases,
         Err(error) => {
-            eprintln!("cannot read {}: {error}", projection.display());
+            eprintln!("{error}");
             return ExitCode::FAILURE;
         }
     };
-    cases.sort();
 
     for case in &cases {
-        if let Err(error) = derive(case, &fixtures) {
+        if let Err(error) = derive(case, &fixtures, case) {
             eprintln!("{}: {error}", case.display());
             return ExitCode::FAILURE;
         }
@@ -93,27 +112,36 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn derive(case: &Path, fixtures: &Path) -> Result<(), String> {
+/// Replays `case`'s scenario and writes the records it leaves under `into`:
+/// the case directory itself to regenerate it, or a scratch directory to
+/// compare against what is committed.
+///
+/// # Errors
+///
+/// When the scenario cannot be read, a payload is missing, or a step does
+/// not apply.
+pub(crate) fn derive(case: &Path, fixtures: &Path, into: &Path) -> Result<(), String> {
     let text = fs::read_to_string(case.join("scenario.json"))
         .map_err(|error| format!("scenario.json: {error}"))?;
     let scenario: Scenario =
         serde_json::from_str(&text).map_err(|error| format!("scenario.json: {error}"))?;
 
     for directory in GENERATED {
-        let path = case.join(directory);
+        let path = into.join(directory);
         if path.exists() {
             fs::remove_dir_all(&path).map_err(|error| format!("{directory}: {error}"))?;
         }
     }
 
     for run in &scenario.runs {
-        let env = environment(case, run);
+        let env = environment(into, run);
         for step in &run.replay {
             let payload = payload_bytes(fixtures, &run.provider, step)?;
             let runtime = HookRuntime {
                 env: &env,
                 snapshots: &NoSnapshots,
                 now: step.now.clone(),
+                lock_limits: limpid_agent_hook::worktree_lock::Limits::HOOK,
             };
             match run_hook(&run.provider, &payload, &runtime) {
                 HookOutcome::Applied => {}
@@ -126,7 +154,7 @@ fn derive(case: &Path, fixtures: &Path) -> Result<(), String> {
             }
         }
     }
-    prune_lock_sidecars(case)
+    prune_lock_sidecars(into)
 }
 
 /// Drops the lock sidecars the runtime leaves beside every record it writes.
@@ -152,10 +180,10 @@ fn prune_lock_sidecars(case: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Points the runtime's directories straight at the case directory so the
-/// generated tree mirrors what the application watches on disk.
-fn environment(case: &Path, run: &RunSpec) -> HookEnv {
-    let at = |name: &str| case.join(name).display().to_string();
+/// Points the runtime's directories straight at `into` so the generated tree
+/// mirrors what the application watches on disk.
+fn environment(into: &Path, run: &RunSpec) -> HookEnv {
+    let at = |name: &str| into.join(name).display().to_string();
     let prefix = if run.provider == "claude" {
         "LIMPID"
     } else {

@@ -1,6 +1,6 @@
 // ReviewPresentation.swift
-// Limpid — how the review surface is laid out in a window, and how wide and
-// tall its parts are.
+// Limpid — how the review surface is laid out in a window, and how wide its
+// file list is.
 //
 // In Core, not beside the views it describes: the command palette, the
 // shortcut table and `ReviewAgents` all ask this type whether review is up and
@@ -20,7 +20,10 @@ import Observation
 enum ReviewRail {
     static let minimum: CGFloat = 170
     static let maximum: CGFloat = 460
-    static let `default`: CGFloat = 232
+    /// The width the file list opens at, and returns to on a double click
+    /// of its divider: the review tab's rows carry a checkbox before the
+    /// name.
+    static let `default`: CGFloat = 240
     /// What the diff needs to stay readable beside the list: two columns of
     /// code and the gutter between them.
     static let diffMinimum: CGFloat = 360
@@ -39,69 +42,39 @@ enum ReviewRail {
     /// that cannot shrink is a surface wider than the window, and on a
     /// half-screen tile the code ran off the edge with no way to bring it back.
     static func width(_ requested: CGFloat, in available: CGFloat) -> CGFloat? {
-        guard available >= inlineMinimumWidth else { return nil }
-        return min(requested, available - diffMinimum)
-    }
-}
-
-/// How tall the terminal docked under review is, and whether it is there at
-/// all.
-///
-/// This was three fixed stops on a shortcut. A terminal's useful height
-/// depends on what the agent is printing, so the divider is draggable and the
-/// stops are gone; the shortcut now toggles the pane away and back.
-enum ReviewStrip {
-    static let minimum: CGFloat = 90
-    static let `default`: CGFloat = 240
-    /// The most of the surface the terminal may take. Review is what the
-    /// reader opened; a strip that could swallow it would leave them resizing
-    /// their way back to the diff.
-    static let maximumFraction: CGFloat = 0.8
-
-    /// `nil` renders no pane at all rather than a zero-height one, so
-    /// libghostty is never handed a new size and the agent's tty keeps its
-    /// geometry while the pane is away.
-    static func height(_ height: CGFloat, isCollapsed: Bool, in available: CGFloat) -> CGFloat? {
-        guard !isCollapsed, available > minimum else { return nil }
-        return min(max(height, minimum), (available * maximumFraction).rounded(.down))
+        guard isInline(in: available) else { return nil }
+        return min(max(requested, minimum), maximumWidth(in: available))
     }
 
-    /// Trimmed so the grid leaves the same spare space the tab does.
-    /// libghostty puts the part of a surface's height that does not fill a
-    /// row outside the grid — below it, or split around it when
-    /// `window-padding-balance` is on — so the spare space depends on the
-    /// height. A strip of arbitrary height put the agent's prompt a few
-    /// points off from where it sat in the tab, and the text looked as if it
-    /// moved when review opened. `tabHeight` is the height the pane had as the
-    /// tab's only pane; the strip keeps that height's spare space, and the
-    /// review surface above takes the trimmed points. `nil` or a height that
-    /// fits no row leaves the height as it is.
-    static func fitted(
-        _ height: CGFloat,
-        matching tabHeight: CGFloat,
-        cellHeight: CGFloat?,
-        verticalPadding: CGFloat = CGFloat(GhosttyConfigBridge.windowPaddingY)
-    ) -> CGFloat {
-        guard let cellHeight, cellHeight > 0 else { return height }
-        let padding = verticalPadding * 2
-        let tabGrid = tabHeight - padding
-        guard tabGrid > 0 else { return height }
-        let spare = tabGrid - (tabGrid / cellHeight).rounded(.down) * cellHeight
-        let rows = ((height - padding - spare) / cellHeight).rounded(.down)
-        guard rows >= 1 else { return height }
-        return rows * cellHeight + padding + spare
+    /// Whether the list can stay beside the diff at all. Asked on its own,
+    /// rather than as `width(_:in:) != nil`, by the views that only need to
+    /// know where the list is: naming the requested width there made them
+    /// read it, and rebuild with it on every frame of a divider drag.
+    static func isInline(in available: CGFloat) -> Bool {
+        available >= inlineMinimumWidth
     }
 
-    /// Rounded to whole points. A drag reports fractional deltas, and handing
-    /// the terminal a new size for a change it cannot render is what a flicker
-    /// is made of.
+    /// The widest the list may be in a surface this wide: what the diff's
+    /// floor leaves, in whole points. The one bound both the divider's drag
+    /// and the drawn width clamp to. They kept a copy each, and neither
+    /// counted the divider between the list and the diff, so at the cap the
+    /// two columns came to a point wider than the surface — and the review's
+    /// chrome above them, centered on that wider row, moved under the
+    /// pointer as the divider reached it.
+    static func maximumWidth(in available: CGFloat) -> CGFloat {
+        max(minimum, min(maximum, (available - diffMinimum).rounded(.down)))
+    }
+
+    /// A dragged width, clamped and rounded to whole points: a drag reports
+    /// fractional deltas, and a list a fraction of a point wider moved the
+    /// diff's text and every control right of it by that fraction on each
+    /// frame.
     static func resized(to proposed: CGFloat, in available: CGFloat) -> CGFloat {
-        let limit = max((available * maximumFraction).rounded(.down), minimum)
-        return min(max(proposed.rounded(), minimum), limit)
+        min(max(proposed.rounded(), minimum), maximumWidth(in: available))
     }
 }
 
-/// App-owned review presentation. Keeping this outside `WindowSession`
+/// App-owned review presentation. Keeping this outside `WorkspaceSession`
 /// avoids persisting a temporary inspection mode into session restoration.
 @MainActor
 @Observable
@@ -109,65 +82,26 @@ final class ReviewPresentation {
     /// The repository shown while the terminal area shows review.
     var directory: URL?
 
-    /// The pane that owns a transient turn review opened from Quick Tabs or a
-    /// Group, and `nil` for repository-scoped Project / Worktree review.
-    ///
-    /// Quick Tabs and Groups do not imply a repository boundary. Tying their
-    /// review to the pane that produced the turn keeps a stale snapshot from
-    /// following the reader into another tab, pane, or working directory.
-    private(set) var transientOwnerPaneID: UUID?
-
-    /// Whether the transient owner runs behind a tmux client. Its outer pty
-    /// reports the shell directory from before tmux attached, so OSC 7 cannot
-    /// decide whether the hosted turn has left its repository.
-    private(set) var isTransientOwnerTmuxHosted = false
-
-    /// The pane docked below the review surface, and the destination for the
-    /// assembled feedback — which is why review never needs to ask which agent
-    /// to write to. It follows the focused pane by default: the strip is the
-    /// one terminal on screen while review is up, so a destination that stayed
-    /// behind after the user switched tab would be writing into something they
-    /// cannot see — unless they pinned it, in which case the strip goes on
-    /// rendering that pane whatever tab is active, and it stays visible.
+    /// The destination for the assembled feedback — which is why review never
+    /// needs to ask which agent to write to. The pane the review was opened
+    /// from, until the reader picks another.
     private(set) var originPaneID: UUID?
 
-    /// Whether the reader named the destination themselves.
-    ///
-    /// Following the focus is right for the common shape — one agent, one
-    /// pane, and the terminal under the diff is the one that wrote it. It is
-    /// wrong for the shape this app exists for: several agents in one
-    /// worktree, each in its own tab. There, reading the diff of one and
-    /// glancing at another moved the destination onto the agent that had
-    /// nothing to do with the comments, and the only thing that said so was a
-    /// chip the reader had no reason to look at again.
-    ///
-    /// So an explicit choice sticks until the reader takes it back, and a new
-    /// opening starts out following again — a pin is about this reading of
-    /// this worktree, not a preference.
-    private(set) var isDestinationPinned = false
-
-    /// Two stored properties rather than one struct on purpose. Observation
-    /// tracks whole stored properties, so a view that only asks whether the
-    /// terminal is showing would be invalidated on every frame of a resize
-    /// drag if the height traveled with it — which is what the review
-    /// surface was doing while the divider moved.
-    var isStripCollapsed = false
-    var stripHeight: CGFloat = ReviewStrip.default
-
-    /// Which layout the diff is read in. Window-scoped like the strip height,
-    /// and for the same reason: it is how the reader wants to read, not
-    /// something the worktree being read owns — and the surface is rebuilt
-    /// from scratch every time review retargets.
+    /// Which layout the diff is read in. Window-scoped: it is how the reader
+    /// wants to read, not something the worktree being read owns — and the
+    /// surface is rebuilt from scratch every time review opens. A review
+    /// opened next starts from it. The supervision window's review tab, which
+    /// a project keeps while its window shows another, takes its layout with
+    /// it, and the window reads the tab in it again when the tab comes back
+    /// (`ParkedReview.Tab`).
     var diffLayout: ReviewDiffLayout = .unified
 
-    /// Window-scoped like the strip's height, and stored beside it rather than
-    /// inside a struct with it for the same reason: observation tracks whole
-    /// stored properties, and a view that only asks how the diff is laid out
-    /// should not be rebuilt on every frame of a divider drag.
+    /// Window-scoped like `diffLayout`, and stored beside it rather than
+    /// inside a struct with it: observation tracks whole stored properties,
+    /// and a view that only asks how the diff is laid out should not be
+    /// rebuilt on every frame of a divider drag. Kept with a review tab its
+    /// project keeps, as `diffLayout` is.
     var railWidth: CGFloat = ReviewRail.default
-
-    /// Set only after inserting feedback so closing review restores that pane.
-    var insertedPaneID: UUID?
 
     /// Which opening of the surface this is, and `nil` while it is down.
     ///
@@ -175,9 +109,7 @@ final class ReviewPresentation {
     /// and open it again inside that wait. "Still on screen, and still the same
     /// pane" was true again by then, so an insert started in the review they
     /// had closed pasted into the one they had just opened and then closed
-    /// that. Compared rather than counted, and left alone by `retarget`: the
-    /// same opening looking at another worktree is still the opening the
-    /// reader pressed Insert in.
+    /// that. Compared rather than counted.
     ///
     /// Changes only where `directory` does, and means the same thing — nil
     /// exactly while there is no directory.
@@ -193,35 +125,26 @@ final class ReviewPresentation {
         directory != nil
     }
 
-    /// The one symbol every Review Changes affordance is drawn with — toolbar,
-    /// View menu, container actions and command palette. They carried two
-    /// between them, so the same command read as two. `nonisolated` because
+    /// The one symbol every Review Changes affordance is drawn with — the
+    /// View menu, the shortcut list, the command palette, and the review's
+    /// own tab in the pane strip. They carried two between them, so the
+    /// same command read as two; Quick Open has a mark of its own. `nonisolated` because
     /// the shortcut table names its icon from off the main actor.
     nonisolated static let symbol = "doc.text.magnifyingglass"
 
     func open(
         _ directory: URL,
         originPaneID: UUID?,
-        initialScope: ReviewScope? = nil,
-        transientOwnerPaneID: UUID? = nil,
-        isTransientOwnerTmuxHosted: Bool = false
+        initialScope: ReviewScope? = nil
     ) {
         let normalized = directory.resolvingSymlinksInPath()
         if self.directory?.resolvingSymlinksInPath() == normalized, let initialScope {
             self.originPaneID = originPaneID
-            self.transientOwnerPaneID = transientOwnerPaneID
-            self.isTransientOwnerTmuxHosted = transientOwnerPaneID != nil && isTransientOwnerTmuxHosted
-            isDestinationPinned = false
             requestedScope = initialScope
             scopeRequestID = UUID()
             return
         }
-        insertedPaneID = nil
         self.originPaneID = originPaneID
-        self.transientOwnerPaneID = transientOwnerPaneID
-        self.isTransientOwnerTmuxHosted = transientOwnerPaneID != nil && isTransientOwnerTmuxHosted
-        isDestinationPinned = false
-        isStripCollapsed = false
         requestedScope = initialScope
         scopeRequestID = UUID()
         self.directory = normalized
@@ -231,123 +154,23 @@ final class ReviewPresentation {
     func close() {
         directory = nil
         originPaneID = nil
-        transientOwnerPaneID = nil
-        isTransientOwnerTmuxHosted = false
-        isDestinationPinned = false
         requestedScope = nil
         opening = nil
     }
 
-    /// The destination the reader named. Pinned by the act of naming it:
-    /// having gone to the trouble of picking a terminal, they do not mean it
-    /// to be taken back by the next tab they look at.
+    /// The destination the reader named.
     func pinDestination(to paneID: UUID) {
-        if let transientOwnerPaneID, paneID != transientOwnerPaneID {
-            close()
-            return
-        }
-        originPaneID = paneID
-        isDestinationPinned = true
-    }
-
-    /// Hand the destination back to whatever is focused, starting with the
-    /// pane given — the focus moved while the pin held it, so releasing it
-    /// without catching up would leave the strip on the pinned pane until the
-    /// reader happened to move focus again.
-    func followFocus(_ paneID: UUID?) {
-        if let transientOwnerPaneID, paneID != transientOwnerPaneID {
-            close()
-            return
-        }
-        isDestinationPinned = false
-        if let paneID {
-            originPaneID = paneID
-        }
-    }
-
-    /// The focus moved. Ignored while the destination is pinned, which is the
-    /// whole of what a pin does.
-    func focusedPaneChanged(to paneID: UUID?) {
-        if let transientOwnerPaneID {
-            if paneID != transientOwnerPaneID {
-                close()
-            }
-            return
-        }
-        guard !isDestinationPinned else { return }
         originPaneID = paneID
     }
 
-    /// Reconcile the current repository of a transient review's owner pane.
-    /// Project / Worktree review ignores this because its lifetime remains
-    /// owned by the container rather than the shell's current directory.
-    func transientOwnerRepositoryChanged(to root: URL?) {
-        guard transientOwnerPaneID != nil else { return }
-        let normalizedRoot = root?.resolvingSymlinksInPath()
-        guard directory?.resolvingSymlinksInPath() != normalizedRoot else { return }
-        close()
-    }
-
-    /// The entry point is one control, so it has to close what it opened.
-    /// Re-opening on a different directory rather than closing keeps the
-    /// button meaningful after the user switches container while review is up.
-    func toggle(_ directory: URL, originPaneID: UUID?) {
-        if self.directory?.resolvingSymlinksInPath() == directory.resolvingSymlinksInPath() {
-            close()
-        } else {
-            open(directory, originPaneID: originPaneID)
-        }
-    }
-
-    /// Follow the user to another project or worktree. Distinct from `open`
-    /// because the strip height they chose is theirs, not part of the target.
-    ///
-    /// The pin does not survive it. A pin names one terminal, and the pane
-    /// that was pinned belongs to the container being left — kept, it would
-    /// hold the destination on a tab that is no longer on screen while the
-    /// diff beside it described somewhere else entirely.
-    func retarget(_ directory: URL, originPaneID: UUID?) {
-        guard isPresented else { return }
-        insertedPaneID = nil
-        self.originPaneID = originPaneID
-        transientOwnerPaneID = nil
-        isTransientOwnerTmuxHosted = false
-        isDestinationPinned = false
-        requestedScope = nil
-        scopeRequestID = UUID()
-        self.directory = directory.resolvingSymlinksInPath()
-    }
-
-    func toggleStrip() {
-        isStripCollapsed.toggle()
-    }
-
-    /// The height to render the docked terminal at, or `nil` for none.
-    func stripHeight(in available: CGFloat) -> CGFloat? {
-        ReviewStrip.height(stripHeight, isCollapsed: isStripCollapsed, in: available)
-    }
-
-    /// The height the strip is drawn at: `stripHeight(in:)` fitted to the
-    /// grid. The divider sits on this edge, so a drag and the accessibility
-    /// value start from it rather than from the height before the fit.
-    func displayedStripHeight(in available: CGFloat, cellHeight: CGFloat?) -> CGFloat? {
-        stripHeight(in: available).map {
-            ReviewStrip.fitted($0, matching: available, cellHeight: cellHeight)
-        }
-    }
-
-    /// Guarded rather than assigned. Observation's generated setter notifies on
-    /// every write, same value or not, so a drag frame that wrote
-    /// `isStripCollapsed = false` over `false` invalidated every view watching
-    /// it — which is the path splitting the height out of a struct was meant to
-    /// close.
-    func resizeStrip(to proposed: CGFloat, in available: CGFloat) {
-        if isStripCollapsed {
-            isStripCollapsed = false
-        }
-        let next = ReviewStrip.resized(to: proposed, in: available)
-        if stripHeight != next {
-            stripHeight = next
+    /// The file list's divider moved. Guarded rather than assigned:
+    /// Observation's generated setter notifies on every write, same value or
+    /// not, so a drag frame that wrote the width it already had would still
+    /// invalidate every view reading it.
+    func resizeRail(to proposed: CGFloat, in available: CGFloat) {
+        let next = ReviewRail.resized(to: proposed, in: available)
+        if railWidth != next {
+            railWidth = next
         }
     }
 }

@@ -1,16 +1,13 @@
 // WorkingDirectoryField.swift
-// Limpid — reusable Form control for a `WorkingDirectoryMode` +
-// companion fixed-path pair. Shared by the Group settings sheet
-// (`ContainerSettingsSheet`) and the Quick Tabs section of the
-// Settings → Terminal pane so both surfaces present the same
-// "Home / Inherit previous / Custom" picker with a folder
-// chooser that only appears in the `.fixed` case.
+// Limpid — the Form control for a `WorkingDirectoryMode` + companion
+// fixed-path pair, for the Scratch section of Settings → Tabs & Panes:
+// a "Home folder / Inherit from previous tab / Custom folder" picker with a folder chooser
+// that only appears in the `.fixed` case.
 //
-// The control is binding-driven: callers own the storage and decide
-// where the writes land (a `SettingsStore` key path, or a
-// session-mutating binding that auto-saves). We deliberately keep no
-// internal `@State` for the values so a binding fed from observable
-// model state always reflects the source of truth.
+// The control is binding-driven: the caller owns the storage (a
+// `SettingsStore` key path). We deliberately keep no internal `@State`
+// for the values so a binding fed from observable model state always
+// reflects the source of truth.
 
 import AppKit
 import SwiftUI
@@ -20,47 +17,32 @@ import SwiftUI
 /// (rows, not a standalone container), matching the surrounding
 /// settings layout.
 struct WorkingDirectoryField: View {
-    /// The picker label (e.g. "Working Directory" / "Default working
-    /// directory"). Lets the two call sites phrase the row to fit
-    /// their context while sharing the control.
+    /// The picker label (e.g. "Working folder").
     let label: LocalizedStringResource
 
     @Binding var mode: WorkingDirectoryMode
     @Binding var path: URL?
+    /// The Settings window, which the folder panel hangs from.
+    @State private var hostWindow = HostWindowReference()
 
     var body: some View {
         Picker(label, selection: Binding(
             get: { mode },
             set: { applyMode($0) }
         )) {
-            Text("Home directory").tag(WorkingDirectoryMode.home)
+            Text("Home folder").tag(WorkingDirectoryMode.home)
             Text("Inherit from previous tab").tag(WorkingDirectoryMode.inheritPrevious)
-            Text("Custom directory").tag(WorkingDirectoryMode.fixed)
+            Text("Custom folder").tag(WorkingDirectoryMode.fixed)
         }
+        // On the picker, which is always there: choosing "Custom folder"
+        // opens the panel before the folder's row exists.
+        .background(HostWindowReader(reference: hostWindow))
         if mode == .fixed {
-            LabeledContent("Folder") {
-                Button {
-                    chooseDirectory()
-                } label: {
-                    Label {
-                        Text(display: displayPath)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    } icon: {
-                        Image(systemName: "folder")
-                    }
-                }
-                .buttonStyle(.borderless)
-                .controlSize(.regular)
+            // The path as every settings row shows it, with Finder.
+            PathRow(label: "Folder", url: path.flatMap { $0.path.isEmpty ? nil : $0 }) {
+                chooseDirectory()
             }
         }
-    }
-
-    private var displayPath: DisplayText {
-        guard let path, !path.path.isEmpty else {
-            return .localized("Choose…")
-        }
-        return .verbatim(PathFormatting.abbreviateHome(path.path))
     }
 
     private func applyMode(_ newMode: WorkingDirectoryMode) {
@@ -86,7 +68,7 @@ struct WorkingDirectoryField: View {
 
     /// Present the folder picker. When `settingModeOnPick` is true we
     /// only flip the mode to `.fixed` once the user actually confirms a
-    /// directory, so cancelling out of the initial Custom selection is
+    /// directory, so canceling out of the initial Custom selection is
     /// a true no-op.
     private func chooseDirectory(settingModeOnPick: Bool = false) {
         let panel = NSOpenPanel()
@@ -103,17 +85,23 @@ struct WorkingDirectoryField: View {
         if let path {
             panel.directoryURL = path
         }
-        // `begin` returns immediately and fires the completion on main,
-        // so the SwiftUI tick that triggered the picker isn't blocked
-        // while AppKit measures and animates the panel onto screen
+        // Attached to the Settings window as a sheet, as Project Settings'
+        // folder panel is, rather than a free window that can fall behind.
+        // Both forms return at once and answer on main, so the SwiftUI tick
+        // that asked is not blocked while AppKit animates the panel in
         // (`runModal` spins the run loop for ~50–200ms on lower-spec
         // machines, producing a visible Settings stutter).
-        panel.begin { response in
+        let finish: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK, let chosen = panel.url else { return }
             if settingModeOnPick {
                 mode = .fixed
             }
             path = chosen
+        }
+        if let window = hostWindow.window {
+            panel.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            panel.begin(completionHandler: finish)
         }
     }
 }

@@ -10,6 +10,8 @@
 //! four kilobytes of text is a bug rather than a title and the next candidate
 //! is more likely to be one.
 
+use limpid_agent_model::{PromptKind, classify_prompt};
+
 /// Maximum number of UTF-8 bytes accepted for one title candidate.
 pub const MAX_TITLE_BYTES: usize = 4_096;
 /// Maximum prompt bytes inspected while deriving the fallback title.
@@ -57,7 +59,13 @@ pub fn resolve_title(candidates: TitleCandidates<'_>) -> Result<Option<String>, 
         if first_prompt.len() > MAX_FIRST_PROMPT_BYTES {
             return Err(TitleError::TooLong);
         }
-        let mut normalized = sanitize_title(first_prompt);
+        // Named by the person's words, without the harness blocks that led
+        // them; a prompt the harness wrote names nothing (`classify_prompt`).
+        let words = match classify_prompt(first_prompt) {
+            (PromptKind::Text, words) => words,
+            _ => "",
+        };
+        let mut normalized = sanitize_title(words);
         truncate_utf8(&mut normalized, MAX_TITLE_BYTES);
         if !normalized.is_empty() {
             return Ok(Some(normalized));
@@ -144,6 +152,19 @@ mod tests {
     }
 
     #[test]
+    fn an_unused_oversized_candidate_is_not_validated() {
+        let oversized_title = "x".repeat(MAX_TITLE_BYTES + 1);
+        let oversized_prompt = "x".repeat(MAX_FIRST_PROMPT_BYTES + 1);
+        let resolved = resolve_title(TitleCandidates {
+            provider_session: Some("Formal title"),
+            provider_generated: Some(&oversized_title),
+            first_prompt: Some(&oversized_prompt),
+        });
+
+        assert_eq!(resolved, Ok(Some("Formal title".to_owned())));
+    }
+
+    #[test]
     fn unsafe_and_multiline_characters_are_normalized_before_selection() {
         let resolved = resolve_title(TitleCandidates {
             provider_session: Some("  Safe\u{202e}\n\t title\u{200b}  "),
@@ -165,6 +186,26 @@ mod tests {
         .unwrap();
 
         assert_eq!(resolved.as_deref(), Some("Generated"));
+    }
+
+    #[test]
+    fn a_first_prompt_the_harness_wrote_names_nothing() {
+        let resolved = resolve_title(TitleCandidates {
+            first_prompt: Some("<task-notification>\n<task-id>b1</task-id>"),
+            ..TitleCandidates::default()
+        });
+        assert_eq!(resolved, Ok(None));
+    }
+
+    #[test]
+    fn a_first_prompt_is_named_by_the_words_after_a_reminder() {
+        let resolved = resolve_title(TitleCandidates {
+            first_prompt: Some(
+                "<system-reminder>\nopened a.swift\n</system-reminder>\nFix the login",
+            ),
+            ..TitleCandidates::default()
+        });
+        assert_eq!(resolved, Ok(Some("Fix the login".to_owned())));
     }
 
     #[test]

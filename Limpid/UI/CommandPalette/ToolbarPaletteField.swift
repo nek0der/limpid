@@ -1,21 +1,24 @@
 // ToolbarPaletteField.swift
-// Limpid — inline command palette trigger embedded in the terminal column toolbar.
+// Limpid — inline command palette trigger in the window's title bar.
 //
-// Reports its frame to `WindowSession.paletteFieldFrame` so the dropdown can be
-// positioned at ContentView level.
+// Reports its frame to its window's `ProjectWindowState.paletteFieldFrame` so
+// the dropdown can be positioned at WindowChromeHost level.
 
 import SwiftUI
 
 struct ToolbarPaletteField: View {
-    @Environment(WindowSession.self) private var session
+    @Environment(WorkspaceSession.self) private var session
+    @Environment(ProjectWindowState.self) private var window
     @Environment(SettingsStore.self) private var settings
     @Environment(AttentionState.self) private var attention
-    @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(\.frecencyStore) private var frecencyStore
     @Environment(\.surfaceRegistry) private var registry
+    @Environment(\.restoreHandler) private var restoreHandler
 
-    private var isActive: Bool {
-        session.commandPaletteState != nil
+    /// The palette open in this window. One open in another window leaves
+    /// this field idle, so the two fields never edit the same query.
+    private var paletteState: CommandPaletteState? {
+        session.commandPaletteState.flatMap { $0.windowID == window.id ? $0 : nil }
     }
 
     var body: some View {
@@ -23,13 +26,13 @@ struct ToolbarPaletteField: View {
             .onGeometryChange(for: CGRect.self) { geo in
                 geo.frame(in: .global)
             } action: { frame in
-                session.paletteFieldFrame = frame
+                window.paletteFieldFrame = frame
             }
     }
 
     @ViewBuilder
     private var pill: some View {
-        if isActive, let state = session.commandPaletteState {
+        if let state = paletteState {
             ActivePill(state: state)
         } else {
             InactivePill(onTap: openPalette)
@@ -40,11 +43,16 @@ struct ToolbarPaletteField: View {
         guard let frecencyStore else { return }
         CommandPaletteActions.openCommandPalette(
             session,
+            in: window.id,
             settings: settings,
             frecencyStore: frecencyStore,
             attention: attention,
             registry: registry,
-            reviewPresentation: reviewPresentation
+            supervision: SupervisionPaletteFacts(
+                window: window,
+                session: session,
+                restoreTurnNumber: restoreHandler?.paletteTurnNumber()
+            )
         )
     }
 }
@@ -54,37 +62,74 @@ struct ToolbarPaletteField: View {
 private struct InactivePill: View {
     let onTap: () -> Void
     @Environment(SettingsStore.self) private var settings
+    @Environment(\.locale) private var locale
     @State private var isHovering = false
 
+    /// A tooltip naming both things the field opens, and to VoiceOver the
+    /// palette's name with its key, since the placeholder it shows is not a
+    /// name.
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                Text("Command Palette")
-                    .font(LimpidFont.bodySecondary)
-                    .foregroundStyle(.tertiary)
-                Spacer(minLength: 0)
-                Text(shortcutHint)
-                    .font(LimpidFont.caption)
-                    .foregroundStyle(.quaternary)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: LimpidLayout.toolbarContentHeight)
-            .frame(maxWidth: 280)
-            .background(
-                isHovering ? LimpidColor.rowHoverFill : Color.primary.opacity(0.03),
-                in: Capsule()
-            )
-            .overlay(Capsule().stroke(LimpidColor.toolbarHairline, lineWidth: 0.5))
+            field
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .help(Text(verbatim: help))
+        .accessibilityLabel(Text("Command Palette"))
+        .accessibilityValue(Text(verbatim: shortcutHint))
+    }
+
+    /// The title bar's field: a field on the surfaces'
+    /// color, edged in `line`, its placeholder and magnifier in the muted
+    /// token, which reads at 4.5:1 on the window's color and on `hover`
+    /// while the background opacity is 100%,
+    /// and the palette's keys in a cap. The title bar sets its width.
+    private var field: some View {
+        let shape = RoundedRectangle(cornerRadius: LimpidLayout.Supervision.paletteFieldCornerRadius, style: .continuous)
+        return HStack(spacing: LimpidLayout.Supervision.spaceSnug) {
+            Image(systemName: "magnifyingglass")
+                .font(.supervision(LimpidLayout.Supervision.paletteFieldSymbolSize))
+                .foregroundStyle(SupervisionTokens.muted.color)
+            Text("Type a command or search…")
+                .font(.supervision(.body))
+                .foregroundStyle(SupervisionTokens.muted.color)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if !shortcutHint.isEmpty {
+                // At rest the field is filled in the cap's own window color,
+                // so the cap draws only its edges (`isFaceFilled`); under the
+                // pointer the field turns `hover` and the cap fills its face
+                // again, so it still reads as a key.
+                SupervisionKeycap(keys: shortcutHint, isFaceFilled: isHovering)
+            }
+        }
+        .padding(.horizontal, LimpidLayout.Supervision.spaceS)
+        .frame(height: LimpidLayout.titleBarControlHeight)
+        // As see-through as the title bar's ground (`SurfaceGround`), so
+        // with the background opacity under 100% it is not an opaque box.
+        .background(SurfaceGround {
+            shape.fill(isHovering ? SupervisionTokens.hover.color : SupervisionTokens.window.color)
+        })
+        .overlay(shape.strokeBorder(SupervisionTokens.line.color, lineWidth: 1))
+        .contentShape(shape)
     }
 
     private var shortcutHint: String {
         settings.settings.keyboard.shortcut(for: .commandPalette)?.displayString ?? ""
+    }
+
+    /// The two things the field opens, each with its key: the palette, and
+    /// Quick Open, which has no other way in from the title bar.
+    private var help: String {
+        let keyboard = settings.settings.keyboard
+        return [
+            ShortcutHelpText.make(
+                name: "Command Palette",
+                shortcut: keyboard.shortcut(for: .commandPalette)?.displayString,
+                locale: locale
+            ),
+            ShortcutHelpText.make(name: "Quick Open", shortcut: keyboard.shortcut(for: .quickOpen)?.displayString, locale: locale)
+        ].joined(separator: "\n")
     }
 }
 
@@ -92,59 +137,81 @@ private struct InactivePill: View {
 
 private struct ActivePill: View {
     @Bindable var state: CommandPaletteState
-    @Environment(WindowSession.self) private var session
+    @Environment(WorkspaceSession.self) private var session
+    @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.frecencyStore) private var frecencyStore
     @FocusState private var fieldFocused: Bool
     @State private var debounceTask: Task<Void, Never>?
 
+    /// The field while typing: the idle field's shape, the text in the text
+    /// color, and the accent's 2pt ring just inside its edge for where the
+    /// keys go.
     var body: some View {
-        HStack(spacing: 6) {
+        let shape = RoundedRectangle(cornerRadius: LimpidLayout.Supervision.paletteFieldCornerRadius, style: .continuous)
+        return HStack(spacing: LimpidLayout.Supervision.spaceSnug) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-            TextField(state.placeholder, text: $state.query)
-                .textFieldStyle(.plain)
-                .font(LimpidFont.bodySecondary)
-                .focused($fieldFocused)
-                .onChange(of: state.query) { _, newValue in
-                    scheduleFilter(query: newValue)
-                }
-                .onSubmit { executeSelected() }
-                .onExitCommand { CommandPaletteActions.closeCommandPalette(session) }
-                .onKeyPress(.upArrow) {
-                    state.moveSelection(up: true)
-                    return .handled
-                }
-                .onKeyPress(.downArrow) {
-                    state.moveSelection(up: false)
-                    return .handled
-                }
+                .font(.supervision(LimpidLayout.Supervision.paletteFieldSymbolSize))
+                .foregroundStyle(SupervisionTokens.muted.color)
+            field
+                .font(.supervision(.body))
+                .foregroundStyle(SupervisionTokens.text.color)
         }
-        .padding(.horizontal, 10)
-        .frame(height: LimpidLayout.toolbarContentHeight)
-        .frame(maxWidth: 280)
-        .background(LimpidColor.rowActiveFill, in: Capsule())
-        .overlay(Capsule().stroke(LimpidColor.rowActiveBorder, lineWidth: 0.5))
-        .onAppear { grabFocus() }
-        .onDisappear { debounceTask?.cancel() }
-        .onReceive(NotificationCenter.default.publisher(for: .limpidCommandPaletteFocus)) { _ in
-            grabFocus()
+        .padding(.horizontal, LimpidLayout.Supervision.spaceS)
+        .frame(height: LimpidLayout.titleBarControlHeight)
+        .background(SurfaceGround { shape.fill(SupervisionTokens.window.color) })
+        // The field shows only while it is typed in, so its ring is always
+        // drawn; on the edge, where the idle field's own edge was.
+        .supervisionFocusRing(
+            isFocused: true,
+            cornerRadius: LimpidLayout.Supervision.paletteFieldCornerRadius,
+            placement: .onEdge
+        )
+        .modifier(FieldLifecycle(onAppear: grabFocus, onDisappear: { debounceTask?.cancel() }))
+    }
+
+    /// The placeholder takes the muted token, which reads at 4.5:1 on its
+    /// field, as the window's other plain fields do.
+    private var field: some View {
+        TextField(
+            text: $state.query,
+            prompt: Text(state.placeholder).foregroundStyle(SupervisionTokens.muted.color)
+        ) {
+            Text(state.placeholder)
+        }
+        .textFieldStyle(.plain)
+        .focused($fieldFocused)
+        .onChange(of: state.query) { _, newValue in
+            scheduleFilter(query: newValue)
+        }
+        .onSubmit { executeSelected() }
+        // ⌘Return opens another project's row in a new window; the
+        // window reads it only for those rows.
+        .onKeyPress(.return, phases: .down) { press in
+            guard press.modifiers.chord == .command else { return .ignored }
+            executeSelected(opensInNewWindow: true)
+            return .handled
+        }
+        .onExitCommand { CommandPaletteActions.closeCommandPalette(session) }
+        .onKeyPress(.upArrow) {
+            state.moveSelection(up: true)
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            state.moveSelection(up: false)
+            return .handled
         }
     }
 
-    /// Two-tick delay: the first tick lets SwiftUI mount the TextField;
-    /// the second lets the responder chain settle after the terminal
-    /// surface relinquishes firstResponder. The initialQuery is applied
-    /// after focus so the cursor lands at the end, not selecting all.
+    /// Takes the keyboard once the terminal has let go
+    /// (`KeyboardHandoff`). The initialQuery is applied a turn after focus
+    /// so the cursor lands at the end, not selecting all.
     private func grabFocus() {
-        DispatchQueue.main.async {
-            DispatchQueue.main.async {
-                fieldFocused = true
-                if let initial = state.initialQuery {
-                    state.initialQuery = nil
-                    DispatchQueue.main.async {
-                        state.query = initial
-                    }
+        KeyboardHandoff.afterResponderSettles {
+            fieldFocused = true
+            if let initial = state.initialQuery {
+                state.initialQuery = nil
+                DispatchQueue.main.async {
+                    state.query = initial
                 }
             }
         }
@@ -159,7 +226,7 @@ private struct ActivePill: View {
         }
     }
 
-    private func executeSelected() {
+    private func executeSelected(opensInNewWindow: Bool = false) {
         guard state.selectedIndex >= 0,
               state.selectedIndex < state.results.count
         else { return }
@@ -173,9 +240,23 @@ private struct ActivePill: View {
         }
 
         debounceTask?.cancel()
-        NotificationCenter.default.post(
-            name: .limpidCommandPaletteExecute,
-            object: selected.action
-        )
+        CommandPaletteActions.postExecution(of: selected.action, from: state, opensInNewWindow: opensInNewWindow, commands: windowRegistry)
+    }
+}
+
+/// What the typing field does as it comes and goes: it takes the keyboard
+/// on arrival and whenever the palette is asked to focus, and drops its
+/// pending filter as it leaves.
+private struct FieldLifecycle: ViewModifier {
+    let onAppear: () -> Void
+    let onDisappear: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear(perform: onAppear)
+            .onDisappear(perform: onDisappear)
+            .onReceive(NotificationCenter.default.publisher(for: .limpidCommandPaletteFocus)) { _ in
+                onAppear()
+            }
     }
 }

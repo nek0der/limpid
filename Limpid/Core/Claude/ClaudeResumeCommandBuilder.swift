@@ -1,8 +1,8 @@
 // ClaudeResumeCommandBuilder.swift
 // Limpid — backward-compat redirect to the generic
-// `AgentResumeCommandBuilder<ClaudeAgent>`. Sub-phase 2.2c collapsed
-// the two parallel builder enums onto the `AgentSpec` protocol. The
-// per-flavor command shape (`claude --resume <id>`) lives on
+// `AgentResumeCommandBuilder<ClaudeAgent>`. The Claude and Codex builders
+// share one implementation over the `AgentSpec` protocol; the per-flavor
+// command shape (`claude --resume <id>`) lives on
 // `ClaudeAgent.resumeCommand`.
 
 import Foundation

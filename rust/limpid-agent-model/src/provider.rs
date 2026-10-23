@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
+use std::path::{Path, PathBuf};
 
 /// Stable, lowercase identifier of a provider such as `claude` or `codex`.
 ///
@@ -138,6 +139,15 @@ pub struct ProviderDescriptor {
     /// than in the rules.
     #[serde(default)]
     pub session_end_drop_reasons: Vec<String>,
+    /// Directories under the provider's configuration directory where the
+    /// provider runs agents of its own rather than the person's: Codex's
+    /// memory agent works in `memories` (or `memories_v2`). A hook call or a
+    /// record from there is the provider's housekeeping, and neither a turn
+    /// to show nor a session to resume. The names live here, with the
+    /// provider, so the hook runtime and the projection read one list and
+    /// the projection spells no provider's directory.
+    #[serde(default)]
+    pub internal_agent_directories: Vec<String>,
 }
 
 impl ProviderDescriptor {
@@ -159,10 +169,66 @@ impl ProviderDescriptor {
         format!("{id}-cwd-events")
     }
 
+    /// The provider's configuration directory when the environment does not
+    /// move it: `~/.<provider id>` under `user_home`.
+    #[must_use]
+    pub fn default_home(&self, user_home: &Path) -> PathBuf {
+        user_home.join(format!(".{}", self.id))
+    }
+
+    /// Whether `path` is one of `internal_agent_directories` under `home`,
+    /// or lies inside one. Compared by components, so a trailing `/` does
+    /// not matter and `memories-notes` is not `memories`. Both paths are
+    /// taken as given: a caller whose paths may name the same directory
+    /// differently (a symlink, `/tmp` for `/private/tmp`) resolves them
+    /// first. A relative `home` matches nothing, since what it is relative
+    /// to is not known here. We ask for a root rather than `is_absolute`:
+    /// the paths are the host's POSIX paths, and elsewhere `is_absolute`
+    /// also wants a drive, so `/Users/me` would read as relative.
+    #[must_use]
+    pub fn is_internal_agent_directory(&self, home: &Path, path: &Path) -> bool {
+        home.has_root()
+            && self
+                .internal_agent_directories
+                .iter()
+                .any(|directory| path.starts_with(home.join(directory)))
+    }
+
     /// Whether the provider declares `capability`.
     #[must_use]
     pub fn has(&self, capability: Capability) -> bool {
         self.capabilities.contains(&capability)
+    }
+}
+
+#[cfg(any(test, feature = "conformance"))]
+impl ProviderDescriptor {
+    /// A provider that declares `capabilities` and nothing else: default
+    /// directories, no process names, no session-end reasons, no internal
+    /// agent directories. For a test whose rule branches on a capability
+    /// rather than on what a real provider declares; a test about a real
+    /// provider uses that provider's own descriptor instead. Kept in one place
+    /// so a new field is added here once rather than in every test.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `id` is not a valid provider id, which is a test's own
+    /// mistake.
+    #[must_use]
+    pub fn fixture(id: &str, capabilities: impl IntoIterator<Item = Capability>) -> Self {
+        let id = ProviderId::new(id).expect("a fixture names a valid provider id");
+        Self {
+            display_name: id.to_string(),
+            capabilities: capabilities.into_iter().collect(),
+            pid_sweep_interval_ms: 3_000,
+            state_directory: Self::default_state_directory(&id),
+            session_directory: Self::default_session_directory(&id),
+            cwd_events_directory: None,
+            process_names: Vec::new(),
+            session_end_drop_reasons: Vec::new(),
+            internal_agent_directories: Vec::new(),
+            id,
+        }
     }
 }
 
@@ -236,6 +302,78 @@ pub struct InstallRecipe {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn with_internal_directories(directories: &[&str]) -> ProviderDescriptor {
+        ProviderDescriptor {
+            internal_agent_directories: directories.iter().map(|it| (*it).to_owned()).collect(),
+            ..ProviderDescriptor::fixture("keeper", [])
+        }
+    }
+
+    #[test]
+    fn the_default_home_is_the_dotted_id_under_the_users_home() {
+        assert_eq!(
+            with_internal_directories(&[]).default_home(Path::new("/Users/me")),
+            PathBuf::from("/Users/me/.keeper")
+        );
+    }
+
+    #[test]
+    fn an_internal_agent_directory_is_read_under_the_home_by_components() {
+        let descriptor = with_internal_directories(&["memories", "memories_v2"]);
+        let home = Path::new("/Users/me/.keeper");
+        for path in [
+            "/Users/me/.keeper/memories",
+            "/Users/me/.keeper/memories/",
+            "/Users/me/.keeper/./memories",
+            "/Users/me/.keeper/memories/skills",
+            "/Users/me/.keeper/memories_v2",
+        ] {
+            assert!(
+                descriptor.is_internal_agent_directory(home, Path::new(path)),
+                "{path}"
+            );
+        }
+        // The home itself, a directory that only begins with the name, the
+        // same names under another directory, and a relative path.
+        for path in [
+            "/Users/me/.keeper",
+            "/Users/me/.keeper/memories-notes",
+            "/Users/me/work/.keeper/memories",
+            ".keeper/memories",
+        ] {
+            assert!(
+                !descriptor.is_internal_agent_directory(home, Path::new(path)),
+                "{path}"
+            );
+        }
+        // A relative home is relative to a directory not known here.
+        assert!(
+            !descriptor
+                .is_internal_agent_directory(Path::new(".keeper"), Path::new(".keeper/memories"))
+        );
+        // A provider that declares none has none.
+        assert!(
+            !with_internal_directories(&[])
+                .is_internal_agent_directory(home, Path::new("/Users/me/.keeper/memories"))
+        );
+    }
+
+    #[test]
+    fn a_descriptor_without_internal_directories_still_decodes() {
+        let mut value =
+            serde_json::to_value(with_internal_directories(&["memories"])).expect("serializes");
+        assert_eq!(
+            value["internalAgentDirectories"],
+            serde_json::json!(["memories"])
+        );
+        value
+            .as_object_mut()
+            .expect("object")
+            .remove("internalAgentDirectories");
+        let decoded: ProviderDescriptor = serde_json::from_value(value).expect("decodes");
+        assert!(decoded.internal_agent_directories.is_empty());
+    }
 
     #[test]
     fn accepts_lowercase_ascii_digits_and_dashes() {

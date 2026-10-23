@@ -1,99 +1,45 @@
 // ReviewPresentationCommand.swift
-// Limpid — the one entry point every Review Changes affordance goes through.
+// Limpid — Find routed to the review or the terminal, and the review's menu items.
 
 import SwiftUI
 
-/// The toolbar button, the View menu, the command palette and the container
-/// actions menu all mean the same thing by "Review Changes": show the surface,
-/// or put it away. Routing them through one place is what keeps the button
-/// able to close what it opened.
+/// What the menus do around the review: Find goes to the review while it is
+/// in front, and the panes it put to sleep wake before the layout swaps.
 @MainActor
 enum ReviewPresentationCommand {
-    static func toggle(
-        session: WindowSession,
-        attention: AttentionState,
-        presentation: ReviewPresentation,
-        registry: (any SurfaceViewProviding)? = nil
-    ) {
-        if presentation.isPresented {
-            reveal(session: session, registry: registry)
-            presentation.close()
-            return
-        }
-        let paneID = session.activeTab?.splitTree.effectiveFocusedLeafID
-        if let directory = ReviewAgents.directory(session: session) {
-            presentation.open(directory, originPaneID: paneID)
-            return
-        }
-        guard ReviewAgents.isTransientTurnContainer(session: session, paneID: paneID),
-              let target = ReviewAgents.turnTarget(
-                  session: session,
-                  attention: attention,
-                  paneID: paneID
-              )
-        else { return }
-        presentation.open(
-            target.root,
-            originPaneID: paneID,
-            initialScope: target.scope,
-            transientOwnerPaneID: paneID,
-            isTransientOwnerTmuxHosted: target.isTmuxHosted
-        )
-    }
-
-    static func openTurn(
-        session: WindowSession,
-        attention: AttentionState,
-        presentation: ReviewPresentation
-    ) {
-        let paneID = session.activeTab?.splitTree.effectiveFocusedLeafID
-        guard let target = ReviewAgents.turnTarget(
-            session: session,
-            attention: attention,
-            paneID: paneID
-        ) else { return }
-        presentation.open(
-            target.root,
-            originPaneID: paneID,
-            initialScope: target.scope,
-            transientOwnerPaneID: ReviewAgents.isTransientTurnContainer(
-                session: session,
-                paneID: paneID
-            ) ? paneID : nil,
-            isTransientOwnerTmuxHosted: target.isTmuxHosted
-        )
-    }
-
     /// We keep Find in the menu so a focused terminal can route its ignored
     /// key binding to the reader instead of competing with a hidden button.
-    static func find(
+    /// Acts in `window`: its review, or its focused pane.
+    static func find( // swiftlint:disable:this function_parameter_count
         _ action: LimpidShortcutAction,
-        session: WindowSession,
-        presentation: ReviewPresentation,
-        registry: any SurfaceViewProviding
+        session: WorkspaceSession,
+        isReviewShown: Bool,
+        registry: any SurfaceViewProviding,
+        commands: any WindowCommandPerforming,
+        window: WindowID
     ) {
-        if presentation.isPresented {
-            NotificationCenter.default.post(name: .limpidReviewFind, object: session, userInfo: ["action": action])
+        if isReviewShown {
+            commands.perform(.reviewFind(action), in: window)
             return
         }
         switch action {
-        case .find: SearchActions.beginSearch(session)
-        case .findNext: SearchActions.searchNext(session, registry: registry)
-        case .findPrevious: SearchActions.searchPrevious(session, registry: registry)
+        case .find: SearchActions.beginSearch(session, in: window)
+        case .findNext: SearchActions.searchNext(session, registry: registry, in: window)
+        case .findPrevious: SearchActions.searchPrevious(session, registry: registry, in: window)
         default: break
         }
     }
 
     /// Bring the panes review had put to sleep back before the layout swaps.
     ///
-    /// While review is up, every pane but the docked one is occluded, which
-    /// stops its renderer. Closing mounts them all again in the same pass, and
+    /// While the review tab is in front, every pane of the tab behind it is
+    /// occluded, which stops its renderer. Closing mounts them all again in the same pass, and
     /// the occlusion pass that wakes them runs after that — so they appeared
     /// for a frame holding whatever their layer last had. Waking them first is
     /// what removes the flash.
-    static func reveal(session: WindowSession, registry: (any SurfaceViewProviding)?) {
-        guard let registry, let tab = session.activeTab else { return }
-        registry.updateOcclusion(visibleIDs: Set(tab.splitTree.allLeafIDs()))
+    static func reveal(session: WorkspaceSession, window: WindowID, paneVisibility: PaneVisibilityReporter) {
+        guard let tab = session.activeTab(in: window) else { return }
+        paneVisibility.wake(Set(tab.splitTree.allLeafIDs()))
     }
 }
 
@@ -102,38 +48,52 @@ enum ReviewPresentationCommand {
 /// what makes `⌘⌥R` work at all.
 struct ReviewChangesMenuItem: View {
     let state: AppState
+    /// The window the item acts in; `nil` while no main window is key,
+    /// where the item is off.
+    let window: WindowID?
 
     var body: some View {
         Button {
-            NotificationCenter.default.post(name: .limpidReviewChanges, object: state.session)
+            guard let window else { return }
+            state.windowRegistry.perform(.review, in: window)
         } label: {
-            Label("Review Changes", systemImage: ReviewPresentation.symbol)
+            // The menu's name for ⌥⌘R; the buttons that open
+            // the same tab on the unviewed turns say "Review Unviewed".
+            Label("Review", systemImage: ReviewPresentation.symbol)
         }
-        .limpidShortcut(.reviewChanges, in: state.settingsStore)
-        .disabled(!ReviewAgents.canReview(
-            session: state.session,
-            attention: state.attention,
-            presentation: state.reviewPresentation
-        ))
+        .limpidShortcut(.review, in: state.settingsStore)
+        // The review tab opens from any tab, and says why when there is
+        // nothing to read.
+        .disabled(window.flatMap { state.session.activeTab(in: $0) } == nil)
     }
 }
 
-struct ReviewThisTurnMenuItem: View {
+struct ReviewLatestTurnMenuItem: View {
     let state: AppState
+    /// The window the item acts in; `nil` while no main window is key,
+    /// where the item is off.
+    let window: WindowID?
 
     var body: some View {
-        let paneID = state.session.activeTab?.splitTree.effectiveFocusedLeafID
         Button {
-            NotificationCenter.default.post(name: .limpidReviewTurn, object: state.session)
+            guard let window else { return }
+            state.windowRegistry.perform(.reviewLatestTurn, in: window)
         } label: {
-            Label("Review This Turn", systemImage: ReviewPresentation.symbol)
+            Label(title, systemImage: ReviewPresentation.symbol)
         }
-        .accessibilityLabel(Text("Review This Turn"))
-        .limpidShortcut(.reviewTurn, in: state.settingsStore)
-        .disabled(ReviewAgents.turnScope(
-            session: state.session,
-            attention: state.attention,
-            paneID: paneID
-        ) == nil)
+        .accessibilityLabel(Text(title))
+        .limpidShortcut(.reviewLatestTurn, in: state.settingsStore)
+        .disabled(isDisabled)
+    }
+
+    /// The pane's latest turn, which the review tab reads from its record.
+    private var title: LocalizedStringKey {
+        "Review Latest Turn"
+    }
+
+    /// With a tab in front, the review tab always answers, with the turn or
+    /// with why there is none to read.
+    private var isDisabled: Bool {
+        window.flatMap { state.session.activeTab(in: $0) } == nil
     }
 }

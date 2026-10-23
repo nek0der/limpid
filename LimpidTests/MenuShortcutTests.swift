@@ -24,7 +24,8 @@ struct MenuShortcutTests {
             .renameTab: .action(.renameTab),
             .closeTab: .action(.closeTab),
             .newWorktree: .action(.newWorktree),
-            .keyboardShortcuts: .action(.keyboardShortcuts)
+            .keyboardShortcuts: .action(.keyboardShortcuts),
+            .reviewChanges: .action(.review)
         ]
         #expect(Set(expected.keys) == Set(MenuCommand.allCases))
         for command in MenuCommand.allCases {
@@ -107,6 +108,13 @@ struct MenuShortcutTests {
         let all: ShortcutModifiers = [.command, .shift, .option, .control]
         #expect(all.appKitModifierFlags == [.command, .shift, .option, .control])
         #expect(ShortcutModifiers().appKitModifierFlags.isEmpty)
+    }
+
+    @Test func keyModifiers_fromAppKitFlags_keepsTheFourAndDropsTheRest() {
+        let flags: NSEvent.ModifierFlags = [.command, .shift, .option, .control, .capsLock, .function]
+        #expect(KeyModifiers(flags) == [.command, .shift, .option, .control])
+        let capsLockOnly: NSEvent.ModifierFlags = [.capsLock]
+        #expect(KeyModifiers(capsLockOnly).isEmpty)
     }
 
     @Test("every named key is AppKit's character for that key", arguments: NamedKey.allCases)
@@ -199,18 +207,7 @@ struct MenuShortcutTests {
         keyCode: UInt16,
         modifiers: NSEvent.ModifierFlags
     ) throws -> NSEvent {
-        try #require(NSEvent.keyEvent(
-            with: .keyDown,
-            location: .zero,
-            modifierFlags: modifiers,
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            characters: characters,
-            charactersIgnoringModifiers: characters,
-            isARepeat: false,
-            keyCode: keyCode
-        ))
+        try NSEvent.testKeyDown(keyCode: keyCode, modifiers: modifiers, characters: characters)
     }
 }
 

@@ -10,6 +10,7 @@ import AppKit
 import Foundation
 import GhosttyKit
 import OSLog
+import Synchronization
 
 private let log = Logger.limpid("clipboard.confirm")
 
@@ -31,27 +32,206 @@ enum ClipboardConfirmationKind {
     }
 }
 
+/// libghostty's state for one clipboard request it handed us. It stays
+/// allocated until we complete or deny it on the surface it came from,
+/// and the C side frees it then, so exactly one answer may reach the C
+/// API with this pointer. `@unchecked Sendable` because the pointer is
+/// opaque to us: we only compare it and hand it back to libghostty on the
+/// main actor, and `ClipboardRequestTracker` is what keeps that answer to
+/// one.
+struct ClipboardRequestState: Hashable, @unchecked Sendable {
+    let pointer: UnsafeMutableRawPointer
+}
+
+/// Where a request came from, and so what refusing it takes.
+///
+/// A write under `clipboard-write = ask` reaches us through the write
+/// callback, which allocates nothing: we refuse it by not writing the
+/// text. Everything else comes through the read or confirm callbacks
+/// with a state libghostty keeps until we answer it. They are separate
+/// cases so a stateless write can never reach the C deny, which
+/// dereferences the state it is given.
+enum ClipboardRequestSource {
+    case osc52Write
+    case libghostty(ClipboardConfirmationKind, ClipboardRequestState)
+
+    var kind: ClipboardConfirmationKind {
+        switch self {
+        case .osc52Write: .osc52Write
+        case let .libghostty(kind, _): kind
+        }
+    }
+}
+
+/// The unanswered libghostty requests of one surface.
+///
+/// A request is tracked from the callback frame that receives it, before
+/// any hop to the main actor, until something claims it to answer it.
+/// Teardown denies whatever is still tracked before the surface is freed.
+/// Without that, a pane that closes between a callback and the main-actor
+/// work it scheduled leaves libghostty's state allocated for good, since
+/// `ghostty_surface_free` does not walk outstanding requests. We keep
+/// states here, never surface pointers, so nothing can answer on a freed
+/// surface: the surface is read from a live pane, or by the teardown that
+/// is about to free it.
+///
+/// A lock rather than the main actor, because the tracking has to happen
+/// in the callback's own frame and we do not rely on which thread
+/// libghostty calls it from.
+final class ClipboardRequestTracker: Sendable {
+    private struct Book {
+        /// Set by teardown, so a request that arrives after it is refused
+        /// in its own frame instead of being kept for a surface that is
+        /// about to go.
+        var isClosed = false
+        var unanswered: Set<ClipboardRequestState> = []
+    }
+
+    private let book = Mutex(Book())
+
+    init() {}
+
+    /// Keep `state` until it is claimed. False once teardown has run; the
+    /// caller then must not keep the request.
+    func track(_ state: ClipboardRequestState) -> Bool {
+        book.withLock { book in
+            guard !book.isClosed else { return false }
+            book.unanswered.insert(state)
+            return true
+        }
+    }
+
+    /// Take `state` to answer it. One claim succeeds, so a request is
+    /// answered by whoever claims it and by nobody else, teardown included.
+    func claim(_ state: ClipboardRequestState) -> Bool {
+        book.withLock { $0.unanswered.remove(state) != nil }
+    }
+
+    /// Whether `state` is still waiting for its answer.
+    func isTracking(_ state: ClipboardRequestState) -> Bool {
+        book.withLock { $0.unanswered.contains(state) }
+    }
+
+    /// Close the book and deny every request still in it. Called once, by
+    /// the surface's teardown, before the surface is freed.
+    func denyUnanswered(_ deny: (ClipboardRequestState) -> Void) {
+        let unanswered = book.withLock { book in
+            book.isClosed = true
+            defer { book.unanswered.removeAll() }
+            return book.unanswered
+        }
+        for state in unanswered {
+            deny(state)
+        }
+    }
+}
+
+/// The pane a clipboard request is answered on: `SurfaceView` in the
+/// app, a stand-in in tests.
+@MainActor
+protocol ClipboardRequestTarget: AnyObject {
+    /// The live libghostty surface; nil when the pane has none.
+    var surface: ghostty_surface_t? { get }
+    var clipboardRequests: ClipboardRequestTracker { get }
+    /// The pane as a view, for the UI that decides where the sheet goes.
+    var surfaceView: SurfaceView? { get }
+}
+
+/// The calls that answer a request. Injected so a test can see what would
+/// reach libghostty and the pasteboard without touching either.
+@MainActor
+struct ClipboardRequestAnswerer {
+    var deny: @MainActor (ghostty_surface_t, ClipboardRequestState) -> Void
+    var complete: @MainActor (ghostty_surface_t, String, ClipboardRequestState) -> Void
+    var writePasteboard: @MainActor (String) -> Void
+
+    static let libghostty = ClipboardRequestAnswerer(
+        deny: { surface, state in
+            ghostty_surface_deny_clipboard_request(surface, state.pointer)
+        },
+        complete: { surface, text, state in
+            GhosttyFFI.completeClipboardRequest(
+                surface: surface,
+                text: text,
+                state: state.pointer,
+                confirmed: true
+            )
+        },
+        writePasteboard: { text in
+            NSPasteboard.general.declareTypes([.string], owner: nil)
+            NSPasteboard.general.setString(text, forType: .string)
+        }
+    )
+
+    /// Refuse a request. Every refusal goes through here, so the rule that
+    /// keeps the C deny safe lives in one place: a write is refused by
+    /// dropping its text, and only a tracked state on a live surface reaches
+    /// the C API. A pane without a surface keeps its request tracked, for
+    /// its teardown to deny before the surface is freed.
+    func refuse(_ source: ClipboardRequestSource, on target: (any ClipboardRequestTarget)?) {
+        guard case let .libghostty(_, state) = source else { return }
+        refuse(state, on: target)
+    }
+
+    /// Refuse a libghostty request by its state, including one we have no
+    /// prompt for. The one place outside teardown that calls the C deny.
+    func refuse(_ state: ClipboardRequestState, on target: (any ClipboardRequestTarget)?) {
+        guard let target, let surface = target.surface else {
+            log.notice("clipboard deny skipped: the pane is gone, and its teardown answers the request")
+            return
+        }
+        guard target.clipboardRequests.claim(state) else { return }
+        deny(surface, state)
+    }
+
+    /// Carry out an allowed request. Returns whether it reached the pane
+    /// or the pasteboard.
+    func approve(
+        _ source: ClipboardRequestSource,
+        contents: String,
+        on target: (any ClipboardRequestTarget)?
+    ) -> Bool {
+        switch source {
+        case .osc52Write:
+            writePasteboard(contents)
+            return true
+        case let .libghostty(_, state):
+            guard let target, let surface = target.surface else {
+                log.notice("clipboard allow skipped: the pane closed before the user answered")
+                return false
+            }
+            guard target.clipboardRequests.claim(state) else { return false }
+            complete(surface, contents, state)
+            return true
+        }
+    }
+}
+
 /// One pending clipboard request waiting on the user's verdict. Holds a
-/// *weak* reference to the originating view rather than the raw surface
-/// pointer: if the pane closes while the sheet is up, `view` (or
-/// `view.surface`) goes nil and `allow()` / `deny()` skip the completion
-/// instead of calling `ghostty_surface_complete_clipboard_request` on a
-/// freed surface. `id` is a fresh UUID per request so SwiftUI's
-/// `.sheet(item:)` rebuilds when a back-to-back request replaces the
-/// previous one.
+/// *weak* reference to the originating pane rather than the raw surface
+/// pointer: if the pane closes while the sheet is up, the target goes nil
+/// and `allow()` / `deny()` leave the request to the pane's teardown
+/// instead of answering on a freed surface. `id` is a fresh UUID per
+/// request so SwiftUI's `.sheet(item:)` rebuilds when a back-to-back
+/// request replaces the previous one.
 @MainActor
 struct PendingClipboardRequest: Identifiable {
     let id = UUID()
-    let kind: ClipboardConfirmationKind
+    let source: ClipboardRequestSource
     let contents: String
-    /// Originating surface view; weak so a closed pane can't be revived
-    /// through this request. The live `ghostty_surface_t` is read from
-    /// `view.surface` at completion time, never cached.
-    weak var view: SurfaceView?
-    /// Opaque libghostty request state. `nonisolated(unsafe)` because it
-    /// crosses the C ABI — passed straight back to the completion call.
-    nonisolated(unsafe) let state: UnsafeMutableRawPointer?
+    /// Originating pane; weak so a closed pane can't be revived through
+    /// this request. The live `ghostty_surface_t` is read from it at
+    /// completion time, never cached.
+    weak var target: (any ClipboardRequestTarget)?
 
+    var kind: ClipboardConfirmationKind {
+        source.kind
+    }
+
+    /// The originating view, for the UI that decides where the sheet goes.
+    var view: SurfaceView? {
+        target?.surfaceView
+    }
 }
 
 /// Holds at most one pending request. If a second request arrives
@@ -70,11 +250,6 @@ final class ClipboardConfirmationCoordinator {
 
     var pending: PendingClipboardRequest?
 
-    /// Takes a refused review paste back off the comments it carried. Set by
-    /// `AppState`, which owns the review pool, rather than observed by a view:
-    /// the mark has to come off whether or not a window is showing, and once.
-    @ObservationIgnored var onReviewPasteDenied: ((ReviewPasteReceipt) -> Void)?
-
     /// Reentrancy guard. `allow` / `deny` set this before they nil out
     /// `pending`, so the `.sheet(item:)` binding's "dismiss = deny"
     /// fallback can tell the difference between "user clicked the
@@ -86,6 +261,11 @@ final class ClipboardConfirmationCoordinator {
     /// second `complete_clipboard_request(... false)`.
     private var isCompleting = false
     private let reviewPasteLedger = ReviewPasteLedger()
+    private let answerer: ClipboardRequestAnswerer
+
+    init(answerer: ClipboardRequestAnswerer = .libghostty) {
+        self.answerer = answerer
+    }
 
     /// The review paste whose clipboard read is in flight.
     ///
@@ -105,102 +285,53 @@ final class ClipboardConfirmationCoordinator {
     }
 
     /// Enqueue a request from libghostty. Called on the main actor
-    /// after the C callback hops over. Returns silently if another
-    /// request is already in flight — see the class doc-comment for
-    /// the rationale.
+    /// after the C callback hops over. Refuses it if another request is
+    /// already in flight — see the class doc-comment for the rationale.
     func enqueue(
-        kind: ClipboardConfirmationKind,
+        _ source: ClipboardRequestSource,
         contents: String,
-        view: SurfaceView,
-        state: UnsafeMutableRawPointer?,
+        target: any ClipboardRequestTarget,
         receipt: ReviewPasteReceipt? = nil
     ) {
         guard reviewPasteLedger.enqueue(receipt: receipt) else {
             log.notice("clipboard request denied: another prompt is already up")
-            if let surface = view.surface {
-                ghostty_surface_deny_clipboard_request(surface, state)
-            }
+            answerer.refuse(source, on: target)
             return
         }
-        pending = PendingClipboardRequest(
-            kind: kind,
-            contents: contents,
-            view: view,
-            state: state
-        )
+        pending = PendingClipboardRequest(source: source, contents: contents, target: target)
     }
 
-    /// Tell review that a paste it started never reached the terminal.
-    ///
-    /// The paste action answers as soon as the request begins, so review has
-    /// already recorded the comments as inserted, and usually closed, by the
-    /// time a refusal arrives. This is what takes the mark back off them.
-    ///
-    /// Reachable from the clipboard callbacks as well as from here. A receipt
-    /// is taken out of the surface synchronously, one main-queue hop before it
-    /// reaches this class, and a pane that dies inside that hop leaves a
-    /// delivery that never happened recorded as one that did.
-    @MainActor static func reportReviewPasteDenied(_ receipt: ReviewPasteReceipt?) {
-        guard let receipt else { return }
-        shared?.onReviewPasteDenied?(receipt)
-    }
-
-    /// User clicked Allow. The read and unsafe-paste paths complete
-    /// libghostty's request (which lets it actually deliver the
-    /// pasteboard contents to the shell). The OSC 52 write path skips
-    /// the C call — libghostty never allocated a request state for
-    /// writes (`state == nil`); instead we set the pasteboard
-    /// ourselves now that the user has approved.
+    /// User clicked Allow. A libghostty request is completed, which lets
+    /// it deliver the pasteboard contents to the shell. An OSC 52 write
+    /// has no request to complete; we set the pasteboard ourselves now
+    /// that the user has approved.
     func allow() {
         guard let req = pending, !isCompleting else { return }
         isCompleting = true
         pending = nil
-        let surface = req.view?.surface
-        reviewPasteLedger.allow(paneIsAlive: surface != nil || (req.kind == .osc52Write && req.state == nil))
-        if req.kind == .osc52Write, req.state == nil {
-            NSPasteboard.general.declareTypes([.string], owner: nil)
-            NSPasteboard.general.setString(req.contents, forType: .string)
-        } else if let surface {
-            GhosttyFFI.completeClipboardRequest(
-                surface: surface,
-                text: req.contents,
-                state: req.state,
-                confirmed: true
-            )
-        } else {
-            log.notice("clipboard allow skipped: the pane closed before the user answered")
-
-        }
-
+        let didLand = answerer.approve(req.source, contents: req.contents, on: req.target)
+        reviewPasteLedger.allow(paneIsAlive: didLand)
         isCompleting = false
     }
 
-    /// User clicked Deny (or the sheet was dismissed). For read /
-    /// unsafe-paste, `ghostty_surface_deny_clipboard_request` drops the
-    /// request and frees the state libghostty allocated for it. For the
-    /// OSC 52 write path (`state == nil`), there is nothing to answer —
-    /// just clear `pending` and leave the pasteboard untouched.
+    /// User clicked Deny (or the sheet was dismissed). A libghostty
+    /// request is denied, which drops it and frees its state. An OSC 52
+    /// write is refused by leaving the pasteboard untouched.
     func deny() {
         guard let req = pending, !isCompleting else { return }
         isCompleting = true
         pending = nil
         reviewPasteLedger.deny()
-        if req.state != nil, let surface = req.view?.surface {
-            ghostty_surface_deny_clipboard_request(surface, req.state)
-        }
+        answerer.refuse(req.source, on: req.target)
         isCompleting = false
     }
 
-    /// Pane is closing while a prompt is up for it. Drain libghostty's
-    /// per-request allocation through the deny path before dropping
-    /// `pending`; otherwise the `ClipboardRequest` state libghostty
-    /// allocated for the confirmation route would leak (only
-    /// `complete_clipboard_request` / `deny_clipboard_request` free it
-    /// — `Surface.deinit` does not walk pending request states). The
-    /// `=== view` gate ensures
-    /// we only complete prompts that belong to the closing pane.
-    func cancelPending(for view: SurfaceView) {
-        guard pending?.view === view else { return }
+    /// Pane is closing while a prompt is up for it. Deny it now, while the
+    /// surface is still live, rather than leave a sheet up for a pane that
+    /// is going away. The `=== target` gate ensures we only answer prompts
+    /// that belong to the closing pane.
+    func cancelPending(for target: any ClipboardRequestTarget) {
+        guard pending?.target === target else { return }
         deny()
     }
 }

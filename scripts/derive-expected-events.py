@@ -22,6 +22,18 @@ def string(obj, key):
     return value if isinstance(value, str) else None
 
 
+def tool_argument(tool_input, read):
+    """The tool's `command` when its input has the key, read as `read` reads
+    it, else its `file_path`. Like the adapters, a `command` that is there but
+    empty or of another type gives no argument rather than the `file_path`."""
+    key = "command" if "command" in tool_input else "file_path"
+    return read(tool_input.get(key))
+
+
+def text(value):
+    return value if isinstance(value, str) else None
+
+
 def transcript_titles(path):
     if not os.path.exists(path):
         return None
@@ -45,6 +57,66 @@ def transcript_titles(path):
             titles["generated_title"] = generated
         return titles or None
     return None
+
+
+INTERRUPT_PREFIX = "[Request interrupted by user"
+
+
+def content_blocks(message):
+    content = message.get("content")
+    if not isinstance(content, list):
+        return []
+    return [block for block in content if isinstance(block, dict)]
+
+
+def transcript_awaited_call_ended(path):
+    """Mirrors `limpid-provider-claude`'s `awaited`: whether every tool call
+    of the latest assistant message that made one has a result, or an
+    interrupt line follows that message."""
+    if path is None or not os.path.exists(path):
+        return False
+    with open(path, encoding="utf-8") as handle:
+        lines = handle.read().split("\n")
+    ended = set()
+    is_interrupted = False
+    latest = None
+    has_latest = False
+    for line in reversed(lines):
+        if "tool_use" not in line and INTERRUPT_PREFIX not in line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict) or record.get("isSidechain") is True:
+            continue
+        message = record.get("message")
+        if not isinstance(message, dict):
+            continue
+        kind = record.get("type")
+        if kind == "user":
+            counts_interrupt = not has_latest
+            for block in content_blocks(message):
+                if block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str):
+                    ended.add(block["tool_use_id"])
+                elif block.get("type") == "text" and counts_interrupt:
+                    is_interrupted |= str(text(block.get("text")) or "").startswith(INTERRUPT_PREFIX)
+            if counts_interrupt:
+                is_interrupted |= str(text(message.get("content")) or "").startswith(INTERRUPT_PREFIX)
+        elif kind == "assistant":
+            calls = [block for block in content_blocks(message) if block.get("type") == "tool_use"]
+            if not calls:
+                continue
+            message_id = string(message, "id")
+            if not has_latest:
+                if is_interrupted:
+                    return True
+                latest, has_latest = message_id, True
+            elif latest != message_id:
+                return True
+            if any(not isinstance(call.get("id"), str) or call["id"] not in ended for call in calls):
+                return False
+    return has_latest
 
 
 def count(source, key):
@@ -153,11 +225,18 @@ def optional(event, key, value):
         event[key] = value
 
 
+def session_source(obj):
+    """The `source` word both providers spell the same way; None for one the adapters do not know."""
+    source = string(obj, "source")
+    return source if source in ("startup", "clear", "resume", "compact") else None
+
+
 def claude_event(obj, transcript_path):
     name = string(obj, "hook_event_name") or "unknown"
     cwd = string(obj, "cwd")
     if name == "SessionStart":
         event = {"type": "session_started", "compact": string(obj, "source") == "compact"}
+        optional(event, "source", session_source(obj))
         optional(event, "session_id", string(obj, "session_id"))
         optional(event, "session_title", string(obj, "session_title"))
         optional(event, "cwd", cwd)
@@ -183,13 +262,18 @@ def claude_event(obj, transcript_path):
             if question is None:
                 question = string(tool_input, "question")
             return {"type": "waiting_for_input", "detail": question or "AskUserQuestion"}
-        argument = string(tool_input, "command") or string(tool_input, "file_path")
+        argument = tool_argument(tool_input, text)
         detail = f"{tool}: {argument}" if argument else tool
         return {"type": "tool_started", "tool": tool, "detail": detail}
     if name == "Notification":
         if string(obj, "notification_type") == "permission_prompt":
             event = {"type": "approval_requested"}
             optional(event, "detail", string(obj, "message"))
+            return event
+        if string(obj, "notification_type") == "idle_prompt":
+            event = {"type": "awaiting_prompt"}
+            if transcript_awaited_call_ended(transcript_path):
+                event["awaited_call_ended"] = True
             return event
         return {"type": "extension", "name": name, "payload": obj}
     if name == "PreCompact":
@@ -202,6 +286,8 @@ def claude_event(obj, transcript_path):
         event = {"type": "turn_finished"}
         optional(event, "titles", transcript_titles(transcript_path))
         optional(event, "cache", transcript_cache(transcript_path))
+        if obj.get("stop_hook_active") is True:
+            event["continues_after_stop_hook"] = True
         return event
     if name == "StopFailure":
         return {"type": "failed", "error": string(obj, "error") or string(obj, "error_type") or "error"}
@@ -213,11 +299,47 @@ def claude_event(obj, transcript_path):
     return {"type": "extension", "name": name, "payload": obj}
 
 
+# The fixture context's provider home (`HookContext::fixture_for`): Codex's
+# memory agent works under it, and its hooks are not the pane's events.
+CODEX_FIXTURE_HOME = "/Users/example/.codex"
+CODEX_MEMORY_DIRECTORIES = ("memories", "memories_v2")
+CODEX_SUBAGENT_ACTIVITY = ("PreToolUse", "PostToolUse", "PermissionRequest")
+
+
+def codex_is_internal_agent(cwd):
+    if cwd is None:
+        return False
+    parts = cwd.rstrip("/").split("/")
+    home = CODEX_FIXTURE_HOME.split("/")
+    return (
+        len(parts) > len(home)
+        and parts[: len(home)] == home
+        and parts[len(home)] in CODEX_MEMORY_DIRECTORIES
+    )
+
+
+def codex_argument(value):
+    """A tool's argument: a string, or an argv array joined with spaces."""
+    if isinstance(value, str):
+        return value or None
+    if isinstance(value, list):
+        words = [word for word in value if isinstance(word, str)]
+        return " ".join(words) if words else None
+    return None
+
+
 def codex_event(obj, _transcript_path):
     name = string(obj, "hook_event_name") or "unknown"
     cwd = string(obj, "cwd")
+    if codex_is_internal_agent(cwd):
+        return None
+    # A subagent's own prompt, session, and stop are not the pane's turn;
+    # only its tools and permission requests are (`is_subagents_own`).
+    if string(obj, "agent_id") and name not in CODEX_SUBAGENT_ACTIVITY:
+        return None
     if name == "SessionStart":
         event = {"type": "session_started", "compact": False}
+        optional(event, "source", session_source(obj))
         optional(event, "session_id", string(obj, "session_id"))
         optional(event, "cwd", cwd)
         return event
@@ -232,7 +354,10 @@ def codex_event(obj, _transcript_path):
         return event
     if name == "PreToolUse":
         tool = string(obj, "tool_name") or ""
-        return {"type": "tool_started", "tool": tool, "detail": tool}
+        tool_input = obj.get("tool_input") if isinstance(obj.get("tool_input"), dict) else {}
+        argument = tool_argument(tool_input, codex_argument)
+        detail = f"{tool}: {argument}" if argument else tool
+        return {"type": "tool_started", "tool": tool, "detail": detail}
     if name == "PostToolUse":
         event = {"type": "tool_finished"}
         optional(event, "tool", string(obj, "tool_name"))
@@ -255,7 +380,10 @@ def codex_event(obj, _transcript_path):
         error = string(obj, "error_type")
         if error:
             return {"type": "failed", "error": error}
-        return {"type": "turn_finished"}
+        event = {"type": "turn_finished"}
+        if obj.get("stop_hook_active") is True:
+            event["continues_after_stop_hook"] = True
+        return event
     return {"type": "extension", "name": name, "payload": obj}
 
 
@@ -285,7 +413,9 @@ def main(argv):
                     with open(os.path.join(case_dir, name), encoding="utf-8") as handle:
                         obj = json.load(handle)
                     transcript = os.path.join(case_dir, name[: -len(".json")] + ".transcript.jsonl")
-                    expected.append([rule(obj, transcript)])
+                    # `None` is a payload that yields no event at all.
+                    event = rule(obj, transcript)
+                    expected.append([] if event is None else [event])
                 with open(os.path.join(case_dir, "expected.json"), "w", encoding="utf-8") as handle:
                     json.dump(expected, handle, indent=2, ensure_ascii=False, sort_keys=True)
                     handle.write("\n")

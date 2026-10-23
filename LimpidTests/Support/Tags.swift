@@ -9,8 +9,8 @@ extension Tag {
     /// `RepoFixture.hasLocalRepo`; the rest gate on their own binary.
     @Tag static var smoke: Self
 
-    /// Wall-clock > 1s. CI runs them; locally consider
-    /// `xcodebuild ... -skip-test-tags slow`.
+    /// Wall-clock > 1s. CI runs them; locally skip them with
+    /// `-skip-testing:LimpidTests/<Suite>` when iterating.
     @Tag static var slow: Self
 
     /// Touches the embedded libghostty FFI layer. Mocked at the
@@ -19,4 +19,10 @@ extension Tag {
 
     /// Round-trips through disk-backed storage (JSON, plist, etc.).
     @Tag static var persistence: Self
+
+    /// Prints how long something takes, for a person to read and compare
+    /// before and after a change; asserts nothing about the times, which
+    /// depend on the machine. Off unless `LIMPID_MEASURE=1` is set
+    /// (`make test-measure`), so CI and `make test` do not run them.
+    @Tag static var measurement: Self
 }

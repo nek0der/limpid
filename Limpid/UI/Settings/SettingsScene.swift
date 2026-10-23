@@ -1,7 +1,7 @@
 // SettingsScene.swift
-// Limpid — Settings window body, modeled on `ThreePaneLayout` so
-// Settings reads like the main window minus a column: detail pane
-// fills the whole window as a background plane, and the sidebar sits
+// Limpid — the Settings window: the section sidebar over the detail pane.
+//
+// The detail pane fills the whole window as a background plane, and the sidebar sits
 // flush against the leading edge as a Liquid Glass surface. Traffic
 // lights land inside the sidebar, on the same strip midline and at the
 // same left margin the main window gives them, so the toolbar feels
@@ -12,6 +12,7 @@
 // applies the transparent title bar and places the traffic lights the
 // same way the main window does.
 
+import AppKit
 import SwiftUI
 
 struct SettingsScene: View {
@@ -28,6 +29,21 @@ struct SettingsScene: View {
     /// column. The detail pane reserves the same width on its leading edge
     /// so the sidebar doesn't cover content.
     static let sidebarWidth: CGFloat = 210
+
+    /// The window's only width; see the frame in `body`.
+    static let windowWidth: CGFloat = 820
+
+    /// The height the window opens at, and keeps as panes are switched:
+    /// the content's ideal height whatever pane is shown, so a pane with
+    /// more rows scrolls inside the window rather than growing it.
+    /// With `.windowResizability(.contentSize)` the window follows the
+    /// content's ideal size, and a form's ideal height is its whole
+    /// content, so without this the window grew to a tall pane's rows and
+    /// stayed there, half empty, on a short one.
+    static let windowHeight: CGFloat = 540
+
+    /// The least height the window can be dragged to.
+    static let minimumWindowHeight: CGFloat = 480
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -73,7 +89,15 @@ struct SettingsScene: View {
             .ignoresSafeArea(.all, edges: .top)
         }
         .ignoresSafeArea(.all)
-        .frame(minWidth: 720, minHeight: 480)
+        // One width, as System Settings has: the grouped form caps its
+        // column, while the title bar over it stays at the leading edge,
+        // so a wider window would pull the column out from under its
+        // title. With `.windowResizability(.contentSize)` this frame is
+        // the window's own limits, so only the height can be dragged.
+        // A frame saved while the window could still widen comes back at
+        // its old width, so the window is also set to this width as it
+        // opens (`SettingsWindowWidth`).
+        .settingsWindowFrame()
         // No rebuild on a language switch: `Text`, `Toggle`, `Picker`
         // and the rest resolve their resources against `\.locale` and
         // redraw in place when it changes. Text that has to be a
@@ -97,7 +121,7 @@ struct SettingsScene: View {
                 self.selectedSearchResultID = nil
             }
         }
-        .limpidSettingsToolbar()
+        .limpidSettingsToolbar(onWindow: SettingsWindowWidth.fit)
     }
 
     /// Gap between the sidebar and the detail pane's content. It is a
@@ -187,9 +211,62 @@ struct SettingsScene: View {
     }
 }
 
+extension View {
+    /// The settings window's frame: one width, and one ideal height
+    /// whatever pane is shown, with only the height free to drag above its
+    /// minimum. Applied to the scene, and to a pane on its own in tests,
+    /// where the ideal size is what the hosting view fits.
+    func settingsWindowFrame() -> some View {
+        frame(width: SettingsScene.windowWidth)
+            .frame(
+                minHeight: SettingsScene.minimumWindowHeight,
+                idealHeight: SettingsScene.windowHeight,
+                maxHeight: .infinity
+            )
+    }
+}
+
+/// Puts the settings window at `SettingsScene.windowWidth` when it opens.
+/// The content's fixed width makes it the window's only width from then on,
+/// but a frame AppKit saved while the window could still widen (before the
+/// width was fixed) is restored as it was, and we do not leave it to the
+/// size limits to pull that back in.
+enum SettingsWindowWidth {
+    /// `frame` at `width`, with its top-left corner where it was, as AppKit
+    /// keeps a window's title bar when it resizes one. `nil` when the frame
+    /// already has that width. AppKit's origin is the bottom-left corner, so
+    /// keeping the origin and the height keeps the top-left one.
+    static func frame(_ frame: CGRect, width: CGFloat) -> CGRect? {
+        guard frame.width != width else { return nil }
+        return CGRect(x: frame.minX, y: frame.minY, width: width, height: frame.height)
+    }
+
+    /// Sets `window` to the fixed width. Run once as the window gets its
+    /// content, and again on the next turn of the main queue, after SwiftUI
+    /// has applied the frame it restores.
+    @MainActor
+    static func fit(_ window: NSWindow) {
+        apply(to: window)
+        DispatchQueue.main.async { [weak window] in
+            guard let window else { return }
+            MainActor.assumeIsolated {
+                apply(to: window)
+            }
+        }
+    }
+
+    @MainActor
+    private static func apply(to window: NSWindow) {
+        let content = CGRect(x: 0, y: 0, width: SettingsScene.windowWidth, height: 1)
+        let width = window.frameRect(forContentRect: content).width
+        guard let fitted = frame(window.frame, width: width) else { return }
+        window.setFrame(fitted, display: true)
+    }
+}
+
 /// Contents of the sidebar: a top spacer reserving the traffic-light
-/// row, then the section list. Mirrors `ContainerColumnContent` but
-/// slimmed down — Settings doesn't need an in-sidebar toolbar row.
+/// row, then the section list. Settings doesn't need an in-sidebar
+/// toolbar row.
 ///
 /// We do NOT recolor the sidebar selection pill. macOS 26 Tahoe's
 /// `.listStyle(.sidebar)` ignores `.tint(_:)` for the selection
@@ -240,7 +317,7 @@ private struct SettingsSidebarSlab: View {
             .background(.thinMaterial, in: Capsule(style: .continuous))
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(LimpidColor.toolbarHairline, lineWidth: 0.5)
+                    .strokeBorder(LimpidColor.glassHairline, lineWidth: 0.5)
             )
             .padding(.horizontal, 10)
             .padding(.bottom, 6)

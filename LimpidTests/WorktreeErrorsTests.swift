@@ -10,19 +10,28 @@ import Testing
 @Suite("Worktree errors")
 struct WorktreeErrorsTests {
 
+    @Test("an error with no words of git's still has a message", arguments: [
+        CreateWorktreeError.projectNotFound,
+        CreateWorktreeError.missingBranchName,
+        CreateWorktreeError.gitFailed(stderr: ""),
+        DeleteWorktreeError.projectNotFound,
+        DeleteWorktreeError.worktreeNotFound,
+        DeleteWorktreeError.gitFailed(stderr: "")
+    ] as [any LocalizedError & Sendable])
+    func anErrorWithoutGitsWords_hasAMessage(_ error: any LocalizedError & Sendable) {
+        #expect(error.errorDescription?.isEmpty == false)
+    }
+
+    @Test("git's own words follow our sentence", arguments: [
+        (CreateWorktreeError.gitFailed(stderr: "fatal: bad ref"), "fatal: bad ref"),
+        (DeleteWorktreeError.gitFailed(stderr: "fatal: locked"), "fatal: locked")
+    ] as [(any LocalizedError & Sendable, String)])
+    func gitFailed_withStderr_endsWithThatStderr(_ error: any LocalizedError & Sendable, stderr: String) {
+        let said = error.errorDescription ?? ""
+        #expect(said.hasSuffix(stderr) && said != stderr, "\(said)")
+    }
+
     // MARK: - Create
-
-    @Test("create: projectNotFound has a localized message")
-    func create_projectNotFound_hasMessage() {
-        let err: CreateWorktreeError = .projectNotFound
-        #expect(err.errorDescription?.isEmpty == false)
-    }
-
-    @Test("create: missingBranchName prompts the user")
-    func create_missingBranchName_hasMessage() {
-        let err: CreateWorktreeError = .missingBranchName
-        #expect(err.errorDescription?.isEmpty == false)
-    }
 
     @Test("create: pathAlreadyExists embeds the offending path")
     func create_pathAlreadyExists_includesPath() throws {
@@ -32,58 +41,33 @@ struct WorktreeErrorsTests {
         #expect(description.contains(url.path))
     }
 
-    @Test("create: gitFailed with stderr surfaces the stderr text")
-    func create_gitFailed_withStderr_returnsStderr() {
-        let err: CreateWorktreeError = .gitFailed(stderr: "fatal: bad ref")
-        #expect(err.errorDescription == "fatal: bad ref")
-    }
-
-    @Test("create: gitFailed with empty stderr falls back to a generic message")
-    func create_gitFailed_withoutStderr_usesFallback() throws {
-        let err: CreateWorktreeError = .gitFailed(stderr: "")
-        let description = try #require(err.errorDescription)
-        #expect(!description.isEmpty)
+    /// A `git worktree add` past its deadline says so, and that the hooks
+    /// are what to look at, rather than reading as git's own failure; a
+    /// half-made folder that could not be removed is named for the person
+    /// to remove.
+    @Test func create_timedOut_pointsAtTheHooks_andNamesAFolderLeftBehind() {
+        let error = CreateWorktreeError.timedOut(seconds: 600, branch: "feature-t", leftover: nil)
+        #expect(error.stage == .creatingWorktree)
+        #expect(error.message.resolved(in: Locale(identifier: "ja"))
+            == "git worktree add が 10 分以内に完了しなかったため、Limpid が停止し、作成途中のワークツリーを削除しました。post-checkout などのリポジトリのフックを確認してください。")
+        let stuck = CreateWorktreeError.timedOut(seconds: 600, branch: nil, leftover: URL(fileURLWithPath: "/tmp/wt"))
+        #expect(stuck.message.resolved(in: Locale(identifier: "en"))
+            .contains("The partially created worktree at /tmp/wt couldn’t be removed"))
     }
 
     // MARK: - Delete
 
-    @Test("delete: projectNotFound has a localized message")
-    func delete_projectNotFound_hasMessage() {
-        let err: DeleteWorktreeError = .projectNotFound
-        #expect(err.errorDescription?.isEmpty == false)
-    }
-
-    @Test("delete: worktreeNotFound has a localized message")
-    func delete_worktreeNotFound_hasMessage() {
-        let err: DeleteWorktreeError = .worktreeNotFound
-        #expect(err.errorDescription?.isEmpty == false)
-    }
-
-    @Test("delete: dirtyNeedsForce mentions the Force option to the user")
-    func delete_dirtyNeedsForce_mentionsForce() throws {
-        let err: DeleteWorktreeError = .dirtyNeedsForce
-        let description = try #require(err.errorDescription)
-        // The string is localized; accept either "Force" (en) or "強制" (ja)
-        // so the test survives the system locale flip.
-        #expect(description.contains("Force") || description.contains("強制"))
-    }
-
-    @Test("delete: submodulesNeedForce mentions the Force option to the user")
-    func delete_submodulesNeedForce_mentionsForce() throws {
-        let err: DeleteWorktreeError = .submodulesNeedForce
-        let description = try #require(err.errorDescription)
-        #expect(description.contains("Force") || description.contains("強制"))
-    }
-
-    @Test("delete: gitFailed with stderr surfaces the stderr text")
-    func delete_gitFailed_withStderr_returnsStderr() {
-        let err: DeleteWorktreeError = .gitFailed(stderr: "fatal: locked")
-        #expect(err.errorDescription == "fatal: locked")
-    }
-
-    @Test("delete: gitFailed with empty stderr falls back to a generic message")
-    func delete_gitFailed_withoutStderr_usesFallback() {
-        let err: DeleteWorktreeError = .gitFailed(stderr: "")
-        #expect(err.errorDescription?.isEmpty == false)
+    /// The alert's button is "Force Delete" (「強制削除」), so the message
+    /// names that button by its whole name in both languages, and the
+    /// Japanese has no English in it.
+    @Test("delete: the force errors name the Force Delete button", arguments: [
+        DeleteWorktreeError.dirtyNeedsForce, .submodulesNeedForce
+    ])
+    func delete_forceErrors_nameTheForceDeleteButton(_ err: DeleteWorktreeError) {
+        let english = err.message.resolved(in: Locale(identifier: "en"))
+        let japanese = err.message.resolved(in: Locale(identifier: "ja"))
+        #expect(english.hasSuffix("To delete it anyway, choose Force Delete."))
+        #expect(japanese.hasSuffix("それでも削除する場合は「強制削除」を選択してください。"))
+        #expect(!japanese.contains("Force"))
     }
 }

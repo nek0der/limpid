@@ -1,11 +1,5 @@
 // NavActionsTests.swift
-// Limpid — `NavActions` is the slice of `TabActions` that handles
-// tab + container cycling and direct-by-index navigation
-// (⌘1…⌘9 / ⌘] / ⌘[ / ⌘⌃1…⌘⌃9). The session-level helpers
-// (`tabs(in:)`, `cycleTopLevelContainer`, `activateTopLevelContainer`,
-// `setActiveTab`) have their own unit tests; this suite pins the
-// `NavActions` shape so a future namespace shuffle can't silently
-// stop calling them.
+// Limpid — ⌘1…⌘9 jump to the Nth tab and ⇧⌘] / ⇧⌘[ move to the next or previous one, among the tabs of the container a window shows.
 
 import Foundation
 import Testing
@@ -16,119 +10,123 @@ struct NavActionsTests {
 
     // MARK: - activateTabInActiveContainer
 
-    @Test("activateTabInActiveContainer activates the Nth tab of the active container")
-    func activateTabInActiveContainer_picksNthTab() {
-        let session = WindowSession()
+    @Test func theNthTab_ofTheActiveContainer_becomesActive() {
+        let session = WorkspaceSession()
         let first = session.openTabInActiveScope()
         let second = session.openTabInActiveScope()
         let third = session.openTabInActiveScope()
 
         NavActions.activateTabInActiveContainer(at: 0, in: session)
-        #expect(session.activeTabID == first.id)
+        #expect(session.primarySelection.activeTabID == first.id)
         NavActions.activateTabInActiveContainer(at: 1, in: session)
-        #expect(session.activeTabID == second.id)
+        #expect(session.primarySelection.activeTabID == second.id)
         NavActions.activateTabInActiveContainer(at: 2, in: session)
-        #expect(session.activeTabID == third.id)
+        #expect(session.primarySelection.activeTabID == third.id)
     }
 
-    @Test("activateTabInActiveContainer is a no-op when the index is out of range")
-    func activateTabInActiveContainer_outOfRange_isNoOp() {
-        let session = WindowSession()
+    @Test func anIndexPastTheTabs_changesNothing() {
+        let session = WorkspaceSession()
         let only = session.openTabInActiveScope()
 
         NavActions.activateTabInActiveContainer(at: 5, in: session)
-        #expect(session.activeTabID == only.id)
+        #expect(session.primarySelection.activeTabID == only.id)
         NavActions.activateTabInActiveContainer(at: -1, in: session)
-        #expect(session.activeTabID == only.id)
-    }
-
-    @Test("activateTabInActiveContainer is a no-op when the container has no tabs")
-    func activateTabInActiveContainer_emptyContainer_isNoOp() {
-        // Switch to an empty group so the active container has zero
-        // tabs and the index path bails before touching activeTabID.
-        let session = WindowSession()
-        _ = session.openTabInActiveScope()
-        let group = session.addGroup(name: "empty")
-        session.setActiveContainer(.group(group.id))
-        NavActions.activateTabInActiveContainer(at: 0, in: session)
-        #expect(session.activeTabID == nil)
+        #expect(session.primarySelection.activeTabID == only.id)
     }
 
     // MARK: - cycleTab
 
-    @Test("cycleTab forward walks through the visible tabs of the active container")
-    func cycleTab_forward_cyclesThroughActiveContainer() {
-        let session = WindowSession()
+    @Test func theNextTab_isTheOneAfter_wrappingPastTheLast() {
+        let session = WorkspaceSession()
         let t1 = session.openTabInActiveScope()
         let t2 = session.openTabInActiveScope()
         let t3 = session.openTabInActiveScope()
         session.setActiveTab(t1.id)
 
         NavActions.cycleTab(session, forward: true)
-        #expect(session.activeTabID == t2.id)
+        #expect(session.primarySelection.activeTabID == t2.id)
         NavActions.cycleTab(session, forward: true)
-        #expect(session.activeTabID == t3.id)
+        #expect(session.primarySelection.activeTabID == t3.id)
         NavActions.cycleTab(session, forward: true)
-        #expect(session.activeTabID == t1.id, "cycle wraps after the last tab")
+        #expect(session.primarySelection.activeTabID == t1.id, "cycle wraps after the last tab")
     }
 
-    @Test("cycleTab backward walks in the opposite direction")
-    func cycleTab_backward_cyclesInReverse() {
-        let session = WindowSession()
+    @Test func thePreviousTab_isTheOneBefore_wrappingPastTheFirst() {
+        let session = WorkspaceSession()
         let t1 = session.openTabInActiveScope()
         let t2 = session.openTabInActiveScope()
         let t3 = session.openTabInActiveScope()
         session.setActiveTab(t1.id)
 
         NavActions.cycleTab(session, forward: false)
-        #expect(session.activeTabID == t3.id, "cycle wraps to the last tab on backward from first")
+        #expect(session.primarySelection.activeTabID == t3.id, "cycle wraps to the last tab on backward from first")
         NavActions.cycleTab(session, forward: false)
-        #expect(session.activeTabID == t2.id)
+        #expect(session.primarySelection.activeTabID == t2.id)
     }
 
-    @Test("cycleTab is a no-op when the active container has no tabs")
-    func cycleTab_emptyContainer_isNoOp() {
-        let session = WindowSession()
-        _ = session.openTabInActiveScope()
-        let group = session.addGroup(name: "empty")
-        session.setActiveContainer(.group(group.id))
-        // Both pre- and post-cycle the activeTabID is nil (the empty
-        // container's setActiveContainer cleared it). cycleTab must
-        // not change anything.
-        #expect(session.activeTabID == nil)
-        NavActions.cycleTab(session, forward: true)
-        #expect(session.activeTabID == nil)
+    // MARK: - A container with no tabs
+
+    /// The keys a person can press with no tab in front of them.
+    enum TabKey: String, CaseIterable {
+        case first
+        case next
+        case previous
+
+        @MainActor
+        func press(in session: WorkspaceSession) {
+            switch self {
+            case .first: NavActions.activateTabInActiveContainer(at: 0, in: session)
+            case .next: NavActions.cycleTab(session, forward: true)
+            case .previous: NavActions.cycleTab(session, forward: false)
+            }
+        }
     }
 
-    // MARK: - cycleContainer / activateContainer
-
-    @Test("cycleContainer delegates to WindowSession.cycleTopLevelContainer")
-    func cycleContainer_delegatesToSession() {
-        let session = WindowSession()
+    /// A project with no tabs shown while a scratch tab exists elsewhere:
+    /// the keys reach no tab outside the container.
+    @Test(arguments: TabKey.allCases)
+    func aContainerWithNoTabs_isLeftWithNoActiveTab(key: TabKey) {
+        let (session, project) = WorkspaceSessionFixture.withProject(name: "empty")
         _ = session.openTabInActiveScope()
-        let group = session.addGroup(name: "first")
-        // Forward from Loose with a Group present moves the
-        // selection through the top-level row order.
-        let beforeForward = session.activeContainerID
-        NavActions.cycleContainer(session, forward: true)
-        #expect(session.activeContainerID != beforeForward)
-        // Same call shape as direct WindowSession use.
-        let beforeBackward = session.activeContainerID
-        NavActions.cycleContainer(session, forward: false)
-        #expect(session.activeContainerID != beforeBackward
-            || session.activeContainerID == .group(group.id)
-            || session.activeContainerID == .loose
-        )
+        session.setActiveContainer(.project(project.id))
+        #expect(session.primarySelection.activeTabID == nil)
+
+        key.press(in: session)
+
+        #expect(session.primarySelection.activeTabID == nil)
     }
 
-    @Test("activateContainer delegates to WindowSession.activateTopLevelContainer")
-    func activateContainer_delegatesToSession() {
-        let session = WindowSession()
-        _ = session.openTabInActiveScope()
-        _ = session.addGroup(name: "first")
-        // Index 0 is Loose; the helper just routes through the
-        // session method, which is exercised in WindowSession tests.
-        NavActions.activateContainer(at: 0, in: session)
-        #expect(session.activeContainerID == .loose)
+    // MARK: - In a window of its own
+
+    @Test func theNextTab_inASecondWindow_movesOnlyThatWindow() {
+        let session = WorkspaceSession()
+        let first = session.openTabInActiveScope()
+        let second = session.openTabInActiveScope()
+        let other = WorkspaceSessionFixture.addWindow(to: session)
+        session.setActiveTab(first.id, in: other)
+
+        NavActions.cycleTab(session, forward: true, in: other)
+
+        #expect(session.selection(other)?.activeTabID == second.id)
+        #expect(session.primarySelection.activeTabID == second.id)
+        NavActions.cycleTab(session, forward: true, in: other)
+        #expect(session.selection(other)?.activeTabID == first.id)
+        #expect(session.primarySelection.activeTabID == second.id)
+    }
+
+    @Test func theNthTab_isOfTheContainerThatWindowShows() {
+        let (session, project) = WorkspaceSessionFixture.withProject()
+        let projectTab = session.openTab(container: .project(project.id))
+        let loose = session.openTab(container: .loose)
+        // The primary stays on its scratch tab, showing no project.
+        session.showProject(nil, in: session.primaryWindowID, intent: .person, reason: .person)
+
+        let other = WorkspaceSessionFixture.addWindow(to: session)
+        session.setActiveContainer(.project(project.id), in: other)
+
+        NavActions.activateTabInActiveContainer(at: 0, in: session, window: other)
+
+        #expect(session.selection(other)?.activeTabID == projectTab.id)
+        #expect(session.primarySelection.activeTabID == loose.id)
     }
 }

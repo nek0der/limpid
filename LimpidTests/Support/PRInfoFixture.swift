@@ -6,7 +6,7 @@
 // byte-identical. That is the shape of drift: a field added to
 // `PRInfo` has to be threaded through every copy, and a suite that
 // misses one starts testing a slightly different object than its
-// neighbours while still reading as though they agree.
+// neighbors while still reading as though they agree.
 //
 // Defaults describe the ordinary case — an open, non-draft request
 // with no checks reported — so a test names only the axis it is

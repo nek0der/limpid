@@ -7,7 +7,7 @@
 // without a UUID→view indirection in the way of the AppKit reparent.
 //
 // Layout uses `ZStack` + `.frame()` + `.offset()` so divider drags share
-// the absolute-position cursor anchoring that keeps the gutter under
+// the absolute-position cursor anchoring that keeps the seam under
 // the mouse pointer.
 
 import SwiftUI
@@ -34,6 +34,8 @@ struct SplitContainerView: View {
     /// through to recursive calls so the whole tree shares one floor;
     /// `PaneAreaView` resolves the value from `terminal.paneMinimumSize`.
     let minPaneSize: PaneMinimumSize
+    /// The pixel grid the seam between two panes is laid on.
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         switch node {
@@ -67,10 +69,21 @@ struct SplitContainerView: View {
 
     @ViewBuilder
     private func splitBody(data: ResolvedSplit, size: CGSize) -> some View {
-        let ratio = resolvedRatio(for: data, size: size)
-        let leftRect = leftRect(for: size, ratio: ratio, direction: data.direction)
-        let rightRect = rightRect(for: size, leftRect: leftRect, direction: data.direction)
-        let dividerCenter = dividerCenter(for: size, leftRect: leftRect, direction: data.direction)
+        let firstMinimum = data.first.minimumExtent(along: data.direction, leafMinimum: minPaneSize)
+        let secondMinimum = data.second.minimumExtent(along: data.direction, leafMinimum: minPaneSize)
+        let geometry = SplitSeamGeometry(
+            size: size,
+            ratio: PaneSplit.resolvedRatio(
+                data.ratio,
+                extent: data.direction == .horizontal ? size.width : size.height,
+                firstMinimum: firstMinimum,
+                secondMinimum: secondMinimum
+            ),
+            direction: data.direction,
+            displayScale: displayScale,
+            firstMinimum: firstMinimum,
+            secondMinimum: secondMinimum
+        )
 
         ZStack(alignment: .topLeading) {
             SplitContainerView(
@@ -82,8 +95,8 @@ struct SplitContainerView: View {
                 onEqualize: onEqualize,
                 minPaneSize: minPaneSize
             )
-            .frame(width: leftRect.width, height: leftRect.height)
-            .offset(x: leftRect.origin.x, y: leftRect.origin.y)
+            .frame(width: geometry.first.width, height: geometry.first.height)
+            .offset(x: geometry.first.minX, y: geometry.first.minY)
 
             SplitContainerView(
                 node: data.second,
@@ -94,83 +107,29 @@ struct SplitContainerView: View {
                 onEqualize: onEqualize,
                 minPaneSize: minPaneSize
             )
-            .frame(width: rightRect.width, height: rightRect.height)
-            .offset(x: rightRect.origin.x, y: rightRect.origin.y)
+            .frame(width: geometry.second.width, height: geometry.second.height)
+            .offset(x: geometry.second.minX, y: geometry.second.minY)
 
-            SplitDividerView(direction: data.direction == .horizontal ? .horizontal : .vertical)
-                .position(dividerCenter)
-                .gesture(dragGesture(data: data, size: size))
-                // Tap classification runs before `DragGesture` accumulates the
-                // 1px slop it needs to fire `onChanged`, so a clean double-
-                // click reaches us even though the drag modifier is attached
-                // above. `simultaneousGesture` avoids the priority struggle
-                // that an `.onTapGesture(count: 2)` modifier would force.
-                .simultaneousGesture(
-                    TapGesture(count: 2).onEnded {
-                        onEqualize(data.path)
-                    }
-                )
-                .help("Double-click to equalize")
+            // Last, so its grab band, which lies over both panes' edges, is
+            // in front of them (`SplitDividerView`).
+            SplitDividerView(
+                direction: data.direction,
+                geometry: geometry,
+                onDrag: { location in resize(data: data, size: size, to: location) },
+                onEqualize: { onEqualize(data.path) }
+            )
         }
     }
 
-    private func dragGesture(data: ResolvedSplit, size: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 1)
-            .onChanged { gesture in
-                let newRatio = switch data.direction {
-                case .horizontal:
-                    Double(gesture.location.x / max(size.width, 1))
-                case .vertical:
-                    Double(gesture.location.y / max(size.height, 1))
-                }
-                let currentExtent = data.direction == .horizontal ? Double(size.width) : Double(size.height)
-                let delta = (newRatio - data.ratio) * currentExtent
-                onResize(data.path, delta, size)
-            }
-    }
-
-    private func leftRect(for size: CGSize, ratio: Double, direction: SplitDirection) -> CGRect {
-        var rect = CGRect(origin: .zero, size: size)
-        switch direction {
+    private func resize(data: ResolvedSplit, size: CGSize, to location: CGPoint) {
+        let newRatio = switch data.direction {
         case .horizontal:
-            rect.size.width = max(0, size.width * ratio - PaneSplit.dividerThickness / 2)
+            Double(location.x / max(size.width, 1))
         case .vertical:
-            rect.size.height = max(0, size.height * ratio - PaneSplit.dividerThickness / 2)
+            Double(location.y / max(size.height, 1))
         }
-        return rect
-    }
-
-    private func rightRect(for size: CGSize, leftRect: CGRect, direction: SplitDirection) -> CGRect {
-        var rect = CGRect(origin: .zero, size: size)
-        switch direction {
-        case .horizontal:
-            rect.origin.x = leftRect.width + PaneSplit.dividerThickness
-            rect.size.width = max(0, size.width - rect.origin.x)
-        case .vertical:
-            rect.origin.y = leftRect.height + PaneSplit.dividerThickness
-            rect.size.height = max(0, size.height - rect.origin.y)
-        }
-        return rect
-    }
-
-    private func dividerCenter(for size: CGSize, leftRect: CGRect, direction: SplitDirection) -> CGPoint {
-        switch direction {
-        case .horizontal:
-            CGPoint(x: leftRect.width + PaneSplit.dividerThickness / 2, y: size.height / 2)
-        case .vertical:
-            CGPoint(x: size.width / 2, y: leftRect.height + PaneSplit.dividerThickness / 2)
-        }
-    }
-
-    private func resolvedRatio(for data: ResolvedSplit, size: CGSize) -> Double {
-        let extent = data.direction == .horizontal ? size.width : size.height
-        let firstMinimum = data.first.minimumExtent(along: data.direction, leafMinimum: minPaneSize)
-        let secondMinimum = data.second.minimumExtent(along: data.direction, leafMinimum: minPaneSize)
-        return PaneSplit.resolvedRatio(
-            data.ratio,
-            extent: extent,
-            firstMinimum: firstMinimum,
-            secondMinimum: secondMinimum
-        )
+        let currentExtent = data.direction == .horizontal ? Double(size.width) : Double(size.height)
+        let delta = (newRatio - data.ratio) * currentExtent
+        onResize(data.path, delta, size)
     }
 }

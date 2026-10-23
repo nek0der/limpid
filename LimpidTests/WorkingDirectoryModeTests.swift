@@ -1,7 +1,6 @@
 // WorkingDirectoryModeTests.swift
-// Limpid — covers the WorkingDirectoryMode enum, its Codable
-// back-compat on TabGroup, and the cwd-resolution precedence in
-// `openTab` for the Group and Quick Tabs (loose) scopes.
+// Limpid — covers the WorkingDirectoryMode enum's wire form and the
+// cwd-resolution precedence in `openTab` for the scratch (loose) tabs.
 
 import Foundation
 import Testing
@@ -11,118 +10,63 @@ import Testing
 @MainActor
 struct WorkingDirectoryModeTests {
 
-    // MARK: - Codable round-trip + back-compat
+    // MARK: - Codable
 
     @Test("WorkingDirectoryMode encodes to a stable rawValue string")
     func mode_encodesToRawValue() throws {
         let encoder = JSONEncoder()
-        for mode in WorkingDirectoryMode.allCases {
-            let data = try encoder.encode(mode)
-            let json = String(bytes: data, encoding: .utf8)
-            #expect(json == "\"\(mode.rawValue)\"")
+        let encoded = try WorkingDirectoryMode.allCases.map { mode in
+            try String(bytes: encoder.encode(mode), encoding: .utf8)
         }
+        #expect(encoded == [#""home""#, #""inheritPrevious""#, #""fixed""#])
     }
 
-    @Test("TabGroup round-trips its cwd fields", .tags(.persistence))
-    func tabGroup_roundTripsCwd() throws {
-        let url = URL(fileURLWithPath: "/tmp/limpid-fixed")
-        let group = TabGroup(name: "G", cwdMode: .fixed, cwdPath: url)
-        let data = try JSONEncoder().encode(group)
-        let decoded = try JSONDecoder().decode(TabGroup.self, from: data)
-        #expect(decoded.cwdMode == .fixed)
-        #expect(decoded.cwdPath == url)
+    // MARK: - The scratch row's folder
+
+    /// The scratch row's Show in Finder opens where a new scratch tab
+    /// would start, not always home.
+    @Test func scratchStartDirectory_isWhereANewScratchTabStarts() {
+        let session = WorkspaceSession()
+        session.quickTabDefaultsProvider = { (.inheritPrevious, nil) }
+        #expect(session.scratchStartDirectory(in: session.primaryWindowID) == nil)
+        _ = session.openTab(container: .loose, workingDirectory: URL(fileURLWithPath: "/tmp/limpid-seed"))
+        #expect(session.scratchStartDirectory(in: session.primaryWindowID)?.path == "/tmp/limpid-seed")
+        session.quickTabDefaultsProvider = { (.fixed, URL(fileURLWithPath: "/tmp/limpid-fixed")) }
+        #expect(session.scratchStartDirectory(in: session.primaryWindowID)?.path == "/tmp/limpid-fixed")
+        session.quickTabDefaultsProvider = { (.home, nil) }
+        #expect(session.scratchStartDirectory(in: session.primaryWindowID) == FileManager.default.homeDirectoryForCurrentUser)
     }
 
-    @Test("legacy TabGroup JSON (no cwd keys) decodes with defaults", .tags(.persistence))
-    func tabGroup_legacyDecodeDefaults() throws {
-        // A snapshot written before the cwd fields existed.
-        let legacy = """
-        { "id": "\(UUID().uuidString)", "name": "Legacy", "isExpanded": true }
-        """
-        let decoded = try JSONDecoder().decode(TabGroup.self, from: Data(legacy.utf8))
-        #expect(decoded.cwdMode == .inheritPrevious)
-        #expect(decoded.cwdPath == nil)
-    }
+    // MARK: - openTab cwd resolution (.loose / scratch)
 
-    @Test("group cwd survives a full SessionSnapshot round-trip", .tags(.persistence))
-    func sessionSnapshot_persistsGroupCwd() throws {
-        let session = WindowSession()
-        let group = session.addGroup(name: "Servers")
-        let fixed = URL(fileURLWithPath: "/tmp/limpid-servers")
-        session.setGroupCwdMode(group.id, to: .fixed, path: fixed)
-
-        let data = try JSONEncoder().encode(session.makeSnapshot())
-        let restored = WindowSession()
-        try restored.restore(from: JSONDecoder().decode(SessionSnapshot.self, from: data))
-
-        let g = restored.groups.first { $0.id == group.id }
-        #expect(g?.cwdMode == .fixed)
-        #expect(g?.cwdPath == fixed)
-    }
-
-    // MARK: - setGroupCwdMode
-
-    @Test("setGroupCwdMode clears the fixed path when mode isn't .fixed")
-    func setGroupCwdMode_clearsPathWhenNotFixed() {
-        let session = WindowSession()
-        let group = session.addGroup(name: "G")
-        session.setGroupCwdMode(group.id, to: .fixed, path: URL(fileURLWithPath: "/tmp/x"))
-        session.setGroupCwdMode(group.id, to: .home)
-        let g = session.groups.first { $0.id == group.id }
-        #expect(g?.cwdMode == .home)
-        #expect(g?.cwdPath == nil)
-    }
-
-    // MARK: - openTab cwd resolution (.group)
-
-    @Test("openTab .group home mode resolves to the home directory")
-    func openTab_groupHome_usesHome() {
-        let session = WindowSession()
-        let group = session.addGroup(name: "G")
-        session.setGroupCwdMode(group.id, to: .home)
-        let tab = session.openTab(container: .group(group.id))
-        #expect(tab.workingDirectory == FileManager.default.homeDirectoryForCurrentUser.path)
-    }
-
-    @Test("openTab .group fixed mode resolves to the fixed path")
-    func openTab_groupFixed_usesPath() {
-        let session = WindowSession()
-        let group = session.addGroup(name: "G")
-        let fixed = URL(fileURLWithPath: "/tmp/limpid-group-fixed")
-        session.setGroupCwdMode(group.id, to: .fixed, path: fixed)
-        let tab = session.openTab(container: .group(group.id))
-        #expect(tab.workingDirectory == fixed.path)
-    }
-
-    @Test("openTab .group inheritPrevious with no active tab falls back to nil cwd")
-    func openTab_groupInherit_noActive_isNil() {
-        let session = WindowSession()
-        let group = session.addGroup(name: "G")
-        // Default mode is .inheritPrevious; no tab is active yet.
-        let tab = session.openTab(container: .group(group.id))
+    @Test("openTab .loose inheritPrevious with no active tab falls back to nil cwd")
+    func openTab_looseInherit_noActive_isNil() {
+        let session = WorkspaceSession()
+        session.quickTabDefaultsProvider = { (.inheritPrevious, nil) }
+        let tab = session.openTab(container: .loose)
         #expect(tab.workingDirectory == nil)
     }
 
-    @Test("openTab .group inheritPrevious copies the active tab's cwd")
-    func openTab_groupInherit_copiesActiveCwd() {
-        let session = WindowSession()
-        let group = session.addGroup(name: "G")
+    @Test("openTab .loose inheritPrevious copies the active tab's cwd")
+    func openTab_looseInherit_copiesActiveCwd() {
+        let session = WorkspaceSession()
+        session.quickTabDefaultsProvider = { (.inheritPrevious, nil) }
         // Seed an active tab with a known cwd.
         let seed = session.openTab(
-            container: .group(group.id),
+            container: .loose,
             workingDirectory: URL(fileURLWithPath: "/tmp/limpid-seed")
         )
-        #expect(session.activeTabID == seed.id)
-        let next = session.openTab(container: .group(group.id))
+        #expect(session.primarySelection.activeTabID == seed.id)
+        let next = session.openTab(container: .loose)
         #expect(next.workingDirectory == "/tmp/limpid-seed")
     }
 
-    @Test("openTab .group inheritPrevious prefers the active tab's live pwd over its launch cwd")
-    func openTab_groupInherit_prefersLivePwd() {
-        let session = WindowSession()
-        let group = session.addGroup(name: "G")
+    @Test("openTab .loose inheritPrevious prefers the active tab's live pwd over its launch cwd")
+    func openTab_looseInherit_prefersLivePwd() {
+        let session = WorkspaceSession()
+        session.quickTabDefaultsProvider = { (.inheritPrevious, nil) }
         let seed = session.openTab(
-            container: .group(group.id),
+            container: .loose,
             workingDirectory: URL(fileURLWithPath: "/tmp/limpid-seed")
         )
         // Simulate the shell `cd`-ing: libghostty's PWD action updates
@@ -130,15 +74,13 @@ struct WorkingDirectoryModeTests {
         if let idx = session.tabs.firstIndex(where: { $0.id == seed.id }) {
             session.tabs[idx].pwd = "/tmp/limpid-after-cd"
         }
-        let next = session.openTab(container: .group(group.id))
+        let next = session.openTab(container: .loose)
         #expect(next.workingDirectory == "/tmp/limpid-after-cd")
     }
 
-    // MARK: - openTab cwd resolution (.loose / Quick Tabs)
-
-    @Test("openTab .loose reads the injected Quick Tabs defaults")
+    @Test("openTab .loose reads the injected scratch defaults")
     func openTab_loose_usesProviderHome() {
-        let session = WindowSession()
+        let session = WorkspaceSession()
         session.quickTabDefaultsProvider = { (.home, nil) }
         let tab = session.openTab(container: .loose)
         #expect(tab.workingDirectory == FileManager.default.homeDirectoryForCurrentUser.path)
@@ -146,7 +88,7 @@ struct WorkingDirectoryModeTests {
 
     @Test("openTab .loose fixed mode uses the provider's path")
     func openTab_loose_fixedPath() {
-        let session = WindowSession()
+        let session = WorkspaceSession()
         let fixed = URL(fileURLWithPath: "/tmp/limpid-quicktab")
         session.quickTabDefaultsProvider = { (.fixed, fixed) }
         let tab = session.openTab(container: .loose)
@@ -155,7 +97,7 @@ struct WorkingDirectoryModeTests {
 
     @Test("explicit workingDirectory always wins over the resolved mode")
     func openTab_explicitWD_overridesMode() {
-        let session = WindowSession()
+        let session = WorkspaceSession()
         session.quickTabDefaultsProvider = { (.home, nil) }
         let explicit = URL(fileURLWithPath: "/tmp/limpid-explicit")
         let tab = session.openTab(container: .loose, workingDirectory: explicit)

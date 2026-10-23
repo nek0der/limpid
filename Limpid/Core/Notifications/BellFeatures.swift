@@ -23,6 +23,15 @@ struct BellFeatures: OptionSet {
     /// path the user took.
     static let paneFlashNanoseconds: UInt64 = 400_000_000
 
+    /// Whether a bell leaves its pane's unread mark: the person was not
+    /// looking at the pane, they did not turn every bell channel off, and
+    /// the pane is not already marked. Marking it once is enough; counting
+    /// each bell would only rewrite the tabs (and save the session) for
+    /// a program that rings on and on.
+    func leavesUnreadMark(isSourceFocused: Bool, isAlreadyUnread: Bool) -> Bool {
+        !isEmpty && !isSourceFocused && !isAlreadyUnread
+    }
+
     static func forAction(_ action: BellAction) -> BellFeatures {
         switch action {
         case .none: []

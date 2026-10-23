@@ -24,24 +24,14 @@ struct SurfaceIMERectTests {
         #expect(rect.height == 20)
     }
 
-    @Test("An empty range collapses the preedit width")
-    func imeViewRect_emptyRange_collapsesWidth() {
+    @Test("An empty range collapses the preedit width; a composed one keeps it", arguments: [(0, CGFloat(0)), (3, 32)])
+    func imeViewRect_widthFollowsTheComposedRange(length: Int, width: CGFloat) {
         let rect = SurfaceView.imeViewRect(
             from: NSRect(x: 40, y: 100, width: 32, height: 20),
-            range: NSRange(location: 0, length: 0),
+            range: NSRange(location: 0, length: length),
             viewHeight: 400
         )
-        #expect(rect.width == 0)
-    }
-
-    @Test("A composed range keeps the preedit width")
-    func imeViewRect_composedRange_keepsWidth() {
-        let rect = SurfaceView.imeViewRect(
-            from: NSRect(x: 40, y: 100, width: 32, height: 20),
-            range: NSRange(location: 0, length: 3),
-            viewHeight: 400
-        )
-        #expect(rect.width == 32)
+        #expect(rect.width == width)
     }
 
     /// Dictation reads this rect to place its insertion point, so the

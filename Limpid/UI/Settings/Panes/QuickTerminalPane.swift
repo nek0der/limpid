@@ -20,28 +20,46 @@ struct QuickTerminalPane: View {
             } header: {
                 Text("Hotkey")
             } footer: {
-                Text("Active in every app, not only Limpid. Click to record a hotkey; press ⎋ to cancel or ⌫ to clear.")
+                SettingsFootnote(
+                    """
+                    Active in every app, not only Limpid. Click to record a hotkey; press ⎋ to cancel \
+                    or ⌫ to restore the default, which is no hotkey.
+                    """
+                )
             }
 
             Section {
                 Picker("Position", selection: $store.settings.quickTerminal.position) {
-                    Text("Top").tag(QuickTerminalPosition.top)
-                    Text("Bottom").tag(QuickTerminalPosition.bottom)
-                    Text("Left").tag(QuickTerminalPosition.left)
-                    Text("Right").tag(QuickTerminalPosition.right)
-                    Text("Center").tag(QuickTerminalPosition.center)
+                    SettingsDefaultMark.title(Text("Top"), value: QuickTerminalPosition.top, of: \.quickTerminal.position)
+                        .tag(QuickTerminalPosition.top)
+                    SettingsDefaultMark.title(Text("Bottom"), value: QuickTerminalPosition.bottom, of: \.quickTerminal.position)
+                        .tag(QuickTerminalPosition.bottom)
+                    SettingsDefaultMark.title(Text("Left"), value: QuickTerminalPosition.left, of: \.quickTerminal.position)
+                        .tag(QuickTerminalPosition.left)
+                    SettingsDefaultMark.title(Text("Right"), value: QuickTerminalPosition.right, of: \.quickTerminal.position)
+                        .tag(QuickTerminalPosition.right)
+                    SettingsDefaultMark.title(Text("Center"), value: QuickTerminalPosition.center, of: \.quickTerminal.position)
+                        .tag(QuickTerminalPosition.center)
                 }
                 .settingsSearchTarget(SettingsSearchCatalog.quickTerminalPosition.id)
-                Picker("Size", selection: $store.settings.quickTerminal.sizePercent) {
+                // Named for what it measures at this position, so the
+                // percentage says of what without a footnote.
+                Picker(
+                    store.settings.quickTerminal.position.isSizedByWidth ? LocalizedStringKey("Width") : LocalizedStringKey("Height"),
+                    selection: $store.settings.quickTerminal.sizePercent
+                ) {
                     ForEach(QuickTerminalSettings.allowedSizePercents, id: \.self) { percent in
-                        Text(Double(percent) / 100, format: .percent).tag(percent)
+                        SettingsDefaultMark.title(
+                            Text(Double(percent) / 100, format: .percent),
+                            value: percent,
+                            of: \.quickTerminal.sizePercent
+                        )
+                        .tag(percent)
                     }
                 }
                 .settingsSearchTarget(SettingsSearchCatalog.quickTerminalSize.id)
             } header: {
                 Text("Layout")
-            } footer: {
-                Text("Size is a share of the screen's height for Top, Bottom, and Center, and of its width for Left and Right.")
             }
 
             Section {
@@ -56,7 +74,7 @@ struct QuickTerminalPane: View {
 
 // MARK: - Hotkey row
 
-/// The recorder plus its clear button, with whatever stops the hotkey from
+/// The recorder plus its restore button, with whatever stops the hotkey from
 /// working shown underneath.
 private struct QuickTerminalHotKeyRow: View {
     @Binding var quickTerminal: QuickTerminalSettings
@@ -74,29 +92,29 @@ private struct QuickTerminalHotKeyRow: View {
                 if let message {
                     Text(message)
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(SupervisionTokens.stoppedText.color)
                 } else if let warning {
                     Text(warning)
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(SupervisionTokens.waitingText.color)
                 }
             }
             Spacer(minLength: 12)
-            // Same widths as the Keyboard pane's rows: the clear button
-            // takes a fixed slot before the pill so the pill's trailing
-            // edge lines up with the form's other controls.
+            // Same widths and controls as the Keyboard pane's rows: ↺ takes
+            // a fixed slot before the pill so the pill's trailing edge lines
+            // up with the form's other controls. The default is no hotkey,
+            // so restoring it and unassigning leave the same thing.
             HStack(spacing: 8) {
                 ZStack {
                     if quickTerminal.hotKey != nil {
                         Button {
-                            quickTerminal.hotKey = nil
-                            rejection = nil
+                            unassign()
                         } label: {
-                            Image(systemName: "xmark.circle.fill")
+                            Image(systemName: "arrow.uturn.backward")
                         }
                         .buttonStyle(.borderless)
-                        .help("Clear hotkey")
-                        .accessibilityLabel(Text("Clear hotkey"))
+                        .help("Restore Default")
+                        .accessibilityLabel(Text(RestoreDefaultSlot.label(for: "Quick Terminal hotkey")))
                     }
                 }
                 .frame(width: LimpidLayout.settingsRecorderAccessoryWidth, alignment: .center)
@@ -109,6 +127,17 @@ private struct QuickTerminalHotKeyRow: View {
             }
         }
         .settingsControlRow(controlHeight: LimpidLayout.settingsRecorderPillHeight)
+        .contextMenu {
+            Button("Unassign") {
+                unassign()
+            }
+            .disabled(quickTerminal.hotKey == nil)
+        }
+    }
+
+    private func unassign() {
+        quickTerminal.hotKey = nil
+        rejection = nil
     }
 
     /// Caution about the saved hotkey that does not stop it from working.
@@ -131,13 +160,12 @@ private struct QuickTerminalHotKeyRow: View {
 
 /// Button that records the next key combination. Same interaction as the
 /// Keyboard pane's recorder: a local key monitor takes the next keyDown, a
-/// mouse monitor cancels on a click elsewhere, ⎋ cancels, ⌫ clears.
+/// mouse monitor cancels on a click elsewhere, ⎋ cancels, ⌫ restores the default.
 private struct QuickTerminalHotKeyRecorder: View {
     @Binding var quickTerminal: QuickTerminalSettings
     let keyboard: KeyboardSettings
     @Binding var rejection: QuickTerminalHotKeyValidation?
 
-    @Environment(\.limpidAccent) private var accent
     @Environment(QuickTerminalHotKeyCenter.self) private var hotKeyCenter: QuickTerminalHotKeyCenter?
     @State private var isRecording = false
     /// Our hold on the global hotkey while recording. `nil` when not
@@ -160,16 +188,7 @@ private struct QuickTerminalHotKeyRecorder: View {
                 .font(.system(.body, design: .default).monospacedDigit())
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.horizontal, 8)
-                .frame(height: LimpidLayout.settingsRecorderPillHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(isRecording ? accent.opacity(0.2) : Color.secondary.opacity(0.12))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(isRecording ? accent : Color.clear, lineWidth: 1)
-                )
+                .settingsRecorderPill(isRecording: isRecording)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("Quick Terminal hotkey"))
@@ -258,14 +277,15 @@ private struct QuickTerminalHotKeyRecorder: View {
     }
 
     private func handleKey(_ event: NSEvent) {
-        switch event.namedKey {
-        case .escape:
+        switch ShortcutRecorderKey.meaning(of: event.namedKey) {
+        case .cancel:
             stopRecording()
-        case .backspace:
+        case .restoreDefault:
+            // The hotkey's default is none.
             quickTerminal.hotKey = nil
             rejection = nil
             stopRecording()
-        default:
+        case .record:
             guard let captured = StoredShortcut.capture(from: event) else {
                 stopRecording()
                 return

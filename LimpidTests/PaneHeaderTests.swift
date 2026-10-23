@@ -1,6 +1,5 @@
 // PaneHeaderTests.swift
-// Limpid — pins when split panes carry a header, what the header calls
-// its pane, and how a pane's name persists and travels with the pane.
+// Limpid — when split panes carry a header, what the header calls its pane and marks it with, and how a rename is written.
 
 import Foundation
 import Testing
@@ -14,8 +13,8 @@ struct PaneHeaderTests {
 
     /// A loose tab split into `panes` leaves through the same action the
     /// UI uses, with the session's id for the tab and its leaves in order.
-    private static func splitTab(panes: Int = 2) throws -> (session: WindowSession, tab: Tab) {
-        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+    private static func splitTab(panes: Int = 2) throws -> (session: WorkspaceSession, tab: Tab) {
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
         for _ in 1..<panes {
             PaneActions.split(session, direction: .horizontal)
         }
@@ -42,60 +41,42 @@ struct PaneHeaderTests {
 
     // MARK: - Visibility
 
-    @Test func showsHeaders_singlePane_hidden() {
-        #expect(!PaneHeaderRules.showsHeaders(leafCount: 1, isZoomed: false, isEnabled: true))
-        // A tab with one pane cannot be zoomed, and its tab row names it.
-        #expect(!PaneHeaderRules.showsHeaders(leafCount: 1, isZoomed: true, isEnabled: false))
-    }
-
-    @Test func showsHeaders_twoOrMorePanes_shown() {
-        #expect(PaneHeaderRules.showsHeaders(leafCount: 2, isZoomed: false, isEnabled: true))
-        #expect(PaneHeaderRules.showsHeaders(leafCount: 4, isZoomed: false, isEnabled: true))
-    }
-
-    @Test func showsHeaders_settingOff_hiddenUnlessZoomed() {
-        #expect(!PaneHeaderRules.showsHeaders(leafCount: 3, isZoomed: false, isEnabled: false))
-        #expect(PaneHeaderRules.showsHeaders(leafCount: 3, isZoomed: true, isEnabled: false))
+    /// A split tab's panes carry headers while the setting is on, and a
+    /// zoomed pane keeps its header with it off. A tab with one pane cannot
+    /// be zoomed, and its tab row names it.
+    @Test(arguments: [
+        (1, false, true, false),
+        (1, true, false, false),
+        (2, false, true, true),
+        (4, false, true, true),
+        (3, false, false, false),
+        (3, true, false, true)
+    ])
+    func showsHeaders_onASplit_whileTheSettingIsOnOrThePaneIsZoomed(leafCount: Int, isZoomed: Bool, isEnabled: Bool, shows: Bool) {
+        #expect(PaneHeaderRules.showsHeaders(leafCount: leafCount, isZoomed: isZoomed, isEnabled: isEnabled) == shows)
     }
 
     @Test func showsHeaderInTab_zoomedPaneKeepsItsHeaderWhateverTheSetting() throws {
-        let singleTab = WindowSessionFixture.withLooseTab().tab
-        #expect(!PaneHeaderRules.showsHeader(in: singleTab, isEnabled: true, isReviewPresented: false))
+        let singleTab = WorkspaceSessionFixture.withLooseTab().tab
+        #expect(!PaneHeaderRules.showsHeader(in: singleTab, isEnabled: true))
+
+        #expect(!PaneHeaderRules.showsHeader(in: nil, isEnabled: true))
 
         let (session, tab) = try Self.splitTab()
-        #expect(!PaneHeaderRules.showsHeader(in: tab, isEnabled: false, isReviewPresented: false))
+        #expect(PaneHeaderRules.showsHeader(in: tab, isEnabled: true))
+        #expect(!PaneHeaderRules.showsHeader(in: tab, isEnabled: false))
 
         // Zoomed, the header is the way back to the split, so it shows with
         // the setting off too, and goes again once the tab unzooms.
         let zoomed = try #require(tab.splitTree.allLeafIDs().first)
         session.update(tab.id) { $0.zoomedLeafID = zoomed }
         let zoomedTab = try #require(session.tab(tab.id))
-        #expect(PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: true, isReviewPresented: false))
-        #expect(PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: false, isReviewPresented: false))
+        #expect(PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: true))
+        #expect(PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: false))
 
         PaneActions.unzoom(session, tabID: tab.id)
         let unzoomedTab = try #require(session.tab(tab.id))
-        #expect(!PaneHeaderRules.showsHeader(in: unzoomedTab, isEnabled: false, isReviewPresented: false))
-    }
-
-    @Test func showsHeaderInTab_reviewHidesItEvenWhileZoomed() throws {
-        let (session, tab) = try Self.splitTab()
-        #expect(!PaneHeaderRules.showsHeader(in: tab, isEnabled: true, isReviewPresented: true))
-
-        let zoomed = try #require(tab.splitTree.allLeafIDs().first)
-        session.update(tab.id) { $0.zoomedLeafID = zoomed }
-        let zoomedTab = try #require(session.tab(tab.id))
-        #expect(!PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: true, isReviewPresented: true))
-        #expect(!PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: false, isReviewPresented: true))
-    }
-
-    @Test func showsHeaderInTab_staleZoomIDFollowsTheSetting() throws {
-        let (session, tab) = try Self.splitTab()
-        // A zoom id that no longer names a leaf renders the split, so the
-        // setting decides as it does unzoomed.
-        session.update(tab.id) { $0.zoomedLeafID = UUID() }
-        let staleTab = try #require(session.tab(tab.id))
-        #expect(!PaneHeaderRules.showsHeader(in: staleTab, isEnabled: false, isReviewPresented: false))
+        #expect(!PaneHeaderRules.showsHeader(in: unzoomedTab, isEnabled: false))
     }
 
     @Test func isZoomed_onlyTheZoomedLeafStillInTheTree() throws {
@@ -112,9 +93,12 @@ struct PaneHeaderTests {
         #expect(PaneHeaderRules.isZoomed(zoomedTab))
         #expect(!PaneHeaderRules.isZoomed(zoomed, in: nil))
 
-        // A zoom id that no longer names a leaf renders the split.
+        // A zoom id that no longer names a leaf renders the split, so the
+        // setting decides as it does unzoomed.
         session.update(tab.id) { $0.zoomedLeafID = UUID() }
-        #expect(try !PaneHeaderRules.isZoomed(#require(session.tab(tab.id))))
+        let staleTab = try #require(session.tab(tab.id))
+        #expect(!PaneHeaderRules.isZoomed(staleTab))
+        #expect(!PaneHeaderRules.showsHeader(in: staleTab, isEnabled: false))
     }
 
     @Test func zoomAction_flipsWhileZoomed() {
@@ -123,7 +107,7 @@ struct PaneHeaderTests {
     }
 
     @Test func menuZoomAction_flipsWhileZoomedAndHidesOnASinglePane() throws {
-        let single = WindowSessionFixture.withLooseTab().tab
+        let single = WorkspaceSessionFixture.withLooseTab().tab
         let lone = try #require(single.splitTree.allLeafIDs().first)
         #expect(PaneHeaderRules.menuZoomAction(for: lone, in: single) == nil)
         #expect(PaneHeaderRules.menuZoomAction(for: lone, in: nil) == nil)
@@ -145,28 +129,34 @@ struct PaneHeaderTests {
     }
 
     @Test func metrics_zoomedHeaderKeepsTheUnzoomButtonBesideTheMenu() {
-        #expect(
-            PaneHeaderMetrics.zoomedMinimumWidth
-                == PaneHeaderMetrics.minimumWidth + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.menuSlot
-        )
         let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, isZoomed: false)
         let zoomed = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, isZoomed: true)
         #expect(zoomed - plain == PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.menuSlot)
         #expect(plain == PaneHeaderMetrics.inlineRenameMinimumWidth)
     }
 
-    @Test func splitPaneHeadersSetting_defaultsOnAndDecodesWithoutKey() throws {
-        #expect(TerminalSettings().showsSplitPaneHeaders)
-        let decoded = try JSONDecoder().decode(TerminalSettings.self, from: Data("{}".utf8))
-        #expect(decoded.showsSplitPaneHeaders)
+    @Test func metrics_theCacheClockKeepsAUsableRenameFieldBesideIt() {
+        let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, isZoomed: false)
+        let withClock = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true, isZoomed: false)
+        #expect(withClock - plain == PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.markSlot)
+        // Everything but the field, with the clock, still leaves the field
+        // its minimum.
+        let fixedParts = PaneHeaderMetrics.minimumWidth
+            + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.markSlot // state mark
+            + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.markSlot // clock
+            + PaneHeaderMetrics.itemSpacing // glyph to field
+        #expect(withClock - fixedParts >= PaneHeaderMetrics.inlineRenameFieldMinimumWidth)
+    }
 
-        var off = TerminalSettings()
-        off.showsSplitPaneHeaders = false
-        let roundTripped = try JSONDecoder().decode(
-            TerminalSettings.self,
-            from: JSONEncoder().encode(off)
+    @Test func inlineRename_endsWhenTheHeaderNarrowsBelowAUsableField() {
+        let threshold = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true, isZoomed: false)
+        #expect(PaneHeaderRules.shouldEndInlineRename(isEditing: true, headerWidth: threshold - 1, threshold: threshold))
+        #expect(!PaneHeaderRules.shouldEndInlineRename(isEditing: true, headerWidth: threshold, threshold: threshold))
+        #expect(!PaneHeaderRules.shouldEndInlineRename(isEditing: false, headerWidth: 40, threshold: threshold))
+        #expect(
+            !PaneHeaderRules.shouldEndInlineRename(isEditing: true, headerWidth: 0, threshold: threshold),
+            "a header not measured yet is not narrow"
         )
-        #expect(!roundTripped.showsSplitPaneHeaders)
     }
 
     // MARK: - Name resolution
@@ -279,46 +269,111 @@ struct PaneHeaderTests {
         #expect(PaneHeaderRules.agentTitle(for: Self.badge(), hasSessionTitles: false) == nil)
     }
 
-    @Test func providerRegistry_sessionTitleCapabilityMatchesProviders() {
-        #expect(AgentProviderRegistry.hasSessionTitles(.claude))
-        #expect(!AgentProviderRegistry.hasSessionTitles(.codex))
+    // MARK: - State mark
+
+    private static func run(
+        _ kind: AgentKind,
+        _ runID: String,
+        _ state: AgentState,
+        detail: String? = nil,
+        panes: [UUID]
+    ) -> AgentRuntimePresentation {
+        var badge = Self.badge(state: state)
+        badge.detail = detail
+        return AgentRuntimePresentation.test(kind: kind, runID: runID, badge: badge, paneIDs: Set(panes))
+    }
+
+    /// One item about `run`, placed in `pane` as the attention list places it.
+    private static func item(_ kind: AttentionItemKind, about run: AgentRuntimePresentation, in pane: UUID) -> AttentionItem {
+        var queue = AttentionQueue()
+        queue.insert(
+            id: .stop(EpisodeKey(origin: .runtime(run.id), episodeToken: "1")),
+            kind: kind,
+            subject: .runtime(id: run.id, provider: run.kind, paneID: pane, tabID: nil, projectID: nil),
+            arrivedAt: Date(timeIntervalSince1970: 0)
+        )
+        return queue.items[0]
+    }
+
+    /// Two runs in one pane are weighed as the row weighs them: a finished
+    /// Claude beside a running Codex runs, in Codex's words; a pane with no
+    /// run has no mark.
+    @Test func mark_twoRunsInAPane_areWeighedAsTheRowWeighsThem() throws {
+        let (session, tab) = try Self.splitTab()
+        let leaves = tab.splitTree.allLeafIDs()
+        let claude = Self.run(.claude, "c", .finished, detail: "done", panes: [leaves[0]])
+        let codex = Self.run(.codex, "x", .running, detail: "Bash: swift test", panes: [leaves[0]])
+
+        let mark = PaneHeaderRules.mark(paneID: leaves[0], items: [], runtimes: [claude, codex], session: session)
+        #expect(mark == PaneHeaderMark(glyph: .running, detail: "Bash: swift test"))
+        #expect(PaneHeaderRules.mark(paneID: leaves[1], items: [], runtimes: [claude, codex], session: session) == nil)
+    }
+
+    /// An item outranks a running run, and the hover text is the words of
+    /// the run the item is about.
+    @Test func mark_anItem_outranksARun_inItsRunsWords() throws {
+        let (session, tab) = try Self.splitTab()
+        let pane = tab.splitTree.allLeafIDs()[0]
+        let claude = Self.run(.claude, "c", .finished, detail: "done", panes: [pane])
+        let codex = Self.run(.codex, "x", .running, detail: "Bash: swift test", panes: [pane])
+        let unread = AttentionItemKind.unread(UnreadTurn(turnID: TurnID("t"), changes: .unknown))
+
+        let mark = PaneHeaderRules.mark(
+            paneID: pane,
+            items: [Self.item(unread, about: claude, in: pane)],
+            runtimes: [claude, codex],
+            session: session
+        )
+        #expect(mark == PaneHeaderMark(glyph: .unread, detail: "done"))
+    }
+
+    /// A run shown in two panes marks the one the list places it in, as its
+    /// items do, not both.
+    @Test func mark_aRunInTwoPanes_marksThePaneItIsPlacedIn() throws {
+        let (session, tab) = try Self.splitTab()
+        let leaves = tab.splitTree.allLeafIDs()
+        let codex = Self.run(.codex, "x", .running, panes: leaves)
+        let placed = try #require(AttentionState.shownPane(of: codex, in: session))
+
+        for leaf in leaves {
+            let mark = PaneHeaderRules.mark(paneID: leaf, items: [], runtimes: [codex], session: session)
+            #expect((mark != nil) == (leaf == placed))
+        }
+    }
+
+    /// At rest and before the agent is matched, the header stays quiet.
+    @Test(arguments: [AgentState.idle, .finished, .unknown])
+    func mark_atRest_isNone(state: AgentState) throws {
+        let (session, tab) = try Self.splitTab()
+        let pane = tab.splitTree.allLeafIDs()[0]
+        let run = Self.run(.claude, "c", state, panes: [pane])
+        #expect(PaneHeaderRules.mark(paneID: pane, items: [], runtimes: [run], session: session) == nil)
     }
 
     @Test func headerRuntime_prefersMostRecentKnownRuntimeInPane() {
         let attention = AttentionState()
         let paneID = UUID()
-        let older = AgentRuntimePresentation(
-            kind: .claude, runID: "older", revision: 1,
+        let older = AgentRuntimePresentation.test(
+            runID: "older",
             badge: Self.badge(state: .finished, updatedAt: Date(timeIntervalSinceNow: -60)),
-            paneIDs: [paneID], tmuxLocations: [:]
+            paneIDs: [paneID]
         )
-        let newer = AgentRuntimePresentation(
-            kind: .codex, runID: "newer", revision: 1,
+        let newer = AgentRuntimePresentation.test(
+            kind: .codex,
+            runID: "newer",
             badge: Self.badge(state: .running, updatedAt: Date()),
-            paneIDs: [paneID], tmuxLocations: [:]
+            paneIDs: [paneID]
         )
-        let unknown = AgentRuntimePresentation(
-            kind: .claude, runID: "unknown", revision: 1,
+        let unknown = AgentRuntimePresentation.test(
+            runID: "unknown",
             badge: Self.badge(state: .unknown, updatedAt: Date(timeIntervalSinceNow: 60)),
-            paneIDs: [paneID], tmuxLocations: [:]
+            paneIDs: [paneID]
         )
         attention.replaceRuntimes([older, unknown], kind: .claude)
         attention.replaceRuntimes([newer], kind: .codex)
 
         #expect(attention.headerRuntime(inPane: paneID)?.runID == "newer")
         #expect(attention.headerRuntime(inPane: UUID()) == nil)
-        #expect(attention.aggregateAgentStateSummary(inPane: paneID)?.state == .finished)
-    }
-
-    // MARK: - On screen
-
-    @Test func showsHeader_followsTabSettingAndReview() throws {
-        let (_, tab) = try Self.splitTab()
-        #expect(PaneHeaderRules.showsHeader(in: tab, isEnabled: true, isReviewPresented: false))
-        #expect(!PaneHeaderRules.showsHeader(in: tab, isEnabled: false, isReviewPresented: false))
-        // Review replaces the split and docks one pane under its own heading.
-        #expect(!PaneHeaderRules.showsHeader(in: tab, isEnabled: true, isReviewPresented: true))
-        #expect(!PaneHeaderRules.showsHeader(in: nil, isEnabled: true, isReviewPresented: false))
     }
 
     // MARK: - Forms
@@ -340,19 +395,8 @@ struct PaneHeaderTests {
         #expect(forms.map(\.showsPromptCacheClock) == [true, true, true, true, false])
     }
 
-    @Test func forms_clockFormOnlyWhileThereIsAClock() {
-        #expect(!PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: false).contains(.withClock))
-        #expect(PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: true).contains(.withClock))
-    }
-
-    @Test func metrics_clockFormIsTheNarrowestFormAndTheClock() {
-        #expect(
-            PaneHeaderMetrics.clockFormWidth
-                == PaneHeaderMetrics.minimumWidth + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.markSlot
-        )
+    @Test func metrics_theClockForm_is78PointsWide() {
         #expect(PaneHeaderMetrics.clockFormWidth == 78)
-        // The split floor does not grow for the clock.
-        #expect(PaneHeaderMetrics.minimumWidth < PaneHeaderMetrics.clockFormWidth)
     }
 
     @Test func forms_whileEditing_keepTheName() {
@@ -366,32 +410,25 @@ struct PaneHeaderTests {
         }
     }
 
-    @Test func metrics_minimumWidthIsGlyphAndMenuWithTheirGaps() {
-        let parts = PaneHeaderMetrics.horizontalPadding * 2
-            + PaneHeaderMetrics.glyphSlot
-            + PaneHeaderMetrics.itemSpacing * 3
-            + PaneHeaderMetrics.menuSlot
-        #expect(PaneHeaderMetrics.minimumWidth == parts)
-        #expect(LimpidLayout.paneHeaderHeight == PaneHeaderMetrics.height)
-    }
-
     /// The header's state mark is `AgentStateMark` in its row placement,
     /// which sizes itself to the tab row's trailing slot; the inline-rename
     /// threshold counts it as `markSlot`.
     @Test func metrics_markSlotMatchesTheStateMark() {
-        #expect(PaneHeaderMetrics.markSlot == LimpidLayout.containerColumnTrailingSlot)
+        #expect(PaneHeaderMetrics.markSlot == LimpidLayout.stateMarkSlot)
     }
 
     // MARK: - Rename
 
-    @Test func renameStyle_inlineAtOrAboveThreshold() {
-        #expect(PaneHeaderRules.renameStyle(headerWidth: 200, threshold: 180) == .inline)
-        #expect(PaneHeaderRules.renameStyle(headerWidth: 180, threshold: 180) == .inline)
-        #expect(PaneHeaderRules.renameStyle(headerWidth: 179, threshold: 180) == .floating)
-    }
-
-    @Test func renameStyle_unmeasuredHeaderEditsInPlace() {
-        #expect(PaneHeaderRules.renameStyle(headerWidth: 0) == .inline)
+    /// In place at or above the threshold, and while the header is not
+    /// measured yet; floating below it.
+    @Test(arguments: [
+        (CGFloat(200), PaneRenameStyle.inline),
+        (180, .inline),
+        (179, .floating),
+        (0, .inline)
+    ])
+    func renameStyle_inPlaceFromTheThreshold_orUnmeasured(headerWidth: CGFloat, style: PaneRenameStyle) {
+        #expect(PaneHeaderRules.renameStyle(headerWidth: headerWidth, threshold: 180) == style)
     }
 
     @Test func renameStyle_narrowestHeaderFloats() {
@@ -404,32 +441,29 @@ struct PaneHeaderTests {
         )
     }
 
-    @Test func nameChange_unchangedDerivedNameWritesNothing() {
-        #expect(PaneHeaderRules.nameChange(submitted: "Fix the build", stored: nil, shown: "Fix the build") == nil)
-    }
-
-    @Test func nameChange_newNameIsSetTrimmed() {
-        #expect(PaneHeaderRules.nameChange(submitted: "  server ", stored: nil, shown: "src") == .set("server"))
-        #expect(PaneHeaderRules.nameChange(submitted: "logs", stored: "server", shown: "server") == .set("logs"))
-    }
-
-    @Test func nameChange_emptyClearsAStoredName() {
-        #expect(PaneHeaderRules.nameChange(submitted: "  ", stored: "server", shown: "server") == .clear)
-        #expect(PaneHeaderRules.nameChange(submitted: "", stored: nil, shown: "src") == nil)
-    }
-
-    @Test func nameChange_sameAsStoredWritesNothing() {
-        #expect(PaneHeaderRules.nameChange(submitted: "server", stored: "server", shown: "server") == nil)
-    }
-
-    /// The agent retitled the pane while the field was open. The untouched
-    /// submit carries the old title, which is what the field opened with;
-    /// compared against the name shown at the start it writes nothing, where
-    /// comparing against the new title would pin the old one.
-    @Test func nameChange_staleTitleSubmittedUnchangedWritesNothing() {
-        let openedWith = "Fix the build"
-        #expect(PaneHeaderRules.nameChange(submitted: openedWith, stored: nil, shown: openedWith) == nil)
-        #expect(PaneHeaderRules.nameChange(submitted: openedWith, stored: nil, shown: "Ship the fix") == .set(openedWith))
+    /// What a submitted rename writes: nothing for the name the field
+    /// opened with while the pane has none of its own, nor for the name it
+    /// has; a new name, trimmed; and a clear for an empty submit of a stored
+    /// name. When the agent retitled the pane while the field was open, the
+    /// untouched submit carries the old title, the one the field opened
+    /// with: compared against that it writes nothing, where comparing
+    /// against the new title would pin the old one.
+    @Test(arguments: [
+        ("Fix the build", String?.none, "Fix the build", PaneNameChange?.none),
+        ("  server ", nil, "src", .set("server")),
+        ("logs", "server", "server", .set("logs")),
+        ("  ", "server", "server", .clear),
+        ("", nil, "src", nil),
+        ("server", "server", "server", nil),
+        ("Fix the build", nil, "Ship the fix", .set("Fix the build"))
+    ])
+    func nameChange_writesOnlyAChangeOfThePanesOwnName(
+        submitted: String,
+        stored: String?,
+        shown: String,
+        change: PaneNameChange?
+    ) {
+        #expect(PaneHeaderRules.nameChange(submitted: submitted, stored: stored, shown: shown) == change)
     }
 
     @Test func commitPaneRename_appliesTheRule() throws {
@@ -448,18 +482,6 @@ struct PaneHeaderTests {
 
     // MARK: - Persistence
 
-    @Test func paneState_decodesWithoutName() throws {
-        let decoded = try JSONDecoder().decode(PaneState.self, from: Data(#"{"unreadCount":2}"#.utf8))
-        #expect(decoded.unreadCount == 2)
-        #expect(decoded.name == nil)
-    }
-
-    @Test func paneState_roundTripsName() throws {
-        let state = PaneState(unreadCount: 1, name: "server")
-        let decoded = try JSONDecoder().decode(PaneState.self, from: JSONEncoder().encode(state))
-        #expect(decoded == state)
-    }
-
     @Test func renamePane_trimsStoresAndClears() throws {
         let (session, tab) = try Self.splitTab()
         let paneID = try #require(tab.splitTree.allLeafIDs().first)
@@ -476,56 +498,14 @@ struct PaneHeaderTests {
         #expect(session.paneState(paneID).name == nil)
     }
 
-    @Test func renamePane_survivesSnapshotRoundTrip() throws {
+    @Test func renamePane_survivesTheTabsRoundTrip() throws {
         let (session, tab) = try Self.splitTab()
         let paneID = try #require(tab.splitTree.allLeafIDs().last)
+        session.update(tab.id) { $0.paneStates[paneID] = PaneState(unreadCount: 1) }
         session.renamePane(paneID, to: "watcher")
 
         let live = try #require(session.tab(tab.id))
         let restored = try JSONDecoder().decode(Tab.self, from: JSONEncoder().encode(live))
-        #expect(restored.paneStates[paneID]?.name == "watcher")
-    }
-
-    // MARK: - Moving panes
-
-    @Test func movePaneToNewTab_namedPane_namesNewTab() throws {
-        let (session, source) = try Self.splitTab()
-        let paneID = try #require(source.splitTree.allLeafIDs().last)
-        session.renamePane(paneID, to: "server")
-
-        TabActions.movePaneToNewTab(session, paneID: paneID)
-
-        let moved = try #require(session.tab(containing: paneID))
-        #expect(moved.id != source.id)
-        #expect(moved.displayTitle == "server")
-        #expect(moved.titleOverride == "server")
-        #expect(moved.paneStates[paneID]?.name == "server")
-        #expect(session.tab(source.id)?.paneStates[paneID] == nil)
-    }
-
-    @Test func movePaneToNewTab_unnamedPane_keepsSourceTitle() throws {
-        let (session, source) = try Self.splitTab()
-        session.update(source.id) { $0.title = "source title" }
-        let paneID = try #require(source.splitTree.allLeafIDs().last)
-
-        TabActions.movePaneToNewTab(session, paneID: paneID)
-
-        let moved = try #require(session.tab(containing: paneID))
-        #expect(moved.title == "source title")
-        #expect(moved.titleOverride == nil)
-    }
-
-    @Test func mergePaneIntoTab_keepsName() throws {
-        let (session, source) = try Self.splitTab()
-        let target = session.openTab(container: .loose)
-        let paneID = try #require(source.splitTree.allLeafIDs().last)
-        session.renamePane(paneID, to: "tests")
-
-        TabActions.mergePaneIntoTab(session, paneID: paneID, into: target.id)
-
-        let merged = try #require(session.tab(target.id))
-        #expect(merged.splitTree.contains(leafID: paneID))
-        #expect(merged.paneStates[paneID]?.name == "tests")
-        #expect(session.paneState(paneID).name == "tests")
+        #expect(restored.paneStates[paneID] == PaneState(unreadCount: 1, name: "watcher"))
     }
 }

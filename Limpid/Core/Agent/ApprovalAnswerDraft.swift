@@ -19,9 +19,13 @@ struct ApprovalAnswerDraft: Equatable, Sendable {
     private(set) var freeText: [Int: String] = [:]
     private(set) var otherSelectedIndices: Set<Int> = []
 
+    /// A multi-select option turns on and off, as a checkbox does. A
+    /// single-select one is a radio button: pressing the chosen one again
+    /// keeps it chosen, and only another option moves the choice.
     mutating func toggle(label: String, questionIndex: Int, in question: ApprovalQuestion) {
         var labels = selectedLabels[questionIndex] ?? []
         if let index = labels.firstIndex(of: label) {
+            guard question.isMultiSelect else { return }
             labels.remove(at: index)
         } else if question.isMultiSelect {
             labels.append(label)
@@ -32,8 +36,10 @@ struct ApprovalAnswerDraft: Equatable, Sendable {
         selectedLabels[questionIndex] = labels
     }
 
+    /// "Other" follows the same rule as an option (`toggle`).
     mutating func toggleOther(questionIndex: Int, in question: ApprovalQuestion) {
         if otherSelectedIndices.contains(questionIndex) {
+            guard question.isMultiSelect else { return }
             otherSelectedIndices.remove(questionIndex)
         } else {
             selectOther(questionIndex: questionIndex, in: question)

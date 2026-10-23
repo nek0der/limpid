@@ -11,5 +11,14 @@ serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 
+# A test about a real provider runs under that provider's own descriptor. A
+# dev-dependency only: the provider crates depend on the model alone, so there
+# is no cycle and the core itself stays free of them. The model's
+# `conformance` feature brings the minimal descriptor the other tests share.
+[dev-dependencies]
+limpid-agent-model = { path = "../limpid-agent-model", features = ["conformance"] }
+limpid-provider-claude = { path = "../limpid-provider-claude" }
+limpid-provider-codex = { path = "../limpid-provider-codex" }
+
 [lints]
 workspace = true

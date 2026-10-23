@@ -46,39 +46,19 @@ struct PRStatusStoreTests {
         let info = PRInfoFixture.make(number: 1, state: .open)
         store.update(container: id, info: info)
 
-        let notified = NotificationFlag()
+        let notified = Recorded(false)
         withObservationTracking {
             _ = store.perContainer
         } onChange: {
-            notified.fire()
+            notified.value = true
         }
         store.update(container: id, info: info)
-        #expect(!notified.didFire)
+        #expect(!notified.value)
 
         // Control: a genuinely different value must still notify, so
         // the assertion above cannot pass by the tracking being dead.
         store.update(container: id, info: PRInfoFixture.make(number: 2, state: .open))
-        #expect(notified.didFire)
-    }
-
-    /// Same reasoning for `clear`, whose guard is the one that keeps a
-    /// disabled feature from waking every sidebar row on each toggle.
-    @Test("clearing an already-empty store does not notify observers")
-    func clear_whenEmpty_doesNotNotifyObservers() {
-        let store = PRStatusStore()
-        let notified = NotificationFlag()
-        withObservationTracking {
-            _ = store.perContainer
-        } onChange: {
-            notified.fire()
-        }
-        store.clear()
-        #expect(!notified.didFire)
-
-        // Control: the tracking is live, so the assertion above is not
-        // passing by the observer never having been registered.
-        store.update(container: .project(UUID()), info: PRInfoFixture.make(number: 1, state: .open))
-        #expect(notified.didFire)
+        #expect(notified.value)
     }
 
     @Test("update replaces an existing entry when the value differs")
@@ -111,59 +91,35 @@ struct PRStatusStoreTests {
     func update_nilOnAbsent_doesNotNotifyObservers() {
         let store = PRStatusStore()
         let id = ContainerID.worktree(projectID: UUID(), worktreeID: UUID())
-        let notified = NotificationFlag()
+        let notified = Recorded(false)
         withObservationTracking {
             _ = store.perContainer
         } onChange: {
-            notified.fire()
+            notified.value = true
         }
         store.update(container: id, info: nil)
-        #expect(!notified.didFire)
+        #expect(!notified.value)
         #expect(store.perContainer.isEmpty)
 
         // Control, as in the tests above.
         store.update(container: id, info: PRInfoFixture.make(number: 1, state: .open))
-        #expect(notified.didFire)
-    }
-
-    @Test("clear drops every entry")
-    func clear_resetsMap() {
-        let store = PRStatusStore()
-        store.update(container: .project(UUID()), info: PRInfoFixture.make(number: 1, state: .open))
-        store.update(
-            container: .worktree(projectID: UUID(), worktreeID: UUID()),
-            info: PRInfoFixture.make(number: 2, state: .merged)
-        )
-        store.clear()
-        #expect(store.perContainer.isEmpty)
-    }
-
-    @Test("prune keeps the live containers and drops the rest")
-    func prune_dropsContainersOutsideTheLiveSet() {
-        let store = PRStatusStore()
-        let live = ContainerID.project(UUID())
-        let gone = ContainerID.worktree(projectID: UUID(), worktreeID: UUID())
-        store.update(container: live, info: PRInfoFixture.make(number: 1, state: .open))
-        store.update(container: gone, info: PRInfoFixture.make(number: 2, state: .open))
-        store.prune(keeping: [live])
-        #expect(store.info(for: live) != nil)
-        #expect(store.info(for: gone) == nil)
+        #expect(notified.value)
     }
 
     /// A hidden worktree whose last known state had checks running
     /// would otherwise hold `PRStatusSyncer.currentInterval` at the
     /// active cadence for the rest of the session — the reason pruning
     /// the store exists at all, beyond bounding its growth.
-    @Test("prune removes an entry whose checks were still pending")
-    func prune_dropsPendingEntry() {
+    @Test("prune keeps the live containers and drops the rest")
+    func prune_dropsContainersOutsideTheLiveSet() {
         let store = PRStatusStore()
+        let live = ContainerID.project(UUID())
         let gone = ContainerID.worktree(projectID: UUID(), worktreeID: UUID())
-        store.update(
-            container: gone,
-            info: PRInfoFixture.make(number: 1, state: .open, checks: .pending)
-        )
-        store.prune(keeping: [])
-        #expect(store.perContainer.isEmpty)
+        store.update(container: live, info: PRInfoFixture.make(number: 1, state: .open))
+        store.update(container: gone, info: PRInfoFixture.make(number: 2, state: .open, checks: .pending))
+        store.prune(keeping: [live])
+        #expect(store.info(for: live) != nil)
+        #expect(store.info(for: gone) == nil)
     }
 
     @Test("pruning against an unchanged live set does not notify observers")
@@ -172,18 +128,31 @@ struct PRStatusStoreTests {
         let live = ContainerID.project(UUID())
         store.update(container: live, info: PRInfoFixture.make(number: 1, state: .open))
 
-        let notified = NotificationFlag()
+        let notified = Recorded(false)
         withObservationTracking {
             _ = store.perContainer
         } onChange: {
-            notified.fire()
+            notified.value = true
         }
         store.prune(keeping: [live])
-        #expect(!notified.didFire)
+        #expect(!notified.value)
 
         // Control, as in the tests above.
         store.prune(keeping: [])
-        #expect(notified.didFire)
+        #expect(notified.value)
     }
 
+    @Test("the forge a lookup found stays until its row goes")
+    func forge_isKeptUntilPruned() {
+        let store = PRStatusStore()
+        let kept = ContainerID.project(UUID())
+        let gone = ContainerID.project(UUID())
+        store.update(container: kept, info: nil, forge: .gitHub)
+        store.update(container: gone, info: nil, forge: .gitLab)
+        #expect(store.forge(for: kept) == .gitHub)
+        store.prune(keeping: [kept])
+        #expect(store.forge(for: gone) == nil)
+        store.update(container: kept, info: nil, forge: nil)
+        #expect(store.forge(for: kept) == nil)
+    }
 }

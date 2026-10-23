@@ -6,10 +6,11 @@
 mod approval;
 mod descriptor;
 mod normalize;
+mod usage;
 
 use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe, NormalizeError,
-    ProviderAdapter, ProviderDescriptor, ProviderOutput, RawHookInput, WorktreeIntent,
+    ProviderAdapter, ProviderDescriptor, ProviderOutput, RawHookInput, RunRecord, WorktreeIntent,
 };
 use serde_json::Value;
 
@@ -29,12 +30,16 @@ impl ProviderAdapter for CodexAdapter {
         descriptor::install_recipe()
     }
 
+    fn home_directory_variable(&self) -> Option<&'static str> {
+        Some(normalize::HOME_DIRECTORY_VARIABLE)
+    }
+
     fn normalize(
         &self,
         input: RawHookInput<'_>,
-        _context: &HookContext,
+        context: &HookContext,
     ) -> Result<Vec<AgentEvent>, NormalizeError> {
-        normalize::normalize(input)
+        normalize::normalize(input, context)
     }
 
     fn approval_request(
@@ -53,5 +58,13 @@ impl ProviderAdapter for CodexAdapter {
         input: RawHookInput<'_>,
     ) -> Result<Option<WorktreeIntent>, NormalizeError> {
         WorktreeIntent::from_hook_payload(input.bytes, "Bash")
+    }
+
+    fn transcript_path(&self, input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {
+        normalize::transcript_path(input)
+    }
+
+    fn applies_to(&self, input: RawHookInput<'_>, record: Option<&RunRecord>) -> bool {
+        normalize::applies_to(input, record)
     }
 }

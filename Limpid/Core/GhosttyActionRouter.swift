@@ -27,7 +27,9 @@ enum GhosttyEvent {
 
     case setTitle(SurfaceView, title: String)
     case setPwd(SurfaceView, pwd: String)
-    case gotoTab(rawIndex: Int32)
+    /// The surface the key went to, which names the window to act in;
+    /// `nil` for a request aimed at the app.
+    case gotoTab(SurfaceView?, rawIndex: Int32)
     case childExited(SurfaceView, exitCode: UInt32, atMs: UInt64)
     case desktopNotification(SurfaceView, title: String, body: String)
     case ringBell(SurfaceView)
@@ -135,7 +137,7 @@ enum GhosttyActionRouter {
         case GHOSTTY_ACTION_GOTO_TAB:
             let raw = action.action.goto_tab.rawValue
             log.notice("GOTO_TAB raw=\(raw, privacy: .public)")
-            return .gotoTab(rawIndex: raw)
+            return .gotoTab(surfaceView(from: target), rawIndex: raw)
 
         case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
             guard let view = surfaceView(from: target) else { return nil }
@@ -269,9 +271,14 @@ enum GhosttyActionRouter {
     private static func surfaceView(from target: ghostty_target_s) -> SurfaceView? {
         guard target.tag == GHOSTTY_TARGET_SURFACE,
               let surface = target.target.surface,
-              let userdata = ghostty_surface_userdata(surface)
+              let userdata = ghostty_surface_userdata(surface),
+              let view = SurfaceView.liveView(forUserdata: userdata)
         else { return nil }
-        return SurfaceView.liveView(forUserdata: userdata)
+        // Each surface's userdata is a token of its own view, so the view
+        // found holds this surface, or none yet while `ghostty_surface_new`
+        // is still returning it.
+        assert(view.surface == nil || view.surface == surface, "a surface's userdata led to another surface's view")
+        return view
     }
 
     // MARK: - Title sanitization

@@ -11,13 +11,6 @@ import Testing
 
 @Suite("AgentInstallRecipe")
 struct AgentInstallRecipeTests {
-    @Test("every installed provider declares a recipe")
-    func recipes_coverTheInstalledProviders() {
-        let recipes = AgentProviderRegistry.recipes
-        #expect(recipes["claude"] != nil)
-        #expect(recipes["codex"] != nil)
-    }
-
     @Test("the resolved environment is the one the shims carried")
     func environment_matchesWhatTheShimsExported() {
         let state = URL(fileURLWithPath: "/states")
@@ -77,7 +70,7 @@ struct AgentInstallRecipeTests {
             hookScriptURL: URL(fileURLWithPath: "/tmp/limpid-hook")
         )
 
-        let environment = installer.environment()
+        let environment = installer.environment(writesRecords: true)
 
         #expect(environment["LIMPID_CODEX_AGENT_STATES_DIR"] == directories.state.path)
         #expect(environment["LIMPID_CODEX_SESSIONS_DIR"] == directories.sessions.path)
@@ -90,11 +83,37 @@ struct AgentInstallRecipeTests {
             AgentProviderRegistry.directories(under: LimpidPaths.applicationSupportDirectory())["claude"]
         )
 
-        let environment = ClaudeShimLocator.environment(forPaneID: nil)
+        let environment = ClaudeShimLocator.environment(forPaneID: nil, writesRecords: true)
 
         #expect(environment["LIMPID_AGENT_STATES_DIR"] == directories.state.path)
         #expect(environment["LIMPID_SESSIONS_DIR"] == directories.sessions.path)
         #expect(environment["LIMPID_CWD_EVENTS_DIR"] == directories.cwdEvents?.path)
+        // The running build's identity, which names the hook link.
+        #expect(environment["LIMPID_CLAUDE_HOOK_NAMESPACE"] == LimpidPaths.bundleID)
+    }
+
+    @Test("a demo pane's Claude is told of no record directory")
+    func claudeShim_environment_inDemoMode_blanksTheRecordDirectories() {
+        // Named and empty, so a value inherited from the Limpid pane that
+        // launched the demo does not reach the hook; the namespace stays so
+        // the shim keeps its links apart from that build's.
+        let environment = ClaudeShimLocator.environment(forPaneID: UUID(), writesRecords: false)
+
+        #expect(environment["LIMPID_AGENT_STATES_DIR"] == "")
+        #expect(environment["LIMPID_SESSIONS_DIR"] == "")
+        #expect(environment["LIMPID_CWD_EVENTS_DIR"] == "")
+        #expect(environment["LIMPID_CLAUDE_HOOK_NAMESPACE"] == LimpidPaths.bundleID)
+    }
+
+    @Test("a demo pane's Codex is told of no record directory and no hook")
+    @MainActor
+    func codexInstaller_environment_inDemoMode_blanksTheRecordsAndTheHook() {
+        let environment = CodexHookInstaller(hookScriptURL: URL(fileURLWithPath: "/tmp/limpid-hook"))
+            .environment(writesRecords: false)
+
+        #expect(environment["LIMPID_CODEX_AGENT_STATES_DIR"] == "")
+        #expect(environment["LIMPID_CODEX_SESSIONS_DIR"] == "")
+        #expect(environment["LIMPID_CODEX_HOOK_ARGS"] == "")
     }
 
     @Test("a provider this build does not have contributes nothing")

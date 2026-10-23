@@ -3,7 +3,7 @@
 // flows through, mirroring `LimpidAppDelegate.quitGate`'s pattern for
 // ⌘Q. `AppState.init` registers `gate` with the closure that owns the
 // policy + agent check + NSAlert. Keeping the gate at the action layer
-// (not the model layer) lets the WindowSession mutator stay reusable
+// (not the model layer) lets the WorkspaceSession mutator stay reusable
 // for non-user paths (shell exit cleanup, project removal, etc.) that
 // must not prompt.
 
@@ -38,14 +38,38 @@ enum CloseConfirmer {
         let kind: Kind
         let source: Source
         let paneIDs: [UUID]
+        /// The window the close was asked in, which the question is shown
+        /// on. Nil when the caller does not know; the panes decide then.
+        var window: WindowID?
     }
 
-    /// Returns `true` when close should proceed, `false` to cancel.
-    /// `nil` (no gate registered) means "allow" so a partially-
+    /// Asks about `Request` and hands the answer to its continuation:
+    /// `true` when close should proceed, `false` to cancel. The answer can
+    /// come later, from a sheet on the window, so nothing waits on it in a
+    /// modal loop of its own; it comes at once when no confirmation is
+    /// needed. `nil` (no gate registered) means "allow" so a partially-
     /// initialized launch can still tear surfaces down.
-    nonisolated(unsafe) static var gate: (@MainActor (Request) -> Bool)?
+    nonisolated(unsafe) static var gate: (@MainActor (Request, @escaping @MainActor (Bool) -> Void) -> Void)?
 
-    static func allow(_ kind: Kind, source: Source, paneIDs: [UUID]) -> Bool {
-        gate?(Request(kind: kind, source: source, paneIDs: paneIDs)) ?? true
+    /// Runs `proceed` once the close is allowed: at once when the gate
+    /// asks nothing, after the person's answer when it asks, never when
+    /// they cancel. What `proceed` closes is read again then, since the
+    /// tab may have changed while the question was up.
+    static func confirm(
+        _ kind: Kind,
+        source: Source,
+        paneIDs: [UUID],
+        window: WindowID?,
+        then proceed: @escaping @MainActor () -> Void
+    ) {
+        guard let gate else {
+            proceed()
+            return
+        }
+        gate(Request(kind: kind, source: source, paneIDs: paneIDs, window: window)) { isAllowed in
+            if isAllowed {
+                proceed()
+            }
+        }
     }
 }

@@ -15,7 +15,7 @@ enum ReviewDiffParser {
     /// Split a blob into the lines a reader will see.
     ///
     /// Two things happen here rather than at each of the three call sites,
-    /// which is where they used to disagree. Git writes the file's own line
+    /// so the three cannot disagree. Git writes the file's own line
     /// endings through, so a CRLF file leaves a carriage return at the end of
     /// every line; it belongs to the file's encoding rather than to the line
     /// being reviewed, and it is refused on the way to a terminal — a comment

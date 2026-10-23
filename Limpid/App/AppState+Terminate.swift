@@ -28,10 +28,14 @@ extension AppState {
         let store = self.store
         let historyStore = self.historyStore
         let frecencyStore = self.frecencyStore
+        let turnReads = self.turnReads
+        let viewedLines = self.viewedLines
+        let stopLedger = self.stopLedger
         let settingsStore = self.settingsStore
         let registry = self.registry
         let agentProjection = self.agentProjection
         let tmuxPresence = self.tmuxPresence
+        let sessionLaunches = self.sessionLaunches
         return NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
@@ -54,6 +58,9 @@ extension AppState {
                     detachedPaneIDs: tmuxPresence.detachedPaneIDs
                 )
                 tmuxPresence.stop()
+                // A setup step left running would go on in a worktree no
+                // one watches.
+                sessionLaunches.cancelAll()
                 // Independent intents protect a direct agent's resume even if
                 // a concurrent hook owns the lifecycle record's advisory lock.
                 agentProjection.prepareForTermination()
@@ -61,9 +68,14 @@ extension AppState {
                 store.saveSynchronously(session.makeSnapshot())
                 historyStore.flushSynchronously()
                 frecencyStore.flushSynchronously()
+                turnReads.flushSynchronously()
+                viewedLines.flushSynchronously()
+                // The stops, so a stop that exists at quit exists after the
+                // relaunch: the person ends it, not the launch.
+                stopLedger.flushSynchronously()
                 // Flush any pending settings.json write — a slider tick
                 // or accent pick inside the 250 ms debounce window would
-                // otherwise be cancelled as the process tears down.
+                // otherwise be canceled as the process tears down.
                 settingsStore.flushSynchronously()
             }
         }

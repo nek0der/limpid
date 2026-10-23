@@ -1,7 +1,7 @@
 // SparkleUpdater.swift
 // Limpid — Sparkle integration. Holds the `SPUUpdater`, the full
 // `SPUUserDriver` (see `LimpidUpdateDriver`), and the shared
-// `UpdateStateModel` that the toolbar / popover subscribe to.
+// `UpdateStateModel` that the update controls / popover subscribe to.
 //
 // We bypass `SPUStandardUpdaterController` entirely and construct
 // `SPUUpdater(hostBundle:applicationBundle:userDriver:delegate:)`
@@ -51,9 +51,9 @@ struct UpdateDisplayItem {
 
 // MARK: - One-shot callback wrapper
 
-/// Wraps a Sparkle reply / acknowledgement / cancellation closure so
-/// it can be invoked from multiple call sites (toolbar popover, inline
-/// Settings popover, auto-dismiss timer, fallback to standard driver)
+/// Wraps a Sparkle reply / acknowledgment / cancellation closure so
+/// it can be invoked from multiple call sites (the left rail's popover,
+/// the inline Settings popover, auto-dismiss timer, fallback to standard driver)
 /// without violating Sparkle's "call exactly once" contract. First call
 /// wins; subsequent calls are silently dropped.
 ///
@@ -97,9 +97,10 @@ extension OneShot where Argument == Void {
 // MARK: - Update state
 
 /// All states the updater lifecycle can be in. Closures embedded in
-/// each case carry Sparkle's reply / cancellation / acknowledgement
-/// callbacks wrapped in `OneShot` — the popover and toolbar read them
-/// through this enum and may legitimately call from multiple surfaces.
+/// each case carry Sparkle's reply / cancellation / acknowledgment
+/// callbacks wrapped in `OneShot` — the popover and the update controls
+/// read them through this enum and may legitimately call from multiple
+/// surfaces.
 ///
 /// Not Equatable / Sendable on purpose: the OneShots aren't, and we
 /// only mutate this on `@MainActor` anyway.
@@ -122,7 +123,7 @@ enum UpdateState {
 }
 
 /// Shared observable wrapping `UpdateState`. The driver writes; the
-/// toolbar / popover read. Splitting the enum out so SwiftUI can read
+/// update controls / popover read. Splitting the enum out so SwiftUI can read
 /// the *current* state without invoking any of the embedded closures
 /// during diff.
 @MainActor
@@ -130,8 +131,8 @@ enum UpdateState {
 final class UpdateStateModel {
     var state: UpdateState = .idle
 
-    /// Convenience: display item attached to the current state, if any.
-    /// Used by the toolbar help-text tooltip without case-matching.
+    /// Convenience: display item attached to the current state, if any,
+    /// without case-matching. The driver reads it.
     var pendingItem: UpdateDisplayItem? {
         switch state {
         case let .available(item, _),
@@ -143,8 +144,9 @@ final class UpdateStateModel {
         }
     }
 
-    /// True when the toolbar should render the shippingbox / progress
-    /// affordance. `.idle` and `.notFound` (after auto-dismiss) hide it.
+    /// True when an update control (the left rail's icon) should render.
+    /// `.idle` and `.notFound` (after auto-dismiss)
+    /// hide it.
     var showsBadge: Bool {
         switch state {
         case .idle: false
@@ -180,7 +182,15 @@ final class UpdaterStack {
     let driver: LimpidUpdateDriver
     let stateModel: UpdateStateModel
 
-    init(allowsAutomaticChecks: Bool) {
+    /// `startsUpdater` is false in demo mode. Started, Sparkle checks at
+    /// once when its defaults hold no last check, as in the isolated home
+    /// `make screenshot` launches with, and a release newer than the build
+    /// would put its badge into the hero; it would also write its check
+    /// dates into the defaults the person's installed copy reads, since a
+    /// demo run of a Release build has the same bundle identifier. Not
+    /// started, it checks nothing and writes nothing, and "Check for
+    /// Updates…" does nothing in a demo run, which is for screenshots.
+    init(allowsAutomaticChecks: Bool, startsUpdater: Bool = true) {
         let stateModel = UpdateStateModel()
         let driver = LimpidUpdateDriver(stateModel: stateModel, hostBundle: .main)
         self.stateModel = stateModel
@@ -191,9 +201,10 @@ final class UpdaterStack {
             userDriver: driver,
             delegate: nil
         )
-        // Always `start()` — without it, `checkForUpdates()` (both the
-        // menu item and Settings → Check Now) silently no-ops. We
-        // still want manual checks to work in Debug, so the gating
+        guard startsUpdater else { return }
+        // Otherwise always `start()` — without it, `checkForUpdates()`
+        // (both the menu item and Settings → Check Now) silently no-ops.
+        // We still want manual checks to work in Debug, so the gating
         // happens on the auto-check schedule via
         // `automaticallyChecksForUpdates` rather than on `start()`
         // itself.
@@ -217,7 +228,7 @@ final class UpdaterStack {
 }
 
 #if DEBUG
-    /// Inject a fake state so the toolbar bubble can be visually
+    /// Inject a fake state so the update popover can be visually
     /// iterated without a real appcast / server round-trip. Hooked
     /// into the App menu (Debug builds only).
     @MainActor
@@ -226,7 +237,7 @@ final class UpdaterStack {
         /// `.available`; when the user presses Install in the popover
         /// the embedded reply closure advances us through download →
         /// extract → readyToInstall → installing → installed → idle,
-        /// each step visually inspectable in toolbar + popover. Skip /
+        /// each step visually inspectable in the rail + popover. Skip /
         /// Later route to `.idle` immediately.
         static func simulate(into model: UpdateStateModel) {
             let item = makeFakeItem()

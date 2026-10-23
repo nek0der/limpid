@@ -1,8 +1,7 @@
 #!/bin/sh
 # Limpid codex worktree intercept — the second PreToolUse hook the provider
-# calls for its shell tool. Like `limpid-hook`, it only chooses a backend:
-# the Hook Helper's `hook codex worktree` subcommand, or the previous bash
-# receiver kept as `limpid-pretool-worktree-hook.legacy` for one release.
+# calls for its shell tool. Like `limpid-hook`, it execs the Hook Helper's
+# `hook codex worktree` subcommand, and says so when the helper is missing.
 
 set -u
 
@@ -22,7 +21,8 @@ hook_dir="$(CDPATH='' cd -- "$(dirname -- "$hook_path")" 2>/dev/null && pwd -P)"
 # LIMPID_HOOK_HELPER exists for the test suites, which run this script
 # from the source tree where no bundle surrounds it.
 helper="${LIMPID_HOOK_HELPER:-$hook_dir/../../MacOS/AgentIntegrationHookHelper}"
-if [ "${LIMPID_AGENT_HOOK_BACKEND:-rust}" != "shell" ] && [ -x "$helper" ]; then
-  exec "$helper" hook codex worktree
+if [ ! -x "$helper" ]; then
+  . "$hook_dir/../agent-shim/runtime-common.sh"
+  limpid_hook_helper_missing "$helper"
 fi
-exec /bin/bash "$hook_dir/limpid-pretool-worktree-hook.legacy"
+exec "$helper" hook codex worktree

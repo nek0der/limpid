@@ -4,7 +4,7 @@
 // n/total counter. Esc closes, ⏎ / ⇧⏎ navigate.
 //
 // The overlay observes `PaneSearchState` (one per pane in
-// `WindowSession.paneSearchStates`). Needle edits flow through a
+// `WorkspaceSession.paneSearchStates`). Needle edits flow through a
 // 300ms debounce (immediate for 3+ chars or empty) into the
 // libghostty binding action `search:<needle>`. Esc / the close
 // button route through `SearchActions.endSearch`, which both drops
@@ -30,13 +30,13 @@ struct PaneSearchOverlay: View {
     var body: some View {
         ViewThatFits {
             searchBar(fieldWidth: 180, showsCounter: true, showsNavigation: true)
-                .padding(10)
+                .padding(LimpidLayout.Supervision.spaceS)
                 .fixedSize(horizontal: true, vertical: false)
             searchBar(fieldWidth: 120, showsCounter: true, showsNavigation: false)
-                .padding(10)
+                .padding(LimpidLayout.Supervision.spaceS)
                 .fixedSize(horizontal: true, vertical: false)
             searchBar(fieldWidth: nil, showsCounter: false, showsNavigation: false)
-                .padding(10)
+                .padding(LimpidLayout.Supervision.spaceS)
                 .frame(maxWidth: .infinity)
             ultraCompactSearchField
         }
@@ -46,11 +46,12 @@ struct PaneSearchOverlay: View {
         .onAppear {
             guard isInteractive else { return }
             // `ViewThatFits` chooses and mounts its winning TextField after
-            // this outer view appears. Defer one actor turn so the focus
-            // binding is attached to the visible candidate.
+            // this outer view appears. Wait until the terminal has let go
+            // (`KeyboardHandoff`), so the focus binding is attached to the
+            // visible candidate.
             focusTask?.cancel()
             focusTask = Task { @MainActor in
-                await Task.yield()
+                await KeyboardHandoff.responderSettled()
                 guard !Task.isCancelled, isInteractive else { return }
                 fieldFocused = true
             }
@@ -93,7 +94,7 @@ struct PaneSearchOverlay: View {
     ) -> some View {
         searchSurface(
             cornerRadius: fieldCornerRadius + barInset,
-            HStack(spacing: 6) {
+            HStack(spacing: LimpidLayout.Supervision.spaceSnug) {
                 searchField(width: fieldWidth, showsCounter: showsCounter)
                     .layoutPriority(1)
                 if showsNavigation {
@@ -122,15 +123,18 @@ struct PaneSearchOverlay: View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
         return content
+            // A panel floating over the terminal like the others, so in the
+            // supervision window it takes their surface and shadows too.
             .floatingPanelSurface(cornerRadius: cornerRadius)
             // Fade the complete control so an inactive search does not compete
-            // with the focused pane. A full-strength material backing remains
-            // underneath to blur terminal text instead of exposing it through
-            // the faded surface.
+            // with the focused pane. A full-strength backing of the surface's
+            // own ground remains underneath to blur terminal text instead of
+            // exposing it through the faded surface: the material, or the
+            // opaque `popover` while transparency is off or reduced.
             .opacity(displayOpacity)
             .background {
                 if !isInteractive {
-                    shape.fill(.regularMaterial)
+                    FloatingPanelFill(shape: shape)
                 } else {
                     shape.fill(.clear)
                 }
@@ -164,11 +168,11 @@ struct PaneSearchOverlay: View {
             }
         )
         .frame(width: width)
-        .padding(.leading, 8)
+        .padding(.leading, LimpidLayout.Supervision.spaceS)
         // Reserve trailing room only while the counter is visible. The
         // narrowest variant gives that space back to text entry.
         .padding(.trailing, showsCounter ? 52 : 8)
-        .padding(.vertical, 5)
+        .padding(.vertical, LimpidLayout.Supervision.spaceXS)
         .background(
             LimpidColor.rowActiveFill,
             in: RoundedRectangle(cornerRadius: fieldCornerRadius, style: .continuous)
@@ -176,7 +180,7 @@ struct PaneSearchOverlay: View {
         .overlay(alignment: .trailing) {
             if showsCounter {
                 matchCounter
-                    .padding(.trailing, 8)
+                    .padding(.trailing, LimpidLayout.Supervision.spaceS)
             }
         }
         .pointerStyle(.horizontalText)
@@ -185,30 +189,22 @@ struct PaneSearchOverlay: View {
     private func navigationButton(forward: Bool) -> some View {
         Button { navigate(forward: forward) } label: {
             Image(systemName: forward ? "chevron.down" : "chevron.up")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.supervision(.caption, weight: .semibold))
         }
         .buttonStyle(.borderless)
-        .help(
-            forward
-                ? Text("Next match (⏎)")
-                : Text("Previous match (⇧⏎)")
-        )
-        .accessibilityLabel(
-            forward
-                ? Text("Next match (⏎)")
-                : Text("Previous match (⇧⏎)")
-        )
+        // The review's find bar's names, with the key in the tooltip only:
+        // in the label VoiceOver would read it.
+        .iconButtonHelp(forward ? "Next Match" : "Previous Match", shortcut: forward ? "⏎" : "⇧⏎")
         .pointerStyle(.default)
     }
 
     private var closeButton: some View {
         Button(action: onClose) {
-            Image(systemName: "xmark")
-                .font(.system(size: 11, weight: .semibold))
+            DismissGlyph(size: .caption, weight: .semibold)
         }
         .buttonStyle(.borderless)
-        .help("Close (Esc)")
-        .accessibilityLabel(Text("Close (Esc)"))
+        // "Close" alone, inside a pane, could be the pane's own close.
+        .iconButtonHelp("Close Find Bar", shortcut: "⎋")
         .pointerStyle(.default)
     }
 
@@ -221,19 +217,24 @@ struct PaneSearchOverlay: View {
            let position = PaneSearchDirection.displayPosition(selected: selected, total: total)
         {
             Text("\(position)/\(total)")
-                .font(.system(size: 11))
+                .font(.supervision(.caption))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
+                // VoiceOver would read the slash; it hears a count instead.
+                .accessibilityLabel(Text("\(position) of \(total)", comment: "VoiceOver: the find bar’s current match, of how many"))
         } else if let total = state.total, total > 0 {
             Text("-/\(total)")
-                .font(.system(size: 11))
+                .font(.supervision(.caption))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
+                // Matches with none current yet: "-/5" would be read as symbols.
+                .accessibilityLabel(Text("\(total) matches", comment: "VoiceOver: the find bar’s matches, while none is current"))
         } else if !state.needle.isEmpty, state.total == 0 {
             Text("0")
-                .font(.system(size: 11))
+                .font(.supervision(.caption))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
+                .accessibilityLabel(Text("No matches"))
         }
     }
 
@@ -252,12 +253,12 @@ struct PaneSearchOverlay: View {
             if delayMs > 0 {
                 try? await Task.sleep(for: .milliseconds(delayMs))
             }
-            // Check cancellation on BOTH branches. The immediate-fire
-            // path (3+ chars or empty needle) used to skip the guard
-            // because there was no suspension point — but Esc /
-            // ⏎ both call `debounceTask?.cancel()` and a queued
-            // main-actor task enqueued on the same tick would run
-            // anyway, re-arming `search:<stale needle>` against a
+            // Check cancellation on BOTH branches, the immediate-fire
+            // path (3+ chars or empty needle) included, though it has no
+            // suspension point: Esc / ⏎ both call
+            // `debounceTask?.cancel()`, and a queued main-actor task
+            // enqueued on the same tick would otherwise run anyway,
+            // re-arming `search:<stale needle>` against a
             // libghostty surface we just told to `end_search`. The
             // overlay disappears while the pane stays full of stale
             // highlights.
@@ -314,7 +315,7 @@ struct PaneSearchTextField: NSViewRepresentable {
         field.isBezeled = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 12)
+        field.font = .systemFont(ofSize: LimpidFont.Supervision.Size.row.rawValue)
         field.lineBreakMode = .byClipping
         field.cell?.usesSingleLineMode = true
         return field

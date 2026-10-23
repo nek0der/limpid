@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 use limpid_agent_model::{ApprovalQuestion, ProviderId};
@@ -53,6 +53,9 @@ pub struct ApprovalRequest {
     /// Questions the provider wants answered instead of a permission; empty
     /// for an ordinary tool approval.
     pub questions: Vec<ApprovalQuestion>,
+    /// The agent run whose hook asked, for correlation only; `None` outside
+    /// a Limpid run. Never part of the key or of authorization.
+    pub agent_run_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -97,6 +100,11 @@ pub struct ApprovalBroker {
     maximum_records: usize,
     sequence: u64,
     records: BTreeMap<ApprovalKey, ApprovalSnapshot>,
+    /// Terminal records their requester has received (a `get` or `wait` that
+    /// returned them) or withdrawn. Only these may be evicted to make room:
+    /// evicting one the requester has not read yet would turn its result into
+    /// `not_found` while its hook still waits.
+    consumed: BTreeSet<ApprovalKey>,
 }
 
 impl ApprovalBroker {
@@ -107,6 +115,7 @@ impl ApprovalBroker {
             maximum_records,
             sequence: 0,
             records: BTreeMap::new(),
+            consumed: BTreeSet::new(),
         }
     }
 
@@ -147,6 +156,9 @@ impl ApprovalBroker {
             };
         }
         if self.records.len() >= self.maximum_records {
+            self.evict_one(now_ms);
+        }
+        if self.records.len() >= self.maximum_records {
             return Err(BrokerError::CapacityExceeded);
         }
         let deadline_ms = now_ms
@@ -166,6 +178,11 @@ impl ApprovalBroker {
 
     /// Returns one request visible to the principal, expiring it first when due.
     ///
+    /// A requester reading its own terminal record consumes it, which makes
+    /// the record evictable. A controller's read does not: the app looks a
+    /// record up to learn how it ended, and that must not take the result
+    /// away from the hook still waiting for it.
+    ///
     /// # Errors
     ///
     /// Returns an authorization, missing-request, or counter error.
@@ -177,7 +194,17 @@ impl ApprovalBroker {
     ) -> Result<ApprovalSnapshot, BrokerError> {
         self.expire(now_ms)?;
         Self::authorize_read(principal, key)?;
-        self.records.get(&key).cloned().ok_or(BrokerError::NotFound)
+        let record = self
+            .records
+            .get(&key)
+            .cloned()
+            .ok_or(BrokerError::NotFound)?;
+        if matches!(principal, Principal::Requester { .. })
+            && record.state != ApprovalState::Pending
+        {
+            self.consumed.insert(key);
+        }
+        Ok(record)
     }
 
     /// Applies the first controller decision to a pending request.
@@ -245,7 +272,10 @@ impl ApprovalBroker {
         let record = self.records.get_mut(&key).ok_or(BrokerError::NotFound)?;
         record.state = ApprovalState::Canceled;
         record.sequence = sequence;
-        Ok(record.clone())
+        let canceled = record.clone();
+        // The requester withdrew it, so nobody is left waiting for it.
+        self.consumed.insert(key);
+        Ok(canceled)
     }
 
     /// Returns a controller-only consistent snapshot after applying expiry.
@@ -297,6 +327,51 @@ impl ApprovalBroker {
         Ok(expired)
     }
 
+    /// How many records could not be evicted to make room right now: the
+    /// pending ones and the terminal ones still owed to their requester. A
+    /// full broker whose records are all evictable still accepts requests,
+    /// so this, not the record count, is what a capacity warning compares.
+    ///
+    /// # Errors
+    ///
+    /// Returns a counter error from applying expiry first.
+    pub fn unevictable_count(&mut self, now_ms: u64) -> Result<usize, BrokerError> {
+        self.expire(now_ms)?;
+        Ok(self
+            .records
+            .iter()
+            .filter(|(key, record)| !self.is_evictable(**key, record, now_ms))
+            .count())
+    }
+
+    /// Whether a record may give up its slot: a terminal record its
+    /// requester has consumed, or one left unconsumed for twice its request's
+    /// lifetime, after which the requester cannot still be waiting. Pending
+    /// records never may.
+    fn is_evictable(&self, key: ApprovalKey, record: &ApprovalSnapshot, now_ms: u64) -> bool {
+        record.state != ApprovalState::Pending
+            && (self.consumed.contains(&key)
+                || now_ms
+                    >= record
+                        .created_at_ms
+                        .saturating_add(record.request.timeout_ms.saturating_mul(2)))
+    }
+
+    /// Frees one slot for a new request: the evictable record that became
+    /// terminal first.
+    fn evict_one(&mut self, now_ms: u64) {
+        let evictable = self
+            .records
+            .iter()
+            .filter(|(key, record)| self.is_evictable(**key, record, now_ms))
+            .min_by_key(|(_, record)| record.sequence)
+            .map(|(key, _)| *key);
+        if let Some(key) = evictable {
+            self.records.remove(&key);
+            self.consumed.remove(&key);
+        }
+    }
+
     fn authorize_read(principal: &Principal, key: ApprovalKey) -> Result<(), BrokerError> {
         match principal {
             Principal::Requester { run_id } if *run_id == key.run_id => Ok(()),
@@ -336,6 +411,7 @@ mod tests {
             input_json: r#"{"command":"make test"}"#.into(),
             timeout_ms: 1_000,
             questions: Vec::new(),
+            agent_run_id: None,
         }
     }
 
@@ -416,6 +492,32 @@ mod tests {
     }
 
     #[test]
+    fn a_resubmit_naming_another_agent_run_conflicts() {
+        // The run that asked is part of the request's content, like its
+        // session: a retry under the same key may not move it to another run.
+        let mut broker = broker();
+        let mut request = request(1, 2);
+        request.agent_run_id = Some(id(7));
+        let requester = Principal::Requester {
+            run_id: request.key.run_id,
+        };
+        broker.submit(&requester, request.clone(), 0).unwrap();
+        let mut moved = request.clone();
+        moved.agent_run_id = Some(id(8));
+        assert_eq!(
+            broker.submit(&requester, moved, 1),
+            Err(BrokerError::RequestConflict)
+        );
+        let mut unnamed = request.clone();
+        unnamed.agent_run_id = None;
+        assert_eq!(
+            broker.submit(&requester, unnamed, 1),
+            Err(BrokerError::RequestConflict)
+        );
+        assert!(broker.submit(&requester, request, 1).is_ok());
+    }
+
+    #[test]
     fn changed_submit_conflicts_and_late_allow_is_rejected() {
         let mut broker = broker();
         let request = request(1, 2);
@@ -463,5 +565,245 @@ mod tests {
             ),
             Err(BrokerError::AlreadyTerminal)
         );
+    }
+
+    fn small_broker() -> ApprovalBroker {
+        ApprovalBroker::new(ServiceEpoch::new(id(99)), 2)
+    }
+
+    fn requester_of(request: &ApprovalRequest) -> Principal {
+        Principal::Requester {
+            run_id: request.key.run_id,
+        }
+    }
+
+    #[test]
+    fn capacity_evicts_consumed_terminal_records_first() {
+        let mut broker = small_broker();
+        let consumed = request(1, 2);
+        let waiting = request(1, 3);
+        broker
+            .submit(&requester_of(&consumed), consumed.clone(), 0)
+            .unwrap();
+        broker
+            .submit(&requester_of(&waiting), waiting.clone(), 0)
+            .unwrap();
+        for key in [consumed.key, waiting.key] {
+            broker
+                .resolve(&Principal::Controller, key, ApprovalDecision::AllowOnce, 1)
+                .unwrap();
+        }
+        broker
+            .get(&requester_of(&consumed), consumed.key, 2)
+            .unwrap();
+
+        let newcomer = request(1, 4);
+        broker
+            .submit(&requester_of(&newcomer), newcomer, 3)
+            .unwrap();
+
+        assert_eq!(
+            broker.get(&Principal::Controller, consumed.key, 4),
+            Err(BrokerError::NotFound)
+        );
+        assert!(broker.get(&Principal::Controller, waiting.key, 4).is_ok());
+    }
+
+    #[test]
+    fn capacity_never_evicts_pending_or_unconsumed() {
+        let mut broker = small_broker();
+        let pending = request(1, 2);
+        let unread = request(1, 3);
+        broker
+            .submit(&requester_of(&pending), pending.clone(), 0)
+            .unwrap();
+        broker
+            .submit(&requester_of(&unread), unread.clone(), 0)
+            .unwrap();
+        broker
+            .resolve(
+                &Principal::Controller,
+                unread.key,
+                ApprovalDecision::Deny { message: None },
+                1,
+            )
+            .unwrap();
+        // The app reading how it ended does not consume it.
+        broker.get(&Principal::Controller, unread.key, 2).unwrap();
+
+        let newcomer = request(1, 4);
+        assert_eq!(
+            broker.submit(&requester_of(&newcomer), newcomer, 3),
+            Err(BrokerError::CapacityExceeded)
+        );
+    }
+
+    #[test]
+    fn an_unread_result_survives_capacity_pressure() {
+        let mut broker = small_broker();
+        let answered = request(1, 2);
+        broker
+            .submit(&requester_of(&answered), answered.clone(), 0)
+            .unwrap();
+        broker
+            .resolve(
+                &Principal::Controller,
+                answered.key,
+                ApprovalDecision::AllowOnce,
+                1,
+            )
+            .unwrap();
+        let other = request(1, 3);
+        broker
+            .submit(&requester_of(&other), other.clone(), 1)
+            .unwrap();
+        broker.cancel(&requester_of(&other), other.key, 2).unwrap();
+        // The slot freed for this one is the withdrawn request's, not the
+        // answer the requester has yet to read.
+        let newcomer = request(1, 4);
+        broker
+            .submit(&requester_of(&newcomer), newcomer, 3)
+            .unwrap();
+
+        let result = broker
+            .get(&requester_of(&answered), answered.key, 999)
+            .unwrap();
+        assert_eq!(
+            result.state,
+            ApprovalState::Resolved(ApprovalDecision::AllowOnce)
+        );
+    }
+
+    #[test]
+    fn unconsumed_terminal_expires_after_double_lifetime() {
+        let mut broker = small_broker();
+        let live = request(1, 2);
+        let abandoned = request(1, 3);
+        broker
+            .submit(&requester_of(&live), live.clone(), 0)
+            .unwrap();
+        broker
+            .submit(&requester_of(&abandoned), abandoned.clone(), 0)
+            .unwrap();
+        broker
+            .resolve(
+                &Principal::Controller,
+                abandoned.key,
+                ApprovalDecision::AllowOnce,
+                1,
+            )
+            .unwrap();
+
+        // `abandoned` was never read; its lifetime is 1,000 ms.
+        let early = request(1, 5);
+        assert_eq!(
+            broker.submit(&requester_of(&early), early.clone(), 1_999),
+            Err(BrokerError::CapacityExceeded)
+        );
+        broker.submit(&requester_of(&early), early, 2_000).unwrap();
+        assert_eq!(
+            broker.get(&Principal::Controller, abandoned.key, 2_001),
+            Err(BrokerError::NotFound)
+        );
+    }
+
+    #[test]
+    fn eviction_takes_the_record_that_ended_first() {
+        let mut broker = ApprovalBroker::new(ServiceEpoch::new(id(99)), 3);
+        let first = request(1, 2);
+        let second = request(1, 3);
+        let live = request(1, 4);
+        for request in [&first, &second, &live] {
+            broker
+                .submit(&requester_of(request), request.clone(), 0)
+                .unwrap();
+        }
+        // `second` ends first, so it goes first even though it was submitted
+        // after `first`.
+        broker
+            .resolve(
+                &Principal::Controller,
+                second.key,
+                ApprovalDecision::AllowOnce,
+                1,
+            )
+            .unwrap();
+        broker
+            .resolve(
+                &Principal::Controller,
+                first.key,
+                ApprovalDecision::AllowOnce,
+                2,
+            )
+            .unwrap();
+        broker.get(&requester_of(&first), first.key, 3).unwrap();
+        broker.get(&requester_of(&second), second.key, 3).unwrap();
+
+        let newcomer = request(1, 5);
+        broker
+            .submit(&requester_of(&newcomer), newcomer, 4)
+            .unwrap();
+
+        assert_eq!(
+            broker.get(&Principal::Controller, second.key, 5),
+            Err(BrokerError::NotFound)
+        );
+        assert!(broker.get(&Principal::Controller, first.key, 5).is_ok());
+    }
+
+    #[test]
+    fn reading_a_pending_request_does_not_consume_it() {
+        let mut broker = small_broker();
+        let read_early = request(1, 2);
+        let other = request(1, 3);
+        broker
+            .submit(&requester_of(&read_early), read_early.clone(), 0)
+            .unwrap();
+        broker
+            .submit(&requester_of(&other), other.clone(), 0)
+            .unwrap();
+        broker
+            .get(&requester_of(&read_early), read_early.key, 1)
+            .unwrap();
+        broker
+            .resolve(
+                &Principal::Controller,
+                read_early.key,
+                ApprovalDecision::AllowOnce,
+                2,
+            )
+            .unwrap();
+
+        let newcomer = request(1, 4);
+        assert_eq!(
+            broker.submit(&requester_of(&newcomer), newcomer, 3),
+            Err(BrokerError::CapacityExceeded)
+        );
+        assert_eq!(broker.unevictable_count(3), Ok(2));
+    }
+
+    #[test]
+    fn unevictable_count_excludes_consumed_results() {
+        let mut broker = small_broker();
+        let consumed = request(1, 2);
+        let pending = request(1, 3);
+        broker
+            .submit(&requester_of(&consumed), consumed.clone(), 0)
+            .unwrap();
+        broker.submit(&requester_of(&pending), pending, 0).unwrap();
+        broker
+            .resolve(
+                &Principal::Controller,
+                consumed.key,
+                ApprovalDecision::AllowOnce,
+                1,
+            )
+            .unwrap();
+        assert_eq!(broker.unevictable_count(2), Ok(2));
+
+        broker
+            .get(&requester_of(&consumed), consumed.key, 2)
+            .unwrap();
+        assert_eq!(broker.unevictable_count(3), Ok(1));
     }
 }

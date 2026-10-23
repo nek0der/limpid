@@ -33,17 +33,26 @@ struct KeyboardPane: View {
     /// key — splitting it across source lines would change the key.
     private let footerKey: LocalizedStringKey =
         // swiftlint:disable:next line_length
-        "Click a shortcut to rebind it. Press ⎋ to cancel, ⌫ to clear back to default. ⌘1–⌘9 and ⌘⌃1–⌘⌃9 are reserved for tab and section jumps."
+        "Click a shortcut to change it. Press ⎋ to cancel, or ⌫ to restore the default. To leave one unassigned, choose Unassign from its ⋯ menu. ⌘⏎ is kept for the main button under an agent’s pane, and ⌘1–9 and ⌃⌘1–9 for moving between tabs and worktrees."
 
-    /// True when at least one action has a user override on it —
-    /// disables the Restore button when there's nothing to undo.
+    /// True when Restore has something to undo: an override, a retired
+    /// binding, or a default the person unassigned. A default given up for
+    /// the quick terminal's hotkey is not one, since Restore leaves the
+    /// hotkey where it is.
     private var hasAnyOverride: Bool {
-        !store.settings.keyboard.overrides.isEmpty
+        let keyboard = store.settings.keyboard
+        return !keyboard.overrides.isEmpty || !keyboard.retired.isEmpty || !keyboard.unassigned.isEmpty
     }
 
     var body: some View {
         @Bindable var store = store
         SettingsForm(title: "Keyboard", section: .keyboard) {
+            if store.settings.keyboard.migrationNotice != nil {
+                KeyboardMigrationSection(
+                    keyboard: $store.settings.keyboard,
+                    quickTerminalHotKey: store.settings.quickTerminal.hotKey
+                )
+            }
             ForEach(LimpidShortcutCategory.allCases) { category in
                 let actions = LimpidShortcutAction.allCases
                     .filter { $0.category == category }
@@ -88,12 +97,7 @@ struct KeyboardPane: View {
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
                         }
-                        .padding(.horizontal, 8)
-                        .frame(height: LimpidLayout.settingsRecorderPillHeight)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(Color.secondary.opacity(0.12))
-                        )
+                        .settingsRecorderPill()
                     }
                     .buttonStyle(.plain)
                     .frame(width: LimpidLayout.settingsRecorderWidth, alignment: .trailing)
@@ -105,13 +109,12 @@ struct KeyboardPane: View {
             } header: {
                 Text("System-wide")
             } footer: {
-                Text("Active in every app, not only Limpid. Change it in Quick Terminal settings.")
+                SettingsFootnote("Active in every app, not only Limpid. Change it in Quick Terminal settings.")
             }
             Section {
-                // Left-aligned destructive button, matching the
-                // shape Advanced > Restore All Defaults uses so the
-                // two reset affordances feel consistent.
-                HStack {
+                // The same trailing row Advanced > Restore Default Settings
+                // uses, so the two reset buttons sit in one place.
+                SettingsButtonRow {
                     Button(role: .destructive) {
                         showingResetConfirm = true
                     } label: {
@@ -119,10 +122,9 @@ struct KeyboardPane: View {
                     }
                     .disabled(!hasAnyOverride)
                 }
-                .settingsControlRow()
                 .settingsSearchTarget(SettingsSearchCatalog.keyboardRestoreDefaults.id)
             } footer: {
-                Text(footerKey)
+                SettingsFootnote(footerKey)
             }
         }
         .confirmationDialog(
@@ -131,14 +133,60 @@ struct KeyboardPane: View {
             titleVisibility: .visible
         ) {
             Button("Restore Defaults", role: .destructive) {
-                store.settings.keyboard.overrides.removeAll()
+                store.settings.keyboard.restoreDefaults()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             // Title already says "restore to defaults" — the message
             // only needs to flag the irreversible part. Anything
             // longer reads like an over-explanation.
-            Text("This cannot be undone.")
+            Text("This can’t be undone.")
+        }
+    }
+}
+
+// MARK: - After the update
+
+/// What the update to the supervision window's shortcuts changed:
+/// bindings that no longer apply, kept until the person discards them, and
+/// new actions left without a default because the person's own binding
+/// held its keys.
+private struct KeyboardMigrationSection: View {
+    @Binding var keyboard: KeyboardSettings
+    let quickTerminalHotKey: StoredShortcut?
+    @Environment(\.locale) private var locale
+
+    /// Kept whole on one line: the literal is the `Localizable.xcstrings`
+    /// key, and splitting it would change the key.
+    private static let footerKey: LocalizedStringKey =
+        // swiftlint:disable:next line_length
+        "Your own shortcuts were kept. New shortcuts whose default keys you had already assigned start unassigned, and shortcuts that no longer apply stay here until you discard them."
+
+    var body: some View {
+        Section {
+            ForEach(KeyboardMigrationRows.rows(keyboard, quickTerminalHotKey: quickTerminalHotKey, locale: locale)) { row in
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: row.title)
+                        if let detail = row.detail {
+                            Text(verbatim: detail)
+                                .font(.caption)
+                                .foregroundStyle(SettingsFootnote.style.color)
+                        }
+                    }
+                    if case let .retired(rawValue) = row.kind {
+                        Spacer(minLength: 12)
+                        Button("Discard") {
+                            keyboard.discardRetired(rawValue)
+                        }
+                        .accessibilityLabel(Text("Discard \(row.title)"))
+                    }
+                }
+            }
+        } header: {
+            Text("Changed by the Update")
+        } footer: {
+            SettingsFootnote(Self.footerKey)
         }
     }
 }
@@ -148,7 +196,8 @@ struct KeyboardPane: View {
 /// One action + its current shortcut + a recorder button. Tapping
 /// the trigger area starts capture; the next non-modifier keypress
 /// is validated and either stored or rejected with a row-local
-/// warning. `⎋` cancels; `⌫` resets to default.
+/// warning. `⎋` cancels; `⌫` restores the default. The ⋯ menu and the
+/// context menu unassign it.
 private struct ShortcutRow: View {
     let action: LimpidShortcutAction
     @Binding var keyboard: KeyboardSettings
@@ -159,6 +208,24 @@ private struct ShortcutRow: View {
 
     @State private var rejection: ShortcutValidation?
 
+    /// Why this action may hold the same keys as another
+    /// (`LimpidShortcutAction.sharesKeys`); `nil` for every other action.
+    private var sharedKeysNote: LocalizedStringResource? {
+        switch action {
+        case .moveProjectUp, .moveProjectDown:
+            LocalizedStringResource(
+                "Only while the sidebar has focus. Elsewhere, the same keys move between panes.",
+                comment: "Settings → Keyboard, hint of Move Project Up and Down: why they share keys"
+            )
+        case .focusPaneUp, .focusPaneDown:
+            LocalizedStringResource(
+                "While the sidebar has focus, the same keys move a project.",
+                comment: "Settings → Keyboard, hint of Focus Pane Above and Below: why they share keys"
+            )
+        default: nil
+        }
+    }
+
     var body: some View {
         // A custom row (see `settingsControlRow`) with the rejection
         // message as a second line under the label, so the row keeps the
@@ -166,30 +233,49 @@ private struct ShortcutRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(action.localizedTitle)
+                    // Two pairs of rows show the same keys (the sidebar's
+                    // and the panes' moves); this says why they do not clash.
+                    .help(sharedKeysNote.map { Text($0) } ?? Text(verbatim: ""))
+                    .accessibilityHint(sharedKeysNote.map { Text($0) } ?? Text(verbatim: ""))
                 if let message = rejection?.message {
                     Text(message)
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(SupervisionTokens.stoppedText.color)
                 }
             }
             Spacer(minLength: 12)
             // Fixed widths so the pill's trailing edge lands at the
             // form's control edge on every row, regardless of whether the
             // reset affordance is showing and regardless of the recorded
-            // glyph's width. The reset button takes a fixed slot before
-            // the pill.
+            // glyph's width. The row's menu and the reset button take fixed
+            // slots before the pill, so the pills line up with the quick
+            // terminal's hotkey row below.
             HStack(spacing: 8) {
+                Menu {
+                    menuItems
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .frame(width: LimpidLayout.settingsRecorderAccessoryWidth, alignment: .center)
+                .help(Text("More for \(Text(action.localizedTitle))"))
+                .accessibilityLabel(Text("More for \(Text(action.localizedTitle))"))
                 ZStack {
-                    if keyboard.overrides[action.rawValue] != nil {
+                    // Also for a default that was unassigned, which shows
+                    // "Unassigned" and has no override to drop.
+                    if canRestore {
                         Button {
-                            keyboard.resetOverride(for: action)
-                            rejection = nil
+                            restoreDefault()
                         } label: {
                             Image(systemName: "arrow.uturn.backward")
                         }
                         .buttonStyle(.borderless)
-                        .help("Reset to default")
-                        .accessibilityLabel(Text("Reset to default"))
+                        .help("Restore Default")
+                        // Named by its action, as a value row's ↺ is, so
+                        // VoiceOver's list of buttons tells the rows apart.
+                        .accessibilityLabel(Text(RestoreDefaultSlot.label(for: action.localizedTitle)))
                     }
                 }
                 .frame(width: LimpidLayout.settingsRecorderAccessoryWidth, alignment: .center)
@@ -204,6 +290,30 @@ private struct ShortcutRow: View {
             }
         }
         .settingsControlRow(controlHeight: LimpidLayout.settingsRecorderPillHeight)
+        .contextMenu { menuItems }
+    }
+
+    private var canRestore: Bool {
+        keyboard.canRestoreDefault(action)
+    }
+
+    /// Unassigning is here rather than on a key: ⌫ restores the default,
+    /// as in Quick Terminal (`ShortcutRecorderKey`).
+    @ViewBuilder private var menuItems: some View {
+        Button("Unassign") {
+            keyboard.unassign(action)
+            rejection = nil
+        }
+        .disabled(keyboard.shortcut(for: action) == nil)
+        Button("Restore Default") {
+            restoreDefault()
+        }
+        .disabled(!canRestore)
+    }
+
+    private func restoreDefault() {
+        keyboard.restoreDefault(for: action)
+        rejection = nil
     }
 }
 
@@ -223,7 +333,6 @@ private struct ShortcutRecorder: View {
     @Binding var recordingAction: LimpidShortcutAction?
     @Binding var rejection: ShortcutValidation?
 
-    @Environment(\.limpidAccent) private var accent
     @Environment(QuickTerminalHotKeyCenter.self) private var hotKeyCenter: QuickTerminalHotKeyCenter?
     @State private var keyMonitor: Any?
     @State private var mouseMonitor: Any?
@@ -257,20 +366,7 @@ private struct ShortcutRecorder: View {
                 .font(.system(.body, design: .default).monospacedDigit())
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.horizontal, 8)
-                .frame(height: LimpidLayout.settingsRecorderPillHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(
-                            isRecording
-                                ? accent.opacity(0.2)
-                                : Color.secondary.opacity(0.12)
-                        )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(isRecording ? accent : Color.clear, lineWidth: 1)
-                )
+                .settingsRecorderPill(isRecording: isRecording)
         }
         .buttonStyle(.plain)
         // The row is an `HStack`, not `LabeledContent`, so the action's
@@ -287,10 +383,18 @@ private struct ShortcutRecorder: View {
         // visible click on the recorder pill could be treated as
         // outside (cancels recording) or vice versa. Mirrors the
         // working pattern in `ToolbarPaletteField`.
-        .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .global)
-        } action: { _, newValue in
-            frameInPane = newValue
+        // Measured only while this row records, the one row whose frame
+        // the mouse monitor reads; in the background, so the row keeps its
+        // identity as recording starts and stops.
+        .background {
+            if isRecording {
+                Color.clear
+                    .onGeometryChange(for: CGRect.self) { proxy in
+                        proxy.frame(in: .global)
+                    } action: { _, newValue in
+                        frameInPane = newValue
+                    }
+            }
         }
         .onChange(of: recordingAction) { _, new in
             // Monitor lifecycle is driven by the shared
@@ -415,17 +519,17 @@ private struct ShortcutRecorder: View {
 
     @MainActor
     private func handleKey(_ event: NSEvent) {
-        // Esc cancels without changing anything.
-        if event.namedKey == .escape {
+        switch ShortcutRecorderKey.meaning(of: event.namedKey) {
+        case .cancel:
             stopRecording()
             return
-        }
-        // Backspace / Delete clears the override (back to default).
-        if event.namedKey == .backspace {
-            keyboard.resetOverride(for: action)
+        case .restoreDefault:
+            keyboard.restoreDefault(for: action)
             rejection = nil
             stopRecording()
             return
+        case .record:
+            break
         }
         guard let captured = StoredShortcut.capture(from: event) else {
             stopRecording()
@@ -448,7 +552,7 @@ private struct ShortcutRecorder: View {
             keyboard.setOverride(shortcut, for: action)
             rejection = nil
             stopRecording()
-        case .conflict, .reserved, .missingModifier, .quickTerminalConflict:
+        case .conflict, .conflictWithPair, .keptBySidebar, .reserved, .missingModifier, .quickTerminalConflict:
             rejection = result
             // Stay recording so the user can press another combo
             // without an extra click; Esc still cancels via

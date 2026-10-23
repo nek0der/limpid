@@ -87,9 +87,13 @@ final class ReviewSplitCodeRowView: NSView {
         codeOffset = context.codeOffset
         match = context.match
         language = context.language
-        let old = pair.old.map { "\($0.oldLine.map(String.init) ?? "-") \($0.text)" } ?? ""
-        let new = pair.new.map { "\($0.newLine.map(String.init) ?? "-") \($0.text)" } ?? ""
-        let position = LocalizedStringResource("Old \(old) → new \(new)").resolved(in: context.locale)
+        // Each side's place and kind, then its code; a context line, the
+        // same on both sides, once.
+        let sides = pair.old?.id == pair.new?.id ? [pair.old] : [pair.old, pair.new]
+        let position = AgentStatusText.spokenList(
+            sides.compactMap(\.self).flatMap { [$0.spokenPosition(locale: context.locale), $0.text] },
+            locale: context.locale
+        )
         setAccessibilityLabel(position)
         // A static text element is read from its value, not its label.
         setAccessibilityValue(position)

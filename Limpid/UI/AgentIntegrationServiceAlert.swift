@@ -5,14 +5,18 @@ import SwiftUI
 
 private struct AgentIntegrationServiceAlertModifier: ViewModifier {
     let registrar: AgentIntegrationServiceRegistrar
+    /// Whether this window shows the alert: one window does, not every one.
+    let isShown: Bool
 
     func body(content: Content) -> some View {
         content.alert(
             Text(registrar.issue?.title ?? ""),
             isPresented: Binding(
-                get: { registrar.issue != nil },
+                get: { isShown && registrar.issue != nil },
                 set: {
-                    if !$0 {
+                    // Only this window's own dismissal: one the alert left
+                    // for another window is not an answer.
+                    if !$0, isShown {
                         registrar.dismissIssue()
                     }
                 }
@@ -38,8 +42,9 @@ private struct AgentIntegrationServiceAlertModifier: ViewModifier {
 
 extension View {
     func agentIntegrationServiceAlert(
-        _ registrar: AgentIntegrationServiceRegistrar
+        _ registrar: AgentIntegrationServiceRegistrar,
+        isShown: Bool
     ) -> some View {
-        modifier(AgentIntegrationServiceAlertModifier(registrar: registrar))
+        modifier(AgentIntegrationServiceAlertModifier(registrar: registrar, isShown: isShown))
     }
 }

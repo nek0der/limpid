@@ -1,5 +1,5 @@
 // PaneActionsTests.swift
-// Limpid — tests for the pane-level verbs that wrap WindowSession mutations.
+// Limpid — the pane-level verbs that wrap WorkspaceSession mutations.
 //
 // Registry-coupled actions inject the production `NoopSurfaceRegistry`
 // (already used by SwiftUI previews) so we exercise the same code path
@@ -17,14 +17,14 @@ struct PaneActionsTests {
 
     @Test("toggleZoom on a single-leaf tab is a no-op")
     func toggleZoom_singleLeaf_doesNothing() {
-        let (session, _, _) = WindowSessionFixture.withLooseTab()
+        let (session, _, _) = WorkspaceSessionFixture.withLooseTab()
         PaneActions.toggleZoom(session)
-        #expect(session.activeTab?.zoomedLeafID == nil)
+        #expect(session.activeTab(in: session.primaryWindowID)?.zoomedLeafID == nil)
     }
 
     @Test("toggleZoom on a split tab zooms the focused leaf, then unzooms")
     func toggleZoom_splitTab_togglesFocusedLeaf() throws {
-        let (session, tab, paneA) = WindowSessionFixture.withLooseTab()
+        let (session, tab, paneA) = WorkspaceSessionFixture.withLooseTab()
         // Add a sibling pane so toggleZoom has something to act on.
         PaneActions.split(session, direction: .horizontal)
         let active = try #require(session.tab(tab.id))
@@ -40,7 +40,7 @@ struct PaneActionsTests {
 
     @Test("splitting while zoomed exits zoom so the new sibling is visible")
     func split_whileZoomed_clearsZoom() {
-        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
         PaneActions.split(session, direction: .horizontal)
         PaneActions.toggleZoom(session)
         #expect(session.tab(tab.id)?.zoomedLeafID != nil)
@@ -117,7 +117,7 @@ struct PaneActionsTests {
 
     @Test("closeActivePane clears zoom when the zoomed leaf is the one removed")
     func closeActivePane_removesZoomedLeaf_clearsZoom() {
-        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
         PaneActions.split(session, direction: .horizontal)
         PaneActions.toggleZoom(session)
@@ -127,14 +127,13 @@ struct PaneActionsTests {
         #expect(session.tab(tab.id)?.zoomedLeafID == nil)
     }
 
-    /// Regression guard for the pre-`5dcea48` bug where the registry
-    /// reconcile passed only the *active* tab's leaves, silently
-    /// sweeping every other tab's `SurfaceView`. Without the fix the
-    /// next visit to an inactive tab would spawn a fresh shell over
-    /// the still-running pty.
+    /// Closing a pane reconciles the registry with every tab's leaves, not
+    /// only the active tab's: a surface of an inactive tab left out would
+    /// be swept, and the next visit to that tab would start a fresh shell
+    /// over the pty still running.
     @Test("closeActivePane keeps inactive tabs' surfaces in the reconcile set")
     func closeActivePane_doesNotSweepInactiveTabsSurfaces() throws {
-        let (session, tabA, _, _, paneB) = WindowSessionFixture.withTwoLooseTabs()
+        let (session, tabA, _, _, paneB) = WorkspaceSessionFixture.withTwoLooseTabs()
         let registry = RecordingSurfaceRegistry()
         PaneActions.split(session, direction: .horizontal)
         // After the split, tabA holds two leaves; the focused one is the
@@ -161,7 +160,7 @@ struct PaneActionsTests {
 
     @Test("equalizeSplits routes the SplitTree primitive through the active tab")
     func equalizeSplits_drivesSplitTreeEqualize() throws {
-        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
         PaneActions.split(session, direction: .horizontal)
         // Drift the ratio off-center so equalize has work to do.
         session.update(tab.id) { t in
@@ -193,7 +192,7 @@ struct PaneActionsTests {
 
     @Test("focusPane moves the focused leaf to the immediate neighbor")
     func focusPane_splitTab_movesFocus() throws {
-        let (session, tab, paneA) = WindowSessionFixture.withLooseTab()
+        let (session, tab, paneA) = WorkspaceSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
         PaneActions.split(session, direction: .horizontal)
         // After split, focused leaf is the new pane (right of paneA).
@@ -204,15 +203,15 @@ struct PaneActionsTests {
 
     @Test("focusPane is a no-op on a single-leaf tab")
     func focusPane_singleLeaf_doesNothing() {
-        let (session, _, paneA) = WindowSessionFixture.withLooseTab()
+        let (session, _, paneA) = WorkspaceSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
         PaneActions.focusPane(session, registry: registry, direction: .right)
-        #expect(session.activeTab?.splitTree.focusedLeafID == paneA)
+        #expect(session.activeTab(in: session.primaryWindowID)?.splitTree.focusedLeafID == paneA)
     }
 
     @Test("toggleZoom pins focusedLeafID to the zoomed leaf even when focus was nil")
     func toggleZoom_pinsFocusedLeafIDToZoomedLeaf() {
-        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
         PaneActions.split(session, direction: .horizontal)
         // Wipe focus to force toggleZoom into its fallback path.
         session.update(tab.id) { $0.splitTree.focusedLeafID = nil }
@@ -224,7 +223,7 @@ struct PaneActionsTests {
 
     @Test("focusPane is a no-op while a pane is zoomed")
     func focusPane_whileZoomed_doesNotMoveFocus() throws {
-        let (session, tab, _) = WindowSessionFixture.withLooseTab()
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
         let registry = NoopSurfaceRegistry()
         PaneActions.split(session, direction: .horizontal)
         let beforeZoom = try #require(session.tab(tab.id)?.splitTree.focusedLeafID)
@@ -232,5 +231,35 @@ struct PaneActionsTests {
 
         PaneActions.focusPane(session, registry: registry, direction: .left)
         #expect(session.tab(tab.id)?.splitTree.focusedLeafID == beforeZoom)
+    }
+
+    // MARK: - In a window of its own
+
+    @Test("split, zoom, and equalize act on the tab of the window they run in")
+    func splitAndZoom_inASecondWindow_actOnThatWindowsTab() {
+        let (session, tabA, _, tabB, _) = WorkspaceSessionFixture.withTwoLooseTabs()
+        let other = WorkspaceSessionFixture.addWindow(to: session)
+        session.setActiveTab(tabB.id, in: other)
+
+        PaneActions.split(session, direction: .horizontal, in: other)
+        #expect(session.tab(tabB.id)?.splitTree.allLeafIDs().count == 2)
+        #expect(session.tab(tabA.id)?.splitTree.allLeafIDs().count == 1)
+
+        PaneActions.toggleZoom(session, in: other)
+        #expect(session.tab(tabB.id)?.zoomedLeafID != nil)
+        PaneActions.toggleZoom(session, in: other)
+        #expect(session.tab(tabB.id)?.zoomedLeafID == nil)
+        #expect(session.primarySelection.activeTabID == tabA.id)
+    }
+
+    @Test("activateAndFocus brings the pane's tab forward in the window given")
+    func activateAndFocus_inASecondWindow_leavesThePrimaryAlone() {
+        let (session, tabA, _, tabB, paneB) = WorkspaceSessionFixture.withTwoLooseTabs()
+        let other = WorkspaceSessionFixture.addWindow(to: session)
+
+        PaneActions.activateAndFocus(session, registry: NoopSurfaceRegistry(), tabID: tabB.id, paneID: paneB, in: other)
+
+        #expect(session.selection(other)?.activeTabID == tabB.id)
+        #expect(session.primarySelection.activeTabID == tabA.id)
     }
 }

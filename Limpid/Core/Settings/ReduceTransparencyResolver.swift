@@ -3,7 +3,7 @@
 // with the macOS accessibility flag into the single boolean the UI
 // needs.
 // Wraps the AppKit accessibility flag in an `@Observable` so SwiftUI
-// re-renders the slab fill the instant the user toggles macOS's System
+// re-renders the glass surfaces' fill the instant the user toggles macOS's System
 // Settings → Accessibility → Display → Reduce Transparency.
 //
 // The system flag always wins: when "Reduce Transparency" is on, AppKit
@@ -23,7 +23,7 @@ import Observation
 @MainActor
 @Observable
 final class ReduceTransparencyResolver {
-    /// Final boolean — `true` means slabs should render solid
+    /// Final boolean — `true` means glass surfaces should render solid
     /// (transparency reduced). Recomputed whenever the user-facing
     /// setting OR the system accessibility flag changes.
     private(set) var shouldReduceTransparency: Bool = false

@@ -80,17 +80,28 @@ struct ApprovalAnswerDraftTests {
         #expect(draft.answers(for: [size]) == ["Which size?": "XXL"])
     }
 
-    @Test func toggleOther_selectsKeptTextAndDeselectsIt() {
+    @Test func toggleOther_inASingleChoice_selectsKeptText_andPressingAgainKeepsIt() {
         var draft = ApprovalAnswerDraft()
         draft.setFreeText("XL", questionIndex: 0, in: size)
+        // A radio button: pressing the chosen row again leaves it chosen.
         draft.toggleOther(questionIndex: 0, in: size)
-        #expect(draft.answers(for: [size]) == nil)
-        #expect(draft.freeText[0] == "XL")
+        #expect(draft.answers(for: [size]) == ["Which size?": "XL"])
 
         draft.toggle(label: "S", questionIndex: 0, in: size)
+        #expect(draft.answers(for: [size]) == ["Which size?": "S"])
+        #expect(draft.freeText[0] == "XL")
         draft.toggleOther(questionIndex: 0, in: size)
         #expect(!draft.isSelected("S", questionIndex: 0))
         #expect(draft.answers(for: [size]) == ["Which size?": "XL"])
+    }
+
+    @Test func singleSelect_pressingTheChosenOptionAgain_keepsIt() {
+        var draft = ApprovalAnswerDraft()
+        draft.toggle(label: "S", questionIndex: 0, in: size)
+        draft.toggle(label: "S", questionIndex: 0, in: size)
+
+        #expect(draft.isSelected("S", questionIndex: 0))
+        #expect(draft.answers(for: [size]) == ["Which size?": "S"])
     }
 
     @Test func selectOtherIfFilled_reselectsKeptTextOnly() {
@@ -114,13 +125,5 @@ struct ApprovalAnswerDraftTests {
         #expect(draft.answers(for: [color]) == ["Which color?": "Red, Blue, Green"])
         draft.toggleOther(questionIndex: 0, in: color)
         #expect(draft.answers(for: [color]) == ["Which color?": "Red, Blue"])
-    }
-
-    @Test func fitsDecisionLimit_countsEncodedBytesNotCharacters() {
-        #expect(ApprovalResolution.answer(["Which color?": "Red"]).fitsDecisionLimit)
-        #expect(ApprovalResolution.answer(["q": String(repeating: "a", count: 8000)]).fitsDecisionLimit)
-        // 3,000 characters, but 9,000 UTF-8 bytes on the wire.
-        #expect(!ApprovalResolution.answer(["q": String(repeating: "あ", count: 3000)]).fitsDecisionLimit)
-        #expect(ApprovalResolution.delegate.fitsDecisionLimit)
     }
 }

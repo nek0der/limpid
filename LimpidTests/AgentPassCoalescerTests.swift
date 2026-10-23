@@ -28,7 +28,7 @@ struct AgentPassCoalescerTests {
     }
 
     @Test("requests inside the window fold into a single trailing pass")
-    func burst_foldsIntoOneTrailingPass() async throws {
+    func burst_foldsIntoOneTrailingPass() async {
         let clock = Clock()
         var passes = 0
         let coalescer = AgentPassCoalescer(window: 0.02, now: { clock.now }, run: { passes += 1 })
@@ -45,7 +45,7 @@ struct AgentPassCoalescerTests {
         // The trailing pass is what carries the last write of the burst; a
         // coalescer that only dropped events would leave the interface on
         // whatever the first pass saw.
-        try await Task.sleep(for: .seconds(0.1))
+        await pollUntil(interval: .milliseconds(5)) { passes == 2 }
         #expect(passes == 2)
     }
 
@@ -65,6 +65,30 @@ struct AgentPassCoalescerTests {
         clock.now += 0.005
         coalescer.didRun()
 
+        // Nothing says a canceled pass will never run, so this outwaits the
+        // window the pass was owed at.
+        try await Task.sleep(for: .seconds(0.1))
+        #expect(passes == 1)
+    }
+
+    @Test("a pass the rules asked for later runs then, and a newer answer replaces it")
+    func requestIn_runsLater_andTheLatestAnswerWins() async throws {
+        let clock = Clock()
+        var passes = 0
+        let coalescer = AgentPassCoalescer(window: 0.02, now: { clock.now }, run: { passes += 1 })
+
+        coalescer.request(in: .milliseconds(20))
+        // A pass by another route reads what changed, but not the moment a
+        // held notice is due, so it leaves the asked-for pass in place.
+        coalescer.didRun()
+        #expect(passes == 0)
+        await pollUntil(interval: .milliseconds(5)) { passes == 1 }
+        #expect(passes == 1)
+
+        // The next answer holds nothing, so nothing is owed. Nothing says a
+        // canceled pass will never run, so this outwaits its 20 ms.
+        coalescer.request(in: .milliseconds(20))
+        coalescer.request(in: nil)
         try await Task.sleep(for: .seconds(0.1))
         #expect(passes == 1)
     }

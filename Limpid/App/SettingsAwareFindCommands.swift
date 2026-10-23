@@ -7,17 +7,34 @@ struct SettingsAwareFindCommands: Commands {
     let state: AppState
     @FocusedValue(\.settingsSearchFocusAction) private var settingsSearchFocusAction
 
+    /// The window Find acts in: its review, or its focused pane. `nil`
+    /// while no main window is key; Settings then has Find for its own
+    /// search field, and the rest is off.
+    private var window: ProjectWindowState? {
+        state.windowRegistry.commandTarget
+    }
+
+    /// Whether Find goes to the window's review tab: while that is the tab
+    /// in front.
+    private var isReviewShown: Bool {
+        window?.review?.isShown == true
+    }
+
     var body: some Commands {
         CommandGroup(after: .textEditing) {
             let performFind: (LimpidShortcutAction) -> Void = { action in
+                guard let window else { return }
                 ReviewPresentationCommand.find(
                     action,
                     session: state.session,
-                    presentation: state.reviewPresentation,
-                    registry: state.registry
+                    isReviewShown: isReviewShown,
+                    registry: state.registry,
+                    commands: state.windowRegistry,
+                    window: window.id
                 )
             }
-            let focusedPaneID = state.session.activeTab?.splitTree.effectiveFocusedLeafID
+            let activeTab = window.flatMap { state.session.activeTab(in: $0.id) }
+            let focusedPaneID = activeTab?.splitTree.effectiveFocusedLeafID
             let hasActiveSearch = focusedPaneID.map {
                 state.session.paneSearchStates[$0] != nil
             } ?? false
@@ -42,20 +59,16 @@ struct SettingsAwareFindCommands: Commands {
                         Label("Find Next", systemImage: "chevron.down")
                     }
                     .limpidShortcut(.findNext, in: state.settingsStore)
-                    .disabled(!hasActiveSearch && !state.reviewPresentation.isPresented)
+                    .disabled(!hasActiveSearch && !isReviewShown)
                     Button {
                         performFind(.findPrevious)
                     } label: {
                         Label("Find Previous", systemImage: "chevron.up")
                     }
                     .limpidShortcut(.findPrevious, in: state.settingsStore)
-                    .disabled(!hasActiveSearch && !state.reviewPresentation.isPresented)
+                    .disabled(!hasActiveSearch && !isReviewShown)
                 }
-                .disabled(
-                    settingsSearchFocusAction == nil
-                        && state.session.activeTab == nil
-                        && !state.reviewPresentation.isPresented
-                )
+                .disabled(settingsSearchFocusAction == nil && activeTab == nil && !isReviewShown)
             }
         }
     }

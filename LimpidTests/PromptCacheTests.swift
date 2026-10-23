@@ -241,7 +241,7 @@ private final class RecordingTypist: AgentCommandTyping {
 @MainActor
 struct PromptCacheAttentionTests {
     /// A window's content, in the coordinates the test clocks report in.
-    static let windowBounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    nonisolated static let windowBounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
 
     private func publish(
         _ attention: AttentionState,
@@ -266,10 +266,8 @@ struct PromptCacheAttentionTests {
         }
         var badge = AgentBadge(state: state, updatedAt: Date(), cacheWindow: window)
         badge.isTmuxHosted = isTmuxHosted ?? tmuxActive.map { _ in true }
-        let runtime = AgentRuntimePresentation(
-            kind: .claude,
+        let runtime = AgentRuntimePresentation.test(
             runID: runID,
-            revision: 1,
             badge: badge,
             paneIDs: [paneID],
             tmuxLocations: tmux.map { [paneID: $0] } ?? [:],
@@ -290,7 +288,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func tabMark_showsTheMostUrgentRunAndNothingWhileValid() {
-        let (_, tab, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 10))
         #expect(attention.promptCacheMark(in: tab) == nil, "a healthy window shows nothing")
@@ -304,7 +302,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func typeableExpiry_onlyForAnExpiredWindowAtThePrompt() {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
         #expect(attention.expiredPromptCache(paneID: paneID) != nil)
@@ -319,46 +317,32 @@ struct PromptCacheAttentionTests {
         #expect(attention.expiredPromptCache(paneID: paneID) == nil, "expiring is not expired")
     }
 
-    @Test func summarize_typesCompactAndAnswersThatWindowOnly() throws {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+    /// Each answer types its command, or nothing, and answers that window
+    /// only: a later expiry asks again. An agent idle at its prompt is
+    /// answered as one that finished its turn.
+    @Test(arguments: [
+        (PromptCacheAction.summarize, ["/compact"], AgentState.finished),
+        (.newConversation, ["/clear"], .finished),
+        (.newConversation, ["/clear"], .idle),
+        (.continueAsIs, [], .finished)
+    ])
+    func anAnswer_typesItsCommandAndAnswersThatWindowOnly(action: PromptCacheAction, typed: [String], state: AgentState) throws {
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let typist = RecordingTypist()
-        let first = window(minutesAgo: 70)
-        publish(attention, paneID: paneID, state: .finished, window: first)
+        publish(attention, paneID: paneID, state: state, window: window(minutesAgo: 70))
         let expired = try #require(attention.expiredPromptCache(paneID: paneID))
 
-        #expect(attention.performPromptCacheAction(.summarize, for: expired, typist: typist))
-        #expect(typist.typed == ["/compact"])
+        #expect(attention.performPromptCacheAction(action, for: expired, typist: typist))
+        #expect(typist.typed == typed)
         #expect(attention.expiredPromptCache(paneID: paneID) == nil)
 
-        // A later expiry asks again.
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 65))
         #expect(attention.expiredPromptCache(paneID: paneID) != nil)
     }
 
-    @Test func newConversation_typesClear() throws {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
-        let attention = AttentionState()
-        let typist = RecordingTypist()
-        publish(attention, paneID: paneID, state: .idle, window: window(minutesAgo: 70))
-        let expired = try #require(attention.expiredPromptCache(paneID: paneID))
-        #expect(attention.performPromptCacheAction(.newConversation, for: expired, typist: typist))
-        #expect(typist.typed == ["/clear"])
-    }
-
-    @Test func continueAsIs_answersWithoutTyping() throws {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
-        let attention = AttentionState()
-        let typist = RecordingTypist()
-        publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
-        let expired = try #require(attention.expiredPromptCache(paneID: paneID))
-        #expect(attention.performPromptCacheAction(.continueAsIs, for: expired, typist: typist))
-        #expect(typist.typed.isEmpty)
-        #expect(attention.expiredPromptCache(paneID: paneID) == nil)
-    }
-
     @Test func continueAsIs_clearsTheMarksForThatWindowOnly() throws {
-        let (_, tab, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
         let expired = try #require(attention.expiredPromptCache(paneID: paneID))
@@ -374,7 +358,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func secondActivation_ofTheSameAnswer_typesNothing() throws {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let typist = RecordingTypist()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
@@ -387,7 +371,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func commands_areTypedOnlyIntoTheAgentInFront() throws {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let typist = RecordingTypist()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
@@ -408,7 +392,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func commands_followTheRecordedProcessOverItsName() throws {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let typist = RecordingTypist()
         // An npm install runs under the interpreter's name.
@@ -427,7 +411,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func commands_aRecordedProcessWinsOverAMatchingName() throws {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let typist = RecordingTypist()
         // Another `claude` in front, such as a second session started from
@@ -443,7 +427,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func commands_neverJoinADraft() throws {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let typist = RecordingTypist()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
@@ -458,7 +442,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func commands_neverFollowAKeyTypedAfterTheTurnEnded() throws {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let typist = RecordingTypist()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
@@ -472,7 +456,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func commands_typeAtACleanPromptAndLeaveTheNextAnswerOpen() throws {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let typist = RecordingTypist()
         // The user's last key was the Return that started the turn.
@@ -493,7 +477,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func commands_withoutATerminal_areDisabledAsNotInFront() {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
         let target = PromptCacheTarget(runtimeID: "claude:run", paneID: paneID)
@@ -503,7 +487,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func autoOpen_neverHangsFromAClockOutsideTheWindow() {
-        let (_, tab, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let presentation = PromptCachePanelPresentation()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
@@ -515,19 +499,14 @@ struct PromptCacheAttentionTests {
         )
         #expect(!attention.autoOpenPromptCachePanel(
             paneID: paneID,
-            in: PromptCacheAutoOpenWindow(
-                tabID: tab.id,
-                showsPaneHeader: false,
-                isAnotherPanelOpen: false,
-                bounds: Self.windowBounds
-            ),
+            in: .test(tabID: tab.id),
             presentation: presentation
         ))
         #expect(presentation.request == nil)
     }
 
     @Test func panelOpenedWhileExpiring_countsAsShownOnceItExpires() throws {
-        let (_, tab, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let presentation = PromptCachePanelPresentation()
         let target = PromptCacheTarget(runtimeID: "claude:run", paneID: paneID)
@@ -548,25 +527,20 @@ struct PromptCacheAttentionTests {
         attention.notePromptCachePanelShown(target)
         #expect(!attention.autoOpenPromptCachePanel(
             paneID: paneID,
-            in: PromptCacheAutoOpenWindow(
-                tabID: tab.id,
-                showsPaneHeader: false,
-                isAnotherPanelOpen: false,
-                bounds: PromptCacheAttentionTests.windowBounds
-            ),
+            in: .test(tabID: tab.id),
             presentation: presentation
         ), "it was seen red, so it does not open by itself")
     }
 
     @Test func tmux_aRunWhoseLocationIsUnknownTakesNoCommands() {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70), isTmuxHosted: true)
         #expect(attention.expiredPromptCache(paneID: paneID) == nil)
     }
 
     @Test func tmux_onlyTheActivePanesRunTakesTheKeys() throws {
-        let (_, tab, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let typist = RecordingTypist()
         typist.foregroundProcessName = "tmux"
@@ -591,7 +565,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func actions_doNothingOnceTheRunMovedOnOrWithoutATerminal() throws {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let typist = RecordingTypist()
         let stale = window(minutesAgo: 70)
@@ -618,7 +592,7 @@ struct PromptCacheAttentionTests {
     // MARK: Clocks, panel, and auto-open
 
     @Test func paneAndTabClocks_speakForTheRunAndItsPane() {
-        let (_, tab, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         #expect(attention.promptCacheMark(paneID: paneID) == nil)
 
@@ -630,7 +604,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func panelContent_followsTheClockAndWhetherCommandsCanBeTyped() {
-        let (_, _, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let target = PromptCacheTarget(runtimeID: "claude:run", paneID: paneID)
 
@@ -656,7 +630,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func autoOpen_opensOnceBelowTheClockFocusArrivedAt() throws {
-        let (_, tab, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let presentation = PromptCachePanelPresentation()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
@@ -664,12 +638,7 @@ struct PromptCacheAttentionTests {
         func autoOpen(showsPaneHeader: Bool = false, isAnotherPanelOpen: Bool = false) -> Bool {
             attention.autoOpenPromptCachePanel(
                 paneID: paneID,
-                in: PromptCacheAutoOpenWindow(
-                    tabID: tab.id,
-                    showsPaneHeader: showsPaneHeader,
-                    isAnotherPanelOpen: isAnotherPanelOpen,
-                    bounds: PromptCacheAttentionTests.windowBounds
-                ),
+                in: .test(tabID: tab.id, showsPaneHeader: showsPaneHeader, isAnotherPanelOpen: isAnotherPanelOpen),
                 presentation: presentation
             )
         }
@@ -695,7 +664,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func autoOpen_onlyForAnExpiryItsCommandsCanActOn() throws {
-        let (_, tab, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let presentation = PromptCachePanelPresentation()
         presentation.clockMoved(
@@ -706,12 +675,7 @@ struct PromptCacheAttentionTests {
         func autoOpen() -> Bool {
             attention.autoOpenPromptCachePanel(
                 paneID: paneID,
-                in: PromptCacheAutoOpenWindow(
-                    tabID: tab.id,
-                    showsPaneHeader: true,
-                    isAnotherPanelOpen: false,
-                    bounds: PromptCacheAttentionTests.windowBounds
-                ),
+                in: .test(tabID: tab.id, showsPaneHeader: true),
                 presentation: presentation
             )
         }
@@ -728,7 +692,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func panelTheUserOpened_countsAsTheOneAutoOpen() {
-        let (_, tab, paneID) = WindowSessionFixture.withLooseTab()
+        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let presentation = PromptCachePanelPresentation()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
@@ -741,13 +705,20 @@ struct PromptCacheAttentionTests {
 
         #expect(!attention.autoOpenPromptCachePanel(
             paneID: paneID,
-            in: PromptCacheAutoOpenWindow(
-                tabID: tab.id,
-                showsPaneHeader: false,
-                isAnotherPanelOpen: false,
-                bounds: PromptCacheAttentionTests.windowBounds
-            ),
+            in: .test(tabID: tab.id),
             presentation: presentation
         ))
+    }
+}
+
+extension PromptCacheAutoOpenWindow {
+    /// The window of `tabID`, at the suites' window size.
+    static func test(tabID: UUID, showsPaneHeader: Bool = false, isAnotherPanelOpen: Bool = false) -> Self {
+        Self(
+            tabID: tabID,
+            showsPaneHeader: showsPaneHeader,
+            isAnotherPanelOpen: isAnotherPanelOpen,
+            bounds: PromptCacheAttentionTests.windowBounds
+        )
     }
 }

@@ -92,13 +92,59 @@ typedef enum limpid_projection_result {
   LIMPID_PROJECTION_INTERNAL = 4,
   // Rust caught a panic at the FFI boundary.
   LIMPID_PROJECTION_PANIC = 5,
+  // The engine holds no proposal by that number that can still be kept:
+  // another pass's was committed since it was made (or it was this one),
+  // or later passes pushed it out. Nothing was remembered.
+  LIMPID_PROJECTION_NOT_PROPOSED = 6,
 } limpid_projection_result;
+
+// Status codes returned by the turn ABI functions, reported as `int32_t`
+// for the same reason as `limpid_provider_result`.
+typedef enum limpid_turn_result {
+  // The call ran and the output buffer holds its body: what became of
+  // each turn, a restore's, undo's, or discard's outcome (a refusal
+  // among them), a recovery, or what became of a declined wait.
+  LIMPID_TURN_OK = 0,
+  // A required pointer was null.
+  LIMPID_TURN_NULL_POINTER = 1,
+  // The input exceeded the limit.
+  LIMPID_TURN_INPUT_TOO_LARGE = 2,
+  // The input was not UTF-8 or not the JSON shape the call expects.
+  LIMPID_TURN_INVALID_INPUT = 3,
+  // The result could not be serialized.
+  LIMPID_TURN_INTERNAL = 4,
+  // Rust caught a panic at the FFI boundary.
+  LIMPID_TURN_PANIC = 5,
+  // Git could not be asked what the call needs to read (where a
+  // worktree's journals are). No body is returned in its place, as an
+  // empty one would read as nothing there.
+  LIMPID_TURN_UNREADABLE = 6,
+} limpid_turn_result;
 
 // Opaque service handle. Multiple sessions share its approval state.
 typedef struct limpid_approval_service_v1 limpid_approval_service_v1;
 
 // Opaque session handle. Its principal and hello state are host-bound.
 typedef struct limpid_approval_session_v1 limpid_approval_session_v1;
+
+// What the rules remember between passes, for one host.
+//
+// A pass proposes the next state and the host commits it once it has read
+// the answer: a pass whose answer the host could not use must leave the
+// memory as it was, or the next pass would take for done what was never
+// shown or carried out.
+//
+// Each proposal has a number, and a commit names the one it means. A
+// proposal can be kept only while the state it was made from is still the
+// committed one: a host that runs passes from more than one thread commits
+// the one whose answer it applied, and the others, made from the state that
+// commit replaced, are refused rather than undoing it. The mutex makes the
+// calls safe to make from any thread; the numbers make them mean what the
+// caller read. A panic inside a pass leaves the lock poisoned; the state
+// behind it is still whole, since a pass only reads the committed state and
+// writes its proposal last, so the lock is recovered rather than every
+// later pass failing.
+typedef struct limpid_projection_engine_v1 limpid_projection_engine_v1;
 
 // Bytes allocated by Rust for one response. Ownership transfers to the caller
 // and must be released with `limpid_approval_bytes_free_v1`.
@@ -227,12 +273,14 @@ int32_t limpid_projection_install_recipes_v1(uint8_t **out, size_t *out_len);
 
 // How the hook runtime names the files in every provider's directories, as
 // `{ "runRecordSuffix", "sessionHintSuffix", "cwdEventSuffix",
-// "worktreeEventsDirectory", "worktreeEventSuffix", "lockSuffix" }`. A run
-// record's file name is its storage id followed by `runRecordSuffix`; a resume
-// hint's and a cwd event's are the pane id followed by their suffix; worktree
-// events are the files ending in `worktreeEventSuffix` in the
-// `worktreeEventsDirectory` of the state directory; and the lock on any of
-// these files is its path followed by `lockSuffix`.
+// "worktreeEventsDirectory", "worktreeEventSuffix", "turnsDirectory",
+// "turnRecordSuffix", "lockSuffix" }`. A run record's file name is its
+// storage id followed by `runRecordSuffix`; a resume hint's and a cwd
+// event's are the pane id followed by their suffix; worktree events are the
+// files ending in `worktreeEventSuffix` in the `worktreeEventsDirectory` of
+// the state directory; turn records are the turn id followed by
+// `turnRecordSuffix` in its `turnsDirectory`; and the lock on any of these
+// files is its path followed by `lockSuffix`.
 //
 // The hook runtime writes each file under that name, and the host lists,
 // rewrites, locks, and deletes it by the same name. Reporting them here is
@@ -244,31 +292,95 @@ int32_t limpid_projection_install_recipes_v1(uint8_t **out, size_t *out_len);
 // owns the body and frees it with `limpid_approval_bytes_free_v1`.
 int32_t limpid_projection_record_layout_v1(uint8_t **out, size_t *out_len);
 
-// Reduces the records the host found into what to show and what to change.
-//
-// `state` is the body a previous call returned, or empty on the first call.
-// `input` is the `ProjectionInput` JSON, `now` the `Instants` JSON.
+// The check commands a project gets until it sets its own, as a JSON
+// array of patterns. The hook runtime classifies commands with the same
+// list, so the project settings show what is actually in force instead of a
+// copy kept on the host's side.
 //
 // # Safety
 //
-// Every non-null pointer must remain valid for its declared length for the
-// duration of this call. The output pointers must be writable, and on
-// `LIMPID_PROJECTION_OK` the caller owns the body and frees it with
-// `limpid_approval_bytes_free_v1`.
-int32_t limpid_projection_project_v1(const uint8_t *state,
-                                     size_t state_len,
-                                     const uint8_t *input,
-                                     size_t input_len,
-                                     const uint8_t *now,
-                                     size_t now_len,
-                                     uint8_t **out,
-                                     size_t *out_len);
+// The output pointers must be writable. On `LIMPID_PROJECTION_OK` the caller
+// owns the body and frees it with `limpid_approval_bytes_free_v1`.
+int32_t limpid_projection_check_defaults_v1(uint8_t **out, size_t *out_len);
+
+// An engine with nothing remembered, as the first pass after launch finds
+// it. The caller owns it and releases it with
+// `limpid_projection_engine_free_v1`.
+struct limpid_projection_engine_v1 *limpid_projection_engine_create_v1(void);
+
+// Releases an engine. A null pointer is ignored.
+//
+// # Safety
+//
+// `engine` must be null or a pointer `limpid_projection_engine_create_v1`
+// returned that has not been released, and no other call may be using it.
+void limpid_projection_engine_free_v1(struct limpid_projection_engine_v1 *engine);
+
+// Reduces the records the host found into what to show and what to change,
+// from what the engine has committed, and proposes the state that follows.
+//
+// `input` is the `ProjectionInput` JSON, `now` the `Instants` JSON; the body
+// is `{ "projection": ..., "commands": [...] }` and `proposal` the number to
+// hand `limpid_projection_engine_commit_v1`. Nothing is remembered until
+// then.
+//
+// # Safety
+//
+// `engine` must be null or a live engine; null reports
+// `LIMPID_PROJECTION_NULL_POINTER`. Every non-null pointer must remain valid
+// for its declared length for the duration of this call. The output
+// pointers must be writable, and on `LIMPID_PROJECTION_OK` the caller owns
+// the body and frees it with `limpid_approval_bytes_free_v1`.
+int32_t limpid_projection_engine_pass_v1(const struct limpid_projection_engine_v1 *engine,
+                                         const uint8_t *input,
+                                         size_t input_len,
+                                         const uint8_t *now,
+                                         size_t now_len,
+                                         uint8_t **out,
+                                         size_t *out_len,
+                                         uint64_t *proposal);
+
+// Remembers what the pass numbered `proposal` proposed, when the state it
+// was made from is still the committed one; otherwise reports
+// `LIMPID_PROJECTION_NOT_PROPOSED` and changes nothing.
+//
+// # Safety
+//
+// `engine` must be null or a live engine; null reports
+// `LIMPID_PROJECTION_NULL_POINTER`.
+int32_t limpid_projection_engine_commit_v1(const struct limpid_projection_engine_v1 *engine,
+                                           uint64_t proposal);
+
+// Counts the turns the retention sweep would take under `to` that it keeps
+// under `from`, from what the engine has committed, and deletes nothing: it
+// is the sweep's own choice (`turns_taken_by_change`), so the count the host
+// shows before a change is what the sweep then deletes, a pass's share at
+// a time.
+//
+// `change` is `{ "from": <TurnSweepInput>, "to": <TurnSweepInput> }`, `now`
+// the `Instants` JSON, and the count is written to `count`.
+//
+// # Safety
+//
+// `engine` must be null or a live engine; null reports
+// `LIMPID_PROJECTION_NULL_POINTER`. Every non-null pointer must remain valid
+// for its declared length for the duration of this call, and `count` must be
+// writable.
+int32_t limpid_projection_engine_turns_taken_v1(const struct limpid_projection_engine_v1 *engine,
+                                                const uint8_t *change,
+                                                size_t change_len,
+                                                const uint8_t *now,
+                                                size_t now_len,
+                                                uint64_t *count);
 
 // Decides what to restore or retire before the interface exists.
 //
 // # Safety
 //
-// As `limpid_projection_project_v1`.
+// Both pointers must remain valid for their declared lengths for the
+// duration of this call. The output pointers must be writable, and on
+// `LIMPID_PROJECTION_OK` the caller owns the body and frees it with
+// `limpid_approval_bytes_free_v1`.
 int32_t limpid_projection_on_launch_v1(const uint8_t *input,
                                        size_t input_len,
                                        const uint8_t *now,
@@ -280,7 +392,7 @@ int32_t limpid_projection_on_launch_v1(const uint8_t *input,
 //
 // # Safety
 //
-// As `limpid_projection_project_v1`.
+// As `limpid_projection_on_launch_v1`.
 int32_t limpid_projection_on_terminate_v1(const uint8_t *input,
                                           size_t input_len,
                                           const uint8_t *now,
@@ -370,6 +482,121 @@ int32_t limpid_provider_approval_output_v2(const uint8_t *provider,
                                            size_t decision_len,
                                            uint8_t **out,
                                            size_t *out_len);
+
+// Restores a worktree to the start of a turn. `request` is JSON:
+// `{"root":…,"turnId":…,"paneId":…,"stateDirectories":[{"provider":…,"directory":…}]}`.
+// The body is `{"outcome":"refused","refusal":{"kind":…}}` or
+// `{"outcome":"finished","journal":{…}}`, the journal's stage saying how it
+// ended.
+//
+// # Safety
+//
+// The input pointer must be readable for its length (or null with length
+// zero), and the output pointers must be writable. On `LIMPID_TURN_OK` the
+// caller owns the body and frees it with `limpid_approval_bytes_free_v1`.
+int32_t limpid_restore_turn_v1(const uint8_t *request,
+                               size_t request_len,
+                               uint8_t **out,
+                               size_t *out_len);
+
+// Undoes a restore. `request` is JSON:
+// `{"root":…,"opId":…,"stateDirectories":[…]}`. The body is as for
+// `limpid_restore_turn_v1`, the journal being the undo's own.
+//
+// # Safety
+//
+// As for `limpid_restore_turn_v1`.
+int32_t limpid_restore_undo_v1(const uint8_t *request,
+                               size_t request_len,
+                               uint8_t **out,
+                               size_t *out_len);
+
+// Discards hunks the review showed. `request` is JSON:
+// `{"root":…,"fromTree":…,"toTree":…,"turnId":…,"turnNumber":…,"paneId":…,
+// "files":[{"path":…,"hunks":["@@ … @@",…]}],"stateDirectories":[…]}`,
+// the trees being the ones the review diffed. The body is
+// `{"outcome":"refused","refusal":{…}}` or
+// `{"outcome":"finished","journal":{…}|null,"hunks":[{"path","header","result"}]}`;
+// the journal's undo is `limpid_restore_undo_v1`.
+//
+// # Safety
+//
+// As for `limpid_restore_turn_v1`.
+int32_t limpid_discard_hunks_v1(const uint8_t *request,
+                                size_t request_len,
+                                uint8_t **out,
+                                size_t *out_len);
+
+// Settles the restores of the worktree at `root` (UTF-8) that a crash cut
+// short, and drops the journals past their lifetime. The body is
+// `{"journals":[…],"settled":[…],"isIncomplete":…}`: every journal of the
+// worktree that could be read, oldest first, the operations this call
+// settled, and whether some journals are there but could not be read.
+// Those keep no other from being settled or dropped, and stay as they are;
+// when the list is incomplete the caller keeps what it knew of the rest
+// rather than read them as gone. Called at launch and before showing a
+// worktree's records. `LIMPID_TURN_UNREADABLE`, with no body, when git
+// could not say where the journals are: nothing was read or settled. A
+// folder that is no worktree of a repository has none, and is
+// `LIMPID_TURN_OK`.
+//
+// # Safety
+//
+// As for `limpid_restore_turn_v1`.
+int32_t limpid_restore_recover_v1(const uint8_t *root,
+                                  size_t root_len,
+                                  uint8_t **out,
+                                  size_t *out_len);
+
+// Deletes turns from one provider's turns directory: each turn's record and
+// the refs that pin its snapshots, together, after finishing any deletion
+// an earlier call left cut short. `directory` is the directory's path in
+// UTF-8; `turn_ids` is a JSON array of turn ids. The body is a JSON array:
+// one entry per requested id, in order, followed by one for each turn an
+// earlier interrupted call left that this call finished and the input did
+// not name, so the body can be longer than the input and an empty input
+// can yield entries. Consumers match entries by `turnId`, not by position.
+// Each is `{"outcome":"deleted","turnId":...}`, `deletedLeavingRefs` with
+// the `roots` that could not be reached, `alreadyGone`, `unreadable`, or
+// `failed` with a `reason`.
+//
+// Runs git, so the caller keeps it off the main thread.
+//
+// # Safety
+//
+// Each input pointer must be readable for its length (or null with length
+// zero), and the output pointers must be writable. On `LIMPID_TURN_OK` the
+// caller owns the body and frees it with `limpid_approval_bytes_free_v1`.
+int32_t limpid_turn_gc_apply_v1(const uint8_t *directory,
+                                size_t directory_len,
+                                const uint8_t *turn_ids,
+                                size_t turn_ids_len,
+                                uint8_t **out,
+                                size_t *out_len);
+
+// Ends a wait a projection pass read as declined (`endDeclinedWait`):
+// under the run record's lock, if the record is still that wait and its
+// transcript still reads declined, we end its turn `interrupted` with its
+// end snapshot and then end the record as an interrupt ends it
+// (`limpid_agent_hook::end_declined_wait`). `request` is a JSON object:
+// `provider`, `stateDirectory`, `storageId`, `episodeToken`, `transcriptPath`,
+// and `turnId` when the record names one. The body is
+// `{"outcome":"ended"}` once the record is written, even if the turn's write
+// was skipped or failed. It is `movedOn`, `notDeclined`, or `busy` when
+// nothing was written, and `failed` when the request is invalid or the record
+// could not be written, which can follow a turn that was.
+//
+// Runs git, so the caller keeps it off the main thread.
+//
+// # Safety
+//
+// The input pointer must be readable for its length (or null with length
+// zero), and the output pointers must be writable. On `LIMPID_TURN_OK` the
+// caller owns the body and frees it with `limpid_approval_bytes_free_v1`.
+int32_t limpid_declined_wait_end_v1(const uint8_t *request,
+                                    size_t request_len,
+                                    uint8_t **out,
+                                    size_t *out_len);
 
 #ifdef __cplusplus
 }  // extern "C"

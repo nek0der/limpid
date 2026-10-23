@@ -3,6 +3,7 @@
 //! Provider lookup is delegated to the hook runtime so all callers share one
 //! registry.
 
+use crate::transfer;
 use limpid_agent_hook::{
     GitSnapshots, HookEnv, HookOutcome, HookRuntime, NoSnapshots, SnapshotRunner, adapter_for,
     run_hook, run_worktree_hook,
@@ -302,19 +303,6 @@ unsafe fn input_bytes<'a>(pointer: *const u8, length: usize) -> Result<&'a [u8],
     Ok(unsafe { slice::from_raw_parts(pointer, length) })
 }
 
-/// Hands a byte vector to the caller as a `Box<[u8]>` allocation, the same
-/// shape `limpid_approval_bytes_free_v1` releases.
-unsafe fn transfer(body: Vec<u8>, out: *mut *mut u8, out_len: *mut usize) {
-    let body = body.into_boxed_slice();
-    let length = body.len();
-    let data = Box::into_raw(body).cast::<u8>();
-    // SAFETY: The caller guarantees both output pointers are writable.
-    unsafe {
-        ptr::write(out, data);
-        ptr::write(out_len, length);
-    }
-}
-
 fn normalize_status(error: &NormalizeError) -> i32 {
     match error {
         NormalizeError::TooLarge { .. } => PROVIDER_INPUT_TOO_LARGE,
@@ -332,7 +320,7 @@ fn provider_boundary(operation: impl FnOnce() -> Result<i32, i32>) -> Result<i32
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::limpid_approval_bytes_free_v1;
+    use crate::test_support::take_bytes;
 
     fn request(provider: &str, payload: &[u8]) -> (i32, Option<Value>) {
         let mut out: *mut u8 = ptr::dangling_mut();
@@ -365,14 +353,8 @@ mod tests {
                 &raw mut out_len,
             )
         };
-        if out.is_null() {
-            assert_eq!(out_len, 0);
-            return (status, None);
-        }
-        // SAFETY: A non-null output is the exact owned pair the call produced.
-        let bytes = unsafe { slice::from_raw_parts(out, out_len) }.to_vec();
-        unsafe { limpid_approval_bytes_free_v1(out, out_len) };
-        (status, Some(bytes))
+        // SAFETY: The pair is what this call wrote.
+        (status, unsafe { take_bytes(out, out_len) })
     }
 
     fn output_v2(provider: &str, request: &[u8], decision: &[u8]) -> (i32, Option<Vec<u8>>) {
@@ -391,25 +373,14 @@ mod tests {
                 &raw mut out_len,
             )
         };
-        if out.is_null() {
-            assert_eq!(out_len, 0);
-            return (status, None);
-        }
-        // SAFETY: A non-null output is the exact owned pair the call produced.
-        let bytes = unsafe { slice::from_raw_parts(out, out_len) }.to_vec();
-        unsafe { limpid_approval_bytes_free_v1(out, out_len) };
-        (status, Some(bytes))
+        // SAFETY: The pair is what this call wrote.
+        (status, unsafe { take_bytes(out, out_len) })
     }
 
     fn take(out: *mut u8, out_len: usize) -> Option<Value> {
-        if out.is_null() {
-            assert_eq!(out_len, 0);
-            return None;
-        }
-        // SAFETY: A non-null output is the exact owned pair the call produced.
-        let bytes = unsafe { slice::from_raw_parts(out, out_len) }.to_vec();
-        unsafe { limpid_approval_bytes_free_v1(out, out_len) };
-        Some(serde_json::from_slice(&bytes).expect("JSON body"))
+        // SAFETY: The pair is what one call wrote.
+        unsafe { take_bytes(out, out_len) }
+            .map(|bytes| serde_json::from_slice(&bytes).expect("JSON body"))
     }
 
     const CODEX_PERMISSION: &[u8] = br#"{"hook_event_name":"PermissionRequest","session_id":"s","turn_id":"t","tool_name":"Bash","tool_input":{"command":"ls"}}"#;
@@ -491,21 +462,20 @@ mod tests {
         assert!(out.is_null());
     }
 
+    /// A decision comes back as the provider's hook output, and a delegated
+    /// one with no body. The bytes themselves are each adapter's, tested
+    /// with it (`decisions_render_the_hook_output_the_agent_reads`).
     #[test]
     fn renders_decisions_and_delegates_with_an_empty_body() {
         let (status, bytes) = output("claude", br#"{"decision":"allow_once"}"#);
         assert_eq!(status, PROVIDER_OK);
-        assert_eq!(
-            bytes.as_deref(),
-            Some(&br#"{"hookSpecificOutput":{"decision":{"behavior":"allow"},"hookEventName":"PermissionRequest"}}"#[..])
-        );
+        assert!(bytes.is_some_and(|bytes| !bytes.is_empty()));
+        // The message is decoded and handed to the adapter; its bytes are
+        // the adapter's tests'.
         let (status, bytes) = output("codex", br#"{"decision":"deny","message":"Blocked"}"#);
         assert_eq!(status, PROVIDER_OK);
-        assert!(
-            bytes
-                .expect("bytes")
-                .ends_with(br#""message":"Blocked"},"hookEventName":"PermissionRequest"}}"#)
-        );
+        let bytes = String::from_utf8(bytes.expect("bytes")).expect("utf8");
+        assert!(bytes.contains(r#""message":"Blocked""#), "{bytes}");
         let (status, bytes) = output("codex", br#"{"decision":"delegate"}"#);
         assert_eq!((status, bytes), (PROVIDER_OK, None));
         let (status, bytes) = output("codex", br#"{"decision":"ask"}"#);
@@ -548,9 +518,8 @@ mod tests {
 
     #[test]
     fn hook_abi_reports_outcomes_and_writes_records() {
-        let scratch =
-            std::env::temp_dir().join(format!("limpid-bridge-hook-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&scratch).expect("scratch");
+        let scratch_dir = tempfile::tempdir().expect("scratch");
+        let scratch = scratch_dir.path().to_path_buf();
         let env = serde_json::json!({
             "LIMPID_PANE_ID": "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10",
             "LIMPID_AGENT_RUN_ID": "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11",
@@ -594,7 +563,6 @@ mod tests {
         let (status, body) = hook("nope", LIMPID_HOOK_KIND_LIFECYCLE, payload, env.as_bytes());
         assert_eq!(status, PROVIDER_OK);
         assert_eq!(body.expect("body")["outcome"], "unknown_provider");
-        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     #[test]

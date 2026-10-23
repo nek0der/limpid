@@ -118,6 +118,49 @@ enum AgentRecordFixtures {
         try state.appendingPathComponent(layout().worktreeEventsDirectory, isDirectory: true)
     }
 
+    /// Where turn records land inside the state directory `state`.
+    static func turns(in state: URL) throws -> URL {
+        try state.appendingPathComponent(layout().turnsDirectory, isDirectory: true)
+    }
+
+    /// Writes a turn record as the hook helper would, numbered `number` in
+    /// the Claude conversation `session`, and returns its file.
+    @discardableResult
+    static func writeTurn(
+        id turnID: String,
+        number: Int,
+        session: String,
+        runID: String,
+        phase: String = "finished",
+        changes: String = #"{"kind":"changed","files":2,"added":94,"removed":2,"hasBashChanges":false}"#,
+        startedAt: String = "2026-10-12T00:00:00Z",
+        in state: URL
+    ) throws -> URL {
+        let directory = try turns(in: state)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = try directory.appendingPathComponent(turnID + layout().turnRecordSuffix)
+        // A turn still under way has no end snapshot yet.
+        let end = phase == "started"
+            ? #"{"kind":"pending"}"#
+            : #"{"kind":"captured","tree":"b","root":"/r"}"#
+        let json = """
+        {"schemaVersion":1,"turnId":"\(turnID)","provider":"claude",
+         "conversation":{"provider":"claude","conversationId":"\(session)","isFallback":false},
+         "runId":"\(runID)","paneId":"\(UUID().uuidString)","displayNumber":\(number),
+         "promptHead":"add tests","startedAt":"\(startedAt)",
+         "finishedAt":"2026-10-12T00:01:30Z","phase":"\(phase)",
+         "begin":{"kind":"captured","tree":"a","root":"/r"},
+         "end":\(end),
+         "skippedBegin":[],"skippedEnd":[],
+         "changes":\(changes),"durationSeconds":90,"appliedEvents":[]}
+        """
+        // Renamed into place, as the hook writes it.
+        let staging = directory.appendingPathComponent(".\(turnID).tmp")
+        try Data(json.utf8).write(to: staging)
+        _ = try FileManager.default.replaceItemAt(url, withItemAt: staging)
+        return url
+    }
+
     /// The sidecar every writer of `url` locks.
     static func lockURL(for url: URL) throws -> URL {
         try URL(fileURLWithPath: url.path + layout().lockSuffix)
@@ -149,15 +192,6 @@ enum AgentRecordFixtures {
             else { return nil }
             return record
         }
-    }
-
-    /// The newest record launched from `paneID`. A pane can own several runs,
-    /// so the most recently updated one wins deterministically.
-    static func record(forPaneID paneID: UUID, in directory: URL) -> AgentStateRecordFixture? {
-        let pane = paneID.uuidString
-        return records(in: directory)
-            .filter { $0.paneId.caseInsensitiveCompare(pane) == .orderedSame }
-            .max { $0.updatedAt < $1.updatedAt }
     }
 
     // MARK: - Resume hints

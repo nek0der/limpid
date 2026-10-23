@@ -4,16 +4,6 @@
 import Foundation
 
 extension AttentionState {
-    func focusRuntime(_ id: String, in session: WindowSession, registry: any SurfaceViewProviding) -> Bool {
-        guard let runtime = allRuntimes.first(where: { $0.id == id }),
-              let paneID = runtime.paneIDs.sorted(by: { $0.uuidString < $1.uuidString })
-              .first(where: { session.tab(containing: $0) != nil }),
-              let tab = session.tab(containing: paneID)
-        else { return false }
-        focusAttention(in: session, registry: registry, tabID: tab.id, paneID: paneID, runtimeID: id)
-        return true
-    }
-
     var allRuntimes: [AgentRuntimePresentation] {
         runtimesByKind.values.flatMap(\.self)
     }
@@ -37,46 +27,32 @@ extension AttentionState {
     }
 
     /// Replaces the marks with the set the projection says still applies.
-    /// Guarded for the same reason as `replaceRuntimes`: the Waiting list
-    /// and the notification history read both dictionaries.
-    func replaceMarks(viewed: [String: String], dismissed: [String: String]) {
+    /// Guarded for the same reason as `replaceRuntimes`: the attention list,
+    /// the badges, and the notification history all read the marks.
+    func replaceMarks(viewed: [String: String]) {
         if viewedRuntimeTokens != viewed {
             viewedRuntimeTokens = viewed
         }
-        if dismissedRuntimeTokens != dismissed {
-            dismissedRuntimeTokens = dismissed
-        }
     }
 
+    /// A run whose turns are recorded is viewed once they are read: looking
+    /// at a turn that changed files does not read it. Any other run is
+    /// viewed by its episode's mark.
     func isViewed(_ runtime: AgentRuntimePresentation) -> Bool {
-        viewedRuntimeTokens[runtime.id] == runtime.attentionEventToken
-    }
-
-    /// Explicit × or a viewed finished turn past `viewedFinishedRetention`.
-    func isDismissed(_ runtime: AgentRuntimePresentation) -> Bool {
-        if dismissedRuntimeTokens[runtime.id] == runtime.attentionEventToken {
-            return true
+        if let decided = turnReadDecision(runtime) {
+            return decided
         }
-        return runtime.badge.state == .finished
-            && isViewed(runtime)
-            && isPastRetention(runtime.badge.updatedAt)
-    }
-
-    func dismissRuntime(_ id: String) {
-        guard let runtime = allRuntimes.first(where: { $0.id == id }), runtime.badge.state == .finished else { return }
-        dismissedRuntimeTokens[id] = runtime.attentionEventToken
-        onRuntimeAttentionChanged?()
+        return viewedRuntimeTokens[runtime.id] == runtime.attentionEventToken
     }
 
     func markVisibleRuntimesViewed(paneID: UUID) {
         var changed = false
-        for runtime in allRuntimes where runtime.paneIDs.contains(paneID) && runtime.badge.state == .finished {
-            // Focusing the outer surface does not mean we saw a background
-            // tmux pane. Only the active window's active pane is visible.
-            if let location = runtime.tmuxLocations[paneID], !location.isActive {
-                continue
-            }
-            if !isViewed(runtime) {
+        // Focusing the outer surface does not mean we saw a background tmux
+        // pane: only the active window's active pane shows the agent.
+        for runtime in allRuntimes where runtime.activeAttachmentPaneIDs.contains(paneID) && runtime.badge.state == .finished {
+            // The episode's own mark, whatever the turns say: only it is
+            // written here.
+            if viewedRuntimeTokens[runtime.id] != runtime.attentionEventToken {
                 viewedRuntimeTokens[runtime.id] = runtime.attentionEventToken
                 changed = true
             }
@@ -93,7 +69,7 @@ extension AttentionState {
         var changed = false
         for runtime in allRuntimes where runtime.badge.state == .finished {
             guard eventTokensByRuntimeID[runtime.id]?.contains(runtime.attentionEventToken) == true,
-                  !isViewed(runtime)
+                  viewedRuntimeTokens[runtime.id] != runtime.attentionEventToken
             else { continue }
             viewedRuntimeTokens[runtime.id] = runtime.attentionEventToken
             changed = true

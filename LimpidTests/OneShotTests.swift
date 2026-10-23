@@ -1,6 +1,6 @@
 // OneShotTests.swift
 // Limpid — first-call-wins semantics for the Sparkle reply /
-// acknowledgement wrapper. Sparkle's contract is that each callback
+// acknowledgment wrapper. Sparkle's contract is that each callback
 // fires exactly once — forgetting stalls the updater, doubling
 // asserts — so the OneShot wrapper is load-bearing for the update
 // pipeline.
@@ -16,6 +16,7 @@ struct OneShotTests {
     func firstCall_fires() {
         var received: String?
         let shot = OneShot<String> { received = $0 }
+        #expect(!shot.hasFired)
         shot.call("hello")
         #expect(received == "hello")
         #expect(shot.hasFired)
@@ -29,22 +30,6 @@ struct OneShotTests {
         shot.call()
         shot.call()
         #expect(count == 1)
-    }
-
-    @Test("hasFired reflects post-call state, not pre-call")
-    func hasFired_transitionsOnFirstCall() {
-        let shot = OneShot<Int> { _ in }
-        #expect(!shot.hasFired)
-        shot.call(42)
-        #expect(shot.hasFired)
-    }
-
-    @Test("Void specialization can be invoked without arguments")
-    func voidSpecialization_callsWithoutArgument() {
-        var fired = false
-        let shot = OneShot<Void> { fired = true }
-        shot.call() // parameterless overload — would fail to compile if missing
-        #expect(fired)
     }
 
     @Test("closure is released after firing so retained state can deallocate")

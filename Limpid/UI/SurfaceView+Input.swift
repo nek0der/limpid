@@ -166,4 +166,29 @@ extension SurfaceView {
             return !isPerformable
         }
     }
+
+    /// Synthesize a Return keypress (press + release) on `surface`.
+    /// Used by `typeInitialCommand(_:)` and `typeAgentCommand(_:)` to
+    /// submit typed text without depending on shell paste-mode quirks.
+    func sendReturnKey(to surface: ghostty_surface_t) {
+        let returnKeyCode = UInt32(NamedKey.return.primaryKeyCode)
+        for action in [GHOSTTY_ACTION_PRESS, GHOSTTY_ACTION_RELEASE] {
+            var key = ghostty_input_key_s()
+            key.action = action
+            key.keycode = returnKeyCode
+            key.mods = ghostty_input_mods_e(0)
+            key.consumed_mods = ghostty_input_mods_e(0)
+            key.unshifted_codepoint = 0x0D
+            key.composing = false
+            if action == GHOSTTY_ACTION_PRESS {
+                "\r".withCString { ptr in
+                    key.text = ptr
+                    _ = ghostty_surface_key(surface, key)
+                }
+            } else {
+                key.text = nil
+                _ = ghostty_surface_key(surface, key)
+            }
+        }
+    }
 }

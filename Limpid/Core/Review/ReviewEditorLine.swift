@@ -51,7 +51,7 @@ extension ReviewRow {
             .line(pair.new?.newLine)
         // Folded lines sit between the rows either side of an expander, so
         // the lines past it are not the neighbors of the lines before it.
-        case .hunk, .notice, .expander:
+        case .hunk, .notice, .expander, .file:
             .boundary
         case .comment:
             .line(nil)

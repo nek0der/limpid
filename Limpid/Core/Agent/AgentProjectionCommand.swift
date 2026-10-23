@@ -11,7 +11,7 @@ import Foundation
 /// them. The shapes mirror the Rust vocabulary exactly; anything this build
 /// does not recognize decodes as `unknown` and is skipped rather than failing
 /// the whole batch, so a newer rule set cannot stall an older host.
-struct AgentProjectionCommand: Decodable {
+struct AgentProjectionCommand: Decodable, Sendable {
     var op: AgentCommandOperation
     var target: AgentCommandTarget
     var expect: AgentCommandPrecondition
@@ -33,7 +33,7 @@ struct AgentProjectionCommand: Decodable {
 }
 
 /// What to do to the target.
-enum AgentCommandOperation: Decodable {
+enum AgentCommandOperation: Decodable, Sendable {
     case retire
     case update(AgentRecordPatch)
     case delete
@@ -44,11 +44,21 @@ enum AgentCommandOperation: Decodable {
     case markViewed(runtimeID: String, token: String)
     case cwdChanged(pane: UUID, newCwd: String, oldCwd: String?)
     case gitSyncRefetch(repoRoot: String)
+    /// Delete a turn's record and the refs that pin its snapshots together,
+    /// through `TurnGarbageCollector`, since it runs git.
+    case deleteTurn(turnID: String)
+    /// End a wait the person declined at the agent's own prompt, which no
+    /// hook reports, in the run record and its turn, through
+    /// `DeclinedWaitCloser`, since the turn's end snapshot runs git. The
+    /// fields name the wait as the pass read it; the writer checks them
+    /// again under the record lock.
+    case endDeclinedWait(episodeToken: String, turnID: String?, transcriptPath: String)
     /// An operation this build does not know. Skipped, never guessed at.
     case unknown
 
     private enum CodingKeys: String, CodingKey {
-        case op, max, lifetimeSecs, keep, runtimeId, token, pane, newCwd, oldCwd, repoRoot
+        case op, max, lifetimeSecs, keep, runtimeId, token, pane, newCwd, oldCwd, repoRoot, turnId
+        case episodeToken, transcriptPath
     }
 
     init(from decoder: any Decoder) throws {
@@ -85,6 +95,14 @@ enum AgentCommandOperation: Decodable {
             )
         case "gitSyncRefetch":
             self = try .gitSyncRefetch(repoRoot: container.decode(String.self, forKey: .repoRoot))
+        case "deleteTurn":
+            self = try .deleteTurn(turnID: container.decode(String.self, forKey: .turnId))
+        case "endDeclinedWait":
+            self = try .endDeclinedWait(
+                episodeToken: container.decode(String.self, forKey: .episodeToken),
+                turnID: container.decodeIfPresent(String.self, forKey: .turnId),
+                transcriptPath: container.decode(String.self, forKey: .transcriptPath)
+            )
         default:
             self = .unknown
         }
@@ -93,20 +111,23 @@ enum AgentCommandOperation: Decodable {
 
 /// What the command addresses, which is what decides the file to lock.
 /// Encodable too, because an outcome names the target it is about.
-enum AgentCommandTarget: Codable, Equatable {
+enum AgentCommandTarget: Codable, Equatable, Sendable {
     case record(provider: String, storageID: String)
     case sessionHint(provider: String, pane: UUID)
     case resumeIntent(runID: String)
     case worktreeEvent(provider: String, fileName: String)
     case retiredRecords(provider: String)
     case paneStore(provider: String, store: AgentPaneStoreKind)
+    /// A turn's record in a provider's turns directory, with the refs that
+    /// pin its snapshots. Not the executor's: the turn collector deletes it.
+    case turn(provider: String, turnID: String)
     /// Nothing on disk. Notifications, viewed marks, and refetches need no
     /// lock and are applied by the adapter rather than the executor.
     case host
     case unknown
 
     private enum CodingKeys: String, CodingKey {
-        case target, provider, storageId, pane, runId, fileName, store
+        case target, provider, storageId, pane, runId, fileName, store, turnId
     }
 
     init(from decoder: any Decoder) throws {
@@ -137,6 +158,8 @@ enum AgentCommandTarget: Codable, Equatable {
                 provider: provider(),
                 store: container.decode(AgentPaneStoreKind.self, forKey: .store)
             )
+        case "turn":
+            self = try .turn(provider: provider(), turnID: container.decode(String.self, forKey: .turnId))
         case "host":
             self = .host
         default:
@@ -169,6 +192,10 @@ enum AgentCommandTarget: Codable, Equatable {
             try container.encode("paneStore", forKey: .target)
             try container.encode(provider, forKey: .provider)
             try container.encode(store, forKey: .store)
+        case let .turn(provider, turnID):
+            try container.encode("turn", forKey: .target)
+            try container.encode(provider, forKey: .provider)
+            try container.encode(turnID, forKey: .turnId)
         case .host, .unknown:
             // An unrecognized target has no name to report it under, so it
             // reports as the one that needs no lock.
@@ -177,14 +204,14 @@ enum AgentCommandTarget: Codable, Equatable {
     }
 }
 
-enum AgentPaneStoreKind: String, Codable {
+enum AgentPaneStoreKind: String, Codable, Sendable {
     case sessions
     case cwdEvents
 }
 
 /// What must still hold when the lock is taken. The projection reasoned
 /// about a snapshot, and a hook may have written since.
-enum AgentCommandPrecondition: Decodable {
+enum AgentCommandPrecondition: Decodable, Sendable {
     case none
     case exists
     case recordUnchanged(storageID: String, revision: Int?, pid: String?, updatedAt: String)
@@ -223,7 +250,7 @@ enum AgentCommandPrecondition: Decodable {
 
 /// Whether a failed precondition stops the chain. A busy lock always
 /// stops it, whatever this says.
-enum AgentCommandMismatchPolicy: String, Decodable {
+enum AgentCommandMismatchPolicy: String, Decodable, Sendable {
     case `continue`
     case abort
 }
@@ -232,7 +259,7 @@ enum AgentCommandMismatchPolicy: String, Decodable {
 ///
 /// The keys are decoded one at a time because a patch names only what it
 /// touches, and synthesized decoding would require every key to be present.
-struct AgentRecordPatch: Decodable {
+struct AgentRecordPatch: Decodable, Sendable {
     var state: AgentPatchField<String>
     var pid: AgentPatchField<String>
     var killedByLimpidAt: AgentPatchField<String>
@@ -257,7 +284,7 @@ struct AgentRecordPatch: Decodable {
 
 /// The intent written at terminate so the next launch can tell a run
 /// Limpid killed from one that ended on its own.
-struct AgentResumeIntentPayload: Decodable {
+struct AgentResumeIntentPayload: Decodable, Sendable {
     var runID: String
     var paneID: UUID
     var sessionID: String
@@ -272,7 +299,7 @@ struct AgentResumeIntentPayload: Decodable {
 
 /// One announcement, with what the host must echo back so a stale delivery
 /// cannot retire a newer pending entry.
-struct AgentNotifyPayload: Decodable {
+struct AgentNotifyPayload: Decodable, Sendable {
     var provider: String
     var kind: AgentNotificationKind
     var tab: UUID
@@ -319,7 +346,7 @@ enum AgentPatchField<Value: Decodable>: Decodable {
 
 /// Why an announcement is being raised. The wording is the host's to build,
 /// because it is localized and names the provider from the registry.
-enum AgentNotificationKind: String, Decodable {
+enum AgentNotificationKind: String, Decodable, Sendable {
     case finished
     case needsInput
     case failed
@@ -361,3 +388,5 @@ enum AgentCommandOutcome: Encodable {
         }
     }
 }
+
+extension AgentPatchField: Sendable where Value: Sendable {}

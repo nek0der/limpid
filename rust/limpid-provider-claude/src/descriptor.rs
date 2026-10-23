@@ -50,6 +50,9 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
             .into_iter()
             .map(str::to_owned)
             .collect(),
+        // No agent of Claude's own is known to work in its configuration
+        // directory.
+        internal_agent_directories: Vec::new(),
     })
 }
 
@@ -106,6 +109,15 @@ mod tests {
         let template: serde_json::Value =
             serde_json::from_str(&recipe.settings_fragments[0].body).expect("template is JSON");
         assert!(template["hooks"]["PermissionRequest"].is_array());
+        // The end snapshot stages and writes a tree like the start one, so a
+        // large repository with a cold index needs the same 600 s the start
+        // has, not Claude's 60 s default.
+        for event in ["UserPromptSubmit", "Stop", "StopFailure"] {
+            assert_eq!(
+                template["hooks"][event][0]["hooks"][0]["timeout"], 600,
+                "{event}"
+            );
+        }
         // Named by placeholder rather than by token text: a typo in a token
         // compiles, installs, and leaves the agent reporting to nothing.
         let state = recipe

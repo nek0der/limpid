@@ -1,79 +1,100 @@
 // ToastView.swift
-// Limpid — bottom-anchored glass capsule that surfaces the current
-// `ToastCenter` slot. Shape borrows from macOS Mail's "Undo" banner
-// and the macOS 26 Liquid Glass capsule pattern: a single pill with
-// a tinted Undo button, fades in / out on identity change.
+// Limpid — the bottom-anchored toast that surfaces the current
+// `ToastCenter` slot, an inverted box that fades in and out on identity
+// change.
 
 import SwiftUI
 
 struct ToastHost: View {
+    /// The gap below the toast, measured from the window's bottom edge.
+    let bottomInset: CGFloat
     @Environment(ToastCenter.self) private var toastCenter
+    /// The window this host is in, which shows its own toasts only. The
+    /// one host, `WindowChromeHost`, lays this over a main window's content,
+    /// and `MainWindowContent` puts that window in the environment.
+    @Environment(ProjectWindowState.self) private var window
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var windowID: WindowID {
+        window.id
+    }
 
     var body: some View {
         VStack {
             Spacer(minLength: 0)
-            if let item = toastCenter.current {
-                ToastCapsule(item: item)
-                    .padding(.bottom, 24)
-                    // Vertical slide + spring overshoot is the kind of
-                    // motion Reduce Motion users opt out of. Drop the
-                    // move half (pure cross-fade) and flatten the
-                    // spring when the setting is on.
-                    .transition(reduceMotion
-                        ? .opacity
-                        : .move(edge: .bottom).combined(with: .opacity))
+            if let item = toastCenter.current(in: windowID) {
+                ToastCapsule(item: item, windowID: windowID)
+                    .padding(.bottom, bottomInset)
+                    // Reduce Motion stops the toast's animation: it
+                    // appears and goes at once, with no slide and no fade.
+                    .modalTransition(.transientBanner, reduceMotion: reduceMotion)
                     .id(item.id)
             }
         }
-        .allowsHitTesting(toastCenter.current != nil)
+        .allowsHitTesting(toastCenter.current(in: windowID) != nil)
         .animation(
-            reduceMotion ? .linear(duration: 0.15) : LimpidMotion.transientBanner,
-            value: toastCenter.current?.id
+            ModalMotion.transientBanner.animation(reduceMotion: reduceMotion),
+            value: toastCenter.current(in: windowID)?.id
         )
     }
 }
 
 private struct ToastCapsule: View {
     @Environment(ToastCenter.self) private var toastCenter
-    @Environment(\.limpidAccent) private var accent
+    @Environment(\.colorScheme) private var colorScheme
     let item: ToastItem
+    let windowID: WindowID
 
+    /// A box in the text color with the window's color on it, its Undo in
+    /// `toastLink`, the link color that reads on that inverted ground.
     var body: some View {
-        HStack(spacing: 12) {
+        content(
+            font: .supervision(.body),
+            linkFont: .supervision(.body, weight: .semibold),
+            text: SupervisionTokens.window.color,
+            link: SupervisionTokens.toastLink.color,
+            spacing: LimpidLayout.Supervision.toastSpacing
+        )
+        .padding(LimpidLayout.Supervision.toastInsets)
+        .background(
+            RoundedRectangle(cornerRadius: LimpidLayout.Supervision.toastCornerRadius, style: .continuous)
+                .fill(SupervisionTokens.text.color)
+                .modifier(FloatingSurfaceShadow())
+        )
+        .pointerStyle(.default)
+    }
+
+    private func content(font: Font, linkFont: Font, text: Color, link: Color, spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
             Text(display: item.message)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(.primary)
+                .font(font)
+                .foregroundStyle(text)
                 .lineLimit(2)
             if item.undo != nil {
                 Button {
-                    toastCenter.undo()
+                    toastCenter.undo(in: windowID)
                 } label: {
-                    Text("Undo")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(accent)
+                    Text("Undo", comment: "Takes back the last move: a toast's, the decision bar's after Mark as Viewed, or a restore's")
+                        .font(linkFont)
+                        .foregroundStyle(link)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // A mark across conversations takes every line back, which
+                // "Undo" alone does not say.
+                .help(item.undoLabel.map { Text($0) } ?? Text(verbatim: ""))
+                .accessibilityLabel(item.undoLabel.map { Text($0) } ?? Text("Undo"))
             }
             // No ⌘Z shortcut — Limpid runs terminal sessions where
             // ⌘Z routes into the focused pane (editor undo), so the
             // toast can't claim that key without breaking the host
             // app's primary use case. Users click Undo explicitly.
             DismissGlyphButton(label: "Dismiss") {
-                toastCenter.dismiss()
+                toastCenter.dismiss(in: windowID)
             }
+            // On the inverted box the × takes the other appearance's
+            // gray, which reads on a ground of the opposite lightness.
+            .environment(\.colorScheme, colorScheme == .dark ? .light : .dark)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            Capsule()
-                .fill(.regularMaterial)
-                .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
-        )
-        .overlay(
-            Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
-        .pointerStyle(.default)
     }
 }

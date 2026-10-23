@@ -1,6 +1,6 @@
 // TabActions+MergePaneIntoTab.swift
-// Limpid — merges a pane that's being dragged in tab column into the tab whose
-// row it was dropped on. Symmetric with `movePaneToNewTab`: the same
+// Limpid — merges a dragged pane into the pane strip tab it was dropped
+// on. Symmetric with `movePaneToNewTab`: the same
 // leaf id flows through, so libghostty keeps the surface and its PTY.
 
 import Foundation
@@ -26,9 +26,11 @@ extension TabActions {
     /// merging its pane into tab B" — the user's intent when they pick
     /// up the pane rather than the tab.
     static func mergePaneIntoTab(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         paneID: UUID,
-        into targetTabID: UUID
+        into targetTabID: UUID,
+        in window: WindowID,
+        intent: SelectionIntent
     ) {
         guard let sourceTab = session.tab(containing: paneID),
               let targetTab = session.tab(targetTabID),
@@ -39,15 +41,15 @@ extension TabActions {
         // Capture per-pane state from source before any mutation so the
         // two update() calls see consistent dictionaries. Only Tab-level
         // dictionaries need explicit migration here; `paneSearchStates`
-        // and `paneTransients` live on `WindowSession` (keyed by pane
+        // and `paneTransients` live on `WorkspaceSession` (keyed by pane
         // id, not nested under Tab), so they follow the leaf id
         // automatically and need no copy / clear step.
-        let paneState = sourceTab.paneStates[paneID]
-        let sessions = sourceTab.agentSessions.compactMapValues { $0[paneID] }
-        let badges = sourceTab.agentBadges.compactMapValues { $0[paneID] }
-        let scrollbackPath = sourceTab.scrollbackPaths[paneID]
-        let initialCommand = sourceTab.initialCommands[paneID]
-        let tmuxBinding = sourceTab.tmuxBindings[paneID]
+        let transfer = sourceTab.paneTransferState(of: paneID)
+        // The conversation that names the row goes with its pane, taken
+        // from the source here; the target keeps whichever of its own and
+        // this one started first.
+        var conversationName: ConversationName?
+        session.update(sourceTab.id) { conversationName = $0.takeConversationName(of: paneID) }
 
         // Attach the leaf to target with the SAME paneID so the
         // SurfaceView in SurfaceRegistry keeps mapping cleanly. We
@@ -57,24 +59,8 @@ extension TabActions {
             let result = t.splitTree.insert(at: pivot, direction: .horizontal, newID: paneID)
             t.splitTree = result.tree
             t.splitTree.focusedLeafID = paneID
-            if let s = paneState {
-                t.paneStates[paneID] = s
-            }
-            for (provider, hint) in sessions {
-                t.agentSessions[provider, default: [:]][paneID] = hint
-            }
-            if let s = tmuxBinding {
-                t.tmuxBindings[paneID] = s
-            }
-            for (provider, badge) in badges {
-                t.agentBadges[provider, default: [:]][paneID] = badge
-            }
-            if let s = scrollbackPath {
-                t.scrollbackPaths[paneID] = s
-            }
-            if let s = initialCommand {
-                t.initialCommands[paneID] = s
-            }
+            t.apply(transfer, to: paneID)
+            t.receiveConversationName(conversationName)
         }
 
         // Drop the pane from the source tab. zoom is per-tab so clear
@@ -85,18 +71,11 @@ extension TabActions {
             if t.zoomedLeafID == paneID {
                 t.zoomedLeafID = nil
             }
-            t.paneStates.removeValue(forKey: paneID)
-            for provider in AgentKind.allCases {
-                t.agentSessions[provider]?.removeValue(forKey: paneID)
-                t.agentBadges[provider]?.removeValue(forKey: paneID)
-            }
-            t.scrollbackPaths.removeValue(forKey: paneID)
-            t.initialCommands.removeValue(forKey: paneID)
-            t.tmuxBindings.removeValue(forKey: paneID)
+            t.removePaneTransferState(of: paneID)
         }
 
         // If the source tab held only the moved pane, it's empty now —
-        // close it so it doesn't linger as a phantom row in tab column. We
+        // close it so it doesn't linger as a phantom tab in the strip. We
         // bypass `TabActions.closeTab`'s scrollback snapshot + closed-
         // tab stack on purpose: the pane is alive in the target tab,
         // it just changed homes, so recording a "closed tab" would
@@ -105,6 +84,6 @@ extension TabActions {
             session.closeTab(sourceTab.id)
         }
 
-        session.setActiveTab(targetTabID)
+        session.setActiveTab(targetTabID, in: window, intent: intent)
     }
 }

@@ -31,7 +31,7 @@ final class WorktreeMoveSuggester {
     /// this and binds OK/Cancel back to `accept()` / `dismiss()`.
     var current: WorktreeMoveSuggestion?
 
-    private weak var session: WindowSession?
+    private weak var session: WorkspaceSession?
     /// Per-(pane, path) keys the user has actively dismissed. We keep
     /// these for the rest of the run so a Cancel sticks across more
     /// `cd`s into the same dir.
@@ -44,7 +44,7 @@ final class WorktreeMoveSuggester {
     /// the cd landed. Keyed by source tab id — the agent only ever
     /// lives in one cwd at a time, so a newer cd in the same tab
     /// supersedes any older one parked here.
-    /// Surfaces on the next `activeTabDidChange` for that tab id.
+    /// Surfaces on the next `shownTabsDidChange` that shows that tab.
     private var pending: [UUID: WorktreeMoveSuggestion] = [:]
 
     private struct SuppressionKey: Hashable {
@@ -52,7 +52,7 @@ final class WorktreeMoveSuggester {
         let path: String
     }
 
-    func bind(session: WindowSession) {
+    func bind(session: WorkspaceSession) {
         self.session = session
     }
 
@@ -125,54 +125,57 @@ final class WorktreeMoveSuggester {
     }
 
     /// Show the suggestion immediately when its source tab is what
-    /// the user is currently looking at; otherwise park it under
-    /// `pending` so an `activeTabDidChange` for that source tab can
-    /// surface it later. A suggestion already on `current` is left
+    /// the user is currently looking at (in any window); otherwise park
+    /// it under `pending` so a `shownTabsDidChange` that shows that
+    /// source tab can surface it later. A suggestion already on `current` is left
     /// alone — the user is reading it, and a fresh park supersedes
     /// any older one for the same source tab.
     private func queueOrSurface(
         _ suggestion: WorktreeMoveSuggestion,
         sourceTabID: UUID,
-        in session: WindowSession
+        in session: WorkspaceSession
     ) {
-        if session.activeTabID == sourceTabID, current == nil {
+        if session.shownTabIDs.contains(sourceTabID), current == nil {
             current = suggestion
         } else {
             pending[sourceTabID] = suggestion
         }
     }
 
-    /// Called by `WorktreeMoveSuggestionHost` on every `activeTabID`
-    /// change. Three-step:
-    ///   1. If a visible suggestion's source tab is not the new
-    ///      active tab, re-park it. Leaving it visible would re-open
-    ///      the "which tab is this about?" ambiguity the gating was
-    ///      meant to fix.
-    ///   2. If `current` is now empty and the new active tab has a
-    ///      parked suggestion, surface it.
+    /// Called by `WorktreeMoveSuggestionHost` whenever a window's tab
+    /// changes. Three-step:
+    ///   1. If a visible suggestion's source tab is no window's tab any
+    ///      more, re-park it. Leaving it visible would re-open the
+    ///      "which tab is this about?" ambiguity the gating was meant to
+    ///      fix.
+    ///   2. If `current` is now empty and a shown tab has a parked
+    ///      suggestion, surface it.
     ///   3. Drop parked entries whose source tab no longer exists.
     ///      `closeTab` doesn't notify the suggester (parked entries
     ///      are keyed by tab id, not pane id) so the cleanup rides
     ///      this signal instead.
-    func activeTabDidChange(to tabID: UUID?) {
+    func shownTabsDidChange() {
+        guard let session else { return }
+        // A suggestion is about its pane, so it is shown while its tab is
+        // in front in any window (the host draws it in that window only).
+        let shown = session.shownTabIDs
         if let visible = current,
-           let session,
            let srcTab = session.tab(containing: visible.paneID),
-           srcTab.id != tabID
+           !shown.contains(srcTab.id)
         {
             pending[srcTab.id] = visible
             current = nil
         }
-        if current == nil, let tabID, let parked = pending.removeValue(forKey: tabID) {
+        if current == nil, let tabID = pending.keys.first(where: shown.contains),
+           let parked = pending.removeValue(forKey: tabID)
+        {
             // Drop the parked entry if its source pane has since died —
             // the cd is moot if the agent that triggered it is gone.
-            if let session, session.tab(containing: parked.paneID) != nil {
+            if session.tab(containing: parked.paneID) != nil {
                 current = parked
             }
         }
-        if let session {
-            pending = pending.filter { session.tab($0.key) != nil }
-        }
+        pending = pending.filter { session.tab($0.key) != nil }
     }
 
     // MARK: - User actions
@@ -207,9 +210,33 @@ final class WorktreeMoveSuggester {
         // Reparent the source tab. The Claude pane keeps its pty (the
         // SurfaceView in the registry is keyed by paneID, not by
         // tabID, so a container swap doesn't tear it down).
-        session.update(sourceTab.id) { $0.container = newContainer }
-        session.setActiveContainer(newContainer)
-        session.setActiveTab(sourceTab.id)
+        // The windows that show the tab follow it into its new container;
+        // `setActiveTab` mirrors the container into each selection. One
+        // that shows another tab stays where it is. A worktree of another
+        // project is that project's: the tab moves there as a drag would,
+        // and the window that drew it switches to that project to show it,
+        // or the window that shows the project already does, brought
+        // forward (`setActiveTab`).
+        // Only a window that draws the tab is where the person said OK; one
+        // that has it selected without drawing it (hidden, or on a scratch
+        // tab another window draws) is moved along as a repair, which never
+        // takes it to another project nor brings it forward.
+        let showing = session.windows(selecting: sourceTab.id)
+        let drawing = Set(session.windows(showing: sourceTab.id))
+        if sourceTab.container.projectID == target.projectID {
+            session.update(sourceTab.id) { $0.container = newContainer }
+            // A view that holds the tab follows it as a window would, so
+            // its row and tab still agree (`projectViews`).
+            if var view = session.projectViews[target.projectID], view.activeTabID == sourceTab.id {
+                view.activeContainerID = newContainer
+                session.projectViews[target.projectID] = view
+            }
+        } else {
+            session.moveTab(sourceTab.id, to: newContainer)
+        }
+        for window in showing {
+            session.setActiveTab(sourceTab.id, in: window, intent: drawing.contains(window) ? .person : .repair)
+        }
     }
 
     /// User clicked Cancel. Suppress further suggestions for the same
@@ -225,25 +252,24 @@ final class WorktreeMoveSuggester {
 
     // MARK: - Synchronous matchers
 
-    /// Walk every tab to locate the pane's owning tab, plus the project
-    /// id the tab points at. We can't suggest anything when the tab
-    /// isn't tied to a project (loose tabs, plain groups).
+    /// Returns the pane's owning tab, plus the project id the tab points at. We
+    /// go through the session's own pane lookup so this matcher and every
+    /// other pane-to-tab question share one answer. We can't suggest
+    /// anything when the tab isn't tied to a project (scratch tabs).
     private func resolveSourceTab(
         paneID: UUID,
-        in session: WindowSession
+        in session: WorkspaceSession
     ) -> (Tab, UUID)? {
-        for tab in session.tabs where tab.splitTree.allLeafIDs().contains(paneID) {
-            guard let projectID = tab.container.projectID else { return nil }
-            return (tab, projectID)
-        }
-        return nil
+        guard let tab = session.tab(containing: paneID),
+              let projectID = tab.container.projectID else { return nil }
+        return (tab, projectID)
     }
 
     /// Outcome of the case A matcher. The three states let
     /// `handleEvent` decide both whether to surface a banner AND
     /// whether case B is still appropriate. Conflating "no match" with
-    /// "matched, source already there" used to land case B with the
-    /// path of a registered worktree and produce duplicate rows in
+    /// "matched, source already there" would land case B with the path
+    /// of a registered worktree and produce duplicate rows in
     /// `attachGitWorktree`.
     enum RegisteredMatch: Equatable {
         /// No registered worktree of the project contains `newCwd`.
@@ -271,7 +297,7 @@ final class WorktreeMoveSuggester {
         var bestLength = 0
         for wt in sourceProject.worktrees where !wt.isHidden {
             let wtPath = wt.workingDirectory.path
-            if pathIsInsideStatic(newCwd, of: wtPath), wtPath.count > bestLength {
+            if RepositoryPath.contains(wtPath, newCwd), wtPath.count > bestLength {
                 bestMatch = wt
                 bestLength = wtPath.count
             }
@@ -304,14 +330,14 @@ final class WorktreeMoveSuggester {
         do {
             list = try await GitWorktreeList.fetch(repoRoot: url)
         } catch {
-            log.debug("git worktree list failed at \(newCwd, privacy: .public): \(String(describing: error), privacy: .public)")
+            log.debug("git worktree list failed at \(newCwd, privacy: .private): \(String(describing: error), privacy: .private)")
             return nil
         }
         guard !list.isEmpty else { return nil }
         // Main worktree is the first entry; match it against the
         // registered project rootURLs.
-        let mainPath = standardize(list[0].path.path)
-        guard let project = projects.first(where: { standardize($0.1.path) == mainPath }) else {
+        let mainPath = RepositoryPath.standardized(list[0].path.path)
+        guard let project = projects.first(where: { RepositoryPath.standardized($0.1.path) == mainPath }) else {
             return nil
         }
         // Locate the worktree entry that contains newCwd (longest
@@ -320,7 +346,7 @@ final class WorktreeMoveSuggester {
         var bestLength = 0
         for info in list {
             let p = info.path.path
-            if pathIsInsideStatic(newCwd, of: p), p.count > bestLength {
+            if RepositoryPath.contains(p, newCwd), p.count > bestLength {
                 bestMatch = info
                 bestLength = p.count
             }
@@ -329,7 +355,7 @@ final class WorktreeMoveSuggester {
         // The main worktree is the project root — moving into it isn't
         // a "worktree" suggestion (the project already owns it). The
         // existing PWD action surfaces the cwd there.
-        if standardize(info.path.path) == mainPath {
+        if RepositoryPath.standardized(info.path.path) == mainPath {
             return nil
         }
         let label = info.branch ?? info.path.lastPathComponent
@@ -343,31 +369,5 @@ final class WorktreeMoveSuggester {
                 label: label
             )
         )
-    }
-
-    // MARK: - Path helpers
-
-    private func pathIsInside(_ child: String, of parent: String) -> Bool {
-        Self.pathIsInsideStatic(child, of: parent)
-    }
-
-    private static func pathIsInsideStatic(_ child: String, of parent: String) -> Bool {
-        let c = standardize(child)
-        let p = standardize(parent)
-        if c == p {
-            return true
-        }
-        return c.hasPrefix(p + "/")
-    }
-
-    /// Trim a trailing slash so `/a` and `/a/` compare equal. We do
-    /// not resolve symlinks — the hook reports paths the agent sees,
-    /// and resolving would force a stat on every event.
-    private static func standardize(_ path: String) -> String {
-        var s = path
-        while s.count > 1, s.hasSuffix("/") {
-            s.removeLast()
-        }
-        return s
     }
 }

@@ -11,6 +11,7 @@
       "compact": false,
       "cwd": "/tmp/example",
       "session_id": "00000000-0000-4000-8000-000000000001",
+      "source": "startup",
       "type": "session_started"
     }
   ],
@@ -35,18 +36,7 @@
   ],
   [
     {
-      "name": "Notification",
-      "payload": {
-        "cwd": "/tmp/example",
-        "hook_event_name": "Notification",
-        "message": "Claude is waiting for your input",
-        "notification_type": "idle_prompt",
-        "prompt_id": "00000000-0000-4000-8000-000000000002",
-        "scratchpad_dir": "/tmp/example",
-        "session_id": "00000000-0000-4000-8000-000000000001",
-        "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
-      },
-      "type": "extension"
+      "type": "awaiting_prompt"
     }
   ],
   [

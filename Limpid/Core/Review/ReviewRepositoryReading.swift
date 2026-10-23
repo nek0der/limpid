@@ -3,20 +3,26 @@
 
 import Foundation
 
-/// What `ReviewStore` needs from Git, named so it can be answered by something
+/// What `ReviewSession` needs from Git, named so it can be answered by something
 /// other than Git.
 ///
-/// The store used to call `ReviewGit`'s static methods directly, which meant a
-/// test could only reach it by building a real repository and spawning real
-/// processes — so a slow answer, a partial failure or a repository that
-/// changes mid-read had no way to be written down. `GitRunning` already
-/// answers the same problem for worktree operations; this is the same shape
-/// for the read side.
+/// A port rather than `ReviewGit`'s static methods, so a test need not build
+/// a real repository and spawn real processes to reach the review: a slow
+/// answer, a partial failure or a repository that changes mid-read can be
+/// written down. `GitRunning` answers the same problem for worktree
+/// operations; this is the same shape for the read side.
 protocol ReviewRepositoryReading: Sendable {
     func files(at root: URL, scope: ReviewScope) async throws -> [ReviewFile]
     func stats(at root: URL, scope: ReviewScope) async throws -> [String: ReviewFileStat]
     func diff(_ file: ReviewFile, root: URL, scope: ReviewScope) async throws -> ReviewDiff
     func fingerprint(_ file: ReviewFile, root: URL, scope: ReviewScope) async throws -> String
+    /// HEAD, the scope's base, and the index entries of `paths`, read
+    /// together (`ReviewGit.indexState`).
+    func indexState(root: URL, scope: ReviewScope, paths: Set<String>) async throws -> ReviewIndexState
+    /// Each path as `lstat` sees it (`ReviewGit.pathStat`).
+    func fileStats(_ paths: [String], root: URL) -> [String: ReviewPathStat]
+    /// Each path's content hash, from batched reads (`ReviewGit.contentHashes`).
+    func contentHashes(_ paths: [String], root: URL) async throws -> [String: String]
     /// Whether the repository has moved since this exact displayed snapshot.
     /// The implementation must not replace that snapshot while answering.
     func hasChanges(
@@ -47,6 +53,18 @@ struct LiveReviewRepository: ReviewRepositoryReading {
 
     func fingerprint(_ file: ReviewFile, root: URL, scope: ReviewScope) async throws -> String {
         try await ReviewGit.fingerprint(file, root: root, scope: scope)
+    }
+
+    func indexState(root: URL, scope: ReviewScope, paths: Set<String>) async throws -> ReviewIndexState {
+        try await ReviewGit.indexState(root: root, scope: scope, paths: paths)
+    }
+
+    func fileStats(_ paths: [String], root: URL) -> [String: ReviewPathStat] {
+        Dictionary(paths.map { ($0, ReviewGit.pathStat($0, root: root)) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    func contentHashes(_ paths: [String], root: URL) async throws -> [String: String] {
+        try await ReviewGit.contentHashes(paths, root: root)
     }
 
     func hasChanges(

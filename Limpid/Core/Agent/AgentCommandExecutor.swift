@@ -39,6 +39,11 @@ struct AgentDirectories {
         layout.map { state.appendingPathComponent($0.worktreeEventsDirectory, isDirectory: true) }
     }
 
+    /// Where turn records land, inside `state`.
+    var turns: URL? {
+        layout.map { state.appendingPathComponent($0.turnsDirectory, isDirectory: true) }
+    }
+
     /// The directory a per-pane store lives in and what each pane's file name
     /// ends with there; the rest of the name is the pane's id. Nil when the
     /// provider has no such store or the layout is unknown.
@@ -102,7 +107,69 @@ struct AgentCommandExecutor {
         return outcomes
     }
 
+    /// What came of deleting a hint the person ended its session by
+    /// (`forgetSessionHint`).
+    enum HintForgetOutcome: Equatable {
+        /// The hint is gone.
+        case deleted
+        /// No hint was there to delete, or no provider of that name.
+        case notFound
+        /// The hint names a newer session, which is the pane's own now.
+        case superseded
+        /// A hook held its lock.
+        case busy
+        /// The lock or the file could not be opened, read, decoded or
+        /// removed. Not a changed precondition: the hint may still name the
+        /// ended session.
+        case failed
+
+        /// Whether nothing is left to do: the ended session's hint is no
+        /// longer on disk to be resumed. One that is not is tried again.
+        var isSettled: Bool {
+            switch self {
+            case .deleted, .notFound, .superseded: true
+            case .busy, .failed: false
+            }
+        }
+    }
+
+    /// Drops `pane`'s hint for `provider` when it still names `sessionID`,
+    /// under the lock the hook writes it under; a hint a newer session has
+    /// written since is left. The one change no rule asks for: only the
+    /// person knows they moved on from a conversation (`AgentProjectionAdapter.forgetSession`).
+    @discardableResult
+    func forgetSessionHint(provider: String, pane: UUID, sessionID: String) -> HintForgetOutcome {
+        guard let url = directories[provider]?.paneStoreURL(.sessions, pane: pane) else { return .notFound }
+        do {
+            let outcome = try AgentFileLock.withLock(for: url) {
+                // Only a hint that is not there is settled. One that is there
+                // but cannot be read or decoded now may still name the ended
+                // session: the throw reads as `.failed`, which is tried again.
+                guard let hint = try readExistingJSON(url) else { return .notFound }
+                guard hint["sessionId"] as? String == sessionID else { return .preconditionChanged }
+                // A removal that fails throws, and reads as `.failed` below.
+                try SecureFileWrite.removeItem(at: url)
+                return .applied
+            }
+            switch outcome {
+            case .applied: return .deleted
+            case .notFound: return .notFound
+            case .preconditionChanged: return .superseded
+            case .busy: return .busy
+            }
+        } catch {
+            log.error("forget session hint failed: \(error.localizedDescription, privacy: .private)")
+            return .failed
+        }
+    }
+
     private func apply(_ command: AgentProjectionCommand, into outcomes: inout [AgentCommandOutcome]) {
+        // This command addresses a record, but the writer that ends it takes the record's
+        // lock itself, off the main actor (`DeclinedWaitCloser`); taking it
+        // here as well would only hold up a hook.
+        if case .endDeclinedWait = command.op {
+            return
+        }
         guard let url = fileURL(for: command.target) else {
             // Either the target needs no lock, or it names a provider this
             // build does not have. Neither is this executor's to perform.
@@ -161,7 +228,7 @@ struct AgentCommandExecutor {
             pruneRetired(command.target, max: max, lifetimeSeconds: lifetime)
         case let .cleanupPaneStore(keep, max):
             cleanupPaneStore(command.target, keep: keep, max: max)
-        case .notify, .markViewed, .cwdChanged, .gitSyncRefetch, .unknown:
+        case .notify, .markViewed, .cwdChanged, .gitSyncRefetch, .deleteTurn, .endDeclinedWait, .unknown:
             .applied
         }
     }
@@ -188,7 +255,7 @@ struct AgentCommandExecutor {
         }
         SecureFileWrite.ensureUserOnlyDirectory(owner.retired)
         do {
-            try FileManager.default.moveItem(
+            try SecureFileWrite.moveItem(
                 at: url,
                 to: owner.retired.appendingPathComponent(name)
             )
@@ -232,7 +299,7 @@ struct AgentCommandExecutor {
             guard hint["runId"] as? String == runID else { return .preconditionChanged }
         }
         do {
-            try FileManager.default.removeItem(at: url)
+            try SecureFileWrite.removeItem(at: url)
         } catch {
             log.error("delete failed: \(error.localizedDescription, privacy: .private)")
             return .preconditionChanged
@@ -283,7 +350,7 @@ struct AgentCommandExecutor {
         for (index, entry) in entries.enumerated()
             where index >= max || now - entry.1 > TimeInterval(lifetimeSeconds)
         {
-            try? FileManager.default.removeItem(at: entry.0)
+            try? SecureFileWrite.removeItem(at: entry.0)
         }
         return .applied
     }
@@ -321,7 +388,7 @@ struct AgentCommandExecutor {
             // to the next pass rather than destroying a write in progress.
             let removal = try? AgentFileLock.withLock(for: url) {
                 do {
-                    try FileManager.default.removeItem(at: url)
+                    try SecureFileWrite.removeItem(at: url)
                     return .applied
                 } catch {
                     return .notFound
@@ -332,11 +399,13 @@ struct AgentCommandExecutor {
             }
         }
         // The cap is a backstop for a directory that has grown without a pane
-        // ever closing; the newest are the ones worth keeping. Files a writer
-        // is holding are left out of it entirely: dropping one here would undo
-        // the wait above for the sake of a bound that is not urgent.
+        // ever closing; the newest are the ones worth keeping. It reads only
+        // the open panes' files, so the held files of closed panes found
+        // above are left out of it. It takes no lock: the hook writes a file
+        // by renaming a temporary into place, so a removal here can at worst
+        // take an entry just written, which the pane's next write puts back.
         for (url, _) in survivors.sorted(by: { $0.1 > $1.1 }).dropFirst(max) {
-            try? FileManager.default.removeItem(at: url)
+            try? SecureFileWrite.removeItem(at: url)
         }
         if !busy.isEmpty {
             log.debug("pane store sweep deferred \(busy.count, privacy: .public) locked files")
@@ -357,7 +426,7 @@ struct AgentCommandExecutor {
     /// would read that file as an event of its own.
     private func needsLock(_ target: AgentCommandTarget) -> Bool {
         switch target {
-        case .retiredRecords, .paneStore, .host, .unknown, .worktreeEvent: false
+        case .retiredRecords, .paneStore, .host, .unknown, .worktreeEvent, .turn: false
         case .record, .sessionHint, .resumeIntent: true
         }
     }
@@ -374,7 +443,7 @@ struct AgentCommandExecutor {
             directories[provider]?.paneStoreURL(.sessions, pane: pane)
         case let .resumeIntent(runID):
             isIdentifier(runID)
-                ? resumeIntents.directory.appendingPathComponent("\(runID).json")
+                ? resumeIntents.url(runID)
                 : nil
         case let .worktreeEvent(provider, fileName):
             isFileName(fileName)
@@ -384,7 +453,8 @@ struct AgentCommandExecutor {
             directories[provider]?.retired
         case let .paneStore(provider, store):
             directories[provider]?.paneStore(store)?.directory
-        case .host, .unknown:
+        case .turn, .host, .unknown:
+            // A turn is the collector's: deleting it runs git.
             nil
         }
     }
@@ -443,6 +513,22 @@ struct AgentCommandExecutor {
         guard let data = try? Data(contentsOf: url),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
+        return object
+    }
+
+    /// The JSON object at `url`, or `nil` when no file is there. A file
+    /// that is there but cannot be read, or is not a JSON object, throws:
+    /// unlike `readJSON`, its caller has to tell that apart from absence.
+    private func readExistingJSON(_ url: URL) throws -> [String: Any]? {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch CocoaError.fileReadNoSuchFile {
+            return nil
+        }
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: url.path])
+        }
         return object
     }
 

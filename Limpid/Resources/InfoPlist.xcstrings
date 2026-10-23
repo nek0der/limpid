@@ -86,6 +86,24 @@
           }
         }
       }
+    },
+    "Folder" : {
+      "comment" : "Finder: the kind of item Limpid opens, a folder, which opens as a project",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folder"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォルダ"
+          }
+        }
+      }
     }
   }
 }

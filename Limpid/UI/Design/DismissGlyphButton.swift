@@ -1,13 +1,29 @@
 // DismissGlyphButton.swift
 // Limpid — the "×" that closes or dismisses the thing it sits on.
 //
-// Every row, toast, panel header and sheet used to draw its own ×, and
-// no two agreed: glyph sizes ran from 9 to 12pt in three weights, the
-// hit area was 16, 18, 24 or just the glyph, and a few had an
-// accessibility label but no tooltip. One component owns all of it, so
-// a site picks only what it closes and how prominent the control is.
+// Rows, toasts, panel headers and sheets draw their × through this
+// component, so the glyph size and weight, the hit area, the
+// accessibility label and the tooltip agree across them; a site picks
+// only what it closes and how prominent the control is. The approval
+// card's header, the two find bars, and the changes panel's header keep
+// buttons of their own, since each takes keyboard focus, a button style, a
+// hit area, or a tooltip with its key that this one does not; they draw
+// their × through `DismissGlyph`, as this does.
 
 import SwiftUI
+
+/// This is the × every dismiss control draws, at the size and weight its
+/// place gives it. It is only the glyph: the button around it, its hit area,
+/// color, focus, and tooltip are the control's.
+struct DismissGlyph: View {
+    var size: LimpidFont.Supervision.Size = .micro
+    var weight: Font.Weight = .bold
+
+    var body: some View {
+        Image(systemName: "xmark")
+            .font(.supervision(size, weight: weight))
+    }
+}
 
 struct DismissGlyphButton: View {
     /// How much room the control gets. Two sizes rather than one: a row
@@ -20,10 +36,10 @@ struct DismissGlyphButton: View {
         /// Sheet headers and floating panels. Draws its own round ground.
         case large
 
-        fileprivate var glyphSize: CGFloat {
+        fileprivate var glyphSize: LimpidFont.Supervision.Size {
             switch self {
-            case .regular: 10
-            case .large: 12
+            case .regular: .micro
+            case .large: .row
             }
         }
 
@@ -41,17 +57,23 @@ struct DismissGlyphButton: View {
         }
     }
 
-    /// What the button closes, as both the tooltip and the VoiceOver
-    /// label. One value for both so a site cannot label one and forget
-    /// the other: "×, button" says nothing about what goes away.
+    /// The large size's round ground, as a corner radius, for a focus
+    /// ring drawn around it.
+    static let largeCornerRadius: CGFloat = Size.large.hitSize / 2
+
+    /// What the button closes: the VoiceOver label, and the tooltip unless
+    /// `help` says more. Required, so a site cannot leave the button
+    /// unnamed: "×, button" says nothing about what goes away.
     let label: LocalizedStringResource
     var size: Size = .regular
+    /// A tooltip that says more than the label, such as the key that
+    /// also closes; the label when `nil`.
+    var help: LocalizedStringResource?
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "xmark")
-                .font(.system(size: size.glyphSize, weight: .bold))
+            DismissGlyph(size: size.glyphSize)
                 .foregroundStyle(.secondary)
                 .frame(width: size.hitSize, height: size.hitSize)
                 .background {
@@ -65,7 +87,7 @@ struct DismissGlyphButton: View {
         // Several hosts sit over a terminal or a diff, whose I-beam would
         // otherwise carry onto the button.
         .pointerStyle(.default)
-        .help(Text(label))
+        .help(Text(help ?? label))
         .accessibilityLabel(Text(label))
     }
 }

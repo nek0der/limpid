@@ -4,8 +4,8 @@
 // the panel opens by itself.
 //
 // Kept in Core and free of SwiftUI so the rules can be pinned by tests. The
-// clock is drawn in three places — a tab row, a Waiting row, and a split
-// pane's header — and the first and last open the same panel, so the
+// clock is drawn in two places — the session header (for the selected tab)
+// and a split pane's header — and both open the same panel, so the
 // decisions live here once rather than in each view.
 
 import Foundation
@@ -20,9 +20,11 @@ struct PromptCacheTarget: Hashable {
 /// Where a clock that opens the panel is drawn. Also the key each clock
 /// publishes its frame under, so a panel can hang below the clock it was
 /// opened from and the panel that opens by itself can find a clock to hang
-/// from. The Waiting row's clock is only an indicator and has no place.
+/// from.
 enum PromptCacheClockPlace: Hashable {
-    /// The trailing status group of a tab row.
+    /// The trailing status group of a tab row; in the supervision window,
+    /// whose tabs draw no clock, the session header's chip for the
+    /// selected tab.
     case tabRow(tabID: UUID)
     /// The trailing group of a split pane's header.
     case paneHeader(paneID: UUID)
@@ -68,7 +70,7 @@ enum PromptCacheCommandBlock: Equatable {
             )
         case .notInFront:
             LocalizedStringResource(
-                "Available when the agent is what this pane is running.",
+                "Available while this pane is running an agent.",
                 comment: "Shown on the prompt cache panel while something other than the agent is in front of the pane"
             )
         case .unsubmittedInput:
@@ -94,7 +96,7 @@ struct PromptCachePanelContent: Equatable {
     /// invite paying for a summary before it saves anything.
     let actions: [PromptCacheAction]
     /// Why the answers that type a command are disabled, or nil when they
-    /// can be typed. "Continue as is" types nothing, so it is offered
+    /// can be typed. "Continue as Is" types nothing, so it is offered
     /// whatever this says. Always nil while the cache is only expiring,
     /// which offers no answers.
     let commandBlock: PromptCacheCommandBlock?
@@ -110,8 +112,8 @@ struct PromptCachePanelContent: Equatable {
     /// The panel's title, beside the clock.
     var title: LocalizedStringResource {
         isExpired
-            ? LocalizedStringResource("Cache expired", comment: "Title of the expired prompt cache panel")
-            : LocalizedStringResource("Cache expires soon", comment: "Title of the expiring prompt cache panel")
+            ? LocalizedStringResource("Cache Expired", comment: "Title of the expired prompt cache panel")
+            : LocalizedStringResource("Cache Expires Soon", comment: "Title of the expiring prompt cache panel")
     }
 
     /// When: how long ago it expired, or how soon it will, at `now`. The

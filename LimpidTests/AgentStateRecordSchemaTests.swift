@@ -1,6 +1,7 @@
 // AgentStateRecordSchemaTests.swift
 // Limpid — the projection accepts the version 3 records the Rust hook
-// runtime writes, alongside the version 2 records the shell receivers wrote.
+// runtime writes, alongside the version 2 records earlier builds' shell
+// receivers wrote.
 
 import Foundation
 import Testing
@@ -30,7 +31,7 @@ struct AgentStateRecordSchemaTests {
     /// reason to retire the record before it is projected.
     private func badge(from json: String, provider: String) throws -> AgentBadge {
         try withTempDir { directory in
-            let (session, tab, paneID) = WindowSessionFixture.withLooseTab()
+            let (session, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
             let states = directory.appendingPathComponent("states")
             try FileManager.default.createDirectory(at: states, withIntermediateDirectories: true)
             try Data(json.replacingOccurrences(of: "%PANE%", with: paneID.uuidString).utf8)
@@ -65,6 +66,24 @@ struct AgentStateRecordSchemaTests {
         let badge = try badge(from: Self.versionThree, provider: "claude")
         #expect(badge.conversationID == "00000000-0000-4000-8000-000000000001")
         #expect(badge.providerSessionTitle == "Formal")
+    }
+
+    @Test("carries what a wait is and its tool, and reads a kind it does not know as none")
+    func waitingRecord_carriesItsKindAndTool() throws {
+        let waiting = Self.versionThree.replacingOccurrences(
+            of: "\"state\":\"finished\"",
+            with: "\"state\":\"needsInput\",\"detail\":\"Bash: swift test\",\"tool\":\"Bash\",\"waitKind\":\"approval\""
+        )
+        let current = try badge(from: waiting, provider: "codex")
+        #expect(current.promptWaitKind == .approval)
+        #expect(current.tool == "Bash")
+        let newer = try badge(from: waiting.replacingOccurrences(of: "\"approval\"", with: "\"plan\""), provider: "codex")
+        #expect(newer.waitKind == "unknown")
+        #expect(newer.promptWaitKind == nil)
+        // A record from before the fields.
+        let older = try badge(from: Self.versionThree, provider: "codex")
+        #expect(older.waitKind == nil)
+        #expect(older.tool == nil)
     }
 
     @Test("treats a version 2 empty runStartedAt and a version 3 null alike")

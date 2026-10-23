@@ -1,9 +1,9 @@
 // PaneInitialCommandPrecedenceTests.swift
-// Limpid — pins which of the four sources `PaneHostRepresentable` can
-// draw a restored pane's first command from actually wins. A pane
-// could take more than one. A pane that both reattaches to tmux and
-// resumes an agent would run two processes against one session id,
-// which is the failure the tmux branch exists to prevent.
+// Limpid — which of the sources a restored pane's first command can come from wins: a staged command, tmux, or a resume.
+
+// A pane could take more than one. A pane that both reattaches to tmux and
+// resumes an agent would run two processes against one session id, which
+// the tmux branch's precedence prevents.
 
 import Foundation
 import Testing
@@ -22,37 +22,126 @@ struct PaneInitialCommandPrecedenceTests {
         TmuxBinding(socketPath: "/tmp/s", sessionID: "$1", sessionName: "work")
     }
 
-    @Test("a staged command outranks everything")
-    func staged_beatsTmuxAndAgents() {
+    /// Lets the main queue run what was queued on it before, a few hops
+    /// deep, so a test can say nothing came of it without waiting a time.
+    private static func drainMainQueue(hops: Int = 5) async {
+        for _ in 0..<hops {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+        }
+    }
+
+    @Test("a staged command outranks everything, once")
+    func staged_beatsTmuxAndAgents_once() {
+        let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
+        session.update(tab.id) { tab in
+            tab.initialCommands[pane] = "echo staged"
+            tab.tmuxBindings[pane] = binding()
+            tab.agentSessions[.claude, default: [:]][pane] = AgentSessionInfo(sessionId: "c1", cwd: nil)
+        }
+        #expect(PaneHostRepresentable.launch(session: session, paneID: pane).command == "echo staged")
+        session.clearStagedLaunch(paneID: pane)
+        #expect(PaneHostRepresentable.launch(session: session, paneID: pane).command?.hasPrefix("tmux -S ") == true)
+    }
+
+    /// A staged agent left in the saved tab would start a fresh
+    /// conversation at every launch instead of resuming this one.
+    @Test("after its staged command, a pane resumes its conversation")
+    func staged_thenResume() throws {
+        let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
+        session.update(tab.id) { tab in
+            tab.initialCommands[pane] = AgentKind.claude.launchCommand
+            tab.agentSessions[.claude, default: [:]][pane] = AgentSessionInfo(sessionId: "c1", cwd: nil)
+            tab.agentResumeCandidates[pane] = [.claude]
+        }
+        #expect(PaneHostRepresentable.launch(session: session, paneID: pane).command == "claude")
+        session.clearStagedLaunch(paneID: pane)
+        let command = try #require(PaneHostRepresentable.launch(session: session, paneID: pane).command)
+        #expect(command.contains("--resume"))
+    }
+
+    @Test("an empty staged command, or a pane in no tab, stages nothing")
+    func stagedLaunch_ignoresEmptyAndUnknownPanes() {
+        let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
+        session.update(tab.id) { $0.initialCommands[pane] = "" }
+        #expect(session.stagedLaunch(paneID: pane) == nil)
+        #expect(session.stagedLaunch(paneID: UUID()) == nil)
+    }
+
+    /// What the stop ledger watches at launch is the resume the pane is
+    /// typed: the session, its folder, and the command; nothing for a pane
+    /// reattaching to tmux, whose agent already runs in there.
+    @Test("the restored resume names the session the pane is typed to resume")
+    func restoredResume_namesItsSession_andYieldsToTmux() throws {
         var tab = tab()
-        tab.initialCommands[pane] = "echo staged"
+        tab.agentSessions[.claude, default: [:]][pane] = AgentSessionInfo(sessionId: "c1", cwd: "/tmp/repo")
+        tab.agentResumeCandidates[pane] = [.claude]
+        let resume = try #require(PaneHostRepresentable.resolveRestoredResume(tab: tab, paneID: pane))
+        #expect(resume == AgentResume(
+            provider: .claude, sessionID: "c1", cwd: "/tmp/repo", command: "cd '/tmp/repo' && claude --resume c1"
+        ))
+        #expect(PaneHostRepresentable.resolveInitialCommand(tab: tab, paneID: pane) == resume.command)
         tab.tmuxBindings[pane] = binding()
-        tab.agentSessions[.claude, default: [:]][pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
-        #expect(PaneHostRepresentable.resolveInitialCommand(tab: tab, paneID: pane) == "echo staged")
+        #expect(PaneHostRepresentable.resolveRestoredResume(tab: tab, paneID: pane) == nil)
+        #expect(PaneHostRepresentable.resolveRestoredResume(tab: nil, paneID: pane) == nil)
+    }
+
+    /// The stop ledger hears of a restored pane's resume from its terminal,
+    /// once the command is typed, and dates the resume from then. A
+    /// view made but never given a terminal (switched away before one was
+    /// made, or one that failed to start) typed nothing, so nothing waits
+    /// to fail into a stop.
+    @Test(.tags(.ffi), .enabled("libghostty is unavailable") { await GhosttyAvailability.isAvailable() })
+    func aRestoredResume_isWatchedFromWhenItIsTyped_andNotWhenNothingIsTyped() async throws {
+        let ghosttyApp = try #require(GhosttyApp.placeholder.target)
+        let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
+        session.writesUserFiles = false
+        session.update(tab.id) { tab in
+            tab.agentSessions[.claude, default: [:]][pane] = AgentSessionInfo(sessionId: "c1", cwd: "/tmp/repo")
+            tab.agentResumeCandidates[pane] = [.claude]
+        }
+        let stops = StopLedgerStore(resumeTimeout: .seconds(30))
+        let view = PaneHostRepresentable.resolveOrCreateSurfaceView(
+            paneID: pane,
+            ghosttyApp: ghosttyApp,
+            registry: RecordingSurfaceRegistry(),
+            session: session,
+            hostsAgentsInTmux: false,
+            stopLedger: stops
+        )
+        // Made, with its command not typed yet: what the main actor had
+        // queued runs, and nothing is watched.
+        await Self.drainMainQueue()
+        #expect(stops.ledger.launchResumes.isEmpty)
+        // Its turn to type came with no terminal: still nothing.
+        view.typeInitialCommand("claude --resume c1")
+        #expect(stops.ledger.launchResumes.isEmpty)
+        #expect(!stops.hasResumeClock)
+        // Typed: watched, from the moment it was.
+        let typedAt = Date(timeIntervalSince1970: 5000)
+        view.onInitialCommandTyped?(typedAt)
+        #expect(stops.ledger.launchResumes[pane]?.since == typedAt)
+        #expect(stops.ledger.launchResumes[pane]?.sessionID == "c1")
+        #expect(stops.hasResumeClock)
     }
 
     /// The agent is running inside the session we are reattaching to,
-    /// so resuming as well would start a second one against the same id.
-    @Test("a tmux binding outranks an agent resume")
-    func tmux_beatsAgentResume() throws {
+    /// so resuming as well would start a second one against the same id;
+    /// a provisional binding, not confirmed yet, blocks it the same.
+    @Test("a tmux binding outranks an agent resume", arguments: [false, true])
+    func tmux_beatsAgentResume(isProvisional: Bool) throws {
         var tab = tab()
-        tab.tmuxBindings[pane] = binding()
-        tab.agentSessions[.claude, default: [:]][pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
-        tab.agentSessions[.codex, default: [:]][pane] = CodexSessionInfo(sessionId: "x1", cwd: nil)
-        let command = try #require(PaneHostRepresentable.resolveInitialCommand(tab: tab, paneID: pane))
-        #expect(command.hasPrefix("tmux -S "))
-    }
-
-    @Test("a provisional tmux binding still blocks duplicate agent resume")
-    func provisionalTmux_beatsAgentResume() throws {
-        var tab = tab()
-        var provisional = binding()
-        provisional.serverPID = "42"
-        provisional.serverStartedAt = "100"
-        provisional.isProvisional = true
-        tab.tmuxBindings[pane] = provisional
-        tab.agentSessions[.claude, default: [:]][pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
-        tab.agentSessions[.codex, default: [:]][pane] = CodexSessionInfo(sessionId: "x1", cwd: nil)
+        var binding = binding()
+        if isProvisional {
+            binding.serverPID = "42"
+            binding.serverStartedAt = "100"
+            binding.isProvisional = true
+        }
+        tab.tmuxBindings[pane] = binding
+        tab.agentSessions[.claude, default: [:]][pane] = AgentSessionInfo(sessionId: "c1", cwd: nil)
+        tab.agentSessions[.codex, default: [:]][pane] = AgentSessionInfo(sessionId: "x1", cwd: nil)
+        tab.agentResumeCandidates[pane] = [.claude, .codex]
 
         let command = try #require(PaneHostRepresentable.resolveInitialCommand(tab: tab, paneID: pane))
 
@@ -64,7 +153,7 @@ struct PaneInitialCommandPrecedenceTests {
     @Test("an agent resume still fires when the pane was not in tmux")
     func noBinding_fallsThroughToAgentResume() throws {
         var tab = tab()
-        tab.agentSessions[.claude, default: [:]][pane] = ClaudeSessionInfo(sessionId: "c1", cwd: nil)
+        tab.agentSessions[.claude, default: [:]][pane] = AgentSessionInfo(sessionId: "c1", cwd: nil)
         tab.agentResumeCandidates[pane] = [.claude]
         let command = try #require(PaneHostRepresentable.resolveInitialCommand(tab: tab, paneID: pane))
         #expect(!command.hasPrefix("tmux -S "))
@@ -73,55 +162,5 @@ struct PaneInitialCommandPrecedenceTests {
     @Test("a pane with nothing recorded just gets its shell")
     func nothingRecorded_isNil() {
         #expect(PaneHostRepresentable.resolveInitialCommand(tab: tab(), paneID: pane) == nil)
-    }
-
-    @Test("the shell title for an injected command is suppressed exactly once")
-    func injectedCommandTitle_matchingFirstTitle_isConsumedOnce() {
-        var guardState = InjectedCommandTitleGuard()
-        guardState.arm("cd '/work' && claude --resume session")
-        let firstMatch = guardState.consumeIfMatching("cd '/work' && claude --resume session")
-        let repeatedMatch = guardState.consumeIfMatching("cd '/work' && claude --resume session")
-
-        #expect(firstMatch)
-        #expect(!repeatedMatch)
-    }
-
-    @Test("a late prompt title cannot disarm the injected command guard")
-    func injectedCommandTitle_nonmatchingPrompt_keepsGuard() {
-        var guardState = InjectedCommandTitleGuard()
-        guardState.arm("codex resume session")
-        let latePromptTitle = guardState.consumeIfMatching("~/dev/limpid")
-        let commandTitle = guardState.consumeIfMatching("codex resume session")
-
-        #expect(!latePromptTitle)
-        #expect(commandTitle)
-    }
-
-    @Test("the shell's control filtering still matches a multiline injected command")
-    func injectedCommandTitle_multilineCommand_matchesShellReport() {
-        var guardState = InjectedCommandTitleGuard()
-        guardState.arm("printf first\nprintf second")
-        let shellTitle = guardState.consumeIfMatching("printf firstprintf second")
-
-        #expect(shellTitle)
-    }
-
-    @Test("command completion clears a guard when the shell emits no title")
-    func injectedCommandTitle_commandFinished_clearsGuard() {
-        var guardState = InjectedCommandTitleGuard()
-        guardState.arm("codex resume session")
-        guardState.clear()
-        let laterTitle = guardState.consumeIfMatching("codex resume session")
-
-        #expect(!laterTitle)
-    }
-
-    @Test("router sanitization is shared by the command and received title")
-    func injectedCommandTitle_sanitizedInput_stillMatches() {
-        var guardState = InjectedCommandTitleGuard()
-        guardState.arm("cd '/tmp/zero\u{200B}' && claude --resume session")
-        let sanitizedTitle = guardState.consumeIfMatching("cd '/tmp/zero' && claude --resume session")
-
-        #expect(sanitizedTitle)
     }
 }

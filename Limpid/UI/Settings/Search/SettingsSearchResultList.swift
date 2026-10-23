@@ -15,21 +15,7 @@ struct SettingsSearchResultList: View {
 
     var body: some View {
         if results.isEmpty {
-            VStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Text("No Settings Found")
-                    .font(.headline)
-                Text(query)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(12)
-            .accessibilityElement(children: .combine)
+            SupervisionEmptyState(.noSettingsFound(query: query), size: .regular)
         } else {
             ScrollViewReader { proxy in
                 List(selection: $selectedID) {
@@ -48,7 +34,7 @@ struct SettingsSearchResultList: View {
                                                 .lineLimit(1)
                                             Text(entry.groupTitle)
                                                 .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(SettingsFootnote.style.color)
                                                 .lineLimit(1)
                                         }
                                         // Indent to the header's title so results read
@@ -90,7 +76,7 @@ struct SettingsSearchResultList: View {
                     if shouldReduceMotion {
                         proxy.scrollTo(newID, anchor: .center)
                     } else {
-                        withAnimation(.easeOut(duration: 0.1)) {
+                        withAnimation(LimpidMotion.selectionScroll) {
                             proxy.scrollTo(newID, anchor: .center)
                         }
                     }
@@ -103,6 +89,12 @@ struct SettingsSearchResultList: View {
         let title = entry.title.resolved(in: locale)
         let section = entry.section.title.resolved(in: locale)
         let group = entry.groupTitle.resolved(in: locale)
-        return Text(verbatim: "\(title), \(section), \(group)")
+        // Joined in the string catalog, as VoiceOver pauses at the
+        // ideographic comma in Japanese and at ", " in English.
+        return Text(LocalizedStringResource(
+            "settings.search.resultAccessibilityLabel",
+            defaultValue: "\(title), \(section), \(group)",
+            comment: "Settings search: VoiceOver label of a result row; the setting, its section, its group"
+        ))
     }
 }

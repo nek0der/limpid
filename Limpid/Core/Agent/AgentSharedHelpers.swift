@@ -6,13 +6,15 @@
 // through.
 
 import Foundation
+import os
 
 /// ISO-8601 parsing for the instants that cross the projection boundary.
-/// The hook backends and the Rust rules both write UTC instants that
-/// round-trip through this one `ISO8601DateFormatter` instance.
+/// The hook backends and the Rust rules both write UTC instants with whole
+/// seconds (`2026-10-22T12:34:56Z`) that round-trip through this one
+/// `ISO8601DateFormatter` instance.
 enum AgentDateParsing {
     static func parseISO8601(_ string: String) -> Date? {
-        formatter.date(from: string)
+        formatter.withLockUnchecked { $0.date(from: string) }
     }
 
     static func parseOptional(_ raw: String?) -> Date? {
@@ -24,18 +26,25 @@ enum AgentDateParsing {
     /// projection input carries, such as the wall clock of one pass and
     /// the marker on a run Limpid is about to kill at quit.
     static func formatISO8601(_ date: Date) -> String {
-        formatter.string(from: date)
+        formatter.withLockUnchecked { $0.string(from: date) }
     }
 
-    /// `nonisolated(unsafe)` because `ISO8601DateFormatter` is not
-    /// declared `Sendable` but Apple documents `date(from:)` as
-    /// thread-safe once the instance is configured. The formatter is
-    /// configured exactly once at file scope and only read after
-    /// that, so the unchecked declaration matches reality.
-    private nonisolated(unsafe) static let formatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
+    /// The one formatter, behind a lock. Detached projection passes parse
+    /// with it while the main actor stamps input instants, and Apple
+    /// documents thread safety for `DateFormatter`, not for
+    /// `ISO8601DateFormatter`, so we serialize every call rather than rely
+    /// on an undocumented guarantee. The formatter never leaves the lock:
+    /// each closure returns only a `Date` or a `String`.
+    ///
+    /// We keep the class over the Sendable `Date.ISO8601FormatStyle`
+    /// because the style does not read and write the same: it accepts
+    /// fractional seconds, which this boundary has always rejected, and it
+    /// truncates a fraction where the formatter rounds it to the nearest
+    /// second.
+    private static let formatter: OSAllocatedUnfairLock<ISO8601DateFormatter> = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return OSAllocatedUnfairLock(uncheckedState: formatter)
     }()
 }
 
@@ -48,9 +57,26 @@ enum AgentSessionIDValidator {
         !id.isEmpty && id.unicodeScalars.allSatisfy(allowed.contains)
     }
 
+    /// `isValid`, and starting with a letter or a digit as every session id
+    /// does: typed into a shell, one starting with `-` would be read as an
+    /// option of the CLI (`--dangerously-…`).
+    static func isStrictlyValid(_ id: String) -> Bool {
+        guard isValid(id), let first = id.unicodeScalars.first else { return false }
+        return first != "-" && first != "_"
+    }
+
     private static let allowed = CharacterSet(
         charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
     )
+}
+
+extension Unicode.Scalar {
+    /// C0, DEL, and C1: what a line editor reads as keys rather than text,
+    /// so a command typed into a terminal must not carry one. DEL is a
+    /// backspace that could take a quote away from a path.
+    var isTypedControl: Bool {
+        value < 0x20 || (0x7F...0x9F).contains(value)
+    }
 }
 
 /// POSIX single-quoting for paths embedded in resume shell commands.
@@ -63,10 +89,10 @@ enum ShellQuote {
     }
 }
 
-// MARK: - WindowSession helper
+// MARK: - WorkspaceSession helper
 
 @MainActor
-extension WindowSession {
+extension WorkspaceSession {
     /// Applies a mutating transform to every tab. The projection decides what
     /// each tab should hold and applies the whole answer at once, so the shape
     /// of the iteration does not belong at that call site.

@@ -1,29 +1,31 @@
-# libghostty Fork Maintenance
+# libghostty fork maintenance
 
 Limpid renders terminals with `libghostty`, the library the ghostty project
 builds from its own source, consumed through its C ABI. `vendor/ghostty` is a
 submodule of our fork of that project (`nek0der/ghostty`, branch `limpid`),
 and that branch carries the patches we need on top of upstream. Upstream is
-`ghostty-org/ghostty`, tracked in the submodule as a separate `upstream`
-remote. This document states why the fork exists, what a patch has to carry,
+`ghostty-org/ghostty`, which we track through a separate `upstream` remote in
+the submodule checkout ([Health](#health) shows how to add it to a fresh
+clone). This document states why the fork exists, what a patch has to carry,
 and how we retire one.
 
 ## Why we carry a fork
 
-Limpid needs a small number of things the embedding API does not offer. Each
-one leaves two options: work around it on our side, or patch the fork.
+Limpid needs a small number of things the embedding API does not offer. For
+each one, we can either work around it on our side or patch the fork.
 Upstream states that `libghostty` is not a stable API yet and describes the
 terminal core moving into a library of its own.
 
 A patch is therefore temporary by default. The fork holds only what we can
-neither wait for nor work around. What each gap actually is belongs to its
-row in the inventory, which changes as patches come and go — not here.
+neither wait for nor work around. Each gap is described in its row of the
+inventory below, not here, because the inventory changes as patches come and
+go.
 
 ## Patch inventory
 
 Every patch on the `limpid` branch appears here. Identify a patch by its
-commit subject rather than its hash — rebasing rewrites the hash on every
-upstream bump.
+commit subject rather than its hash, because rebasing rewrites the hash on
+every upstream bump.
 
 | Patch | Class | Why it is not upstream | Retirement condition |
 |---|---|---|---|
@@ -53,14 +55,15 @@ upstream bump.
    looks unmet once that name changes.
 3. **Keep it additive.** Additive means a consumer that does not use the new
    behavior sees no change. Moving code to create a hook counts as additive;
-   altering what an existing path does for everyone does not. Whitespace,
-   comment-only, and formatting changes are excluded outright. Every touched
-   line can conflict on the next rebase, so touch as few as the change allows.
+   altering what an existing path does for everyone does not. Leave out
+   whitespace-only, comment-only, and formatting changes entirely. Every
+   touched line can conflict on the next rebase, so touch as few lines as the
+   change allows.
 4. **Prefer a shape upstream could accept** over one that only serves Limpid.
    A general extension point is easier to retire than a special case, because
    upstream can land the same shape. Name what the patch adds the way upstream
-   would name it — a local prefix would have to be undone before the change
-   could be proposed, and it does not reduce the cost of moving off the patch
+   would name it. A local prefix would have to be undone before the change
+   could be proposed, and it does not make moving off the patch any cheaper
    later.
 5. **Keep the branch a stack of independent commits on top of upstream.** Do
    not merge upstream into it.
@@ -91,7 +94,7 @@ git -C vendor/ghostty push origin "pin/$(date +%F)"
 A gitlink in Limpid records a hash; it is not a ref in the fork and keeps
 nothing alive. Without the tag, the objects an older Limpid commit points at
 become unreachable the moment the branch moves, and a forge is free to collect
-them — an older release then cannot be checked out or rebuilt. Push the
+them. An older release then cannot be checked out or rebuilt. Push the
 rewritten branch with `--force-with-lease`, never a bare `--force`.
 
 ## Health
@@ -109,10 +112,10 @@ git -C vendor/ghostty rev-list --count "$base"..upstream/main  # commits behind
 git -C vendor/ghostty log --oneline HEAD --not "$base"         # which patches
 ```
 
-Distance is expected to grow between bumps and reset when we rebase; it says
-how stale the pinned state is, not whether anything is wrong. A rising patch
-count is the one to act on: check whether the embedding needs to change
-before reaching for the library.
+The number of commits behind is expected to grow between bumps and reset when
+we rebase. It says how stale the pinned state is, not whether anything is
+wrong. A rising patch count is the number to act on: check whether the
+embedding needs to change before patching the library again.
 
 ## Retiring a patch
 
@@ -123,5 +126,5 @@ message so the reason is recoverable from history rather than only from this
 file.
 
 Keep the Limpid-side calls that reach a fork-only entry point behind a single
-wrapper. That keeps the call sites to one file when the patch retires; the
-submodule bump and the inventory row are separate, small edits.
+wrapper. Retiring the patch then changes the call sites in one file, and the
+submodule bump and the inventory row stay separate, small edits.

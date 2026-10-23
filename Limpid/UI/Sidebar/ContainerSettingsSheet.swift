@@ -1,34 +1,38 @@
 // ContainerSettingsSheet.swift
-// Limpid — unified settings sheet for both Projects and Groups.
-// Mirrors the Liquid Glass pattern of CreateWorktreeSheet
-// (NavigationStack + Form + `.scrollContentBackground(.hidden)`) so the
-// sheets feel like siblings. Auto-saves on every change — the only
-// button is "Done".
-//
-// The sheet adapts to its `target`:
-//   • Common (Project + Group): name, palette color, Working Directory
-//     (mode Picker + a path field shown only for the `.fixed` mode).
-//   • Project only: Root path, Worktrees placement, Hidden Worktrees.
-//   • Group only: no extra sections — its cwd lives in the common block.
+// Limpid — a project's settings sheet: name, color, root, worktree
+// placement, the agents it routes, setup commands, the files to copy into
+// new worktrees, test commands, and hidden
+// worktrees. The supervision sheets' title and footer around a grouped Form.
+// Auto-saves on every change — the only button is "Done".
 
 import AppKit
 import SwiftUI
 
 struct ContainerSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(WindowSession.self) private var session
+    @Environment(WorkspaceSession.self) private var session
 
-    /// The container the sheet edits; one sheet serves both kinds from a
-    /// single `.sheet(item:)`.
-    let target: GroupOrProjectID
+    /// The project the sheet edits.
+    let projectID: UUID
+    /// The sheet's height, from the window it is shown over
+    /// (`height(forWindowHeight:)`): a sheet taller than its window puts
+    /// Done out of reach.
+    let height: CGFloat
 
     @State private var nameDraft: String = ""
-    @State private var customParentText: String = ""
-    /// Bootstrap commands as a newline-separated string (one command
-    /// per line). We keep the GUI shape simple — power users who want
-    /// per-step `timeout` / `cwd` knobs can hand-edit `state.json`,
-    /// which round-trips the detailed `BootstrapItem` form.
+    /// The Setup Commands as a newline-separated string (one command
+    /// per line). A step's `timeout` / `cwd` are set by hand in
+    /// `state.json`; the sheet names them under the editor and keeps them
+    /// with their line (`SetupCommandsDraft`).
     @State private var bootstrapDraft: String = ""
+    /// The steps as the sheet opened, to say which lines an edit took
+    /// their timeout or cwd from (`SetupCommandsDraft.droppedDetailCount`).
+    @State private var openedBootstrap: [BootstrapItem] = []
+    /// The test commands as the list the sheet edits; see `CheckCommandsDraft`.
+    @State private var checksDraft = CheckCommandsDraft(commands: nil, defaults: AgentProviderRegistry.checkDefaults)
+    /// The files to copy into new worktrees as the list the sheet edits;
+    /// see `IgnoredFilesDraft`.
+    @State private var filesDraft = IgnoredFilesDraft(patterns: nil)
     /// The Color row's picker. The sheet is a window of its own, where the
     /// main window's floating panels cannot draw, so it holds and draws its
     /// own: the same panel, hanging from the row's color dot.
@@ -36,95 +40,85 @@ struct ContainerSettingsSheet: View {
     /// The color dot's frame in global coordinates, which here are the
     /// sheet window's.
     @State private var colorDotFrame: CGRect = .zero
+    /// This sheet's window: the folder panel for a custom placement hangs
+    /// from it, and Done reads it to wait out text still being composed.
+    @State private var hostWindow = HostWindowReference()
 
-    /// Tag used by the placement Picker. We expand `WorktreePlacement`
-    /// to a tag because `.custom(URL)` carries associated data and
-    /// can't be directly tagged on a stable identity.
-    private enum PlacementTag: Hashable {
-        case siblingPrefixed, insideHidden, custom
-    }
-
-    private var projectID: UUID? {
-        if case let .project(id) = target {
-            return id
-        }
-        return nil
-    }
-
-    private var groupID: UUID? {
-        if case let .group(id) = target {
-            return id
-        }
-        return nil
-    }
-
+    /// `nil` once the project is closed from elsewhere while the sheet is
+    /// up: the sheet then edits nothing until it is dismissed.
     private var project: Project? {
-        projectID.flatMap { id in session.projects.first(where: { $0.id == id }) }
-    }
-
-    private var group: TabGroup? {
-        groupID.flatMap { id in session.groups.first(where: { $0.id == id }) }
-    }
-
-    private var paletteIndex: Int? {
-        project?.paletteIndex ?? group?.paletteIndex
-    }
-
-    private var currentTag: PlacementTag {
-        switch project?.worktreePlacement ?? .siblingPrefixed {
-        case .siblingPrefixed: .siblingPrefixed
-        case .insideHidden: .insideHidden
-        case .custom: .custom
-        }
+        session.project(projectID)
     }
 
     private var hiddenWorktrees: [Worktree] {
         project?.worktrees.filter(\.isHidden) ?? []
     }
 
-    private var titleText: LocalizedStringResource {
-        projectID != nil ? "Project Settings" : "Group Settings"
+    /// A hidden worktree by the name its row went by (`RowName`), which a
+    /// name the person gave it keeps while it is hidden.
+    private func hiddenRowName(_ worktree: Worktree) -> String {
+        session.rowName(of: .worktree(projectID: projectID, worktreeID: worktree.id))?.text ?? worktree.label
     }
 
-    private var titleIcon: String {
-        projectID != nil ? "folder.badge.gearshape" : "square.stack.3d.up"
+    /// The preferred height while the window has room, less a margin above
+    /// and below the sheet as the window shrinks, down to the least. Before
+    /// the first geometry pass the window's height is 0, and the sheet
+    /// takes the preferred height rather than collapsing.
+    static func height(forWindowHeight windowHeight: CGFloat) -> CGFloat {
+        let metrics = LimpidLayout.Supervision.self
+        guard windowHeight > 0 else { return metrics.projectSettingsSheetPreferredHeight }
+        return max(
+            metrics.projectSettingsSheetMinHeight,
+            min(metrics.projectSettingsSheetPreferredHeight, windowHeight - metrics.sheetWindowMargin)
+        )
     }
 
+    /// Whether an input method is composing in `window`'s focused field:
+    /// ⌘⏎ then belongs to the text being typed, as in the new worktree
+    /// sheet (`NewSessionKey`), and does not close the sheet.
+    static func isComposing(in window: NSWindow?) -> Bool {
+        (window?.firstResponder as? any NSTextInputClient)?.hasMarkedText() ?? false
+    }
+
+    /// The supervision sheets' shape: the title, the form that
+    /// scrolls, and Done at the bottom right. Not a `NavigationStack`'s
+    /// toolbar: a macOS sheet has no title bar, so a `.principal` title is
+    /// never drawn.
     var body: some View {
-        NavigationStack {
-            Form {
-                generalSection
-                if projectID != nil {
-                    worktreesSection
-                    RoutedAgentsSection(
-                        claudeEnabled: project?.routeClaudeWorktrees ?? true,
-                        codexEnabled: project?.routeCodexWorktrees ?? true,
-                        onClaudeChange: applyRouteClaudeToggle,
-                        onCodexChange: applyRouteCodexToggle
-                    )
-                    bootstrapSection
-                    if !hiddenWorktrees.isEmpty {
-                        hiddenSection
-                    }
+        let metrics = LimpidLayout.Supervision.self
+        VStack(spacing: 0) {
+            SupervisionSheetHeader(title: Text(ProjectSettingsText.title(project: project?.name)))
+                .padding(EdgeInsets(
+                    top: metrics.sheetInsets.top,
+                    leading: metrics.sheetInsets.leading,
+                    bottom: 0,
+                    trailing: metrics.sheetInsets.trailing
+                ))
+            form
+            Divider()
+            SupervisionSheetFooter {
+                // Return breaks a line in the commands' editors, so Done
+                // takes ⌘⏎, as the new worktree sheet's Create does.
+                Button("Done") {
+                    guard !Self.isComposing(in: hostWindow.window) else { return }
+                    dismiss()
                 }
+                .buttonStyle(SupervisionPrimaryButtonStyle())
+                .keyboardShortcut(.return, modifiers: .command)
+                .help(Text("Done (⌘⏎)", comment: "Project settings sheet: tooltip of Done"))
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Label {
-                        Text(titleText)
-                            .font(.system(size: 14, weight: .semibold))
-                    } icon: {
-                        Image(systemName: titleIcon)
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
+            .padding(EdgeInsets(
+                top: metrics.spaceM,
+                leading: metrics.sheetInsets.leading,
+                bottom: metrics.spaceM,
+                trailing: metrics.sheetInsets.trailing
+            ))
         }
-        .frame(width: 520, height: 520)
+        .frame(width: metrics.sheetWidth, height: height)
+        .background(HostWindowReader(reference: hostWindow))
+        // Every change is saved as it is made, so Esc is Done too.
+        // The commands' editors take Esc first and pass it on (`onCancel`).
+        .onExitCommand { dismiss() }
         .overlay {
             // The dot toggles the panel itself, so a press on it is left to
             // the dot rather than closing the panel as a click outside.
@@ -134,7 +128,35 @@ struct ContainerSettingsSheet: View {
         .onAppear(perform: loadDrafts)
     }
 
-    // MARK: - General (common: Project + Group)
+    private var form: some View {
+        Form {
+            generalSection
+            worktreesSection
+            RoutedAgentsSection(
+                claudeEnabled: project?.routeClaudeWorktrees ?? true,
+                codexEnabled: project?.routeCodexWorktrees ?? true,
+                onClaudeChange: applyRouteClaudeToggle,
+                onCodexChange: applyRouteCodexToggle
+            )
+            bootstrapSection
+            filesSection
+            checksSection
+            if !hiddenWorktrees.isEmpty {
+                hiddenSection
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        // The headings as written, in title case, never a style's capitals.
+        .textCase(nil)
+        // The window hands the accent down as `.tint`, which on macOS 26
+        // also colors pop-up values and bordered buttons. As in the
+        // Settings window (`SettingsForm`), the form drops it and the
+        // switches put it back (`RoutedAgentsSection`).
+        .tint(nil as Color?)
+    }
+
+    // MARK: - General
 
     private var generalSection: some View {
         Section("General") {
@@ -142,6 +164,9 @@ struct ContainerSettingsSheet: View {
                 Text("Name")
                 Spacer()
                 TextField("", text: $nameDraft)
+                    // The row's label is a Text beside the field, which
+                    // VoiceOver does not take as the field's name.
+                    .accessibilityLabel(Text("Name"))
                     .multilineTextAlignment(.trailing)
                     .textFieldStyle(.plain)
                     .frame(maxWidth: 260)
@@ -153,112 +178,50 @@ struct ContainerSettingsSheet: View {
                 Spacer()
                 Button {
                     if colorPanel.request == nil {
-                        colorPanel.open(container: target, anchor: colorDotFrame)
+                        colorPanel.open(projectID: projectID, anchor: colorDotFrame)
                     } else {
                         colorPanel.close()
                     }
                 } label: {
                     Circle()
-                        .fill(LimpidColor.paletteColor(paletteIndex))
+                        .fill(LimpidColor.paletteColor(project?.paletteIndex))
                         .frame(width: 16, height: 16)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("Change Color"))
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
                     colorDotFrame = frame
-                    colorPanel.updateAnchor(container: target, anchor: frame)
+                    colorPanel.updateAnchor(projectID: projectID, anchor: frame)
                 }
             }
             if let project {
-                LabeledContent("Root") {
-                    Text(project.rootURL.path)
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                }
-            }
-            // Working Directory only applies to Groups. Project tabs
-            // already derive their cwd from the project root / worktree,
-            // so a mode Picker there would be redundant.
-            if groupID != nil {
-                WorkingDirectoryField(
-                    label: "Working Directory",
-                    mode: groupCwdModeBinding,
-                    path: groupCwdPathBinding
-                )
+                PathRow(label: "Root", url: project.rootURL)
             }
         }
     }
 
-    // MARK: - Working Directory (Group)
-
-    //
-    // The shared `WorkingDirectoryField` drives two independent
-    // bindings; we route both through `setGroupCwdMode` (which
-    // auto-saves and keeps mode/path consistent) by combining each
-    // write with the group's other current value.
-
-    private var groupCwdModeBinding: Binding<WorkingDirectoryMode> {
-        Binding(
-            get: { group?.cwdMode ?? .inheritPrevious },
-            set: { newMode in
-                guard let groupID else { return }
-                session.setGroupCwdMode(groupID, to: newMode, path: group?.cwdPath)
-            }
-        )
-    }
-
-    private var groupCwdPathBinding: Binding<URL?> {
-        Binding(
-            get: { group?.cwdPath },
-            set: { newPath in
-                guard let groupID else { return }
-                session.setGroupCwdMode(groupID, to: group?.cwdMode ?? .fixed, path: newPath)
-            }
-        )
-    }
-
-    // MARK: - Worktrees (Project only)
+    // MARK: - Worktrees
 
     private var worktreesSection: some View {
         Section {
-            Picker("Placement", selection: Binding(
-                get: { currentTag },
-                set: { applyPlacementTag($0) }
-            )) {
-                Text("Adjacent Folder (\(siblingPreview))").tag(PlacementTag.siblingPrefixed)
-                Text("Inside project (.worktrees/)").tag(PlacementTag.insideHidden)
-                Text("Custom Parent Folder").tag(PlacementTag.custom)
-            }
-            if currentTag == .custom {
-                LabeledContent("Parent folder") {
-                    HStack(spacing: 8) {
-                        Button {
-                            chooseCustomParent()
-                        } label: {
-                            Label {
-                                Text(display: displayCustomParent)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            } icon: {
-                                Image(systemName: "folder")
-                            }
-                        }
-                        .buttonStyle(.borderless)
-                        .controlSize(.regular)
-                    }
+            // The new worktree sheet's menu: the placements, the
+            // chosen folder among them, and "Choose a Folder…" to pick one.
+            LabeledContent(ProjectSettingsText.placement) {
+                Menu {
+                    WorktreePlacementMenuItems(
+                        project: project,
+                        onChoose: applyPlacement,
+                        onChooseFolder: chooseCustomParent
+                    )
+                } label: {
+                    Text(display: WorktreePlacementActions.shortTitle(of: project?.worktreePlacement ?? .siblingPrefixed))
                 }
+                .fixedSize()
+                .accessibilityLabel(Text(ProjectSettingsText.placement))
             }
-            LabeledContent("Preview") {
-                Text(placementPreviewPath)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-            }
+            // Not made yet, so never "Not Found"; Finder shows the folder
+            // it will go in.
+            PathRow(label: "Preview", url: placementPreviewURL, isExpectedToExist: false)
         } header: {
             Text("Worktrees")
         } footer: {
@@ -271,32 +234,14 @@ struct ContainerSettingsSheet: View {
         }
     }
 
-    /// Sample sibling folder name like "myapp-<branch>", used in the
-    /// Picker label so the user can see the convention at a glance.
-    private var siblingPreview: String {
-        guard let project else { return "<repo>-<branch>" }
-        return "\(project.rootURL.lastPathComponent)-<branch>"
-    }
-
     /// Preview of the path a new worktree would land at, using a
     /// placeholder branch leaf so the user can sanity-check the
     /// strategy without filling the Create sheet first.
-    private var placementPreviewPath: String {
-        guard let project else { return "—" }
-        return PathFormatting.abbreviateHome(
-            project.resolvedWorktreeURL(branchLeaf: "<branch>").path
-        )
+    private var placementPreviewURL: URL? {
+        project?.resolvedWorktreeURL(branchLeaf: "<branch>")
     }
 
-    private var displayCustomParent: DisplayText {
-        let trimmed = customParentText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            return .localized("Choose…")
-        }
-        return .verbatim(PathFormatting.abbreviateHome(trimmed))
-    }
-
-    // MARK: - Routed agents (Project only)
+    // MARK: - Routed agents
 
     /// Per-agent opt-out section for the PreToolUse hooks that
     /// intercept agent-initiated `git worktree add` invocations. One
@@ -325,23 +270,26 @@ struct ContainerSettingsSheet: View {
         var body: some View {
             Section {
                 // Each agent names itself through the registry, so the only
-                // translated part is the word around the name.
-                Toggle(
-                    Self.label(for: .claude),
+                // translated part is the word around the name. The rows are
+                // the Settings window's switch rows, so the switches are the
+                // mini ones System Settings uses in a form and keep the
+                // accent the form drops as `.tint`.
+                SettingsToggle(
+                    Text(Self.label(for: .claude)),
                     isOn: Binding(get: { claudeEnabled }, set: { onClaudeChange($0) })
                 )
-                Toggle(
-                    Self.label(for: .codex),
+                SettingsToggle(
+                    Text(Self.label(for: .codex)),
                     isOn: Binding(get: { codexEnabled }, set: { onCodexChange($0) })
                 )
             } header: {
-                Text("Apply to agents")
+                Text(ProjectSettingsText.agentWorktrees)
             } footer: {
                 Text(
                     """
                     When an agent listed here runs `git worktree add`, \
-                    Limpid intercepts it and applies this project's \
-                    placement and bootstrap. Off lets the agent use \
+                    Limpid intercepts it and applies this project’s \
+                    placement and setup commands. Off lets the agent use \
                     its own default location.
                     """
                 )
@@ -349,7 +297,7 @@ struct ContainerSettingsSheet: View {
         }
     }
 
-    // MARK: - Bootstrap (Project only)
+    // MARK: - Bootstrap
 
     /// One shell command per line. Runs sequentially inside every
     /// newly-created worktree — both the sidebar's "New Worktree" flow
@@ -363,22 +311,78 @@ struct ContainerSettingsSheet: View {
     /// can't parse.
     private var bootstrapSection: some View {
         Section {
-            PlainTextEditor(text: $bootstrapDraft)
-                .frame(minHeight: 90)
-                .onChange(of: bootstrapDraft) { _, _ in commitBootstrap() }
+            // Saved from the editor's own edits only, so opening the sheet writes nothing.
+            PlainTextEditor(
+                text: Binding(get: { bootstrapDraft }, set: { bootstrapDraft = $0
+                    commitBootstrap()
+                }),
+                onCancel: { dismiss() }
+            )
+            .frame(minHeight: 90)
+            .accessibilityLabel(Text(ProjectSettingsText.setupCommands))
+            // What state.json adds to a line, which the text cannot show.
+            ForEach(SetupCommandsDraft.details(of: project?.bootstrap ?? []), id: \.line) { detail in
+                Text(SetupCommandsDraft.description(of: detail))
+                    .font(LimpidFont.caption)
+                    .foregroundStyle(SettingsFootnote.style.color)
+            }
+            let dropped = SetupCommandsDraft.droppedDetailCount(before: openedBootstrap, after: project?.bootstrap ?? [])
+            if dropped > 0 {
+                Label {
+                    Text("\(dropped) lines lost the timeout or folder set in state.json.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(SupervisionTokens.waitingText.color)
+                }
+                .font(LimpidFont.caption)
+            }
         } header: {
-            Text("Bootstrap commands")
+            Text(ProjectSettingsText.setupCommands)
         } footer: {
             Text(
                 """
-                One shell command per line. Each runs inside the new \
-                worktree after `git worktree add`. Empty = no bootstrap.
+                One shell command per line, run in order inside the new \
+                worktree right after it is created. Leave it empty to run nothing. \
+                A line given a timeout or a folder in state.json keeps them while you edit it.
                 """
             )
         }
     }
 
-    // MARK: - Hidden Worktrees (Project only)
+    /// The files Git ignores that each new worktree gets a copy of,
+    /// a list as the test commands are: paths and patterns, with no order.
+    private var filesSection: some View {
+        Section {
+            IgnoredFilesList(draft: editedFiles, root: project?.rootURL)
+        } header: {
+            Text(ProjectSettingsText.filesToCopy)
+        } footer: {
+            Text(ProjectSettingsText.filesToCopyFooter)
+        }
+    }
+
+    /// The commands whose last run in a turn shows with the turn.
+    /// Shown as the list in force, the defaults included, so adding or
+    /// removing one is an edit of what the person sees. A list, not a text
+    /// area as Setup is: these are patterns with no order, where Setup's
+    /// lines are steps run one after another.
+    private var checksSection: some View {
+        Section {
+            TestCommandsList(draft: editedChecks)
+        } header: {
+            Text(ProjectSettingsText.checkCommands)
+        } footer: {
+            Text(
+                """
+                A trailing * matches the rest of a word. The last of these an agent runs \
+                in a turn shows with the turn. ✓ only means it exited with 0, not that \
+                the change is right. Remove every command to show no tests.
+                """
+            )
+        }
+    }
+
+    // MARK: - Hidden Worktrees
 
     private var hiddenSection: some View {
         Section {
@@ -386,21 +390,24 @@ struct ContainerSettingsSheet: View {
                 HStack {
                     Image(systemName: "eye.slash")
                         .foregroundStyle(.secondary)
-                    Text(wt.label)
+                        .accessibilityHidden(true)
+                    Text(hiddenRowName(wt))
                     Spacer()
                     Button("Show") {
-                        if let projectID {
-                            session.unhideWorktree(projectID: projectID, worktreeID: wt.id)
-                        }
+                        session.unhideWorktree(projectID: projectID, worktreeID: wt.id)
                     }
                     .buttonStyle(.borderless)
+                    // Each row's button by its worktree, so VoiceOver's list
+                    // of buttons tells them apart.
+                    .accessibilityLabel(Text(
+                        "Show \(hiddenRowName(wt))",
+                        comment: "Project settings, VoiceOver: shows one hidden worktree again"
+                    ))
                 }
             }
             if hiddenWorktrees.count > 1 {
                 Button("Show All") {
-                    if let projectID {
-                        session.unhideAllWorktrees(projectID: projectID)
-                    }
+                    session.unhideAllWorktrees(projectID: projectID)
                 }
             }
         } header: {
@@ -413,130 +420,100 @@ struct ContainerSettingsSheet: View {
     private func loadDrafts() {
         if let project {
             nameDraft = project.name
-            if case let .custom(url) = project.worktreePlacement {
-                customParentText = url.path
-            } else {
-                customParentText = ""
-            }
-            bootstrapDraft = project.bootstrap
-                .map(\.cmd)
-                .joined(separator: "\n")
-        } else if let group {
-            nameDraft = group.name
+            bootstrapDraft = SetupCommandsDraft.text(for: project.bootstrap)
+            openedBootstrap = project.bootstrap
+            checksDraft = CheckCommandsDraft(
+                commands: project.checkCommands,
+                defaults: AgentProviderRegistry.checkDefaults
+            )
+            filesDraft = IgnoredFilesDraft(patterns: project.ignoredFilesToCopy)
         }
     }
 
-    /// Convert the multiline draft into `[BootstrapItem]` and push it
-    /// through `WindowSession`. When a line in the draft still matches
-    /// an existing entry's `cmd` we preserve the original entry — that
-    /// keeps `.detailed` rows (with `timeout` / `cwd` hand-edited into
-    /// `state.json`) intact when the user touches the editor for an
-    /// unrelated line. Truly new lines round-trip as `.shorthand`.
-    private func commitBootstrap() {
-        guard let projectID, let project else { return }
-        let existing = project.bootstrap
-        let items: [BootstrapItem] = bootstrapDraft
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .map { String($0).trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .map(Self.sanitiseSmartPunctuation)
-            .map { line in
-                if let match = existing.first(where: { $0.cmd == line }) {
-                    return match
+    /// The files list as the person edits it: each edit saves what it
+    /// changed (`IgnoredFilesDraft.save`), so opening the sheet writes
+    /// nothing.
+    private var editedFiles: Binding<IgnoredFilesDraft> {
+        Binding(
+            get: { filesDraft },
+            set: { edited in
+                let previous = filesDraft
+                filesDraft = edited
+                if case let .patterns(patterns) = IgnoredFilesDraft.save(from: previous, to: edited) {
+                    session.setProjectIgnoredFilesToCopy(projectID, to: patterns)
                 }
-                return .shorthand(line)
             }
-        session.setProjectBootstrap(projectID, to: items)
+        )
+    }
+
+    /// The draft as steps, keeping what state.json adds to a line
+    /// (`SetupCommandsDraft.items`), pushed through `WorkspaceSession`.
+    private func commitBootstrap() {
+        guard let project else { return }
+        session.setProjectBootstrap(projectID, to: SetupCommandsDraft.items(
+            from: bootstrapDraft,
+            previous: project.bootstrap,
+            normalizing: CommandLineText.sanitizeSmartPunctuation
+        ))
+    }
+
+    /// The list as the person edits it: each edit saves what it changed
+    /// (`CheckCommandsDraft.save`). Loading the sheet sets the draft
+    /// directly, past this, so opening it writes nothing.
+    private var editedChecks: Binding<CheckCommandsDraft> {
+        Binding(
+            get: { checksDraft },
+            set: { edited in
+                let previous = checksDraft
+                checksDraft = edited
+                if case let .commands(commands) = CheckCommandsDraft.save(
+                    from: previous,
+                    to: edited,
+                    normalizing: CommandLineText.sanitizeSmartPunctuation
+                ) {
+                    session.setProjectCheckCommands(projectID, to: commands)
+                }
+            }
+        )
     }
 
     private func applyRouteClaudeToggle(_ enabled: Bool) {
-        guard let projectID else { return }
         session.setProjectRouteClaudeWorktrees(projectID, to: enabled)
     }
 
     private func applyRouteCodexToggle(_ enabled: Bool) {
-        guard let projectID else { return }
         session.setProjectRouteCodexWorktrees(projectID, to: enabled)
-    }
-
-    /// Belt-and-braces normalizer for `state.json` hand-edits or
-    /// snapshots from older builds. The editor uses `PlainTextEditor`
-    /// which already turns off the substitutions; this catches the
-    /// case where the value flowed in from outside the editor and
-    /// still carries curly quotes / em-dashes that would later break
-    /// `sh -c`.
-    nonisolated static func sanitiseSmartPunctuation(_ line: String) -> String {
-        line
-            .replacingOccurrences(of: "\u{201C}", with: "\"") // "
-            .replacingOccurrences(of: "\u{201D}", with: "\"") // "
-            .replacingOccurrences(of: "\u{2018}", with: "'") // '
-            .replacingOccurrences(of: "\u{2019}", with: "'") // '
-    }
-
-    private var currentName: String? {
-        project?.name ?? group?.name
     }
 
     private func commitName() {
         let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != currentName else { return }
-        if let projectID {
-            session.renameProject(projectID, to: trimmed)
-        } else if let groupID {
-            session.renameGroup(groupID, to: trimmed)
-        }
+        guard !trimmed.isEmpty, trimmed != project?.name else { return }
+        session.renameProject(projectID, to: trimmed)
     }
 
-    // MARK: - Worktree placement mutations (Project)
+    // MARK: - Worktree placement mutations
 
-    private func applyPlacementTag(_ tag: PlacementTag) {
-        guard let projectID else { return }
-        switch tag {
-        case .siblingPrefixed:
-            session.setProjectWorktreePlacement(projectID, to: .siblingPrefixed)
-        case .insideHidden:
-            session.setProjectWorktreePlacement(projectID, to: .insideHidden)
-        case .custom:
-            let trimmed = customParentText.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                // No parent picked yet — open the picker so the user
-                // can choose one. If they cancel, we keep the previous
-                // placement (no transition happens until a URL is set).
-                chooseCustomParent()
-            } else {
-                let expanded = (trimmed as NSString).expandingTildeInPath
-                session.setProjectWorktreePlacement(
-                    projectID,
-                    to: .custom(URL(fileURLWithPath: expanded))
-                )
-            }
-        }
+    /// The custom item only lists while its folder is the placement, so
+    /// choosing it keeps that folder (`WorktreePlacementActions.apply`).
+    private func applyPlacement(_ choice: WorktreePlacementActions.Choice) {
+        guard let project else { return }
+        WorktreePlacementActions.apply(
+            choice,
+            customParent: WorktreePlacementActions.customParent(of: project.worktreePlacement),
+            to: projectID,
+            in: session,
+            attachedTo: hostWindow.window
+        )
     }
 
+    /// Asks for the folder new worktrees go in, starting at the one in use;
+    /// the panel hangs from this sheet.
     private func chooseCustomParent() {
-        guard let projectID else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        // AppKit localizes the open panel's own buttons and sidebar in the
-        // language the process launched with, so our prompt does too: a
-        // panel half in each language would read worse than one that waits
-        // for the relaunch the menu bar also waits for.
-        // swiftlint:disable:next launch_language_lookup
-        panel.prompt = String(localized: "Choose")
-        if !customParentText.isEmpty {
-            panel.directoryURL = URL(
-                fileURLWithPath: (customParentText as NSString).expandingTildeInPath
-            )
-        }
-        // Non-blocking; same stutter rationale as
-        // `WorkingDirectoryField.chooseDirectory`.
-        panel.begin { response in
-            guard response == .OK, let chosen = panel.url else { return }
-            customParentText = chosen.path
-            session.setProjectWorktreePlacement(projectID, to: .custom(chosen))
-        }
+        WorktreePlacementActions.chooseCustomParent(
+            startingAt: project.map { WorktreePlacementActions.customParent(of: $0.worktreePlacement) } ?? "",
+            for: projectID,
+            in: session,
+            attachedTo: hostWindow.window
+        )
     }
 }

@@ -70,7 +70,7 @@ struct BootstrapDetail: Codable, Equatable {
     /// number `timeout`-aware code paths should clamp to once they exist.
     ///
     /// Not enforced yet. v1 reserves the schema slot, but neither
-    /// `WindowSession.runBootstrapStep` nor either hook backend honors the
+    /// `WorktreeSetup.runStep` nor either hook backend honors the
     /// value — a step that never exits stays alive until the process
     /// goes away. Timeout enforcement must be added to the Swift path and both
     /// hook backends together so backend selection cannot change behavior.

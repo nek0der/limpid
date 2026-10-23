@@ -13,11 +13,27 @@ struct TmuxRuntimeEndpoint: Hashable {
 struct TmuxPaneLocation: Equatable {
     let socketPath: String
     let serverPID: String
+    /// tmux's own `#{start_time}`. What a tmux format compares, so a command
+    /// that checks the server generation inside tmux uses this one.
     let serverStartedAt: String
     let sessionID: String
     let windowID: String
     let paneID: String
     let isActive: Bool
+    /// The second the kernel started the server process
+    /// (`TmuxClientProbe.processStartSecond`), which is what a run's record
+    /// names: its hook reads `ps -o lstart=`, which reports the same value.
+    /// tmux sets `#{start_time}` a moment later, after it forks into the
+    /// background, so across a second boundary the two differ by one, and
+    /// a record compared with `serverStartedAt` would miss its server for
+    /// the server's whole life. `nil` when the probe could not read it
+    /// (and in fixtures), where `serverStartedAt` stands in.
+    var serverProcessStartedAt: String?
+
+    /// The start a run record's `tmuxServerStartedAt` is matched against.
+    var recordedServerStart: String {
+        serverProcessStartedAt ?? serverStartedAt
+    }
 }
 
 struct TmuxTopology: Equatable {
@@ -65,7 +81,7 @@ struct TmuxTopology: Equatable {
         let socket = socketKey(endpoint.socketPath)
         return panes.filter {
             $0.socketPath == socket
-                && $0.serverPID == endpoint.serverPID && $0.serverStartedAt == endpoint.serverStartedAt
+                && $0.serverPID == endpoint.serverPID && $0.recordedServerStart == endpoint.serverStartedAt
                 && $0.paneID == endpoint.paneID
         }
     }

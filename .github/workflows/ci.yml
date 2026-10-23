@@ -250,3 +250,11 @@ jobs:
       # it fails locally, and CI never passes a tree that `make lint` rejects.
       - name: Run SwiftLint
         run: swiftlint lint --strict --quiet
+      - name: Check Japanese translations
+        run: scripts/check-localization.sh
+      - name: Self-test the translation check (plurals and substitutions included)
+        run: scripts/test-check-localization.sh
+      - name: Self-test the fixture golden script against the adapters' rules
+        run: scripts/test-derive-expected-events.sh
+      - name: Self-test that make screenshot shoots the app this checkout built
+        run: scripts/test-screenshot-app.sh

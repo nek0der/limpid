@@ -82,7 +82,7 @@ enum CodexTrustHash {
 
     /// The value model the identity is built from.
     ///
-    /// Modelling it explicitly rather than with `Any` / `AnyHashable` is
+    /// Modeling it explicitly rather than with `Any` / `AnyHashable` is
     /// the whole point: a bridged `1` answers `as? Bool` on Darwin, so the
     /// previous serializer emitted `true` for a one-second timeout and the
     /// hash silently stopped matching Codex's. Only `SessionEnd` and

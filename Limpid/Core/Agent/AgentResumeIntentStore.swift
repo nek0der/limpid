@@ -19,12 +19,20 @@ final class AgentResumeIntentStore {
     static let lifetime: TimeInterval = 24 * 60 * 60
     let directory: URL
 
-    init(directory: URL) {
+    /// False in demo mode: nothing is saved, and intents an earlier build
+    /// left are not moved.
+    let writesFiles: Bool
+
+    init(directory: URL, writesFiles: Bool = true) {
         self.directory = directory
-        SecureFileWrite.ensureUserOnlyDirectory(directory)
+        self.writesFiles = writesFiles
+        if writesFiles {
+            SecureFileWrite.ensureUserOnlyDirectory(directory)
+        }
     }
 
     func save(_ intent: AgentResumeIntent) throws {
+        guard writesFiles else { return }
         guard UUID(uuidString: intent.runID) != nil else { throw POSIXError(.EINVAL) }
         try SecureFileWrite.writeAtomic(PersistenceCoders.makeEncoder().encode(intent), to: url(intent.runID))
     }
@@ -68,33 +76,37 @@ final class AgentResumeIntentStore {
     /// are logged rather than thrown, because a migration that cannot run
     /// costs a restore, and refusing to launch costs more.
     func adoptLegacyIntents(from legacy: URL) {
+        guard writesFiles else { return }
         let fileManager = FileManager.default
         guard let names = try? fileManager.contentsOfDirectory(atPath: legacy.path) else { return }
         for name in names.sorted() where name.hasSuffix(".json") && !name.hasPrefix(".") {
             let target = directory.appendingPathComponent(name)
             guard !fileManager.fileExists(atPath: target.path) else { continue }
             do {
-                try fileManager.moveItem(at: legacy.appendingPathComponent(name), to: target)
+                try SecureFileWrite.moveItem(at: legacy.appendingPathComponent(name), to: target)
             } catch {
-                log.error("adopt intent \(name, privacy: .public): \(String(describing: error), privacy: .public)")
+                log.error("adopt intent \(name, privacy: .public): \(String(describing: error), privacy: .private)")
             }
         }
         // Only when nothing is left: anything we could not move is still
         // someone's evidence, and a later launch can try again.
         if let remaining = try? fileManager.contentsOfDirectory(atPath: legacy.path), remaining.isEmpty {
-            try? fileManager.removeItem(at: legacy)
+            try? SecureFileWrite.removeItem(at: legacy)
         }
     }
 
     func remove(runID: String) throws {
-        guard UUID(uuidString: runID) != nil else { return }
+        guard writesFiles, UUID(uuidString: runID) != nil else { return }
         let target = url(runID)
         if FileManager.default.fileExists(atPath: target.path) {
-            try FileManager.default.removeItem(at: target)
+            try SecureFileWrite.removeItem(at: target)
         }
     }
 
-    private func url(_ runID: String) -> URL {
+    /// Where the intent of `runID` is kept: the one place its file is
+    /// named, for the store and for the commands that delete it
+    /// (`AgentCommandExecutor`).
+    func url(_ runID: String) -> URL {
         directory.appendingPathComponent(runID + ".json")
     }
 }

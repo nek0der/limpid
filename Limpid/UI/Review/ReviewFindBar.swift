@@ -1,5 +1,5 @@
 // ReviewFindBar.swift
-// Limpid — finding text in the file the diff is showing.
+// Limpid — finding text in the review tab's stacked diff.
 //
 // Its own file rather than more of `ReviewPane`, which had reached the length
 // one file is allowed. Nothing here reads the diff: the surface counts the
@@ -8,9 +8,9 @@
 
 import SwiftUI
 
-/// The strip under the file bar. There rather than in the header because it
-/// belongs to the diff, and a reader who switches file keeps the query they
-/// are hunting for.
+/// The strip over the stacked diff. There rather than in the tab's top edge
+/// because it belongs to the diff, and a reader who moves to another file
+/// keeps the query they are hunting for.
 struct ReviewFindBar: View {
     @Binding var search: ReviewSearch
     let hitCount: Int
@@ -20,12 +20,15 @@ struct ReviewFindBar: View {
     let onClose: () -> Void
     /// Passed through to the field. See `ReviewFindField.focusRequest`.
     let focusRequest: Int
+    /// What the bar says about where it searched, when that is not the
+    /// whole of what it was asked to (the review tab's range).
+    var note: String?
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: LimpidLayout.Supervision.spaceSnug) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 10))
-                .foregroundStyle(LimpidColor.tertiaryText)
+                .font(.supervision(.micro))
+                .foregroundStyle(SupervisionTokens.muted.color)
             ReviewFindField(
                 text: $search.query,
                 onMove: onMove,
@@ -43,36 +46,46 @@ struct ReviewFindBar: View {
             }
             Text(display: summary)
                 .font(.caption2.monospacedDigit())
-                .foregroundStyle(LimpidColor.tertiaryText)
+                .foregroundStyle(SupervisionTokens.muted.color)
+                .accessibilityLabel(Text(display: spokenSummary))
+            if let note {
+                Text(verbatim: note)
+                    .font(.caption2)
+                    .foregroundStyle(SupervisionTokens.muted.color)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(Text(verbatim: note))
+            }
             Button {
                 onMove(-1)
             } label: {
-                Image(systemName: "chevron.up").font(.system(size: 10))
+                Image(systemName: "chevron.up").font(.supervision(.micro))
             }
             .buttonStyle(.plain)
             .pointerStyle(.default)
             .disabled(hitCount == 0)
-            .accessibilityLabel(Text("Previous Match"))
+            // The field's own keys (`ReviewFindField`).
+            .iconButtonHelp("Previous Match", shortcut: "⇧⏎")
             Button {
                 onMove(1)
             } label: {
-                Image(systemName: "chevron.down").font(.system(size: 10))
+                Image(systemName: "chevron.down").font(.supervision(.micro))
             }
             .buttonStyle(.plain)
             .pointerStyle(.default)
             .disabled(hitCount == 0)
-            .accessibilityLabel(Text("Next Match"))
+            .iconButtonHelp("Next Match", shortcut: "⏎")
             Button {
                 onClose()
             } label: {
-                Image(systemName: "xmark").font(.system(size: 10))
+                DismissGlyph(size: .micro, weight: .regular)
             }
             .buttonStyle(.plain)
             .pointerStyle(.default)
-            .accessibilityLabel(Text("Close Find Bar"))
+            .iconButtonHelp("Close Find Bar", shortcut: "⎋")
         }
-        .foregroundStyle(LimpidColor.secondaryText)
-        .padding(.horizontal, 10)
+        .foregroundStyle(SupervisionTokens.muted.color)
+        .padding(.horizontal, LimpidLayout.Supervision.spaceS)
         .frame(height: 26)
         .background(LimpidColor.rowActiveFill.opacity(0.5).pointerStyle(.default))
     }
@@ -83,5 +96,14 @@ struct ReviewFindBar: View {
         guard search.isActive else { return .verbatim("") }
         guard hitCount > 0 else { return .localized("No matches") }
         return .verbatim("\(position + 1)/\(hitCount)")
+    }
+
+    /// The summary as VoiceOver says it: a count, not "2 slash 5".
+    private var spokenSummary: DisplayText {
+        guard search.isActive, hitCount > 0 else { return summary }
+        return .localized(LocalizedStringResource(
+            "\(position + 1) of \(hitCount)",
+            comment: "VoiceOver: the find bar’s current match, of how many"
+        ))
     }
 }

@@ -11,32 +11,117 @@ enum LimpidProjectionError: Error {
     case rust(Int32)
 }
 
+/// What the adapter needs of the rules' memory between passes. A protocol
+/// so a test can stand in for the engine and make a pass fail.
+protocol ProjectionPassing: Sendable {
+    func pass(input: Data, now: Data) throws -> LimpidProjectionPass
+    func commit(_ proposal: UInt64) throws
+    /// How many turns a change of the retention limits deletes, from what
+    /// was committed (`limpid_projection_engine_turns_taken_v1`).
+    func turnsTaken(change: Data, now: Data) throws -> Int
+}
+
+/// What one projection pass returned.
+struct LimpidProjectionPass {
+    /// `{ "projection": ..., "commands": [...] }`.
+    let body: Data
+    /// What `LimpidProjectionBridge.Engine.commit(_:)` names to keep this
+    /// pass's state.
+    let proposal: UInt64
+}
+
 /// Calls the projection, launch, and terminate rules.
 ///
 /// Each call hands Rust the JSON it needs and takes ownership of the JSON it
-/// returns. The projection state travels as opaque bytes: we store what one
-/// call produced and hand it to the next without looking inside, so its shape
-/// stays a private matter for the rules.
+/// returns. What the rules remember between passes stays on the Rust side,
+/// in an `Engine`: its shape is a private matter for the rules, and handing
+/// it across on every pass cost more than the pass itself once a person had
+/// kept thousands of turns.
 enum LimpidProjectionBridge {
-    /// Reduces the records the watcher found into what to show and what to do.
-    /// Pass the previous call's state, or nil on the first call after launch.
-    static func project(state: Data?, input: Data, now: Data) throws -> Data {
-        try call { pointers in
-            withBytes(state) { stateBuffer in
-                withBytes(now) { nowBuffer in
-                    limpid_projection_project_v1(
-                        stateBuffer.baseAddress,
-                        stateBuffer.count,
+    /// The rules' memory between passes, for one adapter.
+    ///
+    /// A pass proposes what to remember and `commit(_:)` keeps it, which
+    /// the caller does once it has read the answer: a pass whose answer
+    /// could not be used leaves the memory as it was. A new engine
+    /// remembers nothing, as the first pass after launch finds it.
+    ///
+    /// `@unchecked Sendable` because the handle is the only state and never
+    /// changes after `init`, and every call on it goes through a mutex on
+    /// the Rust side. A commit names the pass whose answer it read, and is
+    /// refused when another pass's commit replaced the state that pass was
+    /// made from. That does not cover a pass whose input was read before
+    /// another commit but reached the rules after it: the adapter drops
+    /// such an answer itself. It passes the engine off the main actor for
+    /// the pass and commits on the main actor.
+    final class Engine: ProjectionPassing, @unchecked Sendable {
+        /// Owned by this object from `init` to `deinit`; Rust releases it.
+        /// Imported as implicitly unwrapped, and never null: the Rust side
+        /// returns a fresh allocation, and an allocation that fails aborts
+        /// there rather than returning.
+        private let handle: OpaquePointer
+
+        init() {
+            handle = limpid_projection_engine_create_v1()
+        }
+
+        deinit {
+            limpid_projection_engine_free_v1(handle)
+        }
+
+        /// Reduces the records the watcher found into what to show and what
+        /// to do, and proposes what to remember.
+        func pass(input: Data, now: Data) throws -> LimpidProjectionPass {
+            var proposal: UInt64 = 0
+            let body = try LimpidProjectionBridge.call { pointers in
+                LimpidProjectionBridge.withBytes(now) { nowBuffer in
+                    limpid_projection_engine_pass_v1(
+                        handle,
                         pointers.input,
                         pointers.inputCount,
                         nowBuffer.baseAddress,
                         nowBuffer.count,
                         pointers.out,
-                        pointers.outCount
+                        pointers.outCount,
+                        &proposal
+                    )
+                }
+            } input: { input }
+            return LimpidProjectionPass(body: body, proposal: proposal)
+        }
+
+        /// Remembers what `proposal`'s pass proposed. Throws when another
+        /// commit replaced the state it was made from (or it was this one),
+        /// or later passes pushed it out, and remembers nothing.
+        func commit(_ proposal: UInt64) throws {
+            let status = limpid_projection_engine_commit_v1(handle, proposal)
+            guard status == Int32(LIMPID_PROJECTION_OK.rawValue) else {
+                throw LimpidProjectionError.rust(status)
+            }
+        }
+
+        /// How many turns the sweep takes under `change`'s `to` limits that
+        /// it keeps under its `from` limits, as a pass made now would choose
+        /// them, deleting none. The sweep's own rule, so the count Advanced
+        /// asks with is what a pass deletes.
+        func turnsTaken(change: Data, now: Data) throws -> Int {
+            var count: UInt64 = 0
+            let status = LimpidProjectionBridge.withBytes(change) { changeBuffer in
+                LimpidProjectionBridge.withBytes(now) { nowBuffer in
+                    limpid_projection_engine_turns_taken_v1(
+                        handle,
+                        changeBuffer.baseAddress,
+                        changeBuffer.count,
+                        nowBuffer.baseAddress,
+                        nowBuffer.count,
+                        &count
                     )
                 }
             }
-        } input: { input }
+            guard status == Int32(LIMPID_PROJECTION_OK.rawValue) else {
+                throw LimpidProjectionError.rust(status)
+            }
+            return Int(clamping: count)
+        }
     }
 
     /// The providers this build has, as `{ "<id>": <descriptor>, ... }`.
@@ -59,6 +144,14 @@ enum LimpidProjectionBridge {
     static func recordLayout() throws -> Data {
         try call { pointers in
             limpid_projection_record_layout_v1(pointers.out, pointers.outCount)
+        } input: { Data() }
+    }
+
+    /// The check commands a project gets until it sets its own, as a JSON
+    /// array; the hook classifies commands with the same list.
+    static func checkDefaults() throws -> Data {
+        try call { pointers in
+            limpid_projection_check_defaults_v1(pointers.out, pointers.outCount)
         } input: { Data() }
     }
 
@@ -134,13 +227,13 @@ enum LimpidProjectionBridge {
         throw LimpidProjectionError.rust(status)
     }
 
-    /// Scopes a byte buffer to one call. An empty value yields a null pointer,
-    /// which is how "no state yet" reaches the first call after launch.
+    /// Scopes a byte buffer to one call. An empty value yields a null
+    /// pointer, which the call reports rather than reads.
     private static func withBytes<T>(
-        _ data: Data?,
+        _ data: Data,
         _ body: (UnsafeBufferPointer<UInt8>) -> T
     ) -> T {
-        guard let data, !data.isEmpty else {
+        guard !data.isEmpty else {
             return body(UnsafeBufferPointer<UInt8>(start: nil, count: 0))
         }
         return data.withUnsafeBytes { buffer in

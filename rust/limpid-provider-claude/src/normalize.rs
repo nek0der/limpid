@@ -6,10 +6,12 @@
 //! transcript's latest `ai-title` line carries the observed titles that this
 //! adapter reads on prompt submit and stop, because Claude has no live title
 //! event. Stop also reads the transcript for the prompt cache window the turn
-//! left behind (see `cache`).
+//! left behind (see `cache`), and the idle prompt for whether the tool call
+//! the run waited on has ended (see `awaited`).
 
 use limpid_agent_model::{
-    AgentEvent, MAX_HOOK_INPUT_BYTES, NormalizeError, RawHookInput, Titles, parse_object,
+    AgentEvent, CommandRun, EventId, HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderId,
+    RawHookInput, SessionSource, Titles, UsageLimit, parse_object, transcript_path_for_events,
 };
 use serde_json::{Map, Value};
 
@@ -22,6 +24,7 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
     let event = match event_name.as_str() {
         "SessionStart" => AgentEvent::SessionStarted {
             compact: string(&object, "source") == Some("compact"),
+            source: SessionSource::parse(string(&object, "source")),
             session_id: string(&object, "session_id").map(str::to_owned),
             session_title: string(&object, "session_title").map(str::to_owned),
             cwd,
@@ -47,25 +50,41 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
             Some("permission_prompt") => AgentEvent::ApprovalRequested {
                 detail: string(&object, "message").map(str::to_owned),
             },
+            Some("idle_prompt") => AgentEvent::AwaitingPrompt {
+                awaited_call_ended: input
+                    .transcript
+                    .is_some_and(crate::awaited::transcript_awaited_call_ended),
+            },
             _ => extension(&event_name, object),
         },
         "PreCompact" => AgentEvent::Compacting {
             context_tokens: object.get("current_token_count").and_then(Value::as_u64),
         },
         "Stop" => AgentEvent::TurnFinished {
+            continues_after_stop_hook: object
+                .get("stop_hook_active")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             titles: input.transcript.and_then(transcript_titles),
             cache: input
                 .transcript
                 .and_then(crate::cache::transcript_cache_window),
         },
-        "StopFailure" => AgentEvent::Failed {
+        "StopFailure" => {
             // Recorded payloads carry the reason under `error`; the shell
             // receiver expected `error_type`, kept as a fallback.
-            error: string(&object, "error")
+            let error = string(&object, "error")
                 .or_else(|| string(&object, "error_type"))
-                .unwrap_or("error")
-                .to_owned(),
-        },
+                .unwrap_or("error");
+            AgentEvent::Failed {
+                usage_limit: if error == "rate_limit" {
+                    usage_limit(&object, input.transcript)
+                } else {
+                    None
+                },
+                error: error.to_owned(),
+            }
+        }
         "CwdChanged" => {
             let new_cwd = ["new_cwd", "newCwd", "cwd"]
                 .iter()
@@ -85,32 +104,69 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
     Ok(vec![event])
 }
 
+/// The plan's usage limit a `rate_limit` failure is, if it is one. The
+/// transcript's API error line says so when it is there; when it is not, the
+/// failure's own words do; with neither, a subscriber's limit is the likely
+/// one (Claude Code retries a subscriber's passing 429s itself since 2.1.199),
+/// so it stands with no time.
+fn usage_limit(object: &Map<String, Value>, transcript: Option<&[u8]>) -> Option<UsageLimit> {
+    use crate::usage::{Finding, message_names_a_limit, transcript_usage_limit};
+    match transcript.map_or(Finding::NotFound, transcript_usage_limit) {
+        Finding::Limit(limit) => Some(limit),
+        Finding::NotALimit => None,
+        Finding::NotFound => match string(object, "last_assistant_message") {
+            Some(message) if !message_names_a_limit(message) => None,
+            _ => Some(UsageLimit::default()),
+        },
+    }
+}
+
 /// Titles are read from the transcript on the two events the shell receiver
 /// read it on: prompt submit and stop. Stop reads it for the cache window too,
-/// which needs no extra file read.
+/// which needs no extra file read, and a failed stop for the usage limit it
+/// hit. The idle prompt reads it for whether the call the run waited on has
+/// ended; the other notifications do not, since each one named costs a file
+/// read.
 pub(crate) fn transcript_path(input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {
+    let path = transcript_path_for_events(input, &["UserPromptSubmit", "Stop", "StopFailure"])?;
+    if path.is_some() {
+        return Ok(path);
+    }
     let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)?;
-    if !matches!(
-        string(&object, "hook_event_name"),
-        Some("UserPromptSubmit" | "Stop")
-    ) {
+    if string(&object, "notification_type") != Some("idle_prompt") {
         return Ok(None);
     }
-    Ok(string(&object, "transcript_path")
-        .filter(|path| {
-            std::path::Path::new(path)
-                .extension()
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("jsonl"))
-        })
-        .map(str::to_owned))
+    transcript_path_for_events(input, &["Notification"])
+}
+
+/// Returns the transcript of a call that puts the run in a wait: the question
+/// tool's `PreToolUse` and the permission prompt's `Notification`. Esc at
+/// either sends no hook, so the app reads this transcript for the interrupt
+/// line while the run waits (`awaited`). Only the path is named; nothing is
+/// read.
+pub(crate) fn wait_transcript_path(
+    input: RawHookInput<'_>,
+) -> Result<Option<String>, NormalizeError> {
+    let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)?;
+    let is_wait = match string(&object, "hook_event_name") {
+        Some("PreToolUse") => string(&object, "tool_name") == Some(crate::approval::QUESTION_TOOL),
+        Some("Notification") => string(&object, "notification_type") == Some("permission_prompt"),
+        _ => false,
+    };
+    if !is_wait {
+        return Ok(None);
+    }
+    transcript_path_for_events(input, &["PreToolUse", "Notification"])
 }
 
 fn pre_tool_use(object: &Map<String, Value>) -> AgentEvent {
     let tool = string(object, "tool_name").unwrap_or_default();
     let tool_input = object.get("tool_input");
     if tool == "AskUserQuestion" {
-        // The question text is what the attention card shows; fall back to
-        // the tool name when the payload shape is not the documented one.
+        // The question text is what the attention card shows. A payload
+        // that is not the documented shape has none, and the wait's kind
+        // already says it is a question, so the tool's name would add
+        // nothing a person could read.
         let question = tool_input
             .and_then(|input| input.get("questions"))
             .and_then(|questions| questions.get(0))
@@ -121,9 +177,9 @@ fn pre_tool_use(object: &Map<String, Value>) -> AgentEvent {
                     .and_then(|input| input.get("question"))
                     .and_then(Value::as_str)
             })
-            .unwrap_or("AskUserQuestion");
+            .filter(|question| !question.trim().is_empty());
         return AgentEvent::WaitingForInput {
-            detail: Some(question.to_owned()),
+            detail: question.map(str::to_owned),
         };
     }
     // Prefer the concrete argument over the bare tool name so a permission
@@ -180,6 +236,97 @@ fn extension(name: &str, object: Map<String, Value>) -> AgentEvent {
     }
 }
 
+/// The hook call's identity. Claude's tool hooks name the tool use they are
+/// about, which stays the same however the call is retried; every other hook
+/// falls back to the shim's invocation id.
+pub(crate) fn event_id(
+    input: RawHookInput<'_>,
+    context: &HookContext,
+    provider: &ProviderId,
+) -> Result<Option<EventId>, NormalizeError> {
+    let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)?;
+    let hook = string(&object, "hook_event_name");
+    if let (Some(hook @ ("PreToolUse" | "PostToolUse" | "PostToolUseFailure")), Some(tool_use_id)) = (
+        hook,
+        string(&object, "tool_use_id").filter(|id| !id.is_empty()),
+    ) {
+        return Ok(Some(EventId::tool(provider, tool_use_id, hook)));
+    }
+    Ok(context
+        .invocation_id
+        .map(|id| EventId::invocation(provider, id)))
+}
+
+/// A Bash command Claude ran, from the hook that follows it. Claude reports
+/// a non-zero exit as a failed tool call (`PostToolUseFailure`) whose `error`
+/// begins `Exit code N`; a call that succeeded exited with 0. An interrupted
+/// run (`interrupted`, `is_interrupt`) has no exit status worth showing.
+/// <https://code.claude.com/docs/en/hooks>
+pub(crate) fn command_run(input: RawHookInput<'_>) -> Result<Option<CommandRun>, NormalizeError> {
+    let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)?;
+    if string(&object, "tool_name") != Some("Bash") {
+        return Ok(None);
+    }
+    let Some(command) = object
+        .get("tool_input")
+        .and_then(|input| input.get("command"))
+        .and_then(Value::as_str)
+        .filter(|command| !command.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    // A command sent to the background reports when it starts, not when it
+    // ends: what came back says nothing about how it exited. It is still the
+    // turn's last check, shown without a ✓ or ✗, so an earlier run's ✓ does
+    // not stand for it.
+    let is_background = object
+        .get("tool_input")
+        .and_then(|input| input.get("run_in_background"))
+        .and_then(Value::as_bool)
+        == Some(true)
+        || object
+            .get("tool_response")
+            .and_then(|response| response.get("backgroundTaskId"))
+            .is_some();
+    let exit_code = match string(&object, "hook_event_name") {
+        _ if is_background => None,
+        Some("PostToolUse") => {
+            let interrupted = object
+                .get("tool_response")
+                .and_then(|response| response.get("interrupted"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            (!interrupted).then_some(0)
+        }
+        Some("PostToolUseFailure") => {
+            if object.get("is_interrupt").and_then(Value::as_bool) == Some(true) {
+                None
+            } else {
+                string(&object, "error").and_then(exit_code_of)
+            }
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(CommandRun {
+        command: command.to_owned(),
+        exit_code,
+        cwd: string(&object, "cwd").map(str::to_owned),
+    }))
+}
+
+/// The status in a failed Bash call's `error`, whose first line is
+/// `Exit code N`.
+fn exit_code_of(error: &str) -> Option<i32> {
+    error
+        .lines()
+        .next()?
+        .trim()
+        .strip_prefix("Exit code ")?
+        .trim()
+        .parse()
+        .ok()
+}
+
 fn string<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
     object.get(key).and_then(Value::as_str)
 }
@@ -190,12 +337,96 @@ mod tests {
     use crate::ClaudeAdapter;
     use limpid_agent_model::ProviderAdapter;
 
+    fn event_id_of(payload: &str, invocation: Option<uuid::Uuid>) -> Option<String> {
+        let context = HookContext {
+            invocation_id: invocation,
+            ..HookContext::fixture()
+        };
+        ClaudeAdapter
+            .event_id(
+                RawHookInput {
+                    bytes: payload.as_bytes(),
+                    transcript: None,
+                },
+                &context,
+            )
+            .expect("an object")
+            .map(|id| id.as_str().to_owned())
+    }
+
+    #[test]
+    fn event_id_uses_tool_use_id_for_claude_tool_events() {
+        let invocation = Some(uuid::Uuid::from_u128(9));
+        let before = event_id_of(
+            r#"{"hook_event_name":"PreToolUse","tool_use_id":"toolu_01"}"#,
+            invocation,
+        );
+        let after = event_id_of(
+            r#"{"hook_event_name":"PostToolUse","tool_use_id":"toolu_01"}"#,
+            invocation,
+        );
+        assert_eq!(before.as_deref(), Some("claude:tool:toolu_01:PreToolUse"));
+        assert_eq!(after.as_deref(), Some("claude:tool:toolu_01:PostToolUse"));
+        // A retry under a new invocation id is still the same tool hook.
+        assert_eq!(
+            event_id_of(
+                r#"{"hook_event_name":"PreToolUse","tool_use_id":"toolu_01"}"#,
+                Some(uuid::Uuid::from_u128(10))
+            ),
+            before
+        );
+    }
+
+    #[test]
+    fn event_id_uses_invocation_id_otherwise() {
+        let invocation = Some(uuid::Uuid::from_u128(9));
+        assert_eq!(
+            event_id_of(
+                r#"{"hook_event_name":"UserPromptSubmit","prompt":"hi"}"#,
+                invocation
+            )
+            .as_deref(),
+            Some("claude:invocation:00000000-0000-0000-0000-000000000009")
+        );
+        // A tool hook without its id falls back too.
+        assert_eq!(
+            event_id_of(r#"{"hook_event_name":"PreToolUse"}"#, invocation).as_deref(),
+            Some("claude:invocation:00000000-0000-0000-0000-000000000009")
+        );
+        assert_eq!(event_id_of(r#"{"hook_event_name":"Stop"}"#, None), None);
+        // The same prompt sent twice is two events; one call retried is one.
+        let prompt = r#"{"hook_event_name":"UserPromptSubmit","prompt":"hi"}"#;
+        assert_ne!(
+            event_id_of(prompt, Some(uuid::Uuid::from_u128(1))),
+            event_id_of(prompt, Some(uuid::Uuid::from_u128(2)))
+        );
+        assert_eq!(
+            event_id_of(prompt, Some(uuid::Uuid::from_u128(1))),
+            event_id_of(prompt, Some(uuid::Uuid::from_u128(1)))
+        );
+    }
+
     fn events(payload: &str, transcript: Option<&str>) -> Vec<AgentEvent> {
         normalize(RawHookInput {
             bytes: payload.as_bytes(),
             transcript: transcript.map(str::as_bytes),
         })
         .expect("normalizes")
+    }
+
+    #[test]
+    fn a_stop_after_a_stop_hook_says_so() {
+        assert_eq!(
+            events(
+                r#"{"hook_event_name":"Stop","stop_hook_active":true}"#,
+                None
+            ),
+            vec![AgentEvent::TurnFinished {
+                continues_after_stop_hook: true,
+                titles: None,
+                cache: None,
+            }]
+        );
     }
 
     #[test]
@@ -210,6 +441,7 @@ mod tests {
         assert_eq!(
             actual,
             vec![AgentEvent::TurnFinished {
+                continues_after_stop_hook: false,
                 titles: Some(Titles {
                     session_title: None,
                     generated_title: Some("second".into()),
@@ -223,6 +455,7 @@ mod tests {
                 Some("{\"type\":\"custom-title\",\"customTitle\":\"mine\"}\n")
             ),
             vec![AgentEvent::TurnFinished {
+                continues_after_stop_hook: false,
                 titles: None,
                 cache: None
             }]
@@ -233,6 +466,7 @@ mod tests {
                 Some("{\"type\":\"user\"}\n")
             ),
             vec![AgentEvent::TurnFinished {
+                continues_after_stop_hook: false,
                 titles: None,
                 cache: None
             }]
@@ -253,6 +487,7 @@ mod tests {
         assert_eq!(
             actual,
             vec![AgentEvent::TurnFinished {
+                continues_after_stop_hook: false,
                 titles: Some(Titles {
                     session_title: None,
                     generated_title: Some("named".into()),
@@ -281,7 +516,7 @@ mod tests {
     }
 
     #[test]
-    fn ask_user_question_reports_the_question_text() {
+    fn ask_user_question_reports_the_question_text_and_nothing_without_one() {
         let payload = r#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which color?"}]}}"#;
         assert_eq!(
             events(payload, None),
@@ -293,9 +528,7 @@ mod tests {
             r#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{}}"#;
         assert_eq!(
             events(payload, None),
-            vec![AgentEvent::WaitingForInput {
-                detail: Some("AskUserQuestion".into())
-            }]
+            vec![AgentEvent::WaitingForInput { detail: None }]
         );
     }
 
@@ -336,12 +569,112 @@ mod tests {
                 detail: Some("Read".into())
             }]
         );
+        // A `command` that is there but empty says what the tool runs is
+        // nothing, so the detail is the bare tool: `file_path` is read only
+        // when the input has no `command` at all.
+        // `scripts/derive-expected-events.py` mirrors this, so a re-recorded
+        // case with both keys derives the golden the adapter gives.
+        let payload = r#"{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"command":"","file_path":"/a.txt"}}"#;
+        assert_eq!(
+            events(payload, None),
+            vec![AgentEvent::ToolStarted {
+                tool: "Edit".into(),
+                detail: Some("Edit".into())
+            }]
+        );
+    }
+
+    #[test]
+    fn an_idle_notification_says_the_agent_awaits_its_prompt() {
+        let payload =
+            r#"{"hook_event_name":"Notification","notification_type":"idle_prompt","message":"m"}"#;
+        assert_eq!(
+            events(payload, None),
+            vec![AgentEvent::AwaitingPrompt {
+                awaited_call_ended: false
+            }]
+        );
+        // This is a question the person declined with Esc: its result and the
+        // interrupt line follow the call, and no hook said so.
+        let declined = concat!(
+            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{}}]}}"#,
+            "\n",
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"User rejected tool use"}]},"toolUseResult":"User rejected tool use","toolDenialKind":"user-rejected"}"#,
+            "\n",
+            r#"{"type":"user","message":{"content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#,
+        );
+        assert_eq!(
+            events(payload, Some(declined)),
+            vec![AgentEvent::AwaitingPrompt {
+                awaited_call_ended: true
+            }]
+        );
+    }
+
+    #[test]
+    fn only_the_idle_notification_asks_for_the_transcript() {
+        let path = |payload: &str| {
+            transcript_path(RawHookInput {
+                bytes: payload.as_bytes(),
+                transcript: None,
+            })
+            .expect("ok")
+        };
+        assert_eq!(
+            path(
+                r#"{"hook_event_name":"Notification","notification_type":"idle_prompt","transcript_path":"/t/x.jsonl"}"#
+            ),
+            Some("/t/x.jsonl".into())
+        );
+        assert_eq!(
+            path(
+                r#"{"hook_event_name":"Notification","notification_type":"permission_prompt","transcript_path":"/t/x.jsonl"}"#
+            ),
+            None
+        );
+        assert_eq!(
+            path(
+                r#"{"hook_event_name":"PreToolUse","notification_type":"idle_prompt","transcript_path":"/t/x.jsonl"}"#
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn only_a_call_that_waits_names_its_transcript_for_the_wait() {
+        let path = |payload: &str| {
+            wait_transcript_path(RawHookInput {
+                bytes: payload.as_bytes(),
+                transcript: None,
+            })
+            .expect("ok")
+        };
+        let named = Some("/t/x.jsonl".to_owned());
+        assert_eq!(
+            path(
+                r#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","transcript_path":"/t/x.jsonl"}"#
+            ),
+            named
+        );
+        assert_eq!(
+            path(
+                r#"{"hook_event_name":"Notification","notification_type":"permission_prompt","transcript_path":"/t/x.jsonl"}"#
+            ),
+            named
+        );
+        for payload in [
+            r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","transcript_path":"/t/x.jsonl"}"#,
+            r#"{"hook_event_name":"Notification","notification_type":"idle_prompt","transcript_path":"/t/x.jsonl"}"#,
+            r#"{"hook_event_name":"Stop","transcript_path":"/t/x.jsonl"}"#,
+            r#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","transcript_path":"/t/x.txt"}"#,
+        ] {
+            assert_eq!(path(payload), None, "{payload}");
+        }
     }
 
     #[test]
     fn other_notifications_and_unknown_events_pass_through_as_extensions() {
-        let payload =
-            r#"{"hook_event_name":"Notification","notification_type":"idle_prompt","message":"m"}"#;
+        let payload = r#"{"hook_event_name":"Notification","notification_type":"auth_success","message":"m"}"#;
         assert!(matches!(
             events(payload, None).as_slice(),
             [AgentEvent::Extension { name, .. }] if name == "Notification"
@@ -363,15 +696,73 @@ mod tests {
         assert_eq!(
             events(payload, None),
             vec![AgentEvent::Failed {
-                error: "server_error".into()
+                error: "server_error".into(),
+                usage_limit: None,
             }]
         );
         let payload = r#"{"hook_event_name":"StopFailure","error_type":"rate_limit"}"#;
         assert_eq!(
             events(payload, None),
             vec![AgentEvent::Failed {
-                error: "rate_limit".into()
+                error: "rate_limit".into(),
+                usage_limit: Some(UsageLimit::default()),
             }]
+        );
+    }
+
+    #[test]
+    fn a_rate_limit_failure_reads_the_reset_from_the_transcript() {
+        let payload = r#"{"hook_event_name":"StopFailure","error":"rate_limit"}"#;
+        let transcript = r#"{"type":"user","message":{"content":"go"}}
+{"type":"assistant","isApiErrorMessage":true,"error":"rate_limit","quotaLimits":{"status":"rejected","resetsAt":1791352800,"rateLimitType":"five_hour"}}
+{"type":"system","subtype":"turn_duration"}"#;
+        assert_eq!(
+            events(payload, Some(transcript)),
+            vec![AgentEvent::Failed {
+                error: "rate_limit".into(),
+                usage_limit: Some(UsageLimit {
+                    resets_at: Some("2026-10-07T06:00:00Z".into()),
+                    window: Some("five_hour".into()),
+                }),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_rate_limit_that_is_not_the_plans_limit_stays_an_error() {
+        let payload = r#"{"hook_event_name":"StopFailure","error":"rate_limit","last_assistant_message":"API Error: Request rejected (429)"}"#;
+        assert_eq!(
+            events(payload, None),
+            vec![AgentEvent::Failed {
+                error: "rate_limit".into(),
+                usage_limit: None,
+            }]
+        );
+        let allowed = r#"{"type":"user","message":{"content":"go"}}
+{"type":"assistant","isApiErrorMessage":true,"error":"rate_limit","quotaLimits":{"status":"allowed"}}"#;
+        assert_eq!(
+            events(
+                r#"{"hook_event_name":"StopFailure","error":"rate_limit"}"#,
+                Some(allowed)
+            ),
+            vec![AgentEvent::Failed {
+                error: "rate_limit".into(),
+                usage_limit: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_failed_stop_asks_for_the_transcript() {
+        let payload = br#"{"hook_event_name":"StopFailure","error":"rate_limit","transcript_path":"/tmp/t.jsonl"}"#;
+        assert_eq!(
+            transcript_path(RawHookInput {
+                bytes: payload,
+                transcript: None,
+            })
+            .unwrap()
+            .as_deref(),
+            Some("/tmp/t.jsonl")
         );
     }
 
@@ -427,6 +818,106 @@ mod tests {
                 })
                 .expect("ok"),
             None
+        );
+    }
+
+    fn run(payload: &str) -> Option<CommandRun> {
+        command_run(RawHookInput {
+            bytes: payload.as_bytes(),
+            transcript: None,
+        })
+        .expect("payload")
+    }
+
+    #[test]
+    fn a_bash_call_reports_its_command_and_exit() {
+        let ok = run(
+            r#"{"hook_event_name":"PostToolUse","tool_name":"Bash","cwd":"/r",
+                "tool_input":{"command":"cargo test"},
+                "tool_response":{"stdout":"ok","stderr":"","interrupted":false,"isImage":false}}"#,
+        )
+        .expect("a run");
+        assert_eq!(ok.command, "cargo test");
+        assert_eq!(ok.exit_code, Some(0));
+        assert_eq!(ok.cwd.as_deref(), Some("/r"));
+
+        let failed = run(
+            r#"{"hook_event_name":"PostToolUseFailure","tool_name":"Bash",
+                "tool_input":{"command":"npm test"},
+                "error":"Exit code 1\nError: Cannot find module 'express'","is_interrupt":false}"#,
+        )
+        .expect("a run");
+        assert_eq!(failed.exit_code, Some(1));
+
+        let interrupted = run(
+            r#"{"hook_event_name":"PostToolUseFailure","tool_name":"Bash",
+                "tool_input":{"command":"npm test"},"error":"Interrupted","is_interrupt":true}"#,
+        )
+        .expect("a run");
+        assert_eq!(interrupted.exit_code, None);
+    }
+
+    #[test]
+    fn a_run_that_did_not_end_has_no_exit() {
+        let interrupted = run(
+            r#"{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"cargo test"},
+                "tool_response":{"stdout":"","stderr":"","interrupted":true,"isImage":false}}"#,
+        )
+        .expect("a run");
+        assert_eq!(interrupted.exit_code, None);
+        let unexplained = run(
+            r#"{"hook_event_name":"PostToolUseFailure","tool_name":"Bash",
+                "tool_input":{"command":"cargo test"},"error":"Command timed out"}"#,
+        )
+        .expect("a run");
+        assert_eq!(
+            unexplained.exit_code, None,
+            "no `Exit code` line, no status"
+        );
+        let background = run(r#"{"hook_event_name":"PostToolUse","tool_name":"Bash",
+                    "tool_input":{"command":"cargo test","run_in_background":true},
+                    "tool_response":{"stdout":"","stderr":"","interrupted":false,"isImage":false}}"#)
+        .expect("a run");
+        assert_eq!(
+            background.exit_code, None,
+            "a background command has not ended"
+        );
+    }
+
+    #[test]
+    fn other_tools_and_hooks_report_no_run() {
+        assert_eq!(
+            run(
+                r#"{"hook_event_name":"PostToolUse","tool_name":"Edit","tool_input":{"file_path":"a"}}"#
+            ),
+            None
+        );
+        assert_eq!(
+            run(
+                r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}"#
+            ),
+            None,
+            "before it ran, it has no result"
+        );
+        assert_eq!(
+            run(r#"{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{}}"#),
+            None
+        );
+    }
+
+    #[test]
+    fn a_bash_result_leaves_a_waiting_question_alone() {
+        // The question stays until its own tool answers: a command that
+        // finished meanwhile is not an answer.
+        let events = events(
+            r#"{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"cargo test"}}"#,
+            None,
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, AgentEvent::ToolFinished { .. })),
+            "{events:?}"
         );
     }
 }

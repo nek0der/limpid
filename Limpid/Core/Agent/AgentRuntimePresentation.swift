@@ -5,6 +5,9 @@ import Foundation
 
 struct AgentRuntimePresentation: Equatable {
     let kind: AgentKind
+    /// The run's ID as its record names it; for a record from before run
+    /// IDs, the rules' whole ID (`provider:pane`), since such a record names
+    /// no run. Compare runs by `id`, never by rebuilding it from this.
     let runID: String
     let revision: Int?
     let badge: AgentBadge
@@ -19,13 +22,38 @@ struct AgentRuntimePresentation: Equatable {
     /// not. Compared with what is in front of a pane before anything is typed
     /// there; see `AttentionState.isAgentInFront`.
     var processID: pid_t?
+    /// The provider's session id, as the run's hooks reported it. An
+    /// approval request names its agent by it, so the request shows in the
+    /// panes this run is attached to now, which for a tmux run need not be
+    /// the pane it started in (`ApprovalPresentationStore.panes(for:in:)`).
+    var sessionID: String?
+    /// The conversation the run's turns are numbered in (its session, or the
+    /// run itself until it reports one). Nil for a provider this build does
+    /// not know, and on compatibility fixtures.
+    var conversation: ConversationKey?
+    /// The turn the run is in or last finished, as its record names it.
+    var currentTurnID: TurnID?
+    /// The ID the rules gave the run (`AgentProjectedRuntime.id`), which the
+    /// marks and the outbox are keyed by. Carried as the rules wrote it so
+    /// the interface never rebuilds its shape: a record from before run IDs
+    /// is named by its pane, and a provider this build does not know keeps
+    /// its own name. `nil` on fixtures, which use `id(kind:runID:)`.
+    var projectedID: String?
+
+    /// The panes that would show the agent if they were on screen: every
+    /// pane it is attached to, except a tmux pane that is not its window's
+    /// active one, which shows another tmux pane instead. Whether the pane
+    /// is on screen at all is `PaneVisibility`'s to say.
+    var activeAttachmentPaneIDs: Set<UUID> {
+        paneIDs.filter { tmuxLocations[$0]?.isActive ?? true }
+    }
 
     var resolution: AgentAttachmentResolution {
         attachmentResolution ?? (paneIDs.isEmpty ? .unresolved : .attached)
     }
 
     var id: String {
-        Self.id(kind: kind, runID: runID)
+        projectedID ?? Self.id(kind: kind, runID: runID)
     }
 
     static func id(kind: AgentKind, runID: String) -> String {
@@ -37,7 +65,8 @@ struct AgentRuntimePresentation: Equatable {
         revision.map(String.init) ?? String(badge.updatedAt.timeIntervalSince1970)
     }
 
-    /// Token used by Waiting and notification history. Unlike
+    /// Token the viewed marks, the attention list, and the notification
+    /// history key an episode by. Unlike
     /// `eventToken`, this identifies a state episode rather than one
     /// record write.
     var attentionEventToken: String {
@@ -45,31 +74,75 @@ struct AgentRuntimePresentation: Equatable {
     }
 }
 
-/// Keeps one attention identity stable while a runtime remains in the
-/// same state. Hook revisions identify writes, not user-visible waiting
-/// episodes: repeated permission metadata can advance the revision
-/// without resolving `.needsInput`.
-struct AgentStateEpisodeTracker {
-    private var episodes: [String: (state: AgentState, token: String)] = [:]
+extension UnreadTurnRules.Run {
+    /// What the unread rules need of `runtime`.
+    init(_ runtime: AgentRuntimePresentation) {
+        self.init(
+            runtimeID: runtime.id,
+            runID: runtime.runID,
+            conversation: runtime.conversation,
+            hasPane: !runtime.paneIDs.isEmpty,
+            updatedAt: runtime.badge.updatedAt
+        )
+    }
+}
 
-    mutating func stamp(_ runtimes: [AgentRuntimePresentation]) -> [AgentRuntimePresentation] {
-        let liveIDs = Set(runtimes.map(\.id))
-        episodes = episodes.filter { liveIDs.contains($0.key) }
-        return runtimes.map { runtime in
-            var stamped = runtime
-            if let persisted = runtime.stateEpisodeToken {
-                episodes[runtime.id] = (runtime.badge.state, persisted)
-                return stamped
-            }
-            let episode: (state: AgentState, token: String)
-            if let existing = episodes[runtime.id], existing.state == runtime.badge.state {
-                episode = existing
-            } else {
-                episode = (runtime.badge.state, runtime.eventToken)
-                episodes[runtime.id] = episode
-            }
-            stamped.stateEpisodeToken = episode.token
-            return stamped
+extension PaneRunLedger.Run {
+    /// What the pane run ledger needs of `runtime`.
+    init(_ runtime: AgentRuntimePresentation) {
+        self.init(
+            runtimeID: runtime.id,
+            paneIDs: runtime.paneIDs,
+            state: runtime.badge.state,
+            turnID: runtime.currentTurnID
+        )
+    }
+}
+
+extension TurnReadRuntime {
+    /// What the turn read rules need of `runtime`.
+    init(_ runtime: AgentRuntimePresentation) {
+        self.init(
+            runID: runtime.runID,
+            activeAttachmentPaneIDs: runtime.activeAttachmentPaneIDs,
+            conversation: runtime.conversation,
+            currentTurnID: runtime.currentTurnID,
+            isFinished: runtime.badge.state == .finished
+        )
+    }
+}
+
+/// This initializer is in an extension, so the memberwise initializer the
+/// fixtures use stays.
+extension AgentRuntimePresentation {
+    /// Makes the run as one pass projected it. `tmuxLocationsByEndpoint` is where
+    /// each tmux endpoint's pane sits in every pane attached to it, from the
+    /// topology probe, for this run's own tmux pane: focus-driven viewed
+    /// marks skip a tmux pane that is not its window's active one, the
+    /// approval hand-off holds the run's request there, and ⌘J selects the
+    /// pane inside tmux.
+    init(projected runtime: AgentProjectedRuntime, tmuxLocationsByEndpoint: [String: [UUID: TmuxPaneLocation]]) {
+        let panes = Set(runtime.panes)
+        let resolution: AgentAttachmentResolution = switch runtime.attachment {
+        case "attached": .attached
+        case "detached": .detached
+        default: .unresolved
         }
+        self.init(
+            kind: AgentKind(rawValue: runtime.provider) ?? .claude,
+            runID: runtime.runID ?? runtime.id,
+            revision: runtime.revision,
+            badge: runtime.badge.asAgentBadge,
+            paneIDs: panes,
+            tmuxLocations: runtime.tmuxEndpointKey.flatMap { tmuxLocationsByEndpoint[$0] }?
+                .filter { panes.contains($0.key) } ?? [:],
+            stateEpisodeToken: runtime.episodeToken,
+            attachmentResolution: resolution,
+            processID: runtime.pid.flatMap { pid_t($0) },
+            sessionID: runtime.sessionID,
+            conversation: runtime.conversation?.key,
+            currentTurnID: runtime.currentTurnID.map(TurnID.init),
+            projectedID: runtime.id
+        )
     }
 }

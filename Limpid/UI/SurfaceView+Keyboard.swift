@@ -94,6 +94,17 @@ extension SurfaceView {
         guard self.window?.firstResponder === self else {
             return super.performKeyEquivalent(with: event)
         }
+        if event.type == .keyDown {
+            takenKeyRelease.notePress(keyCode: event.keyCode, isRepeat: event.isARepeat)
+        }
+
+        // ⌘⏎ is the decision bar's, through its own path rather than a
+        // Ghostty binding: the window acts on it, drops it, or
+        // leaves it to the terminal below. Asked before the bindings, so a
+        // binding of the person's own on ⌘⏎ cannot take it first.
+        if let press = primaryKeyPress(of: event), press.isCommandOnly, takePrimaryKey(press, of: event) {
+            return true
+        }
 
         // libghostty keybind fast-path. Beats the IME chain (notably
         // JIS Kotoeri grabbing ⌘⇧- in `interpretKeyEvents`). We
@@ -117,6 +128,12 @@ extension SurfaceView {
             return true
         }
 
+        // ⌥⌘⏎, ⇧⌘⏎, ⌃⌘⏎ that no binding took: in an agent's pane they too
+        // would reach the agent as Return.
+        if let press = primaryKeyPress(of: event), !press.isCommandOnly, takePrimaryKey(press, of: event) {
+            return true
+        }
+
         // We claim Control+Return before AppKit opens its context menu.
         // Keeping keyDown in the path preserves IME composition and
         // libghostty's key encoding, including keypad Enter.
@@ -132,6 +149,8 @@ extension SurfaceView {
     }
 
     override func keyDown(with event: NSEvent) {
+        // A plain key comes here without `performKeyEquivalent`.
+        takenKeyRelease.notePress(keyCode: event.keyCode, isRepeat: event.isARepeat)
         if Self.consumeAsynchronousCompositionEnter(
             keyCode: event.keyCode,
             timestamp: event.timestamp,
@@ -260,6 +279,38 @@ extension SurfaceView {
         }
     }
 
+    private func primaryKeyPress(of event: NSEvent) -> PrimaryKeyPress? {
+        guard event.type == .keyDown, primaryActionHandler != nil else { return nil }
+        return Self.primaryKeyPress(
+            keyCode: event.keyCode,
+            modifierFlags: event.modifierFlags,
+            isComposing: hasMarkedText(),
+            isRepeat: event.isARepeat
+        )
+    }
+
+    /// Asks the window; when it takes the key, its release is held back too.
+    private func takePrimaryKey(_ press: PrimaryKeyPress, of event: NSEvent) -> Bool {
+        guard let primaryActionHandler, primaryActionHandler(press) else { return false }
+        takenKeyRelease.take(keyCode: event.keyCode)
+        return true
+    }
+
+    /// The ⌘⏎ press a key event makes, or nil when it is not ⌘ with Return
+    /// or the keypad's Enter. Only ⌘ ⌥ ⇧ ⌃ count as the chord: the keypad
+    /// and Caps Lock set flags of their own.
+    nonisolated static func primaryKeyPress(
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags,
+        isComposing: Bool,
+        isRepeat: Bool
+    ) -> PrimaryKeyPress? {
+        guard NamedKey(keyCode: keyCode) == .return else { return nil }
+        let chord = modifierFlags.intersection([.command, .option, .shift, .control])
+        guard chord.contains(.command) else { return nil }
+        return PrimaryKeyPress(isCommandOnly: chord == .command, isComposing: isComposing, isRepeat: isRepeat)
+    }
+
     /// We compare occurrence times because Dictation can commit asynchronously
     /// before AppKit dispatches the Enter that ended composition. An Enter
     /// pressed after the commit (including after microphone-key termination)
@@ -276,6 +327,9 @@ extension SurfaceView {
     }
 
     override func keyUp(with event: NSEvent) {
+        if takenKeyRelease.takesRelease(keyCode: event.keyCode) {
+            return
+        }
         forward(event, action: GHOSTTY_ACTION_RELEASE)
     }
 
@@ -394,5 +448,37 @@ extension SurfaceView {
               scalars.index(after: scalars.startIndex) == scalars.endIndex
         else { return false }
         return first.value < 0x20
+    }
+}
+
+/// The release of a key the window took (⌘⏎ for the decision bar), held
+/// back from the terminal so a TUI that asks for key releases never sees
+/// one with no press. AppKit sends no key-up while ⌘ is down, so the
+/// release usually never comes; a new press of the key, or the pane losing
+/// the keyboard, ends the wait so a later plain Return is released as
+/// usual.
+struct TakenKeyRelease: Equatable {
+    private(set) var keyCode: UInt16?
+
+    mutating func take(keyCode: UInt16) {
+        self.keyCode = keyCode
+    }
+
+    /// A fresh press of the taken key means its release was missed.
+    mutating func notePress(keyCode: UInt16, isRepeat: Bool) {
+        if keyCode == self.keyCode, !isRepeat {
+            self.keyCode = nil
+        }
+    }
+
+    /// True for the taken key's release, which is then no longer awaited.
+    mutating func takesRelease(keyCode: UInt16) -> Bool {
+        guard keyCode == self.keyCode else { return false }
+        self.keyCode = nil
+        return true
+    }
+
+    mutating func reset() {
+        keyCode = nil
     }
 }

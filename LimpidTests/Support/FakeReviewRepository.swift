@@ -1,5 +1,5 @@
 // FakeReviewRepository.swift
-// Limpid — a repository that answers the review store without Git.
+// Limpid — a repository that answers the review session without Git.
 
 import Foundation
 @testable import Limpid
@@ -8,39 +8,41 @@ import Foundation
 ///
 /// The point is the answers a real repository cannot be made to give on
 /// demand: a file that vanishes between two reads, a diff that fails while its
-/// neighbours succeed, a working copy that cannot be read at all.
+/// neighbors succeed, a working copy that cannot be read at all.
 final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
     var files: [ReviewFile] = []
-    var nextFilesGate: ReviewFilesGate?
-    var nextDiffFailureGate: ReviewDiffFailureGate?
+    /// Holds the next file list until the test opens it with the files.
+    var nextFilesGate: Gate<[ReviewFile]>?
+    /// Holds the next diff until the test opens it, then fails that diff.
+    var nextDiffFailureGate: Gate<Void>?
     var stats: [String: ReviewFileStat] = [:]
     var diffs: [String: ReviewDiff] = [:]
+    /// Diffs that differ by scope (`ReviewScope.scopeID`, then file id), for
+    /// a file two fixed ranges compare differently. Asked before `diffs`.
+    var diffsByScope: [String: [String: ReviewDiff]] = [:]
     var fingerprints: [String: String] = [:]
-    var hasChangesOverride: Bool?
     var unsupportedDiffs: Set<String> = []
     var sources: [String: [String]] = [:]
     var base: String?
     /// File ids whose diff should fail rather than answer.
     var failingDiffs: Set<String> = []
-    private(set) var diffCalls: [String] = []
     private(set) var fileCalls = 0
-    private(set) var fileScopes: [ReviewScope] = []
     private(set) var diffScopes: [ReviewScope] = []
-    var isTurnBaseMissing = false
     var isFileListFailing = false
+    /// Ranges (`ReviewScope.scopeID`) whose snapshots are gone.
+    var missingRangeScopeIDs: Set<String> = []
 
     func files(at _: URL, scope: ReviewScope) async throws -> [ReviewFile] {
         fileCalls += 1
-        fileScopes.append(scope)
-        if scope.isTurn, isTurnBaseMissing {
-            throw ReviewError.turnBaseMissing
-        }
         if isFileListFailing {
             throw ReviewError.gitFailed
         }
+        if missingRangeScopeIDs.contains(scope.scopeID) {
+            throw ReviewError.rangeSnapshotsMissing
+        }
         if let gate = nextFilesGate {
             nextFilesGate = nil
-            return await gate.answer()
+            return await gate.wait()
         }
         return files
     }
@@ -50,11 +52,10 @@ final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
     }
 
     func diff(_ file: ReviewFile, root _: URL, scope: ReviewScope) async throws -> ReviewDiff {
-        diffCalls.append(file.id)
         diffScopes.append(scope)
         if let gate = nextDiffFailureGate {
             nextDiffFailureGate = nil
-            await gate.answer()
+            await gate.wait()
             throw ReviewError.gitFailed
         }
         if unsupportedDiffs.contains(file.id) {
@@ -63,7 +64,7 @@ final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
         if failingDiffs.contains(file.id) {
             throw ReviewError.gitFailed
         }
-        guard let diff = diffs[file.id] else { throw ReviewError.gitFailed }
+        guard let diff = diffsByScope[scope.scopeID]?[file.id] ?? diffs[file.id] else { throw ReviewError.gitFailed }
         return diff
     }
 
@@ -74,15 +75,27 @@ final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
         return try await diff(file, root: root, scope: scope).fingerprint
     }
 
+    /// A work tree that never changes: these tests ask about the open
+    /// file's fingerprint, not the stack's read states
+    /// (`StackReviewRepository` answers those).
+    func indexState(root _: URL, scope _: ReviewScope, paths _: Set<String>) async throws -> ReviewIndexState {
+        ReviewIndexState(head: "head", base: nil, entries: [:])
+    }
+
+    func fileStats(_ paths: [String], root _: URL) -> [String: ReviewPathStat] {
+        Dictionary(paths.map { ($0, ReviewPathStat(kind: .regular, info: "100644:0", size: 0)) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    func contentHashes(_ paths: [String], root _: URL) async throws -> [String: String] {
+        Dictionary(paths.map { ($0, "hash") }, uniquingKeysWith: { first, _ in first })
+    }
+
     func hasChanges(
         at root: URL,
         scope: ReviewScope,
         comparedTo displayedFiles: [ReviewFile],
         currentDiff: ReviewDiff?
     ) async throws -> Bool {
-        if let hasChangesOverride {
-            return hasChangesOverride
-        }
         guard try await files(at: root, scope: scope) == displayedFiles else { return true }
         guard let currentDiff else { return false }
         return try await fingerprint(currentDiff.file, root: root, scope: scope)
@@ -98,92 +111,28 @@ final class FakeReviewRepository: ReviewRepositoryReading, @unchecked Sendable {
     }
 }
 
-/// Holds one diff request until a newer repository snapshot can overtake it.
-actor ReviewDiffFailureGate {
-    private var response: CheckedContinuation<Void, Never>?
-    private var observer: CheckedContinuation<Void, Never>?
+extension FakeReviewRepository {
+    /// The file `oneFile` lists unless given another: an unstaged edit.
+    static let unstagedFile = ReviewFile(path: "a.swift", layer: .unstaged, status: .modified)
 
-    func answer() async {
-        await withCheckedContinuation { continuation in
-            response = continuation
-            observer?.resume()
-            observer = nil
-        }
-    }
-
-    func waitUntilRequested() async {
-        guard response == nil else { return }
-        await withCheckedContinuation { observer = $0 }
-    }
-
-    func resume() {
-        response?.resume()
-        response = nil
+    /// A repository listing `file` alone, whose diff (`fingerprint`)
+    /// changes its one line: what a test reads when it is about the
+    /// session rather than the file.
+    static func oneFile(_ file: ReviewFile = unstagedFile, fingerprint: String = "f1") throws -> FakeReviewRepository {
+        let repository = FakeReviewRepository()
+        repository.files = [file]
+        repository.diffs[file.id] = try ReviewDiffFixture.diff(of: file, fingerprint: fingerprint)
+        return repository
     }
 }
 
-/// A draft store that keeps what it is given, so two stores over the same
-/// root can be made to hand a draft between them.
-///
-/// `EphemeralReviewDraftStore` discards, which is right for demo mode and for
-/// tests with nothing to say about persistence — but it cannot answer what a
-/// second opening of review reads back.
-final class RecordingReviewDraftStore: ReviewDraftStoring, @unchecked Sendable {
-    private let lock = NSLock()
-    private var drafts: [URL: ReviewDraft] = [:]
-    /// Set to simulate a draft that had to be quarantined while opening.
-    var isLoadFailing = false
-    /// Set to fail every save, which is how a caller's rollback is exercised.
-    var isFailing = false
-
-    func load(root: URL) throws -> ReviewDraft? {
-        if isLoadFailing {
-            throw ReviewError.draftUnreadable
-        }
-        return lock.withLock { drafts[root] }
-    }
-
-    func save(_ draft: ReviewDraft, root: URL) throws {
-        if isFailing {
-            throw ReviewError.storageFailed
-        }
-        lock.withLock { drafts[root] = draft }
-    }
-}
-
-/// A store wired to a fake repository, keeping its draft in memory.
-///
-/// Nothing here has anything to say about the filesystem, and the version that
-/// made a temporary directory never removed it — every run left one behind.
+/// A session wired to a fake repository, keeping its draft in memory: the
+/// root names no folder, since nothing here reads or writes the filesystem.
 @MainActor
-func withTempStore(git: any ReviewRepositoryReading) -> ReviewStore {
-    ReviewStore(
+func fakeReviewSession(git: any ReviewRepositoryReading) -> ReviewSession {
+    ReviewSession(
         root: URL(fileURLWithPath: "/tmp/limpid-review-root"),
         git: git,
         drafts: EphemeralReviewDraftStore()
     )
-}
-
-/// The test controls one response without relying on a wall-clock delay.
-actor ReviewFilesGate {
-    private var response: CheckedContinuation<[ReviewFile], Never>?
-    private var observer: CheckedContinuation<Void, Never>?
-
-    func answer() async -> [ReviewFile] {
-        await withCheckedContinuation { continuation in
-            response = continuation
-            observer?.resume()
-            observer = nil
-        }
-    }
-
-    func waitUntilRequested() async {
-        guard response == nil else { return }
-        await withCheckedContinuation { observer = $0 }
-    }
-
-    func resume(with files: [ReviewFile]) {
-        response?.resume(returning: files)
-        response = nil
-    }
 }

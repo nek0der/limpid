@@ -35,12 +35,20 @@ enum ReviewFileTree {
         return files.filter { !viewed.contains($0.id) || $0.id == open }
     }
 
+    /// Whether the rail heads its files: the folder tree always heads its
+    /// directories, and the flat list heads its files with their kind only
+    /// when the range has more than one. A range of one kind has nothing to
+    /// tell apart, and its one heading only repeated what the review is of
+    /// ("Turn Changes" over every file of a run of turns).
+    static func showsLayerHeadings(files: [ReviewFile], isTree: Bool) -> Bool {
+        isTree || Set(files.map(\.layer)).count > 1
+    }
+
     /// The files in the order the rail draws them.
     ///
-    /// `n` and `p` walk this list too. They used to step through the store's
-    /// own order — layer then path — which is what the flat list shows and not
-    /// what the tree does, so in tree mode the keys jumped around the rail
-    /// instead of down it.
+    /// `n` and `p` walk this list too, not the store's own order — layer then
+    /// path — which is what the flat list shows and not what the tree does:
+    /// in tree mode the keys would jump around the rail instead of down it.
     static func ordered(_ files: [ReviewFile], isTree: Bool) -> [ReviewFile] {
         guard isTree else {
             // Layer in declaration order, then path: `ReviewLayer.allCases` is

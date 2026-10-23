@@ -14,7 +14,7 @@ import GhosttyKit
 /// protocol means they don't reach into AppKit specifics and the
 /// concrete `SurfaceView` type stays in the UI layer.
 @MainActor
-protocol SurfaceViewProviding: AnyObject {
+protocol SurfaceViewProviding: ScrollbackWriting {
     func view(for id: UUID) -> SurfaceView?
     func id(for view: SurfaceView) -> UUID?
     func register(_ view: SurfaceView, for id: UUID)
@@ -23,11 +23,6 @@ protocol SurfaceViewProviding: AnyObject {
     /// used by TabActions when a pane close mutates the tree so
     /// orphaned SurfaceViews don't pile up.
     func reconcile(activeIDs: Set<UUID>)
-    /// Mark surfaces visible or occluded. Here rather than only on the
-    /// concrete registry because callers hold the protocol: one of them
-    /// reached the method by downcasting, which meant it did nothing at all
-    /// wherever the registry was a test double or the no-op.
-    func updateOcclusion(visibleIDs: Set<UUID>)
     /// The pane's text destination, or `nil` when it has none. Separate from
     /// `view(for:)` so review's delivery path can be answered without a
     /// `SurfaceView` — the concrete registry returns the view itself.
@@ -45,11 +40,10 @@ final class SurfaceRegistry: SurfaceViewProviding {
 
     /// Reverse index keyed by `ObjectIdentifier(view)` so
     /// `id(for view:)` is O(1). Every `register` / `unregister` keeps
-    /// both maps in lockstep. Pre-Phase-3 this was a linear scan over
-    /// `views`, which sat on the hot path of every libghostty
-    /// callback that re-resolves the pane id (`GhosttyEventCoordinator`
-    /// dispatch). Even at 5–10 panes the cost was non-trivial; the
-    /// reverse index removes the n-factor entirely.
+    /// both maps in lockstep. The lookup sits on the hot path of every
+    /// libghostty callback that re-resolves the pane id
+    /// (`GhosttyEventCoordinator` dispatch), where a linear scan over
+    /// `views` would cost one step per pane on each callback.
     private var idByView: [ObjectIdentifier: UUID] = [:]
 
     func view(for id: UUID) -> SurfaceView? {
@@ -137,23 +131,14 @@ final class SurfaceRegistry: SurfaceViewProviding {
     /// Mark surfaces visible/occluded based on the set of pane IDs that
     /// are actually on screen. Surfaces not in `visibleIDs` get their
     /// CVDisplayLink stopped, saving ~120 wakeups/s each on ProMotion.
+    ///
+    /// Only the window registry calls this, with the union of every
+    /// window's visible panes. It is not on `SurfaceViewProviding`, which
+    /// views hold: a view applying its own window's set would put to sleep
+    /// the terminals another window shows.
     func updateOcclusion(visibleIDs: Set<UUID>) {
         for (id, view) in views {
             view.setOccluded(!visibleIDs.contains(id))
-        }
-    }
-
-    /// Occlude every registered surface (e.g. window hidden / app occluded).
-    func occludeAll() {
-        for (_, view) in views {
-            view.setOccluded(true)
-        }
-    }
-
-    /// Reveal every registered surface (e.g. window reappears).
-    func revealAll() {
-        for (_, view) in views {
-            view.setOccluded(false)
         }
     }
 
@@ -177,8 +162,11 @@ final class NoopSurfaceRegistry: SurfaceViewProviding {
     func register(_ view: SurfaceView, for id: UUID) {}
     func unregister(_ id: UUID) {}
     func reconcile(activeIDs: Set<UUID>) {}
-    func updateOcclusion(visibleIDs: Set<UUID>) {}
     func deliverer(for id: UUID) -> (any ReviewTextDelivering)? {
         nil
+    }
+
+    func writeScrollback(ofPane _: UUID, to _: URL) -> Bool {
+        false
     }
 }

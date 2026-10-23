@@ -1,5 +1,5 @@
 // TabActions.swift
-// Limpid — centralized verbs over WindowSession + SplitTree so keyboard
+// Limpid — centralized verbs over WorkspaceSession + SplitTree so keyboard
 // shortcuts, menu items, and context menus all dispatch through the same
 // surface. Each method is small and pure: pull the active tab, mutate its
 // split tree, write it back.
@@ -10,28 +10,8 @@ import OSLog
 
 private let log = Logger.limpid("tab.actions")
 
-extension Notification.Name {
-    /// One process-local route for every sidebar toggle affordance. The main
-    /// layout decides whether a toggle changes the persisted wide-window
-    /// preference or the transient overlay used at compact widths.
-    static let limpidToggleSidebarPresentation = Notification.Name("dev.limpid.toggleSidebarPresentation")
-
-    /// Posted by ⌘⇧R to start an inline rename on the active tab column tab.
-    /// TabRow observes and flips its `isEditing` state when the
-    /// notification carries its own tab id.
-    static let limpidRenameActiveTab = Notification.Name("dev.limpid.renameActiveTab")
-
-    /// Toggle the notification history popover from the palette.
-    /// Posted from `TabActions.dispatchViewAction` so it stays
-    /// colocated with the dispatch slice that emits it.
-    static let limpidToggleNotificationHistory = Notification.Name("dev.limpid.toggleNotificationHistory")
-    /// Toggles the keyboard shortcut cheat sheet on the main window.
-    /// `object` is the owning `WindowSession`.
-    static let limpidToggleKeyboardShortcuts = Notification.Name("dev.limpid.toggleKeyboardShortcuts")
-}
-
 /// A focused leaf and its neighbor on a given edge of the same tab.
-/// Returned from `PaneActions.adjacentLeaf`; the focus, swap, and
+/// Returned from `PaneActions.adjacentLeaf`; the focus and
 /// menu-enabled paths each consume the same record.
 struct PaneAdjacency {
     let tab: Tab
@@ -44,44 +24,127 @@ enum TabActions {
 
     // MARK: - Tab
 
-    static func newTab(_ session: WindowSession) {
-        session.openTabInActiveScope()
+    static func newTab(_ session: WorkspaceSession, in window: WindowID, intent: SelectionIntent) {
+        session.openTabInActiveScope(in: window, intent: intent)
     }
 
-    /// ⌘⇧R — start inline rename on the active tab column tab. Posts a
-    /// notification with the tab id so the matching TabRow flips into
-    /// edit mode without us having to plumb an `@State` binding through
-    /// the tab column list / row hierarchy.
-    static func renameActiveTab(_ session: WindowSession) {
-        guard let tabID = session.activeTabID else { return }
-        NotificationCenter.default.post(name: .limpidRenameActiveTab, object: tabID)
+    /// A tab in `container` running `agent`, or a shell when it is `nil`:
+    /// the pane strip's "+". The agent's command is staged for the
+    /// tab's one pane and typed once its terminal starts. Returns the pane.
+    /// The tab is selected in `window` for `intent` when it `selects`, as
+    /// each `newTab` below; one that does not opens behind
+    /// (`WorkspaceSession.openTab`).
+    @discardableResult
+    static func newTab( // swiftlint:disable:this function_parameter_count
+        _ session: WorkspaceSession,
+        in container: ContainerID,
+        running agent: AgentKind?,
+        window: WindowID,
+        intent: SelectionIntent,
+        selects: Bool
+    ) -> UUID? {
+        if let agent {
+            let paneID = newTab(session, in: container, typing: agent.launchCommand, window: window, intent: intent, selects: selects)
+            stageAgentInFront(agent, paneID: paneID, in: session)
+            return paneID
+        }
+        return session.openTab(container: container, in: window, intent: intent, selects: selects).splitTree.allLeafIDs().first
+    }
+
+    /// The agent a tab opened to run wears its badge from the start,
+    /// before its command is typed or its run has a record: the tab is
+    /// that agent's. What its terminal then runs in front takes over
+    /// (`PaneAgentInFrontRules.next`).
+    private static func stageAgentInFront(_ agent: AgentKind, paneID: UUID?, in session: WorkspaceSession) {
+        guard let paneID, let tab = session.tab(containing: paneID) else { return }
+        session.update(tab.id) { $0.agentsInFront[paneID] = PaneAgentInFront(kind: agent, isStaged: true) }
+    }
+
+    /// A tab in `container` whose shell runs `command` once its terminal
+    /// starts, and stays when it ends, so its output can be read: "Create
+    /// PR" and "Open in {tool}" in the changes panel, and a new
+    /// workspace's terminal with a command.
+    @discardableResult
+    static func newTab( // swiftlint:disable:this function_parameter_count
+        _ session: WorkspaceSession,
+        in container: ContainerID,
+        typing command: String,
+        window: WindowID,
+        intent: SelectionIntent,
+        selects: Bool
+    ) -> UUID? {
+        let tab = session.openTab(container: container, in: window, intent: intent, selects: selects)
+        guard let paneID = tab.splitTree.allLeafIDs().first else { return nil }
+        session.update(tab.id) { $0.initialCommands[paneID] = command }
+        return paneID
+    }
+
+    /// ⌘⇧R — start inline rename on the active pane strip tab. Asks the
+    /// window to rename that tab, so the matching tab of that window flips
+    /// into edit mode without us having to plumb an `@State` binding through
+    /// the strip's view hierarchy. A tab could be listed in more than one
+    /// window's strip; only the window asked edits its name.
+    static func renameActiveTab(_ session: WorkspaceSession, in window: WindowID, commands: any WindowCommandPerforming) {
+        guard let selection = session.selection(window), let tabID = selection.activeTabID else { return }
+        commands.perform(.renameTab(tabID), in: selection.windowID)
     }
 
     /// Single entry point for closing a tab so the "snapshot leaves →
     /// closeTab → unregister leaves" cleanup pattern lives in one
-    /// place. All user-initiated call sites (TabRow's ×, ⌘W cascade,
+    /// place. All user-initiated call sites (a tab's ×, ⌘W cascade,
     /// libghostty's ⌘⌥W, the ellipsis "Close All" menu) funnel
     /// through here, which is also the single chokepoint that
     /// consults `CloseConfirmer` — so the agent-aware modal is
-    /// impossible to bypass from a new caller.
+    /// impossible to bypass from a new caller. The tab closes once the
+    /// confirmation allows it, which may be after this returns.
     static func closeTab(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
         tabID: UUID,
         source: CloseConfirmer.Source = .keyboard,
         confirm: Bool = true,
         attention: AttentionState? = nil,
-        agentProjection: AgentProjectionAdapter? = nil
+        agentProjection: AgentProjectionAdapter? = nil,
+        in window: WindowID? = nil
+    ) {
+        guard let tab = session.tab(tabID) else { return }
+        // `confirm: false` is reserved for batch callers (e.g.
+        // `closeAllTabs`) that already showed an
+        // aggregate prompt — without the opt-out we'd nag the user
+        // once per tab inside the loop.
+        guard confirm else {
+            closeAllowedTab(session, registry: registry, tabID: tabID, askedLeafIDs: nil, agentProjection: agentProjection)
+            return
+        }
+        let leafIDs = tab.splitTree.allLeafIDs()
+        CloseConfirmer.confirm(.tab, source: source, paneIDs: leafIDs, window: window) {
+            closeAllowedTab(
+                session,
+                registry: registry,
+                tabID: tabID,
+                askedLeafIDs: Set(leafIDs),
+                agentProjection: agentProjection
+            )
+        }
+    }
+
+    /// Closes the tab, once allowed. Read again here: a confirmation may
+    /// have been up while the tab closed some other way, or while it split.
+    /// A pane that appeared meanwhile was never asked about (its agent may
+    /// be the one the confirmation would have named), so the tab then stays
+    /// rather than close what the person did not agree to; panes that
+    /// ended meanwhile change nothing. `askedLeafIDs` nil closes it as it
+    /// is, for a caller that asked about the whole container.
+    static func closeAllowedTab(
+        _ session: WorkspaceSession,
+        registry: any SurfaceViewProviding,
+        tabID: UUID,
+        askedLeafIDs: Set<UUID>?,
+        agentProjection: AgentProjectionAdapter?
     ) {
         guard let tab = session.tab(tabID) else { return }
         let leafIDs = tab.splitTree.allLeafIDs()
-        // `confirm: false` is reserved for batch callers (e.g.
-        // `closeAllTabsInActiveContainer`) that already showed an
-        // aggregate prompt — without the opt-out we'd nag the user
-        // once per tab inside the loop.
-        if confirm,
-           !CloseConfirmer.allow(.tab, source: source, paneIDs: leafIDs)
-        {
+        if let askedLeafIDs, !Set(leafIDs).isSubset(of: askedLeafIDs) {
             return
         }
 
@@ -91,11 +154,13 @@ enum TabActions {
         // filename / permissions / directory creation.
         var snapshot = tab
         var paths: [UUID: String] = [:]
-        for pid in leafIDs {
-            guard let view = registry.view(for: pid),
-                  let url = WindowSession.captureScrollback(paneID: pid, view: view)
-            else { continue }
-            paths[pid] = url.path
+        // A demo run's panes are not the person's; their scrollback would
+        // be strays in the person's folder.
+        if session.writesUserFiles, let files = session.scrollbackFiles {
+            for pid in leafIDs {
+                guard let url = files.capture(pid, with: registry) else { continue }
+                paths[pid] = url.path
+            }
         }
         snapshot.scrollbackPaths = paths
         session.recordClosedTab(snapshot)
@@ -118,7 +183,12 @@ enum TabActions {
     /// SwiftUI then mounts a new PaneHostView per leaf and the
     /// existing `stageScrollback` path replays each `.vt` above the
     /// fresh shell prompt — the same machinery ⌘Q + restart uses.
-    static func reopenClosedTab(_ session: WindowSession, specificID: UUID? = nil) {
+    static func reopenClosedTab(
+        _ session: WorkspaceSession,
+        specificID: UUID? = nil,
+        in window: WindowID,
+        intent: SelectionIntent
+    ) {
         let closed: ClosedTab? = if let specificID {
             session.popClosedTab(id: specificID)
         } else {
@@ -148,19 +218,29 @@ enum TabActions {
             agentSessions: closed.tab.agentSessions.mapValues { remapKeys($0, using: idMap) },
             tmuxBindings: remapKeys(closed.tab.tmuxBindings, using: idMap)
         )
+        // What a scratch tab kept from its group comes back with it.
+        revived.namePrefix = closed.tab.namePrefix
+        revived.paletteIndex = closed.tab.paletteIndex
+        revived.cwdMode = closed.tab.cwdMode
+        revived.cwdPath = closed.tab.cwdPath
         // `scrollbackPaths` / `initialCommands` aren't in the Tab init
         // signature, so assign them after construction.
         revived.scrollbackPaths = remapKeys(closed.tab.scrollbackPaths, using: idMap)
         revived.initialCommands = remapKeys(closed.tab.initialCommands, using: idMap)
+        revived.initialPromptFiles = remapKeys(closed.tab.initialPromptFiles, using: idMap)
+        revived.initialAgentExecutables = remapKeys(closed.tab.initialAgentExecutables, using: idMap)
         // The projection answered which of those hints may resume while the
         // pane was open. The hint file went with the pane, so the next pass
         // cannot answer again; carrying the answer here gives the revived
         // pane its chance to resume, on the same best-effort terms as the
         // hints above (a pass that lands before the mount clears it).
         revived.agentResumeCandidates = remapKeys(closed.tab.agentResumeCandidates, using: idMap)
+        // The conversation that named the tab's row names it again, in its
+        // pane under the pane's new id, so a later move takes it along.
+        revived.conversationName = closed.tab.conversationName?.remapped(idMap)
 
         session.tabs.append(revived)
-        session.setActiveTab(revived.id)
+        session.setActiveTab(revived.id, in: window, intent: intent)
     }
 
     /// Rewrite the keys of a `[UUID: T]` through the given mapping.
@@ -180,43 +260,62 @@ enum TabActions {
     }
 
     static func closeActiveTab(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         attention: AttentionState? = nil,
-        agentProjection: AgentProjectionAdapter? = nil
+        agentProjection: AgentProjectionAdapter? = nil,
+        in window: WindowID
     ) {
-        guard let id = session.activeTabID else { return }
+        guard let id = session.selection(window)?.activeTabID else { return }
         closeTab(
             session,
             registry: registry,
             tabID: id,
             source: source,
             attention: attention,
-            agentProjection: agentProjection
+            agentProjection: agentProjection,
+            in: window
         )
     }
 
-    /// Close every tab in the active container. Triggered from the
-    /// tab column toolbar ellipsis menu. Shows one aggregate confirm
-    /// (`CloseConfirmer.allow(.allTabs, ...)`) up front, then loops
-    /// with `confirm: false` so the per-tab `closeTab` doesn't
-    /// re-prompt for every iteration.
-    static func closeAllTabsInActiveContainer(
-        _ session: WindowSession,
+    /// Close every tab in `container`: Close All Tabs in a sidebar row's
+    /// menu. One confirmation up front, then each tab without asking
+    /// again.
+    static func closeAllTabs(
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
-        agentProjection: AgentProjectionAdapter? = nil
+        in container: ContainerID,
+        agentProjection: AgentProjectionAdapter? = nil,
+        from window: WindowID? = nil
     ) {
-        let tabs = session.tabs(in: session.activeContainerID)
+        let tabs = session.tabs(in: container)
         guard !tabs.isEmpty else { return }
         let allLeafIDs = tabs.flatMap { $0.splitTree.allLeafIDs() }
-        guard CloseConfirmer.allow(.allTabs, source: .mouse, paneIDs: allLeafIDs) else { return }
-        for tab in tabs {
-            closeTab(
+        let askedLeafIDs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, Set($0.splitTree.allLeafIDs())) })
+        CloseConfirmer.confirm(.allTabs, source: .mouse, paneIDs: allLeafIDs, window: window) {
+            closeTabs(askedLeafIDs, session, registry: registry, in: container, agentProjection: agentProjection)
+        }
+    }
+
+    /// Closes the tabs Close All Tabs asked about once it is allowed: those
+    /// still in `container` then, each as `closeAllowedTab` does. A tab
+    /// opened while the question was up was not asked about, so it stays;
+    /// so does one that split meanwhile.
+    private static func closeTabs(
+        _ askedLeafIDs: [UUID: Set<UUID>],
+        _ session: WorkspaceSession,
+        registry: any SurfaceViewProviding,
+        in container: ContainerID,
+        agentProjection: AgentProjectionAdapter?
+    ) {
+        for tab in session.tabs(in: container) {
+            guard let asked = askedLeafIDs[tab.id] else { continue }
+            closeAllowedTab(
                 session,
                 registry: registry,
                 tabID: tab.id,
-                confirm: false,
+                askedLeafIDs: asked,
                 agentProjection: agentProjection
             )
         }
@@ -227,16 +326,9 @@ enum TabActions {
 
     // MARK: - Split + pane verbs
 
-    // `split` / `closeActivePane` / `adjacentLeaf` / `pullKeyboardFocus`
-    // / `focusPane` / `swapPane` / `activateAndFocus` / `toggleZoom` /
-    // `equalizeSplits` moved to `Limpid/Core/Actions/PaneActions.swift`.
+    // Pane verbs live in `PaneActions`.
 
     // MARK: - Closed-tab restore (⌘⇧T)
-
-    // MARK: - container navigation (⌘[ / ⌘] / ⌘⌃1…9)
-
-    // `cycleContainer` + `activateContainer` moved to
-    // `Limpid/Core/Actions/NavActions.swift`.
 
     // MARK: - In-pane search (⌘F / ⌘G / ⇧⌘G)
 
@@ -250,9 +342,7 @@ enum TabActions {
 
     // MARK: - Container deletion (frees SurfaceViews too)
 
-    // `removeGroup` / `removeProject` / `removeWorktree` /
-    // `pruneMissingWorktrees` / `deleteGitWorktree` moved to
-    // `Limpid/Core/Actions/ContainerActions.swift`.
+    // Container verbs live in `ContainerActions`.
 
     // MARK: - Command Palette
 
@@ -268,6 +358,20 @@ enum TabActions {
         let projection: AgentProjectionAdapter?
     }
 
+    /// The session a shortcut acts on, the window it runs in, and the way to
+    /// ask that window's views, carried together down the dispatch chain.
+    struct ShortcutScope {
+        let session: WorkspaceSession
+        let window: WindowID
+        let commands: any WindowCommandPerforming
+
+        /// Asks the window to carry out `command` (`WindowCommand`).
+        @MainActor
+        func perform(_ command: WindowCommand) {
+            commands.perform(command, in: window)
+        }
+    }
+
     // swiftlint:disable function_parameter_count
     /// Promoted from `private` to module-internal so
     /// `CommandPaletteActions.executeCommandPaletteAction` can route
@@ -275,43 +379,41 @@ enum TabActions {
     /// menu bar and keyboard shortcuts already use. `toastCenter` +
     /// `minPaneSize` ride along for `PaneActions.split`'s pre-flight
     /// geometry check.
+    ///
+    /// Runs in `window`: its selection is the one moved, and what the
+    /// window's own views do is asked of it alone (`WindowCommand`), not of
+    /// every window. A window the
+    /// session does not know runs nothing: what was asked of a window that
+    /// is gone is not done in another (`WorkspaceSession.selection(_:)`).
     static func dispatchShortcutAction(
         _ action: LimpidShortcutAction,
-        session: WindowSession,
+        session: WorkspaceSession,
         attention: AttentionState,
         registry: any SurfaceViewProviding,
+        commands: any WindowCommandPerforming,
         trackers: SessionTrackers,
         toastCenter: ToastCenter,
-        minPaneSize: PaneMinimumSize
+        minPaneSize: PaneMinimumSize,
+        window: WindowID
     ) {
+        guard session.selection(window) != nil else { return }
+        let scope = ShortcutScope(session: session, window: window, commands: commands)
         switch action.category {
         case .file:
-            dispatchFileAction(
-                action,
-                session: session,
-                registry: registry,
-                attention: attention,
-                trackers: trackers
-            )
+            dispatchFileAction(action, in: scope, registry: registry, attention: attention, trackers: trackers)
         case .view:
-            dispatchViewAction(action, session: session)
+            dispatchViewAction(action, in: scope)
         case .navigation:
-            dispatchNavigationAction(action, session: session, attention: attention, registry: registry)
+            dispatchNavigationAction(action, in: scope, attention: attention)
         case .splits:
-            dispatchSplitAction(
-                action,
-                session: session,
-                registry: registry,
-                toastCenter: toastCenter,
-                minPaneSize: minPaneSize
-            )
+            dispatchSplitAction(action, in: scope, registry: registry, toastCenter: toastCenter, minPaneSize: minPaneSize)
         case .search:
-            dispatchSearchAction(action, session: session, registry: registry)
+            dispatchSearchAction(action, in: scope, registry: registry)
         case .terminal, .font:
             guard let ghosttyAction = action.ghosttyAction else { return }
-            dispatchGhosttyAction(ghosttyAction, session: session, registry: registry)
+            dispatchGhosttyAction(ghosttyAction, in: scope, registry: registry)
         case .help:
-            dispatchHelpAction(action, session: session)
+            dispatchHelpAction(action, in: scope)
         }
     }
 
@@ -319,68 +421,76 @@ enum TabActions {
 
     private static func dispatchFileAction(
         _ action: LimpidShortcutAction,
-        session: WindowSession,
+        in scope: ShortcutScope,
         registry: any SurfaceViewProviding,
         attention: AttentionState,
         trackers: SessionTrackers
     ) {
+        let (session, window) = (scope.session, scope.window)
         switch action {
-        case .newTab: newTab(session)
+        case .newTab: newTab(session, in: window, intent: .person)
         case .newWorktree:
-            NotificationCenter.default.post(name: .limpidCreateWorktreeRequested, object: session)
-        case .renameTab: renameActiveTab(session)
-        case .reopenClosedTab: reopenClosedTab(session)
+            scope.perform(.newWorktree)
+        case .newWorktreeNow:
+            scope.perform(.newWorktreeNow)
+        case .renameTab: renameActiveTab(session, in: window, commands: scope.commands)
+        case .reopenClosedTab: reopenClosedTab(session, in: window, intent: .person)
         case .closeSurface:
             PaneActions.closeActivePaneOrTab(
                 session,
                 registry: registry,
                 attention: attention,
-                agentProjection: trackers.projection
+                agentProjection: trackers.projection,
+                in: window
             )
         case .closeTab:
             closeActiveTab(
                 session,
                 registry: registry,
                 attention: attention,
-                agentProjection: trackers.projection
+                agentProjection: trackers.projection,
+                in: window
             )
+        case .openFolder:
+            scope.perform(.openFolder)
+        case .closeWindow:
+            scope.perform(.closeWindow)
+        case .newWindow:
+            scope.perform(.newWindow)
         default:
             log.fault("dispatchFileAction missing handler for \(action.rawValue, privacy: .public) — add a case or fix action.category")
             assertionFailure("dispatchFileAction missing handler for \(action) — add a case or fix action.category")
         }
     }
 
-    private static func dispatchViewAction(
-        _ action: LimpidShortcutAction,
-        session: WindowSession
-    ) {
+    private static func dispatchViewAction(_ action: LimpidShortcutAction, in scope: ShortcutScope) {
         switch action {
         case .toggleSidebar:
-            NotificationCenter.default.post(name: .limpidToggleSidebarPresentation, object: session)
-        case .toggleTabLayout: session.tabColumnHorizontal.toggle()
+            scope.perform(.toggleSidebar)
         case .notificationHistory:
-            NotificationCenter.default.post(name: .limpidToggleNotificationHistory, object: nil)
-        case .reviewChanges:
-            NotificationCenter.default.post(name: .limpidReviewChanges, object: session)
-        case .reviewTurn:
-            NotificationCenter.default.post(name: .limpidReviewTurn, object: session)
+            scope.perform(.toggleNotificationHistory)
+        case .review:
+            scope.perform(.review)
+        case .reviewLatestTurn:
+            scope.perform(.reviewLatestTurn)
         // Palette / quick-open share the .view category but are
         // launched from `AppState` shortcuts rather than this dispatch
         // path — they intentionally no-op here.
         case .commandPalette, .quickOpen: break
+        case .toggleChangesPanel:
+            scope.perform(.toggleChangesPanel)
+        case .allProjects:
+            scope.perform(.toggleAllProjects)
         default:
             log.fault("dispatchViewAction missing handler for \(action.rawValue, privacy: .public) — add a case or fix action.category")
             assertionFailure("dispatchViewAction missing handler for \(action) — add a case or fix action.category")
         }
     }
 
-    private static func dispatchHelpAction(
-        _ action: LimpidShortcutAction,
-        session: WindowSession
-    ) {
+    private static func dispatchHelpAction(_ action: LimpidShortcutAction, in scope: ShortcutScope) {
         switch action {
         case .keyboardShortcuts:
-            NotificationCenter.default.post(name: .limpidToggleKeyboardShortcuts, object: session)
+            scope.perform(.toggleKeyboardShortcuts)
         default:
             log.fault("dispatchHelpAction missing handler for \(action.rawValue, privacy: .public) — add a case or fix action.category")
             assertionFailure("dispatchHelpAction missing handler for \(action) — add a case or fix action.category")
@@ -389,19 +499,32 @@ enum TabActions {
 
     private static func dispatchNavigationAction(
         _ action: LimpidShortcutAction,
-        session: WindowSession,
-        attention: AttentionState,
-        registry: any SurfaceViewProviding
+        in scope: ShortcutScope,
+        attention: AttentionState
     ) {
+        let (session, window) = (scope.session, scope.window)
         switch action {
-        case .nextSection: NavActions.cycleContainer(session, forward: true)
-        case .previousSection: NavActions.cycleContainer(session, forward: false)
-        case .nextTab: NavActions.cycleTab(session, forward: true)
-        case .previousTab: NavActions.cycleTab(session, forward: false)
+        // The window walks its own session rows before this dispatch is
+        // reached (`SupervisionWindowActions.runPaletteShortcut`), and Core
+        // cannot name them.
+        case .nextSession, .previousSession: break
+        case .nextTab: NavActions.cycleTab(session, forward: true, in: window, intent: .person)
+        case .previousTab: NavActions.cycleTab(session, forward: false, in: window, intent: .person)
         case .nextAttention:
-            attention.jumpToAttention(in: session, registry: registry, forward: true)
+            attention.walkAttention?(true)
         case .previousAttention:
-            attention.jumpToAttention(in: session, registry: registry, forward: false)
+            attention.walkAttention?(false)
+        case .showNeedsAttention:
+            scope.perform(.showNeedsAttention)
+        case .focusSidebar:
+            scope.perform(.focusSidebar)
+        // From the palette the sidebar does not have the keyboard, so the
+        // project to move is the one the window shows.
+        case .moveProjectUp, .moveProjectDown:
+            guard let selection = session.selection(window), let projectID = selection.shownProjectID else { break }
+            selection.sidebarArrangement.move(projectID, by: action == .moveProjectUp ? -1 : 1, among: session.projects.map(\.id))
+        case .goBack: session.navigateBack(in: window, intent: .person)
+        case .goForward: session.navigateForward(in: window, intent: .person)
         default:
             log
                 .fault(
@@ -413,11 +536,12 @@ enum TabActions {
 
     private static func dispatchSplitAction(
         _ action: LimpidShortcutAction,
-        session: WindowSession,
+        in scope: ShortcutScope,
         registry: any SurfaceViewProviding,
         toastCenter: ToastCenter,
         minPaneSize: PaneMinimumSize
     ) {
+        let (session, window) = (scope.session, scope.window)
         switch action {
         case .splitRight:
             PaneActions.split(
@@ -425,7 +549,8 @@ enum TabActions {
                 direction: .horizontal,
                 registry: registry,
                 minPaneSize: minPaneSize,
-                toastCenter: toastCenter
+                toastCenter: toastCenter,
+                in: window
             )
         case .splitDown:
             PaneActions.split(
@@ -433,14 +558,15 @@ enum TabActions {
                 direction: .vertical,
                 registry: registry,
                 minPaneSize: minPaneSize,
-                toastCenter: toastCenter
+                toastCenter: toastCenter,
+                in: window
             )
-        case .equalizeSplits: PaneActions.equalizeSplits(session)
-        case .toggleSplitZoom: PaneActions.toggleZoom(session)
-        case .focusPaneLeft: PaneActions.focusPane(session, registry: registry, direction: .left)
-        case .focusPaneRight: PaneActions.focusPane(session, registry: registry, direction: .right)
-        case .focusPaneUp: PaneActions.focusPane(session, registry: registry, direction: .up)
-        case .focusPaneDown: PaneActions.focusPane(session, registry: registry, direction: .down)
+        case .equalizeSplits: PaneActions.equalizeSplits(session, in: window)
+        case .toggleSplitZoom: PaneActions.toggleZoom(session, in: window)
+        case .focusPaneLeft: PaneActions.focusPane(session, registry: registry, direction: .left, in: window)
+        case .focusPaneRight: PaneActions.focusPane(session, registry: registry, direction: .right, in: window)
+        case .focusPaneUp: PaneActions.focusPane(session, registry: registry, direction: .up, in: window)
+        case .focusPaneDown: PaneActions.focusPane(session, registry: registry, direction: .down, in: window)
         default:
             log.fault("dispatchSplitAction missing handler for \(action.rawValue, privacy: .public) — add a case or fix action.category")
             assertionFailure("dispatchSplitAction missing handler for \(action) — add a case or fix action.category")
@@ -449,13 +575,14 @@ enum TabActions {
 
     private static func dispatchSearchAction(
         _ action: LimpidShortcutAction,
-        session: WindowSession,
+        in scope: ShortcutScope,
         registry: any SurfaceViewProviding
     ) {
+        let (session, window) = (scope.session, scope.window)
         switch action {
-        case .find: SearchActions.beginSearch(session)
-        case .findNext: SearchActions.searchNext(session, registry: registry)
-        case .findPrevious: SearchActions.searchPrevious(session, registry: registry)
+        case .find: SearchActions.beginSearch(session, in: window)
+        case .findNext: SearchActions.searchNext(session, registry: registry, in: window)
+        case .findPrevious: SearchActions.searchPrevious(session, registry: registry, in: window)
         default:
             log.fault("dispatchSearchAction missing handler for \(action.rawValue, privacy: .public) — add a case or fix action.category")
             assertionFailure("dispatchSearchAction missing handler for \(action) — add a case or fix action.category")
@@ -464,10 +591,10 @@ enum TabActions {
 
     private static func dispatchGhosttyAction(
         _ action: String,
-        session: WindowSession,
+        in scope: ShortcutScope,
         registry: any SurfaceViewProviding
     ) {
-        guard let tab = session.activeTab,
+        guard let tab = scope.session.activeTab(in: scope.window),
               let leafID = tab.splitTree.effectiveFocusedLeafID,
               let view = registry.view(for: leafID),
               let surface = view.surface

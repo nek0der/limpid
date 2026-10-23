@@ -16,19 +16,20 @@
 // exactly what the link button it carries needs.
 //
 // The presenter modifier (`prHoverCard(_:)`) attaches the hover
-// listener + anchor tracker; the payload (`PRHoverCardContent`)
+// listener + anchor tracker to a view the card opens from as a whole (the
+// header's chip). A sidebar row splits the two: the row is the
+// anchor (`prHoverCardAnchor`), and only its mark and its second line's
+// fact open the card (`prHoverCardPart`). The payload (`PRHoverCardContent`)
 // renders the card; a shared `PRHoverPresentation` observable
 // coordinates open/close timing so hand-offs between rows and the
 // card body work without race conditions.
 //
-// The overlay is hoisted out of the slab because the card has to be
-// drawn beside the sidebar, over the tab column — and the container
-// slab is a sibling plane in `ThreePaneLayout`, not an ancestor of
-// it. An overlay attached inside the slab would be composited within
-// the slab's own plane and clipped with it.
+// The overlay is hoisted out of the sidebar because the card has to be
+// drawn beside it, over the session area — a sibling plane, not a
+// descendant. An overlay attached inside the sidebar would be composited
+// within the sidebar's own plane and clipped with it.
 //
-// `ThreePaneLayout`'s own `ZStack` is the nearest scope that spans
-// both planes; we go one level further out, to `ContentView`, so this
+// We host it at `WindowChromeHost`, which spans both planes, so this
 // host sits with `ToastHost` and `WorktreeMoveSuggestionHost` rather
 // than being the one floating layer declared somewhere else.
 
@@ -42,19 +43,118 @@ extension View {
     /// `target` makes the modifier a no-op — no hover listener, no
     /// anchor tracking — so a row without a request behaves exactly
     /// as it did before this feature existed.
+    /// `place` tells this place's card apart from another place's for the
+    /// same branch.
     @ViewBuilder
-    func prHoverCard(_ target: (container: ContainerID, info: PRInfo)?) -> some View {
+    func prHoverCard(
+        _ target: (container: ContainerID, info: PRInfo)?,
+        place: PRHoverSource.Place = .row
+    ) -> some View {
         if let target {
-            modifier(PRHoverCardPresenter(info: target.info, rowID: target.container))
+            modifier(PRHoverCardPresenter(info: target.info, rowID: PRHoverSource(container: target.container, place: place)))
+        } else {
+            self
+        }
+    }
+
+    /// The view a sidebar row's card hangs beside, when the card opens
+    /// from parts of it (`prHoverCardPart`). The rest of the view only
+    /// holds an open card up while the pointer crosses it toward the card.
+    /// Applied whether or not the row has a request, so the row keeps its
+    /// identity, and its hover and rename state, as the request comes and
+    /// goes.
+    func prHoverCardAnchor(_ container: ContainerID?) -> some View {
+        modifier(PRHoverCardAnchor(rowID: container.map { PRHoverSource(container: $0) }))
+    }
+
+    /// A part of a sidebar row that opens its card: the mark, or the
+    /// second line while it states the request. A nil `target` makes the
+    /// modifier a no-op.
+    @ViewBuilder
+    func prHoverCardPart(
+        _ target: (container: ContainerID, info: PRInfo)?,
+        part: PRHoverSource.Part
+    ) -> some View {
+        if let target {
+            modifier(PRHoverCardPartPresenter(info: target.info, rowID: PRHoverSource(container: target.container), part: part))
         } else {
             self
         }
     }
 }
 
+/// Tracks a row's frame for the card its parts open, and holds that card
+/// up while the pointer is on the row.
+private struct PRHoverCardAnchor: ViewModifier {
+    let rowID: PRHoverSource?
+
+    @Environment(PRHoverPresentation.self) private var presentation
+    /// Where the row is, whether it has a request yet, and whether the
+    /// lazy list shows it, met in one place (`PRHoverAnchorReporter`).
+    @State private var reporter = PRHoverAnchorReporter()
+
+    func body(content: Content) -> some View {
+        content
+            // See `PRHoverCardPresenter` for why `initial: true`.
+            .background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .onChange(of: proxy.frame(in: .global), initial: true) { _, new in
+                            reporter.frameChanged(new, in: presentation)
+                        }
+                }
+            )
+            .onHover { hovering in
+                if let rowID {
+                    presentation.holdChanged(rowID: rowID, isHovering: hovering)
+                }
+            }
+            // The request is often fetched after the row is laid out, when
+            // the frame no longer changes to report it.
+            .onChange(of: rowID, initial: true) { _, new in
+                reporter.sourceChanged(to: new, in: presentation)
+            }
+            .onAppear { reporter.appeared(in: presentation) }
+            .onDisappear { reporter.disappeared(in: presentation) }
+    }
+}
+
+/// Opens a row's card from one of its parts, hung beside the row
+/// (`PRHoverCardAnchor`) rather than beside the part.
+private struct PRHoverCardPartPresenter: ViewModifier {
+    let info: PRInfo
+    let rowID: PRHoverSource
+    let part: PRHoverSource.Part
+
+    @Environment(PRHoverPresentation.self) private var presentation
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                if hovering {
+                    presentation.rowEntered(
+                        rowID: rowID,
+                        part: part,
+                        info: info,
+                        anchor: nil,
+                        delay: reduceMotion ? .zero : PRHoverPresentation.openDelay
+                    )
+                } else {
+                    presentation.rowExited(rowID: rowID, part: part)
+                }
+            }
+            // See `PRHoverCardPresenter`: a hovered part can leave without
+            // `onHover(false)`, as the mark does when a state takes its place.
+            .onDisappear {
+                presentation.rowDisappeared(rowID: rowID, part: part)
+            }
+    }
+}
+
 private struct PRHoverCardPresenter: ViewModifier {
     let info: PRInfo
-    let rowID: ContainerID
+    let rowID: PRHoverSource
 
     @Environment(PRHoverPresentation.self) private var presentation
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -64,7 +164,7 @@ private struct PRHoverCardPresenter: ViewModifier {
         content
             // A .background(GeometryReader) captures the row's global
             // frame without changing its layout — the overlay in
-            // ContentView needs it to position the card next to the
+            // WindowChromeHost needs it to position the card next to the
             // row wherever the row currently sits.
             //
             // `initial: true` matters: a row whose frame is settled by
@@ -109,12 +209,12 @@ private struct PRHoverCardPresenter: ViewModifier {
 
 /// Hosts the floating PR card at scene root. Reads
 /// `PRHoverPresentation.visible` and positions a card next to the
-/// currently hovered row. Rendered by `ContentView` so it can escape
+/// currently hovered row. Rendered by `WindowChromeHost` so it can escape
 /// the sidebar column's clip bounds — see the file banner for why the
-/// slab itself is the wrong place for it.
+/// sidebar itself is the wrong place for it.
 struct PRHoverCardHost: View {
     /// Read from the environment rather than passed in, so the call
-    /// site matches its neighbors in `ContentView` (`ToastHost`,
+    /// site matches its neighbors in `WindowChromeHost` (`ToastHost`,
     /// `WorktreeMoveSuggestionHost`) and the presenter modifier, which
     /// already reaches the same object that way.
     @Environment(PRHoverPresentation.self) private var presentation
@@ -147,11 +247,21 @@ struct PRHoverCardHost: View {
         return min(max(proposed, margin), size.height - margin)
     }
 
+    /// Where the card starts: after its anchor, or before it when that
+    /// would take it past the window's trailing edge (a chip near the
+    /// window's right, where a sidebar row never is), and never past the
+    /// leading edge.
+    private func leadingX(of anchor: CGRect, in width: CGFloat) -> CGFloat {
+        let after = anchor.maxX + anchorGap
+        guard after + cardWidth > width - anchorGap else { return after }
+        return max(anchorGap, anchor.minX - anchorGap - cardWidth)
+    }
+
     var body: some View {
         GeometryReader { overlayGeo in
             if let snap = presentation.visible {
                 let overlayOrigin = overlayGeo.frame(in: .global).origin
-                let localX = snap.anchorRect.maxX - overlayOrigin.x + anchorGap
+                let localX = leadingX(of: snap.anchorRect.offsetBy(dx: -overlayOrigin.x, dy: 0), in: overlayGeo.size.width)
                 let localY = snap.anchorRect.midY - overlayOrigin.y
                 PRHoverCardContent(info: snap.info)
                     .floatingPanelSurface(cornerRadius: cornerRadius)
@@ -170,7 +280,7 @@ struct PRHoverCardHost: View {
                         x: localX + cardWidth / 2,
                         y: clampedCenterY(localY, in: overlayGeo.size)
                     )
-                    .transition(.opacity)
+                    .modalTransition(.floatingPanel, reduceMotion: reduceMotion)
                     .id(snap.rowID)
             }
         }
@@ -183,12 +293,12 @@ struct PRHoverCardHost: View {
         // Animate on identity, not on the whole snapshot: `anchorRect`
         // changes on every scroll frame, and animating that makes the
         // card lag behind the row it belongs to.
+        //
+        // The fade stays under Reduce Motion: the card appearing and
+        // disappearing with no transition at all reads as a glitch, which
+        // is not what the setting asked for (`ModalMotion`).
         .animation(
-            // Shorter and unsprung under Reduce Motion rather than nothing:
-            // the card appearing and disappearing with no transition at all
-            // reads as a glitch, which is not what the setting asked for.
-            // Same substitution the toast and the move suggestion make.
-            reduceMotion ? nil : LimpidMotion.prHoverCard,
+            ModalMotion.floatingPanel.animation(reduceMotion: reduceMotion),
             value: presentation.visible?.rowID
         )
         .ignoresSafeArea()
@@ -210,15 +320,16 @@ struct PRHoverCardContent: View {
     /// The user's Limpid accent, not `Color.accentColor` — see
     /// `PRMarkPresentation` for why the OS constant is the wrong source.
     @Environment(\.limpidAccent) private var limpidAccent
+    @Environment(\.locale) private var locale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: LimpidLayout.Supervision.spaceS) {
             header
             separator
             checksRow
             footer
         }
-        .padding(14)
+        .padding(LimpidLayout.Supervision.spaceM)
         .frame(width: Self.width, alignment: .leading)
     }
 
@@ -236,8 +347,8 @@ struct PRHoverCardContent: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: LimpidLayout.Supervision.spaceSnug) {
+            HStack(spacing: LimpidLayout.Supervision.spaceSnug) {
                 // `Text("#\(info.number)")` would route through
                 // LocalizedStringKey interpolation, which applies the
                 // locale's grouping separator — turning merge request
@@ -249,8 +360,8 @@ struct PRHoverCardContent: View {
                     .foregroundStyle(.secondary)
                 Text(stateBadgeResource)
                     .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, LimpidLayout.Supervision.spaceSnug)
+                    .padding(.vertical, LimpidLayout.Supervision.spaceHairline)
                     .background(stateAccent.opacity(0.18), in: .capsule)
                     .foregroundStyle(stateAccent)
                 Spacer(minLength: 0)
@@ -265,11 +376,7 @@ struct PRHoverCardContent: View {
     @ViewBuilder
     private var checksRow: some View {
         if let checks = info.checks {
-            HStack(spacing: 8) {
-                // Octicons, from the same family the row's mark is
-                // drawn from, so the card and the row read as one
-                // report rather than two vocabularies.
-                //
+            HStack(spacing: LimpidLayout.Supervision.spaceS) {
                 // Hidden from VoiceOver: `checksText` beside it already
                 // states the conclusion, and an unlabeled `Image` is
                 // announced by its asset name ("x-circle-fill").
@@ -285,10 +392,11 @@ struct PRHoverCardContent: View {
                     .accessibilityHidden(true)
                 checksText(checks)
                     .font(.callout)
+                    .accessibilityLabel(Text(verbatim: PRChecksText.spoken(checks, forge: info.forge, locale: locale)))
                 Spacer(minLength: 0)
             }
         } else {
-            HStack(spacing: 8) {
+            HStack(spacing: LimpidLayout.Supervision.spaceS) {
                 Image(systemName: "circle.dashed")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
@@ -322,7 +430,7 @@ struct PRHoverCardContent: View {
             .pointerStyle(.link)
             Spacer()
         }
-        .padding(.top, 2)
+        .padding(.top, LimpidLayout.Supervision.spaceHairline)
     }
 
     // MARK: - Label helpers
@@ -370,41 +478,17 @@ struct PRHoverCardContent: View {
 
     private func checksColor(_ checks: PRChecks) -> Color {
         switch checks.conclusion {
-        case .success: LimpidColor.success
-        case .failure: LimpidColor.error
-        case .pending: LimpidColor.warning
+        // A check's result, not a state, so a pass may be green; a
+        // failure is the stopped red, since both are failures.
+        case .success: SupervisionTokens.added.color
+        case .failure: SupervisionTokens.stopped.color
+        case .pending: SupervisionTokens.waiting.color
         }
     }
 
-    /// One sentence shape across both forges: "<noun> <verdict>",
-    /// with the count breakdown in parentheses when the forge gives us
-    /// one. The noun differs per forge on purpose — see
-    /// `ForgeKind.checksNoun`.
-    ///
-    /// GitLab reports only an aggregate status, so `counts` is absent
-    /// there and the verdict stands alone. Inventing "(0/0)" would
-    /// read as a confident claim about checks we never saw.
+    /// The sentence a session row's VoiceOver label reads in words
+    /// (`PRChecksText.spoken`), with its counts as the card shows them.
     private func checksText(_ checks: PRChecks) -> Text {
-        // Each branch is one complete sentence in the catalog rather
-        // than fragments concatenated at runtime, so a translator sees
-        // the whole phrase and can reorder it. `noun` varies per forge and is
-        // interpolated as a resource, so it resolves in the same locale as
-        // the sentence around it.
-        let noun = info.forge.checksNoun
-        guard let counts = checks.counts else {
-            return switch checks.conclusion {
-            case .success: Text("\(noun) passed")
-            case .failure: Text("\(noun) failed")
-            case .pending: Text("\(noun) running")
-            }
-        }
-        return switch checks.conclusion {
-        case .success:
-            Text("\(noun) passed (\(counts.passed)/\(counts.total))")
-        case .failure:
-            Text("\(noun) failed (\(counts.passed)/\(counts.total) passed)")
-        case .pending:
-            Text("\(noun) running (\(counts.passed)/\(counts.total) passed)")
-        }
+        Text(verbatim: PRChecksText.make(checks, forge: info.forge, locale: locale))
     }
 }

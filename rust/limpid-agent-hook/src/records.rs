@@ -1,6 +1,6 @@
 //! File-level mechanics shared by every record the hook writes: the
-//! sidecar lock the Swift stores and the shell receivers use, atomic
-//! replacement, user-only permissions, and the diagnostic log.
+//! sidecar lock the Swift stores use too, atomic replacement, user-only
+//! permissions, and the diagnostic log.
 
 use limpid_agent_model::{
     LOCK_FILE_SUFFIX, RUN_RECORD_FILE_SUFFIX, RunRecord, WORKTREE_EVENT_FILE_SUFFIX,
@@ -12,9 +12,11 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-/// How many times a busy lock is retried, and how long between attempts.
-/// Matches the shell receiver's `lockf` loop.
-const LOCK_ATTEMPTS: u32 = 20;
+/// How many times a busy lock is retried, and how long between attempts:
+/// about 200 milliseconds in all, short enough that an event's hook barely
+/// holds up its agent; a prompt's waits longer (`PROMPT_RECORD_LOCK_ATTEMPTS`).
+pub(crate) const RECORD_LOCK_ATTEMPTS: u32 = 20;
+const LOCK_ATTEMPTS: u32 = RECORD_LOCK_ATTEMPTS;
 const LOCK_RETRY: Duration = Duration::from_millis(10);
 
 /// The `O_NOFOLLOW` flag, so a symlink planted at a lock or record path is
@@ -27,26 +29,34 @@ const O_NOFOLLOW: i32 = 0o400_000;
 const O_NOFOLLOW: i32 = 0;
 
 /// Runs `body` while holding the exclusive advisory lock on `path`'s sidecar
-/// (`path` followed by `LOCK_FILE_SUFFIX`), retrying a busy lock as the shell
-/// did. Returns `None` when the lock stayed busy or the sidecar could not be
-/// opened (a symlink planted there, for example), in which case the event is
-/// dropped rather than written out of order, as the shell receiver and the
-/// Swift store do. On non-Unix hosts there is no lock and `body` runs
-/// directly.
+/// (`path` followed by `LOCK_FILE_SUFFIX`), retrying a busy lock. Returns
+/// `None` when the lock stayed busy or the sidecar could not be opened (a
+/// symlink planted there, for example), in which case the event is dropped
+/// rather than written out of order, as the Swift store does. On non-Unix
+/// hosts there is no lock and `body` runs directly.
 pub fn with_record_lock<T>(path: &Path, body: impl FnOnce() -> T) -> Option<T> {
+    with_record_lock_attempts(path, LOCK_ATTEMPTS, body)
+}
+
+/// `with_record_lock`, retrying a busy lock up to `attempts` times.
+pub(crate) fn with_record_lock_attempts<T>(
+    path: &Path,
+    attempts: u32,
+    body: impl FnOnce() -> T,
+) -> Option<T> {
     let sidecar = PathBuf::from(format!("{}{LOCK_FILE_SUFFIX}", path.display()));
     if !cfg!(unix) {
         return Some(body());
     }
     let lock = open_lock_file(&sidecar)?;
-    for attempt in 0..LOCK_ATTEMPTS {
+    for attempt in 0..attempts {
         match try_lock(&lock) {
             Ok(()) => {
                 let result = body();
                 let _ = unlock(&lock);
                 return Some(result);
             }
-            Err(busy) if busy && attempt + 1 < LOCK_ATTEMPTS => thread::sleep(LOCK_RETRY),
+            Err(busy) if busy && attempt + 1 < attempts => thread::sleep(LOCK_RETRY),
             Err(_) => return None,
         }
     }
@@ -54,7 +64,7 @@ pub fn with_record_lock<T>(path: &Path, body: impl FnOnce() -> T) -> Option<T> {
 }
 
 #[cfg(unix)]
-fn open_lock_file(sidecar: &Path) -> Option<File> {
+pub(crate) fn open_lock_file(sidecar: &Path) -> Option<File> {
     use std::os::unix::fs::OpenOptionsExt;
     OpenOptions::new()
         .read(true)
@@ -68,7 +78,7 @@ fn open_lock_file(sidecar: &Path) -> Option<File> {
 }
 
 #[cfg(not(unix))]
-fn open_lock_file(_sidecar: &Path) -> Option<File> {
+pub(crate) fn open_lock_file(_sidecar: &Path) -> Option<File> {
     None
 }
 

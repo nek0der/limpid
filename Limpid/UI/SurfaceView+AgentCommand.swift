@@ -8,16 +8,10 @@ import GhosttyKit
 extension SurfaceView: AgentCommandTyping {
     /// The foreground process group's leader on this surface's pty, as
     /// libghostty reads it from the side of the pty it owns, named by the
-    /// path it was started from.
-    ///
-    /// Not the kernel's accounting name: Claude Code's native installer
-    /// starts `~/.local/bin/claude`, a link to a file named after the
-    /// version, and the accounting name is that version (`2.1.292`). The
-    /// start path is what a provider's declared process names match, and
-    /// what the hook's own ancestor walk compares, through `ps -o comm`.
+    /// path it was started from (`ProcessNames`).
     var foregroundProcessName: String? {
         guard let pid = foregroundProcessID else { return nil }
-        return Self.executableName(of: pid) ?? TmuxPanePresence.processName(of: pid)
+        return ProcessNames.name(of: pid)
     }
 
     var foregroundProcessID: pid_t? {
@@ -25,26 +19,23 @@ extension SurfaceView: AgentCommandTyping {
         return GhosttyFFI.surfaceForegroundPID(surface)
     }
 
-    /// The last component of the path `pid` was started from, read from the
-    /// head of its argument area (`KERN_PROCARGS2`: the argument count, then
-    /// that path), or `nil` when the kernel will not say.
-    private nonisolated static func executableName(of pid: pid_t) -> String? {
-        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
-        var size = 0
-        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else {
-            return nil
-        }
-        var buffer = [UInt8](repeating: 0, count: size)
-        // The second call can report less than the first sized for.
-        guard sysctl(&mib, u_int(mib.count), &buffer, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else {
-            return nil
-        }
-        let path = buffer[MemoryLayout<Int32>.size..<size].prefix { $0 != 0 }
-        guard !path.isEmpty, let text = String(bytes: path, encoding: .utf8) else { return nil }
-        return (text as NSString).lastPathComponent
+    /// The names of the processes in the foreground process group, its
+    /// leader first (`ProcessNames.foregroundGroupNames`).
+    var foregroundGroupProcessNames: [String] {
+        guard let leader = foregroundProcessID else { return [] }
+        return ProcessNames.foregroundGroupNames(leader: leader)
     }
 
-    /// Types `command` as keystrokes, then presses Return.
+    /// The arguments the foreground group's leader was started with, after
+    /// its own name (a shell at its prompt has none, `-l`, or what Ghostty's
+    /// shell integration adds); `nil` when the kernel will not say.
+    var foregroundLeaderArguments: [String]? {
+        guard let leader = foregroundProcessID, leader > 0 else { return nil }
+        return ProcessNames.processArguments(of: leader).map(\.arguments)
+    }
+
+    /// Types `command` as keystrokes, then schedules the Return that runs
+    /// it, which any input of the person's before it lands cancels.
     ///
     /// Not a paste. An agent composer folds a bracketed paste into the
     /// message as literal text, so a pasted `/compact` is sent to the model
@@ -53,23 +44,30 @@ extension SurfaceView: AgentCommandTyping {
     /// therefore goes through `commitText(_:)`, which writes it to the pty
     /// as typed input that no keybinding can intercept.
     ///
-    /// Return follows a moment later rather than in the same write. Arriving
+    /// The Return is scheduled a moment later rather than sent in the same
+    /// write (`PendingCommandSubmit`). Arriving
     /// together, the agent can read the whole chunk as one burst of input
     /// and treat it as pasted; apart, the command line is complete and its
     /// suggestion list settled when the key that runs it arrives.
     func typeAgentCommand(_ command: String) -> Bool {
+        // Typed, not pasted: a control character is a key to the line
+        // editor, and DEL is a backspace that could take a quote away from
+        // a path in the command.
         guard surface != nil,
               !command.isEmpty,
-              !command.unicodeScalars.contains(where: { $0.value < 0x20 })
+              !command.unicodeScalars.contains(where: \.isTypedControl)
         else { return false }
         // Typed through `commitText` and `sendReturnKey` directly, which
         // `noteKeyInput(_:)` and `noteTextInput()` do not see: our own
         // command is no draft of the user's, and leaving the two marks as
-        // they were means it cannot block the next answer. Neither needs
-        // resetting afterwards, since both had to be clear for us to type.
+        // they were means it cannot block the next answer. The callers
+        // checked the draft mark of the job in front before typing.
+        noteTypedOwnCommand(command)
         commitText(command)
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: Self.commandSubmitDelay)
+        // Any input of the person's before it lands takes the Return away
+        // (`noteKeyInput(_:)`, `noteTextInput()`): after a ⌃C and ↑ at a
+        // shell, it would run the history line they brought back.
+        commandSubmit.schedule(after: Self.commandSubmitDelay) { [weak self] in
             guard let self, let surface = self.surface else { return }
             self.sendReturnKey(to: surface)
         }
@@ -83,6 +81,30 @@ extension SurfaceView: AgentCommandTyping {
     static let commandSubmitDelay: Duration = .milliseconds(120)
 
     // MARK: - Unsent input
+
+    /// Who a draft was typed to. A draft belongs to the prompt it was typed
+    /// at: an agent that exits takes its prompt, and what was typed there,
+    /// along, so a key left in Claude's TUI does not count as text at the
+    /// shell after.
+    enum DraftOwner: Equatable {
+        case process(pid_t)
+        /// The job in front could not be read; the draft is kept.
+        case unknown
+    }
+
+    var hasUnsubmittedInput: Bool {
+        switch draftOwner {
+        case nil: false
+        case .unknown: true
+        case let .process(pid): pid == foregroundProcessID
+        }
+    }
+
+    /// Records whether a draft waits at the job in front: `isDraft` is true
+    /// when text reached it, false when it was sent or dropped.
+    func noteDraft(_ isDraft: Bool) {
+        draftOwner = isDraft ? foregroundProcessID.map(DraftOwner.process) ?? .unknown : nil
+    }
 
     /// What one key press does to an agent's prompt, as far as the terminal
     /// can tell without reading the screen.
@@ -130,10 +152,11 @@ extension SurfaceView: AgentCommandTyping {
         case .none:
             return
         case .draft:
-            hasUnsubmittedInput = true
+            noteDraft(true)
         case .submit:
-            hasUnsubmittedInput = false
+            noteDraft(false)
         }
+        commandSubmit.cancel()
         lastKeyInputAt = Date()
     }
 
@@ -150,7 +173,75 @@ extension SurfaceView: AgentCommandTyping {
     /// clipboard read), dropped file paths, Dictation, or the character
     /// viewer.
     func noteTextInput() {
-        hasUnsubmittedInput = true
+        noteDraft(true)
+        commandSubmit.cancel()
         lastKeyInputAt = Date()
+    }
+
+    /// Types `body`, the initial command (`scheduleInitialCommandIfNeeded`),
+    /// and Return into the terminal, and tells `onInitialCommandTyped`;
+    /// nothing at all when the terminal is gone. Split from the wait so a
+    /// test can see that a pane with no terminal reports nothing typed.
+    func typeInitialCommand(_ body: String) {
+        guard let surface else {
+            // No terminal to type into: nothing staged is coming.
+            stagedCommand = nil
+            return
+        }
+        body.withCString { ptr in
+            ghostty_surface_text(surface, ptr, UInt(strlen(ptr)))
+        }
+        sendReturnKey(to: surface)
+        stagedCommand?.typedAt = .now
+        // Typed once: a surface made again for this view (Retry) must
+        // not run it a second time, nor report it again.
+        initialCommand = nil
+        let typed = onInitialCommandTyped
+        onInitialCommandTyped = nil
+        typed?(Date())
+    }
+}
+
+/// This holds the Return `typeAgentCommand(_:)` sends a moment after the
+/// command's text, so the person's own input meanwhile can take it away. The
+/// Return was typed for the line as Limpid left it; once they pressed a
+/// key there, the line is theirs, and the Return would run whatever it
+/// holds by then.
+@MainActor
+final class PendingCommandSubmit {
+    private let sleep: @Sendable (Duration) async throws -> Void
+    private var task: Task<Void, Never>?
+
+    /// `sleep` is the wait before the Return, a test's own so that it can
+    /// act inside the wait rather than race a clock.
+    init(sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+        self.sleep = sleep
+    }
+
+    /// Runs `submit` after `delay`, unless `cancel()` comes first. A second
+    /// command replaces the first one's Return, which would otherwise land
+    /// in the middle of the second's text.
+    func schedule(after delay: Duration, _ submit: @escaping @MainActor () -> Void) {
+        task?.cancel()
+        task = Task { @MainActor [sleep] in
+            do {
+                try await sleep(delay)
+            } catch {
+                return
+            }
+            // We check after the wait too: a cancel can come between the
+            // wait's end and this task running again.
+            guard !Task.isCancelled else { return }
+            submit()
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+    }
+
+    /// Returns once the Return scheduled last was sent or dropped.
+    func settled() async {
+        await task?.value
     }
 }

@@ -1,5 +1,5 @@
 {
-  "description": "A running turn whose process died while its pane is still open is retired: the pid decides, the pane does not.",
+  "description": "A running turn whose process died while its pane is still open is retired: the pid decides, the pane does not. The pass that retires it shows the run stopped, in error with the process-exited reason, since no hook will; it is not announced as a failure. The pane's session is still handed over for that stop, but not as a resume candidate: the hint goes with the record, and a run nothing claimed is the stop's to resume, not a restored pane's.",
   "runs": [
     {
       "provider": "claude",

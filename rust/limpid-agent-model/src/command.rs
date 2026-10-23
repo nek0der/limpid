@@ -100,6 +100,33 @@ pub enum CommandOp {
     },
     /// Refetch git state for a repository an agent just created a worktree in.
     GitSyncRefetch { repo_root: String },
+    /// Delete a turn: its record and the refs that pin its two snapshots,
+    /// together. Either alone would leave the other behind for good:
+    /// a record whose snapshots are gone reads as incomplete, and refs with
+    /// no record are never swept, keeping their trees from `git gc`. The
+    /// host hands it to the turn collector rather than performing it under a
+    /// record lock, since it runs git.
+    DeleteTurn { turn_id: String },
+    /// Close a run's wait that its transcript shows the person declined,
+    /// which no hook reports (Claude's question or permission prompt
+    /// dismissed with Esc): the run record ends as an interrupt ends it,
+    /// and its turn ends `interrupted` with its end snapshot. The host hands
+    /// it to the bridge's writer off the main thread, since the end
+    /// snapshot runs git, rather than performing it under a record lock of
+    /// its own. The writer takes the record lock itself and checks under it
+    /// that the record is still this wait (the fields below) and that the
+    /// transcript still reads declined, so a prompt that came meanwhile
+    /// makes it a no-op; the precondition is `None` for that reason.
+    EndDeclinedWait {
+        /// This is the wait's `stateEpisodeToken`.
+        episode_token: String,
+        /// This is the turn the wait is in (`currentTurnId`); it is absent
+        /// when the record names none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        turn_id: Option<String>,
+        /// This is the transcript the record names, which read declined.
+        transcript_path: String,
+    },
 }
 
 /// What the command addresses. The host needs this separately from the verb
@@ -127,6 +154,12 @@ pub enum Target {
     },
     /// A provider's retired directory, for the sweep.
     RetiredRecords { provider: ProviderId },
+    /// A turn's record in a provider's turns directory, with the refs that
+    /// pin its snapshots.
+    Turn {
+        provider: ProviderId,
+        turn_id: String,
+    },
     /// A provider's pane-scoped store, for the capped cleanup.
     PaneStore {
         provider: ProviderId,
@@ -394,6 +427,61 @@ mod tests {
         );
         let text = serde_json::to_string(&command).expect("encode");
         let back: Command = serde_json::from_str(&text).expect("decode");
+        assert_eq!(back, command);
+    }
+
+    #[test]
+    fn delete_turn_names_the_turn_in_its_op_and_its_target() {
+        let command = Command::new(
+            CommandOp::DeleteTurn {
+                turn_id: "TURN".to_owned(),
+            },
+            Target::Turn {
+                provider: provider(),
+                turn_id: "TURN".to_owned(),
+            },
+            Precondition::None,
+        );
+        let value = serde_json::to_value(&command).expect("encode");
+        // The shape the Swift host decodes (`AgentProjectionCommand`).
+        assert_eq!(
+            value["op"],
+            serde_json::json!({"op": "deleteTurn", "turnId": "TURN"})
+        );
+        assert_eq!(
+            value["target"],
+            serde_json::json!({"target": "turn", "provider": "claude", "turnId": "TURN"})
+        );
+        let back: Command = serde_json::from_value(value).expect("decode");
+        assert_eq!(back, command);
+    }
+
+    #[test]
+    fn end_declined_wait_names_the_wait_and_its_record() {
+        let command = Command::new(
+            CommandOp::EndDeclinedWait {
+                episode_token: "5".to_owned(),
+                turn_id: Some("TURN".to_owned()),
+                transcript_path: "/t/session.jsonl".to_owned(),
+            },
+            Target::Record {
+                provider: provider(),
+                storage_id: "RUN".to_owned(),
+            },
+            Precondition::None,
+        );
+        let value = serde_json::to_value(&command).expect("encode");
+        // This is the shape the Swift host decodes (`AgentProjectionCommand`).
+        assert_eq!(
+            value["op"],
+            serde_json::json!({
+                "op": "endDeclinedWait",
+                "episodeToken": "5",
+                "turnId": "TURN",
+                "transcriptPath": "/t/session.jsonl",
+            })
+        );
+        let back: Command = serde_json::from_value(value).expect("decode");
         assert_eq!(back, command);
     }
 

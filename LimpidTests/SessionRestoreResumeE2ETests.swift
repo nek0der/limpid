@@ -1,7 +1,7 @@
 // SessionRestoreResumeE2ETests.swift
 // Limpid — end-to-end coverage for the session-restore → resume
 // command pipeline. The individual links (SessionSnapshot encode /
-// decode, WindowSession.restore, the projection pass,
+// decode, WorkspaceSession.restore, the projection pass,
 // AgentResumeCommandBuilder.initialCommand) each have their own
 // suite; this file pins down the chain that actually drives a user
 // resume: a Limpid that quit yesterday with a live Claude / Codex
@@ -32,7 +32,7 @@ struct SessionRestoreResumeE2ETests {
     /// snapshot round-trips, the session restores, and the first projection
     /// pass runs the way `AppState` runs it before any surface mounts.
     private func relaunch(in root: URL, hints: [Hint]) throws -> (tab: Tab, paneID: UUID) {
-        let session = WindowSession()
+        let session = WorkspaceSession()
         let tab = session.openTabInActiveScope()
         let paneID = try #require(tab.splitTree.allLeafIDs().first)
         let directories = AgentProviderRegistry.directories(under: root)
@@ -60,7 +60,7 @@ struct SessionRestoreResumeE2ETests {
 
         let data = try JSONEncoder().encode(session.makeSnapshot())
         let decoded = try JSONDecoder().decode(SessionSnapshot.self, from: data)
-        let restored = WindowSession()
+        let restored = WorkspaceSession()
         restored.restore(from: decoded)
 
         let adapter = AgentProjectionAdapter(
@@ -73,57 +73,51 @@ struct SessionRestoreResumeE2ETests {
         )
         adapter.bootstrap(into: restored)
         #expect(adapter.lastFailure == nil)
-        return try (#require(restored.activeTab), paneID)
+        return try (#require(restored.activeTab(in: restored.primaryWindowID)), paneID)
     }
 
-    // MARK: - Claude end-to-end
+    /// The command the surface mount reads for `kind`'s agent in the pane.
+    private static func resumeCommand(_ kind: AgentKind, for tab: Tab, paneID: UUID) -> String? {
+        switch kind {
+        case .claude:
+            AgentResumeCommandBuilder<ClaudeAgent>.initialCommand(for: tab, paneID: paneID)
+        case .codex:
+            AgentResumeCommandBuilder<CodexAgent>.initialCommand(for: tab, paneID: paneID)
+        }
+    }
 
-    @Test("encode → decode → restore preserves a Claude resume command")
-    func claudeResume_survivesSnapshotRoundTrip() throws {
+    // MARK: - End to end
+
+    @Test("encode → decode → restore preserves each agent's resume command", arguments: [
+        (AgentKind.claude, "f47ac10b-58cc-4372-a567-0e02b2c3d479", "claude --resume f47ac10b-58cc-4372-a567-0e02b2c3d479"),
+        (.codex, "01963d6b-c0e9-7c4e-9bce-e4d6f2c1c000", "codex resume 01963d6b-c0e9-7c4e-9bce-e4d6f2c1c000")
+    ])
+    func aResume_survivesSnapshotRoundTrip(kind: AgentKind, sessionId: String, resume: String) throws {
         try withTempDir { root in
             let (tab, paneID) = try relaunch(in: root, hints: [
-                Hint(kind: .claude, sessionId: "f47ac10b-58cc-4372-a567-0e02b2c3d479", cwd: "/Users/dev/limpid")
+                Hint(kind: kind, sessionId: sessionId, cwd: "/Users/dev/limpid")
             ])
 
-            let command = AgentResumeCommandBuilder<ClaudeAgent>.initialCommand(for: tab, paneID: paneID)
-            let resolved = try #require(command)
-            #expect(resolved.contains("claude --resume f47ac10b-58cc-4372-a567-0e02b2c3d479"))
+            let resolved = try #require(Self.resumeCommand(kind, for: tab, paneID: paneID))
+            #expect(resolved.contains(resume))
             #expect(resolved.contains("cd '/Users/dev/limpid'"))
         }
     }
 
-    @Test("a malformed Claude session id falls back to a fresh `claude` after restore")
-    func claudeResume_invalidSessionId_fallsBackToFresh() throws {
-        // The validator rejects anything outside the UUID-shape character set.
-        // We expect the resume builder to drop the `--resume <id>` term
-        // and emit a plain `claude` so a hand-edited hint can't smuggle shell
-        // metacharacters into the spawn command.
+    @Test("a malformed Claude session id types nothing after restore")
+    func claudeResume_invalidSessionId_typesNothing() throws {
+        // The validator rejects anything outside the UUID-shape character set,
+        // so a hand-edited hint can't smuggle shell metacharacters into the
+        // spawn command. Nothing takes its place either: a fresh `claude`
+        // would be a new conversation in the old one's pane, which a resume
+        // never starts.
         try withTempDir { root in
             let (tab, paneID) = try relaunch(in: root, hints: [
                 Hint(kind: .claude, sessionId: "bad id; rm -rf /", cwd: nil)
             ])
 
             let command = AgentResumeCommandBuilder<ClaudeAgent>.initialCommand(for: tab, paneID: paneID)
-            // Builder still returns a command (the sessionId stored is
-            // non-empty), but the validation rejects the unsafe shape and
-            // the fallback path emits a plain `claude`.
-            #expect(command == "claude")
-        }
-    }
-
-    // MARK: - Codex end-to-end
-
-    @Test("encode → decode → restore preserves a Codex resume command")
-    func codexResume_survivesSnapshotRoundTrip() throws {
-        try withTempDir { root in
-            let (tab, paneID) = try relaunch(in: root, hints: [
-                Hint(kind: .codex, sessionId: "01963d6b-c0e9-7c4e-9bce-e4d6f2c1c000", cwd: "/Users/dev/limpid")
-            ])
-
-            let command = AgentResumeCommandBuilder<CodexAgent>.initialCommand(for: tab, paneID: paneID)
-            let resolved = try #require(command)
-            #expect(resolved.contains("codex resume 01963d6b-c0e9-7c4e-9bce-e4d6f2c1c000"))
-            #expect(resolved.contains("cd '/Users/dev/limpid'"))
+            #expect(command == nil)
         }
     }
 
@@ -164,7 +158,7 @@ struct SessionRestoreResumeE2ETests {
         // The snapshot remembers the hint, but permission to resume is the
         // projection's to give: until it has looked at the disk, a restored
         // tab starts no agent.
-        let session = WindowSession()
+        let session = WorkspaceSession()
         let tab = session.openTabInActiveScope()
         let paneID = try #require(tab.splitTree.allLeafIDs().first)
         session.update(tab.id) {
@@ -172,10 +166,10 @@ struct SessionRestoreResumeE2ETests {
         }
         let data = try JSONEncoder().encode(session.makeSnapshot())
         let decoded = try JSONDecoder().decode(SessionSnapshot.self, from: data)
-        let restored = WindowSession()
+        let restored = WorkspaceSession()
         restored.restore(from: decoded)
 
-        let restoredTab = try #require(restored.activeTab)
+        let restoredTab = try #require(restored.activeTab(in: restored.primaryWindowID))
         #expect(restoredTab.agentSessions[.claude]?[paneID]?.sessionId == "claude-1")
         #expect(AgentResumeCommandBuilder<ClaudeAgent>.initialCommand(for: restoredTab, paneID: paneID) == nil)
     }

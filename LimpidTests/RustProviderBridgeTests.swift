@@ -18,22 +18,20 @@ struct RustProviderBridgeTests {
         return try JSONSerialization.jsonObject(with: translated) as? [String: Any]
     }
 
-    @Test("decodes Claude PermissionRequest without trusting a pane identifier")
+    /// What the hook wrote reaches Rust and comes back translated. Which
+    /// fields the translation keeps is the provider crate's to test.
+    @Test("hands a Claude PermissionRequest across and reads back its translation")
     func decodeClaudePermissionRequest() throws {
         let request = try #require(try request(provider: "claude", [
             "hook_event_name": "PermissionRequest",
             "session_id": "claude-session",
             "tool_name": "Bash",
-            "tool_input": ["command": "make test"],
-            "LIMPID_PANE_ID": UUID().uuidString
+            "tool_input": ["command": "make test"]
         ]))
 
         #expect(request["provider"] as? String == "claude")
         #expect(request["session_id"] as? String == "claude-session")
-        #expect(request["operation_id"] == nil)
         #expect(request["tool_name"] as? String == "Bash")
-        #expect(request["summary"] as? String == "make test")
-        #expect(request["timeout_ms"] as? Int == 570_000)
         #expect((request["input"] as? [String: Any])?["command"] as? String == "make test")
     }
 
@@ -104,26 +102,13 @@ struct RustProviderBridgeTests {
         }
     }
 
-    @Test("locates the bundled Codex lifecycle fallback beside the helper")
-    func codexLifecycleFallbackPath() throws {
-        try withTempDir { directory in
-            let executable = directory.appendingPathComponent(
-                "Limpid Dev.app/Contents/MacOS/AgentIntegrationHookHelper"
-            )
-            let script = directory.appendingPathComponent(
-                "Limpid Dev.app/Contents/Resources/codex-shim/limpid-hook"
-            )
-            try FileManager.default.createDirectory(
-                at: script.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try Data().write(to: script)
-
-            #expect(
-                AgentApprovalHookFallback.codexLifecycleScript(
-                    forExecutableURL: executable
-                ) == script
-            )
-        }
+    /// The hook helper's usage limit watcher finds Codex by these names, so
+    /// they are the descriptor's own, not a copy that a new name would miss.
+    @Test("reads a provider's process names from its Rust descriptor")
+    func processNamesAreTheDescriptors() throws {
+        let codex = try RustProviderBridge.processNames(provider: "codex")
+        #expect(codex.contains("codex"))
+        #expect(codex == Set(AgentProviderRegistry.processNames(for: .codex)))
+        #expect(try RustProviderBridge.processNames(provider: "gemini").isEmpty)
     }
 }

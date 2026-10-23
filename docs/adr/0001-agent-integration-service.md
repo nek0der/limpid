@@ -2,6 +2,10 @@
 
 - Status: Accepted.
 - Date: 2026-09-13.
+- Note: the tabs and Waiting UI named below were later replaced by the
+  supervision window; approvals now show on each window's approval card and
+  in the Needs Attention list (`ARCHITECTURE.md`, "Attention, turns, and
+  approvals"). The decision is unchanged.
 
 ## Context
 
@@ -47,8 +51,8 @@ provider's normal approval path when that path is available.
 ## Migration
 
 Migration is selected per run. A run uses either the legacy state-file backend
-or the service backend for its entire lifetime. Both backends must not publish
-the same run into the application.
+or the service backend for its entire lifetime. The two backends must never
+both publish the same run into the application.
 
 The macOS service host, signed Hook Helper, provider adapters, and Waiting UI are
 active in signed Debug and Release apps. Startup reconciles the service before

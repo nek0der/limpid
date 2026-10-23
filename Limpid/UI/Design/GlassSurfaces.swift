@@ -46,7 +46,7 @@ private struct FlushGlassSidebarModifier: ViewModifier {
             // where a stroke would draw a seam along the window's own
             // rounded-corner mask.
             .overlay(alignment: .trailing) {
-                LimpidColor.toolbarHairline.frame(width: 0.5)
+                LimpidColor.glassHairline.frame(width: 0.5)
             }
     }
 

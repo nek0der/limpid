@@ -1,17 +1,19 @@
 //! Replays recorded fixtures through the hook runtime against a scratch
 //! state directory and checks what lands on disk.
 
-use limpid_agent_hook::{HookEnv, HookOutcome, HookRuntime, NoSnapshots, run_hook};
+use limpid_agent_hook::{
+    HookEnv, HookOutcome, HookRuntime, NoSnapshots, TURNS_DIRECTORY, run_hook,
+};
 use limpid_agent_model::{
-    LOCK_FILE_SUFFIX, RunRecord, RunState, cwd_event_file_name, run_record_file_name,
-    session_hint_file_name,
+    ChangeSummary, LOCK_FILE_SUFFIX, RunRecord, RunState, SnapshotStatus, TurnPhase, TurnRecord,
+    cwd_event_file_name, run_record_file_name, session_hint_file_name,
 };
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
+use support::{PANE, RUN};
 
-const PANE: &str = "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10";
-const RUN: &str = "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11";
+mod support;
 
 struct Scratch {
     root: PathBuf,
@@ -98,6 +100,55 @@ impl Scratch {
     fn log(&self) -> String {
         fs::read_to_string(self.root.join("hook.log")).unwrap_or_default()
     }
+
+    /// One Claude hook call of run `run`, carrying the invocation id `call`
+    /// the way the shim exports it (`None`: a shim that exports none).
+    fn call(&self, run: &str, call: Option<&str>, payload: &[u8]) -> HookOutcome {
+        self.call_as("claude", run, call, payload)
+    }
+
+    /// Does what `call` does, for `provider`.
+    fn call_as(
+        &self,
+        provider: &str,
+        run: &str,
+        call: Option<&str>,
+        payload: &[u8],
+    ) -> HookOutcome {
+        let mut pairs = self.pairs(provider);
+        pairs.retain(|(name, _)| name != "LIMPID_AGENT_RUN_ID");
+        pairs.push(("LIMPID_AGENT_RUN_ID".to_owned(), run.to_owned()));
+        if let Some(call) = call {
+            pairs.push(("LIMPID_HOOK_INVOCATION_ID".to_owned(), call.to_owned()));
+        }
+        let env = HookEnv::from_pairs(pairs);
+        run_hook(provider, payload, &HookRuntime::new(&env, &NoSnapshots))
+    }
+
+    /// Every turn on disk, in display order.
+    fn turns(&self) -> Vec<TurnRecord> {
+        // A prompt with no turn id of its own makes no turn, so a missing
+        // turns directory means no turns here; a record that does not decode
+        // still fails the test.
+        let mut turns = match support::read_turns(&self.root.join("states")) {
+            Ok(turns) => turns,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(error) => panic!("turns: {error}"),
+        };
+        turns.sort_by_key(|turn| turn.display_number);
+        turns
+    }
+}
+
+const SESSION_START: &[u8] =
+    br#"{"hook_event_name":"SessionStart","session_id":"s1","source":"startup"}"#;
+const PROMPT: &[u8] =
+    br#"{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"add tests"}"#;
+const STOP: &[u8] = br#"{"hook_event_name":"Stop","session_id":"s1"}"#;
+const OTHER_RUN: &str = "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F12";
+
+fn new_call() -> String {
+    uuid::Uuid::new_v4().to_string()
 }
 
 impl Drop for Scratch {
@@ -107,10 +158,14 @@ impl Drop for Scratch {
 }
 
 fn fixture_case(provider: &str, case: &str) -> Vec<Vec<u8>> {
+    dated_fixture_case(provider, "2026-09", case)
+}
+
+fn dated_fixture_case(provider: &str, date: &str, case: &str) -> Vec<Vec<u8>> {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../fixtures")
         .join(provider)
-        .join("2026-09")
+        .join(date)
         .join(case);
     let mut names: Vec<PathBuf> = fs::read_dir(&directory)
         .expect("fixture case")
@@ -134,12 +189,17 @@ fn fixture_case(provider: &str, case: &str) -> Vec<Vec<u8>> {
         .collect()
 }
 
+/// Each payload is its own hook call, with the invocation id the shim mints
+/// for every call.
 fn replay(scratch: &Scratch, provider: &str, payloads: &[Vec<u8>]) -> Vec<HookOutcome> {
-    let env = scratch.env(provider);
-    let runtime = HookRuntime::new(&env, &NoSnapshots);
     payloads
         .iter()
-        .map(|payload| run_hook(provider, payload, &runtime))
+        .map(|payload| {
+            let mut pairs = scratch.pairs(provider);
+            pairs.push(("LIMPID_HOOK_INVOCATION_ID".to_owned(), new_call()));
+            let env = HookEnv::from_pairs(pairs);
+            run_hook(provider, payload, &HookRuntime::new(&env, &NoSnapshots))
+        })
         .collect()
 }
 
@@ -177,6 +237,69 @@ fn answered_claude_question_resumes_before_the_next_tool_or_stop() {
             RunState::Running
         );
     }
+}
+
+/// A question declined with Esc sends no hook after the permission prompt;
+/// the idle prompt a minute later reads the transcript, which shows the
+/// call rejected and interrupted, and ends the wait and the turn with it.
+#[test]
+fn a_declined_claude_question_ends_the_turn_at_the_idle_prompt() {
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../fixtures/claude/2026-10/ask-user-question-declined");
+    let payloads = dated_fixture_case("claude", "2026-10", "ask-user-question-declined");
+    let transcript = directory.join("0004-Notification.transcript.jsonl");
+    // The recorded path names the recording machine's transcript; the
+    // replay reads the one beside the payload.
+    let mut idle: Value = serde_json::from_slice(&payloads[4]).expect("payload");
+    idle["transcript_path"] = Value::from(transcript.display().to_string());
+    let idle = serde_json::to_vec(&idle).expect("payload");
+    let open: Value = serde_json::json!({
+        "hook_event_name": "Notification",
+        "notification_type": "idle_prompt",
+    });
+    let open = serde_json::to_vec(&open).expect("payload");
+
+    let scratch = Scratch::new("claude-question-declined");
+    let call = |payload: &[u8], now: &str| {
+        let mut pairs = scratch.pairs("claude");
+        pairs.push(("LIMPID_HOOK_INVOCATION_ID".to_owned(), new_call()));
+        let env = HookEnv::from_pairs(pairs);
+        let mut runtime = HookRuntime::new(&env, &NoSnapshots);
+        now.clone_into(&mut runtime.now);
+        assert_eq!(run_hook("claude", payload, &runtime), HookOutcome::Applied);
+    };
+    call(&payloads[0], "2026-10-01T12:00:00Z");
+    call(&payloads[1], "2026-10-01T12:00:01Z");
+    call(&payloads[2], "2026-10-01T12:00:05Z");
+    call(&payloads[3], "2026-10-01T12:00:05Z");
+    let waiting = scratch.record().expect("waiting record");
+    assert_eq!(waiting.state, RunState::NeedsInput);
+    // The question's call names its transcript, which the app reads while
+    // the run waits, since the Esc that declines it sends no hook.
+    let named: Value = serde_json::from_slice(&payloads[2]).expect("payload");
+    assert_eq!(
+        waiting.transcript_path.as_deref(),
+        named["transcript_path"].as_str()
+    );
+
+    // An idle prompt with no transcript to read writes nothing, since the
+    // question may still be open.
+    call(&open, "2026-10-01T12:01:05Z");
+    assert_eq!(
+        scratch.record().expect("record"),
+        waiting,
+        "nothing written"
+    );
+
+    call(&idle, "2026-10-01T12:02:05Z");
+    let record = scratch.record().expect("record");
+    assert_eq!(record.state, RunState::Finished);
+    assert_eq!(record.run_started_at, None);
+    assert_eq!(record.wait_kind, None);
+    assert_eq!(record.transcript_path, None, "the path goes with the wait");
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].phase, TurnPhase::Interrupted);
 }
 
 #[test]
@@ -268,6 +391,56 @@ fn codex_session_keeps_its_hint_and_finishes_tools() {
         "Codex never drops the hint on /quit"
     );
     assert!(!scratch.root.join("cwd").exists());
+}
+
+/// Codex's memory agent runs in the same process after the person's turn
+/// ends, with its own `session_id` and the memories directory under Codex's
+/// home as `cwd`, and its `Stop` reaches no user hook. Its calls must not
+/// become the pane's session, turn, or resume hint, nor take back that the
+/// session holds a conversation: its `SessionStart(startup)` read as the
+/// pane's would set `has_prompt` to `false`, and a relaunch would then
+/// retire the person's conversation instead of resuming it.
+#[test]
+fn codex_memory_agent_hooks_leave_the_persons_session_alone() {
+    let payloads = dated_fixture_case("codex", "2026-10", "memory-agent");
+    let person_session = "00000000-0000-4000-8000-000000000001";
+    // The runtime takes Codex's home from the agent's environment: the
+    // variable when set, else the default under `HOME`.
+    for home in [
+        ("CODEX_HOME", "/Users/example/.codex"),
+        ("HOME", "/Users/example"),
+    ] {
+        let scratch = Scratch::new("codex-memory-agent");
+        let replay_with_home = |payload: &[u8]| {
+            let mut pairs = scratch.pairs("codex");
+            pairs.push((home.0.to_owned(), home.1.to_owned()));
+            pairs.push(("LIMPID_HOOK_INVOCATION_ID".to_owned(), new_call()));
+            let env = HookEnv::from_pairs(pairs);
+            run_hook("codex", payload, &HookRuntime::new(&env, &NoSnapshots))
+        };
+        let (before_quit, quit) = payloads.split_at(payloads.len() - 1);
+        for payload in before_quit {
+            assert_eq!(replay_with_home(payload), HookOutcome::Applied);
+        }
+        // The person's turn finished and nothing began after it: the memory
+        // agent's start, prompt, tools, and end changed no record.
+        let record = scratch.record().expect("record");
+        assert_eq!(record.state, RunState::Finished, "{}", home.0);
+        assert_eq!(record.run_started_at, None);
+        assert_eq!(record.last_hook_event.as_deref(), Some("turn_finished"));
+        assert_eq!(record.session_id.as_deref(), Some(person_session));
+        assert_eq!(record.has_prompt, Some(true), "{}", home.0);
+        let hint = scratch.hint().expect("hint");
+        assert_eq!(hint["sessionId"], person_session);
+        assert_eq!(hint["cwd"], "/tmp/example");
+        let turns = scratch.turns();
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].phase, TurnPhase::Finished);
+        assert_eq!(turns[0].conversation.conversation_id, person_session);
+        // The person's own `/quit` still ends the session.
+        assert_eq!(replay_with_home(&quit[0]), HookOutcome::Applied);
+        assert_eq!(scratch.record().expect("record").state, RunState::Unknown);
+    }
 }
 
 #[test]
@@ -402,4 +575,592 @@ fn a_busy_record_lock_skips_the_write_and_logs() {
     );
     assert!(scratch.log().contains("record lock busy"));
     sidecar.unlock().expect("release");
+}
+
+#[test]
+fn resent_event_is_applied_once() {
+    let scratch = Scratch::new("turn-resent");
+    let prompt = new_call();
+    let stop = new_call();
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    // The shim retries a call with the id it minted for it.
+    scratch.call(RUN, Some(&prompt), PROMPT);
+    scratch.call(RUN, Some(&prompt), PROMPT);
+    scratch.call(RUN, Some(&stop), STOP);
+    scratch.call(RUN, Some(&stop), STOP);
+
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 1, "a retried prompt starts no second turn");
+    let turn = &turns[0];
+    assert_eq!(turn.phase, TurnPhase::Finished);
+    assert_eq!(turn.applied_events.len(), 2);
+    assert_eq!(turn.begin, SnapshotStatus::Disabled);
+    assert_eq!(
+        turn.changes,
+        ChangeSummary::Unavailable {
+            reason: "disabled".into()
+        }
+    );
+    assert_eq!(turn.prompt_head.as_deref(), Some("add tests"));
+    assert_eq!(
+        scratch
+            .record()
+            .and_then(|record| record.current_turn_id)
+            .as_deref(),
+        Some(turn.turn_id.as_str())
+    );
+}
+
+/// A Codex subagent inherits the parent's environment, so its hooks reach
+/// the parent's run; its prompt is not the parent's turn.
+#[test]
+fn a_codex_subagents_prompt_leaves_the_parents_turn_current() {
+    let scratch = Scratch::new("turn-codex-subagent");
+    let codex = |payload: &str| {
+        scratch.call_as("codex", RUN, Some(&new_call()), payload.as_bytes());
+    };
+    codex(r#"{"hook_event_name":"SessionStart","session_id":"p","source":"startup"}"#);
+    codex(r#"{"hook_event_name":"UserPromptSubmit","session_id":"p","prompt":"fix it"}"#);
+    let parent_turn = scratch.record().and_then(|record| record.current_turn_id);
+    assert!(parent_turn.is_some(), "the parent's prompt began a turn");
+    codex(
+        r#"{"hook_event_name":"UserPromptSubmit","session_id":"c","prompt":"look around",
+            "agent_id":"019a0000-0000-7000-8000-000000000001","agent_type":"explorer"}"#,
+    );
+    assert_eq!(
+        scratch.record().and_then(|record| record.current_turn_id),
+        parent_turn,
+        "the subagent began no turn"
+    );
+    codex(r#"{"hook_event_name":"Stop","session_id":"p"}"#);
+
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 1, "only the parent's turn");
+    assert_eq!(turns[0].phase, TurnPhase::Finished);
+    assert_eq!(turns[0].prompt_head.as_deref(), Some("fix it"));
+}
+
+/// The Codex helper's watcher reports a limit for the rollout of the
+/// session it watched; `/new` within its interval has moved the run on.
+#[test]
+fn a_codex_usage_limit_applies_only_to_the_session_it_watched() {
+    let scratch = Scratch::new("codex-limit-session");
+    let rollout = scratch.root.join("rollout.jsonl");
+    fs::write(
+        &rollout,
+        r#"{"type":"event_msg","payload":{"type":"task_started"}}
+{"type":"event_msg","payload":{"type":"task_complete","error":{"codex_error_info":"usage_limit_exceeded"}}}
+"#,
+    )
+    .expect("rollout");
+    let codex = |payload: &str| {
+        scratch.call_as("codex", RUN, Some(&new_call()), payload.as_bytes());
+    };
+    let report = serde_json::json!({
+        "hook_event_name": "LimpidUsageLimitReached",
+        "transcript_path": rollout,
+        "session_id": "a",
+        "limpid_limit_reached_at": u64::MAX / 2,
+    })
+    .to_string();
+    codex(r#"{"hook_event_name":"SessionStart","session_id":"a","source":"startup"}"#);
+    codex(r#"{"hook_event_name":"UserPromptSubmit","session_id":"a","prompt":"first"}"#);
+    // The person runs `/new` and sends the first prompt of the new
+    // conversation.
+    codex(r#"{"hook_event_name":"SessionStart","session_id":"b","source":"startup"}"#);
+    codex(r#"{"hook_event_name":"UserPromptSubmit","session_id":"b","prompt":"second"}"#);
+    codex(&report);
+    let record = scratch.record().expect("record");
+    assert_eq!(record.state, RunState::Running, "b goes on");
+    assert_eq!(record.usage_limit, None);
+    assert!(record.run_started_at.is_some());
+
+    // Reported for the session the run is in, it ends that turn.
+    let scratch = Scratch::new("codex-limit-same-session");
+    let codex = |payload: &str| {
+        scratch.call_as("codex", RUN, Some(&new_call()), payload.as_bytes());
+    };
+    codex(r#"{"hook_event_name":"SessionStart","session_id":"a","source":"startup"}"#);
+    codex(r#"{"hook_event_name":"UserPromptSubmit","session_id":"a","prompt":"first"}"#);
+    codex(&report);
+    let record = scratch.record().expect("record");
+    assert_eq!(record.state, RunState::Error);
+    assert!(record.usage_limit.is_some());
+}
+
+#[test]
+fn the_same_prompt_sent_twice_is_two_turns() {
+    let scratch = Scratch::new("turn-twice");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+
+    let turns = scratch.turns();
+    assert_eq!(
+        turns
+            .iter()
+            .map(|turn| turn.display_number)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    // The first was overtaken; it stays as it was rather than being guessed at.
+    assert_eq!(turns[0].phase, TurnPhase::Started);
+}
+
+#[test]
+fn display_number_continues_across_runs_of_one_conversation() {
+    let scratch = Scratch::new("turn-runs");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    // The same session resumed as another run, as after a restore.
+    scratch.call(OTHER_RUN, Some(&new_call()), SESSION_START);
+    scratch.call(OTHER_RUN, Some(&new_call()), PROMPT);
+
+    let turns = scratch.turns();
+    assert_eq!(
+        turns
+            .iter()
+            .map(|turn| turn.display_number)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    assert_eq!(turns[1].run_id, OTHER_RUN);
+    assert!(
+        turns
+            .iter()
+            .all(|turn| turn.conversation.conversation_id == "s1")
+    );
+    assert!(turns.iter().all(|turn| !turn.conversation.is_fallback));
+}
+
+#[test]
+fn display_number_is_never_reused_after_deletion() {
+    let scratch = Scratch::new("turn-deleted");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    let first = scratch.turns().remove(0);
+    fs::remove_file(
+        scratch
+            .root
+            .join("states")
+            .join(TURNS_DIRECTORY)
+            .join(format!("{}.turn.json", first.turn_id)),
+    )
+    .expect("delete the turn");
+
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 1);
+    assert_eq!(
+        turns[0].display_number, 2,
+        "T1 still means the deleted turn"
+    );
+}
+
+#[test]
+fn a_call_without_an_id_records_no_turn() {
+    let scratch = Scratch::new("turn-no-id");
+    scratch.call(RUN, None, SESSION_START);
+    assert_eq!(scratch.call(RUN, None, PROMPT), HookOutcome::Applied);
+
+    assert!(scratch.turns().is_empty());
+    assert!(scratch.log().contains("prompt without an id"));
+    // The run itself is still recorded.
+    assert_eq!(scratch.record().expect("record").state, RunState::Running);
+}
+
+#[test]
+fn an_end_without_a_turn_is_recorded_as_incomplete() {
+    let scratch = Scratch::new("turn-end-only");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), STOP);
+
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 1, "the end is not lost");
+    assert_eq!(turns[0].phase, TurnPhase::Finished);
+    assert_eq!(
+        turns[0].changes,
+        ChangeSummary::Unavailable {
+            reason: "beginMissing".into()
+        }
+    );
+    assert_eq!(turns[0].duration_seconds, None);
+}
+
+#[test]
+fn a_failed_begin_leaves_no_turn_for_the_next_end_to_close() {
+    let scratch = Scratch::new("turn-failed-begin");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    scratch.call(RUN, Some(&new_call()), STOP);
+    let first = scratch.turns().remove(0);
+    // The conversation's counter is unreadable, so the next prompt cannot
+    // number a turn.
+    let counter = scratch
+        .root
+        .join("states")
+        .join(TURNS_DIRECTORY)
+        .join(first.conversation.counter_file_name());
+    let intact = fs::read(&counter).expect("counter");
+    fs::write(&counter, b"not a counter").expect("break the counter");
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    fs::write(&counter, intact).expect("mend the counter");
+    scratch.call(RUN, Some(&new_call()), STOP);
+
+    let turns = scratch.turns();
+    assert_eq!(turns[0].turn_id, first.turn_id);
+    assert_eq!(
+        turns[0].applied_events, first.applied_events,
+        "the finished turn is not ended again by the next turn's stop"
+    );
+    assert_eq!(
+        turns.last().map(|turn| turn.changes.clone()),
+        Some(ChangeSummary::Unavailable {
+            reason: "beginMissing".into()
+        })
+    );
+    assert!(scratch.log().contains("read counter"));
+}
+
+#[test]
+fn a_turn_a_newer_build_wrote_is_left_as_it_is() {
+    let scratch = Scratch::new("turn-newer");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    let turn = scratch.turns().remove(0);
+    let path = scratch
+        .root
+        .join("states")
+        .join(TURNS_DIRECTORY)
+        .join(format!("{}.turn.json", turn.turn_id));
+    let mut value: Value = serde_json::from_slice(&fs::read(&path).expect("read")).expect("json");
+    value["schemaVersion"] = Value::from(2);
+    value["fromTheFuture"] = Value::from(true);
+    let newer = serde_json::to_vec(&value).expect("encode");
+    fs::write(&path, &newer).expect("write");
+
+    scratch.call(RUN, Some(&new_call()), STOP);
+
+    assert_eq!(fs::read(&path).expect("read"), newer, "not a byte changed");
+    assert!(scratch.log().contains("a newer build wrote"));
+}
+
+// Numbers are handed out under the run record's lock, and off Unix the
+// hook opens no lock file (`records::open_lock_file`).
+#[cfg(unix)]
+#[test]
+fn concurrent_prompts_of_one_conversation_get_distinct_numbers() {
+    let scratch = std::sync::Arc::new(Scratch::new("turn-concurrent"));
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(OTHER_RUN, Some(&new_call()), SESSION_START);
+    let threads: Vec<_> = [RUN, OTHER_RUN]
+        .into_iter()
+        .map(|run| {
+            let scratch = std::sync::Arc::clone(&scratch);
+            std::thread::spawn(move || {
+                for _ in 0..5 {
+                    scratch.call(run, Some(&new_call()), PROMPT);
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().expect("thread");
+    }
+
+    let numbers: Vec<u32> = scratch
+        .turns()
+        .iter()
+        .map(|turn| turn.display_number)
+        .collect();
+    assert_eq!(
+        numbers,
+        (1..=10).collect::<Vec<_>>(),
+        "no number twice, none skipped"
+    );
+}
+
+/// Rewrites the current turn's file with `edit`, and returns the run's
+/// current turn id and the bytes now on disk.
+fn rewrite_current_turn(scratch: &Scratch, edit: impl FnOnce(&mut Value)) -> (String, Vec<u8>) {
+    let turn = scratch.turns().remove(0);
+    let path = scratch
+        .root
+        .join("states")
+        .join(TURNS_DIRECTORY)
+        .join(format!("{}.turn.json", turn.turn_id));
+    let mut value: Value = serde_json::from_slice(&fs::read(&path).expect("read")).expect("json");
+    edit(&mut value);
+    let bytes = serde_json::to_vec(&value).expect("encode");
+    fs::write(&path, &bytes).expect("write");
+    (turn.turn_id, bytes)
+}
+
+#[test]
+fn an_unreadable_current_turn_is_neither_ended_nor_replaced() {
+    for (name, edit) in [
+        (
+            "newer shape",
+            Box::new(|value: &mut Value| {
+                value["schemaVersion"] = Value::from(9);
+                value["phase"] = Value::from(42);
+            }) as Box<dyn FnOnce(&mut Value)>,
+        ),
+        (
+            "another turn's id",
+            Box::new(|value: &mut Value| {
+                value["turnId"] = Value::from("00000000-0000-4000-8000-000000000000");
+            }),
+        ),
+    ] {
+        let scratch = Scratch::new("turn-unreadable");
+        scratch.call(RUN, Some(&new_call()), SESSION_START);
+        scratch.call(RUN, Some(&new_call()), PROMPT);
+        let (turn_id, bytes) = rewrite_current_turn(&scratch, edit);
+
+        scratch.call(RUN, Some(&new_call()), STOP);
+
+        let directory = scratch.root.join("states").join(TURNS_DIRECTORY);
+        let records = fs::read_dir(&directory)
+            .expect("turns")
+            .flatten()
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".turn.json"))
+            .count();
+        assert_eq!(records, 1, "{name}: no end-only record in its place");
+        assert_eq!(
+            fs::read(directory.join(format!("{turn_id}.turn.json"))).expect("read"),
+            bytes,
+            "{name}: not a byte changed"
+        );
+        assert_eq!(
+            scratch.record().and_then(|record| record.current_turn_id),
+            Some(turn_id),
+            "{name}: the run still names it"
+        );
+    }
+}
+
+#[test]
+fn an_end_only_turn_ended_again_still_has_no_duration() {
+    // A stop hook held the stop that wrote the end-only record; the time
+    // until the real stop is not how long a turn took.
+    let scratch = Scratch::new("turn-end-only-again");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    scratch.call(RUN, Some(&new_call()), STOP);
+    scratch.call(RUN, Some(&new_call()), STOP);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        br#"{"hook_event_name":"Stop","session_id":"s1","stop_hook_active":true}"#,
+    );
+
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 2);
+    let end_only = &turns[1];
+    assert_eq!(end_only.applied_events.len(), 2, "ended, then ended again");
+    assert_eq!(end_only.duration_seconds, None);
+    assert_eq!(
+        end_only.changes,
+        ChangeSummary::Unavailable {
+            reason: "beginMissing".into()
+        }
+    );
+}
+
+fn bash(hook: &str, command: &str, tail: &str) -> Vec<u8> {
+    format!(
+        r#"{{"hook_event_name":"{hook}","session_id":"s1","tool_name":"Bash",
+           "tool_use_id":"toolu_{}","tool_input":{{"command":"{command}"}}{tail}}}"#,
+        uuid::Uuid::new_v4().simple()
+    )
+    .into_bytes()
+}
+
+#[test]
+fn a_turn_keeps_its_last_check() {
+    let scratch = Scratch::new("turn-check");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        &bash("PostToolUse", "cargo test", ""),
+    );
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        &bash(
+            "PostToolUseFailure",
+            "make test-swift FILTER=TurnTests",
+            r#","error":"Exit code 2\nfailed","is_interrupt":false"#,
+        ),
+    );
+    // Not a check: it leaves the last one as it was.
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        &bash("PostToolUse", "git status", ""),
+    );
+
+    let turn = scratch.turns().remove(0);
+    let check = turn.last_check.expect("a check");
+    assert_eq!(check.command, "make test-swift FILTER=TurnTests");
+    assert_eq!(check.exit_code, Some(2));
+    assert!(check.is_filtered);
+    // And the run itself was not moved by the commands.
+    assert_eq!(scratch.record().expect("record").state, RunState::Running);
+}
+
+#[test]
+fn a_command_after_the_turn_ended_is_not_its_check() {
+    let scratch = Scratch::new("turn-check-after");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    scratch.call(RUN, Some(&new_call()), STOP);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        &bash("PostToolUse", "cargo test", ""),
+    );
+
+    assert_eq!(scratch.turns().remove(0).last_check, None);
+    assert_eq!(
+        scratch.record().expect("record").state,
+        RunState::Finished,
+        "a finished run stays finished"
+    );
+}
+
+#[test]
+fn a_project_names_its_own_checks() {
+    let scratch = Scratch::new("turn-check-project");
+    let project = scratch.root.join("project");
+    fs::create_dir_all(&project).expect("project");
+    // The routing file sits beside the state directories.
+    fs::write(
+        scratch.root.join("worktree-routing.json"),
+        serde_json::json!({
+            "schemaVersion": 1,
+            "projects": [{
+                "root": "/elsewhere",
+                "worktrees": [project],
+                "placement": {"kind": "siblingPrefixed"},
+                "bootstrap": [],
+                "routing": {},
+                "checks": ["just check"],
+            }],
+        })
+        .to_string(),
+    )
+    .expect("routing");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    let cwd = format!(r#","cwd":{}"#, serde_json::json!(project));
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        &bash("PostToolUse", "cargo test", &cwd),
+    );
+    assert_eq!(
+        scratch.turns().remove(0).last_check,
+        None,
+        "the project replaced the defaults"
+    );
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        &bash("PostToolUse", "just check", &cwd),
+    );
+    assert_eq!(
+        scratch
+            .turns()
+            .remove(0)
+            .last_check
+            .map(|check| check.command),
+        Some("just check".to_owned())
+    );
+}
+
+#[test]
+fn a_check_piped_on_has_no_exit_of_its_own() {
+    let scratch = Scratch::new("turn-check-piped");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    // The call succeeded because `tail` did; the tests may have failed.
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        &bash("PostToolUse", "cargo test 2>&1 | tail -20", ""),
+    );
+
+    let check = scratch.turns().remove(0).last_check.expect("a check");
+    assert_eq!(check.exit_code, None);
+    assert!(!check.is_filtered, "the redirection is not an argument");
+}
+
+#[test]
+fn a_check_that_may_not_have_run_has_no_exit_of_its_own() {
+    for command in [
+        "if false; then make test; fi",
+        "while false; do make test; done",
+    ] {
+        let scratch = Scratch::new("turn-check-conditional");
+        scratch.call(RUN, Some(&new_call()), SESSION_START);
+        scratch.call(RUN, Some(&new_call()), PROMPT);
+        // The call exited 0 without running the tests.
+        scratch.call(RUN, Some(&new_call()), &bash("PostToolUse", command, ""));
+
+        let check = scratch.turns().remove(0).last_check.expect("a check");
+        assert_eq!(check.exit_code, None, "{command}");
+    }
+}
+
+fn routing_with(scratch: &Scratch, projects: &str) {
+    fs::write(scratch.root.join("worktree-routing.json"), projects).expect("routing");
+}
+
+#[test]
+fn the_defaults_apply_where_no_project_names_checks() {
+    for routing in [
+        // A project without its own list.
+        r#"{"schemaVersion":1,"projects":[{"root":"/tmp","placement":{"kind":"siblingPrefixed"},"bootstrap":[],"routing":{}}]}"#,
+        // A version this build does not know: not guessed at.
+        r#"{"schemaVersion":2,"projects":[{"root":"/tmp","checks":["just check"]}]}"#,
+    ] {
+        let scratch = Scratch::new("turn-check-defaults");
+        routing_with(&scratch, routing);
+        scratch.call(RUN, Some(&new_call()), SESSION_START);
+        scratch.call(RUN, Some(&new_call()), PROMPT);
+        scratch.call(
+            RUN,
+            Some(&new_call()),
+            &bash("PostToolUse", "cargo test", r#","cwd":"/tmp""#),
+        );
+        assert!(scratch.turns().remove(0).last_check.is_some(), "{routing}");
+    }
+}
+
+#[test]
+fn a_nested_project_keeps_its_own_checks() {
+    let scratch = Scratch::new("turn-check-nested");
+    routing_with(
+        &scratch,
+        r#"{"schemaVersion":1,"projects":[
+            {"root":"/work","checks":["cargo test"]},
+            {"root":"/work/app","checks":["just check"]}]}"#,
+    );
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        &bash("PostToolUse", "cargo test", r#","cwd":"/work/app/src""#),
+    );
+    assert_eq!(
+        scratch.turns().remove(0).last_check,
+        None,
+        "the inner project's list applies"
+    );
 }

@@ -10,8 +10,8 @@ extension ReviewSide {
     /// Whether a comment taken in this column covers that line.
     ///
     /// The one predicate. The run's side, the composer's anchor and the dots in
-    /// the gutter each used to decide it for themselves, and they disagreed
-    /// about the ends of a run that crosses a change block. `nil` is the
+    /// the gutter all ask it, so they cannot disagree about the ends of a run
+    /// that crosses a change block. `nil` is the
     /// unified layout, where a run covers both kinds of line and only
     /// commentability applies.
     static func covers(_ line: ReviewLine, on side: ReviewSide?) -> Bool {

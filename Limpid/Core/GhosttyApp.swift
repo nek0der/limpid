@@ -51,32 +51,30 @@ final class GhosttyApp {
             []
         }
 
-        let cfg = ghostty_config_new()
-        guard let cfg else { throw Error.configInitFailed }
-
         // Layer 2 (Opt-in): user's ~/.config/ghostty/config. Off by
         // default — Limpid Settings is the single source of truth in
         // the common case. Advanced users can enable it for terminal
         // preferences outside our UI. Limpid still clears personal
         // keybinds because the menu bar owns application shortcuts.
-        if settings.advanced.ghosttyConfig.isOn {
-            ghostty_config_load_default_files(cfg)
-        }
-
+        //
         // Layer 3 + 4: Limpid settings serialized via
         // `GhosttyConfigBridge`, with forced overrides appended
         // last so the Liquid Glass toolbar stays intact regardless
-        // of what user config tried to set.
+        // of what user config tried to set. When that layer cannot be
+        // written there is no config to start from: terminals without
+        // the forced overrides would draw opaque cells and paste a
+        // review's lines without confirmation, so the launch fails the
+        // way any other config failure does.
         let resourcesDir = GhosttyApp.resolveResourcesDir()
         let colorScheme = GhosttyApp.currentColorScheme(preference: settings.appearance.colorScheme)
-        if let path = GhosttyConfigBridge.writeConfigFile(
+        let path = GhosttyConfigBridge.writeConfigFile(
             settings: settings,
             resourcesDir: resourcesDir
-        ) {
-            path.withCString { ghostty_config_load_file(cfg, $0) }
-        }
-
-        ghostty_config_finalize(cfg)
+        )
+        guard let cfg = GhosttyConfigBridge.makeConfig(
+            path: path,
+            includeUserConfig: settings.advanced.ghosttyConfig.isOn
+        ) else { throw Error.configInitFailed }
         let isAutomaticSecureInputEnabled = Self.configBool(
             cfg,
             key: "macos-auto-secure-input",
@@ -293,7 +291,7 @@ final class GhosttyApp {
     ) -> ghostty_color_scheme_e {
         resolvedColorScheme(
             preference: preference,
-            systemIsDark: UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+            systemIsDark: SystemAppearance.isSystemDark()
         )
     }
 
@@ -372,14 +370,15 @@ final class GhosttyApp {
 
     /// libghostty wants to read the clipboard. `userdata` here is the
     /// *surface's* userdata (see ghostty source apprt/embedded.zig:
-    /// `self.app.opts.read_clipboard(self.userdata, ...)`), which we set
-    /// to the SurfaceView pointer.
+    /// `self.app.opts.read_clipboard(self.userdata, ...)`): the view's
+    /// `SurfaceUserdataToken`, retained until the surface is freed, so this
+    /// frame may reach its request tracker.
     ///
     /// libghostty allows us to complete the request asynchronously via
     /// `ghostty_surface_complete_clipboard_request`, so we hop to
     /// MainActor before touching `NSPasteboard` (which is main-thread-
-    /// only) and before dereferencing the userdata pointer (the Swift
-    /// view may have deinited between this fire and the hop).
+    /// only) and before looking the view up (the Swift view may have
+    /// deinited between this fire and the hop).
     /// The MIME types the read asked us to serve and the "list the
     /// available types" flag are ignored: we only ever serve
     /// `text/plain` from `NSPasteboard`, which is what the paste and
@@ -391,9 +390,16 @@ final class GhosttyApp {
         guard clipboard != GHOSTTY_CLIPBOARD_PRIMARY else {
             return GHOSTTY_CLIPBOARD_READ_UNSUPPORTED
         }
-        guard let userdata else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
+        guard let userdata, let state else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
         nonisolated(unsafe) let ud = userdata
-        nonisolated(unsafe) let st = state
+        let request = ClipboardRequestState(pointer: state)
+        // Answering READ_STARTED makes the state ours to complete or deny.
+        // Tracked in this frame, so a pane that closes before the hop below
+        // runs still denies it at teardown. A surface already torn down
+        // cannot keep it; answering unavailable lets libghostty free it.
+        guard SurfaceView.clipboardRequests(forUserdata: ud).track(request) else {
+            return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE
+        }
         // Taken here rather than after the hop. This callback runs inline on
         // whichever thread asked, and review asks from the main thread inside
         // its own paste action — so the text it staged cannot be claimed by a
@@ -419,12 +425,16 @@ final class GhosttyApp {
                 // Everything below is a way out, and the pane can die under
                 // any of them: the text and its receipt came off the surface
                 // in the frame above. Unless something claims this delivery it
-                // reports itself as refused, which is what stops comments from
-                // staying marked over a paste that never happened.
+                // settles itself as refused, which is what stops the insert
+                // waiting on it from marking comments over a paste that never
+                // happened.
                 let delivery = ReviewPasteDelivery(receipt: staged?.receipt)
                 defer { delivery.failIfUnsettled() }
+                // A pane that is gone leaves the request tracked, and its
+                // teardown denies it while the surface is still live.
                 guard let view = SurfaceView.liveView(forUserdata: ud),
-                      let surface = view.surface
+                      let surface = view.surface,
+                      view.clipboardRequests.claim(request)
                 else { return }
                 // Every paste reaches the terminal through this read: ⌘V,
                 // Edit > Paste, a review insert, and a middle click. So this
@@ -447,14 +457,14 @@ final class GhosttyApp {
                     // paste can carry it without going through the user's
                     // clipboard. Anything else reads the pasteboard as before.
                     text: staged?.text ?? NSPasteboard.general.string(forType: .string) ?? "",
-                    state: st,
+                    state: request.pointer,
                     confirmed: false
                 )
                 ClipboardConfirmationCoordinator.inFlightReviewDelivery = nil
                 // Whatever is left belongs to a paste that completed outright:
-                // it has no answer left to wait for, and keeping it would let
-                // the next refusal unmark comments that did arrive. A paste
-                // that raised the sheet was claimed inside the call above.
+                // it has no answer left to wait for, and the insert waiting
+                // on it may mark its comments. A paste that raised the sheet
+                // was claimed inside the call above.
                 delivery.landed()
             }
         }
@@ -470,9 +480,22 @@ final class GhosttyApp {
     /// MainActor hop + liveness check as `readClipboardCallback` to
     /// avoid touching a freed `SurfaceView`.
     private static let confirmReadClipboardCallback: ghostty_runtime_confirm_read_clipboard_cb = { userdata, confirm, state, request in
-        guard let userdata, let confirm else { return }
+        // libghostty always passes the request it wants confirmed; without
+        // one there is nothing we could answer.
+        guard let userdata, let confirm, let state else { return }
         nonisolated(unsafe) let ud = userdata
-        nonisolated(unsafe) let st = state
+        let tracked = ClipboardRequestState(pointer: state)
+        // Tracked in this frame, as in the read above, so a pane that closes
+        // before the hop runs still denies it at teardown. Teardown that has
+        // already run is freeing the surface, so there is nothing safe left
+        // to answer on. We do not expect to get here, since callbacks and
+        // teardown both run on the main thread and teardown frees the
+        // surface in the same job; leaking the state is the safe way to be
+        // wrong, where answering could touch a freed surface.
+        guard SurfaceView.clipboardRequests(forUserdata: ud).track(tracked) else {
+            log.fault("clipboard confirmation arrived after its surface was torn down")
+            return
+        }
         let rawRequest = request
         // Materialize the payload into an owned Swift `String` here,
         // synchronously inside the callback frame, NOT after the main
@@ -502,9 +525,9 @@ final class GhosttyApp {
                 // reports unless the sheet takes it.
                 let delivery = ReviewPasteDelivery(receipt: receipt)
                 defer { delivery.failIfUnsettled() }
-                guard let view = SurfaceView.liveView(forUserdata: ud),
-                      let surface = view.surface
-                else { return }
+                // A pane that is gone leaves the request tracked, and its
+                // teardown denies it while the surface is still live.
+                guard let view = SurfaceView.liveView(forUserdata: ud) else { return }
                 guard let coordinator = ClipboardConfirmationCoordinator.shared,
                       let kind = ClipboardConfirmationKind(rawRequest)
                 else {
@@ -513,14 +536,13 @@ final class GhosttyApp {
                     // prompt for — the OSC 5522 clipboard reads and
                     // writes libghostty gained in 1.4 land here.
                     // Deny rather than allow: fail closed.
-                    ghostty_surface_deny_clipboard_request(surface, st)
+                    ClipboardRequestAnswerer.libghostty.refuse(tracked, on: view)
                     return
                 }
                 coordinator.enqueue(
-                    kind: kind,
+                    .libghostty(kind, tracked),
                     contents: contents,
-                    view: view,
-                    state: st,
+                    target: view,
                     receipt: delivery.handedOn()
                 )
             }
@@ -543,21 +565,7 @@ final class GhosttyApp {
     /// `confirm == false` is the historical "trust" path — write
     /// straight to `NSPasteboard`.
     private static let writeClipboardCallback: ghostty_runtime_write_clipboard_cb = { userdata, _, contents, count, confirm in
-        guard let contents, count > 0 else { return }
-        var text: String?
-        for i in 0..<count {
-            let entry = contents[i]
-            if let mime = entry.mime, String(cString: mime) == "text/plain",
-               let data = entry.data
-            {
-                text = String(cString: data)
-                break
-            }
-        }
-        if text == nil, let data = contents[0].data {
-            text = String(cString: data)
-        }
-        guard let text else { return }
+        guard let contents, let text = GhosttyFFI.clipboardWriteText(contents, count: count) else { return }
         if !confirm {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -568,20 +576,19 @@ final class GhosttyApp {
             return
         }
         // confirm == true — enqueue against the coordinator. libghostty
-        // does not allocate a request-state for the write path (only
-        // confirm_read_clipboard_cb does), so we pass `state: nil` and
-        // the coordinator's allow() path writes to NSPasteboard
-        // directly instead of completing a C-side request.
+        // does not allocate a request state for the write path (only
+        // confirm_read_clipboard_cb does), so the request is an
+        // `.osc52Write`: allow() writes to NSPasteboard directly, and a
+        // refusal just drops the text.
         guard let userdata else { return }
         nonisolated(unsafe) let ud = userdata
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 guard let view = SurfaceView.liveView(forUserdata: ud) else { return }
                 ClipboardConfirmationCoordinator.shared?.enqueue(
-                    kind: .osc52Write,
+                    .osc52Write,
                     contents: text,
-                    view: view,
-                    state: nil
+                    target: view
                 )
             }
         }
@@ -589,7 +596,7 @@ final class GhosttyApp {
 
     /// libghostty wants to close a surface — typically because the
     /// child shell process exited. `userdata` is the *surface's*
-    /// userdata (an unretained pointer to `SurfaceView`), and
+    /// userdata (the view's `SurfaceUserdataToken`), and
     /// `processAlive` distinguishes shell exits from forced closes.
     /// Hop to MainActor and broadcast so `GhosttyEventCoordinator`
     /// can remove the pane from the SplitTree.

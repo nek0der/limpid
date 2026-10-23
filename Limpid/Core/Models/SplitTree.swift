@@ -22,12 +22,6 @@ enum SpatialDirection {
     case left, right, up, down
 }
 
-enum FocusDirection {
-    case previous
-    case next
-    case spatial(SpatialDirection)
-}
-
 enum PaneSplitBranch: Equatable {
     case first
     case second
@@ -78,9 +72,13 @@ struct PaneSplit: Codable, Equatable {
         second = try c.decode(PaneNode.self, forKey: .second)
     }
 
-    /// The rendered divider thickness. Geometry checks share this value so a
-    /// configured pane floor describes visible content, not the divider center.
-    static let dividerThickness: CGFloat = 6
+    /// The room a split reserves between its two panes: one point. Geometry
+    /// checks share this value so a configured pane floor describes visible
+    /// content, not the divider center. The seam the split draws there is one
+    /// device pixel (`SplitSeamGeometry`), never wider than this, so every
+    /// floor worked out here still holds on screen. The pointer's grab band
+    /// overhangs both panes and takes no room of its own.
+    static let dividerThickness: CGFloat = 1
 
     /// Keep persisted ratios finite and inside the container. Bounds-dependent
     /// pane floors are applied by `resolvedRatio`, where the real extent and
@@ -245,7 +243,9 @@ struct SplitTree: Codable, Equatable {
         let minSize: PaneMinimumSize
     }
 
-    /// Reset every split in the tree to a 50/50 ratio.
+    /// Recompute every split's ratio from the leaves on each side along its
+    /// axis, so the panes in a row (or a column) end up the same width (or
+    /// height): `H(A, H(B, C))` gets 1/3 outside and 1/2 inside.
     func equalize() -> SplitTree {
         guard let root else { return self }
         return SplitTree(
@@ -355,10 +355,39 @@ struct SplitTree: Codable, Equatable {
         return ids
     }
 
+    /// The leaves whose bottom is the tab's bottom, leading to trailing:
+    /// both sides of a side-by-side split, only the lower half of a stacked
+    /// one. Read from the shape alone, so no ratio changes the answer.
+    func bottomEdgeLeafIDs() -> [UUID] {
+        guard let root else { return [] }
+        return Self.bottomEdgeLeafIDs(in: root)
+    }
+
+    private static func bottomEdgeLeafIDs(in node: PaneNode) -> [UUID] {
+        switch node {
+        case let .leaf(id):
+            [id]
+        case let .split(data):
+            switch data.direction {
+            case .horizontal: bottomEdgeLeafIDs(in: data.first) + bottomEdgeLeafIDs(in: data.second)
+            case .vertical: bottomEdgeLeafIDs(in: data.second)
+            }
+        }
+    }
+
     /// `true` when `leafID` is present somewhere in the tree.
     func contains(leafID: UUID) -> Bool {
         guard let root else { return false }
         return Self.containsLeaf(root, id: leafID)
+    }
+
+    /// The share of the tab's width `leafID` takes, from the stored ratios
+    /// (the dividers left out), or `nil` when the tree has no such leaf.
+    func widthFraction(of leafID: UUID) -> CGFloat? {
+        guard let root else { return nil }
+        var rects: [(id: UUID, rect: CGRect)] = []
+        Self.collectLeafRects(root, in: CGRect(x: 0, y: 0, width: 1, height: 1), into: &rects)
+        return rects.first { $0.id == leafID }?.rect.width
     }
 
     /// Nearest leaf adjacent to `leafID` in the requested direction, or

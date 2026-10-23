@@ -4,9 +4,10 @@
 # an environment variable pointing at a replacement `CODEX_HOME`; having an
 # invocation to add flags to is what lets that whole indirection go.
 #
-# Locate the real codex by excluding our own directory from PATH and
-# falling back to LIMPID_REAL_CODEX (test override) plus a few known
-# install paths.
+# Locate the real codex: LIMPID_REAL_CODEX (an explicit override, a
+# test's stub), then the PATH without our own directory, then
+# LIMPID_FOUND_CODEX (the one the new workspace sheet found), then the
+# agent catalog's known locations.
 
 set -u
 
@@ -20,6 +21,16 @@ runtime_common="$self_dir/../agent-shim/runtime-common.sh"
 if [ -r "$runtime_common" ]; then
   . "$runtime_common"
   limpid_ensure_run_id
+fi
+# The user's own arguments, before we add any: whether this launch takes
+# the first instruction (`limpid_take_initial_prompt`). One-shot flags and
+# the subcommands of `codex --help` keep it, and `resume` and `fork` would
+# read it as a session id; a hidden or new subcommand keeps it by the
+# shape rule when it comes first.
+limpid_prompt_allowed=0
+if command -v limpid_prompt_allowed_for >/dev/null 2>&1 &&
+  limpid_prompt_allowed_for "--version -V -h --help agents exec e review login logout mcp plugin app-server remote-control app completion update doctor sandbox debug apply a resume queue archive delete migrate-rollouts unarchive fork cloud exec-server features help" "$@"; then
+  limpid_prompt_allowed=1
 fi
 
 # Rebuild PATH with our own dir filtered out so command -v finds the real
@@ -37,28 +48,48 @@ for entry in $PATH; do
 done
 IFS="$old_ifs"
 
+# What the new workspace sheet found Codex as, staged for the pane it
+# started (`WorkspaceSession.StagedLaunch`). Read once and taken out of the
+# environment, so neither the agent nor a tmux server it starts carries
+# it on; the pane's shell keeps its copy, a fallback below its own PATH.
+found_codex="${LIMPID_FOUND_CODEX:-}"
+unset LIMPID_FOUND_CODEX
+
 real_codex="${LIMPID_REAL_CODEX:-}"
+# Whether the lookup below, rather than the PATH or the override, found it:
+# its folder is then off the PATH (`limpid_add_agent_folder`).
+found_off_path=0
 if [ -z "$real_codex" ]; then
   real_codex=$(PATH="$filtered_path" command -v codex 2>/dev/null || true)
 fi
-# Common install locations (homebrew cask / direct npm i -g / mise shims
-# already sit on PATH and are found above).
-if [ -z "$real_codex" ]; then
-  for candidate in \
-    "/opt/homebrew/bin/codex" \
-    "/usr/local/bin/codex" \
-    "$HOME/.local/bin/codex"
-  do
-    if [ -x "$candidate" ] && [ "$candidate" != "$self" ]; then
-      real_codex="$candidate"
-      break
-    fi
-  done
+# Only when this pane's PATH has none: a `.nvmrc`, a mise pin or direnv
+# chooses the CLI by folder, and the sheet's came from a pane of this project's
+# folder or the login shell. What it found closes the case where no PATH
+# here has the agent at all; one gone since is passed over.
+if [ -z "$real_codex" ] && [ -n "$found_codex" ] && [ -f "$found_codex" ] && [ -x "$found_codex" ]; then
+  real_codex="$found_codex"
+  found_off_path=1
+fi
+# Then where the new workspace sheet looked before it offered Codex, in
+# its order. Limpid hands every pane the catalog's list rather than this
+# script keeping a copy, so an agent the sheet offers is one this finds.
+if [ -z "$real_codex" ] && command -v limpid_find_known_agent >/dev/null 2>&1 &&
+  limpid_find_known_agent "${LIMPID_CODEX_KNOWN_LOCATIONS:-}" "$self"; then
+  real_codex="$limpid_known_agent"
+  found_off_path=1
 fi
 
 if [ -z "$real_codex" ]; then
-  printf 'limpid: codex not found in PATH (searched without %s)\n' "$self_dir" >&2
+  printf 'limpid: codex not found in PATH or the usual install folders (searched without %s)\n' "$self_dir" >&2
   exit 127
+fi
+
+# Set when Codex is a script for the node beside it, found off the PATH
+# (`limpid_add_agent_folder`).
+codex_node=""
+if [ "$found_off_path" = 1 ] && command -v limpid_add_agent_folder >/dev/null 2>&1 &&
+  limpid_add_agent_folder "$real_codex"; then
+  codex_node="$limpid_agent_node"
 fi
 
 # ----- Optional tmux hosting (Settings > Advanced > tmux) -----
@@ -86,44 +117,21 @@ interactive_first_args="resume fork"
 # Non-interactive wherever they appear.
 one_shot_flags="--version -v -V --help -h -p --print --bg --background"
 # Passed through explicitly rather than left to inheritance, for the
-# reason above.
-hosted_env_names="LIMPID_PANE_ID LIMPID_CODEX_SESSIONS_DIR LIMPID_CODEX_AGENT_STATES_DIR LIMPID_AGENT_RUN_ID LIMPID_AGENT_TMUX_HOST_MODE LIMPID_AGENT_TMUX LIMPID_AGENT_HOOK_BACKEND"
-
-should_host_in_tmux() {
-  [ -n "${LIMPID_AGENT_TMUX:-}" ] && [ -x "${LIMPID_AGENT_TMUX:-}" ] || return 1
-  # Both variables come from the same place, so a missing pane id means
-  # we are not in a Limpid pane and have nothing to name the session for.
-  [ -n "${LIMPID_PANE_ID:-}" ] || return 1
-  # Already inside a session: our directory is still on PATH in there,
-  # so without this the shim would wrap itself without bound.
-  [ -z "${TMUX:-}" ] || return 1
-  # Anything written inside tmux is erased when the client leaves the
-  # alternate screen, so only what we recognize as interactive is
-  # wrapped. This is an allow list rather than a list of one-shots to
-  # exclude because the two cannot be told apart from the shape of the
-  # arguments: `codex fix` is a prompt and `codex exec` is a
-  # subcommand, and a global option can precede either
-  # (`codex -m gpt-5 exec ...`). Wrapping something that was going to
-  # print and exit costs the user that output; declining to wrap an
-  # interactive session only leaves it running the way it does today,
-  # so the guesses are made in that direction.
-  [ -t 0 ] && [ -t 1 ] || return 1
-  for sht_arg in "$@"; do
-    for sht_flag in $one_shot_flags; do
-      [ "$sht_arg" = "$sht_flag" ] && return 1
-    done
-  done
-  # No arguments at all is the ordinary interactive launch.
-  [ "$#" -gt 0 ] || return 0
-  for sht_known in $interactive_first_args; do
-    [ "$1" = "$sht_known" ] && return 0
-  done
-  return 1
-}
+# reason above. `PATH` among them: the pane's, which a mise, direnv or
+# `.nvmrc` folder changes and the agent's folder may have joined, where
+# the server's is the first pane's that started it. `CODEX_HOME` too: the
+# home this pane's Codex reads its config and trust from, made absolute
+# below.
+hosted_env_names="LIMPID_PANE_ID LIMPID_CODEX_SESSIONS_DIR LIMPID_CODEX_AGENT_STATES_DIR LIMPID_AGENT_RUN_ID LIMPID_AGENT_TMUX_HOST_MODE LIMPID_AGENT_TMUX PATH CODEX_HOME"
 
 hosts_in_tmux=0
-# Decided against the user's own arguments, before we add any of ours.
-should_host_in_tmux "$@" && hosts_in_tmux=1
+# Decided against the user's own arguments, before we add any of ours
+# (`limpid_should_host_in_tmux`). Without the shared helpers there is no
+# hosting: the agent runs as it would with the setting off.
+if command -v limpid_should_host_in_tmux >/dev/null 2>&1 &&
+  limpid_should_host_in_tmux "$interactive_first_args" "$one_shot_flags" "$@"; then
+  hosts_in_tmux=1
+fi
 if [ "$hosts_in_tmux" = 1 ]; then
   LIMPID_AGENT_TMUX_HOST_MODE="limpidHosted"
 elif [ -n "${TMUX:-}" ]; then
@@ -134,6 +142,13 @@ export LIMPID_AGENT_TMUX_HOST_MODE
 # Hand off to the real agent, inside a tmux session of its own when the
 # user asked for that. Every exit from this script goes through here.
 exec_agent() {
+  # The first instruction goes last, after `--`, as one argument whatever
+  # it holds: quotes and `$(...)` reach the agent as typed. A reader in
+  # front of the agent passes it, inside tmux as outside
+  # (`limpid_prompt_reader`).
+  if command -v limpid_take_initial_prompt >/dev/null 2>&1 && limpid_take_initial_prompt; then
+    set -- /bin/sh -c "$limpid_prompt_reader" limpid-prompt "$limpid_initial_prompt_file" 0 "$@"
+  fi
   [ "$hosts_in_tmux" = 1 ] || exec "$@"
   # Unique per invocation. `-A` is deliberately absent: with the name
   # already taken it attaches and silently drops the command, handing
@@ -151,15 +166,32 @@ exec_agent() {
     set -sa terminal-overrides ",*:RGB" ";" \
     set -g prefix None ";" \
     new-session -s "$ea_session"
+  # A variable set to empty is passed on empty: a session on a server that
+  # already runs takes every variable not given here from the server's
+  # environment, and a demo pane empties the record directories precisely
+  # so the agent writes no records into another build's.
+  # One this pane does not set is unset in the session, for the same
+  # reason: left out, the session would take the server's value, which
+  # is the pane's that started the server (another pane's home, another
+  # run's id). tmux's `-e` only sets (`NAME=value`), so `/usr/bin/env -u`
+  # takes it out as the agent starts.
+  ea_unset=""
   for ea_name in $hosted_env_names; do
-    eval "ea_value=\${$ea_name:-}"
-    [ -n "$ea_value" ] || continue
+    eval "ea_is_set=\${$ea_name+set}"
+    if [ -z "$ea_is_set" ]; then
+      ea_unset="$ea_unset $ea_name"
+      continue
+    fi
+    eval "ea_value=\${$ea_name}"
     set -- "$@" -e "$ea_name=$ea_value"
   done
   # `/usr/bin/env` guarantees more than one argument after the options,
   # which is what makes tmux exec our argv directly rather than passing
   # a single string to `sh -c` — so nothing here needs quoting.
   set -- "$@" /usr/bin/env
+  for ea_name in $ea_unset; do
+    set -- "$@" -u "$ea_name"
+  done
   while [ "$ea_count" -gt 0 ]; do
     ea_arg="$1"
     shift
@@ -168,6 +200,21 @@ exec_agent() {
   done
   exec "$LIMPID_AGENT_TMUX" "$@"
 }
+
+# Codex resolves a relative `CODEX_HOME` against the directory it starts
+# in. Our hook cannot: it runs in the session's `cwd`, which for Codex's
+# memory agent is a directory under that home, so it would read the
+# memory agent's `cwd` against a path relative to nothing and take the
+# agent for the person's. Made absolute here, the value names the same
+# directory to Codex, to the hook, and to a tmux session, which starts in
+# a directory of its own.
+case "${CODEX_HOME:-}" in
+  "" | /*) ;;
+  *)
+    CODEX_HOME="$PWD/$CODEX_HOME"
+    export CODEX_HOME
+    ;;
+esac
 
 # Splice in the hook flags Limpid computed for this pane, ahead of the
 # user's own arguments so they land as global options. They arrive
@@ -194,4 +241,10 @@ fi
 # fallback for a codex started outside this shim, by absolute path.
 export LIMPID_CODEX_PID="$$"
 
+# On the node beside it when the lookup found one: the same process the
+# `#!/usr/bin/env node` line would start, but on the version it was
+# installed with rather than whichever node the PATH has first.
+if [ -n "$codex_node" ]; then
+  exec_agent "$codex_node" "$real_codex" "$@"
+fi
 exec_agent "$real_codex" "$@"

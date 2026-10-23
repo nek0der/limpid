@@ -2,10 +2,11 @@
 // Limpid — which prompt cache panel is open, which clock it hangs from, and
 // when it opens and closes.
 //
-// Held at the scene root, like `PRHoverPresentation`, because the panel is
-// wider than the tab row or the pane header its clock sits in, and each of
-// those clips what it draws. `PromptCachePanelHost` draws the
-// open panel over the whole window, below its clock.
+// One per window (`ProjectWindowState.promptCachePanel`), like
+// `PRHoverPresentation`, because the panel is wider than the tab row or the
+// pane header its clock sits in, and each of those clips what it draws.
+// `PromptCachePanelHost` draws the open panel over the whole window, below
+// its clock.
 //
 // A place can have more than one clock on screen at once. Every main window
 // renders the same session, and a row or header that swaps one layout for
@@ -200,7 +201,7 @@ final class PromptCachePanelPresentation {
         let delay = openDelay
         showTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: delay)
-            // A cancelled sleep falls through rather than throwing out.
+            // A canceled sleep falls through rather than throwing out.
             guard !Task.isCancelled, let self, isHovering(place), !isAnotherSurfaceOpen else { return }
             // The clock under the pointer, at its latest frame.
             let clock = clocks[place]?.first { $0.instance == instance }

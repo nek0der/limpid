@@ -17,14 +17,21 @@ struct FloatingPanelShapeTests {
     }
 
     @Test func withAnArrow_standsOutOnTheEdgeItFaces() {
-        let top = FloatingPanelShape(cornerRadius: 16, arrow: .init(edge: .top, x: 120), arrowHeight: 10)
+        let top = FloatingPanelShape(cornerRadius: 16, arrow: .init(edge: .top, offset: 120), arrowHeight: 10)
         let bounds = top.path(in: rect).boundingRect
         #expect(bounds.minY == rect.minY - 10)
         #expect(bounds.maxY == rect.maxY)
 
-        let bottom = FloatingPanelShape(cornerRadius: 16, arrow: .init(edge: .bottom, x: 120), arrowHeight: 10)
+        let bottom = FloatingPanelShape(cornerRadius: 16, arrow: .init(edge: .bottom, offset: 120), arrowHeight: 10)
         let bottomBounds = bottom.path(in: rect).boundingRect
         #expect(bottomBounds.maxY == rect.maxY + 10)
         #expect(bottomBounds.minY == rect.minY)
+
+        let leading = FloatingPanelShape(cornerRadius: 16, arrow: .init(edge: .leading, offset: 35), arrowHeight: 10)
+        let leadingBounds = leading.path(in: rect).boundingRect
+        #expect(leadingBounds.minX == rect.minX - 10)
+        #expect(leadingBounds.maxX == rect.maxX)
+        #expect(leadingBounds.minY == rect.minY)
+        #expect(leadingBounds.maxY == rect.maxY)
     }
 }

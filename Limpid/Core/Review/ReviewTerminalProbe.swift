@@ -8,8 +8,7 @@ import Foundation
 /// This reports; it does not gate. What keeps an unbracketed paste from being
 /// run line by line is the confirmation sheet, not this probe — all the reader
 /// needs from here is to see which terminal the text goes to and what is in
-/// front on it. An earlier version made that a precondition and refused every
-/// insertion, which is the opposite of useful.
+/// front on it. As a precondition it would refuse nearly every insertion.
 ///
 /// Deliberately nonisolated: both calls block on a process or a `sysctl`, so
 /// callers run them off the main actor.
@@ -45,79 +44,51 @@ enum ReviewTerminalProbe {
         ) ?? surfaceTTY
     }
 
-    /// The current directory inside the tmux pane driven by `surfaceTTY`.
-    ///
-    /// `nil` is deliberately distinct from the outer shell's directory. If
-    /// the client detached or the server stopped answering, insertion must be
-    /// refused rather than validated against a terminal it will not reach.
-    static func hostedWorkingDirectory(
-        surfaceTTY: String,
-        surfaceForeground: String? = nil,
-        knownBinding: TmuxBinding? = nil
-    ) -> String? {
-        if let surfaceForeground, surfaceForeground != TmuxClientProbe.clientProcessName {
-            return nil
-        }
-        guard let tmuxPath = TmuxClientProbe.locateTmux() else { return nil }
-        var socketPaths = TmuxClientProbe.socketPaths(
-            inServerDirectory: TmuxClientProbe.defaultServerDirectory()
-        )
-        if let knownBinding {
-            let knownPath = TmuxClientProbe.normalizeSocketPath(knownBinding.socketPath)
-            if !socketPaths.contains(where: { TmuxClientProbe.normalizeSocketPath($0.path) == knownPath }) {
-                socketPaths.append(URL(fileURLWithPath: knownPath))
-            }
-        }
-        let clients = TmuxClientProbe.attachedClients(
-            tmuxPath: tmuxPath,
-            socketPaths: socketPaths
-        )
-        guard let binding = clients[surfaceTTY] else { return nil }
-        return TmuxClientProbe.activePanePath(
-            tmuxPath: tmuxPath,
-            socketPath: binding.socketPath,
-            sessionID: binding.sessionID
+    /// What is in front on the tmux pane behind each of `surfaceTTYs`, each
+    /// a surface whose foreground is a tmux client, by surface tty. Lists
+    /// the machine's attached clients once for all of them, since that
+    /// starts a process per socket. Every failure reads the surface's own
+    /// tty, as `deliveryTTY` falls back to it: tmux not found, no client on
+    /// the tty, or no active pane for its session.
+    static func hostedForegrounds(surfaceTTYs: [String]) -> [String: String] {
+        let tmuxPath = TmuxClientProbe.locateTmux()
+        let clients = tmuxPath.map {
+            TmuxClientProbe.attachedClients(tmuxPath: $0, serverDirectory: TmuxClientProbe.defaultServerDirectory())
+        } ?? [:]
+        return hostedForegrounds(
+            surfaceTTYs: surfaceTTYs,
+            clients: clients,
+            activePaneTTY: { binding in
+                tmuxPath.flatMap {
+                    TmuxClientProbe.activePaneTTY(tmuxPath: $0, socketPath: binding.socketPath, sessionID: binding.sessionID)
+                }
+            },
+            foreground: { foregroundProcess(on: $0)?.name }
         )
     }
 
-    /// The command in the foreground process group of `tty`.
-    ///
-    /// `KERN_PROC_TTY` lists every process whose controlling terminal is that
-    /// device; the foreground one is where its process group matches the
-    /// terminal's. We ask the kernel about the processes rather than the
-    /// terminal because `tcgetpgrp` is `ioctl(TIOCGPGRP)`, which XNU answers
-    /// only for the caller's own controlling terminal — and a windowed app has
-    /// none.
+    /// `hostedForegrounds(surfaceTTYs:)` with its readings handed in: the
+    /// attached clients by tty (empty without tmux), the active pane's tty
+    /// of a client's session, and the command in front on a tty.
+    static func hostedForegrounds(
+        surfaceTTYs: [String],
+        clients: [String: TmuxBinding],
+        activePaneTTY: (TmuxBinding) -> String?,
+        foreground: (String) -> String?
+    ) -> [String: String] {
+        var foregrounds: [String: String] = [:]
+        for surfaceTTY in surfaceTTYs {
+            let tty = clients[surfaceTTY].flatMap(activePaneTTY) ?? surfaceTTY
+            foregrounds[surfaceTTY] = foreground(tty)
+        }
+        return foregrounds
+    }
+
+    /// The command in the foreground process group of `tty`
+    /// (`ProcessNames.foregroundProcess(on:)`), by the kernel's accounting
+    /// name as the reader would type it (`displayName`).
     static func foregroundProcess(on tty: String) -> (pid: Int32, name: String)? {
-        var device = stat()
-        guard tty.hasPrefix("/dev/"), stat(tty, &device) == 0 else { return nil }
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_TTY, Int32(device.st_rdev)]
-        var size = 0
-        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return nil }
-        let capacity = size / MemoryLayout<kinfo_proc>.stride + 1
-        var processes = [kinfo_proc](repeating: kinfo_proc(), count: capacity)
-        size = capacity * MemoryLayout<kinfo_proc>.stride
-        guard sysctl(&mib, u_int(mib.count), &processes, &size, nil, 0) == 0 else { return nil }
-        let count = size / MemoryLayout<kinfo_proc>.stride
-        let foreground = processes.prefix(count).filter {
-            $0.kp_eproc.e_pgid == $0.kp_eproc.e_tpgid && $0.kp_eproc.e_tpgid > 1
-        }
-        // An agent running a tool puts several processes in the same group.
-        // The leader is the one worth naming: "claude", not the helper it spawned.
-        guard let process = foreground.first(where: { $0.kp_proc.p_pid == $0.kp_eproc.e_pgid })
-            ?? foreground.first
-        else { return nil }
-        return (process.kp_proc.p_pid, name(of: process))
-    }
-
-    /// `p_comm` is a fixed-size C array, which Swift imports as a tuple.
-    private static func name(of process: kinfo_proc) -> String {
-        var command = process.kp_proc.p_comm
-        let raw = withUnsafeBytes(of: &command) { buffer in
-            guard let base = buffer.baseAddress else { return "" }
-            return String(cString: base.assumingMemoryBound(to: CChar.self))
-        }
-        return displayName(raw)
+        ProcessNames.foregroundProcess(on: tty).map { ($0.pid, displayName($0.accountingName)) }
     }
 
     /// The kernel's accounting name is not always what the reader typed.

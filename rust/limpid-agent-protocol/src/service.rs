@@ -147,6 +147,7 @@ impl ApprovalService {
                         "approval.deny".into(),
                         "approval.delegate".into(),
                         "approval.answer".into(),
+                        "approval.agent_run".into(),
                         "approval.subscribe".into(),
                         "approval.wait".into(),
                     ],
@@ -218,8 +219,7 @@ impl ApprovalService {
                 result
             }
             RequestBody::ApprovalGet(key) => {
-                self.lock_broker()?
-                    .get(principal, key.into_domain(), self.now_ms())
+                return self.get(principal, key.into_domain());
             }
             RequestBody::ApprovalWait {
                 key,
@@ -310,15 +310,43 @@ impl ApprovalService {
         }
     }
 
+    /// Answers `approval.get`, with the service clock for a controller only:
+    /// a controller computes the time left from it, and a requester has no
+    /// use for it.
+    fn get(
+        &self,
+        principal: &Principal,
+        key: limpid_agent_core::ApprovalKey,
+    ) -> Result<ResponseBody, ServeError> {
+        let mut broker = self.lock_broker()?;
+        let now_ms = self.now_ms();
+        let snapshot = match broker.get(principal, key, now_ms) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return Ok(broker_error(&error)),
+        };
+        drop(broker);
+        let mut wire =
+            ApprovalSnapshotWire::from_domain(snapshot).map_err(|_| ServeError::Synchronization)?;
+        wire.now_ms = matches!(principal, Principal::Controller).then_some(now_ms);
+        Ok(ResponseBody::ApprovalResult(Box::new(wire)))
+    }
+
     fn snapshot(&self, principal: &Principal) -> Result<ResponseBody, ServeError> {
         let mut broker = self.lock_broker()?;
-        let snapshots = match broker.snapshot(principal, self.now_ms()) {
+        let now_ms = self.now_ms();
+        let snapshots = match broker.snapshot(principal, now_ms) {
             Ok(snapshots) => snapshots,
             Err(error) => return Ok(broker_error(&error)),
         };
         let sequence = broker.sequence();
+        let unevictable_records = unevictable(&mut broker, now_ms)?;
         let requests = snapshots.into_iter().map(ApprovalIndexWire::from).collect();
-        Ok(ResponseBody::ApprovalSnapshotResult { sequence, requests })
+        Ok(ResponseBody::ApprovalSnapshotResult {
+            sequence,
+            requests,
+            now_ms: Some(now_ms),
+            unevictable_records,
+        })
     }
 
     /// Holds a controller request until the projection changes or its bounded
@@ -346,8 +374,14 @@ impl ApprovalService {
                 u64::try_from(wait_started.elapsed().as_millis()).unwrap_or(u64::MAX),
             );
             if sequence != after_sequence || caller_remaining_ms == 0 {
+                let unevictable_records = unevictable(&mut broker, now_ms)?;
                 let requests = snapshots.into_iter().map(ApprovalIndexWire::from).collect();
-                return Ok(ResponseBody::ApprovalSnapshotResult { sequence, requests });
+                return Ok(ResponseBody::ApprovalSnapshotResult {
+                    sequence,
+                    requests,
+                    now_ms: Some(now_ms),
+                    unevictable_records,
+                });
             }
             let deadline_remaining_ms = snapshots
                 .iter()
@@ -461,4 +495,12 @@ fn broker_error(error_value: &BrokerError) -> ResponseBody {
         }
     };
     error(code, message)
+}
+
+/// The broker's unevictable record count, as the snapshot carries it.
+fn unevictable(broker: &mut ApprovalBroker, now_ms: u64) -> Result<Option<u64>, ServeError> {
+    let count = broker
+        .unevictable_count(now_ms)
+        .map_err(|_| ServeError::Synchronization)?;
+    Ok(Some(u64::try_from(count).unwrap_or(u64::MAX)))
 }

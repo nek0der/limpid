@@ -11,7 +11,7 @@ import AppKit
 ///
 /// Four controls at most: twenty lines toward the hunk below, twenty away from
 /// the hunk above, the whole run at once, and putting it back. A gap has both
-/// neighbours only in the middle of a file, so the ends show what applies to
+/// neighbors only in the middle of a file, so the ends show what applies to
 /// them.
 ///
 /// Two pairs of mirrored glyphs rather than four unrelated ones: a chevron
@@ -32,8 +32,8 @@ final class ReviewExpanderRowView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         count.translatesAutoresizingMaskIntoConstraints = false
-        count.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-        count.textColor = .tertiaryLabelColor
+        count.font = .monospacedSystemFont(ofSize: LimpidFont.Supervision.Size.micro.rawValue, weight: .regular)
+        count.textColor = SupervisionTokens.muted.nsColor
         count.lineBreakMode = .byTruncatingTail
         addSubview(count)
         // Labels are set in `configure`, not here: these rows are pooled, so
@@ -43,7 +43,7 @@ final class ReviewExpanderRowView: NSView {
         configure(button: all, action: #selector(expandAll))
         configure(button: fold, action: #selector(collapse))
         // A stack, because the controls come and go: a gap has both
-        // neighbours only in the middle of a file, and a fully unfolded one
+        // neighbors only in the middle of a file, and a fully unfolded one
         // offers nothing but the way back. Constrained individually, a hidden
         // button keeps the space it would have taken, which left the one
         // remaining control adrift in the middle of the row.

@@ -1,4 +1,4 @@
-.PHONY: build build-release release-check run dev test rust-test review-core fmt rust-fmt lint rust-lint rust-header dmg xcodegen ghostty screenshot clean help
+.PHONY: build build-release release-check run dev test test-measure rust-test review-core fmt rust-fmt lint rust-lint rust-header dmg xcodegen ghostty screenshot clean help FORCE
 
 SCHEME  := Limpid
 PROJECT := Limpid.xcodeproj
@@ -37,13 +37,16 @@ endef
 # DerivedData hash or the Dev/Release product name.
 APP_PATH = $(shell xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) -showBuildSettings 2>/dev/null \
   | awk -F' = ' '/ BUILT_PRODUCTS_DIR = /{d=$$2} / FULL_PRODUCT_NAME = /{n=$$2} END{print d"/"n}')
+RELEASE_APP_PATH = $(shell xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release -showBuildSettings 2>/dev/null \
+  | awk -F' = ' '/ BUILT_PRODUCTS_DIR = /{d=$$2} / FULL_PRODUCT_NAME = /{n=$$2} END{print d"/"n}')
 
 help:
 	@echo "Limpid — common targets"
 	@echo "  make build       Build Debug"
 	@echo "  make run         Launch the built app"
 	@echo "  make dev         build + run"
-	@echo "  make test        Run XCTest / Swift Testing suites"
+	@echo "  make test        Run the Rust and Swift Testing suites"
+	@echo "  make test-measure Run the timing suite that make test leaves out"
 	@echo "  make rust-test   Run Rust workspace tests"
 	@echo "  make review-core Run the review scenarios without building the app"
 	@echo "  make fmt         Auto-format with SwiftFormat"
@@ -56,14 +59,22 @@ help:
 	@echo "  make screenshot  Regenerate .github/assets/hero.png (demo mode)"
 	@echo "  make clean       Remove DerivedData for this project"
 
-# Regenerate the Xcode project when project.yml is newer (or .pbxproj
-# is missing entirely). Anything that depends on `$(PBXPROJ)` picks up
-# fresh xcodegen output automatically, so editing `project.yml` and
-# running `make build` lands the change without a manual `make
-# xcodegen` step. The `xcodegen` phony target stays for explicit
-# invocation.
-$(PBXPROJ): project.yml
-	xcodegen
+# Regenerate the Xcode project when it is missing, when project.yml changed,
+# or when a file under a source directory was added, removed, or renamed.
+# xcodegen expands each source path into the files present when it runs and
+# the project is not tracked, so a new file needs a regeneration the
+# project.yml timestamp alone never triggers. The script decides from content
+# rather than mtimes, because this make compares mtimes to the whole second.
+# Anything that depends on `$(PBXPROJ)` picks up fresh xcodegen output, so
+# `make build` lands either change without a manual `make xcodegen` step.
+XCODEGEN_INPUTS := build/xcodegen.inputs
+SOURCE_DIRS := Limpid LimpidTests AgentIntegrationService
+REGENERATE_PROJECT = scripts/regenerate-project-if-stale.sh
+
+$(PBXPROJ): FORCE
+	@$(REGENERATE_PROJECT) $(PBXPROJ) $(XCODEGEN_INPUTS) project.yml $(SOURCE_DIRS)
+
+FORCE:
 
 build: $(PBXPROJ)
 	$(debug_signing_guard)
@@ -101,6 +112,18 @@ test: rust-test $(PBXPROJ)
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' \
 		$(DEBUG_SIGNING) test
 
+# The timing tests print numbers for a person to compare and check none of
+# them, so they are off unless asked for. The Rust measurements are the ignored
+# tests, run in release because a debug figure says little about the app.
+# xcodebuild hands a TEST_RUNNER_-prefixed variable to the test process without
+# the prefix.
+test-measure: $(PBXPROJ)
+	$(debug_signing_guard)
+	cargo test --locked --release --workspace -- --ignored --nocapture
+	TEST_RUNNER_LIMPID_MEASURE=1 xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' \
+		$(DEBUG_SIGNING) -only-testing:LimpidTests/ScrollingCostMeasurements \
+		'-only-testing:LimpidTests/TurnRecordCacheTests/aPassOverAThousandTurns_isTimed()' test
+
 rust-test:
 	cargo test --locked --workspace --all-targets
 
@@ -120,6 +143,10 @@ rust-fmt:
 lint: rust-lint
 	mint run swiftformat --lint .
 	swiftlint lint --strict
+	scripts/check-localization.sh
+	scripts/test-check-localization.sh
+	scripts/test-screenshot-app.sh
+	scripts/test-derive-expected-events.sh
 
 # The bridge's build script writes the header from the exported Rust items, so
 # a drifted commit shows up as a diff rather than as a Swift link failure.
@@ -134,13 +161,18 @@ rust-lint: rust-fmt rust-header
 dmg:
 	./scripts/package-dmg.sh
 
-xcodegen: $(PBXPROJ)
+# Always regenerate: the explicit escape hatch for a project that drifted in
+# a way the inputs above cannot see.
+xcodegen:
+	@$(REGENERATE_PROJECT) --force $(PBXPROJ) $(XCODEGEN_INPUTS) project.yml $(SOURCE_DIRS)
 
 ghostty:
 	./scripts/build-ghostty.sh
 
+# Hand the script the Release app this project just built, so it never
+# captures another worktree's newer build from DerivedData.
 screenshot: build-release
-	./scripts/screenshot.sh
+	LIMPID_SCREENSHOT_APP='$(RELEASE_APP_PATH)' ./scripts/screenshot.sh
 
 clean:
 	rm -rf $(HOME)/Library/Developer/Xcode/DerivedData/Limpid-*

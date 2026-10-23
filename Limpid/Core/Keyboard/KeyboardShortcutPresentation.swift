@@ -1,6 +1,6 @@
 // KeyboardShortcutPresentation.swift
-// Limpid — whether the keyboard shortcut cheat sheet is up on the
-// main window. Kept off `WindowSession` because it is transient UI
+// Limpid — whether the keyboard shortcuts panel is up over a main
+// window. Kept off `WorkspaceSession` because it is transient UI
 // state that must not be persisted or restored with the session.
 
 import Observation

@@ -47,7 +47,7 @@ struct PRChecksConclusionTests {
             // same rollup carries for commit statuses.
             "FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "ERROR",
             // GitHub spells a cancellation with two Ls, GitLab with
-            // one. Both have to land here or a cancelled run holds the
+            // one. Both have to land here or a canceled run holds the
             // fast cadence open.
             "CANCELLED", "canceled",
             // GitLab.

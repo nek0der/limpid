@@ -9,16 +9,23 @@ private struct ApprovalCardMeasurement: Equatable {
     let height: CGFloat
 }
 
-/// The card deliberately lives above the three-pane layout: its anchor is the
-/// Waiting column's trailing edge, while the pane and Waiting affordances are
-/// only entry points. The otherwise empty host has no hit-test shape, so clicks
-/// outside the card continue to reach the terminal and sidebar.
+/// The card deliberately lives above the window's layout: it stands beside
+/// the row that opened it and points back at it, while the pane, the Needs
+/// Attention list, and the notifications are only entry points. The
+/// otherwise empty host has no hit-test shape, so clicks outside the card
+/// continue to reach the terminal and sidebar.
 struct ApprovalCardHost: View {
     @Environment(ApprovalPresentationStore.self) private var approvals
-    @Environment(WindowSession.self) private var session
-    @Environment(AttentionState.self) private var attention
-    @Environment(\.surfaceRegistry) private var registry
+    @Environment(WorkspaceSession.self) private var session
+    @Environment(WindowRegistry.self) private var windowRegistry
+    @Environment(AttentionQueueStore.self) private var attentionQueue
+    /// The window this card is in: each window has its own card,
+    /// and its ⌘J place follows the pane the card opens. The one host,
+    /// `WindowChromeHost`, lays this over a main window's content, and
+    /// `MainWindowContent` puts that window in the environment.
+    @Environment(ProjectWindowState.self) private var window
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     @State private var measuredCardHeights: [String: CGFloat] = [:]
     /// The tallest height measured for each card. Placing the card by this
     /// height keeps its top edge still when it shrinks: paging to a shorter
@@ -28,39 +35,45 @@ struct ApprovalCardHost: View {
     @State private var placementHeights: [String: CGFloat] = [:]
     private let cardWidth: CGFloat = 400
     private let fallbackCardHeight: CGFloat = 180
+    /// Between the card and the window's edges.
+    private let cardMargin: CGFloat = 8
 
-    private func clampedCenterY(
-        _ proposed: CGFloat,
-        placementHeight: CGFloat,
-        cardHeight: CGFloat,
-        in size: CGSize
-    ) -> CGFloat {
-        guard size.height > placementHeight + 16 else { return size.height / 2 }
-        let top = min(max(proposed - placementHeight / 2, 8), size.height - placementHeight - 8)
-        return top + cardHeight / 2
+    /// The selection of the window this card is in.
+    private var selection: WindowSelection {
+        window.selection
     }
 
     var body: some View {
         GeometryReader { geometry in
-            if let approval = approvals.presentedApproval {
+            if let approval = window.approvalCard.presentedApproval(in: approvals),
+               let model = ApprovalCardModel(approval: approval, in: approvals)
+            {
                 let width = min(cardWidth, max(296, geometry.size.width - 24))
                 let origin = geometry.frame(in: .global).origin
-                let anchor = approvals.rowAnchor(for: approval)
-                // A request may arrive one layout pass before its Waiting row
-                // reports an anchor. Start beside the persisted sidebar width
-                // instead of flashing over the sidebar at the window origin.
-                let fallbackAnchorX = origin.x + min(session.sidebarWidth, geometry.size.width)
-                let x = min(
-                    max((anchor?.maxX ?? fallbackAnchorX) - origin.x + 12 + width / 2, width / 2 + 8),
-                    geometry.size.width - width / 2 - 8
-                )
-                let proposedY = (anchor?.midY ?? origin.y + geometry.size.height / 2) - origin.y
+                let openedFrom = window.approvalCard.state.openedFrom?.offsetBy(dx: -origin.x, dy: -origin.y)
+                let rowAnchor = window.approvalCard.rowAnchor(for: approval)?.offsetBy(dx: -origin.x, dy: -origin.y)
                 let cardHeight = measuredCardHeights[approval.id] ?? fallbackCardHeight
-                let placementHeight = placementHeights[approval.id] ?? cardHeight
+                let placed = placement(
+                    openedFrom: openedFrom,
+                    rowAnchor: rowAnchor,
+                    panelSize: CGSize(width: width, height: cardHeight),
+                    placementHeight: placementHeights[approval.id] ?? cardHeight,
+                    container: geometry.size
+                )
                 ApprovalCard(
                     approval: approval,
-                    onClose: approvals.dismissCard,
-                    onAnswerInTerminal: { answerInTerminal(approval) }
+                    card: window.approvalCard,
+                    model: model,
+                    place: place(of: approval),
+                    // Without its row there is nothing to point at: once the
+                    // request leaves the pending list, its row is gone and
+                    // the last anchor marks another one.
+                    arrow: openedFrom != nil || (rowAnchor != nil && approvals.hasRow(for: approval)) ? placed.arrow : nil,
+                    onClose: { [window] in window.approvalCard.dismiss() },
+                    onAnswerInTerminal: { answerInTerminal(approval) },
+                    movesToPane: openPaneAction(for: approval) != nil,
+                    onOpenPane: openPaneAction(for: approval),
+                    maxHeight: FloatingPanelPlacement.maximumHeight(container: geometry.size.height, margin: cardMargin)
                 )
                 .id(approval.id)
                 .frame(width: width)
@@ -78,93 +91,165 @@ struct ApprovalCardHost: View {
                         placementHeights[measurement.approvalID] = measurement.height
                     }
                 }
-                .onHover { approvals.cardHoverChanged($0) }
-                .position(x: x, y: clampedCenterY(
-                    proposedY,
-                    placementHeight: placementHeight,
-                    cardHeight: cardHeight,
-                    in: geometry.size
-                ))
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97)))
+                .position(x: placed.origin.x + width / 2, y: placed.origin.y + cardHeight / 2)
+                // A floating panel like the dropdowns: it fades and does not
+                // scale, so it never looks to come from anywhere but its row.
+                .modalTransition(.floatingPanel, reduceMotion: reduceMotion)
                 .zIndex(200)
             }
         }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: approvals.presentedApproval?.id)
+        .animation(
+            ModalMotion.floatingPanel.animation(reduceMotion: reduceMotion),
+            value: window.approvalCard.presentedApproval(in: approvals)?.id
+        )
         .ignoresSafeArea()
-        .onChange(of: approvals.pending.map(\.id)) { _, ids in
-            let live = Set(ids)
-            measuredCardHeights = measuredCardHeights.filter { live.contains($0.key) }
-            placementHeights = placementHeights.filter { live.contains($0.key) }
+        .onChange(of: window.approvalCard.state.presentedID) { _, _ in
+            measuredCardHeights = measuredCardHeights.filter { approvals.isKnown($0.key) }
+            placementHeights = placementHeights.filter { approvals.isKnown($0.key) }
+        }
+    }
+
+    /// Where the card goes. Opened from the title bar's Needs Attention
+    /// pill, it hangs below the pill as the list does, pointing up at it;
+    /// otherwise it stands beside its row in this window's sidebar. A
+    /// request may arrive one layout pass before its row reports a frame:
+    /// it then starts beside the window's sidebar edge (the window's left
+    /// edge with the sidebar hidden) rather than flashing over the sidebar.
+    private func placement(
+        openedFrom: CGRect?,
+        rowAnchor: CGRect?,
+        panelSize: CGSize,
+        placementHeight: CGFloat,
+        container: CGSize
+    ) -> (origin: CGPoint, arrow: FloatingPanelPlacement.Arrow?) {
+        if let openedFrom {
+            return FloatingPanelPlacement.layout(
+                anchor: openedFrom,
+                panelSize: panelSize,
+                container: container,
+                margin: cardMargin,
+                style: .init(
+                    alignment: .centered,
+                    gap: LimpidLayout.floatingPanelArrowAnchorGap,
+                    arrowInset: LimpidLayout.floatingPanelArrowInset
+                )
+            )
+        }
+        let sidebarWidth = !window.isSidebarPresented
+            ? 0
+            : window.sidebarDrawnWidth
+        let anchor = rowAnchor ?? CGRect(
+            x: 0,
+            y: container.height / 2,
+            width: min(sidebarWidth, container.width),
+            height: 0
+        )
+        return FloatingPanelPlacement.beside(
+            anchor: anchor,
+            panelSize: panelSize,
+            placementHeight: placementHeight,
+            container: container,
+            style: .init(
+                margin: cardMargin,
+                gap: LimpidLayout.floatingPanelArrowAnchorGap,
+                arrowInset: LimpidLayout.floatingPanelArrowInset
+            )
+        )
+    }
+
+    /// Where the request is, after the agent's name: its session and its
+    /// place, as the Needs Attention list names them.
+    private func place(of approval: ApprovalPresentation) -> String? {
+        attentionQueue.item(for: approval.key).flatMap { item in
+            ApprovalCardModel.place(
+                of: item,
+                in: session,
+                projectsInOtherWindows: windowRegistry.projectsShown(besides: window.id, in: session),
+                locale: locale
+            )
         }
     }
 
     /// We settle the native request when the provider takes over the question,
-    /// even if its session has not yet been associated with a pane.
+    /// even if its session has not yet been associated with a pane. The card
+    /// stays, saying the request is with the TUI: handing over is not
+    /// answering.
     private func answerInTerminal(_ approval: ApprovalPresentation) {
-        let location = approvals.paneLocation(for: approval, in: session)
         approvals.resolve(approval, .delegate)
-        approvals.dismissCard()
-        guard let location else { return }
-        attention.focusAttention(in: session, registry: registry, tabID: location.0, paneID: location.1)
+        openPaneAction(for: approval)?()
     }
-}
 
-/// Every keyboard target inside the approval card. The card reports "lost
-/// focus" to the store whenever this is nil, and the store then dismisses the
-/// card once the pointer leaves it, so each focusable control, including the
-/// question form's fields, needs its own case.
-enum ApprovalCardFocus: Hashable {
-    case details
-    /// The action that commits nothing: Deny, or Answer in terminal.
-    case secondaryAction
-    /// Allow once, Next, or Send answer.
-    case primaryAction
-    case questionTab(Int)
-    case option(Int)
-    case otherOption
-    case answerField
+    /// Goes to the request's pane through the attention list, as ⌘J would.
+    /// Nil when the list does not place the request in a pane, so the card
+    /// offers no pane to open.
+    private func openPaneAction(for approval: ApprovalPresentation) -> (() -> Void)? {
+        guard let item = attentionQueue.item(for: approval.key), item.subject.paneID != nil else { return nil }
+        return {
+            attentionQueue.focus(item, from: window)
+        }
+    }
 }
 
 private struct ApprovalCard: View {
     let approval: ApprovalPresentation
+    /// The card of the window it is drawn in.
+    let card: WindowApprovalCard
+    let model: ApprovalCardModel
+    /// "{session} · {project}", or `nil` while the request is in no pane.
+    let place: String?
+    let arrow: FloatingPanelPlacement.Arrow?
     let onClose: () -> Void
     let onAnswerInTerminal: () -> Void
+    /// Whether Answer in terminal takes the keyboard to the request's pane.
+    /// Without a pane it stays here, and the card places it again once the
+    /// pressed button gives way.
+    let movesToPane: Bool
+    /// Nil when no pane runs the request's session.
+    let onOpenPane: (() -> Void)?
+    /// The tallest the card may be, the window less its margins. A long
+    /// reason or question scrolls in the card's body, between the heading
+    /// and the actions, which stay on screen.
+    let maxHeight: CGFloat
     @Environment(ApprovalPresentationStore.self) private var approvals
-    @Environment(WindowSession.self) private var session
+    @Environment(\.locale) private var locale
     @State private var showsDetails = false
     @State private var allowIsEnabled = false
     @State private var allowDelayTask: Task<Void, Never>?
-    @State private var resolvingDecision: String?
     @FocusState private var focusedAction: ApprovalCardFocus?
+    /// Set by a decision pressed in the card. The control that had focus
+    /// gives way to "Sending…", and to whatever the outcome shows after it,
+    /// so focus is placed again on each change until it leaves the card.
+    @State private var focusFollowsState = false
+    /// The card's measured height, and its scrolling body's: what the rest
+    /// of the card takes is their difference, and the body gets what the
+    /// cap leaves after it. Both are 0 until the first layout, which gives
+    /// the body the whole cap; the next pass measures the rest and settles,
+    /// as the rest does not depend on the body's height.
+    @State private var cardHeight: CGFloat = 0
+    @State private var scrollingBodyHeight: CGFloat = 0
 
+    /// A background release or hand-off can be in flight while the ledger
+    /// still reads held; a decision then would only be dropped.
     private var isResolving: Bool {
         approvals.resolvingIDs.contains(approval.id)
     }
 
-    private var visibleRequestDescription: String? {
-        guard let description = approval.requestDescription?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !description.isEmpty,
-            description != approval.summary?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        else { return nil }
-        return description
+    private var acceptsDecision: Bool {
+        model.actions == .decide && !isResolving
     }
 
-    private var paneContext: String? {
-        guard let location = approvals.paneLocation(for: approval, in: session),
-              let tab = session.tab(location.0)
-        else { return nil }
-        return tab.displayTitle
+    private var visibleRequestDescription: String? {
+        ApprovalCardModel.visibleDescription(approval.requestDescription, summary: approval.summary)
     }
 
     private var detailsHeight: CGFloat {
-        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        let lineHeight = ceil(font.ascender - font.descender + font.leading)
-        let lineCount = approval.inputDescription
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .count
-        return min(CGFloat(max(1, lineCount)) * lineHeight + 12, 180)
+        let font = NSFont.monospacedSystemFont(ofSize: LimpidFont.Supervision.Size.caption.rawValue, weight: .regular)
+        return ApprovalCardModel.detailsHeight(
+            of: approval.inputDescription,
+            lineHeight: ceil(font.ascender - font.descender + font.leading),
+            verticalInsets: LimpidLayout.Supervision.approvalDetailsVerticalInsets,
+            maxHeight: LimpidLayout.Supervision.approvalDetailsMaxHeight
+        )
     }
 
     private var draft: ApprovalAnswerDraft {
@@ -183,7 +268,7 @@ private struct ApprovalCard: View {
     }
 
     private var isLastQuestion: Bool {
-        activeQuestionIndex >= approval.questions.count - 1
+        ApprovalCardModel.isLastQuestion(activeQuestionIndex, of: approval.questions.count)
     }
 
     /// The answer Send would deliver, once every question has one.
@@ -192,105 +277,104 @@ private struct ApprovalCard: View {
     }
 
     private var answerExceedsLimit: Bool {
-        composedAnswer.map { !$0.fitsDecisionLimit } ?? false
+        ApprovalCardModel.answerExceedsLimit(composedAnswer)
     }
 
     private var canSendAnswer: Bool {
-        composedAnswer?.fitsDecisionLimit ?? false
+        ApprovalCardModel.canSend(composedAnswer)
+    }
+
+    private var initialFocus: ApprovalCardFocus {
+        ApprovalCardModel.initialFocus(for: model.actions, canOpenPane: onOpenPane != nil)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(verbatim: "\(approval.provider.rawValue.capitalized)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(LimpidColor.rowActiveFill, in: Capsule())
-                if approval.isQuestion {
-                    Text("Question")
-                        .font(.headline)
-                        .lineLimit(1)
-                } else {
-                    Text(verbatim: approval.toolName)
-                        .font(.headline)
-                        .lineLimit(1)
+        VStack(alignment: .leading, spacing: LimpidLayout.Supervision.approvalCardSpacing) {
+            header
+            // Once with the TUI or timed out, the card says so and offers the
+            // pane, and nothing more: the request is answered there now.
+            if model.actions != .openPane {
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: LimpidLayout.Supervision.approvalCardSpacing) {
+                        Text(kindLabel)
+                            .font(.supervision(.meta))
+                            .foregroundStyle(SupervisionTokens.muted.color)
+                        if approval.isQuestion {
+                            ApprovalQuestionForm(
+                                questions: approval.questions,
+                                draft: draftBinding,
+                                focus: $focusedAction
+                            )
+                            .disabled(!acceptsDecision)
+                            timeLeft
+                        } else {
+                            requestSummary
+                            details
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Spacer(minLength: 0)
+                .scrollBounceBehavior(.basedOnSize)
+                // As tall as what it holds, up to what the cap leaves.
+                .frame(maxHeight: FloatingPanelPlacement.scrollingBodyHeight(
+                    cap: maxHeight,
+                    chrome: cardHeight - scrollingBodyHeight
+                ))
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { scrollingBodyHeight = $0 }
             }
-            if approval.isQuestion {
-                ApprovalQuestionForm(
-                    questions: approval.questions,
-                    draft: draftBinding,
-                    focus: $focusedAction
-                )
-            } else {
-                requestSummary
-            }
-            if let paneContext {
-                Text(verbatim: paneContext)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            if !approval.isQuestion {
-                details
-            }
-            HStack {
-                if approval.isQuestion {
-                    questionActions
-                } else {
-                    approvalActions
-                }
-            }
-            .disabled(isResolving)
-            if approval.isQuestion, answerExceedsLimit {
+            statusLine
+            actions
+            if approval.isQuestion, acceptsDecision, answerExceedsLimit {
                 Text("The answer is too long to send. Shorten it or answer in the terminal.")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if approvals.lastFailureID == approval.id {
-                Text("Could not send the decision. Try again.")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .font(.supervision(.row))
+                    .foregroundStyle(SupervisionTokens.stoppedText.color)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(16)
-        .floatingPanelSurface(cornerRadius: 12)
+        .font(.supervision(.body))
+        .foregroundStyle(SupervisionTokens.text.color)
+        .padding(LimpidLayout.Supervision.approvalCardInsets)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 }
+        .floatingPanelSurface(in: FloatingPanelShape(
+            cornerRadius: LimpidLayout.floatingPanelCornerRadius,
+            arrow: arrow,
+            arrowHeight: LimpidLayout.floatingPanelArrowHeight
+        ))
         .pointerStyle(.default)
         .onAppear {
             beginAllowDelay()
         }
         .onChange(of: approval.id) { _, _ in
-            resolvingDecision = nil
             beginAllowDelay()
         }
-        .onChange(of: isResolving) { wasResolving, isResolving in
-            if wasResolving, !isResolving {
-                resolvingDecision = nil
+        .onChange(of: focusedAction) { _, action in
+            card.focusChanged(action != nil, for: approval)
+            // Losing focus while a send is in flight is the pressed button
+            // going away; at any other time the person moved elsewhere.
+            if action == nil, model.actions != .sending {
+                focusFollowsState = false
             }
         }
-        .onChange(of: focusedAction) { _, action in
-            approvals.cardFocusChanged(action != nil, for: approval)
+        .onChange(of: model) { _, _ in
+            if focusFollowsState {
+                focusedAction = initialFocus
+            }
         }
         .onDisappear { allowDelayTask?.cancel() }
-        .task(id: approvals.cardFocusRequestID) {
-            guard approvals.cardFocusRequestID == approval.id else { return }
+        .task(id: card.state.cardFocusRequestID) {
+            guard card.state.cardFocusRequestID == approval.id else { return }
             // The overlay can appear before AppKit has installed the button's
-            // focus bridge. Defer one turn so the card's non-committing action,
-            // not the terminal, receives the initial keyboard focus: Deny on an
-            // approval, Answer in terminal on a question. A case with no control
-            // on screen would leave focus nowhere and the card would treat the
-            // hand-off as lost.
-            await Task.yield()
+            // focus bridge. Wait until the terminal has let go, so the card,
+            // not the terminal, receives the initial keyboard focus.
+            await KeyboardHandoff.responderSettled()
             guard !Task.isCancelled else { return }
-            focusedAction = .secondaryAction
-            approvals.cardFocusChanged(focusedAction != nil, for: approval)
-            approvals.cardFocusRequestCompleted(for: approval)
+            focusedAction = initialFocus
+            card.focusChanged(focusedAction != nil, for: approval)
+            card.focusRequestCompleted(for: approval)
         }
         .background(ApprovalCardKeyMonitor(
+            isCardFocused: focusedAction != nil,
             isAnswerFieldFocused: focusedAction == .answerField,
             onEscape: onClose,
             onAnswerFieldReturn: submitFromField
@@ -299,19 +383,122 @@ private struct ApprovalCard: View {
         .accessibilityLabel(Text(approval.isQuestion ? "Question from agent" : "Approval request"))
     }
 
-    @ViewBuilder private var requestSummary: some View {
-        if let visibleRequestDescription {
-            Text(verbatim: visibleRequestDescription)
-                .font(.subheadline)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+    /// The agent's name, then where the request is, then ×.
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: LimpidLayout.Supervision.spaceS) {
+            Text(verbatim: SessionRowFactText.agentName(.agent(approval.provider), locale: locale))
+                .font(.supervision(.body, weight: .bold))
+                .fixedSize()
+            if let place {
+                Text(verbatim: place)
+                    .font(.supervision(.row))
+                    .foregroundStyle(SupervisionTokens.muted.color)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    // "session · project / worktree" as a list: the
+                    // separators would be read as symbols.
+                    .accessibilityLabel(Text(verbatim: AgentStatusText.spokenPlace(
+                        AgentStatusText.spoken(place, locale: locale),
+                        locale: locale
+                    )))
+            }
+            Spacer(minLength: 0)
+            Button(action: onClose) {
+                // The system caption is the window's micro step on macOS.
+                DismissGlyph(size: .micro, weight: .semibold)
+                    .foregroundStyle(SupervisionTokens.muted.color)
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .approvalActionCursor()
+            .focused($focusedAction, equals: .close)
+            .help(Text("Close"))
+            .accessibilityLabel(Text("Close"))
+            .accessibilitySortPriority(-2)
         }
-        if let summary = approval.summary, !summary.isEmpty {
-            Text(verbatim: summary)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(3)
+    }
+
+    private var kindLabel: LocalizedStringResource {
+        ApprovalCardModel.kindLabel(isQuestion: approval.isQuestion, action: ApprovalRequestText(approval).action)
+    }
+
+    /// "8:42 left" while Limpid holds the request. The service clock stops
+    /// while the Mac sleeps, as ours does, so ticking once a second needs no
+    /// correction on wake.
+    @ViewBuilder private var timeLeft: some View {
+        if model.showsTimeLeft, let deadline = approvals.serviceDeadlines[approval.id] {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let remaining = deadline.remaining(at: .now)
+                Text(verbatim: ApprovalCardModel.timeLeftText(for: remaining, locale: locale))
+                    .font(.supervision(.body).monospacedDigit())
+                    .foregroundStyle(SupervisionTokens.muted.color)
+                    .accessibilityLabel(Text(verbatim: ApprovalCardModel.spokenTimeLeftText(for: remaining, locale: locale)))
+            }
+            // Read after the request itself (the command, the reason).
+            .accessibilitySortPriority(-1)
+        }
+    }
+
+    /// The reason with the time left after it, "{reason} · 8:42 left", as
+    /// one run of text, so the clock follows the sentence's last line or
+    /// drops whole to the line below. Beside the reason as a view of its
+    /// own, it sat on the reason's first line once the reason wrapped, and
+    /// a wrapped reason read as two sentences with the clock between them.
+    private func reasonWithTimeLeft(_ reason: String, deadline: ServiceDeadline) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let remaining = deadline.remaining(at: .now)
+            Text(reasonLine(reason, remaining: remaining))
+                .foregroundStyle(SupervisionTokens.muted.color)
                 .fixedSize(horizontal: false, vertical: true)
+                // The reason, then the time left, as the eye takes them.
+                .accessibilityLabel(Text(verbatim: AgentStatusText.spokenList(
+                    [reason, ApprovalCardModel.spokenTimeLeftText(for: remaining, locale: locale)],
+                    locale: locale
+                )))
+        }
+    }
+
+    /// The reason and, after a space, the time left in digits of one
+    /// width, so the clock ticks without the sentence shifting.
+    private func reasonLine(_ reason: String, remaining: Duration) -> AttributedString {
+        var line = AttributedString(reason + " ")
+        var clock = AttributedString(ApprovalCardModel.timeLeftAfterReason(for: remaining, locale: locale))
+        clock.font = .supervision(.body).monospacedDigit()
+        line += clock
+        return line
+    }
+
+    /// The command first, in its box, then the agent's reason for it with
+    /// the time left after it, as the person weighs them and as VoiceOver
+    /// reads them.
+    @ViewBuilder private var requestSummary: some View {
+        if let summary = approval.summary, !summary.isEmpty {
+            // The whole command, as the person is asked to allow it. Long
+            // ones scroll inside the card rather than being cut short.
+            ScrollView(.vertical) {
+                Text(verbatim: summary)
+                    .font(.supervision(.row, design: .monospaced))
+                    .foregroundStyle(SupervisionTokens.text.color)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(LimpidLayout.Supervision.approvalCommandInsets)
+            }
+            .frame(maxHeight: LimpidLayout.Supervision.approvalCommandMaxHeight)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(ApprovalCommandWell())
+        }
+        if let visibleRequestDescription {
+            if model.showsTimeLeft, let deadline = approvals.serviceDeadlines[approval.id] {
+                reasonWithTimeLeft(visibleRequestDescription, deadline: deadline)
+            } else {
+                Text(verbatim: visibleRequestDescription)
+                    .foregroundStyle(SupervisionTokens.muted.color)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            timeLeft
         }
     }
 
@@ -319,85 +506,163 @@ private struct ApprovalCard: View {
         Button {
             showsDetails.toggle()
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: LimpidLayout.Supervision.spaceXS) {
                 Image(systemName: showsDetails ? "chevron.down" : "chevron.right")
                     .font(.caption2.weight(.semibold))
                     .accessibilityHidden(true)
-                Text(showsDetails ? "Hide details" : "Show details")
+                Text(showsDetails ? "Hide Details" : "Show Details")
             }
         }
-        .buttonStyle(.link)
+        // A ghost button as the window's other quiet commands are, since
+        // blue is kept for unread and unviewed.
+        .buttonStyle(.supervisionSecondary(tone: .ghost))
         .focused($focusedAction, equals: .details)
-        .accessibilityLabel(Text(showsDetails ? "Hide details" : "Show details"))
+        .accessibilityLabel(Text(showsDetails ? "Hide Details" : "Show Details"))
         if showsDetails {
             ScrollView([.horizontal, .vertical]) {
                 Text(verbatim: approval.inputDescription)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.supervision(.caption, design: .monospaced))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: true)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, LimpidLayout.Supervision.spaceS)
+                    .padding(.vertical, LimpidLayout.Supervision.spaceSnug)
             }
             .defaultScrollAnchor(.topLeading, for: .alignment)
             .frame(height: detailsHeight, alignment: .topLeading)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(ApprovalCommandWell(cornerRadius: LimpidLayout.Supervision.smallControlCornerRadius))
             .accessibilityLabel(Text("Tool input"))
         }
     }
 
+    @ViewBuilder private var statusLine: some View {
+        switch model.status {
+        case .none:
+            EmptyView()
+        case .sendFailed:
+            statusText("Couldn’t send your answer. Try again.", isError: true)
+        case .handedToTerminal:
+            statusText("Handed to the terminal. Answer in that pane.")
+        case .timedOut:
+            statusText("Timed out. Answer in the terminal.")
+        case .alreadyAnswered:
+            statusText("Already answered.")
+        }
+    }
+
+    private func statusText(_ text: LocalizedStringKey, isError: Bool = false) -> some View {
+        Text(text)
+            .foregroundStyle(isError ? SupervisionTokens.stoppedText.color : SupervisionTokens.muted.color)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder private var actions: some View {
+        switch model.actions {
+        case .decide:
+            HStack {
+                if approval.isQuestion {
+                    questionActions
+                } else {
+                    approvalActions
+                }
+            }
+            .disabled(isResolving)
+        case .sending:
+            // The buttons go and "Sending…" stands in their place, so
+            // nothing is sent twice.
+            HStack(spacing: LimpidLayout.Supervision.spaceSnug) {
+                Spacer()
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+                Text("Sending…")
+                    .foregroundStyle(SupervisionTokens.muted.color)
+            }
+        case .openPane:
+            if let onOpenPane {
+                HStack {
+                    Spacer()
+                    Button("Open Pane", action: onOpenPane)
+                        .buttonStyle(SupervisionPrimaryButtonStyle())
+                        .approvalActionCursor()
+                        .cardFocus($focusedAction, equals: .primaryAction)
+                        .accessibilityLabel(Text("Open Pane"))
+                }
+            }
+        case .none:
+            EmptyView()
+        }
+    }
+
+    /// Hands the request to the TUI: on an approval its own focus place,
+    /// on a question the one that commits nothing.
+    private func answerInTerminalButton(focus: ApprovalCardFocus) -> some View {
+        Button("Answer in terminal") { answerInTerminal() }
+            .buttonStyle(.supervisionSecondary)
+            .approvalActionCursor()
+            .cardFocus($focusedAction, equals: focus)
+            .accessibilityLabel(Text("Answer in terminal"))
+    }
+
     @ViewBuilder private var approvalActions: some View {
-        Button(isResolving && resolvingDecision == "deny" ? "Sending…" : "Deny") {
-            resolvingDecision = "deny"
-            approvals.resolve(approval, .deny)
-        }
-        .buttonStyle(.bordered)
-        .approvalActionCursor()
-        .focused($focusedAction, equals: .secondaryAction)
-        .accessibilityLabel(Text(isResolving && resolvingDecision == "deny" ? "Sending denial" : "Deny"))
+        answerInTerminalButton(focus: .answerInTerminal)
         Spacer()
-        Button(isResolving && resolvingDecision == "allow_once" ? "Sending…" : "Allow once") {
-            resolvingDecision = "allow_once"
-            approvals.resolve(approval, .allowOnce)
+        Button("Deny") {
+            decide(.deny)
         }
-        .buttonStyle(.borderedProminent)
+        // Its title in the stop color, as a refusal; edged and unfilled,
+        // so it never reads as the primary one beside it.
+        .buttonStyle(.supervisionSecondary(tone: .refusal))
         .approvalActionCursor()
-        .focused($focusedAction, equals: .primaryAction)
-        .accessibilityLabel(Text(isResolving && resolvingDecision == "allow_once" ? "Sending approval" : "Allow once"))
-        .disabled(!allowIsEnabled || isResolving)
+        .cardFocus($focusedAction, equals: .secondaryAction)
+        .accessibilityLabel(Text("Deny"))
+        Button("Allow once") {
+            decide(.allowOnce)
+        }
+        .buttonStyle(SupervisionPrimaryButtonStyle())
+        .approvalActionCursor()
+        .cardFocus($focusedAction, equals: .primaryAction)
+        .accessibilityLabel(Text("Allow once"))
+        .disabled(!allowIsEnabled)
     }
 
     @ViewBuilder private var questionActions: some View {
-        Button("Answer in terminal") { onAnswerInTerminal() }
-            .buttonStyle(.bordered)
-            .approvalActionCursor()
-            .focused($focusedAction, equals: .secondaryAction)
-            .accessibilityLabel(Text("Answer in terminal"))
+        answerInTerminalButton(focus: .secondaryAction)
         Spacer()
         if isLastQuestion {
-            Button(isResolving ? "Sending…" : "Send answer") { sendAnswer() }
-                .buttonStyle(.borderedProminent)
+            Button("Send Answer") { sendAnswer() }
+                .buttonStyle(SupervisionPrimaryButtonStyle())
                 .approvalActionCursor()
-                .focused($focusedAction, equals: .primaryAction)
-                .accessibilityLabel(Text(isResolving ? "Sending answer" : "Send answer"))
-                .disabled(!allowIsEnabled || isResolving || !canSendAnswer)
+                .cardFocus($focusedAction, equals: .primaryAction)
+                .accessibilityLabel(Text("Send Answer"))
+                .disabled(!allowIsEnabled || !canSendAnswer)
         } else {
             Button("Next") { advance() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(SupervisionPrimaryButtonStyle())
                 .approvalActionCursor()
-                .focused($focusedAction, equals: .primaryAction)
+                .cardFocus($focusedAction, equals: .primaryAction)
                 .accessibilityLabel(Text("Next question"))
-                .disabled(isResolving)
         }
     }
 
     private func sendAnswer() {
-        guard allowIsEnabled, !isResolving, let composedAnswer, canSendAnswer else { return }
-        resolvingDecision = "answer"
-        approvals.resolve(approval, composedAnswer)
+        guard allowIsEnabled, acceptsDecision, let composedAnswer, canSendAnswer else { return }
+        decide(composedAnswer)
+    }
+
+    private func answerInTerminal() {
+        focusFollowsState = !movesToPane
+        onAnswerInTerminal()
+    }
+
+    /// Sends the person's decision and keeps the keyboard in the card
+    /// through what the send changes.
+    private func decide(_ resolution: ApprovalResolution) {
+        focusFollowsState = true
+        approvals.resolve(approval, resolution)
     }
 
     private func advance() {
-        guard !isResolving, !isLastQuestion else { return }
+        guard acceptsDecision, !isLastQuestion else { return }
         ApprovalAnswerComposition.commit()
         draftBinding.wrappedValue.activeQuestionIndex += 1
         focusAfterNext()
@@ -413,7 +678,7 @@ private struct ApprovalCard: View {
 
     /// The Next button leaves the hierarchy as soon as the index advances, and
     /// a removed control drops keyboard focus. Hand focus to a control that
-    /// exists afterwards: Send answer when it can already be pressed, since a
+    /// exists afterwards: Send Answer when it can already be pressed, since a
     /// disabled button cannot take focus, and otherwise the next question's
     /// first option, or its text field when it has no options.
     private func focusAfterNext() {
@@ -440,6 +705,21 @@ private struct ApprovalCard: View {
 }
 
 private extension View {
+    /// A card button's focus place, with the ring that shows it in place
+    /// of the system's, which a custom button style does not get: a
+    /// keyboard user must see where Return goes.
+    func cardFocus(
+        _ focus: FocusState<ApprovalCardFocus?>.Binding,
+        equals value: ApprovalCardFocus
+    ) -> some View {
+        focused(focus, equals: value)
+            .focusEffectDisabled()
+            .supervisionFocusRing(
+                isFocused: focus.wrappedValue == value,
+                cornerRadius: LimpidLayout.Supervision.buttonCornerRadius
+            )
+    }
+
     func approvalActionCursor() -> some View {
         pointerStyle(.default)
             .onContinuousHover { phase in
@@ -453,111 +733,71 @@ private extension View {
     }
 }
 
+/// The well the command and the tool input sit in. A view of its own so it
+/// reads the ground the card's surface hands down: the surface is a
+/// modifier in the card's own body, so the card's environment never hears
+/// of it.
+private struct ApprovalCommandWell: View {
+    var cornerRadius = LimpidLayout.Supervision.approvalCommandCornerRadius
+    @Environment(\.popoverSurface.ground) private var ground
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(ground.well.color)
+    }
+}
+
 /// A scene overlay does not become the AppKit key responder, so consume Escape
-/// at the hosting window before a focused terminal can receive its byte.
-private struct ApprovalCardKeyMonitor: NSViewRepresentable {
+/// at the hosting window before a focused terminal can receive its byte, but
+/// only while focus is in the card. The card stays on screen after the
+/// person moves to the terminal (to answer there, for one), and the TUI's
+/// own prompt needs that Escape.
+private struct ApprovalCardKeyMonitor: View {
+    /// Whether keyboard focus is in the card, which is when Escape is ours.
+    let isCardFocused: Bool
     /// Gates Return handling: the monitor sees every key in the window, and
     /// the terminal and other text fields must keep their own Return.
     let isAnswerFieldFocused: Bool
     let onEscape: () -> Void
     let onAnswerFieldReturn: () -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onEscape: onEscape, onAnswerFieldReturn: onAnswerFieldReturn)
+    var body: some View {
+        WindowKeyDownMonitor(handle: handle)
     }
 
-    func makeNSView(context: Context) -> HostView {
-        let view = HostView(frame: .zero)
-        view.onWindowChange = { [weak coordinator = context.coordinator] window in
-            coordinator?.hostWindow = window
-        }
-        context.coordinator.install()
-        return view
-    }
-
-    func updateNSView(_ view: HostView, context: Context) {
-        context.coordinator.onEscape = onEscape
-        context.coordinator.onAnswerFieldReturn = onAnswerFieldReturn
-        context.coordinator.isAnswerFieldFocused = isAnswerFieldFocused
-        context.coordinator.hostWindow = view.window
-    }
-
-    static func dismantleNSView(_ view: HostView, coordinator: Coordinator) {
-        coordinator.remove()
-        coordinator.hostWindow = nil
-    }
-
-    @MainActor final class HostView: NSView {
-        var onWindowChange: ((NSWindow?) -> Void)?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            onWindowChange?(window)
-        }
-    }
-
-    @MainActor final class Coordinator {
-        var onEscape: () -> Void
-        var onAnswerFieldReturn: () -> Void
-        var isAnswerFieldFocused = false
-        weak var hostWindow: NSWindow?
-        private var monitor: Any?
-
-        init(onEscape: @escaping () -> Void, onAnswerFieldReturn: @escaping () -> Void) {
-            self.onEscape = onEscape
-            self.onAnswerFieldReturn = onAnswerFieldReturn
-        }
-
-        func install() {
-            guard monitor == nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self,
-                      let hostWindow,
-                      event.window === hostWindow,
-                      event.modifierFlags.isDisjoint(with: [.command, .control, .option])
-                else { return event }
-                switch event.namedKey {
-                case .escape:
-                    // Let the active text input client finish or cancel its
-                    // marked text before Escape changes approval UI state.
-                    if let textInput = hostWindow.firstResponder as? any NSTextInputClient,
-                       textInput.hasMarkedText()
-                    {
-                        return event
-                    }
-                    onEscape()
-                    return nil
-                case .return:
-                    // Measured on macOS 27 with a vertical SwiftUI text field:
-                    // the field editor breaks a line on Option-Return, which
-                    // the guard above leaves to it, and treats Shift-Return
-                    // as a submit. Shift-Return is the line break chat inputs
-                    // use, so we route it to the same command. A plain Return
-                    // submits and then selects the whole text, so the next
-                    // keystroke would replace the answer; we take Return
-                    // before the field editor sees it. Marked text keeps
-                    // Return for the input method to commit.
-                    guard isAnswerFieldFocused,
-                          let editor = hostWindow.firstResponder as? NSTextView,
-                          editor.isFieldEditor,
-                          !editor.hasMarkedText()
-                    else { return event }
-                    if event.modifierFlags.contains(.shift) {
-                        editor.insertNewlineIgnoringFieldEditor(nil)
-                    } else {
-                        onAnswerFieldReturn()
-                    }
-                    return nil
-                default:
-                    return event
-                }
+    /// Whether the card took `event`.
+    private func handle(_ event: NSEvent, in window: NSWindow) -> Bool {
+        guard event.modifierFlags.isDisjoint(with: [.command, .control, .option]) else { return false }
+        switch event.namedKey {
+        case .escape:
+            // The active text input client finishes or cancels its marked
+            // text before Escape changes the approval's state.
+            guard isCardFocused, !window.isComposingText else { return false }
+            onEscape()
+            return true
+        case .return:
+            // Measured on macOS 27 with a vertical SwiftUI text field:
+            // the field editor breaks a line on Option-Return, which
+            // the guard above leaves to it, and treats Shift-Return
+            // as a submit. Shift-Return is the line break chat inputs
+            // use, so we insert a line break for it as well. A plain Return
+            // submits and then selects the whole text, so the next
+            // keystroke would replace the answer; we take Return
+            // before the field editor sees it. Marked text keeps
+            // Return for the input method to commit.
+            guard isAnswerFieldFocused,
+                  let editor = window.firstResponder as? NSTextView,
+                  editor.isFieldEditor,
+                  !editor.hasMarkedText()
+            else { return false }
+            if event.modifierFlags.contains(.shift) {
+                editor.insertNewlineIgnoringFieldEditor(nil)
+            } else {
+                onAnswerFieldReturn()
             }
-        }
-
-        func remove() {
-            guard let monitor else { return }
-            NSEvent.removeMonitor(monitor)
-            self.monitor = nil
+            return true
+        default:
+            return false
         }
     }
 }

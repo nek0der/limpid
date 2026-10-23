@@ -16,7 +16,7 @@ import SwiftUI
 /// the workspace it was written inside had grown past what one file should
 /// hold.
 struct ReviewPromptPreview: View {
-    let store: ReviewStore
+    let reviewSession: ReviewSession
     /// Built by the pane rather than here: the surface's Insert button sends
     /// the same text, and two builders would be two answers.
     let prompt: String
@@ -24,11 +24,14 @@ struct ReviewPromptPreview: View {
 
     @Environment(\.locale) private var locale
 
+    /// Where the heading's words start.
+    private static let wordsInset: CGFloat = 12
+
     /// Comments grouped by the file they sit in, in the order they were
     /// written. Repeating one file name down a list of five comments on it
     /// spends the width that the comments themselves need.
     private var commentsByFile: [(file: ReviewFile, comments: [ReviewComment])] {
-        ReviewPromptBuilder.groupedByFile(store.comments)
+        ReviewPromptBuilder.groupedByFile(reviewSession.shownComments)
     }
 
     /// How many comments the prompt beside this header actually carries, which
@@ -36,18 +39,18 @@ struct ReviewPromptPreview: View {
     /// below stay a superset: a stale one is drawn with its warning so the
     /// reader can resolve or delete it here.
     private var insertableCount: Int {
-        store.insertableComments.count
+        reviewSession.insertableComments.count
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: LimpidLayout.Supervision.spaceS) {
                 Text("Comments to insert")
                     .font(LimpidFont.headline)
                 Text(verbatim: "\(insertableCount)")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(LimpidColor.tertiaryText)
-                Spacer(minLength: 8)
+                    .foregroundStyle(SupervisionTokens.muted.color)
+                Spacer(minLength: LimpidLayout.Supervision.spaceS)
                 Button("Copy") {
                     // An empty prompt means building it failed; clearing the
                     // pasteboard first would take what the reader had and
@@ -59,30 +62,27 @@ struct ReviewPromptPreview: View {
                 .disabled(prompt.isEmpty)
                 .accessibilityLabel(Text("Copy"))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Self.wordsInset)
+            .padding(.vertical, LimpidLayout.Supervision.spaceS)
             Divider()
-            if store.comments.isEmpty {
-                Text("No comments yet.")
-                    .font(LimpidFont.caption)
-                    .foregroundStyle(LimpidColor.tertiaryText)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if reviewSession.shownComments.isEmpty {
+                SupervisionEmptyState(.noComments, size: .regular)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
+                    LazyVStack(alignment: .leading, spacing: LimpidLayout.Supervision.spaceM) {
                         ForEach(commentsByFile, id: \.file.id) { group in
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: LimpidLayout.Supervision.spaceSnug) {
                                 promptFileHeading(
                                     group.file,
-                                    count: group.comments.count(where: store.isInsertable)
+                                    count: group.comments.count(where: reviewSession.isInsertable)
                                 )
                                 ForEach(group.comments) { comment in
-                                    promptEntry(comment, isStale: store.staleCommentIDs.contains(comment.id))
+                                    promptEntry(comment, isStale: reviewSession.staleCommentIDs.contains(comment.id))
                                 }
                             }
                         }
                     }
-                    .padding(12)
+                    .padding(LimpidLayout.Supervision.spaceM)
                 }
             }
         }
@@ -90,21 +90,21 @@ struct ReviewPromptPreview: View {
     }
 
     private func promptFileHeading(_ file: ReviewFile, count: Int) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: LimpidLayout.Supervision.spaceSnug) {
             Text(verbatim: ReviewFileTree.name(file.path))
-                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                .font(.supervision(.meta, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
             if let parent = ReviewFileTree.parent(file.path) {
                 Text(verbatim: parent)
-                    .font(.system(size: 9.5, design: .monospaced))
-                    .foregroundStyle(LimpidColor.tertiaryText)
+                    .font(.supervision(.badge, design: .monospaced))
+                    .foregroundStyle(SupervisionTokens.muted.color)
                     .lineLimit(1)
                     .truncationMode(.head)
             }
-            Spacer(minLength: 6)
+            Spacer(minLength: LimpidLayout.Supervision.spaceSnug)
             Text(verbatim: "\(count)")
                 .font(.caption2.monospacedDigit())
-                .foregroundStyle(LimpidColor.tertiaryText)
+                .foregroundStyle(SupervisionTokens.muted.color)
         }
         .help(Text(verbatim: file.path))
     }
@@ -115,38 +115,43 @@ struct ReviewPromptPreview: View {
     /// Neither a stale nor a resolved comment is drawn in the diff, so this is
     /// the only place either can be acted on — which is why the footer carries
     /// their buttons rather than leaving them to the card.
+    ///
+    /// A card that cannot be reached steps back by drawing its comment in
+    /// `muted`, not by fading the card: a faded card took its quiet text and
+    /// the stale warning under 4.5:1.
     private func promptEntry(_ comment: ReviewComment, isStale: Bool) -> some View {
         let isReachable = !isStale && !comment.isResolved
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: LimpidLayout.Supervision.spaceSnug) {
             Button {
                 guard isReachable else { return }
                 onJump(comment)
             } label: {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: LimpidLayout.Supervision.spaceSnug) {
+                    HStack(alignment: .firstTextBaseline, spacing: LimpidLayout.Supervision.spaceS) {
                         Text(verbatim: comment.promptSpan)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(LimpidColor.secondaryText)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .font(.supervision(.micro, weight: .medium, design: .monospaced))
+                            .foregroundStyle(SupervisionTokens.muted.color)
+                            .padding(.horizontal, LimpidLayout.Supervision.spaceSnug)
+                            .padding(.vertical, LimpidLayout.Supervision.spaceHairline)
                             .background(
                                 RoundedRectangle(cornerRadius: 4).fill(LimpidColor.rowHoverFill)
                             )
                         Text(verbatim: comment.body)
                             .font(LimpidFont.body)
+                            .foregroundStyle(isReachable ? SupervisionTokens.text.color : SupervisionTokens.muted.color)
                             .multilineTextAlignment(.leading)
                             .lineLimit(6)
                             .truncationMode(.tail)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     Text(verbatim: Self.excerpt(comment.code))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(LimpidColor.tertiaryText)
+                        .font(.supervision(.micro, design: .monospaced))
+                        .foregroundStyle(SupervisionTokens.muted.color)
                         .lineLimit(3)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
+                        .padding(.horizontal, LimpidLayout.Supervision.spaceS)
+                        .padding(.vertical, LimpidLayout.Supervision.spaceXS)
                         .background(
                             RoundedRectangle(cornerRadius: 5).fill(LimpidColor.rowHoverFill.opacity(0.6))
                         )
@@ -155,13 +160,27 @@ struct ReviewPromptPreview: View {
             .buttonStyle(.plain)
             .disabled(!isReachable)
             .help(help(comment, isStale: isStale))
-            .accessibilityLabel(Text(verbatim: helpText(comment, isStale: isStale).resolved(in: locale) + " " + comment.body))
+            // Where it can be gone to, the comment, with the tooltip's "Go to
+            // comment" read as the hint rather than run into it. Where it
+            // can't, why, then the comment: the reason's own full stop goes,
+            // since the list's separator follows it, and the tooltip is not
+            // read a second time as the hint.
+            .accessibilityLabel(Text(verbatim: isReachable
+                    ? comment.body
+                    : AgentStatusText.spokenList(
+                        [
+                            helpText(comment, isStale: isStale).resolved(in: locale)
+                                .trimmingCharacters(in: CharacterSet(charactersIn: ".。")),
+                            comment.body
+                        ],
+                        locale: locale
+                    )))
+            .accessibilityHint(isReachable ? help(comment, isStale: isStale) : Text(verbatim: ""))
             promptEntryFooter(comment, isStale: isStale)
         }
-        .padding(10)
+        .padding(LimpidLayout.Supervision.spaceM)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 7).fill(LimpidColor.rowActiveFill.opacity(0.5)))
-        .opacity(isReachable ? 1 : 0.75)
     }
 
     /// Matches the footer, and for the same reason: a resolved comment reads
@@ -190,29 +209,29 @@ struct ReviewPromptPreview: View {
     @ViewBuilder
     private func promptEntryFooter(_ comment: ReviewComment, isStale: Bool) -> some View {
         if comment.isResolved {
-            promptEntryActions(Text("Resolved."), tint: LimpidColor.tertiaryText) {
-                Button("Unresolve") { store.setResolved(comment.id, false) }
+            promptEntryActions(Text("Resolved."), tint: SupervisionTokens.muted.color) {
+                Button("Unresolve") { reviewSession.setResolved(comment.id, false) }
                     .buttonStyle(.borderless)
                     .font(LimpidFont.caption)
-                Button("Delete") { store.remove(comment.id) }
+                Button("Delete") { reviewSession.remove(comment.id) }
                     .buttonStyle(.borderless)
                     .font(LimpidFont.caption)
             }
         } else if isStale {
             promptEntryActions(
                 Text("The code this was written against has changed."),
-                tint: LimpidColor.warning
+                tint: SupervisionTokens.waitingText.color
             ) {
-                Button("Resolve") { store.setResolved(comment.id, true) }
+                Button("Resolve") { reviewSession.setResolved(comment.id, true) }
                     .buttonStyle(.borderless)
                     .font(LimpidFont.caption)
-                Button("Delete") { store.remove(comment.id) }
+                Button("Delete") { reviewSession.remove(comment.id) }
                     .buttonStyle(.borderless)
                     .font(LimpidFont.caption)
             }
         } else if comment.insertedAt != nil {
-            promptEntryActions(Text("Already inserted."), tint: LimpidColor.tertiaryText) {
-                Button("Resolve") { store.setResolved(comment.id, true) }
+            promptEntryActions(Text("Already inserted."), tint: SupervisionTokens.muted.color) {
+                Button("Resolve") { reviewSession.setResolved(comment.id, true) }
                     .buttonStyle(.borderless)
                     .font(LimpidFont.caption)
             }
@@ -224,11 +243,11 @@ struct ReviewPromptPreview: View {
         tint: Color,
         @ViewBuilder buttons: () -> some View
     ) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: LimpidLayout.Supervision.spaceSnug) {
             message
                 .font(LimpidFont.caption)
                 .foregroundStyle(tint)
-            Spacer(minLength: 6)
+            Spacer(minLength: LimpidLayout.Supervision.spaceSnug)
             buttons()
         }
     }

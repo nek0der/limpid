@@ -8,13 +8,12 @@
 //     transient and lives on `paneTransients`. Changes to `PaneState` should drive autosave
 //     because they represent durable data the user expects to come
 //     back across a relaunch.
-//   * `PaneTransients` — lives on `WindowSession.paneTransients`
+//   * `PaneTransients` — lives on `WorkspaceSession.paneTransients`
 //     (keyed by pane id, *not* nested under Tab). Bell ring, child
-//     exit code, and the latest OSC 7 working directory stay here so they do
-//     NOT mutate
-//     `tabs[idx]` and therefore does NOT trip the autosave hook on
-//     autosave-worthy state. The UI still observes both via the same
-//     `WindowSession` parent, so SwiftUI sees the change either way.
+//     exit code, and the latest OSC 7 working directory stay here so they
+//     do not mutate `tabs[idx]` and therefore do not trip the autosave
+//     hook. The UI still observes both via the same
+//     `WorkspaceSession` parent, so SwiftUI sees the change either way.
 
 import Foundation
 
@@ -26,7 +25,7 @@ struct PaneState: Codable, Equatable {
     /// and because synthesized `Codable` reads an Optional with
     /// `decodeIfPresent`, so a session saved before panes had names still
     /// decodes. Stored already trimmed and never empty; go through
-    /// `WindowSession.renamePane(_:to:)` rather than writing it directly.
+    /// `WorkspaceSession.renamePane(_:to:)` rather than writing it directly.
     var name: String?
 
     var hasUnread: Bool {
@@ -36,7 +35,7 @@ struct PaneState: Codable, Equatable {
 
 /// Transient per-pane state. Not persisted, not nested under `Tab` so
 /// mutations don't drive autosave. Keyed by pane id on
-/// `WindowSession.paneTransients`.
+/// `WorkspaceSession.paneTransients`.
 struct PaneTransients: Equatable {
     var isBellRinging: Bool = false
     var childExitCode: UInt32?

@@ -10,59 +10,36 @@ import Foundation
 import Testing
 @testable import Limpid
 
-@Suite("Claude shim", .tags(.smoke), .disabled(if: !RepoFixture.hasLocalRepo, "no local git"))
+@Suite("Claude shim", .tags(.smoke), .disabled(if: !RepoFixture.hasLocalRepo, "no local git"), .timeLimit(.minutes(1)))
 struct ClaudeShimScriptTests {
-    /// The template lives in the provider crate and the build copies it into
-    /// the bundle beside the shim. A test runs the shim from the source tree,
-    /// where there is no bundle, so it points the shim at the source instead.
-    private static func templatePath(_ root: URL) -> String {
-        root.appendingPathComponent(
-            "rust/limpid-provider-claude/resources/settings.template.json"
-        ).path
-    }
-
     /// Run the shim with `args` and return the argv the real claude would
     /// have been exec'd with.
     private func runShim(
         _ args: [String],
         hookNamespace: String? = nil,
+        setsTemporaryDirectory: Bool = true,
+        prepareTemporaryDirectory: (URL) throws -> Void = { _ in },
         sourceLocation: SourceLocation = #_sourceLocation
     ) throws -> [String] {
         try withTempDir { dir in
-            let root = try #require(RepoFixture.limpidRoot)
-            let shim = root.appendingPathComponent("Limpid/Resources/claude-shim/claude")
+            try prepareTemporaryDirectory(dir)
             let stub = dir.appendingPathComponent("fake-claude")
+            // The settings payload is pretty-printed JSON, which is why the
+            // argv is recorded NUL-separated.
             let argvFile = dir.appendingPathComponent("argv.txt")
-            // NUL-separated: the settings payload is pretty-printed JSON, so
-            // a newline-delimited dump would split one argument into many.
-            try """
-            #!/bin/sh
-            : > "\(argvFile.path)"
-            for a in "$@"; do printf '%s\\000' "$a" >> "\(argvFile.path)"; done
-            exit 0
-            """.write(to: stub, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o755], ofItemAtPath: stub.path
-            )
+            try ShimHarness.writeExecutable(ShimHarness.argvRecorder(into: argvFile), at: stub)
 
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = [shim.path] + args
-            var environment = [
-                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                "HOME": dir.path,
-                "TMPDIR": dir.path,
-                "LIMPID_CLAUDE_SETTINGS_TEMPLATE": Self.templatePath(root),
-                "LIMPID_REAL_CLAUDE": stub.path
-            ]
+            var environment = ShimHarness.environment(in: dir)
+            environment["LIMPID_CLAUDE_SETTINGS_TEMPLATE"] = try ShimHarness.claudeSettingsTemplate()
+            environment["LIMPID_REAL_CLAUDE"] = stub.path
             environment["LIMPID_CLAUDE_HOOK_NAMESPACE"] = hookNamespace
-            process.environment = environment
-            try process.run()
-            process.waitUntilExit()
+            if !setsTemporaryDirectory {
+                environment["TMPDIR"] = nil
+            }
+            let process = try ShimHarness.run(ShimHarness.shim("claude"), args, environment: environment)
             #expect(process.terminationStatus == 0, sourceLocation: sourceLocation)
 
-            let dumped = (try? String(contentsOf: argvFile, encoding: .utf8)) ?? ""
-            return dumped.split(separator: "\0").map(String.init)
+            return ShimHarness.recordedArgv(argvFile) ?? []
         }
     }
 
@@ -118,10 +95,45 @@ struct ClaudeShimScriptTests {
         #expect(release != development)
     }
 
-    @Test("exports the running build identity for the hook link")
-    func environment_carriesHookNamespace() {
-        let environment = ClaudeShimLocator.environment(forPaneID: nil)
-        #expect(environment["LIMPID_CLAUDE_HOOK_NAMESPACE"] == LimpidPaths.bundleID)
+    /// A link folder someone else put in place (here a link to another
+    /// folder) is not used: the hooks Claude runs would be whatever that
+    /// folder holds. The shim falls back to the hooks' own paths.
+    @Test func hookLink_refusesAFolderThatIsALink() throws {
+        try withTempDir { elsewhere in
+            let argv = try runShim([], hookNamespace: "planted") { dir in
+                try FileManager.default.createSymbolicLink(
+                    at: dir.appendingPathComponent("limpid-claude-shim-planted"),
+                    withDestinationURL: elsewhere
+                )
+            }
+            let command = try sessionStartCommand(argv)
+            #expect(!command.contains("limpid-claude-shim-planted"))
+            #expect(command.hasSuffix("/claude-shim/limpid-hook"))
+            #expect(try FileManager.default.contentsOfDirectory(atPath: elsewhere.path).isEmpty)
+        }
+    }
+
+    /// Without TMPDIR (an ssh login, a tmux server started with a stripped
+    /// environment) the links go to the folder macOS keeps for this user,
+    /// not to a shared /tmp.
+    @Test func hookLink_withoutTMPDIR_usesTheUsersOwnTemporaryFolder() throws {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let length = confstr(_CS_DARWIN_USER_TEMP_DIR, &buffer, buffer.count)
+        try #require(length > 0)
+        let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        let userTemporary = try #require(String(bytes: bytes, encoding: .utf8))
+            .replacingOccurrences(of: "/+$", with: "", options: .regularExpression)
+        let namespace = "test-\(UUID().uuidString)"
+        let linkFolder = URL(fileURLWithPath: userTemporary).appendingPathComponent("limpid-claude-shim-\(namespace)")
+        defer { try? FileManager.default.removeItem(at: linkFolder) }
+
+        let argv = try runShim([], hookNamespace: namespace, setsTemporaryDirectory: false)
+        let command = try sessionStartCommand(argv)
+
+        #expect(command == linkFolder.appendingPathComponent("limpid-hook").path)
+        #expect(!command.hasPrefix("/tmp/"))
+        let mode = try FileManager.default.attributesOfItem(atPath: linkFolder.path)[.posixPermissions] as? Int
+        #expect(mode == 0o700)
     }
 
     @Test("merges with the user's settings instead of losing to them")
@@ -165,30 +177,17 @@ struct ClaudeShimScriptTests {
     @Test("keeps Rust as the sole automatic title writer")
     func terminalTitleOverride_isForcedOff() throws {
         try withTempDir { dir in
-            let root = try #require(RepoFixture.limpidRoot)
-            let shim = root.appendingPathComponent("Limpid/Resources/claude-shim/claude")
             let stub = dir.appendingPathComponent("fake-claude")
-            try """
+            try ShimHarness.writeExecutable("""
             #!/bin/sh
             [ "$CLAUDE_CODE_DISABLE_TERMINAL_TITLE" = "1" ]
-            """.write(to: stub, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o755], ofItemAtPath: stub.path
-            )
+            """, at: stub)
 
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = [shim.path]
-            process.environment = [
-                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                "HOME": dir.path,
-                "TMPDIR": dir.path,
-                "LIMPID_CLAUDE_SETTINGS_TEMPLATE": Self.templatePath(root),
-                "LIMPID_REAL_CLAUDE": stub.path,
-                "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "0"
-            ]
-            try process.run()
-            process.waitUntilExit()
+            var environment = ShimHarness.environment(in: dir)
+            environment["LIMPID_CLAUDE_SETTINGS_TEMPLATE"] = try ShimHarness.claudeSettingsTemplate()
+            environment["LIMPID_REAL_CLAUDE"] = stub.path
+            environment["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] = "0"
+            let process = try ShimHarness.run(ShimHarness.shim("claude"), [], environment: environment)
 
             #expect(process.terminationStatus == 0)
         }
@@ -196,52 +195,69 @@ struct ClaudeShimScriptTests {
 
     /// Runs the shim under a pty with tmux hosting switched on, and
     /// returns the argv tmux was handed. The hosting decision asks
-    /// whether stdin and stdout are terminals, and a `Process` pipe is
-    /// not one, so the harness above can never reach this branch. The
-    /// decision itself is shared with the Codex shim and pinned there;
-    /// what is Claude's own is that our `--settings` survives the wrap.
-    private func runShimHosted(_ args: [String]) throws -> (tmux: [String], claude: [String]) {
+    /// whether stdin and stdout are terminals, and the harness above runs
+    /// the shim on the null device, so it can never reach this branch. The rule
+    /// is shared (`limpid_should_host_in_tmux` in `runtime-common.sh`), but
+    /// each shim hands it its own lists, so Claude's are pinned here as
+    /// Codex's are in its suite; what is Claude's alone besides is that
+    /// our `--settings` survives the wrap.
+    /// `underPTY: false` is the launch whose output is not a terminal.
+    private func runShimHosted(
+        _ args: [String],
+        environment: [String: String] = [:],
+        underPTY: Bool = true
+    ) throws -> HostedRun {
         try withTempDir { dir in
-            let root = try #require(RepoFixture.limpidRoot)
-            let shim = root.appendingPathComponent("Limpid/Resources/claude-shim/claude")
             let claudeArgv = dir.appendingPathComponent("claude.argv")
             let tmuxArgv = dir.appendingPathComponent("tmux.argv")
             let claudeStub = dir.appendingPathComponent("fake-claude")
             let tmuxStub = dir.appendingPathComponent("fake-tmux")
             for (stub, argvFile) in [(claudeStub, claudeArgv), (tmuxStub, tmuxArgv)] {
-                try """
-                #!/bin/sh
-                : > "\(argvFile.path)"
-                for a in "$@"; do printf '%s\\000' "$a" >> "\(argvFile.path)"; done
+                // Beside the argv, what the stub saw of the sheet's executable.
+                try ShimHarness.writeExecutable(ShimHarness.argvRecorder(into: argvFile, then: """
+                printf '%s' "${LIMPID_FOUND_CLAUDE-unset}" > "\(argvFile.path).found"
+                printf '%s' "${LIMPID_AGENT_TMUX_HOST_MODE-unset}" > "\(argvFile.path).mode"
                 exit 0
-                """.write(to: stub, atomically: true, encoding: .utf8)
-                try FileManager.default.setAttributes(
-                    [.posixPermissions: 0o755], ofItemAtPath: stub.path
-                )
+                """), at: stub)
             }
 
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/script")
-            process.arguments = ["-q", "/dev/null", "/bin/sh", shim.path] + args
-            process.environment = [
-                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                "HOME": dir.path,
-                "TMPDIR": dir.path,
-                "LIMPID_CLAUDE_SETTINGS_TEMPLATE": Self.templatePath(root),
+            var shimEnvironment = ShimHarness.environment(in: dir)
+            try shimEnvironment.merge([
+                "LIMPID_CLAUDE_SETTINGS_TEMPLATE": ShimHarness.claudeSettingsTemplate(),
                 "LIMPID_REAL_CLAUDE": claudeStub.path,
                 "LIMPID_AGENT_TMUX": tmuxStub.path,
                 "LIMPID_AGENT_TMUX_SOCKET": "limpid-test.socket",
-                "LIMPID_PANE_ID": "547D688D-39DF-4A06-BD6F-316C3385532C",
-                "LIMPID_AGENT_HOOK_BACKEND": "rust"
-            ]
-            try process.run()
-            process.waitUntilExit()
+                "LIMPID_PANE_ID": "547D688D-39DF-4A06-BD6F-316C3385532C"
+            ]) { _, new in new }
+            shimEnvironment.merge(environment) { _, new in new }
+            try ShimHarness.run(ShimHarness.shim("claude"), args, environment: shimEnvironment, underPTY: underPTY)
 
             func argv(_ url: URL) -> [String] {
-                let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-                return text.split(separator: "\0").map(String.init)
+                ShimHarness.recordedArgv(url) ?? []
             }
-            return (argv(tmuxArgv), argv(claudeArgv))
+            return HostedRun(
+                tmux: argv(tmuxArgv),
+                claude: argv(claudeArgv),
+                tmuxSawFound: try? String(contentsOfFile: tmuxArgv.path + ".found", encoding: .utf8),
+                claudeSawMode: try? String(contentsOfFile: claudeArgv.path + ".mode", encoding: .utf8)
+            )
+        }
+    }
+
+    /// What `runShimHosted` saw: the argv tmux and the agent were each
+    /// handed (empty for the one that did not run), and what tmux saw of
+    /// `LIMPID_FOUND_CLAUDE` (`unset` when it had none), and the host mode
+    /// a Claude run directly was handed (`unset` when it had none).
+    private struct HostedRun {
+        let tmux: [String]
+        let claude: [String]
+        let tmuxSawFound: String?
+        let claudeSawMode: String?
+
+        /// Claude ran directly, with our settings and then the user's
+        /// arguments.
+        func ranDirectly(_ args: [String]) -> Bool {
+            tmux.isEmpty && claude.contains("--settings") && claude.suffix(args.count) == args[...]
         }
     }
 
@@ -256,12 +272,13 @@ struct ClaudeShimScriptTests {
         #expect(handover.tmux.prefix(4) == ["-L", "limpid-test.socket", "-f", "/dev/null"])
         #expect(handover.tmux.contains { $0.hasPrefix("LIMPID_AGENT_RUN_ID=") })
         #expect(handover.tmux.contains("LIMPID_AGENT_TMUX_HOST_MODE=limpidHosted"))
-        // The hook backend is fixed per pane and must reach the hooks that
-        // run inside the tmux session, not only the shell that chose it.
-        #expect(handover.tmux.contains("LIMPID_AGENT_HOOK_BACKEND=rust"))
         let settings = try #require(handover.tmux.firstIndex(of: "--settings"))
-        // Directly after `/usr/bin/env` comes the agent, then our flag.
-        #expect(handover.tmux[settings - 2] == "/usr/bin/env")
+        // After `/usr/bin/env` and the `-u NAME` of each variable the pane
+        // does not set comes the agent, then our flag.
+        let env = try #require(handover.tmux.lastIndex(of: "/usr/bin/env"))
+        let unsets = handover.tmux[(env + 1)..<(settings - 1)]
+        #expect(unsets.count.isMultiple(of: 2))
+        #expect(stride(from: unsets.startIndex, to: unsets.endIndex, by: 2).allSatisfy { handover.tmux[$0] == "-u" })
         let payload = try JSONSerialization.jsonObject(
             with: Data(handover.tmux[settings + 1].utf8)
         ) as? [String: Any]
@@ -269,8 +286,7 @@ struct ClaudeShimScriptTests {
     }
 
     /// `--bg` prints a session id and returns, so hosting it would put
-    /// that id on a screen tmux erases on the way out. The decision rule
-    /// itself is shared with the Codex shim and pinned there.
+    /// that id on a screen tmux erases on the way out.
     @Test(
         "runs a one-shot invocation directly even when hosting is on",
         arguments: [["--version"], ["--bg", "do a thing"]]
@@ -288,5 +304,96 @@ struct ClaudeShimScriptTests {
         let handover = try runShimHosted(["--resume", "abc123"])
         #expect(handover.claude.isEmpty)
         #expect(handover.tmux.suffix(2) == ["--resume", "abc123"])
+    }
+
+    /// A server already running would otherwise start the agent on the
+    /// `PATH` of the pane that started the server (`CodexShimScriptTests`
+    /// pins what the agent's folder adds to it). The stub comes through
+    /// `LIMPID_REAL_CLAUDE`, an override that leaves the `PATH` as it was.
+    @Test("passes the pane's PATH into tmux")
+    func hostedInvocation_passesThePanesPath() throws {
+        let handover = try runShimHosted([])
+        #expect(zip(handover.tmux, handover.tmux.dropFirst()).contains { $0 == "-e" && $1 == "PATH=/usr/bin:/bin:/usr/sbin:/sbin" })
+    }
+
+    /// What the new workspace sheet found stays with the pane's shell: a
+    /// tmux server started with it would hand it to every session after.
+    /// Neither the tmux client nor its `-e` list has it.
+    @Test("keeps what the sheet found out of tmux")
+    func hostedInvocation_keepsTheSheetsExecutableOutOfTmux() throws {
+        let handover = try runShimHosted([], environment: ["LIMPID_FOUND_CLAUDE": "/opt/tools/bin/claude"])
+        #expect(!handover.tmux.isEmpty)
+        #expect(handover.tmuxSawFound == "unset")
+        #expect(!handover.tmux.contains { $0.hasPrefix("LIMPID_FOUND_") })
+    }
+
+    @Test("passes an emptied record directory into tmux as empty")
+    func hostedLaunch_passesEmptyRecordDirectories() throws {
+        // A demo pane empties them; left out, the session would take the
+        // tmux server's values, which are another build's directories.
+        let handover = try runShimHosted([], environment: [
+            "LIMPID_AGENT_STATES_DIR": "",
+            "LIMPID_SESSIONS_DIR": ""
+        ])
+        #expect(handover.tmux.contains("LIMPID_AGENT_STATES_DIR="))
+        #expect(handover.tmux.contains("LIMPID_SESSIONS_DIR="))
+        // An unset one stays unset: not passed, and taken out of what the
+        // session would take from the server.
+        #expect(!handover.tmux.contains { $0.hasPrefix("LIMPID_CWD_EVENTS_DIR=") })
+        #expect(zip(handover.tmux, handover.tmux.dropFirst()).contains { $0 == ("-u", "LIMPID_CWD_EVENTS_DIR") })
+    }
+
+    /// The rest of Claude's allow list: a bare launch, and each spelling
+    /// of the two ways back into a session.
+    @Test("hosts each interactive entry point", arguments: [[], ["-r"], ["--resume"], ["-c"], ["--continue"]])
+    func hostedInvocation_hostsTheInteractiveEntryPoints(_ args: [String]) throws {
+        let handover = try runShimHosted(args)
+        #expect(handover.claude.isEmpty)
+        #expect(handover.tmux.contains("new-session"))
+        #expect(handover.tmux.suffix(args.count) == args[...])
+    }
+
+    /// A prompt and a subcommand look alike, and a flag the list does not
+    /// name may come before either, so whatever does not start with an
+    /// entry point runs directly; so does a one-shot flag anywhere, even
+    /// after an entry point.
+    @Test("runs anything it does not recognize directly", arguments: [
+        ["fix the failing test"], ["mcp", "list"], ["--model", "opus"],
+        ["-p", "hi"], ["--resume", "abc123", "--print"], ["-c", "-h"]
+    ])
+    func hostedInvocation_runsWhatItDoesNotRecognizeDirectly(_ args: [String]) throws {
+        let handover = try runShimHosted(args)
+        #expect(handover.ranDirectly(args))
+    }
+
+    /// Inside a session our folder is still on the PATH, so wrapping again
+    /// would nest without bound. The tmux is then the person's own, which
+    /// the host mode says, so a resume asks that tmux for its pane.
+    @Test("does not wrap again once inside tmux, and names the tmux the person's")
+    func insideTmux_handsOffDirectly_asManual() throws {
+        let handover = try runShimHosted([], environment: ["TMUX": "/tmp/tmux-501/default,4242,0"])
+        #expect(handover.ranDirectly([]))
+        #expect(handover.claudeSawMode == "manual")
+    }
+
+    /// Hosting off, or a pane Limpid did not name, leaves no host mode at
+    /// all: neither ours nor the person's.
+    @Test("does not host without a pane id or a tmux to run", arguments: [
+        ["LIMPID_PANE_ID": ""],
+        ["LIMPID_AGENT_TMUX": ""],
+        ["LIMPID_AGENT_TMUX": "/nonexistent/tmux"]
+    ])
+    func withoutPaneIDOrTmux_handsOffDirectly(_ environment: [String: String]) throws {
+        let handover = try runShimHosted([], environment: environment)
+        #expect(handover.ranDirectly([]))
+        #expect(handover.claudeSawMode == "unset")
+    }
+
+    /// Output that is not a terminal is output someone means to keep,
+    /// which a tmux client would take to a screen it erases.
+    @Test("runs directly when its output is not a terminal")
+    func withoutATerminal_handsOffDirectly() throws {
+        let handover = try runShimHosted([], underPTY: false)
+        #expect(handover.ranDirectly([]))
     }
 }

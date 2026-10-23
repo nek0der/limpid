@@ -3,6 +3,16 @@
 
 import Foundation
 
+/// The resume typed into a restored pane at launch: the session and the
+/// command, so the stop ledger can watch the one the command resumes
+/// (`StopLedgerStore.markResumingAtLaunch`).
+struct AgentResume: Equatable, Sendable {
+    let provider: AgentKind
+    let sessionID: String
+    let cwd: String?
+    let command: String
+}
+
 enum AgentResumeCommandBuilder<S: AgentSpec> {
     /// Decide whether `paneID` inside `tab` should auto-launch a
     /// resumed agent session at surface-mount time. Returns the shell
@@ -22,6 +32,11 @@ enum AgentResumeCommandBuilder<S: AgentSpec> {
     ///    two have a hint for one pane is a rule, and the rules live on the
     ///    other side of the boundary; this side only reads the answer.
     static func initialCommand(for tab: Tab, paneID: UUID) -> String? {
+        resume(for: tab, paneID: paneID)?.command
+    }
+
+    /// `initialCommand`, with the session it resumes.
+    static func resume(for tab: Tab, paneID: UUID) -> AgentResume? {
         // An unresolved tmux restore hint is not permission to create a
         // duplicate native invocation while its original runtime survives.
         guard tab.tmuxBindings[paneID] == nil else { return nil }
@@ -33,11 +48,22 @@ enum AgentResumeCommandBuilder<S: AgentSpec> {
         if let existing = tab.initialCommands[paneID], !existing.isEmpty {
             return nil
         }
-        guard tab.agentResumeCandidates[paneID]?.contains(S.kind) == true else { return nil }
-        return S.resumeCommand(sessionId: info.sessionId, cwd: info.cwd)
+        guard tab.agentResumeCandidates[paneID]?.contains(S.kind) == true,
+              let command = resumeCommand(sessionId: info.sessionId, cwd: info.cwd)
+        else { return nil }
+        return AgentResume(provider: S.kind, sessionID: info.sessionId, cwd: info.cwd, command: command)
     }
 
-    static func resumeCommand(sessionId: String, cwd: String? = nil) -> String {
-        S.resumeCommand(sessionId: sessionId, cwd: cwd)
+    /// The strict resume (`AgentKind.strictResumeCommand`), as "Resume
+    /// Same Conversation" types it: no fresh agent after a resume that
+    /// fails, since a relaunch is no reason to start a new conversation in
+    /// the old one's place; the failure stays on screen, and a
+    /// new conversation is the person's own "Start New Conversation". `nil`
+    /// for an id that is not a session's (the state file is read, not
+    /// trusted) or a folder with a control character in its name, which the
+    /// typed command would carry to the line editor as a key: no resume
+    /// then, rather than one somewhere else.
+    static func resumeCommand(sessionId: String, cwd: String? = nil) -> String? {
+        S.kind.strictResumeCommand(sessionId: sessionId, cwd: cwd)
     }
 }

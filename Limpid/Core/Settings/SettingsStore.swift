@@ -50,6 +50,16 @@ final class SettingsStore {
     /// at next launch still sees the value.
     private static let appLanguageDefaultsKey = "appLanguage"
 
+    /// The language this launch began with, which the macOS menu bar keeps
+    /// until the next one.
+    let appLanguageAtLaunch: AppLanguage
+
+    /// Whether the menu bar still shows another language than the one
+    /// chosen, which only a relaunch changes (General offers it).
+    var needsRelaunchForLanguage: Bool {
+        appLanguage != appLanguageAtLaunch
+    }
+
     var appLanguage: AppLanguage {
         didSet {
             guard appLanguage != oldValue else { return }
@@ -118,6 +128,14 @@ final class SettingsStore {
     /// a debounced save so external file watchers see the change.
     var settings: LimpidSettings {
         didSet {
+            // A change made here (a reset, a new hotkey, Restore Defaults)
+            // can free or take a default's keys, so the bindings are put
+            // back in line before anything reads or saves them.
+            var normalized = settings
+            normalized.normalizeKeyboard()
+            if normalized != settings {
+                settings = normalized
+            }
             guard settings != oldValue else { return }
             guard !suppressNextSave else { return }
             scheduleSave()
@@ -136,6 +154,35 @@ final class SettingsStore {
     /// reload ↔ write feedback loop.
     @ObservationIgnored
     private var suppressNextSave: Bool = false
+
+    /// False in demo mode: nothing this store does reaches the file.
+    @ObservationIgnored
+    private let writesFiles: Bool
+
+    /// See `LoadResult.suspendsSaving`.
+    @ObservationIgnored
+    private var isSavingSuspended = false
+
+    /// Why saving stopped, for the notice at the top of Settings → General
+    /// (`SavingSuspendedNotice`), which tells the person their settings are
+    /// not being saved. `nil` while they are, and in demo mode, which saves
+    /// nothing anyway. Observed, so a file fixed by hand and read again
+    /// (`reloadFromDisk`) takes the notice down.
+    private(set) var savingSuspension: SettingsSavingSuspension?
+
+    /// See `LoadResult.pendingMigration`.
+    @ObservationIgnored
+    private var pendingMigration: MigrationBackupRecord?
+
+    /// The bytes the file held when we last met it: what our last save
+    /// wrote, or what our last reload read. The file watcher reports a save
+    /// like any other change, about 200 ms later; a change made in that
+    /// time, not yet saved, would be replaced by what the file still holds.
+    /// A reload that finds these bytes has nothing new and leaves the
+    /// settings alone. Taken from a reload too, so a hand edit back to what
+    /// we saved before is new to us and read. `nil` until the first of them.
+    @ObservationIgnored
+    private var lastSyncedBytes: Data?
 
     /// Directory that hosts `settings.json`. Production callers use the
     /// no-arg `init()` which routes through `LimpidPaths`; tests pass an
@@ -165,13 +212,22 @@ final class SettingsStore {
         directory.appendingPathComponent("settings.json")
     }
 
-    convenience init() {
-        self.init(directory: LimpidPaths.applicationSupportDirectory())
+    /// `writesFiles` comes from the app, which decides once for every store
+    /// whether this run may write the person's files (not in demo mode).
+    convenience init(writesFiles: Bool) {
+        self.init(directory: LimpidPaths.applicationSupportDirectory(), writesFiles: writesFiles)
     }
 
-    init(directory: URL, languageSources: AppLanguageSources = .live) {
+    /// `writesFiles` is false in demo mode, whose pins and in-memory
+    /// migration are for the run, not for the file (see `saveNow`).
+    init(
+        directory: URL,
+        languageSources: AppLanguageSources = .live,
+        writesFiles: Bool = true
+    ) {
         self.directory = directory
         self.languageSources = languageSources
+        self.writesFiles = writesFiles
         let raw = languageSources.defaults.string(forKey: Self.appLanguageDefaultsKey)
             ?? AppLanguage.system.rawValue
         let stored = AppLanguage(rawValue: raw) ?? .system
@@ -183,8 +239,16 @@ final class SettingsStore {
         // pipelines crop to the SwiftUI window content.
         let language = DemoFixture.isDemoActive ? AppLanguage.english : stored
         self.appLanguage = language
+        self.appLanguageAtLaunch = language
         self.appLocale = Self.locale(for: language, sources: languageSources)
-        var loaded = Self.loadFromDiskOrDefault(at: Self.settingsFileURL(in: directory))
+        let result = Self.load(at: Self.settingsFileURL(in: directory), writes: writesFiles)
+        var loaded = result.settings
+        self.isSavingSuspended = result.suspendsSaving
+        self.savingSuspension = writesFiles ? result.suspension : nil
+        self.pendingMigration = result.pendingMigration
+        // The launch's own move to the current schema, should the watcher
+        // report it, is nothing new (`reloadFromDisk`).
+        self.lastSyncedBytes = result.writtenBytes
         // The hero screenshot pipeline runs under `LIMPID_DEMO=1`.
         // Force the toolbar opaque there so the captured PNG doesn't
         // depend on whatever wallpaper / other windows happen to sit
@@ -203,14 +267,15 @@ final class SettingsStore {
             // happens to be in, so the README image would flip between
             // light and dark depending on who regenerated it.
             loaded.appearance.colorScheme = .light
-            // Pinned for the same reason, and it has to be pinned in
-            // both directions: this setting is opt-in, so without it
-            // the hero would show the sidebar's request marks only for
-            // contributors who happen to have switched them on. The
-            // data behind them comes from `DemoFixture.prStatus`, not
-            // from a CLI — see `PRStatusSyncer.start()`.
-            loaded.advanced.showPRStatusInSidebar = true
-            loaded.advanced.showPRStatusOnlyWhenAttention = false
+            // The default family at 12 points: the hero's 1440-point window
+            // fits the sidebar, a 100-column terminal, and the changes
+            // panel side by side only at that size, and a contributor's
+            // own font would move every column.
+            loaded.font = FontSettings()
+            loaded.font.size = 12
+            // A Ghostty config file would set its own `font-family` over
+            // the default one, so the demo reads none.
+            loaded.advanced.ghosttyConfig = .off
         }
         self.settings = loaded
         localeObserver = NotificationCenter.default.addObserver(
@@ -232,33 +297,207 @@ final class SettingsStore {
 
     // MARK: - Persistence
 
-    private static func loadFromDiskOrDefault(at url: URL) -> LimpidSettings {
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            log.info("settings.json absent at \(url.path, privacy: .public); using defaults")
-            return .default
+    /// What loading `settings.json` gave.
+    private struct LoadResult {
+        var settings: LimpidSettings
+        /// A move whose copy and ledger exist but whose write failed: the
+        /// first save that reaches disk finishes it (`finishPendingMigration`).
+        var pendingMigration: MigrationBackupRecord?
+        /// Saving would replace a file this launch did not take in: one
+        /// that could not be read and could not be moved aside, an older
+        /// one read as it was because its move to the current schema could
+        /// not be made safely, or one a newer build wrote. Saving stops
+        /// for the launch.
+        var suspendsSaving = false
+        /// Why, when `suspendsSaving`.
+        var suspension: SettingsSavingSuspension?
+        /// Whether `settings` are the file's own, decoded as it stands
+        /// (`decodeAsWritten`), rather than the defaults that replace a
+        /// file that does not decode.
+        var isDecoded = false
+        /// This is what the load wrote over the file, when it moved it to the
+        /// current schema and the write landed: the file now holds these
+        /// bytes, not the ones read (`lastSyncedBytes`).
+        var writtenBytes: Data?
+    }
+
+    /// The settings in `url`, moved to the current schema when they are
+    /// older and kept consistent with this build's keys on every load
+    /// (`LimpidSettings.normalizeKeyboard`). With `writes` false (demo
+    /// mode) nothing is written: the move happens in memory only.
+    private static func load(at url: URL, writes: Bool) -> LoadResult {
+        var result = loadAsStored(at: url, writes: writes)
+        result.settings.normalizeKeyboard()
+        return result
+    }
+
+    private static func loadAsStored(at url: URL, writes: Bool) -> LoadResult {
+        // Only a file that is not there is a first launch. A check that the
+        // file exists would also answer no for a folder that cannot be
+        // searched, and the defaults would then be saved over the file once
+        // the folder opens up again.
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            log.info("settings.json absent at \(url.path, privacy: .private); using defaults")
+            return LoadResult(settings: .default)
+        } catch {
+            log.error("settings.json read failed: \(String(describing: error), privacy: .private). Using defaults.")
+            return setAsideUnread(url, writes: writes)
+        }
+        let outcome: VersionedDocumentMigrator.Outcome
+        do {
+            outcome = try VersionedDocumentMigrator.settings.migrate(data)
+        } catch {
+            // The file is read as it was and not written; the next launch
+            // tries again.
+            log.error("settings.json migration failed: \(String(describing: error), privacy: .private)")
+            return readWithoutMigrating(data, at: url, writes: writes)
+        }
+        switch outcome {
+        case let .migrated(from, migrated):
+            return loadMigrated(original: data, migrated: migrated, from: from, at: url, writes: writes)
+        case .current:
+            if writes {
+                MigrationBackup.finishIfWritten(url, current: data, version: LimpidSettings.currentSchemaVersion)
+            }
+            return decodeAsWritten(data, at: url, writes: writes)
+        case let .newer(found):
+            // Kept and read, not set aside: a rollback must not cost the
+            // person their settings. Not written back either: a save
+            // would write this build's schema under the newer version
+            // number, and the newer build, seeing its own number, would
+            // skip the step that moves a value to where it now lives.
+            log.notice("settings.json schema v\(found, privacy: .public) is newer; reading it without saving")
+            return readNewer(data)
+        case .unsupported, .unreadableVersion:
+            return decodeAsWritten(data, at: url, writes: writes)
+        }
+    }
+
+    /// Keeps a copy of the old file (`settings.json.pre-v2`), then writes
+    /// the migrated one at once, as `SessionStore` does for `state.json`.
+    /// Without a copy the file is read as it was and not written, so the
+    /// next launch tries again rather than replacing the only one.
+    private static func loadMigrated(
+        original: Data,
+        migrated: Data,
+        from: Int,
+        at url: URL,
+        writes: Bool
+    ) -> LoadResult {
+        let settings: LimpidSettings
+        let encoded: Data
+        do {
+            settings = try PersistenceCoders.makeDecoder().decode(LimpidSettings.self, from: migrated)
+            encoded = try LimpidSettings.makeFileEncoder().encode(settings)
+        } catch {
+            log.error("migrated settings do not decode or encode: \(String(describing: error), privacy: .private)")
+            return readWithoutMigrating(original, at: url, writes: writes)
+        }
+        // Demo mode moves the settings in memory only: the file belongs to
+        // the build the person runs, which may be an older one.
+        guard writes else { return LoadResult(settings: settings) }
+        let record: MigrationBackupRecord
+        do {
+            record = try MigrationBackup.keep(
+                url,
+                source: original,
+                migrated: encoded,
+                from: from,
+                to: LimpidSettings.currentSchemaVersion
+            )
+        } catch {
+            log.error("settings.json backup failed: \(String(describing: error), privacy: .private)")
+            return readWithoutMigrating(original, at: url, writes: writes)
         }
         do {
-            let data = try Data(contentsOf: url)
-            let decoded = try PersistenceCoders.makeDecoder().decode(LimpidSettings.self, from: data)
-            if decoded.schemaVersion != LimpidSettings.currentSchemaVersion {
-                log.notice("""
-                settings.json schema v\(decoded.schemaVersion, privacy: .public) \
-                != expected v\(LimpidSettings.currentSchemaVersion, privacy: .public); \
-                keeping decoded values
-                """)
-            }
-            return decoded
+            try SecureFileWrite.writeAtomic(encoded, to: url)
         } catch {
-            log.error("settings.json decode failed: \(String(describing: error), privacy: .public). Using defaults.")
+            // The migrated settings are in use and the next save writes
+            // them; that save finishes the ledger with the bytes it writes,
+            // which are not the ones recorded.
+            log.error("migrated settings.json write failed: \(String(describing: error), privacy: .private)")
+            return LoadResult(settings: settings, pendingMigration: record)
+        }
+        log.notice("migrated settings.json from v\(from, privacy: .public)")
+        do {
+            try MigrationBackup.markWritten(record, for: url)
+        } catch {
+            // The file is on disk; only the ledger lags. A relaunch finishes
+            // the ledger from the bytes on disk.
+            log.error("settings migration ledger update failed: \(String(describing: error), privacy: .private)")
+        }
+        return LoadResult(settings: settings, writtenBytes: encoded)
+    }
+
+    /// An older file read as it stands because its move could not be made
+    /// safely. Saving stops for the launch: a save would write this
+    /// build's schema over the only copy of the old one, and the copy kept
+    /// on the next launch would no longer be what the person had. A file
+    /// that does not decode either is not read as it stands: it goes the
+    /// way of any file that does not decode (`decodeAsWritten`), and
+    /// saving stops only if it could not be moved aside.
+    private static func readWithoutMigrating(_ data: Data, at url: URL, writes: Bool) -> LoadResult {
+        var result = decodeAsWritten(data, at: url, writes: writes)
+        guard result.isDecoded else { return result }
+        result.suspendsSaving = true
+        result.suspension = .notMoved
+        return result
+    }
+
+    /// A file a newer build wrote, read where it is. Saving stops whether
+    /// it decodes or not, so it is decided before the decode. One that does
+    /// not decode (the newer build changed the type of a key this build
+    /// knows) is still that build's file: it is not set aside, which would
+    /// leave the newer build its defaults on the way back, and this launch
+    /// runs on the defaults in memory.
+    private static func readNewer(_ data: Data) -> LoadResult {
+        do {
+            let settings = try PersistenceCoders.makeDecoder().decode(LimpidSettings.self, from: data)
+            return LoadResult(settings: settings, suspendsSaving: true, suspension: .newerVersion, isDecoded: true)
+        } catch {
+            log.error("newer settings.json does not decode: \(String(describing: error), privacy: .private). Using defaults.")
+            return LoadResult(settings: .default, suspendsSaving: true, suspension: .newerVersionUnreadable)
+        }
+    }
+
+    /// Moves a file this launch cannot take in out of the way, so the next
+    /// save lands on a fresh path; when it cannot be moved, saving stops
+    /// instead of replacing it with defaults.
+    private static func setAside(_ url: URL, reason: String, writes: Bool) -> LoadResult {
+        guard writes else { return LoadResult(settings: .default) }
+        let suspendsSaving = SecureFileWrite.setAside(url, reason: reason) == .keptInPlace
+        if suspendsSaving {
+            log.error("settings.json stays in place; saving is suspended for this launch")
+        }
+        return LoadResult(settings: .default, suspendsSaving: suspendsSaving, suspension: suspendsSaving ? .unreadable : nil)
+    }
+
+    /// `setAside` for a file that could not be read. Saving goes on only
+    /// once the file has actually moved: `setAside` counts a file it cannot
+    /// see as cleared, and an unreadable folder hides the file it holds.
+    private static func setAsideUnread(_ url: URL, writes: Bool) -> LoadResult {
+        guard writes else { return LoadResult(settings: .default) }
+        guard SecureFileWrite.quarantine(url, reason: "read-failed") == nil else { return LoadResult(settings: .default) }
+        log.error("unreadable settings.json stays in place; saving is suspended for this launch")
+        return LoadResult(settings: .default, suspendsSaving: true, suspension: .unreadable)
+    }
+
+    /// The file decoded as it stands, or the defaults when it does not
+    /// decode.
+    private static func decodeAsWritten(_ data: Data, at url: URL, writes: Bool) -> LoadResult {
+        do {
+            return try LoadResult(settings: PersistenceCoders.makeDecoder().decode(LimpidSettings.self, from: data), isDecoded: true)
+        } catch {
+            log.error("settings.json decode failed: \(String(describing: error), privacy: .private). Using defaults.")
             // settings.json is the one file we document as user-editable
             // (the prettyPrinted carve-out in saveNow). A stray comma in
             // a hand edit must not destroy the rest of the file on the
             // next mutation — didSet → scheduleSave would otherwise
-            // atomic-replace the bad bytes with defaults. Rename the bad
-            // file aside now so the subsequent save lands on a fresh
-            // path.
-            SecureFileWrite.quarantine(url, reason: "decode-failed")
-            return .default
+            // atomic-replace the bad bytes with defaults.
+            return setAside(url, reason: "decode-failed", writes: writes)
         }
     }
 
@@ -294,7 +533,7 @@ final class SettingsStore {
         // change the bundle identifier. `SessionStore` guards both of
         // its write paths for the same reason; this is the one that
         // was missing.
-        guard !DemoFixture.isDemoActive else { return }
+        guard writesFiles, !isSavingSuspended else { return }
         let url = settingsFileURL
         SecureFileWrite.ensureUserOnlyDirectory(url.deletingLastPathComponent())
         do {
@@ -302,16 +541,32 @@ final class SettingsStore {
             // Release; `settings.json` is the one file the user is
             // expected to open in an editor, so override that and keep
             // the file pretty in every build.
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(settings)
+            let data = try LimpidSettings.makeFileEncoder().encode(settings)
             // Same 0600 path as `state.json` / `notifications.json` —
             // `settings.json` may not carry secrets today but it's
             // still the user's machine-local prefs file and shouldn't
             // ship out with the default 0644.
             try SecureFileWrite.writeAtomic(data, to: url)
+            lastSyncedBytes = data
+            finishPendingMigration(written: data, at: url)
         } catch {
-            log.error("settings.json save failed: \(String(describing: error), privacy: .public)")
+            log.error("settings.json save failed: \(String(describing: error), privacy: .private)")
+        }
+    }
+
+    /// The migrated settings reached disk through an ordinary save: the
+    /// ledger records those bytes as written. If the save lands and only
+    /// the ledger fails, and the app then quits, the ledger keeps the
+    /// migration's own hash and stays at `backedUp`; the copy is still
+    /// there, and the ledger is tried again on every save until then.
+    private func finishPendingMigration(written data: Data, at url: URL) {
+        guard let pendingMigration else { return }
+        do {
+            try MigrationBackup.markWritten(pendingMigration, for: url, bytes: data)
+            self.pendingMigration = nil
+        } catch {
+            // Tried again on the next save.
+            log.error("settings migration ledger update failed: \(String(describing: error), privacy: .private)")
         }
     }
 
@@ -330,7 +585,30 @@ final class SettingsStore {
     /// Used by the file watcher when an external edit lands
     /// — does NOT schedule a save back (would cause a feedback loop).
     func reloadFromDisk() {
-        let fresh = Self.loadFromDiskOrDefault(at: settingsFileURL)
+        // Our own save coming back through the watcher, or a file unchanged
+        // since we last read it: nothing we do not already have, and the
+        // settings may have moved on since. A read that fails is not one
+        // and goes the usual way.
+        let bytes = try? Data(contentsOf: settingsFileURL)
+        if let lastSyncedBytes, bytes == lastSyncedBytes {
+            return
+        }
+        let result = Self.load(at: settingsFileURL, writes: writesFiles)
+        // A move to the current schema writes the file again, and the
+        // watcher reports that write as well: those bytes are what the file
+        // holds now, and a change made before it reports must not be
+        // replaced by them. A write that failed leaves the bytes read.
+        lastSyncedBytes = result.writtenBytes ?? bytes
+        // A file fixed by hand since the launch takes saving back up.
+        isSavingSuspended = result.suspendsSaving
+        let suspension = writesFiles ? result.suspension : nil
+        if savingSuspension != suspension {
+            savingSuspension = suspension
+        }
+        // What this reload left unfinished, or nothing: a move this reload
+        // wrote must not be overwritten by the record of an earlier one.
+        pendingMigration = result.pendingMigration
+        let fresh = result.settings
         guard fresh != settings else { return }
         suppressNextSave = true
         settings = fresh
@@ -357,4 +635,18 @@ struct AppLanguageSources {
             currentLocale: { .current }
         )
     }
+}
+
+/// Why `settings.json` is not being saved for this launch.
+enum SettingsSavingSuspension: Equatable {
+    /// It could not be read and could not be moved aside.
+    case unreadable
+    /// It is an older file, read as it stands, whose move to this version's
+    /// format could not be made safely.
+    case notMoved
+    /// A newer build wrote it. It is read, and left for that build.
+    case newerVersion
+    /// A newer build wrote it in a form this build cannot decode. It is
+    /// left for that build, and this launch runs on the defaults.
+    case newerVersionUnreadable
 }

@@ -1,16 +1,16 @@
 # Projection corpus
 
-Input for the reader side: the record sets `limpid_agent_core::project` reduces
-into badges, tab titles, notification transitions, and commands.
+Input for the reader side: the record sets that `limpid_agent_core::project`
+reduces into badges, tab titles, notification transitions, and commands.
 
 ## Why the records are generated
 
 Every `*.state.json` here is produced by replaying the hook fixtures in
 `rust/fixtures/<provider>/` through the real hook runtime, not written by hand.
-Hand-written records would let the writer fixtures and the reader corpus drift: a provider
-schema change would update the writer fixtures and leave the reader corpus
-describing records no hook writes any more. Deriving them means one regeneration
-updates both.
+Hand-written records would let the writer fixtures and the reader corpus
+drift: a provider schema change would update the writer fixtures and leave the
+reader corpus describing records no hook writes anymore. Deriving the records
+means one regeneration updates both.
 
 Regenerate with `scripts/derive-projection-corpus.sh` and review the diff. The
 generated records are goldens, reviewed like `expected.json`.
@@ -71,11 +71,12 @@ The part of `ProjectionInput` that does not come from the state directories.
 | --- | --- |
 | `now` | Wall clock for record comparison and retention |
 | `monotonicMs` | Monotonic uptime for the notification outbox's pending lifetime |
-| `isBootstrap` | The first pass after launch records runtimes and announces nothing |
+| `isBootstrap` | Whether this is the first pass after launch, which records runtimes and announces nothing |
 | `tabs` | Tab identity and its split-tree leaves, so badges and titles can be placed |
-| `pidStatus` | `alive`, `dead`, or `unknown` per pid, evaluated by the host |
+| `pidStatus` | `alive`, `dead`, or `unknown` per PID, evaluated by the host |
 | `focus` | The focused tab and pane, or null |
-| `marks` | `viewed` and `dismissed` as runtime id to episode token |
+| `seenPanes` | The panes the user can see (empty while the app is in the background); a run that finishes in one is marked viewed |
+| `marks` | `viewed`, a map from runtime ID to episode token |
 | `presence` | tmux attachments per endpoint, and whether each location is active |
 | `resumeIntents` | Live resume intents, which keep a dead record from being retired |
 | `acknowledged` | Outcomes of the commands the previous pass returned |

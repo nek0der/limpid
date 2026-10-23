@@ -54,45 +54,82 @@ enum LimpidShortcutCategory: Int, CaseIterable, Identifiable {
 
 /// Every action the user can rebind. When adding a new case,
 /// update these locations:
-///   1. `defaultShortcut`, `localizedTitle`, `category`, `ghosttyAction`
+///   1. `defaultShortcut`, `localizedTitle`, `category`, `ghosttyAction`,
+///      `iconName`
 ///   2. `TabActions.dispatchShortcutAction` (palette dispatch)
-///   3. `CommandPaletteCatalog.icon(for:)` + `isActionEnabled`
-///   4. `iconNames` dictionary (same file) — missing entries fall back to
-///      a placeholder, so omissions ship.
-///   5. `LimpidApp.commands` block (menu bar Button)
+///   3. `CommandPaletteCatalog.isActionEnabled`
+///   4. The menu bar (`LimpidApp.commands` and the `Commands` types)
+///   5. `Localizable.xcstrings` for the title, in en and ja
 ///
-/// 1–3 are compiler-enforced via switch exhaustiveness; 4–5 are manual.
+/// 1 is compiler-enforced via switch exhaustiveness; 2 traps at run time
+/// in the category's dispatcher; 3–5 are manual (3 ends in a default).
+/// Keep raw values when renaming a case: settings store overrides under
+/// them.
 ///
 /// The menu bar pulls its shortcut via `View.limpidShortcut(_:in:)`;
 /// libghostty pulls keybinds via `GhosttyConfigBridge`. Both branches
 /// read the same store.
 ///
-/// Note on ⌘1…⌘9 / ⌘⌃1…⌘⌃9: per-tab and per-section jumps stay
-/// hardcoded in the menu (see `LimpidApp`). They're not in this
+/// Note on ⌘1…⌘9 / ⌘⌃1…⌘⌃9: per-tab and per-worktree jumps stay
+/// hardcoded in the menu (see `NumberShortcutCommands`). They're not in this
 /// enum because we'd need 18 cases for what is really one
 /// parametric action; the conflict checker reserves the triggers
 /// so a user remap can't shadow them.
 enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
-    // File
+
+    // MARK: File
+
     case newTab
+    /// The new worktree sheet for the window's project, on ⌘N. The
+    /// one action for it: the earlier "New Workspace…" (`newSession`) folded
+    /// into this one, and its bindings moved here (`KeyboardSettings.normalize`).
     case newWorktree
+    /// A worktree made at once with the last choices, no sheet.
+    case newWorktreeNow
     case renameTab
     case reopenClosedTab
     case closeSurface
     case closeTab
+    /// Open a folder as a project.
+    case openFolder
+    /// Hides the window; its agents and terminals keep running.
+    case closeWindow
+    /// A window that shows nothing yet, or the hidden one. No default:
+    /// ⌘N is New Worktree…, ⇧⌘N the notification history, and ⌥⌘N makes a
+    /// worktree at once (`newWorktreeNow`). A person's own binding works.
+    case newWindow
 
     // View
     case toggleSidebar
-    case toggleTabLayout
     case notificationHistory
-    case reviewChanges
-    case reviewTurn
+    // The case names follow the supervision window's meaning; the raw
+    // values stay what settings were saved under, so a person's binding
+    // keeps working without a rename step.
+    case review = "reviewChanges"
+    case reviewLatestTurn = "reviewTurn"
+    case toggleChangesPanel
+    case allProjects
 
-    // Navigation (container + tab cycling)
-    case nextSection
-    case previousSection
+    // Navigation (worktree + tab cycling)
+    case nextSession = "nextSection"
+    case previousSession = "previousSection"
     case nextTab
     case previousTab
+    /// Opens the Needs Attention list from the keyboard.
+    case showNeedsAttention
+    /// Moves the keyboard to the sessions sidebar.
+    case focusSidebar
+    /// Move the project the sidebar's keys are on (or the window's) up or
+    /// down among the headers. Their default is ⌥⌘↑ ⌥⌘↓, the keys
+    /// Focus Pane Above and Below have too: the sidebar takes them only
+    /// while it has the keyboard, and the panes have them otherwise
+    /// (`sharesKeys(with:)`, `SidebarKeyRoute`).
+    case moveProjectUp
+    case moveProjectDown
+    /// The window's history of tabs it showed. No default; a person may
+    /// bind them.
+    case goBack
+    case goForward
     /// Jump focus to the next / previous pane whose agent needs the
     /// user (needsInput / error) — cross-tab attention cursor. Displayed
     /// as "Next/Previous Action" (the agent is waiting on the user to
@@ -145,13 +182,22 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         rawValue
     }
 
+    /// Stored names of actions that were folded into another, with the
+    /// action that took them over: ⌘N's "New Workspace…" (`newSession`)
+    /// became New Worktree…. `KeyboardSettings.normalize` moves
+    /// their bindings, and Settings names what it kept aside by the action
+    /// that took them over.
+    static let foldedNames: [String: LimpidShortcutAction] = ["newSession": .newWorktree]
+
     var category: LimpidShortcutCategory {
         switch self {
-        case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
-             .closeSurface, .closeTab: .file
-        case .toggleSidebar, .toggleTabLayout, .notificationHistory, .reviewChanges, .reviewTurn: .view
-        case .nextSection, .previousSection, .nextTab, .previousTab,
-             .nextAttention, .previousAttention: .navigation
+        case .newTab, .newWorktree, .newWorktreeNow, .renameTab, .reopenClosedTab,
+             .closeSurface, .closeTab, .openFolder, .closeWindow, .newWindow: .file
+        case .toggleSidebar, .notificationHistory, .review, .reviewLatestTurn,
+             .toggleChangesPanel, .allProjects: .view
+        case .nextSession, .previousSession, .nextTab, .previousTab,
+             .nextAttention, .previousAttention, .showNeedsAttention, .focusSidebar,
+             .moveProjectUp, .moveProjectDown, .goBack, .goForward: .navigation
         case .splitRight, .splitDown, .equalizeSplits, .toggleSplitZoom,
              .focusPaneLeft, .focusPaneRight, .focusPaneUp, .focusPaneDown: .splits
         case .find, .findNext, .findPrevious: .search
@@ -183,11 +229,13 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .resetFontSize: "reset_font_size"
         // Menu-owned + Limpid-only actions: the menu Button or a
         // notification fires `TabActions.…` directly.
-        case .newTab, .newWorktree, .renameTab, .reopenClosedTab,
-             .closeSurface, .closeTab, .toggleSidebar, .toggleTabLayout,
-             .notificationHistory, .reviewChanges, .reviewTurn,
-             .nextSection, .previousSection, .nextTab, .previousTab,
-             .nextAttention, .previousAttention,
+        case .newTab, .newWorktree, .newWorktreeNow, .renameTab, .reopenClosedTab,
+             .closeSurface, .closeTab, .openFolder, .closeWindow, .newWindow,
+             .toggleSidebar,
+             .notificationHistory, .review, .reviewLatestTurn, .toggleChangesPanel, .allProjects,
+             .nextSession, .previousSession, .nextTab, .previousTab,
+             .nextAttention, .previousAttention, .showNeedsAttention, .focusSidebar,
+             .moveProjectUp, .moveProjectDown, .goBack, .goForward,
              .splitRight, .splitDown,
              .equalizeSplits, .toggleSplitZoom,
              .focusPaneLeft, .focusPaneRight,
@@ -204,19 +252,34 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .newTab: "New Tab"
         case .newWorktree: "New Worktree…"
+        case .newWorktreeNow: "Create Worktree Now"
         case .renameTab: "Rename Tab"
         case .reopenClosedTab: "Reopen Closed Tab"
-        case .closeSurface: "Close Pane"
+        // "Close", not "Close Pane": ⌘W also closes the review tab in front
+        // and, with no supervision window key, the key window (Settings).
+        case .closeSurface: "Close"
         case .closeTab: "Close Tab"
+        case .openFolder: "Open Folder…"
+        case .closeWindow: "Close Window"
+        case .newWindow: "New Window"
         case .toggleSidebar: "Toggle Sidebar"
-        case .toggleTabLayout: "Toggle Tab Layout"
         case .notificationHistory: "Notification History"
-        case .reviewChanges: "Review Changes"
-        case .reviewTurn: "Review This Turn"
-        case .nextSection: "Next Section"
-        case .previousSection: "Previous Section"
+        // The menu's name. The buttons that open the review
+        // tab on the unviewed turns keep "Review Unviewed".
+        case .review: "Review"
+        case .reviewLatestTurn: "Review Latest Turn"
+        case .toggleChangesPanel: "Toggle Changes"
+        case .allProjects: "All Projects"
+        case .nextSession: "Next Worktree"
+        case .previousSession: "Previous Worktree"
         case .nextTab: "Next Tab"
         case .previousTab: "Previous Tab"
+        case .showNeedsAttention: "Show Needs Attention"
+        case .focusSidebar: "Focus Sidebar"
+        case .moveProjectUp: "Move Project Up"
+        case .moveProjectDown: "Move Project Down"
+        case .goBack: "Go Back"
+        case .goForward: "Go Forward"
         case .nextAttention: "Next Action"
         case .previousAttention: "Previous Action"
         case .splitRight: "Split Right"
@@ -250,19 +313,30 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .newTab: "plus"
         case .newWorktree: "arrow.triangle.branch"
+        case .newWorktreeNow: "bolt"
         case .renameTab: "pencil"
         case .reopenClosedTab: "arrow.uturn.backward"
         case .closeSurface: "xmark.square"
         case .closeTab: "xmark"
+        case .openFolder: "folder"
+        case .closeWindow: "xmark.rectangle"
+        case .newWindow: "macwindow.badge.plus"
         case .toggleSidebar: "sidebar.left"
-        case .toggleTabLayout: "rectangle.topthird.inset.filled"
         case .notificationHistory: "bell"
-        case .reviewChanges: ReviewPresentation.symbol
-        case .reviewTurn: ReviewPresentation.symbol
-        case .nextSection: "chevron.left.chevron.right"
-        case .previousSection: "chevron.left.chevron.right"
+        case .review: ReviewPresentation.symbol
+        case .reviewLatestTurn: ReviewPresentation.symbol
+        case .toggleChangesPanel: "sidebar.right"
+        case .allProjects: "square.grid.2x2"
+        case .nextSession: "chevron.left.chevron.right"
+        case .previousSession: "chevron.left.chevron.right"
         case .nextTab: "arrow.left.arrow.right"
         case .previousTab: "arrow.left.arrow.right"
+        case .showNeedsAttention: "list.bullet.rectangle"
+        case .focusSidebar: "sidebar.squares.left"
+        case .moveProjectUp: "arrow.up.square"
+        case .moveProjectDown: "arrow.down.square"
+        case .goBack: "chevron.backward"
+        case .goForward: "chevron.forward"
         case .nextAttention: "arrow.right.to.line"
         case .previousAttention: "arrow.left.to.line"
         case .splitRight: "rectangle.split.2x1"
@@ -282,8 +356,44 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .decreaseFontSize: "textformat.size.smaller"
         case .resetFontSize: "textformat.size"
         case .commandPalette: "text.magnifyingglass"
-        case .quickOpen: "doc.text.magnifyingglass"
+        // Not the review's page under a glass (`ReviewPresentation.symbol`):
+        // the two sit side by side in the palette and the shortcut list.
+        case .quickOpen: "magnifyingglass.circle"
         case .keyboardShortcuts: "keyboard"
+        }
+    }
+
+    /// The action that may hold the same keys as this one, because the two
+    /// never answer in the same place: the sidebar's project moves answer
+    /// only while the sidebar has the keyboard (`SidebarKeyRoute`), and the
+    /// pane moves everywhere else. Any other two actions on one set of keys
+    /// would have one silently win, so the conflict check refuses them
+    /// (`KeyboardSettings.validate`).
+    var sharesKeys: LimpidShortcutAction? {
+        switch self {
+        case .moveProjectUp: .focusPaneUp
+        case .moveProjectDown: .focusPaneDown
+        case .focusPaneUp: .moveProjectUp
+        case .focusPaneDown: .moveProjectDown
+        default: nil
+        }
+    }
+
+    /// Whether `other` may hold the same keys as this action
+    /// (`sharesKeys`).
+    func sharesKeys(with other: LimpidShortcutAction) -> Bool {
+        sharesKeys == other
+    }
+
+    /// Keys this action may not take because the place it answers in uses
+    /// them already: the sidebar, which Move Project Up and Down answer in
+    /// ahead of the menus, moves its cursor and its folds with ⌥← ⌥→ (the
+    /// plain arrows and Return take no modifier, which no binding may lack).
+    var keysItsPlaceKeeps: Set<StoredShortcut> {
+        switch self {
+        case .moveProjectUp, .moveProjectDown:
+            [StoredShortcut(key: "left", modifiers: [.option]), StoredShortcut(key: "right", modifiers: [.option])]
+        default: []
         }
     }
 
@@ -302,20 +412,34 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     var defaultShortcut: StoredShortcut? {
         switch self {
         case .newTab: .init(key: "t", modifiers: [.command])
-        case .newWorktree: .init(key: "n", modifiers: [.command, .option])
+        case .newWorktree: .init(key: "n", modifiers: [.command])
+        case .newWorktreeNow: .init(key: "n", modifiers: [.command, .option])
         case .renameTab: .init(key: "r", modifiers: [.command, .shift])
         case .reopenClosedTab: .init(key: "t", modifiers: [.command, .shift])
         case .closeSurface: .init(key: "w", modifiers: [.command])
         case .closeTab: .init(key: "w", modifiers: [.command, .option])
+        case .openFolder: .init(key: "o", modifiers: [.command])
+        case .closeWindow: .init(key: "w", modifiers: [.command, .shift])
+        case .newWindow: nil
         case .toggleSidebar: .init(key: "b", modifiers: [.command])
-        case .toggleTabLayout: .init(key: "t", modifiers: [.command, .option])
         case .notificationHistory: .init(key: "n", modifiers: [.command, .shift])
-        case .reviewChanges: .init(key: "r", modifiers: [.command, .option])
-        case .reviewTurn: .init(key: "j", modifiers: [.command, .option])
-        case .nextSection: .init(key: "]", modifiers: [.command])
-        case .previousSection: .init(key: "[", modifiers: [.command])
+        case .review: .init(key: "r", modifiers: [.command, .option])
+        case .reviewLatestTurn: .init(key: "j", modifiers: [.command, .option])
+        // ⌥⌘I is the inspector's key across macOS.
+        case .toggleChangesPanel: .init(key: "i", modifiers: [.command, .option])
+        case .allProjects: .init(key: "o", modifiers: [.command, .option])
+        case .nextSession: .init(key: "]", modifiers: [.command])
+        case .previousSession: .init(key: "[", modifiers: [.command])
         case .nextTab: .init(key: "]", modifiers: [.command, .shift])
         case .previousTab: .init(key: "[", modifiers: [.command, .shift])
+        // In the J row with ⌘J, ⇧⌘J, and ⌥⌘J.
+        case .showNeedsAttention: .init(key: "j", modifiers: [.command, .control])
+        case .focusSidebar: .init(key: "0", modifiers: [.command, .option])
+        // Focus Pane Above and Below's keys, which the sidebar takes only
+        // while it has the keyboard (`sharesKeys(with:)`).
+        case .moveProjectUp: .init(key: "up", modifiers: [.command, .option])
+        case .moveProjectDown: .init(key: "down", modifiers: [.command, .option])
+        case .goBack, .goForward: nil
         case .nextAttention: .init(key: "j", modifiers: [.command])
         case .previousAttention: .init(key: "j", modifiers: [.command, .shift])
         case .splitRight: .init(key: "d", modifiers: [.command])
@@ -353,17 +477,11 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
 
 // MARK: - Modifiers
 
-/// Modifier bitset. We don't use `NSEvent.ModifierFlags` directly in
-/// the Codable layer because its raw values are AppKit-private and
-/// can shift across SDK revisions — pin our own stable set.
-struct ShortcutModifiers: OptionSet, Codable, Hashable {
-    let rawValue: UInt8
+/// These are a shortcut's modifiers: the app's one modifier set (`KeyModifiers`),
+/// whose `UInt8` raw value is what `StoredShortcut` saves.
+typealias ShortcutModifiers = KeyModifiers
 
-    static let command = ShortcutModifiers(rawValue: 1 << 0)
-    static let shift = ShortcutModifiers(rawValue: 1 << 1)
-    static let option = ShortcutModifiers(rawValue: 1 << 2)
-    static let control = ShortcutModifiers(rawValue: 1 << 3)
-
+extension ShortcutModifiers {
     /// Ghostty modifier names, joined with `+` in canonical order:
     /// super, ctrl, alt, shift. Order matters for libghostty's
     /// trigger parser only loosely (it accepts any), but we pin one
@@ -482,7 +600,7 @@ struct StoredShortcut: Codable, Hashable {
     /// (⌃⌥⇧⌘ then the key glyph). `displayString` concatenates these
     /// for inline menu-style display; this splits them for surfaces
     /// that render each modifier and the key as its own chip (the
-    /// welcome screen).
+    /// keyboard shortcut panel).
     var displayTokens: [String] {
         var tokens: [String] = []
         if modifiers.contains(.control) {
@@ -594,9 +712,10 @@ extension NamedKey {
 
 // MARK: - Reserved triggers
 
-/// Shortcuts the user CANNOT remap because Limpid uses them for
-/// numbered tab / section jumps (⌘1…⌘9 / ⌘⌃1…⌘⌃9). Those bindings
-/// stay hardcoded in `LimpidApp`'s menu — they're parametric
+/// Shortcuts the user CANNOT remap because Limpid uses them itself: ⌘Q,
+/// ⇧⏎, ⌘⏎, and the numbered tab / workspace jumps (⌘1…⌘9 / ⌘⌃1…⌘⌃9).
+/// The numbered bindings
+/// stay hardcoded in the menu (`NumberShortcutCommands`) — they're parametric
 /// (one shortcut per slot) and don't fit our flat enum cleanly.
 /// The recorder rejects any attempt to bind to one of these so
 /// users can't accidentally shadow tab-jump.
@@ -615,11 +734,16 @@ enum ReservedShortcuts {
         // on the same trigger would double-emit and last-write-wins
         // would silently break the newline workaround.
         set.insert(StoredShortcut(key: "return", modifiers: [.shift]).ghosttyTrigger)
+        // ⌘⏎ — the decision bar's primary button. It takes its own path
+        // past the terminal rather than a keybind, which would emit
+        // `=ignore` and swallow the key even where the bar has nothing
+        // to press. A binding here would steal it.
+        set.insert(StoredShortcut(key: "return", modifiers: [.command]).ghosttyTrigger)
         for n in 1...9 {
             // ⌘0 is rebindable (it's resetFontSize's default).
             // ⌘1…⌘9 — go to tab N.
             set.insert(StoredShortcut(key: "\(n)", modifiers: [.command]).ghosttyTrigger)
-            // ⌘⌃1…⌘⌃9 — go to section N.
+            // ⌘⌃1…⌘⌃9 — go to workspace N.
             set.insert(
                 StoredShortcut(key: "\(n)", modifiers: [.command, .control])
                     .ghosttyTrigger

@@ -1,0 +1,8 @@
+{
+  "maximumDecisionBytes": 8192,
+  "maximumProjectionInputBytes": 16777216,
+  "worktreeRoutingFileName": "worktree-routing.json",
+  "paneIdentifierVariable": "LIMPID_PANE_ID",
+  "atWorkStates": ["running", "needsInput", "compacting"],
+  "notAtWorkStates": ["idle", "finished", "error", "unknown"]
+}

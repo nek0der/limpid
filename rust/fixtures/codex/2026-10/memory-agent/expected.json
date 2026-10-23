@@ -1,0 +1,48 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "source": "startup",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for memory-agent>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: printf 'hi' > h61codex.txt",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "tool": "Bash",
+      "type": "tool_finished"
+    }
+  ],
+  [
+    {
+      "type": "turn_finished"
+    }
+  ],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [
+    {
+      "reason": "other",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ]
+]

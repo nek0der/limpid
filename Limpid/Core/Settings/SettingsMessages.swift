@@ -15,7 +15,7 @@ extension ConfirmPolicy {
     var localizedTitle: LocalizedStringResource {
         switch self {
         case .never: "Never"
-        case .onlyWhenAgent: "Only when an agent is active"
+        case .onlyWhenAgent: "Only while an agent is running"
         case .always: "Always"
         }
     }
@@ -37,10 +37,20 @@ extension ShortcutValidation {
             // interpolated as a resource, which resolves in the same locale
             // as the sentence around it.
             "Already bound to \(other.localizedTitle)"
+        case let .conflictWithPair(first, second):
+            LocalizedStringResource(
+                "Already bound to \(first.localizedTitle) and \(second.localizedTitle)",
+                comment: "Settings → Keyboard: keys that two sharing actions hold are taken; arguments: the two actions"
+            )
+        case .keptBySidebar:
+            LocalizedStringResource(
+                "The sidebar uses these keys while it has keyboard focus",
+                comment: "Settings → Keyboard: Move Project Up or Down cannot take the sidebar's ⌥← ⌥→"
+            )
         case .reserved:
-            "Reserved by Limpid (⌘1–⌘9, ⌘⌃1–⌘⌃9)"
+            "Reserved by Limpid (⌘⏎, ⌘1–9, ⌃⌘1–9)"
         case .missingModifier:
-            "Shortcut must include ⌘, ⌥, ⌃, or ⇧"
+            "Shortcut must include ⌃, ⌥, ⇧, or ⌘"
         case .quickTerminalConflict:
             "Already used by the Quick Terminal hotkey"
         }
@@ -59,7 +69,7 @@ extension QuickTerminalHotKeyValidation {
         case .ok:
             ""
         case .missingPrimaryModifier:
-            "Hotkey must include ⌘ or ⌃."
+            "Hotkey must include ⌃ or ⌘."
         case .reserved:
             "Limpid reserves this combination for its own use."
         case .takenBySystem:
@@ -81,7 +91,7 @@ extension QuickTerminalHotKeyProblem {
         case let .registrationFailed(status) where status == Self.alreadyTakenStatus:
             "Another app already uses this hotkey."
         case let .registrationFailed(status):
-            "The hotkey could not be registered (error \(Int(status)))."
+            "The hotkey couldn’t be registered (error \(Int(status)))."
         case let .conflictsWithMenu(action):
             "The hotkey is off because \(action.localizedTitle) uses the same keys."
         case .takenBySystem:

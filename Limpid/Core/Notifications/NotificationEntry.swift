@@ -23,11 +23,21 @@ struct NotificationEntry: Codable, Identifiable, Equatable {
         case agentNeedsInput
         /// Claude / Codex hit a `StopFailure` (rate limit, billing,
         /// crash). Recorded in history without a banner — the red
-        /// badge and the Waiting row already carry the alarm.
+        /// badge and the attention item already carry the alarm.
         case agentError
 
+        /// Whether the row came from a command rather than an agent: the
+        /// news the Dock shows as a dot, since the attention list does not
+        /// count it. Spelled out so a new kind has to choose.
+        var isFromACommand: Bool {
+            switch self {
+            case .desktop, .commandFinished, .bell: true
+            case .agentFinished, .agentNeedsInput, .agentError: false
+            }
+        }
+
         /// Agent-originated kinds share a glyph family with the
-        /// Waiting list, so the panel can render them through
+        /// agent badges, so the panel can render them through
         /// `AgentState` presentation instead of its own icon set.
         var agentState: AgentState? {
             switch self {
@@ -60,10 +70,15 @@ struct NotificationEntry: Codable, Identifiable, Equatable {
     /// still resolves to a recognizable label after the fact.
     let tabTitleSnapshot: String?
     /// Container the pane belonged to, snapshotted at fire time so the
-    /// notification panel can still show "Servers" / "myapp / main"
+    /// notification panel can still show "Scratch" / "myapp / main"
     /// after the pane / tab has long been closed. Nil for entries
     /// recorded before this field existed.
     let containerLabel: String?
+    /// The container itself, so a row can name where it came from in the
+    /// window's own words after the pane is gone (Scratch rather than the
+    /// "Quick Tabs" an earlier build recorded). Nil for entries recorded
+    /// before this field existed and for a notification no tab owned.
+    let containerID: ContainerID?
     let title: String
     let body: String
     /// Populated only for `.commandFinished` entries.
@@ -85,6 +100,19 @@ struct NotificationEntry: Codable, Identifiable, Equatable {
     /// alone cannot tell whether a later waiting state is this row's event.
     /// Nil for non-agent rows and history written before this field existed.
     let eventToken: String?
+    /// The approval or question request a needs-input row announced, so
+    /// opening the row can open that request's card while it can still be
+    /// answered there. Nil for every other row, for a wait the approval
+    /// service held no request for, and for history written before this
+    /// field existed.
+    let requestKey: ApprovalKey?
+    /// What an agent's notification reported, kept as values so the row
+    /// words it in the window's language and says what happened apart from
+    /// its detail. `nil` for a command's and an OSC 9/777 alert's, for
+    /// history written before this field existed, and for one this build
+    /// cannot read (a newer build's case or agent); the row then reads the
+    /// recorded title and body (`NotificationHistoryRowText`).
+    let event: NotificationEvent?
 
     init(
         id: UUID = UUID(),
@@ -93,13 +121,16 @@ struct NotificationEntry: Codable, Identifiable, Equatable {
         paneID: UUID?,
         tabTitleSnapshot: String?,
         containerLabel: String? = nil,
+        containerID: ContainerID? = nil,
         title: String,
         body: String,
         exitCode: Int? = nil,
         durationSeconds: Double? = nil,
         isRead: Bool = false,
         runtimeID: String? = nil,
-        eventToken: String? = nil
+        eventToken: String? = nil,
+        requestKey: ApprovalKey? = nil,
+        event: NotificationEvent? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -107,6 +138,7 @@ struct NotificationEntry: Codable, Identifiable, Equatable {
         self.paneID = paneID
         self.tabTitleSnapshot = tabTitleSnapshot
         self.containerLabel = containerLabel
+        self.containerID = containerID
         self.title = title
         self.body = body
         self.exitCode = exitCode
@@ -114,5 +146,35 @@ struct NotificationEntry: Codable, Identifiable, Equatable {
         self.isRead = isRead
         self.runtimeID = runtimeID
         self.eventToken = eventToken
+        self.requestKey = requestKey
+        self.event = event
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, timestamp, paneID, tabTitleSnapshot, containerLabel, containerID, title, body
+        case exitCode, durationSeconds, isRead, runtimeID, eventToken, requestKey, event
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decode(Kind.self, forKey: .kind)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        paneID = try container.decodeIfPresent(UUID.self, forKey: .paneID)
+        tabTitleSnapshot = try container.decodeIfPresent(String.self, forKey: .tabTitleSnapshot)
+        containerLabel = try container.decodeIfPresent(String.self, forKey: .containerLabel)
+        containerID = try container.decodeIfPresent(ContainerID.self, forKey: .containerID)
+        title = try container.decode(String.self, forKey: .title)
+        body = try container.decode(String.self, forKey: .body)
+        exitCode = try container.decodeIfPresent(Int.self, forKey: .exitCode)
+        durationSeconds = try container.decodeIfPresent(Double.self, forKey: .durationSeconds)
+        isRead = try container.decode(Bool.self, forKey: .isRead)
+        runtimeID = try container.decodeIfPresent(String.self, forKey: .runtimeID)
+        eventToken = try container.decodeIfPresent(String.self, forKey: .eventToken)
+        requestKey = try container.decodeIfPresent(ApprovalKey.self, forKey: .requestKey)
+        // An event this build cannot read costs the event, never the entry:
+        // a throw here would have `NotificationHistoryStore.load` set the
+        // whole history aside over one row a newer build wrote.
+        event = (try? container.decodeIfPresent(NotificationEvent.self, forKey: .event)) ?? nil
     }
 }

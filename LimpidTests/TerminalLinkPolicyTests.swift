@@ -37,11 +37,15 @@ struct TerminalLinkPolicyTests {
         )
     }
 
-    /// A match's scheme comes from libghostty's fixed list and is visible on
-    /// screen, so it opens like it does in Ghostty.
-    @Test func matchedCustomSchemeOpens() throws {
-        let url = try #require(URL(string: "ssh://host.example"))
-        #expect(TerminalLinkPolicy.action(for: "ssh://host.example", source: .matchedText) == .open(url))
+    /// A match's scheme is visible on screen, but text on screen is still
+    /// written by the program in the pane, and a scheme other than the web's,
+    /// mail's, and file's hands the link to whatever registered it (an ssh client
+    /// that connects, a torrent client that downloads): it asks first, like
+    /// a hyperlink's.
+    @Test(arguments: ["ssh://host.example", "magnet:?xt=urn:btih:abc", "tel:+15555550100", "git://host.example/repo"])
+    func matchedCustomSchemeAsksFirst(_ text: String) throws {
+        let url = try #require(URL(string: text))
+        #expect(TerminalLinkPolicy.action(for: text, source: .matchedText) == .confirm(url))
     }
 
     // MARK: Characters

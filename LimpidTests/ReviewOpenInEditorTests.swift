@@ -44,22 +44,18 @@ struct ReviewOpenInEditorTests {
                 }
             }
         }
-        return ReviewDiffTable(
+        // The lines from row 1, under the file's header.
+        return ReviewTableFixture.table(
+            file,
             rows: lines.enumerated().map { ReviewRow(id: $0.offset, kind: .code($0.element)) },
-            diffLines: lines, intralineHighlights: ReviewIntralineHighlights(),
-            contentKey: "open", widthKey: "open", layout: .unified,
-            files: [file], lineCommentCounts: [:], numberWidth: 26, expandedFileID: file.id, contentIdentity: file.id,
+            lines: lines,
+            key: "open",
             selection: live.map { live in Binding(get: { live.selection }, set: { live.selection = $0 }) }
                 ?? .constant(selection),
-            composerLineID: nil, composerStartLine: nil,
-            composerIsEditing: false, composerText: .constant(""),
-            onSelectFile: { _ in }, onCompose: { live?.composeCount += 1 },
-            onCancelCompose: {}, onCommit: {}, onInsert: {}, onToggleTerminal: {},
-            search: ReviewSearch(), onCloseSearch: {}, searchTargetLineID: nil, language: nil,
-            onToggleViewed: {}, fileApplication: .macOSDefault, onOpenLine: { opened.line = $0 },
-            onExpand: { _, _ in }, onResolve: { _ in }, onEdit: { _ in }, onDelete: { _ in },
-            isOverlayPresented: false, onCloseOverlay: {}, onClose: {},
-            locale: locale
+            composer: .closed,
+            locale: locale,
+            onCompose: { live?.composeCount += 1 },
+            onOpenLine: { line, _ in opened.line = line }
         )
     }
 
@@ -81,7 +77,7 @@ struct ReviewOpenInEditorTests {
     /// other item in the menu.
     @Test func clickInsideTheSelectionOpensItsTop() {
         let opened = Opened()
-        makeTable(selecting: [2, 3], opened: opened).makeCoordinator().openInEditor(clickedRow: 3)
+        makeTable(selecting: [2, 3], opened: opened).makeCoordinator().openInEditor(clickedRow: 4)
         #expect(opened.line == 11)
     }
 
@@ -89,7 +85,7 @@ struct ReviewOpenInEditorTests {
     /// clicked line is the target.
     @Test func clickOutsideTheSelectionOpensTheClickedLine() {
         let opened = Opened()
-        makeTable(selecting: [3], opened: opened).makeCoordinator().openInEditor(clickedRow: 0)
+        makeTable(selecting: [3], opened: opened).makeCoordinator().openInEditor(clickedRow: 1)
         #expect(opened.line == 10)
     }
 
@@ -97,7 +93,7 @@ struct ReviewOpenInEditorTests {
     /// the editor opens.
     @Test func titleNamesTheLineAndTheApp() {
         let coordinator = makeTable(selecting: [1], opened: Opened()).makeCoordinator()
-        #expect(coordinator.openInEditorTitle(clickedRow: 1) == "Open Line 11 in Default Application")
+        #expect(coordinator.openInEditorTitle(clickedRow: 2) == "Open Line 11 in Default Application")
     }
 
     /// The menu is AppKit, outside SwiftUI's environment, so it is written
@@ -105,23 +101,24 @@ struct ReviewOpenInEditorTests {
     @Test func titleFollowsTheTablesLocale() {
         let ja = Locale(identifier: "ja")
         let coordinator = makeTable(selecting: [1], opened: Opened(), locale: ja).makeCoordinator()
-        let title = coordinator.openInEditorTitle(clickedRow: 1)
+        let title = coordinator.openInEditorTitle(clickedRow: 2)
         #expect(title == FileApplicationResolution.macOSDefault.openLineActionTitle(line: 11).resolved(in: ja))
         #expect(title != "Open Line 11 in Default Application")
     }
 
-    /// Text dragged over rows 2 and 3.
+    /// Text dragged over lines 2 and 3, which are rows 3 and 4 under the
+    /// file's header.
     private var draggedText: ReviewTextSelection {
         var text = ReviewTextSelection()
         text.select(
-            from: ReviewTextPosition(rowIndex: 3, lineID: 3, side: nil, utf16Offset: 1),
-            to: ReviewTextPosition(rowIndex: 2, lineID: 2, side: nil, utf16Offset: 0)
+            from: ReviewTextPosition(rowIndex: 4, lineID: 3, side: nil, utf16Offset: 1),
+            to: ReviewTextPosition(rowIndex: 3, lineID: 2, side: nil, utf16Offset: 0)
         )
         return text
     }
 
     @Test func draggedTextSpansItsRowsTopFirst() {
-        #expect(draggedText.rowRange == 2...3)
+        #expect(draggedText.rowRange == 3...4)
         #expect(ReviewTextSelection().rowRange == nil)
     }
 
@@ -134,8 +131,8 @@ struct ReviewOpenInEditorTests {
         let later = Opened()
         var belowTheChange = ReviewTextSelection()
         belowTheChange.select(
-            from: ReviewTextPosition(rowIndex: 3, lineID: 3, side: nil, utf16Offset: 0),
-            to: ReviewTextPosition(rowIndex: 3, lineID: 3, side: nil, utf16Offset: 1)
+            from: ReviewTextPosition(rowIndex: 4, lineID: 3, side: nil, utf16Offset: 0),
+            to: ReviewTextPosition(rowIndex: 4, lineID: 3, side: nil, utf16Offset: 1)
         )
         makeTable(selecting: [], text: belowTheChange, opened: later).makeCoordinator().openInEditor(clickedRow: nil)
         #expect(later.line == 12)
@@ -145,7 +142,7 @@ struct ReviewOpenInEditorTests {
     /// key opens, rather than the line under the pointer.
     @Test func clickInsideDraggedTextOpensItsTop() {
         let opened = Opened()
-        makeTable(selecting: [], text: draggedText, opened: opened).makeCoordinator().openInEditor(clickedRow: 3)
+        makeTable(selecting: [], text: draggedText, opened: opened).makeCoordinator().openInEditor(clickedRow: 4)
         #expect(opened.line == 11)
     }
 
@@ -167,8 +164,8 @@ struct ReviewOpenInEditorTests {
         let live = Live()
         var text = ReviewTextSelection()
         text.select(
-            from: ReviewTextPosition(rowIndex: 0, lineID: 0, side: nil, utf16Offset: 0),
-            to: ReviewTextPosition(rowIndex: 1, lineID: 1, side: nil, utf16Offset: 1)
+            from: ReviewTextPosition(rowIndex: 1, lineID: 0, side: nil, utf16Offset: 0),
+            to: ReviewTextPosition(rowIndex: 2, lineID: 1, side: nil, utf16Offset: 1)
         )
         live.selection.selectText(text)
         let coordinator = makeTable(selecting: [], opened: Opened(), live: live).makeCoordinator()
@@ -192,11 +189,7 @@ struct ReviewOpenInEditorTests {
     /// The arrows are the line keys, so they move the same way `j` / `k` do.
     @Test func arrowsAreTheLineKeys() throws {
         func key(_ keyCode: UInt16, _ modifiers: NSEvent.ModifierFlags = []) throws -> ReviewTableKey? {
-            let event = try #require(NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: modifiers.union([.numericPad, .function]),
-                timestamp: 0, windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "",
-                isARepeat: false, keyCode: keyCode
-            ))
+            let event = try NSEvent.testKeyDown(keyCode: keyCode, modifiers: modifiers.union([.numericPad, .function]))
             return ReviewTableKey(event: event)
         }
         #expect(try key(125) == .nextLine)

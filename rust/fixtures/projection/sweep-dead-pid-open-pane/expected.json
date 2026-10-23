@@ -7,14 +7,15 @@
         "runId": "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3",
         "revision": 3,
         "badge": {
-          "state": "running",
-          "detail": "Bash: ls -la /tmp/example",
+          "state": "error",
           "runStartedAt": "2026-09-14T12:01:00Z",
           "updatedAt": "2026-09-14T12:02:00Z",
           "lastPrompt": "<prompt for session-basic>",
           "firstPrompt": "<prompt for session-basic>",
           "conversationId": "00000000-0000-4000-8000-000000000001",
-          "sessionStartedAt": "2026-09-14T12:00:00Z"
+          "sessionStartedAt": "2026-09-14T12:00:00Z",
+          "stopReason": "processExited",
+          "hasPrompt": true
         },
         "panes": [
           "33333333-3333-4333-8333-333333333333"
@@ -22,20 +23,27 @@
         "attachment": "attached",
         "eventToken": "3",
         "episodeToken": "2",
-        "pid": "9999"
+        "pid": "9999",
+        "sessionId": "00000000-0000-4000-8000-000000000001",
+        "conversation": {
+          "provider": "claude",
+          "conversationId": "00000000-0000-4000-8000-000000000001",
+          "isFallback": false
+        }
       }
     ],
     "badges": {
       "33333333-3333-4333-8333-333333333333": {
         "claude": {
-          "state": "running",
-          "detail": "Bash: ls -la /tmp/example",
+          "state": "error",
           "runStartedAt": "2026-09-14T12:01:00Z",
           "updatedAt": "2026-09-14T12:02:00Z",
           "lastPrompt": "<prompt for session-basic>",
           "firstPrompt": "<prompt for session-basic>",
           "conversationId": "00000000-0000-4000-8000-000000000001",
-          "sessionStartedAt": "2026-09-14T12:00:00Z"
+          "sessionStartedAt": "2026-09-14T12:00:00Z",
+          "stopReason": "processExited",
+          "hasPrompt": true
         }
       }
     },
@@ -51,14 +59,10 @@
       "9f9f9f9f-0000-4000-8000-9f9f9f9f9f9f": "<prompt for session-basic>"
     },
     "marksToKeep": {
-      "viewed": {},
-      "dismissed": {}
+      "viewed": {}
     },
-    "resumeCandidates": {
-      "33333333-3333-4333-8333-333333333333": [
-        "claude"
-      ]
-    }
+    "resumeCandidates": {},
+    "conversations": []
   },
   "commands": [
     {

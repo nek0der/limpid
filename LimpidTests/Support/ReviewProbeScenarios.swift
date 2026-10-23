@@ -82,16 +82,10 @@ enum ReviewProbeScenarios {
         return nil
     }
 
+    /// Returns what `path` wrote, whether or not it exited in time: the
+    /// scenario reads it as a poll that may come up empty, and the poll's
+    /// own limit fails it. The text is empty when the command could not start.
     private static func run(_ path: String, _ arguments: [String]) -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = arguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return "" }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return String(data: data, encoding: .utf8) ?? ""
+        (try? TestProcess.run(URL(fileURLWithPath: path), arguments: arguments))?.stdoutText ?? ""
     }
 }

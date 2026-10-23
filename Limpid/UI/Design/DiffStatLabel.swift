@@ -14,13 +14,17 @@ struct DiffStatLabel: View {
     /// The gap between the two counts. The file list sets its counts a
     /// size smaller than the headers and closes the gap to match.
     var spacing: CGFloat = 4
+    @Environment(\.locale) private var locale
 
     var body: some View {
+        // The diff tones and the figures grouped as the receipt
+        // writes them ("+12,345"), so a count reads the same here as on the
+        // decision bar and in the changes panel.
         HStack(spacing: spacing) {
-            Text(verbatim: "+\(added)")
-                .foregroundStyle(LimpidColor.success)
-            Text(verbatim: "−\(removed)")
-                .foregroundStyle(LimpidColor.error)
+            Text(verbatim: ReceiptText.signed(added, sign: "+", locale: locale))
+                .foregroundStyle(SupervisionTokens.added.color)
+            Text(verbatim: ReceiptText.signed(removed, sign: "−", locale: locale))
+                .foregroundStyle(SupervisionTokens.removed.color)
         }
     }
 }

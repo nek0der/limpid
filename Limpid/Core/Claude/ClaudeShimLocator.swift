@@ -35,8 +35,10 @@ enum ClaudeShimLocator {
     /// to Claude, and live in `PaneShellEnvironment`.
     ///
     /// The state directories are exported even when `paneID` is nil; the
-    /// receiver simply writes nothing useful without a pane to key on.
-    static func environment(forPaneID _: UUID?) -> [String: String] {
+    /// receiver simply writes nothing useful without a pane to key on. When
+    /// the run may not write the person's files (demo mode) they are
+    /// exported empty; `AgentProviderRegistry.environment` says why.
+    static func environment(forPaneID _: UUID?, writesRecords: Bool) -> [String: String] {
         var env: [String: String] = [:]
         // Exposed so the `zdotdir/.zshrc` snippet can re-prepend the shim
         // after the user's `.zshrc` runs. Without that step a user line
@@ -61,7 +63,8 @@ enum ClaudeShimLocator {
                 for: AgentKind.claude.rawValue,
                 state: directories.state,
                 sessions: directories.sessions,
-                cwdEvents: directories.cwdEvents
+                cwdEvents: directories.cwdEvents,
+                writesRecords: writesRecords
             )) { _, recipe in recipe }
         } else {
             // Without a descriptor we have no name for the directories, and
@@ -69,7 +72,6 @@ enum ClaudeShimLocator {
             // scatter records nobody collects.
             log.error("claude provider directories unavailable; exporting no record directories")
         }
-        env.merge(AgentHookBackend.environment) { _, backend in backend }
         return env
     }
 }

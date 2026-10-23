@@ -8,14 +8,25 @@ import Foundation
 import Testing
 @testable import Limpid
 
-private let installedTmux: String? = {
-    for candidate in ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"]
-        where FileManager.default.isExecutableFile(atPath: candidate)
-    {
-        return candidate
-    }
-    return nil
-}()
+/// The tmux the app would run, found where the app looks for one.
+private let installedTmux = TmuxClientProbe.locateTmux(candidates: TmuxClientProbe.tmuxCandidates)
+
+/// The Unix epoch second `pid` started, read the way a run's hook reads its
+/// tmux server's (`ps -o lstart=` in UTC and the C locale, `process.rs`), as
+/// text; empty when `ps` says nothing.
+private func psStartSecond(of pid: pid_t) -> String {
+    guard let output = try? TestProcess.run(
+        URL(fileURLWithPath: "/bin/ps"),
+        arguments: ["-p", String(pid), "-o", "lstart="],
+        environment: ["LC_ALL": "C", "TZ": "UTC"]
+    ), output.ending == .exited else { return "" }
+    let text = output.stdoutText.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    formatter.dateFormat = "EEE MMM d HH:mm:ss yyyy"
+    return formatter.date(from: text).map { String(Int($0.timeIntervalSince1970)) } ?? ""
+}
 
 @Suite("TmuxClientProbe parsing")
 struct TmuxClientProbeParsingTests {
@@ -113,6 +124,14 @@ struct TmuxClientProbeParsingTests {
         #expect(bindings["/dev/ttys2"]?.sessionName == "b")
     }
 
+    @Test("reads a live process's start as the second ps reports")
+    func processStartSecond_isTheSecondPSReports() throws {
+        let pid = getpid()
+        let start = try #require(TmuxClientProbe.processStartSecond(of: pid))
+        #expect(start == psStartSecond(of: pid))
+        #expect(TmuxClientProbe.processStartSecond(of: -1) == nil)
+    }
+
     @Test("ignores blank and malformed lines rather than failing the batch")
     func parseClients_malformedLines_areSkipped() {
         let bindings = TmuxClientProbe.parseClients(
@@ -126,13 +145,6 @@ struct TmuxClientProbeParsingTests {
     @Test("returns nothing when no client is attached")
     func parseClients_emptyOutput_isEmpty() {
         #expect(TmuxClientProbe.parseClients("", socketPath: "/tmp/s").isEmpty)
-    }
-
-    @Test("keeps spaces in an absolute pane path")
-    func parsePanePath_absolutePathWithSpaces_isPreserved() {
-        #expect(TmuxClientProbe.parsePanePath("/tmp/a project\n") == "/tmp/a project")
-        #expect(TmuxClientProbe.parsePanePath("relative/path\n") == nil)
-        #expect(TmuxClientProbe.parsePanePath("\n") == nil)
     }
 }
 
@@ -223,15 +235,6 @@ struct TmuxClientProbeLocateTests {
     func locateTmux_notInstalled_isNil() {
         #expect(TmuxClientProbe.locateTmux(candidates: ["/nonexistent/tmux"]) == nil)
     }
-
-    /// A GUI app launched from Finder inherits launchd's `PATH`
-    /// (`/usr/bin:/bin:/usr/sbin:/sbin`), which has no Homebrew in it,
-    /// so resolving by name would find nothing on most Macs.
-    @Test("looks where package managers actually install tmux")
-    func locateTmux_defaults_coverHomebrew() {
-        #expect(TmuxClientProbe.tmuxCandidates.contains("/opt/homebrew/bin/tmux"))
-        #expect(TmuxClientProbe.tmuxCandidates.contains("/usr/local/bin/tmux"))
-    }
 }
 
 @Suite(
@@ -270,81 +273,53 @@ struct TmuxClientProbeSmokeTests {
         let socket = "/private/tmp/limpid-runtime-\(UUID().uuidString.prefix(8)).sock"
         defer { _ = try? run(tmux, ["-S", socket, "kill-server"]) }
         _ = try run(tmux, ["-S", socket, "-f", "/dev/null", "new-session", "-d", "-s", "runtime", "sleep 120"])
-        let raw = try run(tmux, ["-S", socket, "display-message", "-p", "#{pid}\t#{start_time}\t#{pane_id}"])
+        let raw = try run(tmux, ["-S", socket, "display-message", "-p", "#{pid}\t#{pane_id}"])
         let fields = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\t").map(String.init)
-        #expect(fields.count == 3)
-        guard fields.count == 3 else { return }
-        let endpoint = TmuxRuntimeEndpoint(socketPath: socket, serverPID: fields[0], serverStartedAt: fields[1], paneID: fields[2])
+        #expect(fields.count == 2)
+        guard fields.count == 2, let pid = pid_t(fields[0]) else { return }
+        // As a run's hook records its server: the process's start, from `ps`.
+        let recordedStart = psStartSecond(of: pid)
+        let endpoint = TmuxRuntimeEndpoint(socketPath: socket, serverPID: fields[0], serverStartedAt: recordedStart, paneID: fields[1])
         let discovered = TmuxClientProbe.normalizeSocketPath(socket)
         let snapshot = TmuxClientProbe.topology(tmuxPath: tmux, socketPaths: [URL(fileURLWithPath: discovered)])
+        #expect(snapshot.panes.first?.serverProcessStartedAt == recordedStart)
         #expect(snapshot.locations(for: endpoint).count == 1)
         #expect(TmuxClientProbe.normalizeSocketPath(discovered) == discovered)
-        #expect(
-            TmuxClientProbe.activePanePath(
-                tmuxPath: tmux,
-                socketPath: socket,
-                sessionID: "runtime"
-            ) == FileManager.default.currentDirectoryPath
-        )
     }
 
     /// The format string is the whole contract with tmux, and a typo in
     /// it yields empty output rather than an error. Only a real server
     /// can say whether we asked for the right fields.
     @Test("a real tmux answers in the shape the parser expects")
-    func listClients_realServer_parsesIntoABinding() throws {
+    func listClients_realServer_parsesIntoABinding() async throws {
         let tmux = try #require(installedTmux)
         // `sun_path` caps a unix socket at 104 bytes on macOS, so this
         // cannot live under the test's temp directory.
         let socket = "/tmp/limpid-probe-\(ProcessInfo.processInfo.processIdentifier).sock"
         defer { _ = try? run(tmux, ["-S", socket, "kill-server"]) }
 
-        _ = try run(tmux, ["-S", socket, "new-session", "-d", "-s", "probe", "sleep 120"])
-        // Two things a client needs that the test host does not provide:
-        // stdin held open, or it reads EOF and detaches at once, and a
-        // `TERM`, without which `attach` exits with "open terminal
-        // failed" and leaves the server with no clients at all.
-        let client = Process()
-        client.executableURL = URL(fileURLWithPath: "/bin/sh")
-        client.arguments = [
-            "-c", "sleep 20 | script -q /dev/null \(tmux) -S \(socket) attach -t probe"
-        ]
-        var environment = ProcessInfo.processInfo.environment
-        environment["TERM"] = "xterm-256color"
-        client.environment = environment
-        client.standardOutput = Pipe()
-        let clientErrors = Pipe()
-        client.standardError = clientErrors
-        try client.run()
+        _ = try run(tmux, ["-S", socket, "-f", "/dev/null", "new-session", "-d", "-s", "probe", "sleep 120"])
+        let client = try attachClient(tmux: tmux, socket: socket, session: "probe")
         defer { client.terminate() }
-        Thread.sleep(forTimeInterval: 3)
+        // Until the client has attached, rather than a fixed wait.
+        await pollUntil(timeout: .seconds(10), interval: .milliseconds(100)) {
+            let output = (try? run(tmux, ["-S", socket] + TmuxClientProbe.listClientsArguments)) ?? ""
+            return !TmuxClientProbe.parseClients(output, socketPath: socket).isEmpty
+        }
 
         let output = try run(tmux, ["-S", socket] + TmuxClientProbe.listClientsArguments)
         let bindings = TmuxClientProbe.parseClients(output, socketPath: socket)
         #expect(bindings.count == 1, "raw: \(output.debugDescription)")
-        if bindings.isEmpty {
-            let stderr = clientErrors.fileHandleForReading.availableData
-            Issue.record("client stderr: \(String(data: stderr, encoding: .utf8) ?? "")")
-        }
         #expect(bindings.values.first?.sessionName == "probe")
         #expect(bindings.values.first?.sessionID.hasPrefix("$") == true)
         #expect(bindings.keys.first?.hasPrefix("/dev/") == true)
-        let surfaceTTY = try #require(bindings.keys.first)
-        let binding = try #require(bindings.values.first)
-        #expect(
-            ReviewTerminalProbe.hostedWorkingDirectory(
-                surfaceTTY: surfaceTTY,
-                surfaceForeground: TmuxClientProbe.clientProcessName,
-                knownBinding: binding
-            ) == FileManager.default.currentDirectoryPath
-        )
     }
 
     /// The end-to-end read: discover the socket, ask the server, and
     /// come back with a binding — the same path `applicationWillTerminate`
     /// takes, minus libghostty supplying the tty.
     @Test("discovers a running server and reports its client")
-    func attachedClients_runningServer_findsTheBinding() throws {
+    func attachedClients_runningServer_findsTheBinding() async throws {
         let tmux = try #require(installedTmux)
         // `sun_path` caps a socket at 104 bytes, so the server directory
         // stands in for `${TMUX_TMPDIR}/tmux-<uid>` under /tmp.
@@ -359,10 +334,13 @@ struct TmuxClientProbeSmokeTests {
             try? FileManager.default.removeItem(at: dir)
         }
 
-        _ = try run(tmux, ["-S", socket, "new-session", "-d", "-s", "srv", "sleep 120"])
+        _ = try run(tmux, ["-S", socket, "-f", "/dev/null", "new-session", "-d", "-s", "srv", "sleep 120"])
         let client = try attachClient(tmux: tmux, socket: socket, session: "srv")
         defer { client.terminate() }
-        Thread.sleep(forTimeInterval: 3)
+        // Until the client has attached, rather than a fixed wait.
+        await pollUntil(timeout: .seconds(10), interval: .milliseconds(100)) {
+            !TmuxClientProbe.attachedClients(tmuxPath: tmux, serverDirectory: dir).isEmpty
+        }
 
         let clients = TmuxClientProbe.attachedClients(tmuxPath: tmux, serverDirectory: dir)
         #expect(clients.count == 1)
@@ -404,15 +382,8 @@ struct TmuxClientProbeSmokeTests {
     }
 
     private func run(_ path: String, _ arguments: [String]) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = arguments
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        try process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return String(data: data, encoding: .utf8) ?? ""
+        let output = try TestProcess.run(URL(fileURLWithPath: path), arguments: arguments)
+        #expect(output.ending == .exited, "tmux did not exit within ten seconds")
+        return output.stdoutText
     }
 }

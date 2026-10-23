@@ -15,6 +15,11 @@ use std::process::{Command, Stdio};
 /// The routing file version this build reads.
 const ROUTING_SCHEMA_VERSION: u64 = 1;
 
+/// The routing file's name in the application support folder. The application
+/// writes it (`WorktreeRouting.fileName`); the two sides check the name against
+/// `rust/fixtures/contract/shared-values.json`.
+pub const WORKTREE_ROUTING_FILE: &str = "worktree-routing.json";
+
 /// What the intercept decided.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InterceptResult {
@@ -104,7 +109,7 @@ pub fn run(intent: &WorktreeIntent, provider_id: &str, state_dir: &Path) -> Inte
 /// recoverable, where guessing at a shape could put it anywhere.
 fn project_for(support: &Path, cwd: &Path, provider_id: &str) -> Option<ProjectRules> {
     let routing: Value =
-        serde_json::from_slice(&std::fs::read(support.join("worktree-routing.json")).ok()?).ok()?;
+        serde_json::from_slice(&std::fs::read(support.join(WORKTREE_ROUTING_FILE)).ok()?).ok()?;
     if routing.get("schemaVersion").and_then(Value::as_u64) != Some(ROUTING_SCHEMA_VERSION) {
         return None;
     }
@@ -143,6 +148,52 @@ fn project_for(support: &Path, cwd: &Path, provider_id: &str) -> Option<ProjectR
         });
     }
     None
+}
+
+/// The check commands of the project that owns `cwd`: its own list
+/// when it set one, `None` when it did not or no project owns `cwd`, and the
+/// caller uses the defaults. A worktree of the project counts as the project
+/// (`worktrees` in the routing entry). Read from the same file as the
+/// worktree routing, with the same rule for a version this build does not
+/// know: it is not guessed at, and the defaults apply.
+pub(crate) fn check_patterns(support: &Path, cwd: &Path) -> Option<Vec<String>> {
+    let routing: Value =
+        serde_json::from_slice(&std::fs::read(support.join(WORKTREE_ROUTING_FILE)).ok()?).ok()?;
+    if routing.get("schemaVersion").and_then(Value::as_u64) != Some(ROUTING_SCHEMA_VERSION) {
+        return None;
+    }
+    let cwd = cwd.to_string_lossy();
+    let owns = |root: &&str| *cwd == **root || cwd.starts_with(&format!("{root}/"));
+    // The deepest directory that owns `cwd` decides, so a project nested in
+    // another keeps its own checks.
+    let (_, project) = routing
+        .get("projects")?
+        .as_array()?
+        .iter()
+        .filter_map(|project| {
+            let root = project.get("root").and_then(Value::as_str);
+            let worktrees = project
+                .get("worktrees")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str);
+            let depth = root
+                .into_iter()
+                .chain(worktrees)
+                .filter(owns)
+                .map(str::len)
+                .max()?;
+            Some((depth, project))
+        })
+        .max_by_key(|(depth, _)| *depth)?;
+    project.get("checks")?.as_array().map(|items| {
+        items
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect()
+    })
 }
 
 fn placement(value: &Value) -> Option<Placement> {
@@ -194,10 +245,24 @@ fn run_bootstrap(steps: &[BootstrapStep], worktree: &Path) {
             );
             continue;
         }
-        let directory = step
-            .cwd
-            .as_ref()
-            .map_or_else(|| worktree.to_path_buf(), |cwd| worktree.join(cwd));
+        let directory = match step_directory(step.cwd.as_deref(), worktree) {
+            StepDirectory::Inside(directory) => directory,
+            StepDirectory::Outside(resolved) => {
+                eprintln!(
+                    "limpid-agent-hook: skipping step, cwd '{}' resolves to {} outside the worktree",
+                    step.cwd.as_deref().unwrap_or_default(),
+                    resolved.display()
+                );
+                continue;
+            }
+            StepDirectory::Unresolved(path, error) => {
+                eprintln!(
+                    "limpid-agent-hook: bootstrap step could not start in {}: {error}",
+                    path.display()
+                );
+                continue;
+            }
+        };
         // Both streams go directly to stderr as the shell's `>&2` did.
         // Avoiding a captured stdout preserves output as it is produced and
         // avoids retaining an unbounded bootstrap log in memory.
@@ -208,6 +273,51 @@ fn run_bootstrap(steps: &[BootstrapStep], worktree: &Path) {
                 directory.display()
             ),
         }
+    }
+}
+
+/// Where a step's directory really is, symlinks resolved.
+#[derive(Debug)]
+enum StepDirectory {
+    /// The directory's real path, inside the worktree's.
+    Inside(PathBuf),
+    /// The directory's real path, which is not inside the worktree's.
+    Outside(PathBuf),
+    /// The worktree or the directory has no real path: it does not exist,
+    /// or a link in it leads nowhere.
+    Unresolved(PathBuf, std::io::Error),
+}
+
+/// The real path of the step's directory, checked to lie inside the real
+/// path of the worktree, just before the step runs. `escapes_worktree`
+/// cannot see a link: the branch just checked out decides what the worktree
+/// holds, and a `frontend` there that is a symlink to another project, or a
+/// `packages` link that `cwd: "packages/web"` passes through, would run the
+/// person's own command in that other project. `canonicalize` is
+/// `realpath(3)` and resolves a link in any component. The app's own setup
+/// (`WorktreeSetup.stepDirectory`) makes the same check.
+///
+/// The step is started in the resolved path, so `chdir(2)` follows no link
+/// this check did not see. What is left is a component of that path being
+/// swapped for a link between this check and the start. We leave that open,
+/// as the app does: whatever could make that swap in the window is already
+/// running in the person's account in the worktree (an earlier step, or code
+/// it started), with no boundary left for the check to keep. It guards the
+/// directory a step starts in, not what the step does there.
+fn step_directory(cwd: Option<&str>, worktree: &Path) -> StepDirectory {
+    let root = match worktree.canonicalize() {
+        Ok(root) => root,
+        Err(error) => return StepDirectory::Unresolved(worktree.to_path_buf(), error),
+    };
+    let Some(cwd) = cwd else {
+        return StepDirectory::Inside(root);
+    };
+    let joined = worktree.join(cwd);
+    match joined.canonicalize() {
+        // Component-wise, so `/a/bc` is not inside `/a/b`.
+        Ok(directory) if directory.starts_with(&root) => StepDirectory::Inside(directory),
+        Ok(directory) => StepDirectory::Outside(directory),
+        Err(error) => StepDirectory::Unresolved(joined, error),
     }
 }
 
@@ -248,12 +358,145 @@ mod tests {
         }
     }
 
+    /// A worktree with an `inside` subdirectory, and a directory beside it
+    /// that is not in it.
+    #[cfg(unix)]
+    fn worktree_and_outside() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let scratch = tempfile::tempdir().expect("scratch");
+        let worktree = scratch.path().join("worktree");
+        let outside = scratch.path().join("outside");
+        std::fs::create_dir_all(worktree.join("inside")).expect("inside");
+        std::fs::create_dir_all(outside.join("web")).expect("outside");
+        (scratch, worktree, outside)
+    }
+
+    #[cfg(unix)]
+    fn touch_in(cwd: &str) -> BootstrapStep {
+        BootstrapStep {
+            command: "touch ran".into(),
+            cwd: Some(cwd.into()),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_step_cwd_that_is_a_link_out_of_the_worktree_is_not_run() {
+        let (_scratch, worktree, outside) = worktree_and_outside();
+        std::os::unix::fs::symlink(&outside, worktree.join("frontend")).expect("link");
+
+        assert!(matches!(
+            step_directory(Some("frontend"), &worktree),
+            StepDirectory::Outside(_)
+        ));
+        run_bootstrap(&[touch_in("frontend"), touch_in("inside")], &worktree);
+
+        assert!(!outside.join("ran").exists(), "the step ran outside");
+        assert!(
+            worktree.join("inside/ran").exists(),
+            "a skipped step does not stop later steps"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_step_cwd_through_a_linked_parent_out_of_the_worktree_is_not_run() {
+        let (_scratch, worktree, outside) = worktree_and_outside();
+        std::os::unix::fs::symlink(&outside, worktree.join("packages")).expect("link");
+
+        assert!(matches!(
+            step_directory(Some("packages/web"), &worktree),
+            StepDirectory::Outside(_)
+        ));
+        run_bootstrap(&[touch_in("packages/web")], &worktree);
+
+        assert!(!outside.join("web/ran").exists(), "the step ran outside");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_step_cwd_that_is_a_link_inside_the_worktree_runs() {
+        let (_scratch, worktree, _outside) = worktree_and_outside();
+        std::os::unix::fs::symlink("inside", worktree.join("alias")).expect("link");
+
+        run_bootstrap(&[touch_in("alias")], &worktree);
+
+        assert!(worktree.join("inside/ran").exists(), "the step did not run");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_step_cwd_that_is_missing_is_skipped_and_later_steps_run() {
+        let (_scratch, worktree, _outside) = worktree_and_outside();
+        std::os::unix::fs::symlink("nowhere", worktree.join("dangling")).expect("link");
+
+        for cwd in ["missing", "dangling"] {
+            assert!(matches!(
+                step_directory(Some(cwd), &worktree),
+                StepDirectory::Unresolved(..)
+            ));
+        }
+        run_bootstrap(
+            &[
+                touch_in("missing"),
+                touch_in("dangling"),
+                touch_in("inside"),
+            ],
+            &worktree,
+        );
+
+        assert!(
+            worktree.join("inside/ran").exists(),
+            "later steps did not run"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_worktree_reached_through_a_link_still_holds_its_subdirectory() {
+        let (scratch, worktree, outside) = worktree_and_outside();
+        let link = scratch.path().join("link");
+        std::os::unix::fs::symlink(&worktree, &link).expect("link");
+        std::os::unix::fs::symlink(&outside, worktree.join("frontend")).expect("link");
+
+        assert!(matches!(
+            step_directory(Some("inside"), &link),
+            StepDirectory::Inside(_)
+        ));
+        assert!(matches!(
+            step_directory(Some("frontend"), &link),
+            StepDirectory::Outside(_)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_step_cwd_that_is_a_subdirectory_runs() {
+        let (_scratch, worktree, _outside) = worktree_and_outside();
+
+        run_bootstrap(&[touch_in("inside")], &worktree);
+
+        assert!(worktree.join("inside/ran").exists(), "the step did not run");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sibling_whose_name_starts_with_the_worktree_is_outside() {
+        let (scratch, worktree, _outside) = worktree_and_outside();
+        let sibling = scratch.path().join("worktree-other");
+        std::fs::create_dir_all(&sibling).expect("sibling");
+        std::os::unix::fs::symlink(&sibling, worktree.join("next")).expect("link");
+
+        assert!(matches!(
+            step_directory(Some("next"), &worktree),
+            StepDirectory::Outside(_)
+        ));
+    }
+
     #[cfg(unix)]
     #[test]
     fn bootstrap_continues_after_a_failed_step() {
-        let worktree =
-            std::env::temp_dir().join(format!("limpid-bootstrap-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&worktree).expect("worktree");
+        let worktree_scratch = tempfile::tempdir().expect("scratch");
+        let worktree = worktree_scratch.path().to_path_buf();
         let marker = worktree.join("continued");
         let steps = [
             BootstrapStep {
@@ -269,6 +512,5 @@ mod tests {
         run_bootstrap(&steps, &worktree);
 
         assert!(marker.exists(), "a failed step does not stop later steps");
-        let _ = std::fs::remove_dir_all(&worktree);
     }
 }

@@ -21,7 +21,7 @@ extension AppState {
             guard current != self.lastAppliedSettings else { return }
             // Apply UI-only updates (transparency resolver, color
             // scheme) immediately — they're cheap and the Liquid Glass
-            // slab should track the user's intent without the debounce
+            // surfaces should track the user's intent without the debounce
             // window. Defer the libghostty reload through the debounce
             // so a slider drag collapses into one apply.
             self.reduceTransparencyResolver.apply(
@@ -58,17 +58,37 @@ extension AppState {
                 resourcesDir: resourcesDir
             ) + "\n# includeUserConfig=\(includeUserConfig)"
             guard key != self.lastAppliedConfigKey else { return }
-            self.lastAppliedConfigKey = key
+            // Recorded only once applied, so a reload that kept the running
+            // config is tried again by the next change.
             if let diagnostics = GhosttyConfigBridge.reloadConfig(
                 app: ghosttyApp, settings: latest,
                 resourcesDir: resourcesDir,
                 includeUserConfig: includeUserConfig,
                 surfaces: self.allSurfaceViews
             ) {
+                self.lastAppliedConfigKey = key
                 self.settingsStore.ghosttyConfigDiagnostics = diagnostics
             }
             self.syncSecureInputPreference(from: ghosttyApp)
         }
+    }
+
+    /// Reads the person's own Ghostty config again now, for Integrations'
+    /// "Reload" after the file was edited: the settings did not change, so
+    /// the debounced sync above would skip it.
+    func reloadGhosttyUserConfig() {
+        guard let ghosttyApp else { return }
+        let latest = settingsStore.settings
+        if let diagnostics = GhosttyConfigBridge.reloadConfig(
+            app: ghosttyApp,
+            settings: latest,
+            resourcesDir: GhosttyApp.resolveResourcesDir(),
+            includeUserConfig: latest.advanced.ghosttyConfig.isOn,
+            surfaces: allSurfaceViews
+        ) {
+            settingsStore.ghosttyConfigDiagnostics = diagnostics
+        }
+        syncSecureInputPreference(from: ghosttyApp)
     }
 
     func makeGhosttyEventCoordinator() -> GhosttyEventCoordinator {
@@ -85,17 +105,39 @@ extension AppState {
             claimsSurfaceExit: { [weak quickTerminal] view in
                 quickTerminal?.handleSurfaceExit(view) == true
             },
+            commandWindow: { [windowRegistry] in
+                windowRegistry.backgroundCommandTarget.id
+            },
             linkOpener: TerminalLinkOpener(
                 notify: { [toastCenter] message in
-                    toastCenter.show(ToastItem(message: message, undo: nil))
+                    toastCenter.showInFrontWindow(ToastItem(message: message, undo: nil))
                 },
                 fileApplication: { [settingsStore] in
                     settingsStore.settings.advanced.fileApplication
                 },
                 locale: { [settingsStore] in
                     settingsStore.appLocale
+                },
+                presentAlert: { alert, window, completion in
+                    WindowAlert.begin(alert, on: window, completion: completion)
                 }
-            )
+            ),
+            // What a pane runs in front changes as a command starts, which
+            // its title marks, and as it ends.
+            onTitleChanged: { [weak self] paneID in
+                self?.paneAgentsInFront.titleChanged(inPane: paneID)
+            },
+            onCommandFinished: { [weak self] paneID, exitCode, durationNs in
+                self?.paneAgentsInFront.commandFinished(inPane: paneID)
+                // A resume whose command came back to the shell failed: the
+                // bar says so at once, not at the deadline. One typed at
+                // launch becomes a stop the list did not have.
+                guard let self,
+                      stopLedger.resumeCommandFinished(inPane: paneID, exitCode: exitCode, durationNs: durationNs) != nil
+                else { return }
+                refreshAttentionQueue()
+                refreshStopResumeOffers()
+            }
         )
     }
 

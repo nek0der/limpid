@@ -1,17 +1,143 @@
 #!/bin/sh
-# Limpid shared agent runtime helpers — stable invocation identity and tmux
-# endpoint discovery used by every agent shim and hook receiver.
+# Limpid shared agent runtime helpers — invocation identity, the first
+# instruction, and locating the agent, for every agent shim; and what a hook
+# wrapper says when the Hook Helper is missing.
 
-limpid_is_uuid() {
-  liu_value="${1:-}"
-  case "$liu_value" in
-    ????????-????-????-????-????????????) ;;
-    *) return 1 ;;
-  esac
-  case "$liu_value" in
-    *[!0-9A-Fa-f-]*) return 1 ;;
-  esac
+# The new session's first instruction. Limpid no longer writes these
+# files; an earlier build wrote it to a 0600 file and named the file in
+# LIMPID_INITIAL_PROMPT_FILE, and we still consume a file a restored tab
+# was staged with. The text is never in an environment a later process
+# inherits, nor in a shell's program text: the reader below passes it to
+# the agent as its last argument. The launch Limpid staged takes it: it
+# renames the file to a name of its own, so of two launches one wins,
+# and forgets the variable. A later launch in the same pane, whose shell still names the
+# file, finds none and gets no instruction. A launch that starts no new
+# session does not take it (`limpid_prompt_allowed_for`): `claude
+# --version` typed first must not use the instruction up, and `codex
+# resume` would read it as a session id. Flags an alias adds
+# (`--model`, a permission mode) do not stop it. The shim sets
+# `limpid_prompt_allowed` from its own arguments before adding any. Sets
+# limpid_initial_prompt_file to the taken file and succeeds when there
+# was one. The taken file is touched, so its age counts from the take
+# (`InitialPromptFile.removeOrphans`).
+limpid_take_initial_prompt() {
+  limpid_initial_prompt_file=""
+  ltip_file="${LIMPID_INITIAL_PROMPT_FILE:-}"
+  unset LIMPID_INITIAL_PROMPT_FILE
+  [ -n "$ltip_file" ] || return 1
+  [ "${limpid_prompt_allowed:-0}" = 1 ] || return 1
+  ltip_taken="$ltip_file.taken.$$"
+  mv -f -- "$ltip_file" "$ltip_taken" 2>/dev/null || return 1
+  touch -c -- "$ltip_taken" 2>/dev/null
+  limpid_initial_prompt_file="$ltip_taken"
+}
+
+# Whether the user's arguments (after $1) start a new session the first
+# instruction belongs to. A launch staged by Limpid has none; an alias may
+# add flags (`--model opus`, `-c key=value`), which still start one. Which
+# options take a value is the CLI's to know, so this is no parse but a
+# list and a shape, and what neither knows keeps the instruction:
+# - no argument, nor its name before `=`, nor the first two characters of
+#   a bundled short option (`-rabc`), is one of the words in $1, the
+#   shim's one-shot flags, resume flags, and subcommands;
+# - a word that is no option comes only as the value of the option before
+#   it: one first, or after another word or a `--name=value`, is a
+#   subcommand or the user's own prompt;
+# - there is no `--`.
+# What gets through is a word after a flag that takes no value: a
+# subcommand neither listed nor first (`--verbose newcmd`), which would
+# take the instruction as its argument, or the user's own prompt
+# (`--verbose "fix it"`), which would come with a second one.
+limpid_prompt_allowed_for() {
+  lpa_blockers=$1
+  shift
+  lpa_previous=none
+  for lpa_arg in "$@"; do
+    case $lpa_arg in
+      --) return 1 ;;
+      --?*=* | -?=*) lpa_kind=assigned ;;
+      -?*) lpa_kind=flag ;;
+      *) lpa_kind=word ;;
+    esac
+    if [ "$lpa_kind" = word ]; then
+      [ "$lpa_previous" = flag ] || return 1
+    fi
+    lpa_name=${lpa_arg%%=*}
+    limpid_prompt_word_in "$lpa_name" $lpa_blockers && return 1
+    case $lpa_arg in
+      --*) ;;
+      -??*) limpid_prompt_word_in "${lpa_arg%"${lpa_arg#??}"}" $lpa_blockers && return 1 ;;
+    esac
+    lpa_previous=$lpa_kind
+  done
   return 0
+}
+
+# Whether $1 is one of the words after it.
+limpid_prompt_word_in() {
+  lpw_word=$1
+  shift
+  for lpw_candidate in "$@"; do
+    [ "$lpw_word" = "$lpw_candidate" ] && return 0
+  done
+  return 1
+}
+
+# Runs the agent with the taken instruction: reads the file, deletes it,
+# and execs the agent with the text after `--`, as one argument. A script
+# of its own, given to `sh -c` ahead of the agent's argv, so that inside
+# tmux the text never travels on tmux's command line, which tmux limits to
+# about 16 KB. The `x` keeps the instruction's own trailing newlines,
+# which `$(...)` would strip. $1 is the file; $2 is 1 when a one-word
+# instruction gets a trailing space: Claude's argument parser takes a lone
+# word after `--` as a subcommand when one has that name (`doctor`,
+# `purge`), and a space makes it no subcommand's name. Whether a word has
+# a space is read in the shell's locale: in the C locale an ideographic
+# space is no space, and a Japanese instruction of two words gets the
+# trailing space too, which does no harm. The rest is the agent's argv.
+limpid_prompt_reader='lpr_file=$1; lpr_pad=$2; shift 2
+lpr_text=$(cat -- "$lpr_file" 2>/dev/null; printf x); lpr_text=${lpr_text%x}
+rm -f -- "$lpr_file"
+[ -n "$lpr_text" ] || exec "$@"
+case $lpr_text in
+  *[[:space:]]*) ;;
+  *) [ "$lpr_pad" = 1 ] && lpr_text="$lpr_text " ;;
+esac
+exec "$@" -- "$lpr_text"'
+
+# Whether the user's arguments (after $1 and $2) start an agent the shim
+# hosts in a tmux session of Limpid's own (Settings > Advanced > tmux).
+# $1 is the shim's first arguments that begin an interactive session, $2
+# the flags that make any invocation a one-shot. Each shim names its own
+# lists; the rule is the same for every agent, so it lives here once.
+limpid_should_host_in_tmux() {
+  lsh_interactive=$1
+  lsh_one_shots=$2
+  shift 2
+  [ -n "${LIMPID_AGENT_TMUX:-}" ] && [ -x "${LIMPID_AGENT_TMUX:-}" ] || return 1
+  # Both variables come from the same place, so a missing pane id means
+  # we are not in a Limpid pane and have nothing to name the session for.
+  [ -n "${LIMPID_PANE_ID:-}" ] || return 1
+  # Already inside a session: our directory is still on PATH in there,
+  # so without this the shim would wrap itself without bound.
+  [ -z "${TMUX:-}" ] || return 1
+  # Anything written inside tmux is erased when the client leaves the
+  # alternate screen, so only what we recognize as interactive is
+  # wrapped. This is an allow list rather than a list of one-shots to
+  # exclude because the two cannot be told apart from the shape of the
+  # arguments: `codex fix` is a prompt and `codex exec` is a
+  # subcommand, and a global option can precede either
+  # (`codex -m gpt-5 exec ...`). Wrapping something that was going to
+  # print and exit costs the user that output; declining to wrap an
+  # interactive session only leaves it running the way it does today,
+  # so the guesses are made in that direction.
+  [ -t 0 ] && [ -t 1 ] || return 1
+  for lsh_arg in "$@"; do
+    limpid_prompt_word_in "$lsh_arg" $lsh_one_shots && return 1
+  done
+  # No arguments at all is the ordinary interactive launch.
+  [ "$#" -gt 0 ] || return 0
+  limpid_prompt_word_in "$1" $lsh_interactive
 }
 
 limpid_ensure_run_id() {
@@ -22,117 +148,91 @@ limpid_ensure_run_id() {
   export LIMPID_AGENT_RUN_ID
 }
 
-limpid_capture_tmux_endpoint() {
-  LIMPID_RUNTIME_TMUX_SOCKET=""
-  LIMPID_RUNTIME_TMUX_SESSION=""
-  LIMPID_RUNTIME_TMUX_PANE=""
-  LIMPID_RUNTIME_TMUX_SERVER_PID=""
-  LIMPID_RUNTIME_TMUX_SERVER_START=""
-  # TMUX ends in ,server-pid,session-index. Removing fields from the
-  # right preserves commas in a custom socket path. Session membership
-  # is mutable and belongs to the Swift topology probe, not this hook.
-  case "${TMUX:-}" in /*,*,*) ;; *) return 1 ;; esac
-  case "${TMUX_PANE:-}" in '%'[0-9]*) ;; *) return 1 ;; esac
-  case "${TMUX_PANE#?}" in *[!0-9]*) return 1 ;; esac
-  lcte_prefix=${TMUX%,*}
-  lcte_pid=${lcte_prefix##*,}
-  case "$lcte_pid" in ''|*[!0-9]*) return 1 ;; esac
-  LIMPID_RUNTIME_TMUX_SOCKET=${lcte_prefix%,*}
-  LIMPID_RUNTIME_TMUX_PANE=$TMUX_PANE
-  LIMPID_RUNTIME_TMUX_SERVER_PID=$lcte_pid
-  lcte_start=$(LC_ALL=C TZ=UTC /bin/ps -p "$lcte_pid" -o lstart= 2>/dev/null)
-  if [ -n "$lcte_start" ]; then
-    LIMPID_RUNTIME_TMUX_SERVER_START=$(LC_ALL=C TZ=UTC /bin/date -j -f '%a %b %e %T %Y' "$lcte_start" '+%s' 2>/dev/null || true)
-  fi
-  return 0
-}
-
-limpid_next_revision() {
-  lnr_file="$1"
-  lnr_previous=$(plutil -extract revision raw -o - "$lnr_file" 2>/dev/null || true)
-  case "$lnr_previous" in
-    '' | *[!0-9]*) lnr_previous=0 ;;
+# The paths a known location names, one a line. A `/*/` stands for each
+# folder there, newest version first (`sort -V`: v22.3.0 before v18.20.0,
+# which a plain sort would reverse); only the star is a pattern, so a home
+# folder holding `[`, `?` or `*` is taken as written.
+limpid_expand_location() {
+  case "$1" in
+    */\*/*)
+      lel_parent="${1%%/\*/*}"
+      lel_rest="${1#*/\*/}"
+      for lel_dir in "$lel_parent"/*/; do
+        [ -d "$lel_dir" ] || continue
+        lel_dir="${lel_dir%/}"
+        printf '%s\n' "${lel_dir##*/}"
+      done | sort -r -V | while IFS= read -r lel_name; do
+        printf '%s\n' "$lel_parent/$lel_name/$lel_rest"
+      done
+      ;;
+    *) printf '%s\n' "$1" ;;
   esac
-  printf '%s' $((lnr_previous + 1))
 }
 
-limpid_acquire_record_lock() {
-  # A persistent inode plus a kernel lock avoids stale-owner recovery.
-  # FD 9 stays open in our shell; exit (including SIGKILL) releases it.
-  # The sidecar suffix is the one `LOCK_FILE_SUFFIX` in limpid-agent-model
-  # declares and the app and the Rust runtime lock. A shell script cannot read
-  # it from there, so the hook script suites hold the app's lock and expect
-  # the receiver to skip its write: a drift here fails them instead of letting
-  # two writers into one file.
-  exec 9>"$1.flock" || return 1
-  larl_attempt=0
-  while ! /usr/bin/lockf -s -t 0 9; do
-    larl_attempt=$((larl_attempt + 1))
-    [ "$larl_attempt" -lt 20 ] || { exec 9>&-; return 1; }
-    sleep 0.01
-  done
-  return 0
+# The first executable file other than `$2` (the shim itself) at one of
+# the known locations in `$1`, one a line: the agent catalog's list for
+# this agent (`AgentCatalog.knownLocationsEnvironment`), which the new
+# workspace sheet searched before it offered the agent. A folder named
+# like the agent is passed over, as the catalog passes it over. Sets
+# limpid_known_agent and succeeds when there is one.
+limpid_find_known_agent() {
+  limpid_known_agent=""
+  [ -n "${1:-}" ] || return 1
+  while IFS= read -r lfka_location; do
+    [ -n "$lfka_location" ] || continue
+    while IFS= read -r lfka_candidate; do
+      if [ -f "$lfka_candidate" ] && [ -x "$lfka_candidate" ] && [ "$lfka_candidate" != "$2" ]; then
+        limpid_known_agent="$lfka_candidate"
+        return 0
+      fi
+    done <<LFKA_CANDIDATES
+$(limpid_expand_location "$lfka_location")
+LFKA_CANDIDATES
+  done <<LFKA_LOCATIONS
+$1
+LFKA_LOCATIONS
+  return 1
 }
 
-limpid_release_record_lock() {
-  exec 9>&-
+# For agent `$1`, which the shim found off the PATH (what the new
+# workspace sheet found, or a known location; one found on the PATH runs
+# as the person's terminal would run it, and the shim does not call this):
+# its folder goes at the end of PATH, for what the agent starts by name
+# from beside it, while everything else it runs still gets the person's
+# own node and tools first. Then `limpid_node_beside`. Succeeds, with
+# limpid_agent_node set, when there is such a node.
+limpid_add_agent_folder() {
+  PATH="${PATH:+$PATH:}$(dirname -- "$1")"
+  export PATH
+  limpid_node_beside "$1"
 }
 
-limpid_snapshot_turn_base() {
-  # Keep the real index untouched: a seeded private index takes about 20 ms in
-  # both 530-file and 5,880-file repositories, while an unseeded cold snapshot
-  # took about 650 ms in the 5,880-file repository.
-  LIMPID_TURN_BASE_TREE=""
-  LIMPID_TURN_ROOT=""
-  lstd_cwd="${1:-$(pwd)}"
-  lstd_pane_id="${2:-}"
-
-  [ "${LIMPID_TURN_SNAPSHOT:-1}" != "0" ] || return 0
-  [ -n "$lstd_pane_id" ] || return 0
-  lstd_pane_key=$(printf '%s' "$lstd_pane_id" | tr '[:upper:]' '[:lower:]')
-  command -v git >/dev/null 2>&1 || return 0
-
-  lstd_inside=$(GIT_OPTIONAL_LOCKS=0 git -C "$lstd_cwd" rev-parse --is-inside-work-tree 2>/dev/null) || return 0
-  [ "$lstd_inside" = "true" ] || return 0
-  lstd_bare=$(GIT_OPTIONAL_LOCKS=0 git -C "$lstd_cwd" rev-parse --is-bare-repository 2>/dev/null) || return 0
-  [ "$lstd_bare" = "false" ] || return 0
-  lstd_git_dir=$(GIT_OPTIONAL_LOCKS=0 git -C "$lstd_cwd" rev-parse --absolute-git-dir 2>/dev/null) || return 0
-  lstd_root=$(GIT_OPTIONAL_LOCKS=0 git -C "$lstd_cwd" rev-parse --show-toplevel 2>/dev/null) || return 0
-  [ -n "$lstd_git_dir" ] && [ -n "$lstd_root" ] || return 0
-
-  lstd_directory="$lstd_git_dir/limpid"
-  lstd_index="$lstd_directory/turn-$lstd_pane_key.index"
-  mkdir -p "$lstd_directory" 2>/dev/null || return 0
-  cp "$lstd_git_dir/index" "$lstd_index" 2>/dev/null || :
-
-  GIT_OPTIONAL_LOCKS=0 GIT_INDEX_FILE="$lstd_index" git -C "$lstd_root" add -A 2>/dev/null || return 0
-  lstd_tree=$(GIT_OPTIONAL_LOCKS=0 GIT_INDEX_FILE="$lstd_index" git -C "$lstd_root" write-tree 2>/dev/null) || return 0
-  case "$lstd_tree" in
-    ????????????????????????????????????????) ;;
-    *) return 0 ;;
+# The `node` beside `$1` when `$1` is a script that asks `env` for one:
+# what npm installs under an nvm version, whose node is the one in that
+# folder. Started on it directly, it runs on the node it was installed
+# with even when the PATH has another. Sets limpid_agent_node and
+# succeeds when there is one. Only the first bytes are read: a native
+# agent is a large binary.
+limpid_node_beside() {
+  limpid_agent_node=""
+  lnb_node="$(dirname -- "$1")/node"
+  [ -f "$lnb_node" ] && [ -x "$lnb_node" ] || return 1
+  lnb_first_line=$(head -c 128 -- "$1" 2>/dev/null | tr -d '\000' | head -n 1)
+  case "$lnb_first_line" in
+    '#!'*'env node' | '#!'*'env node '*) limpid_agent_node="$lnb_node" ;;
+    *) return 1 ;;
   esac
-  case "$lstd_tree" in
-    *[!0-9A-Fa-f]*) return 0 ;;
-  esac
-  GIT_OPTIONAL_LOCKS=0 git -C "$lstd_root" update-ref "refs/limpid/turn/$lstd_pane_key" "$lstd_tree" 2>/dev/null || return 0
-
-  LIMPID_TURN_BASE_TREE="$lstd_tree"
-  LIMPID_TURN_ROOT="$lstd_root"
 }
 
-limpid_remove_turn_snapshot() {
-  lrt_cwd="${1:-}"
-  lrt_pane_id="${2:-}"
-  [ -n "$lrt_cwd" ] && [ -n "$lrt_pane_id" ] || return 0
-  lrt_pane_key=$(printf '%s' "$lrt_pane_id" | tr '[:upper:]' '[:lower:]')
-  command -v git >/dev/null 2>&1 || return 0
-  lrt_git_dir=$(GIT_OPTIONAL_LOCKS=0 git -C "$lrt_cwd" rev-parse --absolute-git-dir 2>/dev/null) || return 0
-  GIT_OPTIONAL_LOCKS=0 git -C "$lrt_cwd" update-ref -d "refs/limpid/turn/$lrt_pane_key" 2>/dev/null || :
-  rm -f "$lrt_git_dir/limpid/turn-$lrt_pane_key.index" 2>/dev/null || :
-  rm -f "$lrt_git_dir/limpid/turn-$lrt_pane_key.read.index" 2>/dev/null || :
-  # Remove paths from builds before pane UUIDs were normalized as well.
-  if [ "$lrt_pane_key" != "$lrt_pane_id" ]; then
-    GIT_OPTIONAL_LOCKS=0 git -C "$lrt_cwd" update-ref -d "refs/limpid/turn/$lrt_pane_id" 2>/dev/null || :
-    rm -f "$lrt_git_dir/limpid/turn-$lrt_pane_id.index" 2>/dev/null || :
-  fi
+# Said by a hook wrapper that finds no Hook Helper at $1, and exits. The
+# helper is the only receiver, so without it nothing of the run is recorded
+# and the changes panel, unread turns, and Restore Code go empty: the
+# person has to hear of it. Both providers show a failing hook's stderr and
+# go on (only exit 2 blocks), and the system log keeps the line beside the
+# app's own entries.
+limpid_hook_helper_missing() {
+  lhhm_message="Limpid: the Hook Helper is missing at $1, so this agent's turns are not recorded. Reinstall Limpid."
+  printf '%s\n' "$lhhm_message" >&2
+  /usr/bin/logger -t dev.limpid.hook -p user.err "$lhhm_message" 2>/dev/null || :
+  exit 1
 }

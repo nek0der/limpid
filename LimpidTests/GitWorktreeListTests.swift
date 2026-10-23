@@ -96,9 +96,8 @@ struct GitWorktreeListParserTests {
         #expect(result[0].branch == "main")
     }
 
-    /// Smoke test against a freshly-initialized git repo. Skipped when
-    /// `git` is unavailable.
-    @Test(.tags(.smoke), .disabled(if: !RepoFixture.hasLocalRepo, "no local git"))
+    /// Smoke test against a freshly-initialized git repo.
+    @Test(.tags(.smoke))
     func fetch_freshTempRepo_listsTheInitialWorktree() async throws {
         let repo = try await TempGitRepo.make()
         defer { repo.cleanup() }

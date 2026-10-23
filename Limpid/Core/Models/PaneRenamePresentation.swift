@@ -98,6 +98,18 @@ final class PaneRenamePresentation {
         }
     }
 
+    /// Closes the field without committing, and drops an ask no header has
+    /// taken: the window is about to show another project, whose headers
+    /// are not these panes'.
+    func close() {
+        if request != nil {
+            request = nil
+        }
+        if pendingRename != nil {
+            pendingRename = nil
+        }
+    }
+
     /// The header moved or resized. No-op unless it owns the open field.
     func updateAnchor(paneID: UUID, anchor: CGRect) {
         guard var current = request, current.paneID == paneID, current.anchor != anchor else { return }

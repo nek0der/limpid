@@ -58,6 +58,16 @@ enum CodexHookInjection {
         // in a sidebar that surfaces the OSC-derived title. Suppressed here
         // rather than by rewriting a config we no longer own.
         out += ["-c", "tui.terminal_title=[]"]
+        // Codex's TUI posts its own desktop notifications (OSC 9 or BEL,
+        // "Approval requested: …", "Agent turn complete") for the same
+        // moments Limpid notifies about, so a person saw each twice, the
+        // TUI's in English. `tui.notifications` takes `false` or a list of
+        // kinds (read off the installed codex-cli 0.163.0 binary, whose
+        // `TuiNotificationSettings` names the key; an older Codex ignores
+        // a key it does not know). Off here, for this launch only, as the
+        // title is, leaving the user's config as it is. Claude's template
+        // does the same with `preferredNotifChannel`.
+        out += ["-c", "tui.notifications=false"]
         return out
     }
 

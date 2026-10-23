@@ -34,6 +34,19 @@ struct PopUpMenuButtonTests {
         #expect(PopUpMenu.make(entries, locale: Locale(identifier: "ja")).items.first?.title == "ペインを閉じる")
     }
 
+    @Test("a disabled item says why as its tooltip, in the locale SwiftUI is showing")
+    func make_disabledItem_saysWhyInItsTooltip() {
+        let entries: [PopUpMenuEntry] = [.item(PopUpMenuItem(
+            title: "Start New Conversation",
+            isEnabled: false,
+            help: StopResumeRules.newConversationHelp(.notAtShell)
+        ) {})]
+        #expect(PopUpMenu.make(entries, locale: Locale(identifier: "ja")).items.first?.toolTip
+            == "新しい会話で開始するには、ペインをシェルのプロンプトに戻してください。")
+        #expect(PopUpMenu.make([.item(PopUpMenuItem(title: "Close Pane") {})], locale: Locale(identifier: "en"))
+            .items.first?.toolTip == nil)
+    }
+
     @Test("an item shows its shortcut, and an item without one shows no key")
     func make_showsShortcut() {
         let menu = PopUpMenu.make([
@@ -87,10 +100,92 @@ struct PopUpMenuButtonTests {
         #expect(trigger.toolTip == "Pane actions")
     }
 
-    @Test("a resource resolves in the locale it is given")
-    func resolvedIn_usesLocale() {
-        let resource: LocalizedStringResource = "Pane actions"
-        #expect(resource.resolved(in: Locale(identifier: "en")) == "Pane actions")
-        #expect(resource.resolved(in: Locale(identifier: "ja")) == "ペインの操作")
+    @Test("a trigger with words of its own shows them as its tooltip, and opens nothing while off")
+    func trigger_withHelpAndValue() {
+        let trigger = PopUpMenuTriggerView()
+        trigger.title = "Claude #2"
+        trigger.help = "Claude #2 · 1 unviewed · Ended"
+        trigger.value = "1 unviewed turn · Ended"
+        var opened = 0
+        trigger.makeMenu = {
+            opened += 1
+            return NSMenu()
+        }
+        trigger.isEnabled = false
+
+        #expect(trigger.toolTip == "Claude #2 · 1 unviewed · Ended", "the AppKit tooltip under the pointer")
+        #expect(trigger.accessibilityTitle() == "Claude #2")
+        #expect(trigger.accessibilityValue() as? String == "1 unviewed turn · Ended")
+        #expect(!trigger.isAccessibilityEnabled())
+        #expect(trigger.accessibilityHelp() == nil, "the value says it; VoiceOver does not read it twice")
+        #expect(!trigger.acceptsFirstResponder, "off, the keyboard does not reach it")
+        #expect(!trigger.canBecomeKeyView)
+        #expect(!trigger.accessibilityPerformPress(), "off, VoiceOver's press is refused")
+        trigger.open()
+        #expect(opened == 0)
+    }
+
+    /// The decision bar's ⋯ stays out of the ⇥ order, as the bar's buttons
+    /// do, so ⇥ is the terminal's; VoiceOver still opens it.
+    @Test("a trigger kept out of the Tab order never takes the keyboard, and VoiceOver still opens it")
+    func trigger_keptOutOfTheTabOrder() {
+        #expect(PopUpMenuTriggerView.takesKeyboard(isFullKeyboardAccessOn: true, isEnabled: true, allowsKeyboardFocus: true))
+        #expect(!PopUpMenuTriggerView.takesKeyboard(isFullKeyboardAccessOn: true, isEnabled: true, allowsKeyboardFocus: false))
+        #expect(!PopUpMenuTriggerView.takesKeyboard(isFullKeyboardAccessOn: false, isEnabled: true, allowsKeyboardFocus: true))
+        #expect(!PopUpMenuTriggerView.takesKeyboard(isFullKeyboardAccessOn: true, isEnabled: false, allowsKeyboardFocus: true))
+
+        let trigger = PopUpMenuTriggerView()
+        trigger.allowsKeyboardFocus = false
+        #expect(!trigger.acceptsFirstResponder)
+        #expect(!trigger.canBecomeKeyView)
+        #expect(trigger.isAccessibilityElement() && trigger.isAccessibilityEnabled(), "VoiceOver still reaches it")
+    }
+
+    @Test("a verbatim item keeps its words, its checkmark, and its tooltip")
+    func make_verbatimItem() {
+        let menu = PopUpMenu.make([
+            .item(PopUpMenuItem(
+                verbatim: "Claude #1 · 1",
+                isChecked: true,
+                help: "Claude #1 · 1 unviewed",
+                accessibilityLabel: "Claude #1",
+                accessibilityValue: "1 unviewed turn"
+            ) {}),
+            .item(PopUpMenuItem(verbatim: "Claude #2 · 0") {})
+        ], locale: Locale(identifier: "ja"))
+
+        #expect(menu.items.map(\.title) == ["Claude #1 · 1", "Claude #2 · 0"], "not looked up as a key")
+        #expect(menu.items.map(\.state) == [.on, .off])
+        #expect(menu.items.map(\.toolTip) == ["Claude #1 · 1 unviewed", nil])
+        #expect(menu.items[0].accessibilityLabel() == "Claude #1")
+        #expect(menu.items[0].accessibilityValue() as? String == "1 unviewed turn")
+    }
+
+    @Test("a heading carries its badge and name in their own colors, so it does not read as an item that is off")
+    func make_headingKeepsItsColors() throws {
+        let badge = NSImage(size: NSSize(width: 16, height: 12))
+        let menu = PopUpMenu.make([
+            .heading(PopUpMenuHeading(
+                title: "Claude #4",
+                subtitle: "Unviewed 2",
+                image: { badge },
+                accessibilityLabel: "Claude #4, 2 unviewed"
+            ))
+        ], locale: Locale(identifier: "en"))
+
+        let item = try #require(menu.items.first)
+        #expect(item.isSectionHeader)
+        // A heading is drawn as a disabled item, which fades an item image:
+        // the badge rides in the title instead.
+        #expect(item.image == nil)
+        let title = try #require(item.attributedTitle)
+        #expect(title.string == "\u{FFFC} Claude #4\u{2028}Unviewed 2")
+        let attachment = title.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment
+        #expect(attachment?.image === badge)
+        let name = (title.string as NSString).range(of: "Claude #4")
+        #expect(title.attribute(.foregroundColor, at: name.location, effectiveRange: nil) as? NSColor == .labelColor)
+        let state = (title.string as NSString).range(of: "Unviewed 2")
+        #expect(title.attribute(.foregroundColor, at: state.location, effectiveRange: nil) as? NSColor == .secondaryLabelColor)
+        #expect(item.accessibilityLabel() == "Claude #4, 2 unviewed")
     }
 }

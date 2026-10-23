@@ -7,7 +7,7 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 ## Before you start
 
 - For non-trivial changes, open an issue first to discuss the approach.
-- Bug fixes and small improvements: PR directly is fine.
+- For bug fixes and small improvements, a direct PR is fine.
 
 ## Setup
 
@@ -35,6 +35,12 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
   brew install mint
   mint bootstrap
   ```
+- [SwiftLint](https://github.com/realm/SwiftLint), for `make lint`
+  ```bash
+  brew install swiftlint
+  ```
+  It is not pinned: CI installs Homebrew's current release the same way,
+  and `make lint` runs whichever `swiftlint` is on your `PATH`.
 
 ### Build
 
@@ -65,15 +71,15 @@ make xcodegen
 make dev
 ```
 
-`make help` lists every available target (`build`, `run`, `test`, `dmg`, `screenshot`, `clean`, …).
+`make help` lists the common targets (`build`, `run`, `test`, `lint`, `dmg`, `screenshot`, `clean`, …).
 
-You should see a Limpid window with a working terminal pane (zsh by default), a sidebar, and the tab list. The embedded libghostty version is logged via `os_log` under the `dev.limpid` subsystem (`log stream --predicate 'subsystem == "dev.limpid"'`).
+You should see a Limpid window with a working terminal pane (zsh by default), the Worktrees sidebar with that terminal on its Scratch row, and the pane strip. Limpid logs the embedded libghostty version through `os_log` under the `dev.limpid` subsystem (`log stream --predicate 'subsystem == "dev.limpid"'`).
 
-> First-launch tip: a locally-built Debug binary is ad-hoc signed, so macOS may quarantine it. Right-click → Open the first time.
+> First-launch tip: a locally built Debug binary is ad-hoc signed, so macOS may quarantine it. Right-click the app and choose Open the first time.
 
 ### Native approvals in a Debug build
 
-The approval service accepts connections only from executables signed with its own Team ID. A Debug build is ad-hoc signed by default, so it runs without native approvals, and Claude and Codex use their own permission prompts. To try native approvals, build with a signing identity that has a Team ID. The service's check accepts an Apple Development certificate, which a free Apple Account can create in Xcode.
+The approval service accepts connections only from executables signed with its own Team ID. A Debug build is ad-hoc signed by default, so it runs without native approvals, and Claude and Codex use their own permission prompts. To try native approvals, build with a signing identity that has a Team ID. The service accepts an Apple Development certificate, which a free Apple Account can create in Xcode.
 
 ```bash
 export LIMPID_DEVELOPMENT_TEAM=<your Team ID>
@@ -82,6 +88,10 @@ export LIMPID_DEVELOPMENT_TEAM=<your Team ID>
 make dev
 ```
 
+### Slowing the motion in a Debug build
+
+`LIMPID_SLOW_MOTION=<factor>` makes every animation in a Debug build `<factor>` times as long (`LimpidMotion.pace`). Use it to step frame by frame through a recording of a surface as it opens. `open`, and therefore `make run`, does not pass the shell's environment on, so start the built binary directly: `LIMPID_SLOW_MOTION=10 "<DerivedData>/Build/Products/Debug/Limpid Dev.app/Contents/MacOS/Limpid Dev"`. A Release build ignores the variable.
+
 ### Open in Xcode
 
 ```bash
@@ -89,15 +99,16 @@ make xcodegen
 open Limpid.xcodeproj
 ```
 
-`Limpid.xcodeproj` is gitignored — always regenerate from `project.yml`.
+`Limpid.xcodeproj` is gitignored, so always regenerate it from `project.yml`. `make build` and `make test` regenerate it on their own when `project.yml` changes, or when a file under `Limpid/`, `LimpidTests/`, or `AgentIntegrationService/` is added, removed, or renamed. Run `make xcodegen` to force a regeneration.
 
 ## Language policy
 
-- **Source code, comments, and doc strings**: English only.
+- **Source code, comments, and doc comments**: English only.
 - **User-facing documentation** (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`): English.
-- **Internal design documents** under `docs/`: Japanese is the convention. Mixed-language research notes (e.g. `key-handling-research.md`) are kept as-is; new docs follow this rule.
-- Chat, commit message bodies, and PR descriptions: either language is fine. The commit summary line stays English so `git log` reads cleanly.
-- **In-app strings** are bilingual. Every user-visible label, tooltip, alert, and accessibility annotation has to land in `Limpid/Resources/Localizable.xcstrings` with both an `en` and a `ja` entry. English-only strings are treated as incomplete at review time — there is no CI gate, only the PR checklist and the maintainer's eye.
+- **Internal design documents** under `docs/` (ADRs, protocol and migration notes): English, like the rest of the repository.
+- **Commit messages, PR titles, and PR descriptions**: English. A squash merge turns the PR into the commit on `main`, and the release notes are built from those commits, so they have to read for every contributor and user.
+- **Issues and discussion**: either language is fine.
+- **In-app strings** are bilingual. Every user-visible label, tooltip, alert, and accessibility annotation has to land in `Limpid/Resources/Localizable.xcstrings` with both an `en` and a `ja` entry. CI and `make lint` run `scripts/check-localization.sh`. It fails on a translatable key with no `ja` entry, no string units, or a state other than translated. Whether the Japanese reads well is still the reviewer's job.
 
 ## Pull requests
 
@@ -105,11 +116,11 @@ open Limpid.xcodeproj
 - Keep commits focused. Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, etc.).
 - Code comments must be in English.
 - Code style: see [`AGENTS.md`](AGENTS.md) §3 for the conventions a linter can't enforce (comments explain *why*, file banners, naming).
-- `CHANGELOG.md` is auto-generated by `release-please` from commit messages — don't add it by hand.
+- `release-please` generates `CHANGELOG.md` from commit messages, so don't edit it by hand.
 
 ### Before opening the PR
 
-Run the following from the repo root and make sure all pass:
+Run the following from the repo root and make sure each one passes:
 
 ```bash
 make ghostty      # Only if vendor/ghostty/macos/GhosttyKit.xcframework is
@@ -117,52 +128,53 @@ make ghostty      # Only if vendor/ghostty/macos/GhosttyKit.xcframework is
                   # and will fail at link time without the xcframework.
 make xcodegen     # Regenerate the Xcode project from project.yml.
 make test         # Run the Rust and Swift test suites.
-make review-core  # The review scenarios the test target cannot host — they
-                  # spawn processes, and the parallel suites reuse the
-                  # descriptor numbers another test asserts are closed. CI
-                  # runs this as its own job, so `make test` alone is not
-                  # enough to predict a green build.
-make lint         # cargo fmt + Clippy + SwiftFormat + SwiftLint.
+make review-core  # The one review scenario the test target cannot host. It
+                  # opens a pty and spawns processes, and under the parallel
+                  # suites its descriptors reuse numbers another test
+                  # asserts are closed. CI runs it as its own job, so
+                  # `make test` alone does not predict a green build.
+make lint         # cargo fmt + Clippy + SwiftFormat + SwiftLint, plus the
+                  # localization and script checks.
 ```
 
-`make help` lists every available target.
-
-If you are editing `vendor/ghostty/` content, you're probably on the wrong path — that's a submodule of our libghostty fork, pinned to one commit. Bump it by updating the submodule ref, never by editing in place. `docs/libghostty-fork.md` covers what a fork patch has to carry and how we retire one.
+If you are editing files under `vendor/ghostty/`, you are probably on the wrong path. That directory is a submodule of our libghostty fork, pinned to one commit. Patch the fork and bump the submodule ref; never edit the checkout in place. `docs/libghostty-fork.md` covers what a fork patch has to carry and how we retire one.
 
 ### Opening the PR
 
 Create the PR with `gh pr create --body-file <file>` so
 `.github/pull_request_template.md` is honored verbatim. The
-template has four substantive sections (Summary, Related issue,
-How verified, Screenshots/video) plus a checklist; fill each one,
-and write `Skip.` literally when a section genuinely doesn't
-apply (e.g. an empty Related issue). `gh pr create --fill` and
-the GitHub web UI both skip the template silently, which is the
-single most common first-PR review nit.
+template has four sections (Summary, Related issue, How verified,
+Screenshots / video) plus a checklist. Fill in each section, and
+write `Skip.` when one does not apply (e.g. a PR with no related
+issue). `gh pr create --fill` and the GitHub web UI both skip the
+template silently. That is the most common review nit on a first
+PR.
 
 ## Tests
 
-- New tests use [Swift Testing](https://developer.apple.com/documentation/testing) (`import Testing`, `@Test`, `#expect`). Existing XCTest tests are kept and migrated opportunistically — don't mix the two styles in one file.
-- Reuse fixtures from `LimpidTests/Support/` (`RepoFixture`, `TempGitRepo`, `WithTempDir`, `FakeGit`, `WindowSessionFixture`, `Tags`) instead of rolling your own.
-- Smoke tests that touch the local filesystem or shell out to `git` should gate themselves on `RepoFixture.hasLocalRepo` so they no-op cleanly outside the source tree.
-- **Never write to `~/Library/Application Support/Limpid/` from a test.** Production stores (`SessionStore`, `NotificationHistoryStore`) accept an `init(directory:)` override; pair it with `WithTempDir` so each test runs against an isolated temp directory. Real user data has been corrupted by tests that called the no-arg `init()` and then `clearAll()`.
+- Tests use [Swift Testing](https://developer.apple.com/documentation/testing) (`import Testing`, `@Test`, `#expect`). XCTest is not used; do not add it.
+- Reuse fixtures from `LimpidTests/Support/` (`RepoFixture`, `TempGitRepo`, `WithTempDir`, `FakeGit`, `WorkspaceSessionFixture`, `TurnSummaryFixture`, `Tags`) instead of rolling your own.
+- Smoke tests that touch the local filesystem or shell out to `git` should gate themselves on `RepoFixture.hasLocalRepo` (`.disabled(if: !RepoFixture.hasLocalRepo)`) so they skip cleanly outside the source tree.
+- **Never write to `~/Library/Application Support/Limpid/` from a test.** Production stores (`SessionStore`, `NotificationHistoryStore`) accept an `init(directory:)` override. Pair it with `WithTempDir` so each test runs against an isolated temporary directory. Tests that called the no-argument `init()` and then `clearAll()` have corrupted real user data before. A test run refuses such a change (`TestWriteGuard`), but a refused write still means the test is not testing what it claims. Test runs keep their data in a per-run temporary folder; a `~/Library/Application Support/Limpid Tests Stray/` left by older builds is no longer used and can be removed by hand.
 
 ## Regenerating the hero screenshot
 
-The `.github/assets/hero.png` shown at the top of `README.md` is captured from the app launched in demo mode. To refresh it after a UI change:
+The hero image at the top of `README.md`, `.github/assets/hero.png`, is captured from the app launched in demo mode. To refresh it after a UI change:
 
 ```bash
 make screenshot   # Release build → launch in demo mode → capture → quit.
                   # Output lands at .github/assets/hero.png.
 ```
 
-The script sets `LIMPID_DEMO=1` so the app loads `DemoFixture` instead of the user's real `state.json` — persistence is disabled while the env var is set.
+The script sets `LIMPID_DEMO=1`, so the app loads `DemoFixture` instead of the user's real `state.json`. Demo mode writes none of the user's files: persistence and restores are off, the agent projection runs no pass, and the updater does not start. The fixture, not Git or a real agent, supplies the agents' turns and viewed lines (`DemoFixture+Turns.swift`), the session header's Git facts (`DemoFixture+Git.swift`), and what each pane prints (`DemoFixture+Transcripts.swift`). The terminal font is pinned to the default family at 12 points. Together these make the capture show the same supervision scene on every machine.
 
-**One-time setup**: grant your terminal Screen Recording permission so the script can both query Limpid's window bounds via `CGWindowListCopyWindowInfo` and capture the pixels via `screencapture` (one permission covers both).
+**Display**: the hero is a 1440×900-point window captured at 2x (2880×1800 pixels). The demo opens it at (16, 16) on the main display. That display has to be a 2x (Retina) display with at least 1456×956 points, menu bar included. A 13.6-inch MacBook Air at its default resolution has room; a 1440×900 display does not. The script refuses a capture of any other size.
+
+**One-time setup**: grant your terminal Screen Recording permission so the script can find Limpid's window and capture it through ScreenCaptureKit (one permission covers both).
 
 > System Settings → Privacy & Security → Screen Recording → click `+` → add your terminal app (Terminal, Ghostty, etc.) → toggle on.
 
-If `Tab`, `SplitTree`, or `SessionSnapshot` shapes change, run `DemoFixtureTests` first; the fixture is anchored on stable UUIDs and a JSON round-trip.
+If the shape of `Tab`, `SplitTree`, or `SessionSnapshot` changes, run `DemoFixtureTests` first. The fixture is anchored on stable UUIDs and a JSON round-trip.
 
 ## AI tools
 

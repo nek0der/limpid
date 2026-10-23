@@ -16,32 +16,9 @@ extension StoredShortcut {
     /// dead key, etc.).
     @MainActor
     static func capture(from event: NSEvent) -> StoredShortcut? {
-        let modifiers = modifiersFromNSEvent(event.modifierFlags)
+        let modifiers = ShortcutModifiers(event.modifierFlags)
         guard let key = ghosttyKey(from: event) else { return nil }
         return StoredShortcut(key: key, modifiers: modifiers)
-    }
-
-    /// Translate AppKit's `NSEvent.modifierFlags` to our stable
-    /// `ShortcutModifiers` bitset. Anything outside the four primary
-    /// modifiers (caps lock, function key, …) is dropped — we never
-    /// bind to those.
-    private static func modifiersFromNSEvent(
-        _ flags: NSEvent.ModifierFlags
-    ) -> ShortcutModifiers {
-        var set: ShortcutModifiers = []
-        if flags.contains(.command) {
-            set.insert(.command)
-        }
-        if flags.contains(.shift) {
-            set.insert(.shift)
-        }
-        if flags.contains(.option) {
-            set.insert(.option)
-        }
-        if flags.contains(.control) {
-            set.insert(.control)
-        }
-        return set
     }
 
     /// `NSEvent.keyCode` → stored key string. Named keys come from
@@ -126,5 +103,22 @@ extension NSEvent {
     /// character.
     var namedKey: NamedKey? {
         NamedKey(keyCode: keyCode)
+    }
+}
+
+extension KeyModifiers {
+    /// Reads the four modifiers AppKit's `flags` hold, for a shortcut captured
+    /// here and for a key rule the UI reads (`NewSessionKey`). Anything
+    /// outside them (caps lock, the function key, …) is dropped: we never
+    /// bind to those.
+    init(_ flags: NSEvent.ModifierFlags) {
+        let pairs: [(flag: NSEvent.ModifierFlags, modifier: KeyModifiers)] = [
+            (.command, .command), (.shift, .shift), (.option, .option), (.control, .control)
+        ]
+        self = pairs.reduce(into: []) { modifiers, pair in
+            if flags.contains(pair.flag) {
+                modifiers.insert(pair.modifier)
+            }
+        }
     }
 }

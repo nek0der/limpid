@@ -111,6 +111,11 @@ enum ReviewRowPainter {
         accent = NSColor(color)
     }
 
+    /// Made once: each is a dynamic color that resolves per appearance as
+    /// it draws, and a placeholder row draws on every scroll.
+    private static let placeholderFill = SupervisionTokens.diffPlaceholder.nsColor
+    private static let hatchStroke = SupervisionTokens.diffHatch.nsColor
+
     /// How many cells a tab is worth while estimating how wide a line is.
     /// AppKit's default tab stops sit every 28pt, which is close to four cells
     /// of the code font. Nothing is drawn from this — it only ranks lines — so
@@ -240,15 +245,15 @@ enum ReviewRowPainter {
     /// placeholder continues into the next instead of restarting every row.
     static func drawPlaceholder(in rect: NSRect, phase: CGFloat) {
         guard rect.width > 0, rect.height > 0 else { return }
-        NSColor.separatorColor.withAlphaComponent(0.12).setFill()
+        placeholderFill.setFill()
         rect.fill()
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         NSBezierPath(rect: rect).setClip()
         // Quieter than the code opposite, which is what a placeholder marks the
         // absence of — but not so quiet that the column reads as a pane that
-        // failed to draw. At a third of this it was only legible zoomed in.
-        NSColor.separatorColor.withAlphaComponent(0.6).setStroke()
+        // failed to draw (`SupervisionTokens.diffHatch`).
+        hatchStroke.setStroke()
         let spacing: CGFloat = 7
         let path = NSBezierPath()
         path.lineWidth = 1

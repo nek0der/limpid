@@ -16,6 +16,11 @@ struct AgentIntegrationApprovalSubmission {
     /// request that asks nothing.
     let questions: Any?
     let timeoutMilliseconds: Int
+    /// The agent run whose hook asked (`LIMPID_AGENT_RUN_ID`), so the app
+    /// can tell this run's request from one of another run in the same
+    /// conversation. Correlation only, like `sessionID`; `nil` outside a
+    /// Limpid run.
+    var agentRunID: UUID?
 }
 
 enum AgentIntegrationApprovalWire {
@@ -41,6 +46,7 @@ enum AgentIntegrationApprovalWire {
         body["operation_id"] = submission.operationID
         body["summary"] = submission.summary
         body["questions"] = submission.questions
+        body["agent_run_id"] = submission.agentRunID?.uuidString
         return try request(type: "approval.submit", epoch: epoch, body: body)
     }
 
