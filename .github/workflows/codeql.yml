@@ -40,12 +40,22 @@ jobs:
       - name: Select pinned Rust toolchain
         run: rustup show active-toolchain
 
+      # The cache key names the vendor/ghostty commit the superproject pins.
+      # Hashing build files and .gitmodules missed a bump that changed only
+      # Ghostty's sources, and a hit then linked the previous library.
+      - name: Resolve libghostty source commit
+        id: ghostty-src
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse HEAD:vendor/ghostty)
+          printf 'sha=%s\n' "$SHA" >> "$GITHUB_OUTPUT"
+
       - name: Restore GhosttyKit.xcframework cache
         id: cache-ghostty
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: vendor/ghostty/macos/GhosttyKit.xcframework
-          key: ghostty-${{ runner.os }}-${{ hashFiles('vendor/ghostty/build.zig.zon', 'vendor/ghostty/build.zig', 'scripts/build-ghostty.sh') }}-${{ hashFiles('.gitmodules') }}
+          key: ghostty-v2-${{ runner.os }}-${{ steps.ghostty-src.outputs.sha }}-${{ hashFiles('scripts/build-ghostty.sh') }}
 
       - name: Build libghostty xcframework
         if: steps.cache-ghostty.outputs.cache-hit != 'true'

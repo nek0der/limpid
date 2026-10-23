@@ -6,9 +6,12 @@ name: Release
 #   3. Notarize the .app and staple the ticket
 #   4. Package into a signed + notarized + stapled dmg
 #   5. Sign the dmg for Sparkle with the EdDSA private key
-#   6. Attach the dmg to the draft GitHub Release and publish it
-#   7. Append a new <item> to gh-pages/appcast.xml so Sparkle clients
-#      pick the update up within SUScheduledCheckInterval (24 h).
+#   6. Generate and verify the signed appcast.xml for the dmg
+#   7. Attach the dmg to the draft GitHub Release and publish it
+#   8. Replace gh-pages/appcast.xml so Sparkle clients pick the update up
+#      within SUScheduledCheckInterval (24 h).
+# A tag older than the Latest release or the appcast is published without
+# becoming Latest, and the appcast stays on the newer version.
 #
 # Required secrets (Settings → Secrets and variables → Actions):
 #   BUILD_CERTIFICATE_BASE64   Developer ID Application .p12, base64-encoded
@@ -32,8 +35,20 @@ on:
 permissions:
   contents: write
 
+# One group for every tag, not one per ref. Two tags released at once would
+# otherwise race over which one is Latest and which one the appcast names.
+# The group holds one running and one pending run, and a newer pending run
+# cancels the older one, so a third tag pushed while two are queued drops the
+# middle one. release-please cuts one tag per merge; a dropped run is shown as
+# cancelled and is re-run by dispatching its tag.
+#
+# The group serializes only runs of this definition. The workflow on main
+# before this change used one group per ref (`release-<ref>`), so a run of
+# that older definition is not serialized with these. That is why the
+# publish and appcast steps read Latest and the feed again right before
+# they change them, rather than trusting the plan step alone.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -44,6 +59,10 @@ jobs:
 
     env:
       SPARKLE_VERSION: 2.9.2
+      # SHA-256 of Sparkle-${SPARKLE_VERSION}.tar.xz from Sparkle's GitHub
+      # release; it matches the digest GitHub lists for that asset. Bump it
+      # together with SPARKLE_VERSION.
+      SPARKLE_SHA256: 1cb340cbbef04c6c0d162078610c25e2221031d794a3449d89f2f56f4df77c95
 
     steps:
       # Route user-controlled inputs through env vars so the value is
@@ -62,6 +81,23 @@ jobs:
           else
             TAG="${GITHUB_REF#refs/tags/}"
           fi
+          # Later steps pass the tag through env, but we still accept only a
+          # plain vX.Y.Z so it is safe as a file name, a URL path, and a
+          # version that `sort -V` compares the way Sparkle does. We match the
+          # whole input as one string: `grep` matches line by line, so a
+          # dispatch input with a newline passed and then wrote a second
+          # `version=` line into $GITHUB_OUTPUT, which the runner keeps.
+          TAG_PATTERN='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          case "$TAG" in
+            *$'\n'* | *$'\r'*)
+              echo "::error::Release tags must be a single line."
+              exit 1
+              ;;
+          esac
+          if ! [[ $TAG =~ $TAG_PATTERN ]]; then
+            echo "::error::Release tags must look like v1.2.3."
+            exit 1
+          fi
           VERSION="${TAG#v}"
           printf 'tag=%s\n' "$TAG" >> "$GITHUB_OUTPUT"
           printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
@@ -78,12 +114,18 @@ jobs:
           fetch-depth: 0
 
       # Only main is gated by the required PR checks, including the Release
-      # archive check, so a tag anywhere else has not passed them.
+      # archive check, so a tag anywhere else has not passed them. We also
+      # require that the checkout is the tag's commit, since every later step
+      # builds and labels whatever HEAD is.
       - name: Require the tag to be on main
         env:
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
           set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse "refs/tags/$TAG^{commit}")" ]; then
+            echo "::error::The checkout is not the commit $TAG points at."
+            exit 1
+          fi
           if ! git merge-base --is-ancestor "refs/tags/$TAG" origin/main; then
             echo "::error::$TAG is not on main; only commits that passed the required checks are released."
             exit 1
@@ -103,12 +145,22 @@ jobs:
       - name: Select pinned Rust toolchain
         run: rustup show active-toolchain
 
+      # The cache key names the vendor/ghostty commit the superproject pins.
+      # Hashing build files and .gitmodules missed a bump that changed only
+      # Ghostty's sources, and a hit then linked the previous library.
+      - name: Resolve libghostty source commit
+        id: ghostty-src
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse HEAD:vendor/ghostty)
+          printf 'sha=%s\n' "$SHA" >> "$GITHUB_OUTPUT"
+
       - name: Restore GhosttyKit.xcframework cache
         id: cache-ghostty
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: vendor/ghostty/macos/GhosttyKit.xcframework
-          key: ghostty-${{ runner.os }}-${{ hashFiles('vendor/ghostty/build.zig.zon', 'vendor/ghostty/build.zig', 'scripts/build-ghostty.sh') }}-${{ hashFiles('.gitmodules') }}
+          key: ghostty-v2-${{ runner.os }}-${{ steps.ghostty-src.outputs.sha }}-${{ hashFiles('scripts/build-ghostty.sh') }}
 
       - name: Build libghostty xcframework
         if: steps.cache-ghostty.outputs.cache-hit != 'true'
@@ -148,10 +200,14 @@ jobs:
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_PASSWORD"
 
+      # generate_appcast is handed the Sparkle private key, so we run it only
+      # from the archive whose hash we pinned, not whatever the URL serves.
       - name: Download Sparkle release (for sign_update)
         run: |
+          set -euo pipefail
           curl -fsSL -o /tmp/sparkle.tar.xz \
             "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          printf '%s  %s\n' "$SPARKLE_SHA256" /tmp/sparkle.tar.xz | shasum -a 256 -c -
           mkdir -p /tmp/sparkle
           tar -xJf /tmp/sparkle.tar.xz -C /tmp/sparkle
           /tmp/sparkle/bin/sign_update --version || true
@@ -160,6 +216,8 @@ jobs:
         run: xcodegen generate
 
       - name: Archive Release
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -o pipefail
           xcodebuild \
@@ -168,8 +226,8 @@ jobs:
             -configuration Release \
             -derivedDataPath build \
             -destination 'platform=macOS' \
-            MARKETING_VERSION='${{ steps.ver.outputs.version }}' \
-            CURRENT_PROJECT_VERSION='${{ steps.ver.outputs.version }}' \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$VERSION" \
             archive \
             -archivePath build/Limpid.xcarchive
 
@@ -201,20 +259,27 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
       - name: Notarize and staple the app
+        env:
+          APP: ${{ steps.app.outputs.path }}
         run: |
-          ditto -c -k --keepParent "${{ steps.app.outputs.path }}" /tmp/Limpid.zip
+          set -euo pipefail
+          ditto -c -k --keepParent "$APP" /tmp/Limpid.zip
           xcrun notarytool submit /tmp/Limpid.zip \
             --keychain-profile limpid-notarize-ci \
             --wait
-          xcrun stapler staple "${{ steps.app.outputs.path }}"
+          xcrun stapler staple "$APP"
 
       - name: Package signed and notarized dmg
         id: dmg
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          APP: ${{ steps.app.outputs.path }}
         run: |
+          set -euo pipefail
           mkdir -p dist
-          DMG="dist/Limpid-${{ steps.ver.outputs.version }}.dmg"
+          DMG="dist/Limpid-$VERSION.dmg"
           create-dmg \
-            --volname "Limpid ${{ steps.ver.outputs.version }}" \
+            --volname "Limpid $VERSION" \
             --window-size 540 380 \
             --icon-size 128 \
             --icon "Limpid.app" 140 190 \
@@ -222,12 +287,261 @@ jobs:
             --hide-extension "Limpid.app" \
             --no-internet-enable \
             --codesign "Developer ID Application" \
-            "$DMG" "${{ steps.app.outputs.path }}"
+            "$DMG" "$APP"
           xcrun notarytool submit "$DMG" \
             --keychain-profile limpid-notarize-ci \
             --wait
           xcrun stapler staple "$DMG"
           echo "path=$DMG" >> "$GITHUB_OUTPUT"
+
+      # Decide what this run may change before it changes anything.
+      #
+      # Latest and the appcast only move forward. Re-running an older tag
+      # after a newer release would otherwise mark it Latest and point every
+      # Sparkle client back at it. We compare against both the Latest release
+      # and the version the feed names, read fresh from gh-pages.
+      #
+      # A dmg that a published release already serves is never replaced.
+      # The appcast signs those bytes, and replacing them before a new
+      # appcast lands leaves clients with a signature and length that no
+      # longer match the download. A re-run builds the appcast from the
+      # published dmg instead, which also repairs a feed that a failed run
+      # left behind. A draft's dmg is not public, so a draft may be replaced.
+      #
+      # Keeping the published dmg is only right when it was built from the
+      # commit we checked out. A tag moved after publishing would otherwise
+      # ship the old dmg under notes and checks for the new commit. The
+      # notes step records the source commit as a hidden line in the release
+      # body (`<!-- limpid-source-commit: <sha> -->`), which publishing makes
+      # part of the release. The body is the one place we write anyway, and
+      # unlike `target_commitish` it names the commit we built rather than
+      # the branch release-please cut from. A re-run that would keep a
+      # published dmg stops when that line names another commit.
+      #
+      # Release tags are expected to be protected by a repository ruleset,
+      # which is the primary guard against a moved tag; the marker is the
+      # fallback. Releases published before we recorded it carry no marker,
+      # so for those we warn and keep the published dmg rather than block
+      # every re-run of them. We then write no marker either, since we did
+      # not check which commit built that dmg. We also check that the
+      # remote tag still points at HEAD, so a tag moved during this run
+      # stops it here.
+      - name: Decide what this run publishes
+        id: plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          BUILT_DMG: ${{ steps.dmg.outputs.path }}
+        run: |
+          set -euo pipefail
+          DMG_NAME=$(basename "$BUILT_DMG")
+          HEAD_SHA=$(git rev-parse HEAD)
+          RECORD_SOURCE=true
+
+          # An annotated tag lists its commit on the peeled `^{}` line; a
+          # lightweight tag lists it on the tag line itself.
+          REMOTE_TAG_SHA=$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}" \
+            | awk '{ sha[$2] = $1 } END { print (sha[ref "^{}"] != "" ? sha[ref "^{}"] : sha[ref]) }' ref="refs/tags/$TAG")
+          if [ "$REMOTE_TAG_SHA" != "$HEAD_SHA" ]; then
+            echo "::error::$TAG now points at ${REMOTE_TAG_SHA:-nothing}, not the $HEAD_SHA this run built."
+            exit 1
+          fi
+
+          git fetch --no-tags origin +refs/heads/gh-pages:refs/remotes/origin/gh-pages
+          FEED_VERSION=""
+          if git cat-file -e origin/gh-pages:appcast.xml 2>/dev/null; then
+            FEED_VERSION=$(git show origin/gh-pages:appcast.xml \
+              | xmllint --xpath 'string(//*[local-name()="shortVersionString"])' -)
+          fi
+          # We ask for Latest directly; a listing of the newest releases can
+          # leave it out. Only 404 means there is no Latest yet. Any other
+          # failure stops here rather than being read as "no Latest".
+          if LATEST_TAG=$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name 2>&1); then
+            :
+          elif printf '%s' "$LATEST_TAG" | grep -F 'HTTP 404' >/dev/null; then
+            LATEST_TAG=""
+          else
+            echo "::error::Could not read the Latest release: $LATEST_TAG"
+            exit 1
+          fi
+          LATEST_VERSION="${LATEST_TAG#v}"
+          NEWEST=$(printf '%s\n' "$VERSION" "$FEED_VERSION" "$LATEST_VERSION" \
+            | sed '/^$/d' | sort -V | tail -n 1)
+          if [ "$NEWEST" = "$VERSION" ]; then
+            IS_NEWEST=true
+          else
+            IS_NEWEST=false
+            echo "::warning::$TAG is older than $NEWEST (Latest release: ${LATEST_TAG:-none}, appcast: ${FEED_VERSION:-none}). It is published without becoming Latest, and the appcast is left alone."
+          fi
+
+          RELEASE_EXISTS=false
+          IS_DRAFT=true
+          HAS_DMG=false
+          # Only "release not found" means there is no release. Any other
+          # failure stops here rather than being read as a missing release.
+          if VIEW_ERROR=$(gh release view "$TAG" --json tagName 2>&1 >/dev/null); then
+            RELEASE_EXISTS=true
+          elif ! printf '%s' "$VIEW_ERROR" | grep -F 'release not found' >/dev/null; then
+            echo "::error::Could not read release $TAG: $VIEW_ERROR"
+            exit 1
+          fi
+          if [ "$RELEASE_EXISTS" = true ]; then
+            IS_DRAFT=$(gh release view "$TAG" --json isDraft --jq .isDraft)
+            # No `grep -q`: it exits on the first match, and pipefail would
+            # then report gh's broken pipe as "no dmg".
+            if gh release view "$TAG" --json assets --jq '.assets[].name' \
+              | grep -Fx "$DMG_NAME" >/dev/null; then
+              HAS_DMG=true
+            fi
+          fi
+
+          if [ "$IS_DRAFT" = false ] && [ "$HAS_DMG" = true ]; then
+            # We check every marker, not only the last. A body edited by hand
+            # or copied from other notes can hold several, and the notes step
+            # keeps one naming HEAD, which would hide a mismatched one. We
+            # read every line the notes step would drop, so a malformed
+            # marker counts as a mismatch rather than as no marker.
+            SOURCE_SHAS=$(gh release view "$TAG" --json body --jq .body \
+              | tr -d '\r' \
+              | sed -n 's/^<!-- limpid-source-commit: //p' | sed 's/ -->$//' | sort -u)
+            # `|| true` because grep finds nothing when every marker names HEAD.
+            OTHER_SHAS=$(printf '%s\n' "$SOURCE_SHAS" | { grep -vFx "$HEAD_SHA" || true; })
+            if [ -z "$SOURCE_SHAS" ]; then
+              echo "::warning::The source commit of $TAG's $DMG_NAME cannot be checked: the release was published before we recorded it. We keep the published dmg."
+              RECORD_SOURCE=false
+            elif [ -n "$OTHER_SHAS" ]; then
+              echo "::error::$TAG serves a $DMG_NAME built from $(printf '%s\n' "$OTHER_SHAS" | paste -sd ' ' -), but the tag now points at $HEAD_SHA. We do not ship that dmg under another commit."
+              exit 1
+            fi
+          fi
+
+          if [ "$IS_DRAFT" = false ] && [ "$HAS_DMG" = true ] && [ "$IS_NEWEST" = false ]; then
+            echo "::notice::$TAG already serves $DMG_NAME, which stays as it is."
+            FEED_DMG=""
+            UPLOAD=false
+          elif [ "$IS_DRAFT" = false ] && [ "$HAS_DMG" = true ]; then
+            echo "::notice::$TAG already serves $DMG_NAME. We keep those bytes, build the appcast from them, and do not upload this run's dmg."
+            PUBLISHED_DIR="$RUNNER_TEMP/published"
+            rm -rf "$PUBLISHED_DIR"
+            mkdir -p "$PUBLISHED_DIR"
+            gh release download "$TAG" --pattern "$DMG_NAME" --dir "$PUBLISHED_DIR"
+            FEED_DMG="$PUBLISHED_DIR/$DMG_NAME"
+            UPLOAD=false
+          else
+            FEED_DMG="$BUILT_DMG"
+            UPLOAD=true
+          fi
+
+          {
+            printf 'is_newest=%s\n' "$IS_NEWEST"
+            printf 'release_exists=%s\n' "$RELEASE_EXISTS"
+            printf 'upload=%s\n' "$UPLOAD"
+            printf 'feed_dmg=%s\n' "$FEED_DMG"
+            printf 'record_source=%s\n' "$RECORD_SOURCE"
+          } >> "$GITHUB_OUTPUT"
+
+      # release-please writes the changelog into the release body. We append
+      # GitHub's generated notes once, so a re-run does not repeat them. The
+      # same file becomes the release body and the appcast's notes. Its last
+      # line records the commit the dmg was built from when we know it (see
+      # the plan step); an HTML comment, so neither GitHub nor Sparkle shows
+      # it.
+      - name: Prepare release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          RELEASE_EXISTS: ${{ steps.plan.outputs.release_exists }}
+          RECORD_SOURCE: ${{ steps.plan.outputs.record_source }}
+        run: |
+          set -euo pipefail
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          if [ "$RELEASE_EXISTS" = true ]; then
+            # We drop the marker and trailing blank lines here and append a
+            # fresh marker below, so a re-run keeps exactly one and the body
+            # does not grow a blank line each time.
+            gh release view "$TAG" --json body --jq .body \
+              | tr -d '\r' \
+              | awk '/^<!-- limpid-source-commit: / { next }
+                     /^$/ { blank++; next }
+                     { for (; blank > 0; blank--) print ""; print }' > "$NOTES"
+          else
+            : > "$NOTES"
+          fi
+          if ! grep -q '^\*\*Full Changelog\*\*' "$NOTES"; then
+            printf '\n' >> "$NOTES"
+            gh api "repos/$GH_REPO/releases/generate-notes" -f tag_name="$TAG" --jq .body >> "$NOTES"
+          fi
+          # The plan step stopped any run whose published dmg came from
+          # another commit. It leaves record_source false only for an older
+          # release whose dmg we kept without knowing its commit, and we do
+          # not claim one for it.
+          if [ "$RECORD_SOURCE" = true ]; then
+            printf '\n<!-- limpid-source-commit: %s -->\n' "$(git rev-parse HEAD)" >> "$NOTES"
+          fi
+          printf 'path=%s\n' "$NOTES" >> "$GITHUB_OUTPUT"
+
+      # Sparkle's official publishing recipe, as used by TimeMachineStatus,
+      # CodeEdit, boring.notch et al.: stage the dmg in a *flat* working
+      # directory (generate_appcast never recurses — nested layouts raise
+      # "No usable archives found"), bake the tag into the URL prefix so each
+      # release points at its own GitHub Releases download path, then let
+      # generate_appcast emit a signed appcast.xml with release notes attached.
+      # https://sparkle-project.org/documentation/publishing/
+      #
+      # We generate and check the appcast before the release is published, so
+      # a failure here leaves the published release and the feed as they were.
+      - name: Generate and verify appcast.xml
+        id: appcast
+        if: steps.plan.outputs.is_newest == 'true'
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          FEED_DMG: ${{ steps.plan.outputs.feed_dmg }}
+          NOTES: ${{ steps.notes.outputs.path }}
+        run: |
+          set -euo pipefail
+          DMG_NAME=$(basename "$FEED_DMG")
+          DMG_BASENAME="${DMG_NAME%.dmg}"
+
+          INBOX="$RUNNER_TEMP/sparkle_inbox"
+          rm -rf "$INBOX"
+          mkdir -p "$INBOX"
+          cp "$FEED_DMG" "$INBOX/"
+          cp "$NOTES" "$INBOX/${DMG_BASENAME}.md"
+
+          # --maximum-deltas 0 keeps the run hermetic (delta generation would
+          # require prior dmgs in this same flat directory, which we don't
+          # have here).
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | /tmp/sparkle/bin/generate_appcast \
+            --ed-key-file - \
+            --download-url-prefix "https://github.com/$GH_REPO/releases/download/$TAG/" \
+            --link "https://github.com/$GH_REPO" \
+            --maximum-deltas 0 \
+            "$INBOX"
+
+          APPCAST="$INBOX/appcast.xml"
+          xmllint --noout "$APPCAST"
+          xpath() { xmllint --xpath "$1" "$APPCAST"; }
+          fail() { echo "::error::appcast.xml $1"; exit 1; }
+          [ "$(xpath 'count(//item)')" = 1 ] || fail "does not hold exactly one item."
+          [ "$(xpath 'string(//*[local-name()="shortVersionString"])')" = "$VERSION" ] \
+            || fail "does not name version $VERSION."
+          [ "$(xpath 'string(//enclosure/@url)')" = "https://github.com/$GH_REPO/releases/download/$TAG/$DMG_NAME" ] \
+            || fail "does not point at $DMG_NAME under $TAG."
+          [ "$(xpath 'string(//enclosure/@length)')" = "$(stat -f%z "$FEED_DMG")" ] \
+            || fail "gives a length other than the dmg's."
+          SIGNATURE=$(xpath 'string(//enclosure/@*[local-name()="edSignature"])')
+          [ -n "$SIGNATURE" ] || fail "has no EdDSA signature."
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | /tmp/sparkle/bin/sign_update \
+            --verify --ed-key-file - "$FEED_DMG" "$SIGNATURE"
+
+          printf 'inbox=%s\n' "$INBOX" >> "$GITHUB_OUTPUT"
 
       # release-please creates the release as a draft (see
       # .github/release-please-config.json), so a run that fails before this
@@ -237,86 +551,139 @@ jobs:
       # because it resolves a draft by its tag; the REST lookup by tag only
       # returns published releases.
       - name: Attach the dmg and publish the release
+        id: publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
           DMG: ${{ steps.dmg.outputs.path }}
+          RELEASE_EXISTS: ${{ steps.plan.outputs.release_exists }}
+          UPLOAD: ${{ steps.plan.outputs.upload }}
+          IS_NEWEST: ${{ steps.plan.outputs.is_newest }}
+          NOTES: ${{ steps.notes.outputs.path }}
         run: |
           set -euo pipefail
           # A dispatch for a tag release-please did not cut has no release yet.
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
+          if [ "$RELEASE_EXISTS" != true ]; then
             gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes ""
           fi
-          gh release upload "$TAG" "$DMG" --clobber
-
-          # Append GitHub's generated notes under release-please's changelog,
-          # once, so a re-run does not repeat them.
-          NOTES="$RUNNER_TEMP/release-notes.md"
-          gh release view "$TAG" --json body --jq .body > "$NOTES"
-          if ! grep -q '^\*\*Full Changelog\*\*' "$NOTES"; then
-            printf '\n' >> "$NOTES"
-            gh api "repos/$GH_REPO/releases/generate-notes" -f tag_name="$TAG" --jq .body >> "$NOTES"
+          if [ "$UPLOAD" = true ]; then
+            # Only a draft's dmg may be replaced. A published release that
+            # gained the dmg since the plan step makes the upload fail rather
+            # than replace it.
+            if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true ]; then
+              gh release upload "$TAG" "$DMG" --clobber
+            else
+              gh release upload "$TAG" "$DMG"
+            fi
           fi
-          gh release edit "$TAG" --notes-file "$NOTES" --draft=false --latest
+          # The plan step read Latest minutes ago. We read it again right
+          # before we move it, so a newer release that became Latest since
+          # then stays Latest, and the appcast step then leaves the feed alone.
+          if [ "$IS_NEWEST" = true ]; then
+            if LATEST_TAG=$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name 2>&1); then
+              :
+            elif printf '%s' "$LATEST_TAG" | grep -F 'HTTP 404' >/dev/null; then
+              LATEST_TAG=""
+            else
+              echo "::error::Could not read the Latest release: $LATEST_TAG"
+              exit 1
+            fi
+            LATEST_VERSION="${LATEST_TAG#v}"
+            NEWEST=$(printf '%s\n' "$VERSION" "$LATEST_VERSION" | sed '/^$/d' | sort -V | tail -n 1)
+            if [ "$NEWEST" != "$VERSION" ]; then
+              echo "::notice::$LATEST_TAG became Latest while this run was building; $TAG is published without becoming Latest, and the appcast is left alone."
+              IS_NEWEST=false
+            fi
+          fi
+          gh release edit "$TAG" --notes-file "$NOTES" --draft=false --latest="$IS_NEWEST"
+          printf 'is_newest=%s\n' "$IS_NEWEST" >> "$GITHUB_OUTPUT"
 
-      # Sparkle's official publishing recipe, as used by TimeMachineStatus,
-      # CodeEdit, boring.notch et al.: stage the current dmg in a *flat*
-      # working directory (generate_appcast never recurses — nested layouts
-      # raise "No usable archives found"), bake the tag into the URL prefix
-      # so each release points at its own GitHub Releases download path,
-      # then let generate_appcast emit a signed appcast.xml with release
-      # notes attached.
-      # https://sparkle-project.org/documentation/publishing/
-      - name: Generate and publish appcast.xml
+      # Each release ships its own one-item appcast; Sparkle clients only need
+      # the newest entry to decide whether to update. Sparkle clients follow
+      # `sparkle:releaseNotesLink` to fetch the notes, so the matching .md goes
+      # alongside it, or the update sheet shows an empty body.
+      - name: Publish appcast.xml
+        if: steps.publish.outputs.is_newest == 'true'
         env:
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          FEED_DMG: ${{ steps.plan.outputs.feed_dmg }}
+          INBOX: ${{ steps.appcast.outputs.inbox }}
         run: |
           set -euo pipefail
-          TAG="${{ steps.ver.outputs.tag }}"
-          REPO="${{ github.repository }}"
-          DMG="${{ steps.dmg.outputs.path }}"
-          DMG_BASENAME=$(basename "$DMG" .dmg)
+          DMG_NAME=$(basename "$FEED_DMG")
+          DMG_BASENAME="${DMG_NAME%.dmg}"
 
-          INBOX="$RUNNER_TEMP/sparkle_inbox"
-          rm -rf "$INBOX"
-          mkdir -p "$INBOX"
-          cp "$DMG" "$INBOX/"
+          # The feed must describe the bytes the release now serves. The
+          # release is published at this point, so the REST lookup by tag
+          # finds it.
+          ASSET=$(gh api "repos/$GH_REPO/releases/tags/$TAG" \
+            --jq '.assets[] | [.name, (.size | tostring), (.digest // "")] | @tsv' \
+            | awk -F '\t' -v name="$DMG_NAME" '$1 == name')
+          if [ -z "$ASSET" ]; then
+            echo "::error::$TAG does not serve $DMG_NAME."
+            exit 1
+          fi
+          if [ "$(printf '%s' "$ASSET" | cut -f2)" != "$(stat -f%z "$FEED_DMG")" ]; then
+            echo "::error::The published $DMG_NAME differs in size from the one the appcast signs."
+            exit 1
+          fi
+          # Equal sizes do not prove equal bytes. GitHub lists a digest for
+          # newer assets; for one without it we download the published dmg
+          # and hash it ourselves.
+          EXPECTED="sha256:$(shasum -a 256 "$FEED_DMG" | cut -d ' ' -f 1)"
+          DIGEST=$(printf '%s' "$ASSET" | cut -f3)
+          if [ -z "$DIGEST" ]; then
+            SERVED_DIR="$RUNNER_TEMP/served"
+            rm -rf "$SERVED_DIR"
+            mkdir -p "$SERVED_DIR"
+            gh release download "$TAG" --pattern "$DMG_NAME" --dir "$SERVED_DIR"
+            DIGEST="sha256:$(shasum -a 256 "$SERVED_DIR/$DMG_NAME" | cut -d ' ' -f 1)"
+          fi
+          if [ "$DIGEST" != "$EXPECTED" ]; then
+            echo "::error::The published $DMG_NAME differs from the one the appcast signs."
+            exit 1
+          fi
 
-          # GitHub Release body → matching .md so the appcast embeds notes.
-          gh release view "$TAG" --json body --jq .body \
-            > "$INBOX/${DMG_BASENAME}.md"
-
-          # Generate the signed appcast. The URL prefix bakes in the tag so
-          # the enclosure URL resolves to the GitHub Releases download path.
-          # --maximum-deltas 0 keeps the run hermetic (delta generation
-          # would require prior dmgs in this same flat directory, which
-          # we don't have here).
-          printf '%s' "$SPARKLE_PRIVATE_KEY" | /tmp/sparkle/bin/generate_appcast \
-            --ed-key-file - \
-            --download-url-prefix "https://github.com/$REPO/releases/download/$TAG/" \
-            --link "https://github.com/$REPO" \
-            --maximum-deltas 0 \
-            "$INBOX"
-
-          # Replace the appcast.xml on the gh-pages branch and publish
-          # the matching release-notes .md alongside it. Sparkle clients
-          # follow `sparkle:releaseNotesLink` in the appcast to fetch the
-          # notes — without the .md the link 404s and the update sheet
-          # shows an empty body. Each release ships its own one-item
-          # appcast; Sparkle clients only need the newest entry to
-          # decide whether to update.
-          git worktree add /tmp/pages gh-pages
-          cp "$INBOX/appcast.xml" /tmp/pages/appcast.xml
-          cp "$INBOX/${DMG_BASENAME}.md" "/tmp/pages/${DMG_BASENAME}.md"
+          git fetch --no-tags origin +refs/heads/gh-pages:refs/remotes/origin/gh-pages
+          git worktree add -B gh-pages /tmp/pages origin/gh-pages
           cd /tmp/pages
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add appcast.xml "${DMG_BASENAME}.md"
-          if git diff --cached --quiet; then
-            echo "No appcast changes to commit."
-          else
+          # Another push to gh-pages between our fetch and our push rejects
+          # ours as non-fast-forward. We rebuild the commit on the new tip and
+          # try again, so a published release is not left behind a stale feed.
+          # Before each attempt we read the version the tip's feed names: a
+          # newer one came from another run, and we keep it rather than roll
+          # the feed back.
+          for attempt in 1 2 3; do
+            FEED_VERSION=""
+            if [ -f appcast.xml ]; then
+              FEED_VERSION=$(xmllint --xpath 'string(//*[local-name()="shortVersionString"])' appcast.xml)
+            fi
+            NEWEST=$(printf '%s\n' "$VERSION" "$FEED_VERSION" | sed '/^$/d' | sort -V | tail -n 1)
+            if [ "$NEWEST" != "$VERSION" ]; then
+              echo "::notice::gh-pages already names $FEED_VERSION, which is newer than $VERSION; the appcast is left alone."
+              exit 0
+            fi
+            cp "$INBOX/appcast.xml" appcast.xml
+            cp "$INBOX/${DMG_BASENAME}.md" "${DMG_BASENAME}.md"
+            git add appcast.xml "${DMG_BASENAME}.md"
+            if git diff --cached --quiet; then
+              echo "No appcast changes to commit."
+              exit 0
+            fi
             git commit -m "chore(release): publish ${TAG} to appcast"
-            git push origin gh-pages
-          fi
+            if git push origin gh-pages; then
+              exit 0
+            fi
+            echo "::warning::gh-pages push attempt $attempt was rejected; retrying on the new tip."
+            git fetch --no-tags origin +refs/heads/gh-pages:refs/remotes/origin/gh-pages
+            git reset --hard origin/gh-pages
+          done
+          echo "::error::Could not push the appcast to gh-pages."
+          exit 1
