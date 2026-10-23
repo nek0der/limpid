@@ -107,7 +107,7 @@ jobs:
       # whatever branch it was started from, and building that under the
       # tag's name would ship code the tag does not point at.
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: refs/tags/${{ steps.ver.outputs.tag }}
           submodules: recursive
@@ -157,7 +157,7 @@ jobs:
 
       - name: Restore GhosttyKit.xcframework cache
         id: cache-ghostty
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: vendor/ghostty/macos/GhosttyKit.xcframework
           key: ghostty-v2-${{ runner.os }}-${{ steps.ghostty-src.outputs.sha }}-${{ hashFiles('scripts/build-ghostty.sh') }}
@@ -177,13 +177,13 @@ jobs:
       # post-step skips save on prior failures.
       - name: Save GhosttyKit.xcframework cache
         if: always() && steps.cache-ghostty.outputs.cache-hit != 'true' && hashFiles('vendor/ghostty/macos/GhosttyKit.xcframework/**') != ''
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: vendor/ghostty/macos/GhosttyKit.xcframework
           key: ${{ steps.cache-ghostty.outputs.cache-primary-key }}
 
       - name: Import Developer ID certificate
-        uses: apple-actions/import-codesign-certs@63fff01cd422d4b7b855d40ca1e9d34d2de9427d # v3
+        uses: apple-actions/import-codesign-certs@fe74d46e82474f87e1ba79832ad28a4013d0e33a # v6.1.0
         with:
           p12-file-base64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           p12-password: ${{ secrets.P12_PASSWORD }}

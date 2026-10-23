@@ -1,7 +1,7 @@
 version: 2
 updates:
   # GitHub Actions: monthly, no major bumps. Majors tend to introduce
-  # breaking changes that need a hand-review (e.g. `actions/cache` v5,
+  # breaking changes that need a hand-review (e.g. `actions/cache` v6,
   # `apple-actions/import-codesign-certs` v7) and a release pipeline
   # this small can survive being a release behind.
   - package-ecosystem: github-actions

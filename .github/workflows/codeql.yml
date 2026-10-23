@@ -22,7 +22,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           submodules: recursive
 
@@ -52,7 +52,7 @@ jobs:
 
       - name: Restore GhosttyKit.xcframework cache
         id: cache-ghostty
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: vendor/ghostty/macos/GhosttyKit.xcframework
           key: ghostty-v2-${{ runner.os }}-${{ steps.ghostty-src.outputs.sha }}-${{ hashFiles('scripts/build-ghostty.sh') }}
@@ -63,7 +63,7 @@ jobs:
 
       - name: Save GhosttyKit.xcframework cache
         if: always() && steps.cache-ghostty.outputs.cache-hit != 'true' && hashFiles('vendor/ghostty/macos/GhosttyKit.xcframework/**') != ''
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: vendor/ghostty/macos/GhosttyKit.xcframework
           key: ${{ steps.cache-ghostty.outputs.cache-primary-key }}
@@ -79,7 +79,7 @@ jobs:
       # (it's Zig, not Swift), so tracing only the final xcodebuild
       # is both correct and avoids the conflict.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3
+        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: swift
 
@@ -101,4 +101,4 @@ jobs:
             build
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3
+        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
