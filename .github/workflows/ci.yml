@@ -23,8 +23,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - name: Select pinned Rust toolchain
-        run: rustup show active-toolchain
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install --no-self-update
       - name: Check formatting
         run: cargo fmt --all --check
       # The bridge build script rewrites the committed header; any diff means
@@ -61,8 +61,8 @@ jobs:
       - name: Install tooling
         run: brew install xcodegen zig@0.16 tmux
 
-      - name: Select pinned Rust toolchain
-        run: rustup show active-toolchain
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install --no-self-update
 
       # The cache key names the vendor/ghostty commit the superproject pins.
       # Hashing build files and .gitmodules missed a bump that changed only
@@ -172,8 +172,8 @@ jobs:
       - name: Install tooling
         run: brew install xcodegen zig@0.16
 
-      - name: Select pinned Rust toolchain
-        run: rustup show active-toolchain
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install --no-self-update
 
       # The cache key names the vendor/ghostty commit the superproject pins.
       # Hashing build files and .gitmodules missed a bump that changed only

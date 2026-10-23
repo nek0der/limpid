@@ -56,7 +56,7 @@ jobs:
       - name: Self-test the crate notice generator (and what it refuses)
         run: scripts/test-generate-crate-notices.sh
       # The check fills in the Rust crate section from `cargo metadata`.
-      - name: Select pinned Rust toolchain
-        run: rustup show active-toolchain
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install --no-self-update
       - name: Verify every bundled dependency is acknowledged
         run: scripts/check-notices-coverage.sh
