@@ -33,26 +33,10 @@ pub(crate) fn sweep(
     alive: &BTreeSet<Uuid>,
     now: &Instants,
 ) -> Vec<Command> {
-    // An intent past its window is no longer a claim. The launch rules would
-    // not honor it either, so letting it hold a dead record would keep both
-    // on disk for good.
-    let claimed: BTreeSet<&str> = input
-        .resume_intents
-        .iter()
-        .filter(|intent| {
-            seconds_between(&intent.created_at, &now.wall)
-                .is_some_and(|age| age < RESUME_WINDOW_SECS)
-        })
-        .map(|intent| intent.run_id.as_str())
-        .collect();
-
+    let retired = retiring(accepted, input, now);
     let mut commands: Vec<Command> = accepted
         .iter()
-        .filter(|(storage_id, run)| {
-            // A restore has already claimed this run. Retiring it now would
-            // take away the record the restore is about to rebuild from.
-            !claimed.contains(storage_id.as_str()) && is_removable(&run.record, input)
-        })
+        .filter(|(storage_id, _)| retired.contains(storage_id.as_str()))
         .map(|(storage_id, run)| retire(storage_id, run, accepted))
         .collect();
 
@@ -91,6 +75,45 @@ pub(crate) fn sweep(
         }
     }
     commands
+}
+
+/// The storage ids of the records this pass retires. The projection reads
+/// the same set to show a run that died at work as stopped on its last pass
+/// (`died_at_work`).
+pub(crate) fn retiring<'a>(
+    accepted: &'a BTreeMap<String, AcceptedRun>,
+    input: &ProjectionInput,
+    now: &Instants,
+) -> BTreeSet<&'a str> {
+    // An intent past its window is no longer a claim. The launch rules would
+    // not honor it either, so letting it hold a dead record would keep both
+    // on disk for good.
+    let claimed: BTreeSet<&str> = input
+        .resume_intents
+        .iter()
+        .filter(|intent| {
+            seconds_between(&intent.created_at, &now.wall)
+                .is_some_and(|age| age < RESUME_WINDOW_SECS)
+        })
+        .map(|intent| intent.run_id.as_str())
+        .collect();
+    accepted
+        .iter()
+        .filter(|(storage_id, run)| {
+            // A restore has already claimed this run. Retiring it now would
+            // take away the record the restore is about to rebuild from.
+            !claimed.contains(storage_id.as_str()) && is_removable(&run.record, input)
+        })
+        .map(|(storage_id, _)| storage_id.as_str())
+        .collect()
+}
+
+/// Whether a record being retired is of a run that died in the middle of
+/// work: no hook ended it (`SessionEnd` leaves `Unknown`, a turn's end leaves
+/// `Finished` or `Error`), and Limpid did not stop it on quit. Such a run
+/// stopped, and the pass that retires it is the last one to see it.
+pub(crate) fn died_at_work(record: &RunRecord) -> bool {
+    record.state.is_at_work() && record.killed_by_limpid_at.is_none()
 }
 
 /// Whether a record describes a run that is definitely over.
@@ -396,17 +419,7 @@ mod tests {
     }
 
     fn descriptor() -> limpid_agent_model::ProviderDescriptor {
-        limpid_agent_model::ProviderDescriptor {
-            id: claude(),
-            display_name: "Claude".to_owned(),
-            capabilities: [Capability::CwdEvents].into_iter().collect(),
-            pid_sweep_interval_ms: 30_000,
-            state_directory: "agent-states".to_owned(),
-            session_directory: "sessions".to_owned(),
-            cwd_events_directory: Some("cwd-events".to_owned()),
-            process_names: Vec::new(),
-            session_end_drop_reasons: Vec::new(),
-        }
+        limpid_agent_model::ProviderDescriptor::fixture("claude", [Capability::CwdEvents])
     }
 
     fn prunes(commands: &[Command]) -> usize {

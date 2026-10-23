@@ -29,27 +29,31 @@ and Hook Helper signatures against its current Team ID and their expected signin
 identifiers.
 
 An atomic `0600` marker under the build-specific Application Support directory
-records `replacing`, `registered`, or `ready`, the artifact identity, and the app
-build version.
-The marker proves only that this app started a registration attempt; it is not an
-authentication credential. A healthy registration is retained only when the
-status is `.enabled`, the authenticated running artifact matches the bundle, and
-the marker names that artifact. A matching `registered` marker is completed as
-`ready` after authentication, which covers a process exit immediately after
-registration. `replacing` means unregister or registration was not known to have
-completed. A replacing, missing, corrupt, or mismatched marker causes one
-deliberate repair.
+records `replacing`, `registered`, or `ready`, the artifact identity, and the
+app build version. The marker proves only that this app started a registration
+attempt; it is not an authentication credential. A healthy registration is
+retained only when the status is `.enabled`, the authenticated running artifact
+matches the bundle, and the marker names that artifact. A matching `registered`
+marker is completed as `ready` after authentication, which covers a process
+exit immediately after registration. `replacing` means that the unregister or
+the registration was not known to have completed. A replacing, missing,
+corrupt, or mismatched marker causes one deliberate repair.
 
 Reconciliation applies the following actions:
 
 | Status and evidence | Action |
 | --- | --- |
-| `.notRegistered` | Write `replacing`, register, write `registered`, authenticate the running artifact, then write `ready`. |
+| `.notRegistered`, or `.notFound` before a registration call | Write `replacing`, register, write `registered`, authenticate the running artifact, then write `ready`. Background Task Management reports `.notFound` for a label it has no record of, which is every machine's state before the first registration. |
 | `.enabled` with matching running artifact and `registered` or `ready` marker | Keep the service process, PID, epoch, and pending requests; complete the marker as `ready`. |
 | `.enabled` with any artifact or marker mismatch | Write `replacing`, await asynchronous unregister completion, register, write `registered`, authenticate, then write `ready`. |
 | `.enabled` with an unreachable controller and current `registered` or `ready` marker | Keep the service and pending requests, disable controller observation, and retry. A marker mismatch remains explicit replacement evidence. |
 | `.requiresApproval` | Keep the registration, disable native routing, and direct the user to Login Items. Retry when the app becomes active. |
-| `.notFound` or unknown status | Disable native routing and expose a recoverable error. Do not treat it as unregistered. |
+| `.notFound` after a registration call | Disable native routing and expose a recoverable error. Do not register again in the same pass. |
+| Unknown status | Disable native routing and expose a recoverable error. Do not treat it as unregistered. |
+
+An earlier revision of this table treated every `.notFound` as an error. That
+blocked the first registration on a machine that had never had the service,
+so `.notFound` before a registration call now registers, as the first row says.
 
 The same content comparison handles upgrades, downgrades, and rollbacks. Moving
 an unchanged app does not replace the service because paths are excluded from the
@@ -62,15 +66,15 @@ without resetting a pending Login Items approval. A slow unregister keeps
 reconciliation in flight and never proceeds to registration until the OS
 completion callback.
 
-Controller observation starts only after the replacement has been authenticated
-and stops on a later reconciliation failure. Codex uses one stable Helper command
-for every pane. The signed Helper independently compares the authenticated
-service artifact with its own bundle on every request and publishes Codex's
-lifecycle fallback when it emits no approval decision. Claude's helper also emits
-no decision on failure, so the provider retains its native permission flow.
-Restarting the service changes
-the Rust-owned epoch; requests and controller actions from the prior epoch cannot
-authorize the new process.
+Controller observation starts only after the replacement has been
+authenticated and stops on a later reconciliation failure. Codex uses one
+stable Helper command for every pane. The signed Helper independently compares
+the authenticated service artifact with its own bundle on every request and
+publishes Codex's lifecycle fallback when it emits no approval decision. For
+Claude, the Helper also emits no decision on failure, so the provider retains
+its native permission flow. Restarting the service changes the Rust-owned
+epoch; requests and controller actions from the prior epoch cannot authorize
+the new process.
 
 ## Consequences
 

@@ -21,6 +21,15 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
     /// as `registry`.
     nonisolated(unsafe) static var onTap: (@MainActor @Sendable (NotificationTapPayload) -> Void)?
 
+    /// Whether the person can see where an agent's notification came from:
+    /// any pane its runtime shows in, tmux attachments included,
+    /// or else the pane the banner names. Decides an agent's banner: none
+    /// while its source is in sight, whichever pane has the keyboard. Set
+    /// by the app layer, which knows the windows. Nil until then, when the
+    /// focus test decides as it does for command notifications. Same
+    /// `nonisolated(unsafe)` rationale as `registry`.
+    nonisolated(unsafe) static var isSourceSeen: (@MainActor (_ paneID: UUID?, _ runtimeID: String?) -> Bool)?
+
     override init() {
         super.init()
     }
@@ -54,11 +63,17 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
         withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
     ) {
         let userInfo = notification.request.content.userInfo
-        let requireFocus = (userInfo["requireFocus"] as? Bool) ?? true
-        let paneIDString = userInfo["paneID"] as? String
+        let requireFocus = (userInfo[NotificationPayloadKey.requireFocus] as? Bool) ?? true
+        let paneIDString = userInfo[NotificationPayloadKey.paneID] as? String
+        let runtimeID = userInfo[NotificationPayloadKey.runtimeID] as? String
+        let isAgent = (userInfo[NotificationPayloadKey.kind] as? String).flatMap(NotificationEntry.Kind.init(rawValue:))?.agentState != nil
         Task { @MainActor in
-            let isPaneFocused = LimpidNotificationDelegate.isPaneFocused(paneIDString: paneIDString)
-            if requireFocus, isPaneFocused {
+            let isPaneInSight: Bool = if isAgent, let isSourceSeen = LimpidNotificationDelegate.isSourceSeen {
+                isSourceSeen(paneIDString.flatMap(UUID.init(uuidString:)), runtimeID)
+            } else {
+                LimpidNotificationDelegate.isPaneFocused(paneIDString: paneIDString)
+            }
+            if requireFocus, isPaneInSight {
                 completionHandler([])
             } else {
                 completionHandler([.banner, .sound])
@@ -80,8 +95,10 @@ final class LimpidNotificationDelegate: NSObject, UNUserNotificationCenterDelega
         withCompletionHandler completionHandler: @escaping @Sendable () -> Void
     ) {
         let payload = NotificationTapPayload(userInfo: response.notification.request.content.userInfo)
-        let onTap = LimpidNotificationDelegate.onTap
         Task { @MainActor in
+            // Read on the main actor, so a tap that launched the app finds
+            // the handler the attention list installs once it is up.
+            let onTap = LimpidNotificationDelegate.onTap
             // Bring Limpid forward even if the payload is empty — a
             // stale notification (pre-tap-plumbing or after the
             // origin pane / tab / container was deleted) should
@@ -140,13 +157,32 @@ struct NotificationTapPayload {
     let paneID: UUID?
     let tabID: UUID?
     let containerID: ContainerID?
+    /// The request a needs-input banner announced; see
+    /// `NotificationEntry.requestKey`.
+    let requestKey: ApprovalKey?
 
     init(userInfo: [AnyHashable: Any]) {
-        self.runtimeID = userInfo["runtimeID"] as? String
-        self.paneID = (userInfo["paneID"] as? String).flatMap(UUID.init(uuidString:))
-        self.tabID = (userInfo["tabID"] as? String).flatMap(UUID.init(uuidString:))
-        self.containerID = (userInfo["containerJSON"] as? String)
+        self.runtimeID = userInfo[NotificationPayloadKey.runtimeID] as? String
+        self.requestKey = (userInfo[NotificationPayloadKey.requestKeyJSON] as? String)
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode(ApprovalKey.self, from: $0) }
+        self.paneID = (userInfo[NotificationPayloadKey.paneID] as? String).flatMap(UUID.init(uuidString:))
+        self.tabID = (userInfo[NotificationPayloadKey.tabID] as? String).flatMap(UUID.init(uuidString:))
+        self.containerID = (userInfo[NotificationPayloadKey.containerJSON] as? String)
             .flatMap { $0.data(using: .utf8) }
             .flatMap { try? JSONDecoder().decode(ContainerID.self, from: $0) }
     }
+}
+
+/// The keys of a banner's `userInfo`, which `LimpidNotificationManager`
+/// writes and the delegate reads back when the banner shows or is clicked.
+/// One list, so the writer and the reader cannot name a key two ways.
+enum NotificationPayloadKey {
+    static let requireFocus = "requireFocus"
+    static let kind = "kind"
+    static let paneID = "paneID"
+    static let tabID = "tabID"
+    static let runtimeID = "runtimeID"
+    static let containerJSON = "containerJSON"
+    static let requestKeyJSON = "requestKeyJSON"
 }

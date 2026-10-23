@@ -12,7 +12,8 @@ import Testing
     .disabled(if: !RepoFixture.hasLocalRepo, "no local git"),
     // Running the test bundle without its app host leaves no helper to
     // exec, which is a missing precondition rather than a failure.
-    .disabled(if: HookHelperFixture.helperURL == nil, "no hook helper beside the test host")
+    .disabled(if: HookHelperFixture.helperURL == nil, "no hook helper beside the test host"),
+    .timeLimit(.minutes(1))
 )
 struct HookHelperLifecycleTests {
     private static let paneID = "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10"
@@ -24,22 +25,12 @@ struct HookHelperLifecycleTests {
             .appendingPathComponent("rust/fixtures/\(provider)/2026-09/session-basic/\(name)"))
     }
 
-    private func environment(provider: String, in directory: URL) -> [String: String] {
-        let prefix = provider == "claude" ? "LIMPID" : "LIMPID_CODEX"
-        var env = IsolatedProcessEnvironment.make([
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-            "HOME": directory.path,
-            "LIMPID_PANE_ID": Self.paneID,
-            "LIMPID_AGENT_RUN_ID": Self.runID,
-            "LIMPID_TURN_SNAPSHOT": "0",
-            "LIMPID_HOOK_LOG": directory.appendingPathComponent("hook.log").path,
-            "\(prefix)_AGENT_STATES_DIR": directory.appendingPathComponent("states").path,
-            "\(prefix)_SESSIONS_DIR": directory.appendingPathComponent("sessions").path
-        ])
-        if provider == "claude" {
-            env["LIMPID_CWD_EVENTS_DIR"] = directory.appendingPathComponent("cwd").path
-        }
-        return env
+    private func environment(_ agent: HookAgent, in directory: URL) -> [String: String] {
+        var env = agent.environment(in: directory, paneID: Self.paneID)
+        env["LIMPID_AGENT_RUN_ID"] = Self.runID
+        env["LIMPID_TURN_SNAPSHOT"] = "0"
+        env["LIMPID_HOOK_LOG"] = directory.appendingPathComponent("hook.log").path
+        return IsolatedProcessEnvironment.make(env)
     }
 
     @discardableResult
@@ -52,6 +43,11 @@ struct HookHelperLifecycleTests {
         let process = Process()
         process.executableURL = helper
         process.arguments = arguments
+        // The wrapper mints an id for every call; run directly, the helper
+        // gets one here, or it records the run but logs that its turn could
+        // not be told apart from a retry.
+        var environment = environment
+        environment["LIMPID_HOOK_INVOCATION_ID"] = environment["LIMPID_HOOK_INVOCATION_ID"] ?? UUID().uuidString
         process.environment = environment
         let stdin = Pipe()
         let stderr = Pipe()
@@ -61,7 +57,7 @@ struct HookHelperLifecycleTests {
         try process.run()
         try stdin.fileHandleForWriting.write(contentsOf: payload)
         try stdin.fileHandleForWriting.close()
-        process.waitUntilExit()
+        #expect(process.waitUntilExit(within: 10), "the helper did not exit within ten seconds")
         let text = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         return (process.terminationStatus, text)
     }
@@ -72,12 +68,14 @@ struct HookHelperLifecycleTests {
         return try JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
-    @Test("writes a version 3 record without opening the approval service", arguments: ["claude", "codex"])
-    func lifecycleHook_writesTheRecord(provider: String) throws {
+    @Test("writes a version 3 record without opening the approval service", arguments: HookAgent.allCases)
+    func lifecycleHook_writesTheRecord(agent: HookAgent) throws {
         try withTempDir { directory in
-            let env = environment(provider: provider, in: directory)
+            let env = environment(agent, in: directory)
             for name in ["0000-SessionStart.json", "0001-UserPromptSubmit.json"] {
-                let result = try runHelper(["hook", provider], payload: fixturePayload(provider, name), environment: env)
+                let result = try runHelper(
+                    ["hook", agent.rawValue], payload: fixturePayload(agent.rawValue, name), environment: env
+                )
                 #expect(result.status == 0)
                 #expect(result.stderr.isEmpty)
             }
@@ -113,16 +111,20 @@ struct HookHelperLifecycleTests {
         }
     }
 
-    @Test("skips the write while Limpid holds the record lock")
-    func lifecycleHook_yieldsToTheSwiftLock() throws {
+    /// The app locks a record's sidecar before it rewrites the record. The
+    /// helper names the sidecar itself, so it has to hold off while the app
+    /// holds that lock; one that locked another file would write straight
+    /// through.
+    @Test("skips the write while Limpid holds the record lock", arguments: HookAgent.allCases)
+    func lifecycleHook_yieldsToTheSwiftLock(agent: HookAgent) throws {
         try withTempDir { directory in
-            let env = environment(provider: "claude", in: directory)
+            let env = environment(agent, in: directory)
             let states = directory.appendingPathComponent("states")
             try FileManager.default.createDirectory(at: states, withIntermediateDirectories: true)
             let recordURL = try states.appendingPathComponent(AgentRecordFixtures.recordFileName(Self.runID))
             let outcome = try AgentFileLock.withLock(for: recordURL) {
-                let payload = try fixturePayload("claude", "0000-SessionStart.json")
-                let result = try runHelper(["hook", "claude"], payload: payload, environment: env)
+                let payload = try fixturePayload(agent.rawValue, "0000-SessionStart.json")
+                let result = try runHelper(["hook", agent.rawValue], payload: payload, environment: env)
                 #expect(result.status == 0)
                 return .applied
             }
@@ -136,7 +138,7 @@ struct HookHelperLifecycleTests {
     @Test("passes a plain tool call through the worktree hook with exit 0")
     func worktreeHook_passesThroughOrdinaryCommands() throws {
         try withTempDir { directory in
-            let env = environment(provider: "claude", in: directory)
+            let env = environment(.claude, in: directory)
             let payload = try JSONSerialization.data(withJSONObject: [
                 "hook_event_name": "PreToolUse",
                 "tool_name": "Bash",

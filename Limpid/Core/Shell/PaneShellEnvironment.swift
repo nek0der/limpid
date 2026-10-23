@@ -7,6 +7,12 @@
 import Foundation
 
 enum PaneShellEnvironment {
+    /// The variable that carries the pane's id, which the hook reads to know
+    /// it runs in a Limpid pane and which one (`PANE_ID_VARIABLE` in the
+    /// hook). The two sides check the name against
+    /// `rust/fixtures/contract/shared-values.json`.
+    static let paneIDVariable = "LIMPID_PANE_ID"
+
     /// The tmux a hosted agent runs under: which binary, and the socket
     /// name that keeps our server apart from the user's own and from
     /// another Limpid build's.
@@ -27,7 +33,9 @@ enum PaneShellEnvironment {
         shimDirectories: [URL],
         zdotdir: URL?,
         basePath: String,
-        agentTmux: AgentTmuxHost? = nil
+        agentTmux: AgentTmuxHost? = nil,
+        panePathRecord: URL? = nil,
+        agentKnownLocations: [String: String] = [:]
     ) -> [String: String] {
         var env: [String: String] = [:]
         // Skipping `PATH` entirely when we have no shim beats exporting one
@@ -41,7 +49,7 @@ enum PaneShellEnvironment {
             env["ZDOTDIR"] = zdotdir.path
         }
         if let paneID {
-            env["LIMPID_PANE_ID"] = paneID.uuidString
+            env[paneIDVariable] = paneID.uuidString
         }
         // The binary carries both halves of the decision — that the
         // user asked for tmux hosting, and which tmux to use. A shim
@@ -52,15 +60,29 @@ enum PaneShellEnvironment {
             env["LIMPID_AGENT_TMUX"] = agentTmux.binary
             env["LIMPID_AGENT_TMUX_SOCKET"] = agentTmux.socketName
         }
+        // Where the shell writes the `PATH` it ends up with once the
+        // person's `.zshrc` has run: the new worktree sheet looks for the
+        // agents on it (`AgentCatalog.detectInstallations`).
+        if let panePathRecord {
+            env[AgentCatalog.panePathRecordVariable] = panePathRecord.path
+        }
+        // Where the sheet looks for each agent beyond the `PATH`s. The
+        // agent's shim looks there too, so an agent the sheet offers is
+        // one the pane can start (`AgentCatalog.knownLocationsEnvironment`).
+        env.merge(agentKnownLocations) { _, new in new }
         return env
     }
 
     /// Production assembly, with the shim directories resolved from the
     /// app bundle. Kept next to `variables` so the call site stays one
     /// line and the bundle lookups have exactly one home.
+    /// `projectID` is the project the pane is in, whose `PATH` record its
+    /// shell writes; a scratch pane, in none, writes none.
     static func resolved(
         forPaneID paneID: UUID?,
-        hostsAgentsInTmux: Bool = false
+        hostsAgentsInTmux: Bool = false,
+        recordsPanePath: Bool = false,
+        projectID: UUID? = nil
     ) -> [String: String] {
         variables(
             paneID: paneID,
@@ -76,7 +98,15 @@ enum PaneShellEnvironment {
                 ? TmuxClientProbe.locateTmux().map {
                     AgentTmuxHost(binary: $0, socketName: defaultAgentSocketName())
                 }
-                : nil
+                : nil,
+            // Not while the run may not write the person's files (demo
+            // mode), as the agents' record directories are not.
+            panePathRecord: recordsPanePath
+                ? projectID.map { AgentCatalog.panePathRecordURL(in: LimpidPaths.applicationSupportDirectory(), project: $0) }
+                : nil,
+            // The home detection expands them against
+            // (`AgentCatalog.detectInstallations`).
+            agentKnownLocations: AgentCatalog.knownLocationsEnvironment(home: NSHomeDirectory())
         )
     }
 

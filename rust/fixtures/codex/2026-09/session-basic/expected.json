@@ -4,6 +4,7 @@
       "compact": false,
       "cwd": "/tmp/example",
       "session_id": "00000000-0000-4000-8000-000000000001",
+      "source": "startup",
       "type": "session_started"
     }
   ],
@@ -16,7 +17,7 @@
   ],
   [
     {
-      "detail": "Bash",
+      "detail": "Bash: ls",
       "tool": "Bash",
       "type": "tool_started"
     }

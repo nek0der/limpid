@@ -17,11 +17,6 @@ enum ReviewScope: Equatable {
     /// else in this app a worktree is a checkout, and one scope reading from
     /// another scope's worktree is a sentence nobody can parse.
     case uncommitted
-    /// What changed since the prompt was sent, represented as one index-backed
-    /// layer because that index already includes tracked additions and
-    /// deletions. The snapshot cannot identify who changed an edit in a shared
-    /// worktree, so this scope deliberately makes no authorship claim.
-    case turn(baseTree: String, paneID: UUID)
     /// Everything between the branch point and the worktree — commits and
     /// uncommitted work in one diff, which is what "review the branch" means
     /// once an agent has started committing its own work.
@@ -30,74 +25,61 @@ enum ReviewScope: Equatable {
     /// merge base rather than from `base` itself, so commits that landed on
     /// the base after this branch left it do not read as reversed changes.
     case branch(base: String)
+    /// A run of turns, fixed when review opened: the tree the first began
+    /// at against the tree the last ended at. Later turns and later
+    /// edits leave it as it is.
+    case turns(ReviewTurnRange)
 
     var base: String? {
         switch self {
-        case .uncommitted: nil
-        case .turn: nil
+        case .uncommitted, .turns: nil
         case let .branch(base): base
         }
     }
 
-    var isTurn: Bool {
-        if case .turn = self {
-            return true
-        }
-        return false
-    }
-
-    /// Stable within the control; selector values are intentionally excluded
-    /// because changing the recorded tree should not replace the segment.
-    var selfID: String {
+    /// What a comment and a read mark belong to: one comparison,
+    /// named by what fixes it. A comment written in one scope and added to
+    /// another carries both IDs. `turn:<tree>`, which the per-pane "This
+    /// turn" scope of earlier builds wrote, names no scope now: a comment
+    /// that has only those is legacy (`ReviewComment.isLegacy`).
+    var scopeID: String {
         switch self {
         case .uncommitted: "uncommitted"
-        case .turn: "turn"
-        case .branch: "branch"
+        case let .branch(base): "branch:" + base
+        case let .turns(range): range.scopeID
         }
+    }
+
+    /// The base a comment's branch scope names (`branch:<base>`), or `nil`
+    /// when it was written in none. `current` when it names that one, which
+    /// is what the view shows and finds it stale against; otherwise the
+    /// first sorted, so a comment carried into two is read the same way
+    /// every time.
+    static func branchBase(in scopeIDs: Set<String>, current: String?) -> String? {
+        let prefix = "branch:"
+        if let current, scopeIDs.contains(prefix + current) {
+            return current
+        }
+        return scopeIDs.sorted().first { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
     }
 
     /// The layers this scope names its files with. `ReviewFile.id` carries the
     /// layer, so this is what tells a file, a comment or a read mark which
-    /// scope it belongs to. The turn and branch layers stay disjoint from the
-    /// staged, unstaged, and untracked working-copy layers.
+    /// scope it belongs to. The range layer is disjoint from the
+    /// working-copy layers; a branch scope shares `untracked` with
+    /// `uncommitted`, as untracked files are in no commit.
     ///
-    /// Here rather than beside either reader: the store prunes read marks with
+    /// Here rather than beside either reader: the review prunes read marks with
     /// it on the main actor, and `ReviewGit` lists and counts files with it off
     /// the main actor. Two copies is how they came to disagree.
     var layers: [ReviewLayer] {
         switch self {
         case .uncommitted: [.staged, .unstaged, .untracked]
-        case .turn: [.turn]
         case .branch: [.branch, .untracked]
+        case .turns: [.turns]
         }
     }
 
-    /// The choices that can truthfully label the snapshot on screen.
-    ///
-    /// A destination change may stop offering the turn being read, and a new
-    /// prompt may offer another turn with the same segment identity. Neither
-    /// event replaces an already-loaded snapshot, so we keep its exact scope
-    /// in the control until the reader explicitly changes it. Otherwise the
-    /// selection has no matching segment, and a new turn can appear selected
-    /// while the diff still belongs to the previous one.
-    static func pickerOptions(
-        current: ReviewScope,
-        offeredTurn: ReviewScope?,
-        branchBase: String?
-    ) -> [ReviewScope] {
-        var result: [ReviewScope] = [.uncommitted]
-        if current.isTurn {
-            result.append(current)
-        } else if let offeredTurn {
-            result.append(offeredTurn)
-        }
-        if case .branch = current {
-            result.append(current)
-        } else if let branchBase {
-            result.append(.branch(base: branchBase))
-        }
-        return result
-    }
 }
 
 /// Outcome of replacing the review's visible repository snapshot.
@@ -110,34 +92,31 @@ enum ReviewReloadResult: Equatable {
 /// Where in Git a change was found. `ReviewFile.id` is built from this, so the
 /// cases keep their raw values: a draft written before a case was added still
 /// points at the file it was written about.
+///
+/// Whole-snapshot layers lead the rail because each is the entire list
+/// when present. The rail's section order is this declaration order.
 enum ReviewLayer: String, Codable, CaseIterable {
-    /// Whole-snapshot layers lead the rail because each is the entire list
-    /// when present. The rail's section order is this declaration order.
+    /// The per-pane "This turn" scope of earlier builds, which no scope
+    /// lists now. Kept so a draft's comment written there still decodes: it
+    /// is legacy (`ReviewComment.isLegacy`), shown read only under this
+    /// title until the reader moves it into a scope. The title names where
+    /// the comment came from, as "Comments from an earlier review" does,
+    /// rather than a scope the reader can no longer open.
     case turn
+    /// A fixed run of turns (`ReviewScope.turns`). Titled by what the files
+    /// are, not "These turns", which pointed at nothing on screen.
+    case turns
     case branch
     case staged, unstaged, untracked
 
     var title: LocalizedStringResource {
         switch self {
-        case .turn: "This turn"
-        case .branch: "On this branch"
+        case .turn: LocalizedStringResource("Earlier Review", comment: "Review: a comment from a scope earlier builds had")
+        case .turns: LocalizedStringResource("Turn Changes", comment: "Review: the files of a fixed run of turns")
+        case .branch: "On This Branch"
         case .staged: "Staged"
         case .unstaged: "Unstaged"
         case .untracked: "Untracked"
-        }
-    }
-
-    /// What the title means in Git's terms, for the reader who knows the words
-    /// but not which two things each one compares. The titles are names; this
-    /// is the only place that says what was diffed against what.
-    var detail: LocalizedStringResource {
-        switch self {
-        case .turn:
-            "What changed since the prompt was sent, whoever changed it: the snapshot taken at the prompt against the working tree."
-        case .branch: "Everything this branch adds, including work not committed yet."
-        case .staged: "Waiting for the next commit: HEAD against the index."
-        case .unstaged: "Edited but not staged: the index against the working tree."
-        case .untracked: "New files Git is not tracking yet."
         }
     }
 }
@@ -200,6 +179,10 @@ struct ReviewViewMark: Codable, Equatable {
     /// `nil` when the file was marked from the list without having been
     /// opened, which is the one case where no fingerprint has been computed.
     var fingerprint: String?
+    /// When the reader marked it, so a scope no longer open lets its marks go
+    /// after a while (`ReviewDraftWriter.closedScopeMarkLifetime`). `nil` on a mark
+    /// from before this was kept, which stays until its file moves on.
+    var markedAt: Date?
 }
 
 /// Added and removed line counts for one changed file. The reader picks what
@@ -279,9 +262,9 @@ struct ReviewDiff {
     ///
     /// Carried rather than derived: an empty patch does not parse to an empty
     /// row list, so nothing downstream can tell this from a patch that merely
-    /// has nothing to comment on. The file bar reads it to stop printing the
-    /// counts the list was built with beside a pane that says there is nothing
-    /// here.
+    /// has nothing to comment on. The file's header in the stack reads it to
+    /// stop printing the counts the list was built with beside a diff that
+    /// says there is nothing here.
     var hasVanished = false
 
     static func hash(_ value: Data) -> String {
@@ -309,6 +292,13 @@ struct ReviewAnchor: Codable, Equatable {
 
 struct ReviewComment: Identifiable, Codable, Equatable {
     var id = UUID()
+    /// The scopes this comment belongs to (`ReviewScope.scopeID`), each one
+    /// comparison it was written or kept for. A set, so a comment added to a
+    /// second scope is held once rather than copied. Empty for a
+    /// comment carried over from a draft that did not record its scope (a
+    /// turn's, whose snapshot no record can prove): it is shown, but moves
+    /// into a scope only by the reader's choice and the insert's own check.
+    var scopeIDs: Set<String> = []
     let file: ReviewFile
     let fingerprint: String
     /// Where the run starts.
@@ -353,6 +343,27 @@ struct ReviewComment: Identifiable, Codable, Equatable {
 
     var isResolved: Bool {
         resolvedAt != nil
+    }
+
+    /// Whether the supervision review has no scope to show this comment in:
+    /// none was recorded (a version 1 draft's turn or branch comment), or
+    /// only the per-pane "This turn" scope earlier builds had (`turn:<tree>`),
+    /// whose snapshot belonged to a prompt and which no build offers now.
+    /// Shown read only, until the reader moves it
+    /// (`ReviewSession.moveLegacyComment`).
+    var isLegacy: Bool {
+        scopeIDs.allSatisfy { $0.hasPrefix("turn:") }
+    }
+
+    /// Whether this is still the comment `sent` was when an insert took it:
+    /// the same in everything but the two marks the reader or an insert set
+    /// on it (`insertedAt`, `resolvedAt`), neither of which changes what
+    /// the agent was asked.
+    func readsAsSent(_ sent: ReviewComment) -> Bool {
+        var current = self
+        current.insertedAt = sent.insertedAt
+        current.resolvedAt = sent.resolvedAt
+        return current == sent
     }
 
     /// First row of the run. Named here rather than reached through `anchor`
@@ -402,6 +413,106 @@ struct ReviewComment: Identifiable, Codable, Equatable {
         guard let end, end != start else { return String(start) }
         return "\(min(start, end))-\(max(start, end))"
     }
+
+    /// Where the comment sits, in words (`position(oldStart:oldEnd:newStart:newEnd:locale:)`).
+    func position(locale: Locale) -> String {
+        Self.position(oldStart: anchor.oldLine, oldEnd: end?.oldLine, newStart: anchor.newLine, newEnd: end?.newLine, locale: locale)
+    }
+
+    /// "Old 10 → new 12", or "Line 12" ("Lines 12-18") when only one side
+    /// of the diff has the run. Old and new are named rather than set apart
+    /// by a slash, which cannot say which is which, and a side with no
+    /// position is left out rather than written as "-". Shared with the
+    /// composer, so a run reads the same before and after it becomes a
+    /// comment.
+    static func position(oldStart: Int?, oldEnd: Int?, newStart: Int?, newEnd: Int?, locale: Locale) -> String {
+        let hasOld = oldStart != nil || oldEnd != nil
+        let hasNew = newStart != nil || newEnd != nil
+        // A comment always has a line on one side; nothing to place says nothing.
+        guard hasOld || hasNew else { return "" }
+        guard hasOld != hasNew else {
+            let old = span(oldStart, oldEnd)
+            let new = span(newStart, newEnd)
+            return LocalizedStringResource("Old \(old) → new \(new)").resolved(in: locale)
+        }
+        let (start, end) = hasNew ? (newStart, newEnd) : (oldStart, oldEnd)
+        let lines = span(start, end)
+        let isRun = start != nil && end != nil && start != end
+        let resource = isRun
+            ? LocalizedStringResource(
+                "Lines \(lines)",
+                comment: "Review: a comment's run of lines, on the one side of the diff that has them"
+            )
+            : LocalizedStringResource("Line \(lines)", comment: "Review: a comment's line, on the one side of the diff that has it")
+        return resource.resolved(in: locale)
+    }
+
+    /// `position` as VoiceOver reads it: "Old line 10, new line 12",
+    /// "Lines 12 to 18". VoiceOver reads the arrow and the hyphen of the
+    /// drawn form as symbols ("right arrow", "hyphen" in Japanese).
+    static func spokenPosition(oldStart: Int?, oldEnd: Int?, newStart: Int?, newEnd: Int?, locale: Locale) -> String {
+        let hasOld = oldStart != nil || oldEnd != nil
+        let hasNew = newStart != nil || newEnd != nil
+        guard hasOld || hasNew else { return "" }
+        guard hasOld != hasNew else {
+            let old = spokenSpan(oldStart, oldEnd, locale: locale)
+            let new = spokenSpan(newStart, newEnd, locale: locale)
+            return LocalizedStringResource(
+                "Old line \(old), new line \(new)",
+                comment: "VoiceOver, review: where a line or a comment sits on both sides of the diff; arguments: old line(s), new line(s)"
+            ).resolved(in: locale)
+        }
+        let (start, end) = hasNew ? (newStart, newEnd) : (oldStart, oldEnd)
+        let lines = spokenSpan(start, end, locale: locale)
+        let isRun = start != nil && end != nil && start != end
+        let resource = isRun
+            ? LocalizedStringResource(
+                "Lines \(lines)",
+                comment: "Review: a comment's run of lines, on the one side of the diff that has them"
+            )
+            : LocalizedStringResource("Line \(lines)", comment: "Review: a comment's line, on the one side of the diff that has it")
+        return resource.resolved(in: locale)
+    }
+
+    /// `position(locale:)` as VoiceOver reads it.
+    func spokenPosition(locale: Locale) -> String {
+        Self.spokenPosition(
+            oldStart: anchor.oldLine,
+            oldEnd: end?.oldLine,
+            newStart: anchor.newLine,
+            newEnd: end?.newLine,
+            locale: locale
+        )
+    }
+
+    /// `span` in words: "12", or "12 to 18" for a run.
+    private static func spokenSpan(_ start: Int?, _ end: Int?, locale: Locale) -> String {
+        guard let start else { return end.map(String.init) ?? "" }
+        guard let end, end != start else { return String(start) }
+        return LocalizedStringResource(
+            "\(min(start, end)) to \(max(start, end))",
+            comment: "VoiceOver, review: a run of line numbers, first to last"
+        ).resolved(in: locale)
+    }
+}
+
+extension ReviewLine {
+    /// Where a code line sits, as VoiceOver reads it: an added line by its
+    /// new number, a removed one by its old, a context line by both. The
+    /// kind is said in words, since on screen only the line's fill tells
+    /// an added line from a removed one.
+    func spokenPosition(locale: Locale) -> String {
+        switch (kind, oldLine, newLine) {
+        case let (.added, _, new?):
+            LocalizedStringResource("Added, new line \(new)", comment: "VoiceOver, review: an added code line and its number")
+                .resolved(in: locale)
+        case let (.removed, old?, _):
+            LocalizedStringResource("Removed, old line \(old)", comment: "VoiceOver, review: a removed code line and its number")
+                .resolved(in: locale)
+        default:
+            ReviewComment.spokenPosition(oldStart: oldLine, oldEnd: oldLine, newStart: newLine, newEnd: newLine, locale: locale)
+        }
+    }
 }
 
 enum ReviewError: LimpidLocalizedError {
@@ -410,13 +521,47 @@ enum ReviewError: LimpidLocalizedError {
     /// nothing was being saved, and there is nothing for the reader to retry.
     case resolvedBacklogTooLarge, baseUnavailable
     case draftUnreadable
+    /// The draft on disk could not be updated safely, so the review is kept
+    /// in memory only, until it closes.
+    case draftNotSaved
+    /// The draft on disk could not be read, nor moved aside: the review
+    /// starts empty and must not save over it.
+    case draftUnreadableNotSaved
     /// The review or the worktree moved while Git was answering. Separate from
     /// `changed`, which is about comments that no longer describe the diff.
     case checkInterrupted
     case commentLimitReached, commentTooLong, nothingToInsert, promptTooLong, timedOut
     case instructionsInvalid, instructionsTooLong
-    case turnBaseMissing
+    /// A fixed range lost a snapshot (the retention sweep, a pruned ref):
+    /// its record is incomplete, and nothing is guessed in its place.
+    case rangeSnapshotsMissing
+    /// A fixed range was recorded in another work tree of the repository.
+    case rangeInAnotherWorktree
     case unsavedComment
+    /// A comment is being written, and another was asked for: the first is
+    /// not dropped for it.
+    case commentInProgress
+    /// A comment from before scopes could not be moved into the scope on
+    /// screen: its file is not in it, the lines it quotes are not, or
+    /// they are there more than once, or (a fixed range) the code is no
+    /// longer where the comment says. Each says what the reader can do.
+    case legacyFileNotInScope, legacyCodeNotFound, legacyCodeRepeated, legacyCodeMoved
+    /// The comment being edited was deleted in another window; the text
+    /// written stays in the composer.
+    case commentDeletedElsewhere
+    /// The review's banner holds the text of a comment that could not stay
+    /// where it was written (`ReviewSession.unplacedComment`), which has to
+    /// be copied or discarded first.
+    case unplacedCommentHeld
+    /// The review tab's worktree no longer resolves to the review the tab
+    /// keeps (`ReviewPaneOpening`).
+    case worktreeMoved
+    /// The pane's terminal did not start, or did not finish typing the
+    /// command it was restored with, in the time an insert waits for it.
+    case paneDidNotStart
+    /// The paste was started and the terminal did not take it: refused at
+    /// the confirmation sheet, or dropped with its pane. Nothing was marked.
+    case pasteRefused
 
     var message: DisplayText {
         .localized(text)
@@ -425,33 +570,61 @@ enum ReviewError: LimpidLocalizedError {
     private var text: LocalizedStringResource {
         switch self {
         case .unsavedComment:
-            "Save or cancel the comment before changing review scope."
-        case .turnBaseMissing:
-            "The snapshot for this turn is gone. Showing uncommitted changes instead."
-        case .invalidDiff: "This diff could not be parsed."
-        case .unsupported: "This file cannot be reviewed as text."
+            "Save or cancel the comment before changing the review scope."
+        case .commentInProgress:
+            "Save or cancel the comment you’re writing first."
+        case .legacyFileNotInScope:
+            "This comment’s file isn’t in this scope."
+        case .legacyCodeNotFound:
+            "The code this comment quotes isn’t in this scope’s changes."
+        case .legacyCodeRepeated:
+            "The code this comment quotes appears more than once in this scope, so it can’t be placed."
+        case .legacyCodeMoved:
+            "The code this comment quotes has changed since. Write the comment again."
+        case .commentDeletedElsewhere:
+            "This comment was deleted in another window. Copy what you wrote before closing."
+        case .unplacedCommentHeld:
+            "First, copy or discard the comment that couldn’t be put back."
+        case .worktreeMoved:
+            "This review’s worktree is no longer where it was. Close the review and open it again."
+        case .paneDidNotStart:
+            "The pane’s terminal didn’t start. Try again."
+        case .pasteRefused:
+            // The comments are what Insert puts in the pane, not
+            // the review, which stays open around them.
+            "The comments weren’t inserted. They stay in this review."
+        case .rangeSnapshotsMissing:
+            "The snapshots of these turns are gone, so their record is incomplete and their changes can’t be shown."
+        case .rangeInAnotherWorktree:
+            "These turns were recorded in another worktree."
+        case .invalidDiff: "This diff couldn’t be parsed."
+        case .unsupported: "This file can’t be reviewed as text."
         case .tooLarge: "This diff exceeds the review size limit."
-        case .gitFailed: "Git could not load the changes. Try again."
+        case .gitFailed: "Git couldn’t load the changes. Try again."
         case .changed: "Changes have moved since these comments were written. Reopen the file and recreate affected comments."
         // Not "there is no terminal": the same error answers a terminal that
         // took the paste as a request for the clipboard's types, and a pane
         // the reader switched away from while Git was running.
-        case .targetUnavailable: "The terminal below review did not take the paste. Try again."
+        case .targetUnavailable: "The terminal below the review didn’t accept the insert. Try again."
         case .invalidText: "The review text contains unsupported control characters."
         case .commentLimitReached: "This review has as many comments as it can hold. Resolve or delete some before adding more."
         case .commentTooLong: "This comment is too long to send. Shorten it and try again."
         case .nothingToInsert: "Every comment in this review is resolved. Unresolve a comment to include it."
-        case .timedOut: "Git did not respond in time. Try again."
-        case .instructionsInvalid: "The review instructions in Settings contain characters that cannot be sent to a terminal."
+        case .timedOut: "Git didn’t respond in time. Try again."
+        case .instructionsInvalid: "The review instructions in Settings contain characters that can’t be sent to a terminal."
         case .instructionsTooLong: "The review instructions in Settings are too long to send. Shorten them and try again."
         case .promptTooLong: "These comments are too long to send together. Resolve or delete some and try again."
-        case .storageFailed: "Review comments could not be saved. Keep Review open and try the change again."
+        case .storageFailed: "Review comments couldn’t be saved. Keep Review open and try the change again."
         case .resolvedBacklogTooLarge:
             "The review draft is full. Delete resolved comments from the preview and try again."
         case .baseUnavailable:
-            "Git could not determine the comparison branch. Check the repository and try again."
-        case .draftUnreadable: "Saved review comments could not be loaded. This review starts empty."
-        case .checkInterrupted: "The review or worktree changed while Git was checking it. Insert again."
+            "Git couldn’t determine the comparison branch. Check the repository and try again."
+        case .draftUnreadable: "Saved review comments couldn’t be loaded. This review starts empty."
+        case .draftNotSaved:
+            "Saved review comments couldn’t be updated safely, so changes to this review aren’t saved and are lost when it closes."
+        case .draftUnreadableNotSaved:
+            "Saved review comments couldn’t be loaded or moved aside. This review starts empty, and changes to it aren’t saved."
+        case .checkInterrupted: "The comments or the checked-out commit changed while Git was checking them. Insert again."
         }
     }
 }
@@ -518,8 +691,8 @@ struct ReviewPrompt: Equatable {
 enum ReviewPromptBuilder {
     /// What a whole prompt may run to.
     ///
-    /// Derived rather than chosen, so a review the store was willing to hold
-    /// is a review this can build. Every comment the store accepts is bounded
+    /// Derived rather than chosen, so a review the session was willing to hold
+    /// is a review this can build. Every comment the session accepts is bounded
     /// by its body and its excerpt, and it accepts a fixed number of them; a
     /// smaller number here meant a reader could fill a review comment by
     /// comment, each one accepted, and be refused only when they pressed
@@ -529,8 +702,8 @@ enum ReviewPromptBuilder {
     /// an escaped text byte, twice the excerpt for restored line markers,
     /// and six bytes per path byte for quoted attribute escapes.
     static var maxBytes: Int {
-        ReviewStore.maxComments * (
-            ReviewStore.maxCommentBytes * 4 + ReviewStore.maxCodeExcerpt * 8 + Int(PATH_MAX) * 6
+        ReviewSession.maxComments * (
+            ReviewSession.maxCommentBytes * 4 + ReviewSession.maxCodeExcerpt * 8 + Int(PATH_MAX) * 6
         )
             + maxInstructionsBytes
             + framingMargin
@@ -562,7 +735,7 @@ enum ReviewPromptBuilder {
         the current file first.
         Fix the ones that still apply, and for each one you skip, say why in one line.
         Limit each change to what its comment asks for.
-        Then run this project's usual checks and show what you ran and what came back.
+        Then run this project’s usual checks and show what you ran and what came back.
         """
     }
 
@@ -587,11 +760,10 @@ enum ReviewPromptBuilder {
     ///
     /// The excerpt goes in as it was read, apart from the two substitutions
     /// below it: `ReviewText.neutralized` for what must not reach a terminal,
-    /// and `escaped` for what could be read as this prompt's own markup. It
-    /// used to be
-    /// JSON-encoded, which folded every line onto one and doubled every
-    /// backslash — a Swift key path arrived as `\\.id`, so nothing the agent
-    /// searched for matched.
+    /// and `escaped` for what could be read as this prompt's own markup. Not
+    /// JSON-encoded: that would fold every line onto one and double every
+    /// backslash — a Swift key path would arrive as `\\.id`, so nothing the
+    /// agent searched for would match.
     ///
     /// The default opening and the boundary are resolved in `locale`, the app
     /// locale at the moment of building, so the agent reads the language the

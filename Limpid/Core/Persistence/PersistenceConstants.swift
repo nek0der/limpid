@@ -1,10 +1,9 @@
 // PersistenceConstants.swift
 // Limpid — named timings + a single JSON coder factory shared by
-// every top-level Codable store. Per-store ad-hoc constants used to
-// drift (250 vs 400 ms debounces, `.iso8601` set in some places and
-// omitted in others, `.prettyPrinted` Debug-only on three stores and
-// always-on on a fourth); centralizing them keeps the on-disk shape
-// uniform and makes future timing / format changes one-line edits.
+// every top-level Codable store. Per-store constants drift apart
+// (debounce lengths, date strategies, pretty-printing); one place keeps
+// the on-disk shape uniform and makes a timing or format change a
+// one-line edit.
 
 import Foundation
 
@@ -34,13 +33,18 @@ enum PersistenceTiming {
 
 // MARK: - JSON coder factory
 
-/// Canonical JSON config every Limpid Codable store routes through.
-/// All four top-level stores (`SessionStore`, `SettingsStore`,
-/// `NotificationHistoryStore`, `FrecencyStore`) hand encoding /
-/// decoding off here so a single change here lands uniformly across
-/// every on-disk file. The per-pane agent records are not among them:
-/// the hooks write those from shell and Rust, so their shape is a
-/// cross-language contract rather than this factory's to set.
+/// The shared JSON config for the Codable stores that route through it
+/// (`SessionStore`, `NotificationHistoryStore`, `FrecencyStore`, the read,
+/// viewed-line, routing, stop, resume, and review-draft stores), so a
+/// change here reaches each of their files. `SettingsStore` only decodes
+/// through it: it writes `settings.json` with
+/// `LimpidSettings.makeFileEncoder`. Not every file Limpid writes is among
+/// them. `VersionedListFile` (`ended-session-hints.json`,
+/// `turn-deletions.json`, `restore-pending-stops.json`), the migration
+/// backup's record, and the service registration marker keep coders of
+/// their own, and the per-pane agent records are written by the
+/// hooks from shell and Rust, so their shape is a cross-language contract
+/// rather than this factory's to set.
 enum PersistenceCoders {
     /// Encoder with sorted keys (clean `git diff` over copied state
     /// files), ISO 8601 dates (forward-compat with any timezone-aware

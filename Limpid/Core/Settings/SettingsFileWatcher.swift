@@ -32,9 +32,9 @@ final class SettingsFileWatcher {
     #if DEBUG
         /// Test seam: read the watched directory's file descriptor so a
         /// lifecycle test can assert it closes when the source is
-        /// canceled. Pre-fix the cancel handler captured `self` weakly and
-        /// closed by the wrong path; the value-capture fix is correctness-
-        /// critical, and without this accessor there's no way to pin it.
+        /// canceled. The cancel handler closes the fd it captured by value,
+        /// not whatever `dirFD` holds then, and only this accessor lets a
+        /// test see which one it was.
         nonisolated var currentDirFD: CInt {
             dirFD
         }
@@ -66,11 +66,11 @@ final class SettingsFileWatcher {
 
         // Make sure the directory exists so `open` doesn't fail on a
         // fresh install where settings.json hasn't been written yet.
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        SecureFileWrite.ensureUserOnlyDirectory(dir)
 
         let fd = open(dir.path, O_EVTONLY)
         guard fd >= 0 else {
-            log.error("open() on \(dir.path, privacy: .public) failed: errno \(errno, privacy: .public)")
+            log.error("open() on \(dir.path, privacy: .private) failed: errno \(errno, privacy: .public)")
             return
         }
         self.dirFD = fd
@@ -88,7 +88,7 @@ final class SettingsFileWatcher {
         }
         source.resume()
         self.dirSource = source
-        log.notice("settings.json watcher armed on \(dir.path, privacy: .public)")
+        log.notice("settings.json watcher armed on \(dir.path, privacy: .private)")
     }
 
     func stop() {

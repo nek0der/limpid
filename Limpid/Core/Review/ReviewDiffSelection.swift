@@ -31,9 +31,9 @@ struct ReviewDiffSelection: Equatable {
     /// Replaces the text. Text lets go of the line run unless an open composer
     /// keeps it. An empty selection — the press that starts a drag — leaves
     /// the run alone until the release says whether it was a drag.
-    mutating func selectText(_ selection: ReviewTextSelection, keepingLines: Bool = false) {
+    mutating func selectText(_ selection: ReviewTextSelection, keepsLines: Bool = false) {
         text = selection
-        if !selection.isEmpty, !keepingLines {
+        if !selection.isEmpty, !keepsLines {
             lines = ReviewSelection()
         }
     }
@@ -41,9 +41,9 @@ struct ReviewDiffSelection: Equatable {
     /// A press on code that did not become a drag. Code is for reading and
     /// copying; lines are picked in the gutter. Returns whether the run went.
     @discardableResult
-    mutating func pressCode(keepingLines: Bool = false) -> Bool {
+    mutating func pressCode(keepsLines: Bool = false) -> Bool {
         text.clear()
-        guard !keepingLines else { return false }
+        guard !keepsLines else { return false }
         lines = ReviewSelection()
         return true
     }

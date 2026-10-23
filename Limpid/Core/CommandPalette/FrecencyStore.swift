@@ -38,17 +38,23 @@ final class FrecencyStore {
 
     private(set) var entries: [String: Entry] = [:]
     private let fileURL: URL
-    private var pendingSave: DispatchWorkItem?
+    private let saveDebounce = DebouncedSave()
     private let saveQueue = DispatchQueue(label: "dev.limpid.frecency")
+    /// False in demo mode: what is used is ranked in memory only, and the
+    /// person's own ranking is neither read nor written.
+    private let writesFiles: Bool
 
-    convenience init() {
-        self.init(directory: LimpidPaths.applicationSupportDirectory())
+    convenience init(writesFiles: Bool) {
+        self.init(directory: LimpidPaths.applicationSupportDirectory(), writesFiles: writesFiles)
     }
 
-    init(directory: URL) {
-        SecureFileWrite.ensureUserOnlyDirectory(directory)
+    init(directory: URL, writesFiles: Bool = true) {
+        self.writesFiles = writesFiles
         self.fileURL = directory.appendingPathComponent("frecency.json")
-        load()
+        if writesFiles {
+            SecureFileWrite.ensureUserOnlyDirectory(directory)
+            load()
+        }
     }
 
     // MARK: - Scoring
@@ -76,8 +82,8 @@ final class FrecencyStore {
     // MARK: - Persistence
 
     func flushSynchronously() {
-        pendingSave?.cancel()
-        pendingSave = nil
+        saveDebounce.cancel()
+        guard writesFiles else { return }
         pruneExpired()
         let snapshot = entries
         let url = fileURL
@@ -93,7 +99,7 @@ final class FrecencyStore {
             entries = try decoder.decode([String: Entry].self, from: data)
             pruneExpired()
         } catch {
-            log.error("failed to decode frecency.json: \(String(describing: error), privacy: .public)")
+            log.error("failed to decode frecency.json: \(String(describing: error), privacy: .private)")
         }
     }
 
@@ -106,20 +112,16 @@ final class FrecencyStore {
     }
 
     private func scheduleSave() {
-        pendingSave?.cancel()
+        saveDebounce.cancel()
+        guard writesFiles else { return }
         pruneExpired()
         let snapshot = entries
         let url = fileURL
-        let work = DispatchWorkItem { [saveQueue] in
+        saveDebounce.schedule { [saveQueue] in
             saveQueue.async {
                 Self.write(snapshot, to: url)
             }
         }
-        pendingSave = work
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + .milliseconds(PersistenceTiming.coalescingMs),
-            execute: work
-        )
     }
 
     private nonisolated static func write(_ entries: [String: Entry], to url: URL) {
@@ -128,7 +130,7 @@ final class FrecencyStore {
             let data = try encoder.encode(entries)
             try SecureFileWrite.writeAtomic(data, to: url)
         } catch {
-            log.error("failed to write frecency.json: \(String(describing: error), privacy: .public)")
+            log.error("failed to write frecency.json: \(String(describing: error), privacy: .private)")
         }
     }
 }

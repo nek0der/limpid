@@ -57,11 +57,27 @@ enum PalettePrefix: CaseIterable {
 
     var placeholder: LocalizedStringResource {
         switch self {
-        case .actions: "Type an action name..."
-        case .tabs: "Type a tab name..."
-        case .projects: "Type a project or worktree name..."
-        case .settings: "Type a setting name..."
-        case .help: "Select a mode..."
+        case .actions: "Type an action name…"
+        case .tabs: "Type a tab name…"
+        case .projects: "Type a project or worktree name…"
+        case .settings: "Type a setting name…"
+        case .help: "Select a mode…"
+        }
+    }
+
+    /// What the prefix narrows to, in a word or two, as the palette's foot
+    /// lists the prefixes.
+    var shortName: LocalizedStringResource {
+        // The section names the palette already has where one fits.
+        switch self {
+        case .actions: "Actions"
+        case .tabs: LocalizedStringResource("Tabs", comment: "Command palette's foot: what the @ prefix narrows to")
+        case .projects: LocalizedStringResource(
+                "Projects & Worktrees",
+                comment: "Command palette's foot: what the # prefix narrows to"
+            )
+        case .settings: "Settings"
+        case .help: "Help"
         }
     }
 
@@ -86,7 +102,7 @@ enum PalettePrefix: CaseIterable {
             return false
         case .projects:
             switch item.action {
-            case .activateProject, .activateWorktree, .activateGroup: return true
+            case .activateProject, .activateWorktree: return true
             default: return false
             }
         default:

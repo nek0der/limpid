@@ -23,14 +23,14 @@ struct AppearancePane: View {
                     "Theme",
                     selection: $store.settings.appearance.colorScheme
                 ) {
-                    Text("Follow System").tag(ColorSchemePreference.system)
-                    Text("Light").tag(ColorSchemePreference.light)
-                    Text("Dark").tag(ColorSchemePreference.dark)
+                    SettingsDefaultMark.title(Text("Follow System"), value: ColorSchemePreference.system, of: \.appearance.colorScheme)
+                        .tag(ColorSchemePreference.system)
+                    SettingsDefaultMark.title(Text("Light"), value: ColorSchemePreference.light, of: \.appearance.colorScheme)
+                        .tag(ColorSchemePreference.light)
+                    SettingsDefaultMark.title(Text("Dark"), value: ColorSchemePreference.dark, of: \.appearance.colorScheme)
+                        .tag(ColorSchemePreference.dark)
                 }
                 .settingsSearchTarget(SettingsSearchCatalog.theme.id)
-            }
-
-            Section {
                 HStack(spacing: 12) {
                     Text("Accent")
                     Spacer(minLength: 12)
@@ -46,13 +46,18 @@ struct AppearancePane: View {
                 // System Settings' accent row is.
                 .settingsControlRow()
                 .settingsSearchTarget(SettingsSearchCatalog.accentColor.id)
+            } header: {
+                // A heading over the first group, as the other panes have,
+                // puts the first card at the same height under the title.
+                // It names the group rather than repeating a row's label.
+                Text("Color")
             } footer: {
-                Text("Painted on focus rings, drop targets, and other highlights.")
+                SettingsFootnote("Used for focus rings, drop targets, and other highlights.")
             }
 
             Section {
                 SettingsToggle(
-                    "Transparency",
+                    "Translucent window",
                     isOn: Binding(
                         get: { store.settings.appearance.transparency == .on },
                         set: { store.settings.appearance.transparency = $0 ? .on : .off }
@@ -60,10 +65,19 @@ struct AppearancePane: View {
                 )
                 .disabled(reduceTransparencyResolver.systemReducesTransparency)
                 .settingsSearchTarget(SettingsSearchCatalog.transparency.id)
+                // The opacity only acts while the window is translucent, so
+                // it sits under the switch as its child and is disabled
+                // while the switch is off or the OS forces opacity.
                 SliderRow(
-                    title: "Opacity",
+                    title: "Background opacity",
                     value: $store.settings.appearance.backgroundOpacity,
-                    range: 0.5...1.0
+                    range: 0.5...1.0,
+                    defaultValue: AppearanceSettings().backgroundOpacity
+                )
+                .padding(.leading, LimpidLayout.settingsChildRowIndent)
+                .disabled(
+                    store.settings.appearance.transparency != .on
+                        || reduceTransparencyResolver.systemReducesTransparency
                 )
                 .settingsSearchTarget(SettingsSearchCatalog.backgroundOpacity.id)
             } footer: {
@@ -71,7 +85,7 @@ struct AppearancePane: View {
                 // is disabled. The enabled state is self-explanatory, so
                 // we keep the footer to the one non-obvious case.
                 if reduceTransparencyResolver.systemReducesTransparency {
-                    Text("Disabled when System Settings' Accessibility Reduce Transparency is on.")
+                    SettingsFootnote("Disabled when Reduce Transparency is on in System Settings → Accessibility → Display.")
                 }
             }
 
@@ -79,11 +93,12 @@ struct AppearancePane: View {
                 SliderRow(
                     title: "Unfocused pane opacity",
                     value: $store.settings.appearance.unfocusedPaneOpacity,
-                    range: 0.15...1.0
+                    range: 0.15...1.0,
+                    defaultValue: AppearanceSettings().unfocusedPaneOpacity
                 )
                 .settingsSearchTarget(SettingsSearchCatalog.unfocusedPaneOpacity.id)
             } footer: {
-                Text("Dims the unfocused leaves when a tab carries more than one pane.")
+                SettingsFootnote("Dims the panes without focus when a tab has more than one pane.")
             }
         }
     }

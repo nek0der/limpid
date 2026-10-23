@@ -1,9 +1,9 @@
 // GitSyncCoordinator.swift
 // Limpid — keeps `Project.worktrees` synchronized with the real
-// `git worktree list` output, plus per-worktree `GitRef` status.
+// `git worktree list` output, each row's `GitRef` taken from it.
 //
 // Lifecycle:
-//   - Watches `WindowSession.projects` (via `observeRepeatedly`) and
+//   - Watches `WorkspaceSession.projects` (via `observeRepeatedly`) and
 //     installs/removes a per-Project sync as projects come and go.
 //   - Each per-Project sync runs an initial fetch, then watches the
 //     repo's `.git` directory via FSEvents to re-fetch on demand.
@@ -28,10 +28,17 @@ extension Notification.Name {
     static let limpidGitSyncRequested = Notification.Name("dev.limpid.gitSyncRequested")
 }
 
+/// Lists a repository's worktrees: `git worktree list`, or a test's own.
+typealias WorktreeLister = @Sendable (URL) async throws -> [GitWorktreeInfo]
+
 @MainActor
 final class GitSyncCoordinator {
-    private weak var session: WindowSession?
+    private weak var session: WorkspaceSession?
     private var perProject: [UUID: ProjectSync] = [:]
+    private let listWorktrees: WorktreeLister
+    /// The person's home folder, under which Codex keeps the worktrees it
+    /// makes (`WorktreeAdmissionRule.Facts.homePath`). A test passes its own.
+    private let homePath: String
 
     // `deinit` is nonisolated, but `NSObjectProtocol?` is non-Sendable,
     // so accessing these tokens to remove the observers needs the
@@ -41,8 +48,14 @@ final class GitSyncCoordinator {
     private nonisolated(unsafe) var syncRequestObserver: (any NSObjectProtocol)?
     private nonisolated(unsafe) var activateObserver: (any NSObjectProtocol)?
 
-    init(session: WindowSession) {
+    init(
+        session: WorkspaceSession,
+        listWorktrees: @escaping WorktreeLister = { try await GitWorktreeList.fetch(repoRoot: $0) },
+        homePath: String = NSHomeDirectory()
+    ) {
         self.session = session
+        self.listWorktrees = listWorktrees
+        self.homePath = homePath
         observeRepeatedly { [weak self] in
             guard let self, let session = self.session else { return }
             // Touch the list of projects so the runtime re-arms on
@@ -110,7 +123,7 @@ final class GitSyncCoordinator {
         }
         // Spin up syncs for any new project rooted in a git repo.
         for project in session.projects where perProject[project.id] == nil {
-            let sync = ProjectSync(projectID: project.id, session: session)
+            let sync = ProjectSync(projectID: project.id, session: session, listWorktrees: listWorktrees, homePath: homePath)
             perProject[project.id] = sync
             sync.start()
         }
@@ -122,24 +135,32 @@ final class GitSyncCoordinator {
 @MainActor
 private final class ProjectSync {
     let projectID: UUID
-    weak var session: WindowSession?
+    weak var session: WorkspaceSession?
     private var refetchTask: Task<Void, Never>?
+    private let listWorktrees: WorktreeLister
+    private let homePath: String
+    /// Counts the syncs started. Canceling one does not stop the `git` it
+    /// awaits, so a sync that a later one replaced can still return, with an
+    /// older picture of the repository, after the later one wrote its own.
+    /// It writes only while it is still the latest.
+    private var generation: UInt = 0
 
-    init(projectID: UUID, session: WindowSession) {
+    init(projectID: UUID, session: WorkspaceSession, listWorktrees: @escaping WorktreeLister, homePath: String) {
         self.projectID = projectID
         self.session = session
+        self.listWorktrees = listWorktrees
+        self.homePath = homePath
     }
 
     func start() {
         // Initial fetch only. We deliberately do NOT install a
         // FSEvents watcher on `.git` — sub-second auto refetches
         // triggered by Limpid's own git CLI calls (rename/delete/
-        // create) used to clobber the optimistic in-memory state and
-        // produce a long tail of race conditions (W14, W19, W20,
-        // W31, W32, W36, W38). The remaining refetch triggers are:
+        // create) would clobber the optimistic in-memory state and
+        // produce a long tail of race conditions. The refetch triggers are:
         //   1. App focus (didBecomeActiveNotification, GitSyncCoordinator init)
         //   2. Manual `Sync Worktrees` (limpidGitSyncRequested)
-        //   3. Self-triggered — `WindowSession+Worktree` posts the
+        //   3. Self-triggered — `WorkspaceSession+Worktree` posts the
         //      same notification at the end of each mutation.
         scheduleRefetch()
     }
@@ -167,6 +188,8 @@ private final class ProjectSync {
     }
 
     private func refetch() async {
+        generation &+= 1
+        let started = generation
         guard let project = currentProject() else { return }
         let root = project.rootURL
         // `git worktree list` already filters to actual checkouts —
@@ -174,44 +197,34 @@ private final class ProjectSync {
         // user-pinned items alone.
         let infos: [GitWorktreeInfo]
         do {
-            infos = try await GitWorktreeList.fetch(repoRoot: root)
+            infos = try await listWorktrees(root)
         } catch {
-            log.error("worktree list failed: \(String(describing: error), privacy: .public)")
+            log.error("worktree list failed: \(String(describing: error), privacy: .private)")
             return
         }
 
-        // Per-worktree status (branch / dirty / ahead-behind).
-        var statuses: [URL: GitWorktreeStatus] = [:]
-        for info in infos {
-            if let s = try? await GitStatus.fetch(workingDirectory: info.path) {
-                statuses[info.path.standardizedFileURL] = s
-            }
-        }
-
+        // One listing, no `git status` per worktree: the listing names each
+        // one's branch and HEAD, and nothing reads the dirty flag or the
+        // ahead and behind counts a status gave. Run on every activation,
+        // a status per worktree made a new row wait for all of them.
+        guard started == generation, !Task.isCancelled else { return }
         guard let session else { return }
         guard let pIdx = session.projects.firstIndex(where: { $0.id == projectID }) else { return }
 
         let projectRoot = project.rootURL.standardizedFileURL
-        // Main checkout entry is captured separately for the toolbar
-        // subtitle; per-worktree rows skip it because the project
-        // header already stands for the main checkout.
+        // Main checkout entry is captured separately for the project's
+        // `mainBranchName`; per-worktree entries skip it because the
+        // project's own folder already stands for the main checkout.
         let mainInfo = infos.first(where: { $0.path.standardizedFileURL == projectRoot })
         let liveInfos = infos.filter { $0.path.standardizedFileURL != projectRoot }
 
-        let merged = buildReconciledList(
+        let merged = admitUnadmitted(
+            buildReconciledList(session: session, pIdx: pIdx, liveInfos: liveInfos),
             session: session,
-            pIdx: pIdx,
-            liveInfos: liveInfos,
-            statuses: statuses
+            projectID: projectID
         )
         writeBackIfChanged(session: session, pIdx: pIdx, merged: merged)
-        updateMainBranch(
-            session: session,
-            pIdx: pIdx,
-            mainInfo: mainInfo,
-            statuses: statuses,
-            projectRoot: projectRoot
-        )
+        updateMainBranch(session: session, pIdx: pIdx, mainInfo: mainInfo)
     }
 
     // MARK: - refetch sub-steps
@@ -227,10 +240,9 @@ private final class ProjectSync {
     /// rename races), append brand-new rows at the end, and skip
     /// anything the user deleted while our awaits were in flight.
     private func buildReconciledList(
-        session: WindowSession,
+        session: WorkspaceSession,
         pIdx: Int,
-        liveInfos: [GitWorktreeInfo],
-        statuses: [URL: GitWorktreeStatus]
+        liveInfos: [GitWorktreeInfo]
     ) -> [Worktree] {
         let userPinned = session.projects[pIdx].worktrees.filter { $0.origin == .userPinned }
         let oldGitWorktrees = session.projects[pIdx].worktrees.filter { $0.origin == .gitWorktree }
@@ -281,8 +293,8 @@ private final class ProjectSync {
                 return nil
             }()
             if let info = resolved {
-                var fresh = mergeWorktree(existing: old, info: info, statuses: statuses)
-                fresh.isMissing = false
+                var fresh = mergeWorktree(existing: old, info: info)
+                fresh.missingSince = nil
                 result.append(fresh)
                 consumedPaths.insert(info.path.standardizedFileURL)
             } else {
@@ -290,17 +302,16 @@ private final class ProjectSync {
                 // the UI dims it + warns rather than silently dropping
                 // user state.
                 var stale = old
-                stale.isMissing = true
+                stale.missingSince = old.missingSince ?? Date()
                 result.append(stale)
             }
         }
-        // Append rows git reported that we don't already track.
         for info in liveInfos {
             let path = info.path.standardizedFileURL
             if consumedPaths.contains(path) {
                 continue
             }
-            result.append(mergeWorktree(existing: nil, info: info, statuses: statuses))
+            result.append(mergeWorktree(existing: nil, info: info))
         }
 
         // Filter out anything the user explicitly removed during our
@@ -316,18 +327,13 @@ private final class ProjectSync {
     /// same path/branch.
     private func mergeWorktree(
         existing: Worktree?,
-        info: GitWorktreeInfo,
-        statuses: [URL: GitWorktreeStatus]
+        info: GitWorktreeInfo
     ) -> Worktree {
         let path = info.path.standardizedFileURL
-        let status = statuses[path]
         let gitRef = GitRef(
-            branchName: info.branch ?? status?.branch,
+            branchName: info.branch,
             worktreePath: path,
-            headSHA: info.headSHA ?? status?.headSHA,
-            ahead: status?.ahead ?? 0,
-            behind: status?.behind ?? 0,
-            isDirty: status?.isDirty ?? false,
+            headSHA: info.headSHA,
             lastFetched: Date()
         )
         // Fall back through branch → folder basename → a literal
@@ -347,19 +353,52 @@ private final class ProjectSync {
             updated.gitRef = gitRef
             return updated
         }
+        // A worktree Git reports first was made outside Limpid, by an agent
+        // or by hand: it waits among the other worktrees until the person
+        // opens it. One Limpid makes is attached as its own before
+        // this sync sees it (`attachGitWorktree`).
         return Worktree(
             label: autoLabel,
             workingDirectory: path,
             gitRef: gitRef,
-            origin: .gitWorktree
+            origin: .gitWorktree,
+            admission: .discovered
         )
+    }
+
+    /// Admits each row a `state.json` from before admissions holds with
+    /// none, once, by its use and then its path (`WorktreeAdmissionRule`);
+    /// `writeBackIfChanged` saves the result with the sync's. A pinned row
+    /// is the person's own. A row being changed is left as the change has
+    /// it, as the reconcile leaves it.
+    private func admitUnadmitted(_ rows: [Worktree], session: WorkspaceSession, projectID: UUID) -> [Worktree] {
+        let inFlight = session.worktreeMutationsInFlight
+        return rows.map { row in
+            guard row.admission == nil, !inFlight.contains(row.id) else { return row }
+            var admitted = row
+            if row.origin == .userPinned {
+                admitted.admission = .opened
+                return admitted
+            }
+            let container = ContainerID.worktree(projectID: projectID, worktreeID: row.id)
+            admitted.admission = WorktreeAdmissionRule.classify(WorktreeAdmissionRule.Facts(
+                hasTabs: !session.tabs(in: container).isEmpty,
+                hasLastActiveTab: row.lastActiveTabID != nil,
+                isSelected: session.holdsSelection(of: container),
+                path: row.workingDirectory.standardizedFileURL.path,
+                // A row Git reported with no branch has its HEAD detached.
+                isDetached: row.gitRef != nil && row.gitRef?.branchName == nil,
+                homePath: homePath
+            ))
+            return admitted
+        }
     }
 
     /// Write the reconciled list back to the session only when it
     /// actually differs — avoids Observation churn that would
     /// re-render the sidebar on every focus refetch.
     private func writeBackIfChanged(
-        session: WindowSession,
+        session: WorkspaceSession,
         pIdx: Int,
         merged: [Worktree]
     ) {
@@ -369,19 +408,22 @@ private final class ProjectSync {
         }
     }
 
-    /// Update the project's `mainBranchName` from the main checkout
-    /// entry (or the git status of the root as fallback). Drives the
-    /// tab/terminal column toolbar subtitle when the project container is active.
+    /// Update the project's `mainBranchName` and `mainHeadSHA` from the
+    /// main checkout entry. The branch names the main folder's checkout
+    /// wherever Limpid names one (`CheckoutName`); the commit says it is a
+    /// repository when a detached HEAD leaves it no branch.
     private func updateMainBranch(
-        session: WindowSession,
+        session: WorkspaceSession,
         pIdx: Int,
-        mainInfo: GitWorktreeInfo?,
-        statuses: [URL: GitWorktreeStatus],
-        projectRoot: URL
+        mainInfo: GitWorktreeInfo?
     ) {
-        let mainBranch = mainInfo?.branch ?? statuses[projectRoot]?.branch
+        let mainBranch = mainInfo?.branch
         if session.projects[pIdx].mainBranchName != mainBranch {
             session.projects[pIdx].mainBranchName = mainBranch
+        }
+        let mainHead = mainInfo?.headSHA
+        if session.projects[pIdx].mainHeadSHA != mainHead {
+            session.projects[pIdx].mainHeadSHA = mainHead
         }
     }
 }

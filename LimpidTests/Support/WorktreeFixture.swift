@@ -20,16 +20,23 @@ enum WorktreeFixture {
         workingDirectory: URL? = nil,
         origin: WorktreeOrigin = .gitWorktree,
         isHidden: Bool = false,
-        isMissing: Bool = false
+        isMissing: Bool = false,
+        admission: WorktreeAdmission? = nil
     ) -> Worktree {
-        var worktree = Worktree(
+        Worktree(
             label: label,
-            workingDirectory: workingDirectory ?? FileManager.default.temporaryDirectory
-                .appendingPathComponent("limpid-worktree-\(UUID().uuidString)"),
+            workingDirectory: workingDirectory ?? freshPath(),
             origin: origin,
-            isHidden: isHidden
+            isHidden: isHidden,
+            missingSince: isMissing ? Date(timeIntervalSince1970: 0) : nil,
+            admission: admission
         )
-        worktree.isMissing = isMissing
-        return worktree
+    }
+
+    /// A folder for a worktree that does not exist yet, under the temporary
+    /// directory, so a creation's "path already exists" guard never fires
+    /// for the path a test means to succeed.
+    static func freshPath() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("limpid-worktree-\(UUID().uuidString)")
     }
 }

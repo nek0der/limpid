@@ -16,30 +16,6 @@ import Testing
 @Suite("PRStatusSyncer targets")
 struct PRStatusSyncerTargetTests {
 
-    private func freshPath() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("limpid-target-\(UUID().uuidString)")
-    }
-
-    @discardableResult
-    private func appendWorktree(
-        to projectID: UUID,
-        in session: WindowSession,
-        origin: WorktreeOrigin = .gitWorktree,
-        isHidden: Bool = false,
-        isMissing: Bool = false
-    ) throws -> Worktree {
-        let worktree = WorktreeFixture.make(
-            workingDirectory: freshPath(),
-            origin: origin,
-            isHidden: isHidden,
-            isMissing: isMissing
-        )
-        let idx = try #require(session.projects.firstIndex(where: { $0.id == projectID }))
-        session.projects[idx].worktrees.append(worktree)
-        return worktree
-    }
-
     /// `GitSyncCoordinator` keeps a project's main checkout out of
     /// `project.worktrees` because the Project row already stands for
     /// it. That checkout still has a branch, so leaving it out here
@@ -47,7 +23,7 @@ struct PRStatusSyncerTargetTests {
     /// the one row that never shows a request.
     @Test("a project with no worktrees still contributes its own root")
     func enumerableTargets_projectWithoutWorktrees_includesRoot() {
-        let (session, project) = WindowSessionFixture.withProject()
+        let (session, project) = WorkspaceSessionFixture.withProject()
         let targets = PRStatusSyncer.enumerableTargets(session: session)
         #expect(targets.map(\.container) == [.project(project.id)])
         #expect(targets.first?.workingDirectory == project.rootURL)
@@ -55,8 +31,8 @@ struct PRStatusSyncerTargetTests {
 
     @Test("each visible git worktree contributes its own row")
     func enumerableTargets_visibleWorktrees_areIncluded() throws {
-        let (session, project) = WindowSessionFixture.withProject()
-        let worktree = try appendWorktree(to: project.id, in: session)
+        let (session, project) = WorkspaceSessionFixture.withProject()
+        let worktree = try WorkspaceSessionFixture.appendWorktree(to: project.id, in: session)
         let targets = PRStatusSyncer.enumerableTargets(session: session)
         #expect(targets.count == 2)
         let match = try #require(targets.first {
@@ -70,8 +46,8 @@ struct PRStatusSyncerTargetTests {
     /// it can only ever fail.
     @Test("a user-pinned row is not a target")
     func enumerableTargets_userPinned_isExcluded() throws {
-        let (session, project) = WindowSessionFixture.withProject()
-        try appendWorktree(to: project.id, in: session, origin: .userPinned)
+        let (session, project) = WorkspaceSessionFixture.withProject()
+        try WorkspaceSessionFixture.appendWorktree(to: project.id, in: session, origin: .userPinned)
         #expect(PRStatusSyncer.enumerableTargets(session: session).count == 1)
     }
 
@@ -79,8 +55,8 @@ struct PRStatusSyncerTargetTests {
     /// run in — spawning for either is work with nowhere to land.
     @Test("hidden and missing worktrees are not targets", arguments: [true, false])
     func enumerableTargets_hiddenAndMissing_areExcluded(hidden: Bool) throws {
-        let (session, project) = WindowSessionFixture.withProject()
-        try appendWorktree(
+        let (session, project) = WorkspaceSessionFixture.withProject()
+        try WorkspaceSessionFixture.appendWorktree(
             to: project.id,
             in: session,
             isHidden: hidden,
@@ -91,14 +67,43 @@ struct PRStatusSyncerTargetTests {
 
     @Test("every project contributes, and each row appears once")
     func enumerableTargets_multipleProjects_areAllCovered() throws {
-        let (session, first) = WindowSessionFixture.withProject(name: "first")
-        let second = session.addOrActivateProject(rootURL: freshPath(), suggestedName: "second")
-        try appendWorktree(to: first.id, in: session)
-        try appendWorktree(to: second.id, in: session)
+        let (session, first) = WorkspaceSessionFixture.withProject(name: "first")
+        let second = session.addOrActivateProject(rootURL: WorkspaceSessionFixture.projectRootURL("second"), suggestedName: "second")
+        try WorkspaceSessionFixture.appendWorktree(to: first.id, in: session)
+        try WorkspaceSessionFixture.appendWorktree(to: second.id, in: session)
         let containers = PRStatusSyncer.enumerableTargets(session: session).map(\.container)
         #expect(containers.count == 4)
         #expect(Set(containers).count == containers.count)
         #expect(containers.contains(.project(first.id)))
         #expect(containers.contains(.project(second.id)))
+    }
+
+    /// Only a worktree in Other Worktrees, one only Git reported and with no
+    /// tab, is read on the slow pace; a tab, or the person opening it, puts
+    /// it back on the row's.
+    @Test("a worktree only Git reported, with no tab, is read occasionally")
+    func enumerableTargets_otherWorktrees_areOccasional() throws {
+        let (session, project) = WorkspaceSessionFixture.withProject()
+        let other = try WorkspaceSessionFixture.appendWorktree(to: project.id, in: session, admission: .discovered)
+        let withTab = try WorkspaceSessionFixture.appendWorktree(to: project.id, in: session, admission: .discovered)
+        let made = try WorkspaceSessionFixture.appendWorktree(to: project.id, in: session, admission: .created)
+        session.openTab(
+            container: .worktree(projectID: project.id, worktreeID: withTab.id),
+            in: session.primaryWindowID,
+            intent: .repair,
+            selects: false
+        )
+        func isOccasional(_ worktree: Worktree) -> Bool? {
+            PRStatusSyncer.enumerableTargets(session: session)
+                .first { $0.container == .worktree(projectID: project.id, worktreeID: worktree.id) }?.isOccasional
+        }
+
+        #expect(isOccasional(other) == true)
+        #expect(isOccasional(withTab) == false)
+        #expect(isOccasional(made) == false)
+        #expect(PRStatusSyncer.enumerableTargets(session: session).first { $0.container == .project(project.id) }?.isOccasional == false)
+
+        session.setActiveContainer(.worktree(projectID: project.id, worktreeID: other.id), in: session.primaryWindowID, intent: .person)
+        #expect(isOccasional(other) == false)
     }
 }

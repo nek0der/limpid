@@ -1,14 +1,16 @@
 //! The per-run record that state files carry.
 //!
-//! Version 2 is what the shell receivers write today; version 3 is what the
-//! Rust hook runtime writes. Both are accepted on the way in so a run whose
-//! writer changes between backends keeps one record with a monotonic
-//! revision. Fields the model does not know are carried in `extra` rather
+//! Version 2 is what earlier builds' shell receivers wrote; version 3 is what
+//! the Rust hook runtime writes. Both are accepted on the way in, so a record
+//! an earlier build left keeps one record with a monotonic revision once the
+//! runtime writes it. Fields the model does not know are carried in `extra` rather
 //! than dropped, because an older reader must not erase what a newer writer
 //! recorded.
 
 use crate::cache::CacheWindow;
-use serde::{Deserialize, Deserializer, Serialize};
+use crate::serde_helpers::lenient;
+use crate::usage::UsageLimit;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -24,7 +26,7 @@ pub const MAX_RECORD_TEXT_BYTES: usize = 4_096;
 /// the host finds, rewrites, and retires it by the same name. The host asks the
 /// bridge for this value rather than keeping a copy, since a copy that drifted
 /// would compile, pass its own tests, and leave every run invisible. Records
-/// already on disk, and the shell receivers kept as the rollback path, use
+/// already on disk, some written by earlier builds' shell receivers, use
 /// exactly this name, so changing it strands them.
 pub const RUN_RECORD_FILE_SUFFIX: &str = ".state.json";
 
@@ -34,7 +36,7 @@ pub fn run_record_file_name(storage_id: &str) -> String {
     format!("{storage_id}{RUN_RECORD_FILE_SUFFIX}")
 }
 
-/// Lifecycle state of one run, as the badge and Waiting rules read it.
+/// Lifecycle state of one run, as the badge and attention rules read it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RunState {
@@ -52,17 +54,51 @@ pub enum RunState {
 
 impl RunState {
     /// Display priority used when several runs compete for one pane badge.
+    ///
+    /// A run waiting for an answer outranks one that stopped: Limpid can
+    /// answer the request only until its deadline (570 s, set by the provider
+    /// adapters under the provider's 600 s hook timeout), and after that the
+    /// person has to answer at the agent's own prompt in the terminal. A
+    /// stopped run has no such deadline. Swift's `PanePriority` holds the
+    /// same order (a wait before a stop before an unread turn) for the
+    /// attention items.
     #[must_use]
-    pub fn priority(self) -> u8 {
+    pub const fn priority(self) -> u8 {
         match self {
-            Self::Error => 5,
-            Self::NeedsInput => 4,
+            Self::NeedsInput => 5,
+            Self::Error => 4,
             Self::Finished => 3,
             Self::Running | Self::Compacting => 2,
             Self::Idle => 1,
             Self::Unknown => 0,
         }
     }
+
+    /// Whether the run is at work: running, compacting, or waiting on the
+    /// person's answer before it goes on. The one set every rule that asks
+    /// "is this run working" reads: whether a run works outside a turn, whether
+    /// a retired run died mid-work, and whether a restore must wait for it.
+    /// Swift's `AgentState.isMidTurn` holds the same set; the two sides check
+    /// it against `rust/fixtures/contract/shared-values.json`.
+    #[must_use]
+    pub const fn is_at_work(self) -> bool {
+        matches!(self, Self::Running | Self::NeedsInput | Self::Compacting)
+    }
+}
+
+/// What a run waiting in `NeedsInput` waits on, as the event that put it
+/// there said: the provider's permission request, or its own question tool.
+/// The interface words the wait from this rather than from `detail`, which
+/// is text for people and can be a question that happens to read like a
+/// tool's request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WaitKind {
+    Approval,
+    Question,
+    /// A kind a newer writer added, read as no kind at all.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A version 3 run record. Timestamps are ISO-8601 UTC strings with second
@@ -86,6 +122,32 @@ pub struct RunRecord {
     pub state: RunState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// The tool `detail` is about, as the provider named it (`Bash`,
+    /// `Write`, `apply_patch`). Written with `detail` by a tool event and
+    /// kept with it by the permission request that follows, so a reader
+    /// need not take the name back out of the text. Absent in records
+    /// written before the field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    /// What the run waits on while it is in `NeedsInput`; absent in any
+    /// other state and in records written before the field existed. It is
+    /// read leniently like the cache window: a shape this build cannot read
+    /// is no kind, and the interface falls back to reading `detail`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    pub wait_kind: Option<WaitKind>,
+    /// This is the provider's transcript of the conversation, as the event
+    /// that put the run in `NeedsInput` named it. It is absent in any other
+    /// state, for a provider that keeps no transcript, and in records written
+    /// before the field existed. Claude sends no hook when the person
+    /// declines its question or permission prompt with Esc, so the transcript
+    /// is the only place that says the wait is over, and the app reads it
+    /// from here while the run waits (the projection's declined wait).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript_path: Option<String>,
     /// Set on prompt submit, cleared when the turn ends. Version 2 wrote an
     /// empty string for "not running"; version 3 writes `null`.
     #[serde(default)]
@@ -104,6 +166,14 @@ pub struct RunRecord {
     pub last_prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_prompt: Option<String>,
+    /// Whether the session holds a conversation at all: a prompt was given
+    /// in this run, or the session resumed one that exists on disk. `false`
+    /// is a session started anew that never received a prompt, which has no
+    /// transcript to resume, so a relaunch retires it quietly instead of
+    /// typing a resume that cannot succeed. Absent in a record from
+    /// before the field, which is read as "could be either".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_prompt: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -116,6 +186,16 @@ pub struct RunRecord {
     pub turn_base_tree: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_root: Option<String>,
+    /// The worktree the run's latest prompt was given in, whether or not its
+    /// snapshot was taken (`turn_root` is set only when it was). A restore
+    /// of that worktree refuses while the run is at work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_root: Option<String>,
+    /// The run's latest turn record (`turns/<id>.turn.json`). Set only after
+    /// that record is written, so a reader that follows it finds the file;
+    /// a turn the next prompt overtook stays on disk without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_turn_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub killed_by_limpid_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -139,32 +219,49 @@ pub struct RunRecord {
     /// so a value here always describes the turn the run is resting after.
     /// Absent in every record written before the field existed, which reads
     /// as unknown.
+    ///
+    /// It is read leniently, so the field never vetoes the record. The window
+    /// is an estimate behind the interface's cache clock; a newer writer that
+    /// adds a precision this build does not know, or a value of the wrong
+    /// shape, must cost that estimate and nothing else, never the run's
+    /// badge. So an older build that rewrites the record drops a window a
+    /// newer build wrote and it could not read, and the clock is gone until
+    /// the next turn leaves one. That is acceptable for an estimate: a
+    /// missing clock misleads no one, while keeping a value this build cannot
+    /// check would.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "lenient_cache_window"
+        deserialize_with = "lenient"
     )]
     pub cache_window: Option<CacheWindow>,
+    /// The usage limit the run's last failure hit, set by every failure and
+    /// consulted only while the run rests in error. Absent in records
+    /// written before the field existed, and read leniently like the cache
+    /// window: a shape this build cannot read costs the limit's time, never
+    /// the record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    pub usage_limit: Option<UsageLimit>,
+    /// Where a run working outside a turn returns when the agent is idle
+    /// again: `idle` for work that began at the prompt after a session
+    /// start, `finished` for work after a turn ended. Set by the tool event
+    /// that begins that work and kept only while it lasts, so a record with
+    /// it set always shows work no turn holds. Absent in records written
+    /// before the field existed, which return to `finished`, and read
+    /// leniently like the cache window.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    pub outside_turn_rest: Option<RunState>,
     /// Fields this version does not model, preserved verbatim.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
-}
-
-/// Reads `cacheWindow` without letting it veto the record. The window is an
-/// estimate behind the interface's cache clock; a newer writer that adds a
-/// precision this build does not know, or a value of the wrong shape, must
-/// cost that estimate and nothing else, never the run's badge.
-///
-/// So an older build that rewrites the record drops a window a newer build
-/// wrote and it could not read, and the clock is gone until the next turn
-/// leaves one. That is acceptable for an estimate: a missing clock misleads
-/// no one, while keeping a value this build cannot check would.
-fn lenient_cache_window<'de, D>(deserializer: D) -> Result<Option<CacheWindow>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Option::<Value>::deserialize(deserializer)?;
-    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
 }
 
 impl RunRecord {
@@ -206,7 +303,8 @@ impl RunRecord {
     }
 }
 
-/// The record shape the shell receivers write. Differences from version 3:
+/// The record shape earlier builds' shell receivers wrote. Differences from
+/// version 3:
 /// `runStartedAt` is always present and empty when not running, and
 /// `revision` may be absent on very old records.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -278,6 +376,10 @@ impl From<RunRecordV2> for RunRecord {
             state_episode_token: record.state_episode_token,
             state: record.state,
             detail: record.detail.filter(|value| !value.is_empty()),
+            // The shell receivers recorded neither.
+            tool: None,
+            wait_kind: None,
+            transcript_path: None,
             run_started_at: record.run_started_at.filter(|value| !value.is_empty()),
             updated_at: record.updated_at,
             last_hook_event: record.last_hook_event,
@@ -286,12 +388,17 @@ impl From<RunRecordV2> for RunRecord {
             is_tmux_hosted: record.is_tmux_hosted,
             last_prompt: record.last_prompt,
             first_prompt: record.first_prompt,
+            // The shell receivers did not record where a session came from.
+            has_prompt: None,
             session_id: record.session_id,
             provider_session_title: record.provider_session_title,
             provider_generated_title: record.provider_generated_title,
             session_started_at: record.session_started_at,
             turn_base_tree: record.turn_base_tree,
             turn_root: record.turn_root,
+            worktree_root: None,
+            // The shell receivers wrote no turn records.
+            current_turn_id: None,
             killed_by_limpid_at: record.killed_by_limpid_at,
             resume_attempted_at: record.resume_attempted_at,
             tmux_socket_path: record.tmux_socket_path,
@@ -301,6 +408,8 @@ impl From<RunRecordV2> for RunRecord {
             tmux_server_started_at: record.tmux_server_started_at,
             // The shell receivers never estimated the cache.
             cache_window: None,
+            usage_limit: None,
+            outside_turn_rest: None,
             extra: record.extra,
         }
     }
@@ -327,7 +436,7 @@ mod tests {
 
     #[test]
     fn the_record_file_name_matches_what_is_already_on_disk() {
-        // Existing records and the shell receivers use this name; a change
+        // Existing records, earlier builds' among them, use this name; a change
         // here must come with a migration, not slip through as a rename.
         assert_eq!(
             run_record_file_name("6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11"),
@@ -397,6 +506,81 @@ mod tests {
     }
 
     #[test]
+    fn the_wait_kind_round_trips_and_a_kind_this_build_does_not_know_is_unknown() {
+        let json = V2.replace("\"schemaVersion\":2", "\"schemaVersion\":3");
+        let record = RunRecord::decode(json.as_bytes()).expect("decodes without the fields");
+        assert_eq!(record.wait_kind, None);
+        assert_eq!(record.tool, None);
+        let encoded = RunRecord {
+            wait_kind: Some(WaitKind::Question),
+            tool: Some("AskUserQuestion".to_owned()),
+            ..record
+        }
+        .encode()
+        .expect("encodes");
+        let text = String::from_utf8(encoded.clone()).expect("utf8");
+        assert!(text.contains(r#""tool":"AskUserQuestion","waitKind":"question""#));
+        let again = RunRecord::decode(&encoded).expect("decodes again");
+        assert_eq!(again.wait_kind, Some(WaitKind::Question));
+        assert!(!again.extra.contains_key("waitKind"));
+
+        let newer = json.replace("\"revision\":1", r#""revision":1,"waitKind":"plan""#);
+        let record = RunRecord::decode(newer.as_bytes()).expect("the record survives");
+        assert_eq!(record.wait_kind, Some(WaitKind::Unknown));
+        let unreadable = json.replace("\"revision\":1", r#""revision":1,"waitKind":7"#);
+        let record = RunRecord::decode(unreadable.as_bytes()).expect("the record survives");
+        assert_eq!(record.wait_kind, None);
+    }
+
+    #[test]
+    fn the_transcript_path_round_trips_and_its_absence_still_decodes() {
+        let json = V2.replace("\"schemaVersion\":2", "\"schemaVersion\":3");
+        let record = RunRecord::decode(json.as_bytes()).expect("decodes without the field");
+        assert_eq!(record.transcript_path, None);
+        let text = String::from_utf8(record.encode().expect("encodes")).expect("utf8");
+        assert!(!text.contains("transcriptPath"), "absent stays absent");
+        let encoded = RunRecord {
+            transcript_path: Some("/t/session.jsonl".to_owned()),
+            ..record
+        }
+        .encode()
+        .expect("encodes");
+        let text = String::from_utf8(encoded.clone()).expect("utf8");
+        assert!(text.contains(r#""transcriptPath":"/t/session.jsonl""#));
+        let again = RunRecord::decode(&encoded).expect("decodes again");
+        assert_eq!(again.transcript_path.as_deref(), Some("/t/session.jsonl"));
+        assert!(!again.extra.contains_key("transcriptPath"));
+    }
+
+    #[test]
+    fn the_usage_limit_round_trips_and_a_shape_this_build_cannot_read_costs_only_the_limit() {
+        let json = V2.replace("\"schemaVersion\":2", "\"schemaVersion\":3");
+        let record = RunRecord::decode(json.as_bytes()).expect("decodes without the field");
+        assert_eq!(record.usage_limit, None);
+        let limit = UsageLimit {
+            resets_at: Some("2026-09-14T05:00:00Z".to_owned()),
+            window: Some("five_hour".to_owned()),
+        };
+        let encoded = RunRecord {
+            usage_limit: Some(limit.clone()),
+            ..record
+        }
+        .encode()
+        .expect("encodes");
+        let again = RunRecord::decode(&encoded).expect("decodes again");
+        assert_eq!(again.usage_limit, Some(limit));
+
+        let unreadable = V2
+            .replace("\"schemaVersion\":2", "\"schemaVersion\":3")
+            .replace(
+                "\"revision\":1",
+                r#""revision":1,"usageLimit":{"resetsAt":7}"#,
+            );
+        let record = RunRecord::decode(unreadable.as_bytes()).expect("the record survives");
+        assert_eq!(record.usage_limit, None);
+    }
+
+    #[test]
     fn a_cache_window_this_build_cannot_read_costs_only_the_window() {
         let json = V2.replace("\"schemaVersion\":2", "\"schemaVersion\":3").replace(
             "\"revision\":1",
@@ -446,13 +630,32 @@ mod tests {
 
     #[test]
     fn priorities_order_the_states() {
-        assert!(RunState::Error.priority() > RunState::NeedsInput.priority());
-        assert!(RunState::NeedsInput.priority() > RunState::Finished.priority());
+        assert!(RunState::NeedsInput.priority() > RunState::Error.priority());
+        assert!(RunState::Error.priority() > RunState::Finished.priority());
         assert!(RunState::Finished.priority() > RunState::Running.priority());
         assert_eq!(
             RunState::Running.priority(),
             RunState::Compacting.priority()
         );
         assert!(RunState::Idle.priority() > RunState::Unknown.priority());
+    }
+
+    #[test]
+    fn a_run_is_at_work_while_its_turn_goes_on() {
+        for state in [
+            RunState::Running,
+            RunState::NeedsInput,
+            RunState::Compacting,
+        ] {
+            assert!(state.is_at_work(), "{state:?}");
+        }
+        for state in [
+            RunState::Idle,
+            RunState::Finished,
+            RunState::Error,
+            RunState::Unknown,
+        ] {
+            assert!(!state.is_at_work(), "{state:?}");
+        }
     }
 }

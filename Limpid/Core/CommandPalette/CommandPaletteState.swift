@@ -19,9 +19,13 @@ final class CommandPaletteState {
     /// The language the palette's rows are resolved in, fixed for the
     /// palette's lifetime like `allItems`; see `CommandPaletteCatalog`.
     let locale: Locale
+    /// The window the palette opened in. Its dropdown draws there and its
+    /// chosen row runs there, whichever window the field was in.
+    let windowID: WindowID
 
-    init(locale: Locale) {
+    init(locale: Locale, windowID: WindowID) {
         self.locale = locale
+        self.windowID = windowID
     }
 
     struct ScoredItem: Identifiable, Equatable {
@@ -41,7 +45,7 @@ final class CommandPaletteState {
 
     /// Placeholder text for the search field, changes per mode.
     var placeholder: LocalizedStringResource {
-        activePrefix?.placeholder ?? "Type a command or search..."
+        activePrefix?.placeholder ?? "Type a command or search…"
     }
 
     /// Single source of truth for filtering + ranking. Called on every
@@ -102,14 +106,6 @@ final class CommandPaletteState {
             .sorted { $0.score > $1.score }
         }
         selectedIndex = 0
-    }
-
-    func clampSelection() {
-        if results.isEmpty {
-            selectedIndex = 0
-        } else {
-            selectedIndex = min(selectedIndex, results.count - 1)
-        }
     }
 
     func moveSelection(up: Bool) {

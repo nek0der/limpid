@@ -15,26 +15,36 @@ private let log = Logger.limpid("agent.projection.adapter")
 /// are all decided on the other side of the boundary.
 ///
 /// Passes are triggered by the directories changing and by a timer that asks
-/// whether the agent processes are still alive. Tests drive `refresh()`
-/// directly instead, so a case does not depend on a file event arriving.
+/// whether the agent processes are still alive, through `requestPass()`.
+/// Tests drive `refresh()` and `requestPass()` directly instead, awaiting
+/// `passesSettled()` after the latter, so a case does not depend on a file
+/// event arriving, and `noteTurnsChanged()` stands in for the turn
+/// directory's.
 @MainActor
 final class AgentProjectionAdapter {
     private let directories: [String: AgentDirectories]
     private let descriptors: [String: AgentProviderDescriptor]
     private let executor: AgentCommandExecutor
+    /// Deletes the turns a pass asks to, off the main actor.
+    private let turnCollector: TurnGarbageCollector
+    /// This ends the waits a pass read as declined at the agent's own
+    /// prompt, off the main actor and once each.
+    private let declinedWaits: DeclinedWaitCloser
     private let processStatus: (String?) -> AgentProcessStatus
     /// Read here as well as written through the executor: an intent is the
     /// evidence that a run was killed at quit rather than lost, and the rules
     /// retire a run whose intent they were not told about.
     private let resumeIntents: AgentResumeIntentStore
 
-    private weak var session: WindowSession?
+    private weak var session: WorkspaceSession?
     private weak var attention: AttentionState?
     private weak var tmuxPresence: TmuxPanePresence?
 
-    /// Opaque to this process: what one pass produced, handed back to the
-    /// next. Reading it here would make its shape a contract.
-    private var carried: Data?
+    /// What the rules remember between passes. Opaque to this process:
+    /// reading it here would make its shape a contract. Not private so the
+    /// count of what a retention change deletes
+    /// (`AgentProjectionAdapter+TurnRetention.swift`) asks the same engine.
+    let engine: any ProjectionPassing
     /// What the previous pass's commands came to, reported once and then
     /// dropped so an outcome cannot be replayed.
     private var pending: [AgentCommandOutcome] = []
@@ -51,30 +61,61 @@ final class AgentProjectionAdapter {
     /// process to ask about, such as a tmux-hosted run, still keeps the
     /// sweep going: its presence is re-read on the same pass.
     private(set) var sweepInterval: TimeInterval?
-    /// Between the file events and `refresh()`, so a hook write that fans out
+    /// Between the file events and `requestPass()`, so a hook write that fans out
     /// into several events costs one pass now and at most one more later.
-    private lazy var watcherPasses = AgentPassCoalescer { [weak self] in self?.refresh() }
+    private lazy var watcherPasses = AgentPassCoalescer { [weak self] in self?.requestPass() }
+    /// The requested pass running off the main actor, if one is.
+    private var passInFlight: Task<Void, Never>?
+    /// Whether a pass was requested while one ran.
+    private var isPassOwed = false
+    /// Bumped by every pass run in place, so an answer still on its way
+    /// from a requested pass that started before it is not applied over it.
+    private var passGeneration = 0
+    /// Whether a turn directory reported a change since a pass last listed
+    /// them. The other directories change with every hook write, the turn
+    /// records only when one is written or deleted; listing them costs more
+    /// the more turns are kept, so a pass for any other change goes by the
+    /// last list.
+    private var haveTurnsChanged = true
     /// Why the last pass could not run, if it could not. Kept because a pass
     /// that fails changes nothing visible, so without this the only evidence
     /// is a log line nobody is watching.
     private(set) var lastFailure: String?
+    /// The hints the person ended a session by (`forgetSession`) that are
+    /// still on disk: a hook held their lock, or the file could not go.
+    /// Tried again before every pass and at quit, kept from the rules
+    /// meanwhile, and kept in a file (`AgentForgottenHintQueue`), so the
+    /// ended session is neither shown again nor resumed by any launch.
+    private var forgottenHintQueue: AgentForgottenHintQueue
+    var forgottenHints: [AgentForgottenHint] {
+        forgottenHintQueue.hints
+    }
 
     /// Every tmux socket a record has named. The topology probe needs somewhere
     /// to look, and the records are the only place a socket this process never
     /// spawned is written down.
     private(set) var socketPaths: Set<String> = []
-    /// Where each tmux-hosted pane sits, as of the last pass. Kept on the
-    /// runtimes so attention can tell a visible tmux pane from one behind it.
-    private var paneLocations: [UUID: TmuxPaneLocation] = [:]
+    /// Every recorded turn, as the last pass that succeeded read them.
+    let turnHistory = TurnHistory()
+    /// Which turn records the projection has already read, so a pass sends
+    /// only the ones that changed.
+    private let turnRecords = TurnRecordCache()
+    /// Where each tmux endpoint's tmux pane sits in every pane attached to
+    /// it, by endpoint key, as of the last pass, for the runtimes'
+    /// `tmuxLocations` (each runtime names its endpoint). Keyed by the
+    /// endpoint, not the pane: two runs in one tmux session reach the same
+    /// pane from different tmux panes, and only one of them can be in front.
+    private var tmuxLocationsByEndpoint: [String: [UUID: TmuxPaneLocation]] = [:]
 
     /// The one the application builds: every provider the registry declares,
     /// rooted at this build's own support directory. Tests inject their
     /// directories through the designated initializer instead.
-    convenience init() {
+    convenience init(writesFiles: Bool, staged: StagedProjection? = nil) {
         let root = LimpidPaths.applicationSupportDirectory()
         let directories = AgentProviderRegistry.directories(under: root)
         let resumeIntents = AgentResumeIntentStore(
-            directory: root.appendingPathComponent("resume-intents", isDirectory: true)
+            directory: root.appendingPathComponent("resume-intents", isDirectory: true),
+            writesFiles: writesFiles
         )
         // The intents an earlier build wrote under each provider's state
         // directory, before they were shared.
@@ -86,22 +127,51 @@ final class AgentProjectionAdapter {
         self.init(
             directories: directories,
             descriptors: AgentProviderRegistry.descriptors,
-            resumeIntents: resumeIntents
+            resumeIntents: resumeIntents,
+            writesFiles: writesFiles,
+            staged: staged,
+            forgottenHintsURL: root.appendingPathComponent(AgentForgottenHintFile.fileName),
+            turnDeletionsURL: root.appendingPathComponent(TurnDeletionFile.fileName)
         )
     }
 
+    /// `writesFiles` is false in demo mode, which the app decides. The
+    /// adapter then never runs a pass or a lifecycle call, because those are
+    /// what delete, move, and rewrite the records: a pass keeps only the
+    /// hints of the panes it can see, and a demo window shows none of the
+    /// person's. It watches nothing either, since watching creates the
+    /// directories. It shows `staged` instead, which the app hands in.
     init(
         directories: [String: AgentDirectories],
         descriptors: [String: AgentProviderDescriptor],
         resumeIntents: AgentResumeIntentStore,
-        processStatus: @escaping (String?) -> AgentProcessStatus = AgentProcessStatus.inspect
+        writesFiles: Bool = true,
+        staged: StagedProjection? = nil,
+        forgottenHintsURL: URL? = nil,
+        turnDeletionsURL: URL? = nil,
+        processStatus: @escaping (String?) -> AgentProcessStatus = AgentProcessStatus.inspect,
+        turnCollector: TurnGarbageCollector = TurnGarbageCollector(),
+        declinedWaits: DeclinedWaitCloser = DeclinedWaitCloser(),
+        engine: any ProjectionPassing = LimpidProjectionBridge.Engine()
     ) {
+        self.engine = engine
         self.directories = directories
+        self.turnCollector = turnCollector
+        self.declinedWaits = declinedWaits
         self.descriptors = descriptors
         self.processStatus = processStatus
         self.resumeIntents = resumeIntents
+        self.writesFiles = writesFiles
+        self.staged = staged
         executor = AgentCommandExecutor(directories: directories, resumeIntents: resumeIntents)
+        forgottenHintQueue = AgentForgottenHintQueue(url: writesFiles ? forgottenHintsURL : nil)
+        turnDeletions = TurnDeletionQueue(url: writesFiles ? turnDeletionsURL : nil)
     }
+
+    /// See the designated initializer.
+    private let writesFiles: Bool
+    /// What demo mode shows in place of a pass; `nil` when passes run.
+    private let staged: StagedProjection?
 
     deinit {
         // The descriptors belong to the sources, not to this object: each
@@ -112,45 +182,36 @@ final class AgentProjectionAdapter {
     }
 
     func bootstrap(
-        into session: WindowSession,
+        into session: WorkspaceSession,
         attention: AttentionState? = nil,
         tmuxPresence: TmuxPanePresence? = nil
     ) {
         self.session = session
         self.attention = attention
         self.tmuxPresence = tmuxPresence
-        if DemoFixture.isDemoActive {
-            if let attention {
-                Self.seedRuntimes(fromBadgesIn: session, into: attention)
-            }
-            return
+        guard writesFiles else {
+            return show(staged, in: session, attention: attention)
         }
         refresh()
+        finishInterruptedDeletions()
     }
 
-    /// Demo mode never runs a pass, so the runtimes the Waiting list and the
-    /// row badges read would stay empty and the fixture's staged turns would
-    /// show nowhere. The fixture stages badges, and those are enough to stand
-    /// in for runtimes: one per badge, keyed by its pane so the identity is
-    /// stable across launches, which is what `make screenshot` depends on.
-    static func seedRuntimes(fromBadgesIn session: WindowSession, into attention: AttentionState) {
-        for kind in AgentKind.allCases {
-            var runtimes: [AgentRuntimePresentation] = []
-            for tab in session.tabs {
-                for (pane, badge) in tab.agentBadges[kind] ?? [:] {
-                    runtimes.append(AgentRuntimePresentation(
-                        kind: kind,
-                        runID: pane.uuidString,
-                        revision: nil,
-                        badge: badge,
-                        paneIDs: [pane],
-                        tmuxLocations: [:],
-                        stateEpisodeToken: "\(pane.uuidString):\(badge.updatedAt.timeIntervalSince1970)",
-                        attachmentResolution: .attached
-                    ))
-                }
+    /// Finishes the deletions a quit cut short (a record moved aside, its
+    /// refs not yet deleted) once a run, whether or not the sweep asks for
+    /// anything: otherwise they wait for the next batch, which may not come
+    /// for days, with refs no limit counts and a record no list shows.
+    private func finishInterruptedDeletions() {
+        for directory in Set(directories.values.compactMap(\.turns)) {
+            turnCollector.enqueue([], in: directory) { [weak self] deletions in
+                guard let self else { return }
+                // A record git refused to let go is put back in the list.
+                noteTurnsChanged()
+                // Moved aside before this run read the records, so no
+                // history knows them: what they were comes from the file
+                // the run that asked for them kept (`TurnDeletionFile`).
+                // Another directory's turns are judged by its own batch.
+                announce(turnDeletions.recovered(deletions, recordState: TurnDeletionFile.recordStates(in: directory)))
             }
-            attention.replaceRuntimes(runtimes, kind: kind)
         }
     }
 
@@ -160,15 +221,26 @@ final class AgentProjectionAdapter {
     /// A pass re-reads everything rather than following individual events. One
     /// hook write fires several of them, the directories hold fewer records
     /// than a machine has panes, and a rule that depended on seeing every
-    /// event in order would be wrong the first time one was missed.
+    /// event in order would be wrong the first time one was missed. The turn
+    /// records are the exception: they grow with every turn, so they are
+    /// listed again only when their own directory reports a change.
     func startWatching() {
         stopWatching()
+        guard writesFiles else { return }
+        let turnDirectories = Set(directories.values.compactMap(\.turns))
         for directory in watchedDirectories() {
-            guard let source = watch(directory) else { continue }
+            guard let source = watch(directory, isTurns: turnDirectories.contains(directory)) else { continue }
             sources.append(source)
         }
+        // A record written between the last listing and the descriptors
+        // opening sent no event this watch will see, so one pass reads
+        // everything again now rather than at whatever comes next.
+        noteTurnsChanged()
         isWatching = true
         rearmSweep()
+        if hasBootstrapped {
+            watcherPasses.request()
+        }
     }
 
     /// Picks the sweep cadence from the records the pass just read.
@@ -207,7 +279,7 @@ final class AgentProjectionAdapter {
         }
         sweep?.invalidate()
         let timer = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in self?.requestPass() }
         }
         // Best effort, so let the system coalesce it with other work.
         timer.tolerance = seconds / 3
@@ -229,6 +301,17 @@ final class AgentProjectionAdapter {
     /// Synchronous by necessity: it runs inside `willTerminate`, and anything
     /// it defers would not reach disk.
     func prepareForTermination() {
+        // The last tries at a hint the person ended while a hook held it, which
+        // a few short waits outlast; one that stays is in the queue's file.
+        for _ in 0..<10 where !forgottenHints.isEmpty {
+            retryForgottenHints()
+            if !forgottenHints.isEmpty {
+                usleep(20000)
+            }
+        }
+        // The list may be what an earlier write failed to keep, and none of
+        // the tries above changed it: the next launch reads only the file.
+        forgottenHintQueue.save()
         runLifecycle("terminate", LimpidProjectionBridge.onTerminate)
     }
 
@@ -241,7 +324,10 @@ final class AgentProjectionAdapter {
         _ name: String,
         _ call: (Data, String) throws -> Data
     ) {
-        guard !DemoFixture.isDemoActive else { return }
+        guard writesFiles else { return }
+        // A hint ended while a hook held it goes now if it can; one that
+        // stays is kept from the launch rules by `lifecycleInput`.
+        retryForgottenHints()
         do {
             let body = try call(
                 JSONEncoder().encode(lifecycleInput()),
@@ -256,14 +342,43 @@ final class AgentProjectionAdapter {
             // decide leaves every record where it is, and a quit that cannot
             // leaves the runs to be judged as orphans on the next launch.
             lastFailure = String(describing: error)
-            log.error("\(name, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            log.error("\(name, privacy: .public) failed: \(String(describing: error), privacy: .private)")
         }
     }
 
     /// A pane is gone. The rules decide what that means for the records it
     /// held, so this only asks them again.
     func didClosePane(_ paneID: UUID) {
-        refresh()
+        requestPass()
+    }
+
+    /// The person ended `sessionID` in `paneID` (`AppState.forgetStoppedConversation`).
+    func forgetSession(_ sessionID: String, of kind: AgentKind, inPane paneID: UUID) {
+        guard writesFiles else { return }
+        forgottenHintQueue.add(AgentForgottenHint(provider: kind.rawValue, pane: paneID, sessionID: sessionID))
+        retryForgottenHints()
+        requestPass()
+    }
+
+    /// Deletes the hints still waiting (`forgottenHints`). One the hook
+    /// held the lock of, or that could not be removed, stays for the next
+    /// try; any other outcome settles it: deleted, gone already, or naming
+    /// a newer session, which is the pane's own now.
+    private func retryForgottenHints() {
+        if !forgottenHints.isEmpty {
+            forgottenHintQueue.removeAll {
+                executor.forgetSessionHint(provider: $0.provider, pane: $0.pane, sessionID: $0.sessionID).isSettled
+            }
+        }
+        // A write that failed goes again, though no hint settled since.
+        forgottenHintQueue.save()
+    }
+
+    /// The hints read for a pass without the ones still waiting to be
+    /// deleted, which the rules would take for the pane's session, and the
+    /// launch rules would resume.
+    private func withoutForgottenHints(_ files: [AgentProjectionFile]) -> [AgentProjectionFile] {
+        AgentForgottenHint.removing(forgottenHints, from: files)
     }
 
     func stopWatching() {
@@ -277,11 +392,11 @@ final class AgentProjectionAdapter {
     private func watchedDirectories() -> [URL] {
         directories.values.flatMap { directory -> [URL] in
             [directory.state, directory.sessions]
-                + [directory.worktreeEvents, directory.cwdEvents].compactMap(\.self)
+                + [directory.worktreeEvents, directory.cwdEvents, directory.turns].compactMap(\.self)
         }
     }
 
-    private func watch(_ directory: URL) -> (any DispatchSourceFileSystemObject)? {
+    private func watch(_ directory: URL, isTurns: Bool) -> (any DispatchSourceFileSystemObject)? {
         // Created here rather than waited for: on a fresh install nothing has
         // written a record yet, and a descriptor cannot be opened on a
         // directory that does not exist, so the first run of an agent would
@@ -292,7 +407,7 @@ final class AgentProjectionAdapter {
             // We just tried to create it, so this is a directory we cannot
             // have: the volume is read-only, or the sandbox refused. Nothing
             // here can fix that, and the pass still reads what it can.
-            log.error("cannot watch \(directory.path, privacy: .public): errno=\(errno)")
+            log.error("cannot watch \(directory.path, privacy: .private): errno=\(errno)")
             return nil
         }
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -300,8 +415,22 @@ final class AgentProjectionAdapter {
             eventMask: [.write, .extend, .attrib, .rename, .delete],
             queue: .main
         )
-        source.setEventHandler { [weak self] in
-            Task { @MainActor in self?.watcherPasses.request() }
+        source.setEventHandler { [weak self, weak source] in
+            let events = source?.data ?? []
+            // The source delivers on the main queue.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                // The directory itself was removed or moved: this descriptor
+                // now follows an inode nothing writes to again, and the hook
+                // makes a new directory. Open that one, which also lists the
+                // turn records again.
+                if !events.isDisjoint(with: [.delete, .rename]) {
+                    self.startWatching()
+                } else if isTurns {
+                    self.noteTurnsChanged()
+                }
+                self.watcherPasses.request()
+            }
         }
         // Captured by value so the close belongs to this source's lifetime
         // rather than the adapter's.
@@ -310,36 +439,72 @@ final class AgentProjectionAdapter {
         return source
     }
 
-    /// Runs one pass: read the directories, ask the rules, apply the answer.
-    func refresh() {
-        guard let session, !DemoFixture.isDemoActive else { return }
-        // Whatever asked for this pass, it reads the directories now, so a
-        // trailing pass the watcher was owed has nothing left to pick up.
-        watcherPasses.didRun()
-        let input = buildInput(session: session)
-        stepSweep(for: input)
-        let response: AgentProjectionResponse
-        let body: Data
-        do {
-            body = try LimpidProjectionBridge.project(
-                state: carried,
-                input: JSONEncoder().encode(input),
-                now: JSONEncoder().encode(instants())
-            )
-            response = try JSONDecoder().decode(AgentProjectionResponse.self, from: body)
-        } catch {
-            // A pass that cannot run leaves the interface as it is. The next
-            // file change tries again with the same carried state.
-            lastFailure = String(describing: error)
-            log.error("projection failed: \(String(describing: error), privacy: .public)")
+    /// A turn directory changed: the next requested pass lists the turn
+    /// records again.
+    func noteTurnsChanged() {
+        haveTurnsChanged = true
+    }
+
+    /// The pass anything other than a test asks for: a file event, the
+    /// sweep, a closed pane, tmux, or attention. It lists the turn records
+    /// again only when their directory changed since the last listing.
+    ///
+    /// The slow part of the pass runs off the main actor: with ten thousand
+    /// turns kept, listing their records and encoding and decoding what
+    /// crosses the bridge take tens of milliseconds, which on the main actor
+    /// dropped frames on every hook write. One requested pass runs at a
+    /// time; one asked for meanwhile runs once after it, reading whatever
+    /// changed by then.
+    func requestPass() {
+        guard passInFlight == nil else {
+            isPassOwed = true
             return
         }
-        lastFailure = nil
-        carried = carriedState(from: body)
-        hasBootstrapped = true
+        guard let work = preparePass(shouldRereadTurns: haveTurnsChanged) else { return }
+        // This pass reads everything that changed until now.
+        isPassOwed = false
+        let generation = passGeneration
+        let engine = engine
+        passInFlight = Task { [weak self] in
+            let outcome = await Task.detached(priority: .userInitiated) {
+                AgentProjectionPass.run(work, engine: engine)
+            }.value
+            guard let self else { return }
+            passInFlight = nil
+            // A pass run in place (`refresh()`) since this one started read
+            // newer files, and this answer was made from older ones. The
+            // rules do not always refuse its commit: when this pass reached
+            // them after the in-place pass had committed, its answer was
+            // built on that newer state. So the generation, not the commit, is what drops it, without
+            // reporting a failure. When the pass in place failed, nothing
+            // newer was applied, so one more pass catches up at once.
+            if generation == passGeneration {
+                finishPass(outcome, of: work)
+            } else if lastFailure != nil {
+                isPassOwed = true
+            }
+            if isPassOwed {
+                requestPass()
+            }
+        }
+    }
 
-        apply(response.projection, to: session)
-        pending = perform(response.commands, session: session)
+    /// Waits until no requested pass is running or owed. For tests, which
+    /// otherwise cannot tell when a requested pass has been applied.
+    func passesSettled() async {
+        while let pass = passInFlight {
+            await pass.value
+        }
+    }
+
+    /// Runs one pass in place: read every directory, ask the rules, apply
+    /// the answer. For the first pass, which the interface waits for, and
+    /// for tests.
+    func refresh() {
+        guard let work = preparePass(shouldRereadTurns: true) else { return }
+        // Newer than any answer still on its way from a requested pass.
+        passGeneration += 1
+        finishPass(AgentProjectionPass.run(work, engine: engine), of: work)
     }
 
     // MARK: - Reading
@@ -351,11 +516,19 @@ final class AgentProjectionAdapter {
         input.providers = descriptors
         for (provider, directory) in directories {
             input.records += runRecords(in: directory, provider: provider)
-            input.sessionRecords += paneFiles(in: directory, .sessions, provider: provider)
+            input.sessionRecords += withoutForgottenHints(paneFiles(in: directory, .sessions, provider: provider))
         }
         input.resumeIntents = intents()
         input.pidStatus = pidStatus(for: input.records)
         return input
+    }
+
+    /// Each provider's turn directory, with what its records' names end with.
+    private func turnDirectories() -> [TurnRecordCache.Source] {
+        guard let suffix = AgentProviderRegistry.recordLayout?.turnRecordSuffix else { return [] }
+        return directories.sorted { $0.key < $1.key }.compactMap { provider, directory in
+            directory.turns.map { TurnRecordCache.Source(provider: provider, directory: $0, suffix: suffix) }
+        }
     }
 
     private func intents() -> [AgentProjectionIntent] {
@@ -371,17 +544,19 @@ final class AgentProjectionAdapter {
         }
     }
 
-    private func buildInput(session: WindowSession) -> AgentProjectionInput {
+    private func buildInput(session: WorkspaceSession, protection: TurnProtection?) -> AgentProjectionInput {
         var input = AgentProjectionInput()
         input.providers = descriptors
+        input.home = NSHomeDirectory()
+        input.resolvedHomes = AgentProjectionInput.resolvedHomes(of: descriptors.keys, under: NSHomeDirectory())
         input.isBootstrap = !hasBootstrapped
         input.acknowledged = pending
 
         for (provider, directory) in directories {
             input.records += runRecords(in: directory, provider: provider)
-            input.sessionRecords += paneFiles(in: directory, .sessions, provider: provider)
+            input.sessionRecords += withoutForgottenHints(paneFiles(in: directory, .sessions, provider: provider))
             input.cwdEvents += paneFiles(in: directory, .cwdEvents, provider: provider)
-            input.worktreeEvents += worktreeFiles(in: directory, provider: provider)
+            input.worktreeEvents += AgentProjectionWorktreeFile.events(in: directory, provider: provider)
         }
         input.resumeIntents = intents()
 
@@ -392,6 +567,8 @@ final class AgentProjectionAdapter {
         input.marks = marks()
         input.presence = presence(for: input.records)
         input.focus = focus(in: session)
+        input.seenPanes = seenPanes().sorted { $0.uuidString < $1.uuidString }
+        input.turnSweep = protection.map { AgentProjectionTurnSweep(limits: turnRetention, protection: $0) }
         return input
     }
 
@@ -400,7 +577,7 @@ final class AgentProjectionAdapter {
     /// sees none rather than reading files by a guess.
     private func runRecords(in directory: AgentDirectories, provider: String) -> [AgentProjectionFile] {
         guard let suffix = directory.runRecordSuffix else { return [] }
-        return files(in: directory.state, suffix: suffix, provider: provider)
+        return AgentProjectionFile.files(in: directory.state, suffix: suffix, provider: provider)
     }
 
     /// The provider's resume hints or cwd events, found the same way as its
@@ -411,47 +588,7 @@ final class AgentProjectionAdapter {
         provider: String
     ) -> [AgentProjectionFile] {
         guard let store = directory.paneStore(kind) else { return [] }
-        return files(in: store.directory, suffix: store.suffix, provider: provider)
-    }
-
-    private func files(in directory: URL, suffix: String, provider: String) -> [AgentProjectionFile] {
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
-            return []
-        }
-        return names.sorted().compactMap { name in
-            guard name.hasSuffix(suffix), !name.hasPrefix(".") else { return nil }
-            let url = directory.appendingPathComponent(name)
-            return AgentProjectionFile(
-                provider: provider,
-                name: String(name.dropLast(suffix.count)),
-                // A read that fails here is reported as present-but-unread so
-                // the rules keep the record they already accepted.
-                content: (try? Data(contentsOf: url)).flatMap { String(data: $0, encoding: .utf8) }
-            )
-        }
-    }
-
-    private func worktreeFiles(in owner: AgentDirectories, provider: String) -> [AgentProjectionWorktreeFile] {
-        guard let directory = owner.worktreeEvents,
-              let suffix = owner.layout?.worktreeEventSuffix,
-              let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path)
-        else {
-            return []
-        }
-        return names.sorted().compactMap { name in
-            // The writer renames a temporary into place, so a name that is
-            // not a finished event's is a write in progress and must not be
-            // read as an event.
-            guard name.hasSuffix(suffix), !name.hasPrefix(".") else { return nil }
-            guard let data = try? Data(contentsOf: directory.appendingPathComponent(name)),
-                  let content = String(data: data, encoding: .utf8)
-            else { return nil }
-            return AgentProjectionWorktreeFile(
-                provider: provider,
-                fileName: name,
-                content: content
-            )
-        }
+        return AgentProjectionFile.files(in: store.directory, suffix: store.suffix, provider: provider)
     }
 
     /// Liveness for every process a record names. Asking is a system call, so
@@ -459,10 +596,7 @@ final class AgentProjectionAdapter {
     private func pidStatus(for records: [AgentProjectionFile]) -> [String: String] {
         var status: [String: String] = [:]
         for record in records {
-            guard let content = record.content,
-                  let object = try? JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any],
-                  let pid = object["pid"] as? String, status[pid] == nil
-            else { continue }
+            guard let pid = record.recordFacts?.pid, status[pid] == nil else { continue }
             status[pid] = switch processStatus(pid) {
             case .alive: "alive"
             case .dead: "dead"
@@ -474,10 +608,7 @@ final class AgentProjectionAdapter {
 
     private func marks() -> AgentProjectionMarks {
         guard let attention else { return AgentProjectionMarks() }
-        return AgentProjectionMarks(
-            viewed: attention.viewedRuntimeTokens,
-            dismissed: attention.dismissedRuntimeTokens
-        )
+        return AgentProjectionMarks(viewed: attention.viewedRuntimeTokens)
     }
 
     /// Which panes each tmux-hosted run reaches.
@@ -491,76 +622,44 @@ final class AgentProjectionAdapter {
         // Collected even when no probe is running, because the probe asks for
         // its candidates before it starts and would otherwise have nowhere to
         // look for a session this process did not spawn.
-        socketPaths = Set(records.compactMap { endpoint(in: $0)?.socketPath })
-        paneLocations = [:]
+        let endpoints = records.compactMap(\.tmuxEndpoint)
+        socketPaths = Set(endpoints.map(\.socketPath))
+        tmuxLocationsByEndpoint = [:]
         guard let tmuxPresence else { return presence }
-        for record in records {
-            guard let endpoint = endpoint(in: record) else { continue }
-            let key = AgentProjectionPresence.key(
-                socketPath: endpoint.socketPath,
-                pane: endpoint.paneID
-            )
+        for endpoint in endpoints {
+            let key = AgentProjectionPresence.key(for: endpoint)
             guard presence.attachments[key] == nil else { continue }
             let attachments = tmuxPresence.attachments(for: endpoint)
             guard !attachments.isEmpty || tmuxPresence.resolution(for: endpoint) == .detached else {
                 continue
             }
             presence.attachments[key] = Array(attachments.keys)
-            for (pane, location) in attachments {
-                presence.locations[pane.uuidString] = .init(isActive: location.isActive)
-                paneLocations[pane] = location
-            }
+            presence.locations[key] = Dictionary(uniqueKeysWithValues: attachments.map { pane, location in
+                (pane.uuidString, AgentProjectionPaneLocation(isActive: location.isActive))
+            })
+            tmuxLocationsByEndpoint[key] = attachments
         }
         return presence
     }
 
-    private func endpoint(in record: AgentProjectionFile) -> TmuxRuntimeEndpoint? {
-        guard let content = record.content,
-              let object = try? JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any],
-              let socketPath = object["tmuxSocketPath"] as? String, !socketPath.isEmpty,
-              let paneID = object["tmuxPaneId"] as? String, !paneID.isEmpty
+    /// The pane with the keyboard: the focused pane of the window the
+    /// person was last in while it is shown, else the primary's.
+    private func focus(in session: WorkspaceSession) -> AgentProjectionFocus? {
+        let front = session.lastFrontWindowID
+        let window = session.hiddenWindowIDs.contains(front) ? session.primaryWindowID : front
+        guard let tab = session.activeTab(in: window),
+              session.windows(showing: tab.id).contains(window),
+              let pane = tab.splitTree.focusedLeafID
         else { return nil }
-        return TmuxRuntimeEndpoint(
-            socketPath: socketPath,
-            serverPID: object["tmuxServerPID"] as? String ?? "",
-            serverStartedAt: object["tmuxServerStartedAt"] as? String ?? "",
-            paneID: paneID
-        )
-    }
-
-    private func focus(in session: WindowSession) -> AgentProjectionFocus? {
-        guard let tab = session.activeTab, let pane = tab.splitTree.focusedLeafID else { return nil }
-        return AgentProjectionFocus(
-            tab: tab.id,
-            pane: pane,
-            // The key window's own first responder is what the notification
-            // delegate asks about too, so a run that finishes behind another
-            // application is not treated as seen.
-            isActive: LimpidNotificationDelegate.isPaneFocused(paneIDString: pane.uuidString)
-        )
-    }
-
-    private func instants() -> [String: AnyEncodableInstant] {
-        [
-            "wall": .text(AgentDateParsing.formatISO8601(Date())),
-            // Uptime rather than the wall clock, so a clock adjustment cannot
-            // expire or revive a notification that is waiting for a pane.
-            "monotonicMs": .number(UInt64(ProcessInfo.processInfo.systemUptime * 1000))
-        ]
-    }
-
-    /// Lifts the opaque state out of the body without decoding it, so its
-    /// shape stays a private matter for the rules.
-    private func carriedState(from body: Data) -> Data? {
-        guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
-              let state = object["state"]
-        else { return nil }
-        return try? JSONSerialization.data(withJSONObject: state)
+        return AgentProjectionFocus(tab: tab.id, pane: pane)
     }
 
     // MARK: - Applying
 
-    private func apply(_ projection: AgentProjection, to session: WindowSession) {
+    /// `keepsMarks` leaves the viewed marks as they are: the person changed
+    /// them after the pass read them, so the rules' trimmed set would drop
+    /// that change.
+    private func apply(_ projection: AgentProjection, to session: WorkspaceSession, keepsMarks: Bool = false) {
         for (provider, descriptor) in descriptors {
             guard let kind = AgentKind(rawValue: descriptor.id) else { continue }
             attention?.replaceRuntimes(
@@ -572,16 +671,20 @@ final class AgentProjectionAdapter {
         }
         // The rules trimmed the marks to the runs that still exist; what they
         // handed back is the whole of what the interface keeps.
-        attention?.replaceMarks(
-            viewed: projection.marksToKeep.viewed,
-            dismissed: projection.marksToKeep.dismissed
-        )
+        if !keepsMarks {
+            attention?.replaceMarks(viewed: projection.marksToKeep.viewed)
+        }
 
         let badgesByPane = projection.badgesByPane
         let sessionsByPane = projection.sessionsByPane
         let titlesByTab = projection.titlesByTab
         let candidatesByPane = projection.resumeCandidatesByPane
+        let descriptors = self.descriptors
+        let hasSessionTitles = { (kind: AgentKind) in AgentProviderRegistry.hasSessionTitles(kind, in: descriptors) }
         session.applyAcrossTabs { tab in
+            // Before the badges are replaced: a tab restored without a name
+            // is named by the ones it was saved with.
+            tab.rememberSavedConversationName(hasSessionTitles: hasSessionTitles)
             let leaves = tab.splitTree.allLeafIDs()
             // Every provider the interface can key by, not only the ones the
             // registry answered for. A provider with no descriptor this run —
@@ -620,45 +723,32 @@ final class AgentProjectionAdapter {
             if let title = titlesByTab[tab.id], tab.title != title {
                 tab.title = title
             }
+            // Read from the badges just applied, with the same capability
+            // the rules chose the tab's title by, so the row's name and the
+            // pane header's agree while the agent runs.
+            tab.rememberConversationName(hasSessionTitles: hasSessionTitles)
         }
         onProjectionApplied?(session)
     }
 
-    private func runtimePresentation(
-        _ runtime: AgentProjectedRuntime
-    ) -> AgentRuntimePresentation {
-        let panes = Set(runtime.panes)
-        let resolution: AgentAttachmentResolution = switch runtime.attachment {
-        case "attached": .attached
-        case "detached": .detached
-        default: .unresolved
-        }
-        return AgentRuntimePresentation(
-            kind: AgentKind(rawValue: runtime.provider) ?? .claude,
-            runID: runtime.runID ?? runtime.id,
-            revision: runtime.revision,
-            badge: runtime.badge.asAgentBadge,
-            paneIDs: panes,
-            // From the topology probe: focus-driven viewed marks skip a tmux
-            // pane that is not its window's active one, and ⌘J selects the
-            // pane inside tmux.
-            tmuxLocations: Dictionary(uniqueKeysWithValues: runtime.panes.compactMap { pane in
-                paneLocations[pane].map { (pane, $0) }
-            }),
-            stateEpisodeToken: runtime.episodeToken,
-            attachmentResolution: resolution,
-            processID: runtime.pid.flatMap { pid_t($0) }
-        )
+    private func runtimePresentation(_ runtime: AgentProjectedRuntime) -> AgentRuntimePresentation {
+        AgentRuntimePresentation(projected: runtime, tmuxLocationsByEndpoint: tmuxLocationsByEndpoint)
     }
 
     /// Runs the file commands and applies the rest here, where the interface
     /// is. The split is the executor's contract: it owns the lock, this owns
     /// everything that is not a file.
+    /// `sweptWith` is what protected turns when the rules chose the ones
+    /// to delete.
     private func perform(
         _ commands: [AgentProjectionCommand],
-        session: WindowSession
+        session: WorkspaceSession,
+        sweptWith: TurnProtection?
     ) -> [AgentCommandOutcome] {
         var outcomes = executor.run(commands)
+        // One batch per turns directory.
+        var turnsToDelete: [URL: [String]] = [:]
+        turnDeletions.forgetPastWaits(now: turnDeletionClock())
         for command in commands {
             switch command.op {
             case let .markViewed(runtimeID, token):
@@ -667,6 +757,14 @@ final class AgentProjectionAdapter {
                 onCwdChanged?(pane, newCwd, oldCwd)
             case let .gitSyncRefetch(repoRoot):
                 onGitSyncRequested?(repoRoot)
+            case let .deleteTurn(turnID):
+                // The op and the target name the turn alike, or neither is
+                // trusted.
+                if case let .turn(provider, target) = command.target, target == turnID,
+                   let directory = directories[provider]?.turns, turnDeletions.mayAsk(turnID)
+                {
+                    turnsToDelete[directory, default: []].append(turnID)
+                }
             case let .notify(payload):
                 if deliver(payload, session: session) {
                     outcomes.append(.notified(
@@ -679,22 +777,123 @@ final class AgentProjectionAdapter {
                 continue
             }
         }
+        // We hand the waits over on every pass, so a wait no pass asks about
+        // any more is forgotten. The badge already shows the turn stopped;
+        // the write makes the record say so, and the turn where its commit
+        // lands, which the next pass reads at once.
+        declinedWaits.close(DeclinedWaitRequest.asked(by: commands, in: directories)) { [weak self] in
+            self?.noteTurnsChanged()
+            self?.requestPass()
+        }
+        // Reported by what the next pass reads: a deleted turn's record is
+        // gone from the directory, and one that stayed is chosen again.
+        // The rules ask for deletions only with a sweep, which carries what
+        // protected turns.
+        if let sweptWith {
+            for (directory, turnIDs) in turnsToDelete {
+                turnDeletions.ask(turnIDs, in: directory, sweptWith: sweptWith, turn: turnHistory.turn)
+            }
+        }
         return outcomes
     }
+
+    /// Sends the next batch waiting, checked against what protects turns
+    /// now (`TurnDeletionQueue.nextBatch`), and the one after it once it
+    /// has finished. The collector calls back for every batch, and no batch
+    /// is empty, so the batch it holds never keeps the others waiting.
+    private func sendNextTurnBatch() {
+        guard turnDeletions.hasBatchToSend else { return }
+        let next = turnDeletions.nextBatch(protection: turnProtection())
+        if next.needsSweep {
+            requestPass()
+        }
+        guard let batch = next.batch else { return }
+        turnCollector.enqueue(batch.turnIDs, in: batch.directory) { [weak self] deletions in
+            guard let self else { return }
+            let report = turnDeletions.finished(asked: batch.turnIDs, deletions, now: turnDeletionClock())
+            // The batch took records out of the directory; the next pass
+            // lists it rather than wait for the watcher's event.
+            noteTurnsChanged()
+            announce(report)
+            sendNextTurnBatch()
+        }
+    }
+
+    /// Hands the host what a batch took.
+    private func announce(_ report: TurnDeletionQueue.Report) {
+        if !report.gone.isEmpty {
+            onTurnsDeleted?(report.gone, report.remaining)
+        }
+        guard !report.deletedIn.isEmpty else { return }
+        Task { [weak self, onTurnsDeletedIn] in
+            guard await onTurnsDeletedIn?(report.deletedIn) ?? true else { return }
+            self?.turnDeletions.spansSaved(report.spanTurnIDs)
+        }
+    }
+
+    /// What one pass may hand the rules (`MAX_PROJECTION_INPUT_BYTES` in
+    /// the bridge). Past it every pass fails. The content is split by
+    /// `TurnRecordCache.contentBudgetBytes`; what grows without it is every turn
+    /// record's name, about seventy bytes each. The two sides check the
+    /// value against `rust/fixtures/contract/shared-values.json`.
+    static let inputLimitBytes = 16 * 1024 * 1024
+
+    /// Logs past three quarters of the limit, once a run, so it is seen
+    /// before the passes start failing.
+    private func noteSize(input: Int) {
+        guard input > Self.inputLimitBytes / 4 * 3, !hasWarnedOfInputSize else { return }
+        hasWarnedOfInputSize = true
+        log.error("projection input \(input, privacy: .public) bytes, near the limit")
+    }
+
+    private var hasWarnedOfInputSize = false
+
+    /// The turn deletions on their way or waiting.
+    private(set) var turnDeletions: TurnDeletionQueue
+    /// The clock the waits are measured by; injected by tests.
+    var turnDeletionClock: () -> Date = Date.init
+    /// The turn record content one pass sends at most
+    /// (`TurnRecordCache.contentBudgetBytes`); a test sets a small one to see the
+    /// records arrive over several passes.
+    var turnContentBudgetBytes = TurnRecordCache.contentBudgetBytes
+    /// The limits turn records are kept within; set by the host.
+    var turnRetention = TurnRetentionLimits.standard
+    /// The turns the host protects from the retention sweep, or `nil` while
+    /// it has not read what protects them; set by the host. The default
+    /// protects everything by never letting the sweep run.
+    var turnProtection: @MainActor () -> TurnProtection? = { nil }
+    /// Set by the host to forget what it kept about turns that are gone (their
+    /// read marks, a conversation's viewed line), each with its conversation
+    /// as the history had it when the deletion was asked for, or as the file
+    /// kept it for one an earlier run left cut short (none when neither knew
+    /// it), and the conversations that still have
+    /// turns not deleted or still being deleted (`TurnProtection.conversationsEmptied`).
+    var onTurnsDeleted: (@MainActor ([TurnID: ConversationKey?], Set<ConversationKey>) -> Void)?
+    /// Set by the host to keep, by worktree, when the turns deleted there
+    /// ran (`TurnDeletionQueue.Span`). It returns true once they are saved
+    /// (`TurnDeletionQueue.spansSaved`).
+    var onTurnsDeletedIn: (@MainActor ([String: [DateInterval]]) async -> Bool)?
 
     /// Set by the host to receive the cwd changes and git refetch requests
     /// that leave this subsystem.
     var onCwdChanged: ((UUID, String, String?) -> Void)?
     var onGitSyncRequested: ((String) -> Void)?
+    /// Set by the host to take in at once the one pass that shows a run whose
+    /// process died at work, before its commands retire the record.
+    var onRunsExited: (@MainActor () -> Void)?
     /// Set by the host to actually raise a notification. Returns whether it
     /// was delivered, which is what retires the pending entry.
     var onNotify: ((AgentNotifyPayload, Tab) -> Bool)?
+    /// The panes the person can see now: empty while the application is in
+    /// the background. Set by the host, which knows the windows; the default
+    /// sees nothing, so nothing is read by accident.
+    var seenPanes: @MainActor () -> Set<UUID> = { [] }
     /// Set by the host to react once the panes reflect a new projection.
     /// Approval presentation uses it to release requests the terminal
     /// already answered.
-    var onProjectionApplied: (@MainActor (WindowSession) -> Void)?
+    var onProjectionApplied: (@MainActor (WorkspaceSession) -> Void)?
 
-    private func deliver(_ payload: AgentNotifyPayload, session: WindowSession) -> Bool {
+    private func deliver(_ payload: AgentNotifyPayload, session: WorkspaceSession) -> Bool {
         guard let onNotify, let tab = session.tabs.first(where: { $0.id == payload.tab }) else {
             return false
         }
@@ -703,17 +902,87 @@ final class AgentProjectionAdapter {
 
 }
 
-/// One value of the two-clock envelope. A tiny type rather than a dictionary
-/// of `Any` so the encoded shape cannot drift.
-enum AnyEncodableInstant: Encodable {
-    case text(String)
-    case number(UInt64)
+// MARK: - One pass
 
-    func encode(to encoder: any Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case let .text(value): try container.encode(value)
-        case let .number(value): try container.encode(value)
+extension AgentProjectionAdapter {
+    private func preparePass(shouldRereadTurns: Bool) -> AgentProjectionPass.Work? {
+        guard let session, writesFiles else { return nil }
+        // A pass asked to go by the last list reads the turn records anyway
+        // when that list cannot be trusted (`TurnRecordCache.unchanged`).
+        let unchanged = shouldRereadTurns ? nil : turnRecords.unchanged()
+        if unchanged == nil {
+            haveTurnsChanged = false
+        }
+        // Every pass reads whatever changed since the last listing, so it
+        // leaves nothing for the trailing pass the watcher was owed: an event
+        // in a turn directory marks them before it asks for a pass.
+        watcherPasses.didRun()
+        let protection = turnProtection()
+        retryForgottenHints()
+        let input = buildInput(session: session, protection: protection)
+        stepSweep(for: input)
+        return AgentProjectionPass.Work(
+            sweptWith: protection,
+            input: input,
+            now: AnyEncodableInstant.now(),
+            unchanged: unchanged,
+            turnSources: turnDirectories(),
+            sent: turnRecords.snapshot(),
+            contentBudgetBytes: turnContentBudgetBytes
+        )
+    }
+
+    /// `work` is what the pass read on the main actor: the viewed marks it
+    /// sent (see `apply(_:to:keepsMarks:)`), and what protected turns from
+    /// its sweep.
+    private func finishPass(_ outcome: AgentProjectionPass.Outcome, of work: AgentProjectionPass.Work) {
+        // The window went while the pass ran: nothing to apply it to, so
+        // nothing is committed either.
+        guard let session else { return }
+        if let bytes = outcome.inputBytes {
+            noteSize(input: bytes)
+        }
+        let answer: AgentProjectionPass.Answer
+        do {
+            answer = try outcome.answer.get()
+            try engine.commit(answer.proposal)
+        } catch {
+            // A pass that cannot run leaves the interface and the rules'
+            // memory as they were. The next pass tries again, reading the
+            // turn records again, since what this one read never arrived.
+            turnRecords.forgetLastList()
+            lastFailure = String(describing: error)
+            log.error("projection failed: \(String(describing: error), privacy: .private)")
+            return
+        }
+        lastFailure = nil
+        // Only now do the rules hold what this pass sent; a pass that failed
+        // above must send the same content again.
+        turnRecords.commit(answer.turns)
+        hasBootstrapped = true
+        let response = answer.response
+        if let conversations = response.projection.conversations {
+            turnHistory.replace(with: conversations.elements)
+        }
+        turnDeletions.isHistoryComplete = answer.turns.isComplete
+
+        // A mark the person set while the pass ran is not in what the rules
+        // trimmed; keeping theirs leaves it to the pass that change asked for.
+        apply(response.projection, to: session, keepsMarks: marks() != work.input.marks)
+        // A finished turn's notice held in case a queued instruction follows.
+        watcherPasses.request(in: response.projection.nextPassInMs.map { .milliseconds($0) })
+        // Before the commands retire it (`onRunsExited`).
+        if response.projection.runtimes.contains(where: { $0.badge.stopReason == AgentBadge.processExitedReason }) {
+            onRunsExited?()
+        }
+        pending = perform(response.commands, session: session, sweptWith: work.sweptWith)
+        // Only now: sending may ask for a pass at once, which hands the rules
+        // what this one's commands came to (`pending`).
+        sendNextTurnBatch()
+        // The rest of the records, at once rather than at the next event.
+        if !answer.turns.isComplete {
+            noteTurnsChanged()
+            requestPass()
         }
     }
 }

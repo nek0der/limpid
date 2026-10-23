@@ -65,6 +65,17 @@ enum KeyboardShortcutCatalog {
                     locale: locale
                 ))
             }
+            // The restore has no key of its own: the palette's entry is the
+            // keyboard's way to it, so the sheet lists it under
+            // the palette's keys.
+            if category == .view, let palette = keyboard.shortcut(for: .commandPalette) {
+                entries.append(entry(
+                    id: "palette.restoreTurn",
+                    title: RestoreGate.entryTitle,
+                    tokens: palette.displayTokens,
+                    locale: locale
+                ))
+            }
             guard !entries.isEmpty else { continue }
             out.append(KeyboardShortcutSection(
                 id: "category.\(category.rawValue)",
@@ -73,12 +84,57 @@ enum KeyboardShortcutCatalog {
             ))
         }
 
+        // The review's keys while its diff has the keyboard: unmodified,
+        // so never the TUI's, and not rebindable. The review tab writes
+        // them here rather than along its foot.
         out.append(KeyboardShortcutSection(
-            id: "fixed.tabsAndSections",
-            title: LocalizedStringResource("Tabs & Sections").resolved(in: locale),
+            id: "fixed.review",
+            title: LocalizedStringResource("Review").resolved(in: locale),
+            entries: reviewEntries(locale: locale)
+        ))
+        // ⌘-click has no key to bind and no menu item: the sheet is where
+        // it is found, beside the row tooltips.
+        out.append(KeyboardShortcutSection(
+            id: "fixed.window",
+            title: LocalizedStringResource(
+                "Window",
+                comment: "Shortcut sheet: the section of what opens a project in a new window"
+            ).resolved(in: locale),
+            entries: [
+                entry(
+                    id: "fixed.newWindowClick",
+                    // The words of the rows' VoiceOver action, which does
+                    // the same (`NewWindowText.actionName`).
+                    title: LocalizedStringResource(
+                        "Open in New Window",
+                        comment: "VoiceOver action on a row of another project: opens it in a new window, as Command-click does"
+                    ),
+                    tokens: ["⌘", LocalizedStringResource(
+                        "Click",
+                        comment: "Shortcut sheet: the keycap after ⌘ for a Command-click"
+                    ).resolved(in: locale)],
+                    locale: locale
+                )
+            ]
+        ))
+        // ⌃⌘1–9 goes to the nth working worktree the sidebar shows.
+        out.append(KeyboardShortcutSection(
+            id: "fixed.tabsAndWorktrees",
+            title: LocalizedStringResource(
+                "Tabs & Worktrees",
+                comment: "Shortcut sheet: the section of the fixed keys that move between tabs and worktrees"
+            ).resolved(in: locale),
             entries: [
                 entry(id: "fixed.goToTab", title: "Go to Tab 1–9", tokens: ["⌘", "1–9"], locale: locale),
-                entry(id: "fixed.goToSection", title: "Go to Section 1–9", tokens: ["⌃", "⌘", "1–9"], locale: locale)
+                entry(
+                    id: "fixed.goToWorktree",
+                    title: LocalizedStringResource(
+                        "Go to Worktree 1–9",
+                        comment: "Shortcut sheet: ⌃⌘1–9, the nth working worktree the sidebar shows"
+                    ),
+                    tokens: ["⌃", "⌘", "1–9"],
+                    locale: locale
+                )
             ]
         ))
         // The app menu is not named in the sheet: "Limpid" is the
@@ -124,6 +180,29 @@ enum KeyboardShortcutCatalog {
     }
 
     // MARK: - Helpers
+
+    /// One row per key, as the review's diff answers them
+    /// (`ReviewDiffTable`'s key handling).
+    private static func reviewEntries(locale: Locale) -> [KeyboardShortcutEntry] {
+        func row(_ id: String, _ title: LocalizedStringResource, _ tokens: [String]) -> KeyboardShortcutEntry {
+            entry(id: "review.\(id)", title: title, tokens: tokens, locale: locale)
+        }
+        return [
+            row("nextLine", LocalizedStringResource("Next Line", comment: "Shortcut sheet, Review: j"), ["J"]),
+            row("previousLine", LocalizedStringResource("Previous Line", comment: "Shortcut sheet, Review: k"), ["K"]),
+            row("extendDown", LocalizedStringResource("Extend Selection Down", comment: "Shortcut sheet, Review: ⇧J"), ["⇧", "J"]),
+            row("extendUp", LocalizedStringResource("Extend Selection Up", comment: "Shortcut sheet, Review: ⇧K"), ["⇧", "K"]),
+            row("nextHunk", LocalizedStringResource("Next Hunk", comment: "Shortcut sheet, Review: ]"), ["]"]),
+            row("previousHunk", LocalizedStringResource("Previous Hunk", comment: "Shortcut sheet, Review: ["), ["["]),
+            row("oldSide", LocalizedStringResource("Select Old Side", comment: "Shortcut sheet, Review: h, side by side"), ["H"]),
+            row("newSide", LocalizedStringResource("Select New Side", comment: "Shortcut sheet, Review: l, side by side"), ["L"]),
+            row("nextFile", LocalizedStringResource("Next File", comment: "Shortcut sheet, Review: n"), ["N"]),
+            row("previousFile", LocalizedStringResource("Previous File", comment: "Shortcut sheet, Review: p"), ["P"]),
+            row("comment", LocalizedStringResource("Comment on Selection", comment: "Shortcut sheet, Review: c"), ["C"]),
+            row("viewed", LocalizedStringResource("Toggle File Viewed", comment: "Shortcut sheet, Review: v, the file's checkbox"), ["V"]),
+            row("open", LocalizedStringResource("Open in Editor", comment: "Shortcut sheet, Review: o"), ["O"])
+        ]
+    }
 
     private static func matches(_ entry: KeyboardShortcutEntry, query: String) -> Bool {
         if FuzzyMatch.score(query: query, candidate: entry.title) != nil {

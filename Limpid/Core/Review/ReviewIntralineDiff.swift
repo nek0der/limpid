@@ -8,9 +8,18 @@ import Foundation
 /// unmodified line text.
 struct ReviewIntralineHighlights: Equatable, Sendable {
     var rangesByLineID: [Int: [NSRange]] = [:]
+    /// The review tab's other files, by their slot (`ReviewStackIDs`), each
+    /// by the file's own ids. Handed over whole rather than copied id by id:
+    /// the stack is rebuilt every time a file is read or a comment opens,
+    /// and moving every file's ranges into one table each time walked them
+    /// all again.
+    var bands: [Int: [Int: [NSRange]]] = [:]
 
     subscript(lineID: Int) -> [NSRange] {
-        rangesByLineID[lineID] ?? []
+        if let slot = ReviewStackIDs.slot(of: lineID) {
+            return bands[slot]?[lineID - ReviewStackIDs.offset(forSlot: slot)] ?? []
+        }
+        return rangesByLineID[lineID] ?? []
     }
 }
 

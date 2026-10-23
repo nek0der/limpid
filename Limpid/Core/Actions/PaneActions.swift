@@ -22,13 +22,14 @@ enum PaneActions {
     /// an undersized sibling when zoom is cleared. All three are optional so
     /// unit tests can drive `split` without an attached view tree.
     static func split(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         direction: SplitDirection,
         registry: (any SurfaceViewProviding)? = nil,
         minPaneSize: PaneMinimumSize = .zero,
-        toastCenter: ToastCenter? = nil
+        toastCenter: ToastCenter? = nil,
+        in window: WindowID
     ) {
-        guard let tab = session.activeTab else { return }
+        guard let tab = session.activeTab(in: window) else { return }
         let pivotID = tab.splitTree.effectiveFocusedLeafID
         guard let pivotID else { return }
 
@@ -49,7 +50,7 @@ enum PaneActions {
             toastCenter.show(ToastItem(
                 message: .localized("Not enough room to split"),
                 undo: nil
-            ))
+            ), in: window)
             return
         }
 
@@ -127,28 +128,78 @@ enum PaneActions {
 
     /// Close the focused pane without falling through to the tab even
     /// when it's the last one. The ⌘W "close pane or tab" cascade lives
-    /// on `closeActivePaneOrTab` below.
+    /// on `closeActivePaneOrTab` below, which passes
+    /// `fallsThroughToTab`: its pane, left alone while the question was up,
+    /// closes as its tab does.
     static func closeActivePane(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         attention: AttentionState? = nil,
-        agentProjection: AgentProjectionAdapter? = nil
+        agentProjection: AgentProjectionAdapter? = nil,
+        in window: WindowID,
+        fallsThroughToTab: Bool = false
     ) {
-        guard let tab = session.activeTab else { return }
+        guard let tab = session.activeTab(in: window) else { return }
         guard let leafID = tab.splitTree.effectiveFocusedLeafID
         else { return }
-        guard CloseConfirmer.allow(.pane, source: source, paneIDs: [leafID]) else { return }
+        let pane = ClosingPane(leafID: leafID, tabID: tab.id, window: window, fallsThroughToTab: fallsThroughToTab)
+        CloseConfirmer.confirm(.pane, source: source, paneIDs: [leafID], window: window) {
+            closePane(pane, session, registry: registry, agentProjection: agentProjection)
+        }
+    }
+
+    /// The pane a close asked about, kept while the question is up.
+    private struct ClosingPane {
+        let leafID: UUID
+        let tabID: UUID
+        let window: WindowID
+        /// Whether the pane, if it is its tab's last, closes as the tab
+        /// does (⌘W's cascade).
+        let fallsThroughToTab: Bool
+    }
+
+    /// Closes the pane the person asked to close, once allowed. The tab
+    /// and the pane are read again here, not the window's active tab: a
+    /// confirmation may have been up while the window moved to another tab.
+    /// A sibling that ended meanwhile can leave the pane its tab's last;
+    /// under ⌘W's cascade the tab then closes as a tab, so it can be
+    /// reopened with its scrollback.
+    private static func closePane(
+        _ pane: ClosingPane,
+        _ session: WorkspaceSession,
+        registry: any SurfaceViewProviding,
+        agentProjection: AgentProjectionAdapter?
+    ) {
+        let leafID = pane.leafID
+        let tabID = pane.tabID
+        let window = pane.window
+        guard let tab = session.tab(tabID), tab.splitTree.contains(leafID: leafID) else { return }
+        if pane.fallsThroughToTab, tab.splitTree.allLeafIDs() == [leafID] {
+            TabActions.closeAllowedTab(
+                session,
+                registry: registry,
+                tabID: tabID,
+                askedLeafIDs: [leafID],
+                agentProjection: agentProjection
+            )
+            return
+        }
+        // Closed before its agent started: nothing will take the file.
+        InitialPromptFile.remove(tab.initialPromptFiles[leafID])
         session.update(tab.id) { t in
             let result = t.splitTree.remove(leafID)
             t.splitTree = result.tree
-            // Clear zoom if the zoomed pane just disappeared.
             if let z = t.zoomedLeafID, !t.splitTree.contains(leafID: z) {
                 t.zoomedLeafID = nil
             }
-            // Drop every per-pane dictionary entry for the closed leaf. All
-            // of them are persisted through `SessionSnapshot`, so a missed
-            // one accumulates on disk on every ⌘W against a multi-pane tab.
+            // Drop every per-pane dictionary entry for the closed leaf. Most
+            // are persisted through `SessionSnapshot`, where a missed one
+            // accumulates on disk on every ⌘W against a multi-pane tab; the
+            // rest (`initialAgentExecutables`, `agentsInFront`) live only in
+            // memory but would tie a stale state to a leaf that is gone.
+            // Tmux bindings are pruned when they are next captured
+            // (`captureTmuxBindings`).
             // `mergePaneIntoTab` sweeps the same set on its leaf-out path;
             // keep the two close-leaf paths structurally identical.
             for provider in AgentKind.allCases {
@@ -157,16 +208,19 @@ enum PaneActions {
             t.paneStates.removeValue(forKey: leafID)
             t.scrollbackPaths.removeValue(forKey: leafID)
             t.initialCommands.removeValue(forKey: leafID)
+            t.initialPromptFiles.removeValue(forKey: leafID)
+            t.initialAgentExecutables.removeValue(forKey: leafID)
             for provider in AgentKind.allCases {
                 t.agentBadges[provider]?.removeValue(forKey: leafID)
             }
+            t.agentsInFront.removeValue(forKey: leafID)
         }
         session.paneSearchStates.removeValue(forKey: leafID)
         session.paneTransients.removeValue(forKey: leafID)
         registry.unregister(leafID)
         agentProjection?.didClosePane(leafID)
         // If the tab is now empty, close it altogether.
-        if let refreshed = session.activeTab, refreshed.splitTree.isEmpty {
+        if let refreshed = session.tab(tabID), refreshed.splitTree.isEmpty {
             session.closeTab(refreshed.id)
         } else {
             // Reconcile registry entries against EVERY tab's leaves —
@@ -174,7 +228,7 @@ enum PaneActions {
             // ids would wipe surfaces in other tabs, and the next visit
             // to one of those tabs would spawn a fresh shell in place
             // of the (still-alive) leaf.
-            let allLive = Set(session.tabs.flatMap { $0.splitTree.allLeafIDs() })
+            let allLive = session.allPaneIDs
             registry.reconcile(activeIDs: allLive)
             // Promote the surviving sibling to first responder —
             // SwiftUI's reparent on close does NOT re-fire
@@ -183,7 +237,9 @@ enum PaneActions {
             // falls back to the window itself. Without this pull,
             // the next keystroke is silently dropped on the floor
             // until the user clicks the surviving pane.
-            if let surviving = session.activeTab?.splitTree.effectiveFocusedLeafID {
+            if session.selection(window)?.activeTabID == tabID,
+               let surviving = session.tab(tabID)?.splitTree.effectiveFocusedLeafID
+            {
                 pullKeyboardFocus(to: surviving, registry: registry)
             }
         }
@@ -194,13 +250,14 @@ enum PaneActions {
     /// through `CloseConfirmer` so the confirm policy is honored
     /// regardless of which branch we end up taking.
     static func closeActivePaneOrTab(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
         source: CloseConfirmer.Source = .keyboard,
         attention: AttentionState? = nil,
-        agentProjection: AgentProjectionAdapter? = nil
+        agentProjection: AgentProjectionAdapter? = nil,
+        in window: WindowID
     ) {
-        guard let tab = session.activeTab else { return }
+        guard let tab = session.activeTab(in: window) else { return }
         let leafCount = tab.splitTree.allLeafIDs().count
         if leafCount <= 1 {
             TabActions.closeActiveTab(
@@ -208,7 +265,8 @@ enum PaneActions {
                 registry: registry,
                 source: source,
                 attention: attention,
-                agentProjection: agentProjection
+                agentProjection: agentProjection,
+                in: window
             )
         } else {
             closeActivePane(
@@ -216,7 +274,9 @@ enum PaneActions {
                 registry: registry,
                 source: source,
                 attention: attention,
-                agentProjection: agentProjection
+                agentProjection: agentProjection,
+                in: window,
+                fallsThroughToTab: true
             )
         }
     }
@@ -230,11 +290,12 @@ enum PaneActions {
     /// on that edge. Single source of truth for the focus / swap
     /// actions and the Pane menu's per-direction enabled state.
     static func adjacentLeaf(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         registry: (any SurfaceViewProviding)? = nil,
-        direction: SpatialDirection
+        direction: SpatialDirection,
+        in window: WindowID
     ) -> PaneAdjacency? {
-        guard let tab = session.activeTab, tab.zoomedLeafID == nil,
+        guard let tab = session.activeTab(in: window), tab.zoomedLeafID == nil,
               let current = tab.splitTree.effectiveFocusedLeafID
         else { return nil }
         let paneIDs = tab.splitTree.allLeafIDs()
@@ -276,11 +337,12 @@ enum PaneActions {
     /// ⌥⌘←/↑/↓/→ — move keyboard focus to the adjacent pane in the
     /// requested direction. tmux `select-pane -L/U/D/R` analogue.
     static func focusPane(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
-        direction: SpatialDirection
+        direction: SpatialDirection,
+        in window: WindowID
     ) {
-        guard let adjacency = adjacentLeaf(session, registry: registry, direction: direction) else { return }
+        guard let adjacency = adjacentLeaf(session, registry: registry, direction: direction, in: window) else { return }
         // Focus shift only — never overwrite `tab.title`. The label is
         // owned by the tab (agent prompt or latest OSC 2); pulling each
         // pane's last-known title up on focus would make the name
@@ -290,44 +352,29 @@ enum PaneActions {
         pullKeyboardFocus(to: adjacency.neighbor, registry: registry)
     }
 
-    /// ⌥⌘⇧←/↑/↓/→ — swap the focused pane with its neighbor in the
-    /// requested direction. Each slot keeps its geometry; only the two
-    /// panes trade places (tmux `swap-pane`). Focus follows the moved
-    /// pane to its new slot, and a brief flash marks where it landed.
-    /// No-op while zoomed or when there's no neighbor.
-    static func swapPane(
-        _ session: WindowSession,
-        registry: any SurfaceViewProviding,
-        direction: SpatialDirection
-    ) {
-        guard let adjacency = adjacentLeaf(session, registry: registry, direction: direction) else { return }
-        // `swappingLeaves` moves focus to `current`, so it follows the
-        // pane.
-        session.update(adjacency.tab.id) {
-            $0.splitTree = $0.splitTree.swappingLeaves(adjacency.current, adjacency.neighbor)
-        }
-        pullKeyboardFocus(to: adjacency.current, registry: registry)
-        flashPane(adjacency.current, session: session)
-    }
-
     /// Make `tabID` active, focus `paneID`, and pull keyboard focus to
-    /// it. Shared with `AttentionState` (the ⌘J cursor + Waiting row
-    /// taps) so the focus-pull primitive is single-source.
-    static func activateAndFocus(
-        _ session: WindowSession,
+    /// it. Shared with `AttentionState.focusAttention` (⌘J and the
+    /// attention list) so the focus-pull primitive is single-source.
+    ///
+    /// The window and the intent stay two arguments, as in every selection:
+    /// one value for both would hide the intent at the call site.
+    static func activateAndFocus( // swiftlint:disable:this function_parameter_count
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
         tabID: UUID,
-        paneID: UUID
+        paneID: UUID,
+        in window: WindowID,
+        intent: SelectionIntent
     ) {
-        session.setActiveTab(tabID)
+        session.setActiveTab(tabID, in: window, intent: intent)
         session.update(tabID) { t in
             // Exit zoom if the jump target is not the zoomed leaf —
             // otherwise `PaneAreaView` keeps showing the (still-zoomed)
             // pane while `focusedLeafID` claims focus moved to an
             // off-screen leaf, and a follow-up ⌘W silently destroys
-            // the unseen pane. ⌘J / Waiting-list taps are specifically
-            // designed for cross-pane navigation, so this path is
-            // routine.
+            // the unseen pane. ⌘J and the Needs Attention list are
+            // specifically designed for cross-pane navigation, so this
+            // path is routine.
             if let zoomed = t.zoomedLeafID, zoomed != paneID {
                 t.zoomedLeafID = nil
             }
@@ -342,8 +389,8 @@ enum PaneActions {
     /// is what the user sees, and its zoom clears. Unlike `toggleZoom` it
     /// never zooms, so a button that means "back to the split" cannot zoom
     /// another pane if the tab has unzoomed under it.
-    static func unzoom(_ session: WindowSession, tabID: UUID) {
-        session.setActiveTab(tabID)
+    static func unzoom(_ session: WorkspaceSession, tabID: UUID, in window: WindowID, intent: SelectionIntent) {
+        session.setActiveTab(tabID, in: window, intent: intent)
         session.update(tabID) { $0.zoomedLeafID = nil }
     }
 
@@ -352,8 +399,8 @@ enum PaneActions {
     /// renders only the zoomed leaf; the rest of the SplitTree stays
     /// intact so a second invocation restores the previous layout
     /// untouched. No-op when the active tab has a single leaf.
-    static func toggleZoom(_ session: WindowSession) {
-        guard let tab = session.activeTab else { return }
+    static func toggleZoom(_ session: WorkspaceSession, in window: WindowID) {
+        guard let tab = session.activeTab(in: window) else { return }
         guard tab.splitTree.allLeafIDs().count > 1 else { return }
         guard let focusID = tab.splitTree.effectiveFocusedLeafID
         else { return }
@@ -372,11 +419,14 @@ enum PaneActions {
         }
     }
 
-    /// Reset every split divider in the active tab back to 50/50.
+    /// Give the panes of the active tab equal sizes along each axis, by the
+    /// leaf weights `SplitTree.equalize` uses, rather than 50/50 at every
+    /// divider.
+    ///
     /// tmux `select-layout even-*` equivalent — most useful after one
     /// pane has drifted dominant from interactive drags.
-    static func equalizeSplits(_ session: WindowSession) {
-        guard let tab = session.activeTab else { return }
+    static func equalizeSplits(_ session: WorkspaceSession, in window: WindowID) {
+        guard let tab = session.activeTab(in: window) else { return }
         session.update(tab.id) { t in
             t.splitTree = t.splitTree.equalize()
         }

@@ -44,8 +44,8 @@ enum SearchActions {
     /// ⌘F — show the search overlay on the focused pane. Idempotent:
     /// if a state already exists, focus it (the overlay observes
     /// `paneSearchStates` and re-grabs focus on the next render).
-    static func beginSearch(_ session: WindowSession) {
-        guard let id = focusedPaneID(session) else { return }
+    static func beginSearch(_ session: WorkspaceSession, in window: WindowID) {
+        guard let id = focusedPaneID(session, in: window) else { return }
         if session.paneSearchStates[id] == nil {
             session.paneSearchStates[id] = PaneSearchState()
         }
@@ -58,7 +58,7 @@ enum SearchActions {
     /// caller that wants to end search without going through the
     /// overlay. Single source of truth for "search lifetime ends".
     static func endSearch(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
         paneID: UUID
     ) {
@@ -70,10 +70,11 @@ enum SearchActions {
 
     /// ⌘G — jump to the next match for the focused pane, if any.
     static func searchNext(
-        _ session: WindowSession,
-        registry: any SurfaceViewProviding
+        _ session: WorkspaceSession,
+        registry: any SurfaceViewProviding,
+        in window: WindowID
     ) {
-        guard let id = focusedPaneID(session),
+        guard let id = focusedPaneID(session, in: window),
               session.paneSearchStates[id] != nil,
               let view = registry.view(for: id),
               let surface = view.surface
@@ -84,10 +85,11 @@ enum SearchActions {
 
     /// ⇧⌘G — jump to the previous match.
     static func searchPrevious(
-        _ session: WindowSession,
-        registry: any SurfaceViewProviding
+        _ session: WorkspaceSession,
+        registry: any SurfaceViewProviding,
+        in window: WindowID
     ) {
-        guard let id = focusedPaneID(session),
+        guard let id = focusedPaneID(session, in: window),
               session.paneSearchStates[id] != nil,
               let view = registry.view(for: id),
               let surface = view.surface
@@ -96,12 +98,13 @@ enum SearchActions {
         GhosttyFFI.performBindingAction(action, on: surface)
     }
 
-    /// Resolve the focused pane id of the active tab so the search
-    /// actions know which surface to target. Lives here (not in
-    /// `TabActions`) because the search slice is the only consumer;
-    /// later slices that need it can promote to a shared helper.
-    private static func focusedPaneID(_ session: WindowSession) -> UUID? {
-        guard let tab = session.activeTab else { return nil }
+    /// Resolve the focused pane id of `window`'s tab so the search actions
+    /// know which surface to target.
+    /// Lives here (not in `TabActions`) because the search slice is the
+    /// only consumer; later slices that need it can promote to a shared
+    /// helper.
+    private static func focusedPaneID(_ session: WorkspaceSession, in window: WindowID) -> UUID? {
+        guard let tab = session.activeTab(in: window) else { return nil }
         return tab.splitTree.effectiveFocusedLeafID
     }
 }

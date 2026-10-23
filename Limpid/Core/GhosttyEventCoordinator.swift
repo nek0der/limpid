@@ -1,6 +1,6 @@
 // GhosttyEventCoordinator.swift
 // Limpid — applies libghostty action events to the @Observable
-// WindowSession. Receives typed `GhosttyEvent` from
+// WorkspaceSession. Receives typed `GhosttyEvent` from
 // `GhosttyActionRouter` via the static `sink` closure installed by
 // AppState at boot.
 
@@ -19,7 +19,7 @@ final class GhosttyEventCoordinator {
     private static let setTitleDebounce: TimeInterval = 0.08
 
     private weak var ghosttyApp: GhosttyApp?
-    private weak var session: WindowSession?
+    private weak var session: WorkspaceSession?
     private let registry: any SurfaceViewProviding
     private let notificationManager: LimpidNotificationManager
     private let bellFeaturesProvider: () -> BellFeatures
@@ -31,7 +31,21 @@ final class GhosttyEventCoordinator {
     /// it took the event. A closure rather than the owner itself so Core
     /// does not depend on the UI type that owns that surface.
     private let claimsSurfaceExit: @MainActor (SurfaceView) -> Bool
+    /// The window a request aimed at the app rather than a pane acts in
+    /// (a GOTO_TAB with no surface): the one commands act on. A closure
+    /// because the app layer, which owns the windows, decides it.
+    private let commandWindow: @MainActor () -> WindowID
     private let linkOpener: TerminalLinkOpener
+    /// Told of every finished foreground command (COMMAND_FINISHED), before
+    /// the notification's own filters: a resume typed into a pane is over
+    /// once its command returns to the shell (`StopLedgerStore`). A closure
+    /// because the app layer owns the ledger.
+    private let onCommandFinished: @MainActor (_ paneID: UUID, _ exitCode: Int, _ durationNs: UInt64) -> Void
+    /// Told of every title a pane's terminal reports, before any is left
+    /// off the tab's name: the shell names a command as it starts it, the
+    /// one mark a command's start leaves, Limpid's own typed commands
+    /// included (`PaneAgentInFrontFollower`).
+    private let onTitleChanged: @MainActor (_ paneID: UUID) -> Void
 
     /// Pending SET_TITLE applies, keyed by pane id. We debounce title
     /// updates by a tiny delay so a shell that prints the command name
@@ -43,20 +57,23 @@ final class GhosttyEventCoordinator {
     /// inside the flash window (`tail -f` style bursts, repeated `\a`
     /// from autocomplete misses), and an unmanaged Task lets the
     /// first run's late `setBell(false)` darken the second flash
-    /// prematurely. Keying by paneID and cancelling the previous
+    /// prematurely. Keying by paneID and canceling the previous
     /// before scheduling lets the latest fire own the cleanup.
     private var pendingBellFlashes: [UUID: Task<Void, Never>] = [:]
 
     init(
         ghosttyApp: GhosttyApp?,
-        session: WindowSession,
+        session: WorkspaceSession,
         registry: any SurfaceViewProviding,
         notificationManager: LimpidNotificationManager,
         bellFeaturesProvider: @escaping () -> BellFeatures,
         secureInputManager: SecureInputManager,
         attention: AttentionState? = nil,
         claimsSurfaceExit: @escaping @MainActor (SurfaceView) -> Bool = { _ in false },
-        linkOpener: TerminalLinkOpener
+        commandWindow: @escaping @MainActor () -> WindowID,
+        linkOpener: TerminalLinkOpener,
+        onTitleChanged: @escaping @MainActor (_ paneID: UUID) -> Void = { _ in },
+        onCommandFinished: @escaping @MainActor (_ paneID: UUID, _ exitCode: Int, _ durationNs: UInt64) -> Void = { _, _, _ in }
     ) {
         self.ghosttyApp = ghosttyApp
         self.session = session
@@ -66,7 +83,10 @@ final class GhosttyEventCoordinator {
         self.secureInputManager = secureInputManager
         self.attention = attention
         self.claimsSurfaceExit = claimsSurfaceExit
+        self.commandWindow = commandWindow
         self.linkOpener = linkOpener
+        self.onTitleChanged = onTitleChanged
+        self.onCommandFinished = onCommandFinished
     }
 
     // Single entry point invoked by `GhosttyActionRouter.sink`. Switch
@@ -78,8 +98,8 @@ final class GhosttyEventCoordinator {
             handleSetTitle(view: view, title: title)
         case let .setPwd(view, pwd):
             handleSetPwd(view: view, pwd: pwd)
-        case let .gotoTab(rawIndex):
-            handleGotoTab(rawIndex: rawIndex)
+        case let .gotoTab(view, rawIndex):
+            handleGotoTab(view: view, rawIndex: rawIndex)
         case let .childExited(view, exitCode, _):
             handleChildExited(view: view, exitCode: exitCode)
         case let .desktopNotification(view, title, body):
@@ -104,7 +124,7 @@ final class GhosttyEventCoordinator {
             handleMouseOverLink(view: view, url: url)
         case let .openUrl(view, url, source):
             if let url {
-                linkOpener.open(url, source: source, baseDirectories: linkBaseDirectories(for: view))
+                linkOpener.open(url, source: source, baseDirectories: linkBaseDirectories(for: view), window: view?.window)
             } else {
                 linkOpener.reject(.malformed)
             }
@@ -156,13 +176,15 @@ final class GhosttyEventCoordinator {
             log.debug("SET_TITLE dropped (missing session/paneID)")
             return
         }
+        onTitleChanged(paneID)
 
-        // Our delayed initial command is an implementation detail, not a name
-        // the user chose for this tab. Shell integration reports that command
-        // through OSC 2 immediately before execution; consume only that one
-        // matching report and leave every later program title untouched.
-        if view.consumeInjectedCommandTitle(title) {
-            log.debug("SET_TITLE ignored: injected initial command")
+        // A command Limpid typed (a resume, a new conversation) is an
+        // implementation detail, not a name the user chose for this tab.
+        // Shell integration reports that command through OSC 2 immediately
+        // before execution, and a shell with more hooks reports it again;
+        // every report of it is left off, and every other title passes.
+        if view.isInjectedCommandTitle(title) {
+            log.debug("SET_TITLE ignored: a command Limpid typed")
             return
         }
 
@@ -241,46 +263,23 @@ final class GhosttyEventCoordinator {
         // which is exactly the bug the user hit. Worktree labels are
         // owned by the user (rename) and by GitSync (basename of the
         // disk path) — not by per-pane shell titles.
-        log.notice("SET_TITLE applied to tab \(tabID, privacy: .public): \(title, privacy: .public)")
+        log.notice("SET_TITLE applied to tab \(tabID, privacy: .public): \(title, privacy: .private)")
     }
 
-    /// GOTO_TAB switches the active tab within the same sidebar
-    /// section as the currently-active tab.
-    private func handleGotoTab(rawIndex raw: Int32) {
+    /// GOTO_TAB switches the active tab among the tabs of the sidebar row
+    /// (container) that holds the surface the key went to, in the window
+    /// showing that tab (`GotoTabRoute`); one with no surface, in the
+    /// window commands act on.
+    private func handleGotoTab(view: SurfaceView?, rawIndex raw: Int32) {
         guard let session else { return }
-
-        let visible: [Tab] = if let container = session.activeTab?.container {
-            switch container {
-            case .loose:
-                session.looseTabs
-            case let .group(gid):
-                session.tabs(in: gid)
-            case let .project(pid):
-                session.directTabs(in: pid)
-            case let .worktree(pid, wid):
-                session.tabs(inProject: pid, worktree: wid)
-            }
-        } else {
-            session.tabs
-        }
-        guard !visible.isEmpty else { return }
-
-        let target: Tab?
-        switch raw {
-        case GHOSTTY_GOTO_TAB_PREVIOUS.rawValue:
-            target = neighbor(of: visible, forward: false, current: session.activeTabID)
-        case GHOSTTY_GOTO_TAB_NEXT.rawValue:
-            target = neighbor(of: visible, forward: true, current: session.activeTabID)
-        case GHOSTTY_GOTO_TAB_LAST.rawValue:
-            target = visible.last
-        default:
-            let index = Int(raw) - 1
-            guard index >= 0, index < visible.count else { return }
-            target = visible[index]
-        }
-        if let target {
-            session.setActiveTab(target.id)
-        }
+        let paneID = view.flatMap { registry.id(for: $0) }
+        guard let route = GotoTabRoute.resolve(
+            rawIndex: raw,
+            fromPane: paneID,
+            commandWindow: commandWindow(),
+            in: session
+        ) else { return }
+        session.setActiveTab(route.tabID, in: route.window, intent: .person)
     }
 
     /// COMMAND_FINISHED — the shell integration's preexec/precmd hook
@@ -291,6 +290,7 @@ final class GhosttyEventCoordinator {
         // an initial-command title must no longer be suppressed.
         view.clearInjectedCommandTitleGuard()
         guard let paneID = registry.id(for: view) else { return }
+        onCommandFinished(paneID, exit, durationNs)
 
         let config = CommandFinishConfig.default
         guard config.mode != .never else { return }
@@ -315,7 +315,7 @@ final class GhosttyEventCoordinator {
                 comment: "Command-finished notification — exit code fragment"
             ).resolved(in: locale)
         }()
-        let durationLabel = formatDuration(durationSeconds, locale: locale)
+        let durationLabel = DurationText.command(durationSeconds, locale: locale)
         let body = LocalizedStringResource(
             "Finished in \(durationLabel)\(exitFragment)",
             comment: "Command-finished notification body — duration + optional exit fragment"
@@ -342,28 +342,6 @@ final class GhosttyEventCoordinator {
         if config.channels.contains(.bell) {
             NSSound.beep()
         }
-    }
-
-    /// Locale-aware short duration formatter used by the
-    /// command-finished notification body. The earlier shape relied on
-    /// `String(format: "%.1fs", …)` which pinned the C locale's `.`
-    /// decimal separator and English unit suffixes — comma-decimal
-    /// locales would have read "1,5s" as "15s" and ja users saw "1.5s"
-    /// inline with otherwise translated copy. `locale` is the one the
-    /// sentence around it is resolved in.
-    private func formatDuration(_ seconds: Double, locale: Locale) -> String {
-        if seconds < 60 {
-            return Duration.seconds(seconds).formatted(
-                .units(allowed: [.seconds], width: .narrow, fractionalPart: .show(length: 1))
-                    .locale(locale)
-            )
-        }
-        let m = Int(seconds) / 60
-        let s = Int(seconds) % 60
-        return Duration.seconds(m * 60 + s).formatted(
-            .units(allowed: [.minutes, .seconds], width: .narrow)
-                .locale(locale)
-        )
     }
 
     /// RING_BELL — `printf '\a'` from the shell, or any escape that
@@ -398,6 +376,18 @@ final class GhosttyEventCoordinator {
         if features.contains(.attention), !isFocusedSource {
             NSApp.requestUserAttention(.informationalRequest)
         }
+        // A bell rung where the person is not looking stays as the pane's
+        // unread mark (the tab's dot, and the Dock's dot when nothing
+        // needs attention) until they look, which clears it. The flash and
+        // the beep are gone by then.
+        if let session,
+           features.leavesUnreadMark(
+               isSourceFocused: isFocusedSource,
+               isAlreadyUnread: session.paneState(paneID).hasUnread
+           )
+        {
+            session.markUnread(paneID: paneID)
+        }
         if features.contains(.paneFlash) {
             session?.setBell(paneID: paneID, ringing: true)
             // Cancel the previous drain — without this, a second BEL
@@ -423,8 +413,8 @@ final class GhosttyEventCoordinator {
         let owningTab = session.tab(containing: paneID)
 
         // Suppress Claude Code's generic OSC 9 / 777 broadcast when
-        // the agent projection is already publishing an enriched
-        // "Claude needs input" notification for this pane (Limpid's
+        // the agent projection is already publishing an enriched wait
+        // notification ("… is waiting for approval") for this pane (Limpid's
         // banner carries container + permission / question context;
         // the OSC version is just "Claude is waiting for your input"
         // — duplicate noise).
@@ -533,18 +523,13 @@ final class GhosttyEventCoordinator {
         }
     }
 
-    private func neighbor(of tabs: [Tab], forward: Bool, current: UUID?) -> Tab? {
-        let i = current.flatMap { id in tabs.firstIndex(where: { $0.id == id }) } ?? 0
-        let n = tabs.count
-        let next = forward ? (i + 1) % n : (i - 1 + n) % n
-        return tabs[next]
-    }
-
     /// Only surfaces of this window bump it; another window's grid does not
     /// concern the views observing this session.
     private func handleCellSize(view: SurfaceView) {
         guard let session, registry.id(for: view) != nil else { return }
         session.cellSizeGeneration &+= 1
+        // The grid moved with the font; the next report compares against it.
+        view.reportGridSizeIfChanged()
     }
 
     /// PWD propagates to every tab whose tree contains the reporting
@@ -597,5 +582,79 @@ final class GhosttyEventCoordinator {
         }
         view.currentCursor = cursor
         view.window?.invalidateCursorRects(for: view)
+    }
+}
+
+/// Where a libghostty GOTO_TAB goes: which tab, in which window.
+///
+/// Resolved from the surface the key went to (leaf, then its tab, then the
+/// window showing that tab), never from the menu's target
+/// (`WindowRegistry.commandTarget`): a key libghostty handles does not pass
+/// through `Commands`, and the window it went to is the surface's, not
+/// whichever window AppKit has key.
+@MainActor
+enum GotoTabRoute {
+    struct Route: Equatable {
+        let tabID: UUID
+        /// The window whose selection moves.
+        let window: WindowID
+    }
+
+    /// The tab `raw` names among the tabs beside `paneID`'s tab, in the
+    /// window that shows `paneID`'s tab: the primary when it does, else
+    /// the first other window by ID, so two windows on one tab always
+    /// resolve the same way. A pane no window shows moves nothing: the key
+    /// reached a terminal no one sees, and no window chose it. Without a
+    /// pane (a request aimed at the app) the tab moved from is the one
+    /// `commandWindow`, where commands act, shows; nothing moves when the
+    /// session does not know that window.
+    static func resolve(
+        rawIndex raw: Int32,
+        fromPane paneID: UUID?,
+        commandWindow: WindowID,
+        in session: WorkspaceSession
+    ) -> Route? {
+        let window: WindowID
+        let current: Tab?
+        if let paneID {
+            guard let shownIn = session.window(showingPane: paneID) else { return nil }
+            window = shownIn
+            current = session.tab(containing: paneID)
+        } else {
+            guard session.selection(commandWindow) != nil else { return nil }
+            window = commandWindow
+            current = session.activeTab(in: commandWindow)
+        }
+        let visible = tabs(beside: current, in: session)
+        guard !visible.isEmpty else { return nil }
+
+        let target: Tab?
+        switch raw {
+        case GHOSTTY_GOTO_TAB_PREVIOUS.rawValue:
+            target = neighbor(of: visible, forward: false, current: current?.id)
+        case GHOSTTY_GOTO_TAB_NEXT.rawValue:
+            target = neighbor(of: visible, forward: true, current: current?.id)
+        case GHOSTTY_GOTO_TAB_LAST.rawValue:
+            target = visible.last
+        default:
+            let index = Int(raw) - 1
+            guard index >= 0, index < visible.count else { return nil }
+            target = visible[index]
+        }
+        return target.map { Route(tabID: $0.id, window: window) }
+    }
+
+    /// The tabs of `current`'s sidebar row (its container), or every tab
+    /// without one.
+    private static func tabs(beside current: Tab?, in session: WorkspaceSession) -> [Tab] {
+        guard let container = current?.container else { return session.tabs }
+        return session.tabs(in: container)
+    }
+
+    private static func neighbor(of tabs: [Tab], forward: Bool, current: UUID?) -> Tab? {
+        let i = current.flatMap { id in tabs.firstIndex(where: { $0.id == id }) } ?? 0
+        let n = tabs.count
+        let next = forward ? (i + 1) % n : (i - 1 + n) % n
+        return tabs[next]
     }
 }

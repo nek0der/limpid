@@ -1,5 +1,5 @@
 // SurfaceCompositionTests.swift
-// Limpid — regression coverage for keys delivered after Dictation commits.
+// Limpid — which keys delivered after Dictation or an input method commits reach the shell.
 
 import Foundation
 import Testing
@@ -8,43 +8,24 @@ import Testing
 @Suite("Surface composition")
 @MainActor
 struct SurfaceCompositionTests {
-    @Test("An Enter pressed during composition is consumed once", arguments: [UInt16(36), UInt16(76)])
-    func asynchronousCommit_consumesTerminatingEnter(keyCode: UInt16) {
+    /// Return or the keypad's Enter inside the commit's window, closed at
+    /// both ends, is the key that caused the commit and is consumed; one
+    /// before it, or after the microphone ended it even by a moment, is
+    /// forwarded. The window closes on the first key either way, so the
+    /// next Enter is forwarded.
+    @Test("An Enter is consumed only inside the commit's window, once", arguments: [
+        (UInt16(36), TimeInterval(101.999), true),
+        (76, 101.999, true),
+        (36, 102, true),
+        (36, 102.000001, false),
+        (36, 99.999, false)
+    ])
+    func asynchronousCommit_consumesOnlyTheEnterInsideItsWindow(keyCode: UInt16, timestamp: TimeInterval, isConsumed: Bool) {
         var interval: ClosedRange<TimeInterval>? = 100...102
         #expect(SurfaceView.consumeAsynchronousCompositionEnter(
-            keyCode: keyCode, timestamp: 101.999, interval: &interval
-        ))
+            keyCode: keyCode, timestamp: timestamp, interval: &interval
+        ) == isConsumed)
         #expect(interval == nil)
-        #expect(!SurfaceView.consumeAsynchronousCompositionEnter(
-            keyCode: keyCode, timestamp: 102.1, interval: &interval
-        ))
-    }
-
-    /// The window is closed at both ends: a key delivered exactly at the
-    /// commit is still the one that caused it.
-    @Test("The commit instant itself is inside the window")
-    func asynchronousCommit_consumesEnterAtUpperBound() {
-        var interval: ClosedRange<TimeInterval>? = 100...102
-        #expect(SurfaceView.consumeAsynchronousCompositionEnter(
-            keyCode: 36, timestamp: 102, interval: &interval
-        ))
-    }
-
-    @Test("An Enter pressed after microphone termination is forwarded even immediately after commit")
-    func microphoneTermination_preservesNextEnter() {
-        var interval: ClosedRange<TimeInterval>? = 100...102
-        #expect(!SurfaceView.consumeAsynchronousCompositionEnter(
-            keyCode: 36, timestamp: 102.000001, interval: &interval
-        ))
-        #expect(interval == nil)
-    }
-
-    @Test("A stale Enter from before composition is forwarded")
-    func asynchronousCommit_preservesEarlierEnter() {
-        var interval: ClosedRange<TimeInterval>? = 100...102
-        #expect(!SurfaceView.consumeAsynchronousCompositionEnter(
-            keyCode: 36, timestamp: 99.999, interval: &interval
-        ))
     }
 
     @Test("Editing keys retain their normal handling", arguments: [UInt16(53), UInt16(51), UInt16(0)])

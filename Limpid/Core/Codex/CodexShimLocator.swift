@@ -1,8 +1,8 @@
 // CodexShimLocator.swift
 // Limpid — resolves the in-bundle `codex-shim/` directory. Mirrors
 // `ClaudeShimLocator`'s resolution and stays separate from
-// `CodexHookInstaller`: the shim is how hooks reach Codex from here on,
-// and outlives the shadow home that used to carry them.
+// `CodexHookInstaller`: the shim is how hooks reach Codex, and the
+// installer writes only the trust they need.
 
 import Foundation
 

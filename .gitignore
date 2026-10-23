@@ -77,7 +77,10 @@ secrets/
 docs/*
 !docs/adr/
 !docs/agent-integration-protocol.md
+!docs/data-migration.md
+!docs/known-limitations.md
 !docs/libghostty-fork.md
+!docs/user-guide.md
 
 # Distribution artifacts (dmg, zip, etc.)
 dist/

@@ -1,0 +1,10 @@
+{
+  "written": [
+    "agentStarted",
+    "writeFailed",
+    "externalChangeDetected",
+    "interrupted",
+    "keptAside"
+  ],
+  "later": "someday"
+}

@@ -1,58 +1,33 @@
 // RustBridgeTests.swift
-// LimpidTests — Verifies that the application links and calls the Rust bridge.
+// Limpid — verifies that the application links and calls the Rust bridge.
+//
+// The title rules are the Rust crate's and are tested there; these check
+// only what the Swift wrapper adds: the strings crossing the ABI each way,
+// and the output buffer it hands Rust being the protocol's limit.
 
 import Testing
 @testable import Limpid
 
 struct RustBridgeTests {
     @Test func abiVersion_matchesSwiftContract() {
-        #expect(LimpidRustRuntime.abiVersion == 2)
+        #expect(LimpidRustRuntime.abiVersion == 4)
     }
 
-    @Test("Rust selects and trims the provider session title")
-    func titleResolver_prefersProviderSessionTitle() {
+    /// Every candidate goes across, and the chosen title comes back as
+    /// UTF-8 with what Rust took out of it gone.
+    @Test("a title makes the round trip through the Rust bridge")
+    func titleResolver_roundTripsThroughTheABI() {
         let title = LimpidRustTitleResolver.resolve(
-            providerSessionTitle: "  Formal title  ",
-            providerGeneratedTitle: "Generated title",
+            providerSessionTitle: " \n ",
+            providerGeneratedTitle: "  Safe\u{202E}\n\t título\u{200B}  ",
             firstPrompt: "Opening prompt"
         )
 
-        #expect(title == "Formal title")
+        #expect(title == "Safe título")
     }
 
-    @Test("Rust falls back through blank and absent candidates")
-    func titleResolver_usesGeneratedFallback() {
-        let title = LimpidRustTitleResolver.resolve(
-            providerSessionTitle: " \n ",
-            providerGeneratedTitle: "Generated title",
-            firstPrompt: nil
-        )
-
-        #expect(title == "Generated title")
-    }
-
-    @Test("Rust sanitizes unsafe title scalars before returning to Swift")
-    func titleResolver_sanitizesForSingleLineDisplay() {
-        let title = LimpidRustTitleResolver.resolve(
-            providerSessionTitle: "  Safe\u{202E}\n\t title\u{200B}  ",
-            providerGeneratedTitle: nil,
-            firstPrompt: nil
-        )
-
-        #expect(title == "Safe title")
-    }
-
-    @Test("Rust ignores an oversized fallback after selecting a formal title")
-    func titleResolver_doesNotValidateUnusedFallback() {
-        let title = LimpidRustTitleResolver.resolve(
-            providerSessionTitle: "Formal title",
-            providerGeneratedTitle: nil,
-            firstPrompt: String(repeating: "x", count: 4097)
-        )
-
-        #expect(title == "Formal title")
-    }
-
+    /// A fallback past the limit is cut to exactly what the output buffer
+    /// holds, not refused for overflowing it.
     @Test("Rust truncates a long opening prompt into a bounded fallback")
     func titleResolver_truncatesLongPromptFallback() {
         let title = LimpidRustTitleResolver.resolve(

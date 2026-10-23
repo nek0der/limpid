@@ -16,9 +16,8 @@ import Foundation
 // MARK: - Top-level container
 
 /// Versioned root document persisted to `settings.json`. The
-/// `schemaVersion` exists so we can migrate forward without losing
-/// the file if a future field is renamed; current loader treats
-/// unknown versions as "fall back to defaults + log".
+/// `schemaVersion` lets the loader migrate an older file forward
+/// (`VersionedDocumentMigrator.settings`); a newer one is read as is.
 struct LimpidSettings: Codable, Equatable {
     var schemaVersion: Int = currentSchemaVersion
     var appearance: AppearanceSettings = .init()
@@ -28,6 +27,9 @@ struct LimpidSettings: Codable, Equatable {
     var confirmations: ConfirmationSettings = .init()
     var advanced: AdvancedSettings = .init()
     var quickTerminal: QuickTerminalSettings = .init()
+    var review: ReviewSettings = .init()
+    var general: GeneralSettings = .init()
+    var newSession: NewSessionSettings = .init()
     var jumpOpensTurnReview = true
 
     /// Trailing root-level keys the current build doesn't recognize.
@@ -35,7 +37,9 @@ struct LimpidSettings: Codable, Equatable {
     /// survive a Sparkle rollback to an older one. See `LimpidJSONValue`.
     var unknownFields: [String: LimpidJSONValue] = [:]
 
-    static let currentSchemaVersion = 1
+    /// 2: the supervision window's keyboard actions, with `unbound` and
+    /// `retired` (`LimpidSettings.migrateFromV1`).
+    static let currentSchemaVersion = 2
 
     static let `default` = LimpidSettings()
 
@@ -65,6 +69,9 @@ struct LimpidSettings: Codable, Equatable {
         self.quickTerminal = try c.decodeIfPresent(
             QuickTerminalSettings.self, forKey: .quickTerminal
         ) ?? .init()
+        self.review = try c.decodeIfPresent(ReviewSettings.self, forKey: .review) ?? .init()
+        self.general = try c.decodeIfPresent(GeneralSettings.self, forKey: .general) ?? .init()
+        self.newSession = try c.decodeIfPresent(NewSessionSettings.self, forKey: .newSession) ?? .init()
         self.jumpOpensTurnReview = try c.decodeIfPresent(
             Bool.self,
             forKey: .jumpOpensTurnReview
@@ -85,13 +92,16 @@ struct LimpidSettings: Codable, Equatable {
         try c.encode(confirmations, forKey: .confirmations)
         try c.encode(advanced, forKey: .advanced)
         try c.encode(quickTerminal, forKey: .quickTerminal)
+        try c.encode(review, forKey: .review)
+        try c.encode(general, forKey: .general)
+        try c.encode(newSession, forKey: .newSession)
         try c.encode(jumpOpensTurnReview, forKey: .jumpOpensTurnReview)
         try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case schemaVersion, appearance, font, terminal, keyboard, confirmations, advanced, quickTerminal
-        case jumpOpensTurnReview
+        case review, general, newSession, jumpOpensTurnReview
     }
 
     private static let knownKeyStrings: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))
@@ -102,7 +112,7 @@ struct LimpidSettings: Codable, Equatable {
 /// Tri-state policy for destructive actions (⌘Q, tab/pane close).
 /// `onlyWhenAgent` consults the live-agent predicate; the modal body
 /// always reflects actual state (agent-specific copy iff an agent is
-/// live), so `always` without an agent renders a plain "Close tab?"
+/// live), so `always` without an agent renders a plain "Close this tab?"
 /// without misleading agent copy.
 enum ConfirmPolicy: String, Codable, CaseIterable {
     case never
@@ -131,7 +141,7 @@ enum ConfirmPolicy: String, Codable, CaseIterable {
 /// close has only a keyboard path today, so there's no mouse twin.
 ///
 /// Every close path — SwiftUI menu, libghostty's `close_tab` action,
-/// tab column's × button — funnels through `CloseConfirmer`, which consults
+/// a pane strip tab's × button — funnels through `CloseConfirmer`, which consults
 /// the right field below based on the request's `(kind, source)`. So
 /// a new caller can't accidentally bypass confirmation by reaching
 /// for `session.closeTab` directly.
@@ -184,8 +194,8 @@ struct ConfirmationSettings: Codable, Equatable {
 
 // MARK: - Appearance
 
-/// Whether the toolbar (container / tab column slabs, window backdrop)
-/// renders with Liquid Glass. Currently a two-state knob; the enum
+/// Whether the window's surfaces (the rails, the panels, the window
+/// backdrop) render with Liquid Glass. Currently a two-state knob; the enum
 /// shape lets a future `medium` / `auto` value land without rewriting
 /// the wire format (the boolean trap the schema-anti-pattern study
 /// flagged for every two-state flag in `settings.json`).
@@ -209,8 +219,8 @@ enum TransparencyMode: String, Codable, CaseIterable {
 
 struct AppearanceSettings: Codable, Equatable {
     /// The single accent color painted on focus rings, drop targets,
-    /// active row pills, and other toolbar highlights. We follow the
-    /// "5% rule" (design-rules.md §5.3): one accent per screen, used
+    /// active row pills, and other single-point highlights. We follow the
+    /// "5% rule": one accent per screen, used
     /// sparingly. The actual `Color` is resolved by
     /// `LimpidColor.accent(for:)` so callers don't have to know about
     /// the enum.
@@ -218,14 +228,14 @@ struct AppearanceSettings: Codable, Equatable {
 
     /// Terminal pane background opacity (0.0 fully transparent
     /// through to 1.0 opaque). We keep this independent of the
-    /// surrounding slab's Liquid Glass: the slab is always Material
+    /// surrounding surfaces' Liquid Glass: they are always Material
     /// (or solid when `transparency` resolves to off), the pane sits
     /// on top with its own opacity so the user can read terminal
     /// content against the wallpaper.
     var backgroundOpacity: Double = 0.92
 
-    /// Whether the toolbar (container / tab column slabs, window backdrop — not the
-    /// terminal pane) uses Liquid Glass. macOS Accessibility's
+    /// Whether the window's surfaces (the rails, the panels, the window
+    /// backdrop — not the terminal pane) use Liquid Glass. macOS Accessibility's
     /// "Reduce Transparency" always wins: when the system flag is on,
     /// AppKit renders vibrancy opaque and strips Liquid Glass no matter
     /// what we ask for, so this toggle only has an effect while that
@@ -340,8 +350,9 @@ enum AccentColor: String, Codable, CaseIterable {
 // MARK: - Font
 
 struct FontSettings: Codable, Equatable {
-    /// PostScript family name. `nil` = libghostty's default
-    /// (currently SF Mono on macOS). The picker only offers
+    /// PostScript family name. `nil` = the Ghostty config's family when
+    /// that file is read, else libghostty's embedded JetBrains Mono
+    /// (`GhosttyUserConfig.defaultFontFamily`). The picker only offers
     /// monospace families.
     var family: String?
 
@@ -357,7 +368,7 @@ struct FontSettings: Codable, Equatable {
 
     /// Extra pixels added to the cell's natural line height. Useful
     /// for fonts that pack glyphs too tightly to read comfortably.
-    /// Range: -2 ... +6.
+    /// Range: -4 ... +10 (`FontPane.lineSpacingRange`).
     var lineHeight: Double = 0
 
     /// See `LimpidSettings.unknownFields`.
@@ -424,8 +435,9 @@ struct TerminalSettings: Codable, Equatable {
     /// distracting.
     var cursorBlink: CursorBlink = .on
 
-    /// Default working-directory strategy for tabs opened in the
-    /// Quick Tabs scope (the implicit `.loose` container). Defaults to
+    /// Default working-directory strategy for tabs opened among the
+    /// scratch tabs (the implicit `.loose` container). The key keeps the
+    /// scratch tabs' earlier name, Quick Tabs, so saved settings read. Defaults to
     /// `.inheritPrevious`, which preserves the historical "open where
     /// I left off, else home" behavior.
     var quickTabCwdMode: WorkingDirectoryMode = .inheritPrevious
@@ -537,26 +549,6 @@ enum CursorStyle: String, Codable, CaseIterable {
 
 // MARK: - Keyboard
 
-/// Outcome of `KeyboardSettings.validate`. The recorder surfaces
-/// these to the user as a small warning under the row; `.ok` is the
-/// only outcome that commits.
-enum ShortcutValidation: Equatable {
-    case ok
-    /// Another action is already bound to the same trigger.
-    case conflict(LimpidShortcutAction)
-    /// Trigger collides with a parametric range Limpid reserves
-    /// (⌘1…⌘9, ⌘⌃1…⌘⌃9). See `ReservedShortcuts`.
-    case reserved
-    /// Modifier-less binding — would hijack every plain keystroke
-    /// of that character and break terminal input. The recorder
-    /// requires at least one of ⌘/⌥/⌃/⇧.
-    case missingModifier
-    /// The quick terminal's global hotkey uses the same trigger. Carbon
-    /// takes a registered hotkey before the menu bar sees it, so the
-    /// menu item would never fire.
-    case quickTerminalConflict
-}
-
 /// User-bound shortcuts. Each entry overrides libghostty's default
 /// for the same action; entries omitted from this map keep the
 /// `LimpidShortcutAction.defaultShortcut` value, which itself
@@ -570,6 +562,36 @@ struct KeyboardSettings: Codable, Equatable {
     /// dictionaries. Unknown rawValues (e.g. an action removed in
     /// a future version) decode silently to nothing.
     var overrides: [String: StoredShortcut] = [:]
+
+    /// Actions whose default was given up because a person's own binding
+    /// or the quick terminal's hotkey already holds the same keys: the
+    /// person's choice wins over a default that arrived later.
+    /// Derived from the overrides and the hotkey on every change
+    /// (`normalize`), so a default comes back once its keys are free. A
+    /// separate key rather than a marker inside `overrides`, so an older
+    /// build reads `overrides` unchanged and carries this through
+    /// `unknownFields`.
+    var unbound: [String] = []
+
+    /// Actions the person left with no keys (Keyboard's "Unassign"), kept
+    /// apart from `unbound`, which `normalize` rebuilds: a default given up
+    /// to a binding comes back when the keys are free, one the person
+    /// unassigned stays off until they restore it. A key older builds do
+    /// not know, so they read it as absent and carry it through
+    /// `unknownFields`.
+    var unassigned: [String] = []
+
+    /// Bindings that no longer apply, by action raw value: an action that
+    /// lost its default, or keys Limpid now reserves (⌘⏎). Kept rather
+    /// than dropped, listed in Settings → Keyboard, and discarded there by
+    /// the person. Never bound.
+    var retired: [String: StoredShortcut] = [:]
+
+    /// Actions, by raw value, whose keys did something else in the release
+    /// the person updated from, and that say so the first time they are
+    /// used (`noteChangedKeys(since:)`); taken off once said. A key older
+    /// builds do not know, carried through `unknownFields`.
+    var keysToIntroduce: [String] = []
 
     /// See `LimpidSettings.unknownFields`.
     var unknownFields: [String: LimpidJSONValue] = [:]
@@ -585,6 +607,10 @@ struct KeyboardSettings: Codable, Equatable {
             [String: StoredShortcut].self,
             forKey: .overrides
         ) ?? [:]
+        self.unbound = try c.decodeIfPresent([String].self, forKey: .unbound) ?? []
+        self.unassigned = try c.decodeIfPresent([String].self, forKey: .unassigned) ?? []
+        self.retired = try c.decodeIfPresent([String: StoredShortcut].self, forKey: .retired) ?? [:]
+        self.keysToIntroduce = try c.decodeIfPresent([String].self, forKey: .keysToIntroduce) ?? []
         self.unknownFields = try CodableSidecar.decodeUnknownFields(
             from: decoder,
             knownKeys: Self.knownKeyStrings
@@ -594,22 +620,43 @@ struct KeyboardSettings: Codable, Equatable {
     func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(overrides, forKey: .overrides)
+        // Written only when there is something to keep, so a file that
+        // never needed them reads as it did.
+        if !unbound.isEmpty {
+            try c.encode(unbound, forKey: .unbound)
+        }
+        if !unassigned.isEmpty {
+            try c.encode(unassigned, forKey: .unassigned)
+        }
+        if !retired.isEmpty {
+            try c.encode(retired, forKey: .retired)
+        }
+        if !keysToIntroduce.isEmpty {
+            try c.encode(keysToIntroduce, forKey: .keysToIntroduce)
+        }
         try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case overrides
+        case unbound
+        case unassigned
+        case retired
+        case keysToIntroduce
     }
 
     private static let knownKeyStrings: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))
 
     /// Effective shortcut for `action`: user override if present,
-    /// otherwise the action's built-in default. Returns `nil` only
-    /// when the user has explicitly cleared the binding (reserved
-    /// for a future "Unbind" affordance — currently every action
-    /// has a default).
+    /// otherwise the action's built-in default, unless that default was
+    /// given up (`unbound`) or unassigned (`unassigned`). `nil` for an
+    /// action with neither.
     func shortcut(for action: LimpidShortcutAction) -> StoredShortcut? {
-        overrides[action.rawValue] ?? action.defaultShortcut
+        if let override = overrides[action.rawValue] {
+            return override
+        }
+        let isOff = unbound.contains(action.rawValue) || unassigned.contains(action.rawValue)
+        return isOff ? nil : action.defaultShortcut
     }
 
     /// Conflict-check `proposed` against every other action's
@@ -632,8 +679,18 @@ struct KeyboardSettings: Codable, Equatable {
         if ReservedShortcuts.triggers.contains(proposed.ghosttyTrigger) {
             return .reserved
         }
-        for other in LimpidShortcutAction.allCases where other != action {
+        if action.keysItsPlaceKeeps.contains(proposed) {
+            return .keptBySidebar
+        }
+        // The one action that answers somewhere else may keep the same keys
+        // (`LimpidShortcutAction.sharesKeys`).
+        for other in LimpidShortcutAction.allCases where other != action && !action.sharesKeys(with: other) {
             if shortcut(for: other) == proposed {
+                // A pair holding the keys together is named as one, so the
+                // person learns both lose them.
+                if let partner = other.sharesKeys, partner != action, shortcut(for: partner) == proposed {
+                    return .conflictWithPair(other, partner)
+                }
                 return .conflict(other)
             }
         }
@@ -643,16 +700,122 @@ struct KeyboardSettings: Codable, Equatable {
         return .ok
     }
 
-    /// Replace (or set) the override for `action`.
+    /// Replace (or set) the override for `action`; a binding of the
+    /// person's own also ends their unassigning it.
     mutating func setOverride(_ shortcut: StoredShortcut, for action: LimpidShortcutAction) {
         overrides[action.rawValue] = shortcut
+        unbound.removeAll { $0 == action.rawValue }
+        unassigned.removeAll { $0 == action.rawValue }
     }
 
-    /// Drop the user override so the action falls back to its
-    /// built-in default.
+    /// Drop the user override so the action falls back to its built-in
+    /// default. Whether that default is free again is `normalize`'s call,
+    /// which `SettingsStore` makes after every change.
     mutating func resetOverride(for action: LimpidShortcutAction) {
         overrides.removeValue(forKey: action.rawValue)
     }
+
+    /// Every binding back to its default: overrides, given-up defaults,
+    /// and the retired list. A default the quick terminal's hotkey holds
+    /// stays given up (`normalize`).
+    mutating func restoreDefaults() {
+        overrides.removeAll()
+        unbound.removeAll()
+        unassigned.removeAll()
+        retired.removeAll()
+    }
+
+    /// Forgets a retired binding the person has read.
+    mutating func discardRetired(_ rawValue: String) {
+        retired.removeValue(forKey: rawValue)
+    }
+
+    /// What is left from the update to the supervision window's shortcuts,
+    /// as the bindings stand now: retired bindings not yet
+    /// discarded, and defaults still given up. `nil` when there is none.
+    /// A default the person unassigned is in `unassigned`, not here.
+    var migrationNotice: KeyboardMigrationNotice? {
+        let notice = KeyboardMigrationNotice(
+            retired: retired.keys.sorted().compactMap { raw in retired[raw].map { (raw, $0) } }
+                .map { KeyboardMigrationNotice.Retired(rawValue: $0.0, shortcut: $0.1) },
+            conflicts: unbound.compactMap(LimpidShortcutAction.init(rawValue:))
+        )
+        return notice.retired.isEmpty && notice.conflicts.isEmpty ? nil : notice
+    }
+
+    /// The `retired` key for a quick terminal hotkey this build reserves.
+    static let quickTerminalHotKeyID = "quickTerminalHotKey"
+
+    /// What holds the keys of `action`'s default, when something else
+    /// does: another action's binding or the quick terminal's hotkey.
+    func holderOfDefault(
+        for action: LimpidShortcutAction,
+        quickTerminalHotKey: StoredShortcut?
+    ) -> DefaultKeysHolder? {
+        guard let trigger = action.defaultShortcut?.ghosttyTrigger else { return nil }
+        if let holder = LimpidShortcutAction.allCases.first(where: {
+            $0 != action && !action.sharesKeys(with: $0) && overrides[$0.rawValue]?.ghosttyTrigger == trigger
+        }) {
+            return .action(holder)
+        }
+        return quickTerminalHotKey?.ghosttyTrigger == trigger ? .quickTerminalHotKey : nil
+    }
+
+    /// Keeps the bindings consistent with this build's keys. Run on
+    /// every load, not only on the move to schema 2: a rolled-back build
+    /// keeps the file at schema 2 while it lets a person bind keys this
+    /// build reserves or gave to a new action, and a hand edit can do the
+    /// same. Running it twice changes nothing more.
+    ///
+    /// A binding on a reserved key (⌘⏎, which the decision bar takes)
+    /// moves to `retired`, and so does a quick terminal hotkey on one. A
+    /// default whose keys a person's own binding or the hotkey already
+    /// holds is given up (`unbound`): the person's choice wins over a
+    /// default that arrived later, and no two actions share keys. First, a
+    /// binding of an action folded into another moves to the one that took
+    /// it over (`foldActions`).
+    mutating func normalize(quickTerminalHotKey: inout StoredShortcut?) {
+        foldActions()
+        for (raw, binding) in overrides where ReservedShortcuts.triggers.contains(binding.ghosttyTrigger) {
+            overrides.removeValue(forKey: raw)
+            retired[raw] = binding
+        }
+        if let hotKey = quickTerminalHotKey, ReservedShortcuts.triggers.contains(hotKey.ghosttyTrigger) {
+            retired[Self.quickTerminalHotKeyID] = hotKey
+            quickTerminalHotKey = nil
+        }
+        // Rebuilt rather than added to, so a default whose keys were freed
+        // (an override reset, a hotkey changed) comes back. What the person
+        // unassigned is kept apart, in `unassigned`, and is not touched;
+        // nor is it listed here, so `unbound` is only the defaults that
+        // gave way, which the update notice shows.
+        let hotKey = quickTerminalHotKey
+        unbound = LimpidShortcutAction.allCases
+            .filter {
+                overrides[$0.rawValue] == nil && !unassigned.contains($0.rawValue)
+                    && holderOfDefault(for: $0, quickTerminalHotKey: hotKey) != nil
+            }
+            .map(\.rawValue)
+    }
+}
+
+/// What holds a default's keys instead of its action.
+enum DefaultKeysHolder: Equatable {
+    case action(LimpidShortcutAction)
+    case quickTerminalHotKey
+}
+
+/// What moving the keyboard settings to schema 2 left for the person to
+/// look at: bindings kept aside, and new actions left without a
+/// default because their keys were the person's.
+struct KeyboardMigrationNotice: Equatable {
+    struct Retired: Equatable {
+        let rawValue: String
+        let shortcut: StoredShortcut
+    }
+
+    let retired: [Retired]
+    let conflicts: [LimpidShortcutAction]
 }
 
 // MARK: - Advanced
@@ -684,27 +847,6 @@ struct AdvancedSettings: Codable, Equatable {
     /// when this is on. Limpid Settings values always win over user
     /// `ghostty/config` values where they overlap.
     var ghosttyConfig: GhosttyConfig = .off
-
-    /// Report each row's linked pull request in the sidebar: a mark in
-    /// the row's trailing group, and a hover-revealed card carrying
-    /// the title and CI summary. Needs `gh` or `glab` on the machine,
-    /// signed in to the remote's host. Off by default: it shells out
-    /// to a CLI the user may not have.
-    var showPRStatusInSidebar: Bool = false
-
-    /// Draw the mark only on rows whose request needs attention,
-    /// rather than on every row that has one.
-    ///
-    /// Off by default. Restricting the mark was a response to a
-    /// trailing group that also carried a disclosure chevron and a
-    /// permanently reserved delete slot; with both gone the column
-    /// holds the request, the agent state and the bell, and a mark on
-    /// each request no longer crowds it. Knowing a branch has an open
-    /// request without hovering is worth the ink.
-    ///
-    /// The hover card is unaffected either way — it reports every
-    /// request regardless.
-    var showPRStatusOnlyWhenAttention: Bool = false
 
     /// Run agent commands inside a tmux session of their own instead of
     /// directly on the pane's pty, so the agent survives Limpid quitting
@@ -740,13 +882,31 @@ struct AdvancedSettings: Codable, Equatable {
     /// opening always resolves the identifier again through `NSWorkspace`.
     var fileApplication: FileApplication?
 
-    /// See `LimpidSettings.unknownFields`.
+    /// Whether Limpid holds an approval request while its pane is out of
+    /// sight and hands it to the TUI only once the pane is seen. Not shown in
+    /// Settings: it is the way out if a provider draws its own prompt while
+    /// the request is held, which would leave two prompts for one request.
+    /// Off hands every request to the TUI at once, as if nothing held it.
+    var holdsApprovalsWhileHidden = true
+
+    /// How long the turns' records are kept.
+    var turnRetention: TurnRetentionSettings = .init()
+
+    /// See `LimpidSettings.unknownFields`. It also carries the two
+    /// pull-request switches earlier builds read (`showPRStatusInSidebar`
+    /// and `showPRStatusOnlyWhenAttention`): pull requests now show
+    /// wherever `gh` or `glab` can read them, and a build
+    /// that still reads the switches finds the person's value after a
+    /// rollback.
     var unknownFields: [String: LimpidJSONValue] = [:]
 
     init() {}
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.holdsApprovalsWhileHidden = try c.decodeIfPresent(
+            Bool.self, forKey: .holdsApprovalsWhileHidden
+        ) ?? true
         self.reviewInstructions = try c.decodeIfPresent(
             String.self, forKey: .reviewInstructions
         ) ?? ""
@@ -756,15 +916,10 @@ struct AdvancedSettings: Codable, Equatable {
         self.ghosttyConfig = try c.decodeIfPresent(
             GhosttyConfig.self, forKey: .ghosttyConfig
         ) ?? .off
-        self.showPRStatusInSidebar = try c.decodeIfPresent(
-            Bool.self, forKey: .showPRStatusInSidebar
-        ) ?? false
-        self.showPRStatusOnlyWhenAttention = try c.decodeIfPresent(
-            Bool.self, forKey: .showPRStatusOnlyWhenAttention
-        ) ?? false
         self.hostsAgentsInTmux = try c.decodeIfPresent(
             Bool.self, forKey: .hostsAgentsInTmux
         ) ?? false
+        self.turnRetention = try c.decodeIfPresent(TurnRetentionSettings.self, forKey: .turnRetention) ?? .init()
         self.unknownFields = try CodableSidecar.decodeUnknownFields(
             from: decoder,
             knownKeys: Self.knownKeyStrings
@@ -774,11 +929,15 @@ struct AdvancedSettings: Codable, Equatable {
     func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(ghosttyConfig, forKey: .ghosttyConfig)
-        try c.encode(showPRStatusInSidebar, forKey: .showPRStatusInSidebar)
-        try c.encode(showPRStatusOnlyWhenAttention, forKey: .showPRStatusOnlyWhenAttention)
+        try c.encode(turnRetention, forKey: .turnRetention)
         try c.encode(hostsAgentsInTmux, forKey: .hostsAgentsInTmux)
         try c.encode(reviewInstructions, forKey: .reviewInstructions)
         try c.encodeIfPresent(fileApplication, forKey: .fileApplication)
+        // Written only when changed, so a file nobody touched does not grow
+        // a key nobody can see.
+        if !holdsApprovalsWhileHidden {
+            try c.encode(holdsApprovalsWhileHidden, forKey: .holdsApprovalsWhileHidden)
+        }
         try CodableSidecar.encodeUnknownFields(unknownFields, to: encoder)
     }
 
@@ -788,9 +947,9 @@ struct AdvancedSettings: Codable, Equatable {
         /// Named for Review, its first user; the stored key stays so
         /// existing settings files keep their choice.
         case fileApplication = "reviewFileApplication"
-        case showPRStatusInSidebar
-        case showPRStatusOnlyWhenAttention
         case hostsAgentsInTmux
+        case holdsApprovalsWhileHidden = "approvalHoldWhileHidden"
+        case turnRetention
     }
 
     private static let knownKeyStrings: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))

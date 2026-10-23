@@ -20,7 +20,10 @@ pub const MAXIMUM_REQUEST_BYTES: usize = 1024 * 1024;
 pub const MAXIMUM_RESPONSE_BYTES: usize = 64 * 1024;
 /// Maximum encoded approval body that can be echoed in one bounded response.
 pub const MAXIMUM_APPROVAL_BYTES: usize = 48 * 1024;
-/// Maximum encoded decision accepted from a controller.
+/// Maximum encoded decision accepted from a controller. The app's approval
+/// card checks an answer against it before sending
+/// (`ApprovalResolution.maximumEncodedBytes`); the two sides check the value
+/// against `rust/fixtures/contract/shared-values.json`.
 pub const MAXIMUM_DECISION_BYTES: usize = 8 * 1024;
 /// Maximum request lifetime or individual blocking wait.
 pub const MAXIMUM_WAIT_MS: u64 = 10 * 60 * 1_000;

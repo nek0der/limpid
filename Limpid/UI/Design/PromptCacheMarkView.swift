@@ -2,12 +2,11 @@
 // Limpid — the clock that says a pane's prompt cache is about to expire or
 // already has.
 //
-// Drawn beside the agent state mark in the tab rows and the split pane
-// headers, at that mark's metrics, so the two read as one status group;
-// there it is also the way into the cache panel, below itself: resting the
-// pointer on it, clicking it, or its accessibility action. On the Waiting
-// list it is only an indicator beside the wait time, at that text's size. A
-// row never changes height for it. Yellow and red alone would carry the
+// Drawn beside the agent state mark in a split pane's header, at that
+// mark's metrics, so the two read as one status group, and as a chip with
+// words in the supervision window's session header. Either one is the way
+// into the cache panel, below itself: resting the pointer on it, clicking
+// it, or its accessibility action. Neither header changes height for it. Amber and red alone would carry the
 // meaning by color, which is why the spoken label names the state and the
 // spoken value names the cost.
 
@@ -17,8 +16,11 @@ import SwiftUI
 
 /// What every clock shows and says, wherever it is drawn.
 private extension PromptCacheMark {
+    /// The clock's tint: amber while the cache is about to expire, the
+    /// stopped red once it has. The chip shows the same pair through its
+    /// tone.
     var tint: Color {
-        status == .expired ? LimpidColor.promptCacheExpired : LimpidColor.warning
+        status == .expired ? SupervisionTokens.stopped.color : SupervisionTokens.waiting.color
     }
 
     var accessibilityLabel: Text {
@@ -40,12 +42,31 @@ private extension PromptCacheMark {
     }
 }
 
-/// The interactive clock in a tab row or a pane header.
+extension PromptCacheMark {
+    /// The words the session header's chip shows for the clock, the
+    /// panel's own title.
+    var chipTitle: LocalizedStringResource {
+        status == .expired
+            ? LocalizedStringResource("Cache Expired", comment: "Title of the expired prompt cache panel")
+            : LocalizedStringResource("Cache Expires Soon", comment: "Title of the expiring prompt cache panel")
+    }
+}
+
+/// The interactive clock in a split pane's header, or the chip in the
+/// supervision window's session header.
 struct PromptCacheMarkView: View {
+    /// How the clock is drawn: a glyph beside a pane header's state mark,
+    /// or a chip with words among the session header's exception chips.
+    enum Style {
+        case clock
+        case chip
+    }
+
     let mark: PromptCacheMark
     /// The key this clock's frame is published under, so its panel hangs
     /// below it.
     let place: PromptCacheClockPlace
+    var style: Style = .clock
 
     @Environment(PromptCachePanelPresentation.self) private var presentation
     /// Tells this clock apart from another drawn for the same place, so a
@@ -61,18 +82,31 @@ struct PromptCacheMarkView: View {
         Button {
             presentation.clockClicked(place: place, instance: instance, anchor: frame, target: mark.target)
         } label: {
-            // The same font and slot as `AgentStateMark.rowStatus`, so the
-            // clock and the check beside it are one size and one weight.
-            Image(systemName: "clock")
-                .foregroundStyle(mark.tint)
-                .font(.system(size: LimpidLayout.promptCacheClockFontSize, weight: .semibold))
-                .frame(
-                    width: LimpidLayout.containerColumnTrailingSlot,
-                    height: LimpidLayout.containerColumnTrailingSlot
+            switch style {
+            case .clock:
+                // The slot of `AgentStateMark.Placement.headerStatus`, so the clock and
+                // the state mark beside it share one square.
+                Image(systemName: "clock")
+                    .foregroundStyle(mark.tint)
+                    .font(.supervision(LimpidLayout.promptCacheClockFontSize, weight: .semibold))
+                    .frame(
+                        width: LimpidLayout.stateMarkSlot,
+                        height: LimpidLayout.stateMarkSlot
+                    )
+                    // No fill behind it, open or hovered: the panel's arrow
+                    // already points at the clock it came from.
+                    .contentShape(Rectangle())
+            case .chip:
+                // The header's chip, edged and worded in the tone of what
+                // it says: amber while the cache is about to expire, red
+                // once it has.
+                SupervisionChip(
+                    text: Text(mark.chipTitle),
+                    tone: mark.status == .expired ? .stopped : .waiting,
+                    systemImage: "clock"
                 )
-                // No fill behind it, open or hovered: the panel's arrow
-                // already points at the clock it came from.
                 .contentShape(Rectangle())
+            }
         }
         .buttonStyle(.plain)
         .pointerStyle(.default)
@@ -98,7 +132,7 @@ struct PromptCacheMarkView: View {
         .accessibilityValue(mark.accessibilityValue)
         // Only the expired panel offers answers; the expiring one informs,
         // so it gets no hint.
-        .modifier(OptionalAccessibilityHint(hint: mark.status == .expired ? Text("Shows the ways to go on") : nil))
+        .modifier(OptionalAccessibilityHint(hint: mark.status == .expired ? Text("Shows ways to continue") : nil))
         // Opened from VoiceOver, the panel must not close because the
         // pointer happens to be elsewhere; the trigger says so.
         .accessibilityAction {
@@ -109,23 +143,6 @@ struct PromptCacheMarkView: View {
                 trigger: .accessibility
             )
         }
-    }
-}
-
-/// The clock on a Waiting row: an indicator, not a control. A click on the
-/// row already takes the user to the pane, where the other clocks open the
-/// panel.
-struct PromptCacheIndicator: View {
-    let mark: PromptCacheMark
-
-    var body: some View {
-        Image(systemName: "clock")
-            .foregroundStyle(mark.tint)
-            .font(.system(size: LimpidLayout.promptCacheIndicatorFontSize, weight: .medium))
-            .frame(width: LimpidLayout.promptCacheIndicatorSlot, height: LimpidLayout.promptCacheIndicatorSlot)
-            .accessibilityElement()
-            .accessibilityLabel(mark.accessibilityLabel)
-            .accessibilityValue(mark.accessibilityValue)
     }
 }
 

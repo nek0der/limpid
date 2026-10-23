@@ -1,0 +1,4 @@
+{"type": "user", "isSidechain": false, "message": {"role": "user", "content": "<prompt for ask-user-question-declined>"}}
+{"type": "assistant", "isSidechain": false, "message": {"id": "msg_00000000000000000000001", "role": "assistant", "content": [{"type": "tool_use", "id": "toolu_00000000000000000000000", "name": "AskUserQuestion", "input": {"questions": [{"question": "どの色が好みですか？"}]}}]}}
+{"type": "user", "isSidechain": false, "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_00000000000000000000000", "is_error": true, "content": "User rejected tool use"}]}, "toolUseResult": "User rejected tool use", "toolDenialKind": "user-rejected"}
+{"type": "user", "isSidechain": false, "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user for tool use]"}]}}

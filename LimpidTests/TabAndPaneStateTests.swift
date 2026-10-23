@@ -1,5 +1,5 @@
 // TabAndPaneStateTests.swift
-// Limpid — pure-data tests for Tab, PaneState, and ContainerID extraction.
+// Limpid — pure-data tests for Tab and its agent, PaneState, and ContainerID extraction.
 
 import Foundation
 import Testing
@@ -15,7 +15,6 @@ struct TabTests {
         #expect(tab.title == "scratch")
         #expect(tab.projectID == nil)
         #expect(tab.worktreeID == nil)
-        #expect(tab.groupID == nil)
         #expect(tab.container.hasParent == false)
     }
 
@@ -32,14 +31,15 @@ struct TabTests {
         #expect(tab.container.hasParent)
     }
 
-    @Test("a group-anchored tab retains its group link")
-    func newWithSinglePane_group_retainsGroupID() {
-        let groupID = UUID()
+    @Test("a project-anchored tab retains its project link and no worktree")
+    func newWithSinglePane_project_retainsProjectID() {
+        let projectID = UUID()
         let (tab, _) = Tab.newWithSinglePane(
-            title: "ssh prod1",
-            container: .group(groupID)
+            title: "build",
+            container: .project(projectID)
         )
-        #expect(tab.groupID == groupID)
+        #expect(tab.projectID == projectID)
+        #expect(tab.worktreeID == nil)
         #expect(tab.container.hasParent)
     }
 
@@ -56,6 +56,141 @@ struct TabTests {
         var tab = Tab.newWithSinglePane(title: "auto", container: .loose).tab
         tab.titleOverride = override
         #expect(tab.displayTitle == expected)
+    }
+
+    @Test("a group's name stays before the terminal's title, and a rename replaces both")
+    func namePrefix_staysUntilRenamed() {
+        var tab = Tab.newWithSinglePane(title: "ssh", container: .loose).tab
+        tab.namePrefix = "prod"
+        #expect(tab.displayTitle == "prod · ssh")
+
+        tab.title = "~/servers"
+        #expect(tab.displayTitle == "prod · ~/servers")
+
+        tab.rename("web")
+        #expect(tab.displayTitle == "web")
+        // Clearing the name goes back to the title, without the prefix.
+        tab.rename("")
+        #expect(tab.displayTitle == "~/servers")
+    }
+
+    @Test("a name the tab had in its group stays after the prefix")
+    func namePrefix_goesBeforeAHandSetName() {
+        var tab = Tab.newWithSinglePane(title: "zsh", container: .loose).tab
+        tab.titleOverride = "deploy"
+        tab.namePrefix = "prod"
+
+        #expect(tab.displayTitle == "prod · deploy")
+        // A session row is named without it.
+        #expect(tab.name == "deploy")
+    }
+
+    @Test("a new pane starts in the tab's own default, else where the tab opened")
+    func newPaneWorkingDirectory_followsTheTabsDefault() {
+        var tab = Tab.newWithSinglePane(title: "t", workingDirectory: "/opened", container: .loose).tab
+        tab.pwd = "/now"
+        #expect(tab.newPaneWorkingDirectory == "/opened")
+
+        tab.cwdMode = .inheritPrevious
+        #expect(tab.newPaneWorkingDirectory == "/now")
+        tab.cwdMode = .home
+        #expect(tab.newPaneWorkingDirectory == FileManager.default.homeDirectoryForCurrentUser.path)
+        tab.cwdMode = .fixed
+        #expect(tab.newPaneWorkingDirectory == "/opened", "no fixed folder chosen")
+        tab.cwdPath = URL(fileURLWithPath: "/fixed")
+        #expect(tab.newPaneWorkingDirectory == "/fixed")
+    }
+
+    @Test("the new fields round-trip, and a mode a later build added reads as none")
+    func groupFields_roundTrip_andToleratesAnUnknownMode() throws {
+        var tab = Tab.newWithSinglePane(title: "t", container: .loose).tab
+        tab.namePrefix = "prod"
+        tab.paletteIndex = 4
+        tab.cwdMode = .fixed
+        tab.cwdPath = URL(fileURLWithPath: "/fixed")
+
+        let decoded = try JSONDecoder().decode(Tab.self, from: JSONEncoder().encode(tab))
+        #expect(decoded == tab)
+
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(tab)) as? [String: Any])
+        object["cwdMode"] = "nearestRepo"
+        let later = try JSONDecoder().decode(Tab.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(later.cwdMode == nil)
+        #expect(later.namePrefix == "prod")
+    }
+
+    @Test("a pane's tmux binding survives an encode and decode", .tags(.persistence))
+    func tmuxBinding_roundTrips() throws {
+        let pane = UUID()
+        let binding = TmuxBinding(socketPath: "/private/tmp/tmux-501/default", sessionID: "$3", sessionName: "limpid")
+        var tab = Tab(title: "t", splitTree: SplitTree(leafID: pane), container: .loose)
+        tab.tmuxBindings[pane] = binding
+        let decoded = try JSONDecoder().decode(Tab.self, from: JSONEncoder().encode(tab))
+        #expect(decoded.tmuxBindings[pane] == binding)
+    }
+
+    /// The field is additive, so a `state.json` written by a build that
+    /// predates it has to keep loading. Encoding a tab, deleting the key
+    /// and decoding again is the same shape as that upgrade.
+    @Test("a tab written before tmux bindings existed decodes with none", .tags(.persistence))
+    func tmuxBindings_aTabWrittenWithoutTheKey_decodesWithNone() throws {
+        let tab = Tab(title: "t", splitTree: SplitTree(leafID: UUID()), container: .loose)
+        var object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(tab)) as? [String: Any])
+        object.removeValue(forKey: "tmuxBindings")
+        let decoded = try JSONDecoder().decode(Tab.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(decoded.tmuxBindings.isEmpty)
+    }
+
+    @Test func aTabSavedAndRead_keepsItsStagedInstruction_andAnOlderFileReadsWithoutOne() throws {
+        let made = Tab.newWithSinglePane(title: "t", container: .loose)
+        var tab = made.tab
+        let pane = made.paneID
+        tab.initialPromptFiles[pane] = "/tmp/limpid-prompts/p"
+        tab.initialAgentExecutables[pane] = AgentInstallation(kind: .codex, executable: "/opt/tools/bin/codex")
+        let decoded = try JSONDecoder().decode(Tab.self, from: JSONEncoder().encode(tab))
+        #expect(decoded.initialPromptFiles == [pane: "/tmp/limpid-prompts/p"])
+        // The executable the sheet found is never saved: a restored pane
+        // searches afresh.
+        #expect(decoded.initialAgentExecutables.isEmpty)
+
+        var older = try JSONSerialization.jsonObject(with: JSONEncoder().encode(tab)) as? [String: Any] ?? [:]
+        older.removeValue(forKey: "initialPromptFiles")
+        let fromOlder = try JSONDecoder().decode(Tab.self, from: JSONSerialization.data(withJSONObject: older))
+        #expect(fromOlder.initialPromptFiles.isEmpty)
+    }
+
+    // MARK: - The tab's agent
+
+    @Test func aTabWithTwoAgents_wearsTheFirstAgentsBadge() {
+        let claudePane = UUID()
+        let codexPane = UUID()
+        var tab = Tab(
+            title: "t",
+            splitTree: SplitTree(leafID: claudePane).insert(at: claudePane, direction: .horizontal, newID: codexPane).tree,
+            container: .loose
+        )
+        tab.agentBadges[.codex] = [codexPane: AgentBadge(state: .running, updatedAt: Date())]
+        #expect(tab.agentKind == .codex)
+        tab.agentBadges[.claude] = [claudePane: AgentBadge(state: .idle, updatedAt: Date())]
+        #expect(tab.agentKind == .claude, "Claude comes first in AgentKind's order")
+    }
+
+    @Test func aTabIsAnAgentTab_whileAnAgentHasASessionInIt_andRunsInTmuxByEitherSource() {
+        let pane = UUID()
+        var tab = Tab(title: "t", splitTree: SplitTree(leafID: pane), container: .loose)
+        #expect(tab.agentKind == nil)
+        tab.agentBadges[.codex] = [pane: AgentBadge(state: .unknown, updatedAt: Date())]
+        #expect(tab.agentKind == .codex, "a run restored at launch has not reported yet, and is still the tab's agent")
+        tab.agentBadges[.codex] = [pane: AgentBadge(state: .idle, updatedAt: Date())]
+        #expect(tab.agentKind == .codex, "the tab wears its agent's badge")
+
+        #expect(!tab.isHostedInTmux(mountedTmuxPaneIDs: []))
+        #expect(tab.isHostedInTmux(mountedTmuxPaneIDs: [pane]))
+        tab.agentBadges[.codex]?[pane]?.isTmuxHosted = true
+        #expect(tab.isHostedInTmux(mountedTmuxPaneIDs: []))
+
+        tab.agentBadges[.codex] = [:]
+        #expect(tab.agentKind == nil, "a retired run leaves the tab a plain terminal")
     }
 }
 
@@ -176,17 +311,6 @@ struct TabAgentMapDecodingTests {
 @Suite("PaneState")
 struct PaneStateTests {
 
-    @Test("defaults: no unread")
-    func init_default_isAllZero() {
-        // PaneState used to also carry bell-ringing and child-exit
-        // bits, but those moved to `WindowSession.paneTransients` so
-        // flipping them wouldn't trip the autosave hook. PaneState is
-        // now strictly the persisted slice.
-        let state = PaneState()
-        #expect(state.unreadCount == 0)
-        #expect(state.hasUnread == false)
-    }
-
     @Test("hasUnread tracks the count field")
     func hasUnread_tracksUnreadCount() {
         var state = PaneState()
@@ -196,12 +320,19 @@ struct PaneStateTests {
         state.unreadCount = 0
         #expect(state.hasUnread == false)
     }
+
+    @Test("a pane state saved before panes had names reads with none")
+    func decode_withoutAName_readsNone() throws {
+        let decoded = try JSONDecoder().decode(PaneState.self, from: Data(#"{"unreadCount":2}"#.utf8))
+        #expect(decoded.unreadCount == 2)
+        #expect(decoded.name == nil)
+    }
 }
 
 @Suite("ContainerID extraction")
 struct ContainerIDExtractionTests {
 
-    @Test("projectID is set on .project and .worktree, nil on .loose and .group")
+    @Test("projectID is set on .project and .worktree, nil on .loose")
     func projectID_extraction() {
         let pid = UUID()
         let wid = UUID()
@@ -210,6 +341,5 @@ struct ContainerIDExtractionTests {
         #expect(ContainerID.worktree(projectID: pid, worktreeID: wid).projectID == pid)
         #expect(ContainerID.worktree(projectID: pid, worktreeID: wid).worktreeID == wid)
         #expect(ContainerID.loose.projectID == nil)
-        #expect(ContainerID.group(UUID()).projectID == nil)
     }
 }

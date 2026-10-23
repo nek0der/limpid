@@ -25,11 +25,15 @@ struct KeyboardShortcutCatalogTests {
         sections.flatMap(\.entries)
     }
 
-    @Test("Every rebindable action appears exactly once")
+    @Test("Every action with keys appears exactly once, and one without none")
     func sections_coverEveryAction() {
         let ids = entries(sections()).map(\.id)
+        let keyboard = KeyboardSettings()
         for action in LimpidShortcutAction.allCases {
-            #expect(ids.filter { $0 == "action.\(action.rawValue)" }.count == 1, "\(action.rawValue)")
+            // A sheet of keys has nothing to say for an action with none
+            // (Go Back, Go Forward, New Window by default).
+            let expected = keyboard.shortcut(for: action) == nil ? 0 : 1
+            #expect(ids.filter { $0 == "action.\(action.rawValue)" }.count == expected, "\(action.rawValue)")
         }
     }
 
@@ -54,9 +58,71 @@ struct KeyboardShortcutCatalogTests {
     func sections_includeFixedRows() {
         let ids = Set(entries(sections()).map(\.id))
         #expect(ids.contains("fixed.goToTab"))
-        #expect(ids.contains("fixed.goToSection"))
+        #expect(ids.contains("fixed.goToWorktree"))
         #expect(ids.contains("fixed.insertNewline"))
         #expect(ids.contains("fixed.settings"))
+    }
+
+    @Test func theSheet_listsTheCommandClick_inAWindowSection() throws {
+        let window = try #require(sections(locale: Locale(identifier: "ja")).first { $0.id == "fixed.window" })
+        // ⌘-click has no key to bind, so the sheet is where it is found.
+        #expect(window.title == "ウインドウ")
+        #expect(window.entries.map(\.title) == ["新規ウインドウで開く"])
+        #expect(window.entries.map(\.tokens) == [["⌘", "クリック"]])
+        #expect(window.entries.first?.searchAliases.contains("Open in New Window") == true)
+        let english = try #require(sections().first { $0.id == "fixed.window" })
+        #expect(english.title == "Window")
+        #expect(english.entries.map(\.tokens) == [["⌘", "Click"]])
+    }
+
+    @Test func theSheet_namesTheNumberKeys_tabsAndWorktrees() throws {
+        let numbers = try #require(sections(locale: Locale(identifier: "ja")).first { $0.id == "fixed.tabsAndWorktrees" })
+        // ⌃⌘1–9 goes to the nth working worktree the sidebar shows.
+        #expect(numbers.title == "タブとワークツリー")
+        #expect(numbers.entries.map(\.title) == ["タブ 1〜9 へ移動", "ワークツリー 1〜9 へ移動"])
+        #expect(numbers.entries.map(\.tokens) == [["⌘", "1–9"], ["⌃", "⌘", "1–9"]])
+        #expect(numbers.entries.last?.searchAliases.contains("Go to Worktree 1–9") == true)
+        // ⌘[ ⌘] are listed under the same word.
+        let navigation = try #require(sections().first { $0.id == "category.\(LimpidShortcutCategory.navigation.rawValue)" })
+        let titles = navigation.entries.map(\.title)
+        #expect(titles.contains("Next Worktree"))
+        #expect(titles.contains("Previous Worktree"))
+    }
+
+    @Test("The palette's restore entry is listed under the palette's keys")
+    func sections_listThePalettesRestoreEntry() throws {
+        let view = try #require(sections(locale: Locale(identifier: "ja"))
+            .first { $0.id == "category.\(LimpidShortcutCategory.view.rawValue)" })
+        let restore = try #require(view.entries.first { $0.id == "palette.restoreTurn" })
+        #expect(restore.title == "このターンの前にコードを復元…")
+        #expect(restore.tokens == KeyboardSettings().shortcut(for: .commandPalette)?.displayTokens)
+    }
+
+    @Test("The review's diff keys are listed, as the review tab writes no keys along its foot")
+    func sections_listTheReviewKeys() throws {
+        let review = try #require(sections(locale: Locale(identifier: "ja")).first { $0.id == "fixed.review" })
+        #expect(review.title == "レビュー")
+        #expect(review.entries.map(\.tokens) == [
+            ["J"], ["K"], ["⇧", "J"], ["⇧", "K"], ["]"], ["["], ["H"], ["L"], ["N"], ["P"], ["C"], ["V"], ["O"]
+        ])
+        let nextHunk = try #require(review.entries.first { $0.id == "review.nextHunk" })
+        #expect(nextHunk.title == "次のハンク")
+        // Found by its English name in Japanese too.
+        #expect(nextHunk.searchAliases.contains("Next Hunk"))
+    }
+
+    @Test("The sheet and the diff name the same review keys")
+    func reviewKeys_areTheSameInTheSheetAndTheDiff() throws {
+        let review = try #require(sections().first { $0.id == "fixed.review" })
+        // As the table receives them: a letter lower case, with ⇧ upper case.
+        let listed = review.entries.map { entry -> String in
+            let key = entry.tokens.last ?? ""
+            return entry.tokens.contains("⇧") ? key.uppercased() : key.lowercased()
+        }
+        let answered = Set(ReviewTableKey.byCharacter.keys)
+
+        #expect(Set(listed) == answered)
+        #expect(listed.count == answered.count, "one row per key")
     }
 
     @Test("Quick terminal hotkey is listed only when one is set")
@@ -95,42 +161,15 @@ struct KeyboardShortcutCatalogTests {
         #expect(KeyboardShortcutCatalog.filter(sections(), query: "zzzzqqqq").isEmpty)
     }
 
-    @Test("Dispatching the action posts the toggle notification for its session")
-    func dispatch_postsToggleNotification() {
-        let (session, _, _) = WindowSessionFixture.withLooseTab()
-        let flag = NotificationFlag()
-        var poster: AnyObject?
-        let token = NotificationCenter.default.addObserver(
-            forName: .limpidToggleKeyboardShortcuts,
-            object: nil,
-            queue: nil
-        ) { note in
-            // The observer runs synchronously on the posting thread, so
-            // reading the sender here is safe; the flag is what the test
-            // asserts on after the call returns.
-            poster = note.object as AnyObject?
-            flag.fire()
-        }
-        defer { NotificationCenter.default.removeObserver(token) }
-
-        TabActions.dispatchShortcutAction(
-            .keyboardShortcuts,
-            session: session,
-            attention: AttentionState(),
-            registry: RecordingSurfaceRegistry(),
-            trackers: TabActions.SessionTrackers(projection: nil),
-            toastCenter: ToastCenter(),
-            minPaneSize: 0
-        )
-
-        #expect(flag.didFire)
-        #expect(poster === session)
-    }
-
-    @Test("⌘/ default does not collide with any other binding")
-    func defaultShortcut_isConflictFree() throws {
-        let keyboard = KeyboardSettings()
-        let shortcut = try #require(LimpidShortcutAction.keyboardShortcuts.defaultShortcut)
-        #expect(keyboard.validate(shortcut, for: .keyboardShortcuts, quickTerminalHotKey: nil) == .ok)
+    @Test func newWindow_hasNoDefaultKeys_andIsAFileMenuItem() {
+        // ⌘N is New Worktree… and ⇧⌘N the notification history.
+        #expect(LimpidShortcutAction.newWindow.defaultShortcut == nil)
+        #expect(LimpidShortcutAction.newWindow.category == .file)
+        #expect(LimpidShortcutAction.newWindow.ghosttyAction == nil)
+        #expect(!entries(sections()).contains { $0.id == "action.newWindow" })
+        // Bound by the person, the sheet lists it.
+        var keyboard = KeyboardSettings()
+        keyboard.overrides[LimpidShortcutAction.newWindow.rawValue] = StoredShortcut(key: "n", modifiers: [.command, .control, .option])
+        #expect(entries(sections(keyboard: keyboard)).contains { $0.id == "action.newWindow" })
     }
 }

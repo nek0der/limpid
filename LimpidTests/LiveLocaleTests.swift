@@ -32,8 +32,11 @@ struct LiveLocaleTests {
     // MARK: - Model text
 
     @Test func settingsPickers_switchWithTheLanguage() {
-        #expect(ConfirmPolicy.onlyWhenAgent.localizedTitle.resolved(in: ja) == "エージェントが動作中のみ")
-        #expect(ConfirmPolicy.onlyWhenAgent.localizedTitle.resolved(in: en) == "Only when an agent is active")
+        #expect(ConfirmPolicy.onlyWhenAgent.localizedTitle.resolved(in: ja) == "エージェントの実行中のみ確認する")
+        #expect(ConfirmPolicy.onlyWhenAgent.localizedTitle.resolved(in: en) == "Only while an agent is running")
+        // The three choices share one shape: what Limpid does.
+        #expect(ConfirmPolicy.always.localizedTitle.resolved(in: ja) == "常に確認する")
+        #expect(ConfirmPolicy.never.localizedTitle.resolved(in: ja) == "確認しない")
         for policy in ConfirmPolicy.allCases {
             expectTranslated(policy.localizedTitle)
         }
@@ -48,13 +51,13 @@ struct LiveLocaleTests {
         #expect(ReviewLayer.untracked.title.resolved(in: en) == "Untracked")
         for layer in ReviewLayer.allCases {
             expectTranslated(layer.title)
-            expectTranslated(layer.detail)
         }
     }
 
-    @Test func agentStates_switchWithTheLanguage() {
-        for state in [AgentState.error, .needsInput, .finished, .running, .idle, .unknown] {
-            expectTranslated(state.localizedLabel)
+    @Test func stateGlyphNames_switchWithTheLanguage() {
+        let kinds: [StateGlyph.Kind] = [.needsApproval, .needsAnswer, .needsResponse, .stopped, .unread, .running, .idle, .unknown]
+        for kind in kinds {
+            expectTranslated(kind.name)
         }
     }
 
@@ -63,7 +66,7 @@ struct LiveLocaleTests {
             .invalidDiff, .unsupported, .tooLarge, .gitFailed, .changed, .targetUnavailable, .invalidText,
             .storageFailed, .resolvedBacklogTooLarge, .baseUnavailable, .draftUnreadable, .checkInterrupted,
             .commentLimitReached, .commentTooLong, .nothingToInsert, .promptTooLong, .timedOut,
-            .instructionsInvalid, .instructionsTooLong, .turnBaseMissing, .unsavedComment
+            .instructionsInvalid, .instructionsTooLong, .unsavedComment
         ]
         for error in errors {
             guard case let .localized(message) = DisplayText(error: error) else {
@@ -78,8 +81,12 @@ struct LiveLocaleTests {
         let error = NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "disk full"])
         #expect(DisplayText(error: error) == .verbatim("disk full"))
         #expect(DisplayText(error: error).resolved(in: ja) == "disk full")
-        let gitError = CreateWorktreeError.gitFailed(stderr: "fatal: bad ref")
-        #expect(DisplayText(error: gitError) == .verbatim("fatal: bad ref"))
+        // Git's own words stay English after our sentence in each language.
+        let gitError = DisplayText(error: CreateWorktreeError.gitFailed(stderr: "fatal: bad ref"))
+        #expect(gitError.resolved(in: en) == "git worktree add failed: fatal: bad ref")
+        #expect(gitError.resolved(in: ja) == "git worktree add に失敗しました：fatal: bad ref")
+        let removeError = DisplayText(error: DeleteWorktreeError.gitFailed(stderr: "fatal: locked"))
+        #expect(removeError.resolved(in: ja) == "git worktree remove に失敗しました：fatal: locked")
         let missingBranch = DisplayText(error: CreateWorktreeError.missingBranchName)
         #expect(missingBranch.resolved(in: en) != missingBranch.resolved(in: ja))
     }
@@ -116,11 +123,23 @@ struct LiveLocaleTests {
 
     @Test func notificationTitles_resolveInTheLocaleTheyAreSentIn() {
         expectTranslated(AgentKind.claude.finishedTitle)
-        expectTranslated(AgentKind.codex.needsInputTitle)
-        expectTranslated(AgentKind.claude.errorTitle)
-        let session = WindowSession()
-        #expect(session.containerLabel(for: .loose, locale: ja) == "クイックタブ")
-        #expect(session.containerLabel(for: .loose, locale: en) == "Quick Tabs")
+        expectTranslated(AgentKind.codex.waitTitle(for: .approval(PromptApproval(recorded: nil, tool: "Bash"))))
+        expectTranslated(AgentKind.codex.waitTitle(for: .question(detail: nil)))
+        expectTranslated(AgentKind.codex.waitTitle(for: nil))
+        expectTranslated(AgentKind.claude.stoppedTitle)
+        #expect(AgentKind.claude.waitTitle(for: .approval(PromptApproval(recorded: nil, tool: "Bash"))).resolved(in: ja)
+            == "Claude Code が承認を待っています")
+        #expect(AgentKind.claude.waitTitle(for: .question(detail: nil)).resolved(in: ja) == "Claude Code が質問しています")
+        #expect(AgentKind.claude.waitTitle(for: .question(detail: nil)).resolved(in: en) == "Claude Code is asking a question")
+        #expect(AgentKind.claude.waitTitle(for: .unclassified(detail: nil)).resolved(in: ja) == "Claude Code が応答を待っています")
+        #expect(AgentKind.claude.waitTitle(for: nil).resolved(in: en) == "Claude Code is waiting for a response")
+        #expect(AgentKind.claude.finishedTitle.resolved(in: ja) == "Claude Code がターンを完了しました")
+        #expect(AgentKind.claude.finishedTitle.resolved(in: en) == "Claude Code finished a turn")
+        #expect(AgentKind.claude.stoppedTitle.resolved(in: ja) == "Claude Code が停止しました")
+        #expect(AgentKind.claude.stoppedTitle.resolved(in: en) == "Claude Code stopped")
+        let session = WorkspaceSession()
+        #expect(session.containerLabel(for: .loose, locale: ja) == "スクラッチ")
+        #expect(session.containerLabel(for: .loose, locale: en) == "Scratch")
     }
 
     @Test func confirmations_switchWithTheLanguage() throws {
@@ -152,7 +171,22 @@ struct LiveLocaleTests {
             return
         }
         expectTranslated(detail)
-        #expect(SessionLoadIssue.decodeFailed(message: "line 2").detail == .verbatim("line 2"))
+        #expect(SessionLoadIssue.decodeFailed(message: .verbatim("line 2")).detail == .verbatim("line 2"))
+    }
+
+    @Test func migrationErrors_areDescribedInBothLanguages() {
+        let errors: [any LimpidLocalizedError] = [
+            MigrationBackup.BackupError.noFreeBackupName,
+            MigrationBackup.BackupError.copyFailed,
+            VersionedDocumentMigrator.MigrationError.stepProducedWrongVersion(from: 4, found: nil)
+        ]
+        for error in errors {
+            guard case let .localized(message) = DisplayText(error: error) else {
+                Issue.record("\(error) is described by Limpid")
+                continue
+            }
+            expectTranslated(message)
+        }
     }
 
     @Test func sessionRepair_isDescribedInBothLanguages() {
@@ -179,7 +213,7 @@ struct LiveLocaleTests {
         try withTempDir { directory in
             let settings = SettingsStore(directory: directory)
             let items = CommandPaletteCatalog.buildItems(
-                session: WindowSession(),
+                session: WorkspaceSession(),
                 settings: settings,
                 attention: AttentionState(),
                 locale: ja
@@ -192,7 +226,7 @@ struct LiveLocaleTests {
             #expect(split.searchAlias == LimpidShortcutAction.splitRight.localizedTitle.resolved(in: en))
 
             let english = CommandPaletteCatalog.buildItems(
-                session: WindowSession(),
+                session: WorkspaceSession(),
                 settings: settings,
                 attention: AttentionState(),
                 locale: en
@@ -204,9 +238,9 @@ struct LiveLocaleTests {
     }
 
     @Test func commandPaletteHelp_subtitlesFollowThePalettesLocale() {
-        let state = CommandPaletteState(locale: ja)
+        let state = CommandPaletteState(locale: ja, windowID: WindowID())
         state.applyFilter(query: "?", frecencyStore: nil)
-        let english = CommandPaletteState(locale: en)
+        let english = CommandPaletteState(locale: en, windowID: WindowID())
         english.applyFilter(query: "?", frecencyStore: nil)
         #expect(!state.results.isEmpty)
         #expect(state.results.map(\.item.subtitle) != english.results.map(\.item.subtitle))
@@ -269,28 +303,16 @@ struct LiveLocaleTests {
 
     @Test func agentStatus_tooltipsAreOneFormatPerPhrase() {
         #expect(AgentStatusText.joined(["Running", "", "editing a file"], locale: en) == "Running · editing a file")
-        #expect(AgentStatusText.breakdown([.error: 1, .needsInput: 2], dominant: .error, locale: en)
-            == "1 Error · 2 Needs input")
-        #expect(AgentStatusText.breakdown([:], dominant: .finished, locale: en) == "Finished")
-        #expect(AgentStatusText.tab(
-            state: .running, panes: (matching: 2, total: 3), detail: "editing", elapsedSeconds: 12, locale: en
-        ) == "Running (2 of 3 panes) · editing · 12s")
-        #expect(AgentStatusText.tab(
-            state: .idle, panes: (matching: 1, total: 1), detail: nil, elapsedSeconds: nil, locale: en
-        ).isEmpty)
-        #expect(AgentStatusText.pane(state: .needsInput, detail: "", locale: en) == "Needs input")
+        #expect(AgentStatusText.pane(name: "Needs approval", detail: "", locale: en) == "Needs approval")
+        #expect(AgentStatusText.pane(name: "Needs approval", detail: "Bash: ls", locale: en)
+            == "Needs approval · Bash: ls")
         #expect(AgentStatusText.spokenList(["server", "Claude", ""], locale: en) == "server, Claude")
     }
 
     @Test func agentStatus_followsTheGivenLocale() {
-        let japanese = AgentStatusText.tab(
-            state: .running, panes: (matching: 2, total: 3), detail: nil, elapsedSeconds: 12, locale: ja
-        )
-        #expect(japanese.contains(AgentState.running.localizedLabel.resolved(in: ja)))
-        #expect(japanese.contains("2 / 3"))
-        #expect(japanese.contains("12秒"))
-        #expect(AgentState.finished.accessibilityLabel(isViewedFinished: true, locale: ja)
-            == "\(AgentState.finished.localizedLabel.resolved(in: ja))、確認済み")
+        let running = StateGlyph.Kind.running.name.resolved(in: ja)
+        #expect(AgentStatusText.pane(name: running, detail: "編集中", locale: ja)
+            == AgentStatusText.joined([running, "編集中"], locale: ja))
         #expect(AgentStatusText.spokenList(["a", "b"], locale: ja) == "a、b")
     }
 
@@ -311,5 +333,29 @@ struct LiveLocaleTests {
         let message = DisplayText(error: error)
         #expect(message.resolved(in: en) == "git exited with code 128.")
         #expect(message.resolved(in: ja) != message.resolved(in: en))
+        let said = DisplayText(error: GitProcessError.nonZeroExit(GitResult(exitCode: 1, stdout: "", stderr: "fatal: nope")))
+        #expect(said.resolved(in: en) == "git exited with code 1: fatal: nope")
+        #expect(said.resolved(in: ja) == "git が終了コード 1 で終了しました：fatal: nope")
+    }
+
+    /// A setup that the system stopped says which command, in the reader's
+    /// language, before the system's own reason.
+    @Test func aSetupThatCouldNotStart_saysWhichCommandFirst() {
+        let error = NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "No such file"])
+        let message = SessionLaunchStore.setupCouldNotStart(1, error)
+        #expect(message.resolved(in: en) == "Setup command 2 couldn’t start: No such file")
+        #expect(message.resolved(in: ja) == "セットアップコマンド 2 を開始できませんでした：No such file")
+    }
+
+    /// Our own reason inside one of these sentences resolves in the same
+    /// language as the sentence, whatever language the app launched in.
+    @Test func aNestedReason_followsTheSentencesLanguage() {
+        let timedOut = GitProcessError.timedOut(seconds: 60)
+        let setup = SessionLaunchStore.setupCouldNotStart(0, timedOut)
+        #expect(setup.resolved(in: ja) == "セットアップコマンド 1 を開始できませんでした：git が 60 秒以内に完了しませんでした。")
+        #expect(setup.resolved(in: en) == "Setup command 1 couldn’t start: git didn’t finish within 60 seconds.")
+        let fetch = NewSessionActions.fetchFailure(timedOut)
+        #expect(fetch.resolved(in: ja) == "リモートからフェッチできませんでした：git が 60 秒以内に完了しませんでした。")
+        #expect(fetch.resolved(in: en) == "Couldn’t fetch from the remote: git didn’t finish within 60 seconds.")
     }
 }

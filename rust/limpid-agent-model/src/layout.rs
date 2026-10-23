@@ -5,7 +5,7 @@
 //! lists, rewrites, locks, or deletes it by the same name. The host asks the
 //! bridge for these values rather than keeping copies, since a copy that
 //! drifted would compile, pass its own tests, and leave the file unread. Files
-//! already on disk, and the shell receivers kept as the rollback path, use
+//! already on disk, some written by earlier builds' shell receivers, use
 //! exactly these names, so changing one strands them.
 
 /// What a resume hint's file name ends with in the provider's session
@@ -19,6 +19,11 @@ pub const CWD_EVENT_FILE_SUFFIX: &str = ".cwd.json";
 /// The directory inside the provider's state directory that worktree events
 /// are written to.
 pub const WORKTREE_EVENTS_DIRECTORY: &str = "worktree-events";
+
+/// The directory inside the provider's state directory that turn records
+/// (`TURN_RECORD_FILE_SUFFIX`) and the conversations' counters
+/// (`TURN_COUNTER_FILE_SUFFIX`) are written to.
+pub const TURNS_DIRECTORY: &str = "turns";
 
 /// What a finished worktree event's file name ends with. Anything else in the
 /// directory is a write still in progress.
@@ -48,7 +53,7 @@ mod tests {
 
     #[test]
     fn the_names_match_what_is_already_on_disk() {
-        // Existing files and the shell receivers use these names; a change
+        // Existing files, earlier builds' among them, use these names; a change
         // here must come with a migration, not slip through as a rename.
         assert_eq!(
             session_hint_file_name(PANE),
@@ -59,6 +64,7 @@ mod tests {
             "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10.cwd.json"
         );
         assert_eq!(WORKTREE_EVENTS_DIRECTORY, "worktree-events");
+        assert_eq!(TURNS_DIRECTORY, "turns");
         assert_eq!(WORKTREE_EVENT_FILE_SUFFIX, ".json");
         assert_eq!(LOCK_FILE_SUFFIX, ".flock");
     }

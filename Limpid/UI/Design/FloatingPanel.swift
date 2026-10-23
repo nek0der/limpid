@@ -4,9 +4,10 @@
 // places the panel below or above it, and the monitor that closes it on
 // Escape or a click elsewhere.
 //
-// The pane rename field, the prompt cache panel and the container color
-// picker are drawn this way, at scene root on the command palette's
-// surface, rather than through `.popover`. A popover's arrow, frame and
+// The pane rename field, the prompt cache panel, the container color
+// picker, and the supervision title bar's dropdowns are drawn this way, at
+// scene root on the command palette's surface, rather than through
+// `.popover`. A popover's arrow, frame and
 // corner radius cannot be changed, so it could never match the app's
 // other floating panels; and with one open, a click elsewhere only
 // dismissed it (see `PRHoverCard`). Where the panel goes is
@@ -39,8 +40,8 @@ extension FloatingPanelPlacement.Style {
 /// Hosts a floating panel over a whole window: the request's panel while
 /// one is open, nothing otherwise. Owns what every such host
 /// needs and is easy to get subtly wrong: reading the window's frame, an
-/// identity per opening (which restarts the measurement), the fade and its
-/// Reduce Motion substitute, and reaching past the safe area. Empty regions
+/// identity per opening (which restarts the measurement), the fade
+/// (`ModalMotion.floatingPanel`), and reaching past the safe area. Empty regions
 /// pass clicks through to the window, as `PRHoverCardHost`'s do.
 struct FloatingPanelHost<Request: FloatingPanelRequest, Content: View>: View {
     /// The open panel, or nil.
@@ -82,13 +83,12 @@ struct FloatingPanelHost<Request: FloatingPanelRequest, Content: View>: View {
                 ) {
                     content(request)
                 }
-                .transition(.opacity)
+                .modalTransition(.floatingPanel, reduceMotion: reduceMotion)
                 .id(request.id)
             }
         }
         .ignoresSafeArea()
-        // Off under Reduce Motion, as the other floating panels do.
-        .animation(reduceMotion ? nil : LimpidMotion.paletteToggle, value: request?.id)
+        .animation(ModalMotion.floatingPanel.animation(reduceMotion: reduceMotion), value: request?.id)
     }
 }
 
@@ -179,8 +179,9 @@ struct FloatingPanelShape: Shape {
             return RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).path(in: rect)
         }
         let radius = min(cornerRadius, rect.width / 2, rect.height / 2)
-        let topArrowX = arrow.edge == .top ? rect.minX + arrow.x : nil
-        let bottomArrowX = arrow.edge == .bottom ? rect.minX + arrow.x : nil
+        let topArrowX = arrow.edge == .top ? rect.minX + arrow.offset : nil
+        let bottomArrowX = arrow.edge == .bottom ? rect.minX + arrow.offset : nil
+        let leadingArrowY = arrow.edge == .leading ? rect.minY + arrow.offset : nil
         var path = Path()
         path.move(to: CGPoint(x: rect.minX + radius, y: rect.minY))
         if let x = topArrowX {
@@ -208,6 +209,11 @@ struct FloatingPanelShape: Shape {
             tangent2End: CGPoint(x: rect.minX, y: rect.minY),
             radius: radius
         )
+        if let y = leadingArrowY {
+            path.addLine(to: CGPoint(x: rect.minX, y: y + arrowHeight))
+            path.addLine(to: CGPoint(x: rect.minX - arrowHeight, y: y))
+            path.addLine(to: CGPoint(x: rect.minX, y: y - arrowHeight))
+        }
         path.addArc(
             tangent1End: CGPoint(x: rect.minX, y: rect.minY),
             tangent2End: CGPoint(x: rect.maxX, y: rect.minY),
@@ -228,10 +234,11 @@ struct FloatingPanelKey: Equatable {
 }
 
 /// Watches the window's keys and clicks while a floating panel is up. An
-/// AppKit monitor because the keyboard stays with the terminal while the
-/// panel is up: the panel never takes focus, so SwiftUI's own key handling
-/// would not see the keys. Placed as the panel's background, so its bounds
-/// are the panel's.
+/// AppKit monitor because the keyboard usually stays with the terminal
+/// while the panel is up, so SwiftUI's own key handling would not see the
+/// keys; a panel that does take the keyboard (a title bar dropdown's
+/// search field) still gets Escape here first, wherever focus is inside it.
+/// Placed as the panel's background, so its bounds are the panel's.
 struct FloatingPanelEventMonitor: NSViewRepresentable {
     /// A mouse button went down outside the panel. The click still reaches
     /// what it landed on.

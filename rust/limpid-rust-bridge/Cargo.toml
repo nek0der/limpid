@@ -17,6 +17,9 @@ serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 # cbindgen (MPL-2.0) regenerates include/limpid_rust_bridge.h on every build so
 # the committed header can never drift from the exported symbols. The default
 # features only serve its command-line binary; leaving them out keeps clap and

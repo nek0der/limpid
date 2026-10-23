@@ -33,9 +33,8 @@ private func loginShellSearchPath(environment: [String: String]) -> String? {
     process.environment = environment
     process.standardOutput = output
     process.standardError = FileHandle.nullDevice
-    guard (try? process.run()) != nil else { return nil }
+    guard (try? process.run()) != nil, process.waitUntilExit(within: 10) else { return nil }
     let data = output.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
     guard process.terminationStatus == 0,
           let text = String(data: data, encoding: .utf8),
           let line = text.split(separator: "\n").last(where: { $0.hasPrefix(marker) })
@@ -83,7 +82,8 @@ private let installedCodex: InstalledCodex? = {
 @Suite(
     "Codex hook injection smoke",
     .tags(.smoke),
-    .disabled(if: installedCodex == nil, "no Codex executable found")
+    .disabled(if: installedCodex == nil, "no Codex executable found"),
+    .timeLimit(.minutes(2))
 )
 struct CodexHookInjectionSmokeTests {
     private struct DiscoveredHook: Decodable {
@@ -140,11 +140,18 @@ struct CodexHookInjectionSmokeTests {
         ])
 
         // Read until the hooks/list reply; the server stays up afterwards.
+        // A read blocks until the server writes, so a server that never
+        // answers is stopped after 30 seconds, which ends the read at EOF;
+        // `.timeLimit` cannot end a test blocked in one.
+        let watchdog = DispatchWorkItem { [process] in process.terminate() }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: watchdog)
+        defer { watchdog.cancel() }
         var buffer = Data()
         let handle = stdout.fileHandleForReading
-        let deadline = Date().addingTimeInterval(30)
-        while Date() < deadline {
-            buffer.append(handle.availableData)
+        while true {
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { break }
+            buffer.append(chunk)
             guard let text = String(data: buffer, encoding: .utf8) else { continue }
             for line in text.split(separator: "\n") {
                 guard let data = line.data(using: .utf8),

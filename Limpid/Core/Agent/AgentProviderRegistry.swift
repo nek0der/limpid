@@ -24,7 +24,7 @@ enum AgentProviderRegistry {
         } catch {
             // An empty registry means no provider has any capability, so the
             // rules decide nothing rather than deciding wrongly.
-            log.error("provider registry unavailable: \(String(describing: error), privacy: .public)")
+            log.error("provider registry unavailable: \(String(describing: error), privacy: .private)")
             return [:]
         }
     }()
@@ -40,7 +40,12 @@ enum AgentProviderRegistry {
     /// conversation has to branch the same way. The spelling is Rust's
     /// serialized `Capability::SessionTitle`; an unreadable registry
     /// answers false, which names a pane by its opening prompt at worst.
-    static func hasSessionTitles(_ kind: AgentKind) -> Bool {
+    /// `descriptors` is the registry's own unless a caller holds the set
+    /// its rules run with (`AgentProjectionAdapter`).
+    static func hasSessionTitles(
+        _ kind: AgentKind,
+        in descriptors: [String: AgentProviderDescriptor] = AgentProviderRegistry.descriptors
+    ) -> Bool {
         descriptors[kind.rawValue]?.capabilities.contains("session_title") == true
     }
 
@@ -83,6 +88,11 @@ struct AgentRecordLayout: Decodable, Equatable {
     /// What a finished worktree event's file name ends with. Anything else in
     /// that directory is a write still in progress.
     var worktreeEventSuffix: String
+    /// The directory inside the state directory that turn records and the
+    /// conversations' counters are written to.
+    var turnsDirectory: String
+    /// What a turn record's file name ends with; the rest is its turn id.
+    var turnRecordSuffix: String
     /// What is appended to a file's path to name the sidecar every writer
     /// locks before replacing or deleting that file.
     var lockSuffix: String
@@ -102,8 +112,23 @@ extension AgentProviderRegistry {
                 from: LimpidProjectionBridge.recordLayout()
             )
         } catch {
-            log.error("record layout unavailable: \(String(describing: error), privacy: .public)")
+            log.error("record layout unavailable: \(String(describing: error), privacy: .private)")
             return nil
+        }
+    }()
+}
+
+extension AgentProviderRegistry {
+    /// The commands a project counts as checks until it sets its own,
+    /// as the hook carries them, so project settings show what is in force.
+    /// Empty when the bridge cannot be read, which shows an empty list
+    /// rather than a guessed one.
+    static let checkDefaults: [String] = {
+        do {
+            return try JSONDecoder().decode([String].self, from: LimpidProjectionBridge.checkDefaults())
+        } catch {
+            log.error("check defaults unavailable: \(String(describing: error), privacy: .private)")
+            return []
         }
     }()
 }
@@ -146,7 +171,7 @@ extension AgentProviderRegistry {
                 from: LimpidProjectionBridge.installRecipes()
             )
         } catch {
-            log.error("install recipes unavailable: \(String(describing: error), privacy: .public)")
+            log.error("install recipes unavailable: \(String(describing: error), privacy: .private)")
             return [:]
         }
     }()
@@ -164,20 +189,29 @@ extension AgentProviderRegistry {
 
     /// The environment one provider's recipe asks for, with each placeholder
     /// resolved against the directories this build actually uses.
+    ///
+    /// When `writesRecords` is false (demo mode) the directory variables are
+    /// still named, with empty values. A demo build is often launched from a
+    /// Limpid pane, whose own values it inherits; left in place they would
+    /// point the demo's agent at that build's records. The hook reads an
+    /// empty value as unset and writes nothing. The bundle id stays, so the
+    /// shim keeps its links apart from the other build's.
     static func environment(
         for provider: String,
         state: URL,
         sessions: URL,
-        cwdEvents: URL?
+        cwdEvents: URL?,
+        writesRecords: Bool = true
     ) -> [String: String] {
         var environment: [String: String] = [:]
+        let path = { (url: URL) in writesRecords ? url.path : "" }
         for variable in recipes[provider]?.environment ?? [] {
             switch variable.value {
-            case .stateDirectory: environment[variable.name] = state.path
-            case .sessionDirectory: environment[variable.name] = sessions.path
+            case .stateDirectory: environment[variable.name] = path(state)
+            case .sessionDirectory: environment[variable.name] = path(sessions)
             case .cwdEventsDirectory:
                 if let cwdEvents {
-                    environment[variable.name] = cwdEvents.path
+                    environment[variable.name] = path(cwdEvents)
                 }
             case .bundleID: environment[variable.name] = LimpidPaths.bundleID
             // The hook's own arguments are assembled where the hook path is

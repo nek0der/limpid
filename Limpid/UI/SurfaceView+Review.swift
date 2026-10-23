@@ -26,6 +26,21 @@ extension SurfaceView: ReviewTextDelivering, ReviewPasteStaging {
     ///
     /// The text is staged on this surface rather than on `NSPasteboard`, so
     /// review never overwrites what the user has on their clipboard.
+    var hasTerminalSurface: Bool {
+        surface != nil
+    }
+
+    var isReadyForReviewPaste: Bool {
+        let now = ContinuousClock.now
+        // Asked of the kernel only while it can still change the answer.
+        if ReviewPasteReadiness.watchesForStart(stagedCommand, now: now),
+           !AgentForeground.isShellAtPrompt(names: foregroundGroupProcessNames, leaderArguments: foregroundLeaderArguments)
+        {
+            stagedCommand?.startedAt = now
+        }
+        return ReviewPasteReadiness.isReady(hasSurface: surface != nil, stagedCommand: stagedCommand, now: now)
+    }
+
     func deliverReviewText(_ prompt: ReviewPrompt, receipt: ReviewPasteReceipt?) throws {
         guard let surface else { throw ReviewError.targetUnavailable }
         try ReviewPasteAttempt.deliver(prompt, receipt: receipt, staging: self) {

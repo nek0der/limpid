@@ -24,30 +24,55 @@ import Testing
 
 @Suite("CodexTrustHash")
 struct CodexTrustHashTests {
-    @Test("compute matches the spike reference vector for SessionStart")
-    func referenceVector() {
-        let hash = CodexTrustHash.compute(
-            eventLabel: "session_start",
-            command: "/usr/bin/touch /tmp/lcx-v8.marker"
-        )
-        #expect(
-            hash == "sha256:fd4b14127461257da7975c9cbbd34408e33f66c82bf2c4ff65c0d77fc8c01dc0"
-        )
+    /// One hook's identity and the hash Codex gave it.
+    struct Vector: Sendable, CustomTestStringConvertible {
+        let event: String
+        let command: String
+        var timeoutSec: Int = 600
+        var matcher: String?
+        let hash: String
+
+        var testDescription: String {
+            event
+        }
     }
 
-    /// Reference vector taken from Codex's own `currentHash` for a
-    /// one-second hook, which `SessionEnd` and `Interrupt` default to.
-    /// Every other event defaults to 600, so a serializer that confuses a
-    /// `1` for `true` stayed invisible until those two were subscribed.
-    @Test("compute matches Codex for a one-second timeout")
-    func referenceVectorOneSecondTimeout() {
-        #expect(
-            CodexTrustHash.compute(
-                eventLabel: "session_end",
-                command: "/bin/echo lifecycle",
-                timeoutSec: 1
-            ) == "sha256:a293e09c0100519171de887b09b815c869812d295fea193a83d2b10c967baa81"
+    /// The SessionStart vector is the spike's (see the header). The
+    /// one-second one is Codex's own `currentHash` for the timeout
+    /// `SessionEnd` and `Interrupt` default to: every other event defaults
+    /// to 600, so a serializer that confused a `1` for `true` stayed
+    /// invisible until those two were subscribed. The matcher one is the
+    /// SHA-256 of `{"event_name":"pre_tool_use","hooks":[{"async":false,
+    /// "command":"/usr/bin/touch /tmp/lcx-pretool.marker","timeout":600,
+    /// "type":"command"}],"matcher":"Bash"}`, so a change to where the
+    /// matcher sits in the canonical JSON shows up at once.
+    @Test("compute matches Codex's own hash", arguments: [
+        Vector(
+            event: "session_start",
+            command: "/usr/bin/touch /tmp/lcx-v8.marker",
+            hash: "sha256:fd4b14127461257da7975c9cbbd34408e33f66c82bf2c4ff65c0d77fc8c01dc0"
+        ),
+        Vector(
+            event: "session_end",
+            command: "/bin/echo lifecycle",
+            timeoutSec: 1,
+            hash: "sha256:a293e09c0100519171de887b09b815c869812d295fea193a83d2b10c967baa81"
+        ),
+        Vector(
+            event: "pre_tool_use",
+            command: "/usr/bin/touch /tmp/lcx-pretool.marker",
+            matcher: "Bash",
+            hash: "sha256:ce9484197045c10817f450d469e5b53194c2133bb98c6fbafa3b87ed22c9ba71"
         )
+    ])
+    func referenceVector(_ vector: Vector) {
+        let hash = CodexTrustHash.compute(
+            eventLabel: vector.event,
+            command: vector.command,
+            timeoutSec: vector.timeoutSec,
+            matcher: vector.matcher
+        )
+        #expect(hash == vector.hash)
     }
 
     @Test("trustKey format follows <path>:<event>:<group>:<handler>")
@@ -84,24 +109,5 @@ struct CodexTrustHashTests {
             matcher: "Bash"
         )
         #expect(without != with)
-    }
-
-    /// Second reference vector covering the matcher branch (so an
-    /// upstream change to either matcher placement or its
-    /// alphabetical position in the canonical JSON shows up
-    /// immediately). Like the SessionStart vector this hash is the
-    /// SHA-256 of:
-    ///   {"event_name":"pre_tool_use","hooks":[{"async":false,"command":"/usr/bin/touch
-    /// /tmp/lcx-pretool.marker","timeout":600,"type":"command"}],"matcher":"Bash"}
-    @Test("compute matches reference vector for pre_tool_use + matcher=Bash")
-    func referenceVectorWithMatcher() {
-        let hash = CodexTrustHash.compute(
-            eventLabel: "pre_tool_use",
-            command: "/usr/bin/touch /tmp/lcx-pretool.marker",
-            matcher: "Bash"
-        )
-        #expect(
-            hash == "sha256:ce9484197045c10817f450d469e5b53194c2133bb98c6fbafa3b87ed22c9ba71"
-        )
     }
 }

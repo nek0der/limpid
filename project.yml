@@ -323,6 +323,16 @@ targets:
         # prompt names Limpid rather than the tool the user typed.
         NSMicrophoneUsageDescription: "Limpid runs a shell that may record audio, such as a voice-input tool."
         NSAppleEventsUsageDescription: "Limpid runs a shell that may control other apps with AppleScript."
+        # A folder opens as a project (`LimpidAppDelegate.application(_:open:)`):
+        # Finder's Open With lists Limpid for folders, and the Dock icon
+        # takes a dropped one. `Alternate` keeps Finder opening folders
+        # itself on a double-click.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Folder
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.folder
         # Sparkle update settings (https://sparkle-project.org/documentation/)
         # SUFeedURL points to the appcast hosted on GitHub Pages.
         # SUPublicEDKey is the EdDSA public key paired with the private key

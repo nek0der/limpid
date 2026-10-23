@@ -14,7 +14,7 @@ enum ReviewTableKey {
     case nextFile, previousFile
     /// Move the cursor between the two columns of the split layout.
     case oldSide, newSide
-    case comment, close, insert, toggleTerminal
+    case comment, close, insert
     /// Mark the open file read, or put it back.
     case markViewed
     /// Open the file in the app chosen for files, at the top of the
@@ -25,10 +25,6 @@ enum ReviewTableKey {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         if modifiers == .command, event.namedKey == .return {
             self = .insert
-            return
-        }
-        if modifiers == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "e" {
-            self = .toggleTerminal
             return
         }
         if event.namedKey == .escape {
@@ -62,8 +58,9 @@ enum ReviewTableKey {
     }
 
     /// Shift is the only modifier `charactersIgnoringModifiers` keeps, so the
-    /// extending pair arrives here as capitals.
-    private static let byCharacter: [String: ReviewTableKey] = [
+    /// extending pair arrives here as capitals. Internal so a test can hold
+    /// the shortcut sheet to these keys.
+    static let byCharacter: [String: ReviewTableKey] = [
         "j": .nextLine, "k": .previousLine,
         "J": .extendNextLine, "K": .extendPreviousLine,
         "]": .nextHunk, "[": .previousHunk,
@@ -114,6 +111,11 @@ final class ReviewTableView: NSTableView {
     /// event; the split layout has no horizontal scroll of its own to fall
     /// back on.
     var onScrollCode: ((CGFloat) -> Bool)?
+    /// A notch of a mouse wheel or a page key, which scroll without the
+    /// live-scroll notifications a trackpad or the scroller sends.
+    var onScrollStep: (() -> Void)?
+    /// A context menu's items for a row that is not code (a file's header).
+    var headerMenuItems: ((Int) -> [NSMenuItem])?
     /// Where the last press landed, in table coordinates. `NSTableView`
     /// selects whole rows, and a row of the split layout is two columns wide —
     /// this is what tells the two apart.
@@ -249,6 +251,39 @@ final class ReviewTableView: NSTableView {
             return
         }
         super.scrollWheel(with: event)
+        if event.phase.isEmpty, event.momentumPhase.isEmpty {
+            onScrollStep?()
+        }
+    }
+
+    override func scrollPageDown(_ sender: Any?) {
+        super.scrollPageDown(sender)
+        onScrollStep?()
+    }
+
+    override func scrollPageUp(_ sender: Any?) {
+        super.scrollPageUp(sender)
+        onScrollStep?()
+    }
+
+    override func pageDown(_ sender: Any?) {
+        super.pageDown(sender)
+        onScrollStep?()
+    }
+
+    override func pageUp(_ sender: Any?) {
+        super.pageUp(sender)
+        onScrollStep?()
+    }
+
+    override func scrollToBeginningOfDocument(_ sender: Any?) {
+        super.scrollToBeginningOfDocument(sender)
+        onScrollStep?()
+    }
+
+    override func scrollToEndOfDocument(_ sender: Any?) {
+        super.scrollToEndOfDocument(sender)
+        onScrollStep?()
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -257,7 +292,7 @@ final class ReviewTableView: NSTableView {
             return onCopyCode?() ?? false
         }
         guard window?.firstResponder === self, event.type == .keyDown,
-              let key = ReviewTableKey(event: event), key == .insert || key == .toggleTerminal
+              let key = ReviewTableKey(event: event), key == .insert
         else {
             return super.performKeyEquivalent(with: event)
         }
@@ -298,6 +333,11 @@ final class ReviewTableView: NSTableView {
             } else if delegate?.tableView?(self, shouldSelectRow: clicked) ?? true {
                 lastClickX = point.x
                 selectRowIndexes(IndexSet(integer: clicked), byExtendingSelection: false)
+            }
+        }
+        if let menuRow {
+            for item in headerMenuItems?(menuRow) ?? [] {
+                menu.addItem(item)
             }
         }
         if let menuRow, let title = openInEditorTitle?(menuRow) {
@@ -346,13 +386,22 @@ final class ReviewScrollView: NSScrollView {
     }
 }
 
+/// A request to put a file's header at the top of the stacked diff. The
+/// serial tells two requests for the same file apart.
+struct ReviewStackScroll: Equatable {
+    var fileID: String?
+    var serial = 0
+}
+
 struct ReviewDiffTable: NSViewRepresentable {
-    let rows: [ReviewRow]
-    /// The patch the rows were built from, for the one question rows cannot
-    /// answer cheaply: which changed block a line belongs to.
+    /// Every file of the range, file under file: the rows, and which
+    /// file each row belongs to. The one place the table takes its rows
+    /// from, so what it draws and what it says a row's file is cannot
+    /// disagree.
+    let stack: ReviewStack
+    /// The open file's patch, for the one question rows cannot answer
+    /// cheaply: which changed block a line of it belongs to.
     let diffLines: [ReviewLine]
-    /// Precomputed off the main actor and keyed by the original line ids.
-    let intralineHighlights: ReviewIntralineHighlights
     /// Cheap stand-in for comparing the row list itself. `updateNSView` runs on
     /// every observable change in the surrounding view, and diffing up to
     /// 100,000 rows there would cost more than the reload it avoids.
@@ -364,17 +413,13 @@ struct ReviewDiffTable: NSViewRepresentable {
     /// built for it; the table needs it for row heights, column width and
     /// which half of a split row a click landed in.
     let layout: ReviewDiffLayout
-    /// The ordered change list, used only by `n` / `p`. The rows themselves
-    /// carry one file; the rail is what names the rest.
+    /// The ordered change list, which `n` / `p` walk.
     let files: [ReviewFile]
-    let lineCommentCounts: [Int: Int]
-    /// Sized from the largest line number the file actually has, so a short
-    /// file does not carry columns wide enough for a hundred thousand lines.
+    /// One gutter for every file, as wide as the largest line number the
+    /// range has needed (`ReviewWorkspaceView.highestLine`): it does not
+    /// narrow for a short file.
     let numberWidth: CGFloat
     let expandedFileID: String?
-    /// The diff the rows were built from — the file and the fingerprint of its
-    /// patch. Unfolding does not change it; a refresh does.
-    let contentIdentity: String
     /// False while a replacement snapshot is loading. The SwiftUI hit-test
     /// gate does not stop an already-focused `NSTableView` receiving keys.
     var isInteractionEnabled = true
@@ -399,7 +444,6 @@ struct ReviewDiffTable: NSViewRepresentable {
     let onCancelCompose: () -> Void
     let onCommit: () -> Void
     let onInsert: () -> Void
-    let onToggleTerminal: () -> Void
     /// The find bar's state. The query is what the rows mark, and it is
     /// deliberately not part of `contentKey`: the row list does not change
     /// with it, and rebuilding a hundred thousand rows per keystroke is what
@@ -417,17 +461,66 @@ struct ReviewDiffTable: NSViewRepresentable {
     /// Toggles the open file's read mark. Here rather than only in the list
     /// because that is where the reader is when they finish a file.
     let onToggleViewed: () -> Void
+    /// Raised when the surface comes back in front (the review tab, from
+    /// behind a terminal tab), so the diff takes the keyboard again as it
+    /// does when it first opens.
+    var focusRequest = 0
     /// The app files open in, which the open item names.
     let fileApplication: FileApplicationResolution
-    /// Opens the file at a line of the new file. The table works out the
-    /// line; the surface knows the repository and the app.
-    let onOpenLine: (Int) -> Void
-    /// Unfolds part of one gap. The store owns how much is showing; this only
+    /// Opens a file at a line of its new side: the row's file in the stacked
+    /// diff, `nil` for the open one. The table works out the line; the
+    /// surface knows the repository and the app.
+    let onOpenLine: (Int, String?) -> Void
+    /// Unfolds part of one gap. The review session owns how much is showing; this only
     /// says which gap the reader pressed and which way.
     let onExpand: (Int, ReviewGapAction) -> Void
     let onResolve: (ReviewComment) -> Void
     let onEdit: (ReviewComment) -> Void
     let onDelete: (ReviewComment) -> Void
+    /// What each hunk's header offers, by the header's line id: the
+    /// review tab's "Discard". Handed in as values, worked out where the
+    /// window's state is observed, so a discard or a change of the gate
+    /// updates the table; a header with no entry offers nothing.
+    var hunkActions: [Int: ReviewHunkAction] = [:]
+    /// A hunk's buttons, with the file the hunk belongs to in the stacked
+    /// diff (`nil` for the open file).
+    var onDiscardHunk: (ReviewLine, String?) -> Void = { _, _ in }
+    var onUndoDiscard: (ReviewLine, String?) -> Void = { _, _ in }
+    /// "Comment" on a hunk header: a comment on the hunk's changed lines.
+    var onCommentHunk: (ReviewLine, String?) -> Void = { _, _ in }
+    /// How opaque the surface the stacked diff stands on is filled
+    /// (`supervisionSurfaceOpacity`), which its file and hunk headers take
+    /// so they do not stand out as opaque bands with transparency on. The
+    /// headers are AppKit rows, and SwiftUI's environment stops at the
+    /// table. A change reaches each header as it is next configured.
+    var surfaceOpacity: Double = 1
+    /// Puts a file's header at the top of the stacked diff.
+    var scrollRequest = ReviewStackScroll()
+    /// Where the review tab's stacked diff was scrolled as the tab went
+    /// with its project, put back once, as soon as the file it
+    /// names has been read again (`Coordinator.applyStackRestore`). The
+    /// table is made only once the surface's first read has listed the
+    /// range again, so a file the place names and the list lacks is gone,
+    /// not unlisted yet.
+    var stackRestore: ReviewScrollAnchor?
+    /// Told once `stackRestore` is put back, or given up for the reader's
+    /// own move.
+    var onStackRestored: () -> Void = {}
+    /// Handed, as the table is made, a way to read where the stacked diff
+    /// is scrolled (`ProjectWindowState.readReviewScroll`).
+    var onScrollReader: ((@escaping @MainActor () -> ReviewScrollAnchor?) -> Void)?
+    /// Asked for the diffs of the stacked files about to be on screen.
+    var onNeedDiffs: ([String]) -> Void = { _ in }
+    /// Whether an input method has unfinished text in the composer.
+    var onComposerInputMethodText: (Bool) -> Void = { _ in }
+    /// The stacked file the reader has scrolled to, once they stop.
+    var onReadingFile: (String) -> Void = { _ in }
+    /// A file's checkbox in its header.
+    var onToggleFileViewed: (String) -> Void = { _ in }
+    /// A checked file's chevron in its header, or a click on the header.
+    var onToggleFileFold: (String) -> Void = { _ in }
+    /// The worktree the files are in, for a file header's context menu.
+    var root: URL?
     /// A transient rail sits above the table and therefore owns Escape before
     /// the composer, find bar, or Review surface beneath it.
     let isOverlayPresented: Bool
@@ -441,6 +534,27 @@ struct ReviewDiffTable: NSViewRepresentable {
     /// Read here and handed to the painter: the rows are AppKit, and the
     /// system accent they used instead is not the one the picker sets.
     @Environment(\.limpidAccent) private var accent
+
+    /// The stack's rows, which the table draws.
+    var rows: [ReviewRow] {
+        stack.rows
+    }
+
+    /// Every drawn file's character highlights, keyed by the ids the rows
+    /// carry.
+    var intralineHighlights: ReviewIntralineHighlights {
+        stack.intralineHighlights
+    }
+
+    /// Every drawn file's comment markers, keyed by the ids the rows carry.
+    var lineCommentCounts: [Int: Int] {
+        stack.commentCounts
+    }
+
+    /// The hunk headers, by line id, whose hunk has lines to comment on.
+    var commentableHunks: Set<Int> {
+        stack.commentableHunks
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -506,11 +620,11 @@ struct ReviewDiffTable: NSViewRepresentable {
         }
         table.onCodePress = { [weak coordinator = context.coordinator] in
             guard let coordinator else { return false }
-            return coordinator.parent.selection.pressCode(keepingLines: coordinator.isComposing)
+            return coordinator.parent.selection.pressCode(keepsLines: coordinator.isComposing)
         }
         table.onTextSelection = { [weak coordinator = context.coordinator] selection in
             guard let coordinator else { return }
-            coordinator.parent.selection.selectText(selection, keepingLines: coordinator.isComposing)
+            coordinator.parent.selection.selectText(selection, keepsLines: coordinator.isComposing)
         }
         table.onSelectTextUnit = { [weak coordinator = context.coordinator] position, clickCount in
             coordinator?.selectTextUnit(at: position, clickCount: clickCount)
@@ -518,6 +632,12 @@ struct ReviewDiffTable: NSViewRepresentable {
         table.onScrollCode = { [weak coordinator = context.coordinator, weak table] delta in
             guard let table else { return false }
             return coordinator?.scrollCode(by: delta, in: table) ?? false
+        }
+        table.onScrollStep = { [weak coordinator = context.coordinator] in
+            coordinator?.noteScrollStep()
+        }
+        table.headerMenuItems = { [weak coordinator = context.coordinator] row in
+            coordinator?.headerMenuItems(forRow: row) ?? []
         }
         table.target = context.coordinator
         table.doubleAction = #selector(Coordinator.openComposerFromDoubleClick(_:))
@@ -549,6 +669,16 @@ struct ReviewDiffTable: NSViewRepresentable {
         scroll.contentView.clipsToBounds = true
         context.coordinator.observeScroll(of: scroll)
         context.coordinator.observeViewport(of: scroll)
+        context.coordinator.observeLiveScroll(of: scroll)
+        // Read as the tab goes, not as it scrolls: nothing is written per
+        // scroll event. A place still to be put back is where the tab
+        // stands: the tab can go again before its file is read.
+        if let onScrollReader {
+            onScrollReader { [weak coordinator = context.coordinator, weak scroll, weak table] in
+                guard let coordinator, let scroll, let table else { return nil }
+                return coordinator.pendingStackRestore ?? coordinator.anchor(in: scroll, table: table)
+            }
+        }
         // Review opens for reading, so the diff takes the keyboard. The origin
         // pane below declines the mount grab while review is presented.
         DispatchQueue.main.async { [weak table] in
@@ -569,18 +699,26 @@ struct ReviewDiffTable: NSViewRepresentable {
         scroll.hidesAccessibilityTree = isOverlayPresented
         scroll.setAccessibilityHidden(isOverlayPresented)
         guard let table = scroll.documentView as? ReviewTableView else { return }
+        // A comment being written keeps the keyboard where it is: in the
+        // table, its letters would be the table's keys.
+        if coordinator.appliedFocusRequest != focusRequest, composerLineID == nil {
+            coordinator.appliedFocusRequest = focusRequest
+            DispatchQueue.main.async { [weak table] in
+                guard let table, let window = table.window else { return }
+                window.makeFirstResponder(table)
+            }
+        }
         table.hidesAccessibilityTree = isOverlayPresented
         table.setAccessibilityHidden(isOverlayPresented)
         coordinator.gutter.setAccessibilityHidden(isOverlayPresented)
-        // Taken while the coordinator still holds the previous rows, and only
-        // within one file: unfolding a gap inserts rows above what is on
-        // screen, and the code the reader was reading must not slide away
-        // under them. A different file starts at its own top instead.
-        // Against the diff itself, not just the file: a refresh keeps the file
-        // and renumbers its rows, so the same id can name different code and
-        // the anchor would put the reader in front of it.
-        let anchor = coordinator.appliedIdentity == contentIdentity ? coordinator.anchor(in: scroll, table: table) : nil
-        coordinator.appliedIdentity = contentIdentity
+        // Taken while the coordinator still holds the previous rows:
+        // unfolding a gap inserts rows above what is on screen, and the code
+        // the reader was reading must not slide away under them. The anchor
+        // names the file as well as the line, and the diff the line was read
+        // in, so it holds across a file being opened, closed, or read in
+        // above, and a refresh that renumbers a file's rows does not put the
+        // reader in front of other code (`ReviewStack.anchorKey`).
+        let anchor = coordinator.anchor(in: scroll, table: table)
         coordinator.parent = self
         ReviewRowPainter.setAccent(accent)
         // Per table, not per process: two windows both have to redraw, and the
@@ -634,23 +772,17 @@ struct ReviewDiffTable: NSViewRepresentable {
         }
         if composerLineID != nil,
            let index = coordinator.composerRowIndex,
-           index < table.numberOfRows
+           index < table.numberOfRows,
+           rows.indices.contains(index),
+           case let .composer(line) = rows[index].kind
         {
-            let height = ReviewRowMetrics.composerHeight(
-                for: composerText,
-                width: max(scroll.contentSize.width, ReviewRowMetrics.minimumMeasurementWidth),
-                numberWidth: numberWidth,
-                layout: layout
-            )
+            let height = coordinator.composerHeight(for: line, in: table)
             if abs(coordinator.appliedComposerHeight - height) > 0.5 {
                 coordinator.appliedComposerHeight = height
                 table.noteHeightOfRows(withIndexesChanged: IndexSet(integer: index))
             }
         }
-        if coordinator.appliedFileID != expandedFileID {
-            coordinator.appliedFileID = expandedFileID
-            coordinator.scrollToOrigin(of: scroll)
-        }
+        coordinator.applyFileChange(in: scroll, table: table)
         // A narrower window, or a switch back to unified, can leave the code
         // scrolled past where it can go.
         coordinator.refreshSearch(in: table, scroll: scroll)
@@ -659,5 +791,7 @@ struct ReviewDiffTable: NSViewRepresentable {
         coordinator.syncTextSelection(in: table)
         coordinator.focusComposerIfNeeded(in: table)
         coordinator.refreshGutter(in: table)
+        coordinator.refreshHunkActions(in: table)
+        coordinator.refreshHeaderFills(in: table)
     }
 }

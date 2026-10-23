@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # scripts/screenshot.sh
 # Limpid — Regenerate the README hero shot from the demo session.
-# Run from the repo root. Requires a recent Release build of
-# `Limpid.app` somewhere under Xcode DerivedData (we don't rebuild
+# Run from the repo root. `make screenshot` builds Release and hands the
+# script that build through LIMPID_SCREENSHOT_APP. Run on its own, the script
+# takes the most recent Limpid.app under Xcode DerivedData (we don't rebuild
 # here so the script stays fast and decoupled from the toolchain).
 #
 # Usage:
-#   xcodebuild -project Limpid.xcodeproj -scheme Limpid \
-#     -configuration Release build
+#   make screenshot
+# or, with a Release build already made:
 #   ./scripts/screenshot.sh
 #
 # Output: .github/assets/hero.png (committed to git so README shows
@@ -54,7 +55,16 @@ find_latest_app() {
   printf '%s' "${latest}"
 }
 
-APP_PATH="$(find_latest_app Release Limpid.app)"
+# The app the caller built wins: DerivedData holds one folder per worktree, so
+# the newest app there may be another branch's build.
+APP_PATH="${LIMPID_SCREENSHOT_APP:-}"
+if [ -n "${APP_PATH}" ] && [ ! -d "${APP_PATH}" ]; then
+  echo "error: LIMPID_SCREENSHOT_APP is not an app: ${APP_PATH}" >&2
+  exit 1
+fi
+if [ -z "${APP_PATH}" ]; then
+  APP_PATH="$(find_latest_app Release Limpid.app)"
+fi
 if [ -z "${APP_PATH}" ]; then
   APP_PATH="$(find_latest_app Debug 'Limpid Dev.app' Limpid.app)"
 fi
@@ -124,8 +134,10 @@ CAPTURE_HOME="$(cd "${CAPTURE_HOME_PATH}" && pwd -P)"
 # wherever the app was launched from, so launched from here they would put
 # the contributor's own paths in the hero. They start instead in this
 # directory inside the isolated home, which mirrors the worktree the demo's
-# split tab belongs to, so its headers read `~/code/limpid-feat-agents`.
-DEMO_SHELL_DIR="${CAPTURE_HOME}/code/limpid-feat-agents"
+# window shows (`DemoFixture.selectedWorktreeRoot`, which `DemoFixtureTests`
+# holds this path to), so its footer reads
+# `~/code/duesmith-feat-overdue-reminders`.
+DEMO_SHELL_DIR="${CAPTURE_HOME}/code/duesmith-feat-overdue-reminders"
 mkdir -p "${DEMO_SHELL_DIR}"
 
 # Launch the selected bundle's executable directly. `open -a` resolves through
@@ -134,7 +146,7 @@ mkdir -p "${DEMO_SHELL_DIR}"
 # one unambiguous identity. Give it an isolated Application Support directory
 # so an installed copy cannot reload the user's settings into the demo process.
 # Ignore macOS window restoration so a saved frame cannot replace DemoFixture's
-# reproducible 1280×800 frame. Demo mode forces English UI and an opaque toolbar.
+# reproducible 1440×900 frame. Demo mode forces English UI and an opaque toolbar.
 # The subshell `exec`s the app, so `$!` is the app's own pid.
 (
   cd "${DEMO_SHELL_DIR}"
@@ -176,7 +188,7 @@ sleep 1
 # Park the pointer off the window before capturing. Sidebar rows reveal
 # a delete button on hover, so without this the shot depends on where
 # the contributor's cursor happened to rest — the hero would show one
-# row with an affordance its neighbours lack, which is the opposite of
+# row with an affordance its neighbors lack, which is the opposite of
 # what the design says about the trailing group at rest.
 swift - <<'SWIFT' >/dev/null 2>&1 || true
 import Cocoa
@@ -232,7 +244,7 @@ fi
 # Retina detail, and the desktop-independent window filter keeps the rounded
 # alpha mask without recording screen pixels behind the corners.
 #
-# The hero is the fixture's 1280×800-point window at 2x, 2560×1600 pixels. A
+# The hero is the fixture's 1440×900-point window at 2x, 2880×1800 pixels. A
 # capture that is anything else is refused rather than written: one run
 # produced a 620×388 image that a later run of the same build did not
 # reproduce, so the size is checked instead of assumed. The window gets a few
@@ -249,7 +261,7 @@ _ = NSApplication.shared
 guard CommandLine.arguments.count == 3,
       let raw = Int32(CommandLine.arguments[1]) else { exit(1) }
 let outputURL = URL(fileURLWithPath: CommandLine.arguments[2]) as CFURL
-let expectedPoints = CGSize(width: 1280, height: 800)
+let expectedPoints = CGSize(width: 1440, height: 900)
 let expectedScale: CGFloat = 2
 
 func report(_ message: String) {
@@ -315,10 +327,13 @@ SWIFT
 
 if [ "${CAPTURE_STATUS}" -ge 5 ] && [ "${CAPTURE_STATUS}" -le 7 ]; then
   echo "" >&2
-  echo "error: the Limpid window could not be captured at the hero's size (2560×1600)." >&2
+  echo "error: the Limpid window could not be captured at the hero's size (2880×1800)." >&2
   echo "       $(cat "${CAPTURE_LOG}")" >&2
-  echo "       The demo opens its window at (100, 100) on the main display, which" >&2
-  echo "       has to be a 2x (Retina) display; leave the window there and rerun." >&2
+  echo "       The demo opens its 1440×900-point window at (16, 16) on the main" >&2
+  echo "       display, which has to be a 2x (Retina) display at least 1456×956" >&2
+  echo "       points with the menu bar (a 13.6-inch MacBook Air at its default" >&2
+  echo "       resolution is; a 1440×900 display is not). Leave the window there" >&2
+  echo "       and rerun." >&2
   exit 1
 elif [ "${CAPTURE_STATUS}" -ne 0 ]; then
   echo "" >&2

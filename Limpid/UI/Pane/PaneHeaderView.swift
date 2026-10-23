@@ -17,13 +17,17 @@ struct PaneHeaderView: View {
     /// uses for its fade. The header does not fade with the terminal: it is
     /// what tells the panes apart, and a dimmed name is harder to find.
     let isFocused: Bool
-    @Environment(WindowSession.self) private var session
+    @Environment(WorkspaceSession.self) private var session
     @Environment(AttentionState.self) private var attention
+    @Environment(AttentionQueueStore.self) private var attentionQueue
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.displayScale) private var displayScale
     @Environment(PaneRenamePresentation.self) private var renamePresentation
     @Environment(SettingsStore.self) private var settingsStore
     @Environment(\.locale) private var locale
+    /// The window this header is drawn in, which its actions act in: the
+    /// same window as the pane's own view and its right-click.
+    @Environment(ProjectWindowState.self) private var window
 
     @State private var isEditing = false
     /// The name the header showed when the in-place edit began. The commit
@@ -41,11 +45,6 @@ struct PaneHeaderView: View {
     /// Set once this drag has handed the pane to AppKit, so one gesture
     /// starts one dragging session.
     @State private var hasStartedPaneDrag = false
-
-    /// The agent this pane's header speaks for, if any.
-    private var runtime: AgentRuntimePresentation? {
-        attention.headerRuntime(inPane: paneID)
-    }
 
     /// Whether this pane is the one its tab shows zoomed.
     private var isZoomed: Bool {
@@ -68,18 +67,19 @@ struct PaneHeaderView: View {
         attention.paneHeaderLabel(paneID: paneID, in: session, locale: locale)
     }
 
-    /// The mark on the trailing edge, reduced the way the tab row reduces
-    /// its panes. Hidden for states the tab row also leaves unmarked.
-    private var stateSummary: AgentStateSummary? {
-        guard let summary = attention.aggregateAgentStateSummary(inPane: paneID),
-              summary.state.hasVisibleBadge
-        else { return nil }
-        return summary
+    /// The mark on the trailing edge (`PaneHeaderRules.mark`).
+    private var mark: PaneHeaderMark? {
+        PaneHeaderRules.mark(
+            paneID: paneID,
+            items: attentionQueue.queue.items,
+            runtimes: attention.allRuntimes,
+            session: session
+        )
     }
 
     var body: some View {
         let label = self.label
-        let summary = stateSummary
+        let mark = self.mark
         // The widest row that fits, so a narrow pane drops what it cannot
         // show rather than leaving an empty gap or cutting the menu at the
         // edge. The glyph and the menu always stay: the glyph says what the
@@ -90,7 +90,7 @@ struct PaneHeaderView: View {
                 isEditing: isEditing,
                 showsPromptCacheClock: attention.promptCacheMark(paneID: paneID) != nil
             ), id: \.self) { form in
-                row(label: label, summary: summary, form: form)
+                row(label: label, mark: mark, form: form)
             }
         }
         .padding(.horizontal, LimpidLayout.paneHeaderHorizontalPadding)
@@ -137,7 +137,7 @@ struct PaneHeaderView: View {
             // went off) drops its field without the edit ending, so the
             // keyboard would stay with a field that no longer exists.
             if isEditing {
-                PaneRenameFocus.returnToTerminal(paneID: paneID, registry: registry)
+                KeyboardHandoff.returnToTerminal(paneID: paneID, registry: registry, keeper: .terminalOrTextField, timing: .nextTurn)
             }
         }
         .onHover { isHovering = $0 }
@@ -172,16 +172,14 @@ struct PaneHeaderView: View {
         }
         .help(Text(verbatim: [label.name, label.agentName, label.detail].compactMap(\.self).joined(separator: " — ")))
         .accessibilityElement(children: isEditing ? .contain : .ignore)
-        .accessibilityLabel(Text(verbatim: accessibilityDescription(label, summary: summary)))
+        .accessibilityLabel(Text(verbatim: accessibilityDescription(label, mark: mark)))
         .accessibilityAddTraits(.isHeader)
         .accessibilityAction { focusPane() }
         .accessibilityAction(named: Text("Rename Pane…")) { beginRename(label: label) }
         .accessibilityAction(named: Text(verbatim: zoomActionTitle.resolved(in: locale))) { performZoomAction() }
         // The ellipsis menu sits inside this single element, so its actions
         // are offered on the header itself as well.
-        .accessibilityAction(named: Text("Move Pane to New Tab")) {
-            TabActions.movePaneToNewTab(session, paneID: paneID)
-        }
+        .accessibilityAction(named: Text("Move Pane to New Tab")) { movePaneToNewTab() }
         .accessibilityAction(named: Text("Close Pane")) { onSurface { $0.onRequestCloseActivePane?() } }
         .promptCacheAccessibilityAction(attention.promptCacheMark(paneID: paneID)) { _ in
             // The header's own clock, or, in the narrowest form that draws
@@ -201,17 +199,17 @@ struct PaneHeaderView: View {
         .onChange(of: isEditing) { wasEditing, editing in
             if wasEditing, !editing {
                 editingShownName = nil
-                PaneRenameFocus.returnToTerminal(paneID: paneID, registry: registry)
+                KeyboardHandoff.returnToTerminal(paneID: paneID, registry: registry, keeper: .terminalOrTextField, timing: .nextTurn)
             }
         }
     }
 
-    private func row(label: PaneHeaderLabel, summary: AgentStateSummary?, form: PaneHeaderForm) -> some View {
+    private func row(label: PaneHeaderLabel, mark: PaneHeaderMark?, form: PaneHeaderForm) -> some View {
         HStack(spacing: LimpidLayout.paneHeaderItemSpacing) {
             // The tab row's identity glyphs, so a pane and a single-pane tab
             // running the same thing are marked the same way.
             Image(systemName: label.isAgent ? "bolt" : "terminal")
-                .font(.system(size: LimpidLayout.paneHeaderGlyphFontSize, weight: .semibold))
+                .font(.supervision(LimpidLayout.paneHeaderGlyphFontSize, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: LimpidLayout.paneHeaderGlyphSlot, height: LimpidLayout.paneHeaderGlyphSlot)
                 .accessibilityHidden(true)
@@ -219,7 +217,7 @@ struct PaneHeaderView: View {
                 InlineRenameField(
                     name: label.name,
                     isEditing: $isEditing,
-                    font: .system(size: LimpidLayout.paneHeaderNameFontSize, weight: isFocused ? .semibold : .regular),
+                    font: .supervision(LimpidLayout.paneHeaderNameFontSize, weight: isFocused ? .semibold : .regular),
                     foregroundColor: isFocused ? .primary : .secondary,
                     onRename: { submitted in
                         session.commitPaneRename(
@@ -232,7 +230,8 @@ struct PaneHeaderView: View {
                     submitsEmptyName: true,
                     // Between the widths where the name shows and the width a
                     // usable field needs, a double-click has to float too.
-                    onBeginRename: { beginRename(label: label) }
+                    onBeginRename: { beginRename(label: label) },
+                    fieldName: "Pane name"
                 )
                 .accessibilityLabel(Text("Pane name"))
                 .frame(minWidth: 0, idealWidth: LimpidLayout.paneHeaderNameFittingWidth, alignment: .leading)
@@ -246,12 +245,8 @@ struct PaneHeaderView: View {
             if form.showsPromptCacheClock {
                 PromptCachePaneClock(paneID: paneID)
             }
-            if form.showsMark, let summary {
-                AgentStateMark(
-                    state: summary.state,
-                    isViewedFinished: summary.isViewedFinished,
-                    tooltip: stateTooltip(for: summary.state)
-                )
+            if form.showsMark, let mark {
+                AgentStateMark(kind: StateGlyph.Kind(mark.glyph), tooltip: stateTooltip(for: mark))
             }
             // In every form while zoomed, beside the menu: the way back to
             // the split, where the eye looks for the pane's own controls.
@@ -281,19 +276,19 @@ struct PaneHeaderView: View {
 
     private func styledDetail(_ detail: String) -> some View {
         Text(verbatim: detail)
-            .font(.system(size: LimpidLayout.paneHeaderDetailFontSize))
+            .font(.supervision(LimpidLayout.paneHeaderDetailFontSize))
             .foregroundStyle(.tertiary)
             .lineLimit(1)
-            .truncationMode(.head)
+            .supervisionTruncation(.pathTitle)
     }
 
-    /// Hover text for the state mark: the state, then what the agent is
-    /// doing when the badge says, as the tab row phrases a single pane.
-    private func stateTooltip(for state: AgentState) -> String {
-        AgentStatusText.pane(state: state, detail: runtime?.badge.detail, locale: locale)
+    /// Hover text for the state mark: the glyph's name, then what the
+    /// agent is doing when the badge says.
+    private func stateTooltip(for mark: PaneHeaderMark) -> String {
+        AgentStatusText.pane(name: StateGlyph.Kind(mark.glyph).name.resolved(in: locale), detail: mark.detail, locale: locale)
     }
 
-    private func accessibilityDescription(_ label: PaneHeaderLabel, summary: AgentStateSummary?) -> String {
+    private func accessibilityDescription(_ label: PaneHeaderLabel, mark: PaneHeaderMark?) -> String {
         var pieces = [label.name]
         if let agentName = label.agentName {
             pieces.append(agentName)
@@ -301,8 +296,9 @@ struct PaneHeaderView: View {
         if let detail = label.detail {
             pieces.append(detail)
         }
-        if let summary {
-            pieces.append(summary.state.accessibilityLabel(isViewedFinished: summary.isViewedFinished, locale: locale))
+        // The mark's own name, as the glyph reads it everywhere.
+        if let mark {
+            pieces.append(StateGlyph.Kind(mark.glyph).name.resolved(in: locale))
         }
         // The header is one element, so the clock inside it is heard here.
         if let mark = attention.promptCacheMark(paneID: paneID) {
@@ -352,12 +348,17 @@ struct PaneHeaderView: View {
         switch zoomAction {
         case .zoom:
             focusPane()
-            PaneActions.toggleZoom(session)
+            PaneActions.toggleZoom(session, in: window.id)
         case .unzoom:
             if let tab = session.tab(containing: paneID) {
-                PaneActions.unzoom(session, tabID: tab.id)
+                PaneActions.unzoom(session, tabID: tab.id, in: window.id, intent: .person)
             }
         }
+    }
+
+    /// Moves this pane to a tab of its own, in the window that draws it.
+    private func movePaneToNewTab() {
+        TabActions.movePaneToNewTab(session, paneID: paneID, in: window.id, intent: .person)
     }
 
     /// The way back from zoom, in a slot the size of the menu's beside it.
@@ -366,7 +367,7 @@ struct PaneHeaderView: View {
             performZoomAction()
         } label: {
             Image(systemName: "arrow.down.right.and.arrow.up.left")
-                .font(.system(size: LimpidLayout.paneHeaderMenuFontSize, weight: .semibold))
+                .font(.supervision(LimpidLayout.paneHeaderMenuFontSize, weight: .semibold))
                 .foregroundStyle(isHovering ? .secondary : .tertiary)
                 .frame(width: LimpidLayout.paneHeaderMenuSlot, height: LimpidLayout.paneHeaderMenuSlot)
                 .contentShape(Rectangle())
@@ -379,7 +380,7 @@ struct PaneHeaderView: View {
 
     /// What can be done to this pane alone, reachable without knowing the
     /// terminal's right-click menu is there. Splitting is left out: the
-    /// toolbar and ⌘D already split the focused pane, and a click on the
+    /// Pane menu and ⌘D already split the focused pane, and a click on the
     /// header focuses it. Always drawn, so the state mark beside it never
     /// moves, and quiet until the pointer is on the header.
     private func actionsMenu(label: PaneHeaderLabel) -> some View {
@@ -387,7 +388,7 @@ struct PaneHeaderView: View {
             actionsMenuEntries(label: label)
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: LimpidLayout.paneHeaderMenuFontSize, weight: .semibold))
+                .font(.supervision(LimpidLayout.paneHeaderMenuFontSize, weight: .semibold))
                 .foregroundStyle(isHovering ? .secondary : .tertiary)
                 .frame(width: LimpidLayout.paneHeaderMenuSlot, height: LimpidLayout.paneHeaderMenuSlot)
                 .contentShape(Rectangle())
@@ -414,7 +415,7 @@ struct PaneHeaderView: View {
             }),
             .separator,
             .item(PopUpMenuItem(title: "Move Pane to New Tab", systemImage: "rectangle.split.2x1") {
-                TabActions.movePaneToNewTab(session, paneID: paneID)
+                movePaneToNewTab()
             }),
             .separator,
             .item(PopUpMenuItem(
@@ -439,7 +440,7 @@ struct PaneHeaderView: View {
     }
 
     /// Hands the pane to the terminal's own drag, which carries it to the
-    /// tab column or another pane exactly as the ⌥⌘ drag does. It needs the
+    /// pane strip's tabs or another pane exactly as the ⌥⌘ drag does. It needs the
     /// mouse event AppKit is delivering, which is the current one while the
     /// gesture updates.
     private func startPaneDrag() {

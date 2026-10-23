@@ -12,13 +12,12 @@
 // resolves an absolute path once per process so the Finder-launch and
 // terminal-launch cases behave identically.
 //
-// The spawn helper also gives us a timeout that actually fires.
-// Wrapping a `Process` in `withCheckedContinuation` alone is
-// not cancellable: `withTaskGroup` waits for every child before
-// returning, and `cancelAll()` only sets a flag the continuation never
-// observes, so a hung child would pin the caller indefinitely. We
-// install a cancellation handler that terminates the child, which
-// unblocks `waitUntilExit()` and lets the group finish promptly.
+// The run helper also gives us a timeout that actually fires.
+// Wrapping a `Process` in `withCheckedContinuation` alone is not
+// cancellable, and SIGTERM alone does not end a child that ignores it
+// or a pipe that something the child started still holds. The wait
+// itself (`drainAndWait`) carries the timeout and the cancellation, so
+// it ends the child and stops reading in every one of those cases.
 
 import Foundation
 import OSLog
@@ -146,6 +145,7 @@ actor ToolLocator {
             arguments: ["-lc", "command -v \(name)"],
             workingDirectory: nil,
             environment: [:],
+            readsOutputFromFile: true,
             timeout: .seconds(5)
         )
         guard let result, result.isSuccess else { return nil }
@@ -158,148 +158,144 @@ actor ToolLocator {
 // MARK: - Running
 
 /// Run `executable` with `arguments`. Returns `nil` when the process
-/// could not be launched or exceeded `timeout` — callers in this
-/// subsystem treat every failure the same way ("show nothing"), so a
-/// typed error would only be unwrapped and discarded.
+/// could not be launched, was canceled, or exceeded `timeout` —
+/// callers in this subsystem treat every failure the same way ("show
+/// nothing"), so a typed error would only be unwrapped and discarded.
+/// The timeout holds whatever the child does: one that ignores SIGTERM
+/// is killed, and one that leaves something behind holding its output
+/// is not waited for (`drainAndWait`).
 ///
 /// `environment` entries are layered on top of the inherited
 /// environment rather than replacing it, so the child keeps the
 /// user's `HOME`, credential helpers, and proxy settings.
+///
+/// `readsOutputFromFile` sends stdout to a temporary file and stderr to
+/// the null device, for a login shell: what its profile starts in the
+/// background inherits the shell's output, and with a pipe that process
+/// would be cut off (SIGPIPE) the moment we stop reading. It can write to
+/// a file for as long as it likes. `stderr` is then empty.
 func runTool(
     executable: URL,
     arguments: [String],
     workingDirectory: URL?,
     environment: [String: String] = [:],
+    readsOutputFromFile: Bool = false,
     timeout: Duration
 ) async -> ToolResult? {
-    await withTaskGroup(of: ToolResult??.self) { group in
-        group.addTask {
-            await spawn(
-                executable: executable,
-                arguments: arguments,
-                workingDirectory: workingDirectory,
-                environment: environment
-            )
-        }
-        group.addTask {
-            try? await Task.sleep(for: timeout)
-            // A timed-out run and a run that never launched are both
-            // "no result" to every caller here. The extra optional
-            // exists only so `group.next()` can tell "a task finished"
-            // from "the group is empty".
-            return ToolResult??.some(nil)
-        }
-        let first = await group.next() ?? nil
-        // Terminating the child (via the spawn task's cancellation
-        // handler) is what lets this group return promptly instead of
-        // blocking on `waitUntilExit()`.
-        group.cancelAll()
-        return first ?? nil
-    }
-}
-
-/// Holds the child process so a cancellation handler running on
-/// another task can terminate it. `NSLock` rather than an actor
-/// because the handler is synchronous and must not suspend.
-private final class ProcessBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var process: Process?
-    private var isCancelled = false
-
-    /// Returns false when cancellation already arrived, in which case
-    /// the caller must not start the process at all.
-    func adopt(_ process: Process) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !isCancelled else { return false }
-        self.process = process
-        return true
-    }
-
-    /// Call once `run()` has returned.
-    ///
-    /// `terminate()` can't signal a process that hasn't launched —
-    /// `Process.terminate()` raises on one — so a cancellation landing
-    /// between `adopt` and `run` sets the flag and finds nothing to
-    /// kill, and `adopt` has already returned by then. Re-checking here
-    /// closes that window. It matters because `runTool` awaits every
-    /// child of its task group: an unkilled child means the timeout
-    /// does not hold and the call blocks until the tool exits on its
-    /// own.
-    func launched() {
-        lock.lock()
-        let cancelled = isCancelled
-        let target = process
-        lock.unlock()
-        guard cancelled, let target, target.isRunning else { return }
-        target.terminate()
-    }
-
-    func terminate() {
-        lock.lock()
-        let target = process
-        isCancelled = true
-        lock.unlock()
-        guard let target, target.isRunning else { return }
-        target.terminate()
-    }
-}
-
-private func spawn(
-    executable: URL,
-    arguments: [String],
-    workingDirectory: URL?,
-    environment: [String: String]
-) async -> ToolResult? {
-    let box = ProcessBox()
+    let stop = ProcessStopRequest()
     return await withTaskCancellationHandler {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .utility).async {
-                let process = Process()
-                process.executableURL = executable
-                process.arguments = arguments
-                if let workingDirectory {
-                    process.currentDirectoryURL = workingDirectory
-                }
-
-                var env = ProcessInfo.processInfo.environment
-                // C locale so the tool's human-readable strings stay
-                // reproducible regardless of the user's region.
-                env["LC_ALL"] = "C"
-                env["LANG"] = "C"
-                for (key, value) in environment {
-                    env[key] = value
-                }
-                process.environment = env
-
-                let stdoutPipe = Pipe()
-                let stderrPipe = Pipe()
-                process.standardOutput = stdoutPipe
-                process.standardError = stderrPipe
-
-                guard box.adopt(process) else {
-                    cont.resume(returning: nil)
-                    return
-                }
-                do {
-                    try process.run()
-                } catch {
-                    log.debug("launch failed: \(String(describing: error), privacy: .public)")
-                    cont.resume(returning: nil)
-                    return
-                }
-                box.launched()
-
-                let output = drainAndWait(process, stdout: stdoutPipe, stderr: stderrPipe)
-
-                cont.resume(returning: ToolResult(
-                    exitCode: process.terminationStatus,
-                    stdout: String(data: output.stdout, encoding: .utf8) ?? "",
-                    stderr: String(data: output.stderr, encoding: .utf8) ?? ""
+                cont.resume(returning: runToolSync(
+                    executable: executable,
+                    arguments: arguments,
+                    workingDirectory: workingDirectory,
+                    environment: environment,
+                    readsOutputFromFile: readsOutputFromFile,
+                    timeout: timeout,
+                    stop: stop
                 ))
             }
         }
     } onCancel: {
-        box.terminate()
+        stop.request()
+    }
+}
+
+// swiftlint:disable:next function_parameter_count
+private func runToolSync(
+    executable: URL,
+    arguments: [String],
+    workingDirectory: URL?,
+    environment: [String: String],
+    readsOutputFromFile: Bool,
+    timeout: Duration,
+    stop: ProcessStopRequest
+) -> ToolResult? {
+    // Canceled before it started: nothing to launch. One canceled
+    // after this check is ended by `drainAndWait`.
+    guard !stop.isRequested else { return nil }
+    let process = Process()
+    process.executableURL = executable
+    process.arguments = arguments
+    if let workingDirectory {
+        process.currentDirectoryURL = workingDirectory
+    }
+
+    var env = ProcessInfo.processInfo.environment
+    // C locale so the tool's human-readable strings stay
+    // reproducible regardless of the user's region.
+    env["LC_ALL"] = "C"
+    env["LANG"] = "C"
+    for (key, value) in environment {
+        env[key] = value
+    }
+    process.environment = env
+
+    let stdoutPipe: Pipe?
+    let stderrPipe: Pipe?
+    let outputFile: ToolOutputFile?
+    if readsOutputFromFile {
+        guard let file = ToolOutputFile() else { return nil }
+        outputFile = file
+        stdoutPipe = nil
+        stderrPipe = nil
+        process.standardOutput = file.handle
+        process.standardError = FileHandle.nullDevice
+    } else {
+        outputFile = nil
+        let out = Pipe()
+        let err = Pipe()
+        stdoutPipe = out
+        stderrPipe = err
+        process.standardOutput = out
+        process.standardError = err
+    }
+    defer { outputFile?.remove() }
+
+    do {
+        try process.run()
+    } catch {
+        log.debug("launch failed: \(String(describing: error), privacy: .private)")
+        return nil
+    }
+
+    let output = drainAndWait(process, stdout: stdoutPipe, stderr: stderrPipe, timeout: timeout, stop: stop)
+    guard output.ending == .exited else { return nil }
+    let stdout = outputFile?.contents() ?? output.stdout
+    return ToolResult(
+        exitCode: process.terminationStatus,
+        stdout: String(data: stdout, encoding: .utf8) ?? "",
+        stderr: String(data: output.stderr, encoding: .utf8) ?? ""
+    )
+}
+
+/// A user-only temporary file a child writes its stdout to.
+private final class ToolOutputFile {
+    let url: URL
+    let handle: FileHandle
+
+    init?() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("limpid-tool-\(UUID().uuidString).out")
+        guard FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600]),
+              let handle = try? FileHandle(forWritingTo: url)
+        else {
+            log.debug("could not create a file for a tool's output")
+            return nil
+        }
+        self.url = url
+        self.handle = handle
+    }
+
+    /// What the child wrote. Read once it has exited; a process it left
+    /// behind may still write, and what comes later is not ours.
+    func contents() -> Data {
+        (try? Data(contentsOf: url)) ?? Data()
+    }
+
+    func remove() {
+        try? handle.close()
+        try? FileManager.default.removeItem(at: url)
     }
 }

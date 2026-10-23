@@ -2,10 +2,11 @@
 //! record and the side writes the hook runtime performs.
 //!
 //! This unifies the rule set previously carried by both `limpid-hook` shell
-//! receivers. Every `SessionStarted` clears `lastPrompt` and `runStartedAt`
-//! and refreshes `sessionStartedAt`. A non-compact start also clears
+//! receivers. Every `SessionStarted` clears `lastPrompt` and refreshes
+//! `sessionStartedAt`. A non-compact start also clears `runStartedAt` and
 //! `firstPrompt` and replaces both title fields; a compact start retains those
-//! fields unless it supplies a session title. A finished turn records the
+//! fields unless it supplies a session title, and keeps the turn it happened
+//! in open. A finished turn records the
 //! prompt cache window it left behind, and every event that starts or ends
 //! work clears it again, because that window no longer describes the cache.
 //! The function owns no file,
@@ -13,8 +14,8 @@
 //! `SideWrite` and `TurnSnapshotOp` belong to the runtime.
 
 use limpid_agent_model::{
-    AgentEvent, Capability, MAX_RECORD_TEXT_BYTES, ProviderDescriptor, RunRecord, RunState, Titles,
-    TmuxEndpoint,
+    AgentEvent, Capability, MAX_RECORD_TEXT_BYTES, PromptKind, ProviderDescriptor, RunRecord,
+    RunState, SessionSource, Titles, TmuxEndpoint, WaitKind, classify_prompt, seconds_between,
 };
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +35,12 @@ pub struct ApplyContext {
     /// Whether the agent runs inside any tmux, hosted or manual. Set even
     /// when the endpoint could not be parsed.
     pub is_tmux_hosted: bool,
+    /// This is the provider's transcript, when this call opens a wait the
+    /// provider may end without a hook
+    /// (`ProviderAdapter::wait_transcript_path`). It is kept on the record
+    /// while the run waits, so the app can read whether the person declined
+    /// the call.
+    pub transcript_path: Option<String>,
 }
 
 /// What the runtime must write after one event.
@@ -89,8 +96,8 @@ pub enum TurnSnapshotOp {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
     },
-    /// Remove the snapshot ref and index files at session end. `cwd` is the
-    /// previous turn root when known.
+    /// Remove the scratch index files, and the per-pane ref earlier builds
+    /// wrote, at session end. `cwd` is the previous turn root when known.
     Remove {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
@@ -153,6 +160,15 @@ pub fn apply(
             return writes;
         }
         AgentEvent::Extension { .. } => return writes,
+        // The agent at its prompt says something only about a run shown at
+        // work, or waiting on a call the transcript shows ended
+        // (`idle_outcome`); any other run already rests where it should, and
+        // a wait still open is not ended by the agent being idle.
+        AgentEvent::AwaitingPrompt { awaited_call_ended }
+            if idle_outcome(prev, *awaited_call_ended, now).is_none() =>
+        {
+            return writes;
+        }
         _ => {}
     }
 
@@ -174,10 +190,24 @@ pub fn apply(
 
     next.last_hook_event = Some(event_name(event).to_owned());
     let previous_token = prev.and_then(|record| record.state_episode_token.clone());
+    let continues_episode = leaves_or_rejoins_a_rest(prev, event, now);
+    // A `Stop` is the end of work every time, so it always begins an
+    // episode, even from `finished`: the run the idle prompt settled after a
+    // late tool, then a real `Stop`, has finished again.
+    let begins_episode = matches!(event, AgentEvent::TurnFinished { .. });
     next.state_episode_token = match (prev.map(|record| record.state), previous_token) {
-        (Some(previous), Some(token)) if previous == next.state => Some(token),
+        (Some(previous), Some(token))
+            if !begins_episode && (previous == next.state || continues_episode) =>
+        {
+            Some(token)
+        }
         _ => next.revision.map(|revision| revision.to_string()),
     };
+    next.transcript_path = wait_transcript(prev, context, &next);
+    let works_outside_a_turn = !is_in_a_turn(&next) && next.state.is_at_work();
+    if !works_outside_a_turn {
+        next.outside_turn_rest = None;
+    }
     writes.run = Some(next);
     writes
 }
@@ -196,12 +226,34 @@ fn session_transition(
     match event {
         AgentEvent::SessionStarted {
             compact,
+            source,
             session_id,
             session_title,
             cwd,
         } => {
-            next.state = RunState::Idle;
-            next.run_started_at = None;
+            // A compaction in the middle of a turn restarts the session while
+            // the turn goes on, so the turn stays open and running; one the
+            // person asked for after the turn ended rests at the prompt.
+            let continues_turn = *compact && prev.is_some_and(is_in_a_turn);
+            // A fresh start has no conversation yet; a resume or a fork has
+            // the one it picked up; a compaction keeps this run's. A source
+            // this build does not know says nothing either way, so only a
+            // start the provider names as fresh can retire a run quietly at
+            // launch (`session_lifecycle`).
+            next.has_prompt = match source {
+                Some(SessionSource::Startup | SessionSource::Clear) => Some(false),
+                Some(SessionSource::Resume | SessionSource::Fork) => Some(true),
+                Some(SessionSource::Compact) => prev.and_then(|record| record.has_prompt),
+                None => None,
+            };
+            next.state = if continues_turn {
+                RunState::Running
+            } else {
+                RunState::Idle
+            };
+            if !continues_turn {
+                next.run_started_at = None;
+            }
             next.last_prompt = None;
             // A new session, a `/clear`, a resume, and a compaction restart all
             // begin a different prefix, so the previous window describes a
@@ -241,6 +293,7 @@ fn session_transition(
             }
             next.turn_base_tree = None;
             next.turn_root = None;
+            next.worktree_root = None;
             let drops = descriptor.has(Capability::SessionEndDropsSession)
                 && !context.is_tmux_hosted
                 && reason.as_deref().is_some_and(|reason| {
@@ -277,9 +330,19 @@ fn turn_transition(
             // window is warm by definition until the turn reports a new one.
             next.cache_window = None;
             let prompt = text_field(prompt);
-            if next.first_prompt.is_none() {
+            // The first prompt names the tab, so it is the first one with
+            // the person's words: a prompt the harness wrote (a background
+            // task's end, a subagent's hand-back) gives way to the next.
+            let names_nothing = next
+                .first_prompt
+                .as_deref()
+                .is_none_or(|first| classify_prompt(first).0 != PromptKind::Text);
+            if names_nothing && prompt.is_some() {
                 next.first_prompt.clone_from(&prompt);
             }
+            // A prompt, whatever it says, gives the session a conversation
+            // its transcript can resume.
+            next.has_prompt = Some(true);
             next.last_prompt = prompt;
             observe_titles(next, titles.as_ref());
             if let Some(cwd) = turn_snapshot_cwd(event, descriptor) {
@@ -288,24 +351,30 @@ fn turn_transition(
                 });
             }
         }
-        AgentEvent::ToolStarted { detail, .. } => {
+        // A tool outside a turn runs too: the run is shown working, and its
+        // `runStartedAt` stays empty, which is what records that no turn
+        // holds the work (`idle_outcome`).
+        AgentEvent::ToolStarted { tool, detail } => {
             next.state = RunState::Running;
             next.detail = detail.as_deref().and_then(text_field);
+            next.tool = text_field(tool);
+            note_rest_left(prev, event, next);
         }
         AgentEvent::WaitingForInput { detail } => {
             next.state = RunState::NeedsInput;
             next.detail = detail.as_deref().and_then(text_field);
+            next.wait_kind = Some(WaitKind::Question);
         }
         AgentEvent::ApprovalRequested { detail } => {
             next.state = RunState::NeedsInput;
-            // The preceding tool event stored what needs approval (the
-            // command or question); keep it over the provider's generic
-            // "needs your permission" message.
-            next.detail = prev
-                .and_then(|record| record.detail.as_deref())
-                .and_then(text_field)
-                .or_else(|| detail.as_deref().and_then(text_field))
-                .or_else(|| Some("permission".to_owned()));
+            // Claude's permission prompt also follows its question tool: the
+            // question is still what waits, in its own words.
+            if is_question_wait(prev) {
+                carry_wait(prev, next);
+                next.wait_kind = Some(WaitKind::Question);
+            } else {
+                approval_wait(prev, detail.as_deref(), next);
+            }
         }
         AgentEvent::Compacting { context_tokens } => {
             next.state = RunState::Compacting;
@@ -314,13 +383,20 @@ fn turn_transition(
         }
         AgentEvent::ToolFinished { .. } => {
             next.state = RunState::Running;
+            note_rest_left(prev, event, next);
         }
         AgentEvent::CompactionFinished => {
-            next.state = RunState::Running;
+            // Codex compacts at the person's `/compact` after a turn as well
+            // as within one, and only a turn goes on afterwards.
+            next.state = if prev.is_some_and(is_in_a_turn) {
+                RunState::Running
+            } else {
+                RunState::Idle
+            };
             // Compaction replaces the prefix the window was measured on.
             next.cache_window = None;
         }
-        AgentEvent::TurnFinished { titles, cache } => {
+        AgentEvent::TurnFinished { titles, cache, .. } => {
             next.state = RunState::Finished;
             next.run_started_at = None;
             observe_titles(next, titles.as_ref());
@@ -329,10 +405,13 @@ fn turn_transition(
             // with the previous turn's numbers.
             next.cache_window.clone_from(cache);
         }
-        AgentEvent::Failed { error } => {
+        AgentEvent::Failed { error, usage_limit } => {
             next.state = RunState::Error;
             next.run_started_at = None;
             next.detail = text_field(error);
+            // Set or cleared by every failure, so it always describes the
+            // error the run rests in; the badge reads it only then.
+            next.usage_limit.clone_from(usage_limit);
             // A failed request may or may not have refreshed the cache; an
             // unknown window is shown as nothing rather than as a guess.
             next.cache_window = None;
@@ -342,9 +421,257 @@ fn turn_transition(
             next.run_started_at = None;
             next.cache_window = None;
         }
-        AgentEvent::TitleChanged { titles } => observe_titles(next, Some(titles)),
+        // Reached only when it ends something (`apply`). Work outside a turn
+        // is over and returns to the rest it left, in the episode it left
+        // (`leaves_or_rejoins_a_rest`), so the end its `Stop` or failure
+        // already announced is not announced again. A turn open long enough
+        // to have sat idle stopped without saying so (an Esc, then the
+        // person's `/compact`, or an Esc that declined the question or
+        // permission the turn waited on), and ends as an interrupt does.
+        // Either way the requests made since refreshed the cache after the
+        // window was read.
+        AgentEvent::AwaitingPrompt { awaited_call_ended } => {
+            next.cache_window = None;
+            match idle_outcome(prev, *awaited_call_ended, now) {
+                Some(IdleOutcome::EndsOutsideWork) => {
+                    // Only the two rests are places to return to; any other
+                    // value, from a newer writer or none at all, is a turn's.
+                    next.state = match prev.and_then(|record| record.outside_turn_rest) {
+                        Some(RunState::Idle) => RunState::Idle,
+                        _ => RunState::Finished,
+                    };
+                }
+                Some(IdleOutcome::EndsStoppedTurn) | None => {
+                    next.state = RunState::Finished;
+                    next.run_started_at = None;
+                }
+            }
+        }
+        AgentEvent::TitleChanged { titles } => {
+            observe_titles(next, Some(titles));
+            // The state does not change, so neither does what it is about:
+            // a wait renamed mid-way is still that wait.
+            carry_wait(prev, next);
+        }
         _ => {}
     }
+}
+
+/// Whether a prompt opened a turn that has not ended. `runStartedAt` is the
+/// mark: a prompt sets it, every end of a turn clears it, and so does a
+/// session start other than a compaction.
+fn is_in_a_turn(record: &RunRecord) -> bool {
+    record.run_started_at.is_some()
+}
+
+/// How long a turn must have been open before the idle prompt can end it.
+/// Claude sends that notification after its TUI has sat at the prompt for a
+/// minute (the default idle threshold, 60 s), so an idle prompt that arrives
+/// sooner after a prompt is the previous stretch's, delivered late, and
+/// ending the turn just begun would be wrong. Five seconds under the minute
+/// absorb the record's whole-second clock and the hook's own delay.
+pub const STOPPED_TURN_IDLE_SECS: u64 = 55;
+
+/// What the agent idle at its prompt ends, for a run shown at work.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdleOutcome {
+    /// Work no turn holds: Claude's TUI has sent a turn's `Stop` before the
+    /// `PreToolUse` of a tool the turn still ran, with no `Stop` after it,
+    /// or a turn another stop hook holds open has gone on after its first
+    /// `Stop`. The turn's end is taken again, with that work in it, and the
+    /// turn keeps how it ended.
+    EndsOutsideWork,
+    /// A turn is still open: it stopped without a `Stop`, which an Esc does,
+    /// including the Esc that declines the question or permission prompt
+    /// the turn waited on.
+    EndsStoppedTurn,
+}
+
+/// What `AwaitingPrompt` at `now` ends for `prev`, or `None` when it ends
+/// nothing: the run rests already, waits on the person, or is in a turn too
+/// young to have sat idle (`STOPPED_TURN_IDLE_SECS`).
+///
+/// `awaited_call_ended` is the event's word that the call the run last made
+/// has a result or an interrupt after it. A turn waiting on the person ends
+/// only with it. Claude sends no hook when a question or permission prompt
+/// is declined with Esc, so this is the one sign that the wait is over; a
+/// minute idle without it is a person who has not answered yet.
+///
+/// Shared with the turn rules, so the record and the turn record end the
+/// same thing, and with the hook runtime, which judges it again under the
+/// record lock.
+#[must_use]
+pub fn idle_outcome(
+    prev: Option<&RunRecord>,
+    awaited_call_ended: bool,
+    now: &str,
+) -> Option<IdleOutcome> {
+    let record = prev?;
+    let has_sat_idle = || {
+        record
+            .run_started_at
+            .as_deref()
+            .and_then(|started| seconds_between(started, now))
+            .is_some_and(|open| open >= STOPPED_TURN_IDLE_SECS)
+    };
+    match record.state {
+        RunState::Running if !is_in_a_turn(record) => Some(IdleOutcome::EndsOutsideWork),
+        RunState::Running | RunState::Compacting => {
+            has_sat_idle().then_some(IdleOutcome::EndsStoppedTurn)
+        }
+        // A wait outside a turn is a late tool's, which no turn holds; it
+        // keeps resting on the person as before.
+        RunState::NeedsInput if awaited_call_ended && is_in_a_turn(record) => {
+            has_sat_idle().then_some(IdleOutcome::EndsStoppedTurn)
+        }
+        _ => None,
+    }
+}
+
+/// Returns the record after the person declined the wait `prev` is in, which
+/// no hook reports (Esc at Claude's question or permission prompt), as the
+/// app's writer applies it once the transcript shows it. It is `None` unless
+/// `prev` waits inside a turn, the only wait the projection reads as declined.
+///
+/// It ends the turn as the idle prompt ends a declined wait
+/// (`IdleOutcome::EndsStoppedTurn`): finished, out of the turn, with the
+/// wait's words, its kind, its transcript, and the cache window gone. Two
+/// things differ, both because the projection has already shown this end
+/// from the transcript before the record says it (`declined_badge`). The
+/// episode stays the wait's: the badge showed the finish in it, and a new
+/// one would read as a second finish and be announced. And the record is
+/// otherwise carried as it is, identity and unknown fields included, since
+/// no hook call supplies them: the writer is the app, not the agent.
+#[must_use]
+pub fn end_declined_wait(prev: &RunRecord, now: &str) -> Option<RunRecord> {
+    if prev.state != RunState::NeedsInput || !is_in_a_turn(prev) {
+        return None;
+    }
+    let mut next = prev.clone();
+    next.schema_version = RunRecord::SCHEMA_VERSION;
+    next.revision = Some(prev.revision.unwrap_or(0) + 1);
+    next.state = RunState::Finished;
+    next.run_started_at = None;
+    next.detail = None;
+    next.tool = None;
+    next.wait_kind = None;
+    next.transcript_path = None;
+    next.cache_window = None;
+    next.outside_turn_rest = None;
+    now.clone_into(&mut next.updated_at);
+    next.last_hook_event = Some("wait_declined".to_owned());
+    Some(next)
+}
+
+/// Records the rest a tool event outside a turn takes the run from, for the
+/// idle prompt to return it to. A failure's work settles as finished: the
+/// agent went on after it, and that work did not fail.
+fn note_rest_left(prev: Option<&RunRecord>, event: &AgentEvent, next: &mut RunRecord) {
+    // A tool event's judgment does not read the clock.
+    let Some(record) = prev.filter(|_| leaves_or_rejoins_a_rest(prev, event, "")) else {
+        return;
+    };
+    next.outside_turn_rest = Some(match record.state {
+        RunState::Idle => RunState::Idle,
+        _ => RunState::Finished,
+    });
+}
+
+/// Whether `event` takes the run out of a rest, or back to one, without a
+/// turn: a tool after the turn ended, or the agent idle after that tool.
+/// The stretch belongs to the episode the run rested in, so it raises no
+/// notification of its own and leaves a finish the person saw seen. A `Stop`
+/// that ends the stretch is the turn's real end and begins a new one.
+fn leaves_or_rejoins_a_rest(prev: Option<&RunRecord>, event: &AgentEvent, now: &str) -> bool {
+    let Some(record) = prev.filter(|record| !is_in_a_turn(record)) else {
+        return false;
+    };
+    match event {
+        AgentEvent::ToolStarted { .. } | AgentEvent::ToolFinished { .. } => matches!(
+            record.state,
+            RunState::Finished | RunState::Error | RunState::Idle
+        ),
+        AgentEvent::AwaitingPrompt { awaited_call_ended } => {
+            idle_outcome(prev, *awaited_call_ended, now) == Some(IdleOutcome::EndsOutsideWork)
+        }
+        _ => false,
+    }
+}
+
+/// Whether the run already waits on its own question: the record says so,
+/// or, for a record from before `waitKind`, its last event was the question.
+fn is_question_wait(prev: Option<&RunRecord>) -> bool {
+    prev.is_some_and(|record| {
+        record.state == RunState::NeedsInput
+            && (record.wait_kind == Some(WaitKind::Question)
+                || (record.wait_kind.is_none()
+                    && record.last_hook_event.as_deref() == Some("waiting_for_input")))
+    })
+}
+
+/// A permission request's wait. Only the tool event just before it says
+/// what needs approval, and which tool; any earlier detail (an error, say)
+/// is not a request's words, and the provider's own message stands instead.
+fn approval_wait(prev: Option<&RunRecord>, detail: Option<&str>, next: &mut RunRecord) {
+    next.wait_kind = Some(WaitKind::Approval);
+    // `tool` is written only by a tool event and kept only with its words;
+    // a record from before the field says it by its last event, which the
+    // shell receivers named after the hook.
+    let has_tool_context = prev.is_some_and(|record| {
+        record.tool.is_some()
+            || matches!(
+                record.last_hook_event.as_deref(),
+                Some("tool_started" | "PreToolUse")
+            )
+    });
+    let tool_detail = prev
+        .filter(|_| has_tool_context)
+        .and_then(|record| record.detail.as_deref())
+        .and_then(text_field);
+    if tool_detail.is_some() {
+        next.tool = prev
+            .and_then(|record| record.tool.as_deref())
+            .and_then(text_field);
+    }
+    next.detail = tool_detail
+        .or_else(|| detail.and_then(text_field))
+        .or_else(|| Some("permission".to_owned()));
+}
+
+/// Returns the transcript a waiting run's record names: the one the call that
+/// opened or renewed the wait named, else the one the wait already had (a
+/// title change, or Claude's permission prompt after its question tool,
+/// whose path the question already gave). Only a run in `NeedsInput` keeps
+/// one, since only a wait is read from it. A path longer than any record
+/// text is dropped rather than cut, because a cut path names another file.
+fn wait_transcript(
+    prev: Option<&RunRecord>,
+    context: &ApplyContext,
+    next: &RunRecord,
+) -> Option<String> {
+    if next.state != RunState::NeedsInput {
+        return None;
+    }
+    context
+        .transcript_path
+        .clone()
+        .or_else(|| {
+            prev.filter(|record| record.state == RunState::NeedsInput)
+                .and_then(|record| record.transcript_path.clone())
+        })
+        .filter(|path| !path.is_empty() && path.len() <= MAX_RECORD_TEXT_BYTES)
+}
+
+/// Keeps what the run's wait is about through an event that leaves its
+/// state as it was.
+fn carry_wait(prev: Option<&RunRecord>, next: &mut RunRecord) {
+    next.detail = prev
+        .and_then(|record| record.detail.as_deref())
+        .and_then(text_field);
+    next.tool = prev
+        .and_then(|record| record.tool.as_deref())
+        .and_then(text_field);
+    next.wait_kind = prev.and_then(|record| record.wait_kind);
 }
 
 /// The next record with every field the event does not touch carried over
@@ -359,8 +686,13 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
         state_episode_token: None,
         state: prev.map_or(RunState::Unknown, |record| record.state),
         // The shell wrote `detail` fresh on every event; only the approval
-        // rule reads the previous one, and it does so explicitly.
+        // rule reads the previous one, and it does so explicitly. The tool
+        // `detail` names and the kind of wait go with it.
         detail: None,
+        tool: None,
+        wait_kind: None,
+        // `apply` sets it again while the run waits (`wait_transcript`).
+        transcript_path: None,
         run_started_at: prev.and_then(|record| record.run_started_at.clone()),
         updated_at: now.to_owned(),
         last_hook_event: None,
@@ -377,6 +709,7 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
         first_prompt: prev
             .and_then(|record| record.first_prompt.as_deref())
             .and_then(text_field),
+        has_prompt: prev.and_then(|record| record.has_prompt),
         session_id: prev.and_then(|record| record.session_id.clone()),
         provider_session_title: prev
             .and_then(|record| record.provider_session_title.as_deref())
@@ -387,6 +720,8 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
         session_started_at: prev.and_then(|record| record.session_started_at.clone()),
         turn_base_tree: prev.and_then(|record| record.turn_base_tree.clone()),
         turn_root: prev.and_then(|record| record.turn_root.clone()),
+        worktree_root: prev.and_then(|record| record.worktree_root.clone()),
+        current_turn_id: prev.and_then(|record| record.current_turn_id.clone()),
         killed_by_limpid_at: prev.and_then(|record| record.killed_by_limpid_at.clone()),
         resume_attempted_at: prev.and_then(|record| record.resume_attempted_at.clone()),
         tmux_socket_path: context.tmux.as_ref().map(|tmux| tmux.socket_path.clone()),
@@ -402,9 +737,13 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
                 .unwrap_or_default()
         }),
         // Carried through the events that neither start nor end work, such
-        // as a title change after the turn ended. An idle notification never
-        // reaches here: it arrives as an extension, which writes nothing.
+        // as a title change after the turn ended. The idle prompt reaches
+        // here only when it ends work, which clears it.
         cache_window: prev.and_then(|record| record.cache_window.clone()),
+        usage_limit: prev.and_then(|record| record.usage_limit.clone()),
+        // Kept while the work outside a turn lasts; `apply` drops it once the
+        // run is in a turn or at rest.
+        outside_turn_rest: prev.and_then(|record| record.outside_turn_rest),
         extra: prev.map(|record| record.extra.clone()).unwrap_or_default(),
     }
 }
@@ -435,6 +774,7 @@ fn event_name(event: &AgentEvent) -> &'static str {
         AgentEvent::ApprovalRequested { .. } => "approval_requested",
         AgentEvent::Compacting { .. } => "compacting",
         AgentEvent::CompactionFinished => "compaction_finished",
+        AgentEvent::AwaitingPrompt { .. } => "awaiting_prompt",
         AgentEvent::TurnFinished { .. } => "turn_finished",
         AgentEvent::Failed { .. } => "failed",
         AgentEvent::Interrupted => "interrupted",
@@ -506,721 +846,5 @@ fn is_dropped(character: char) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use limpid_agent_model::ProviderId;
-    use std::collections::BTreeSet;
-
-    const NOW: &str = "2026-09-14T00:00:00Z";
-    const LATER: &str = "2026-09-14T00:00:05Z";
-
-    fn context() -> ApplyContext {
-        ApplyContext {
-            run_id: "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11".into(),
-            pane_id: "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10".into(),
-            pid: Some(4242),
-            tmux: None,
-            is_tmux_hosted: false,
-        }
-    }
-
-    fn descriptor(name: &str, capabilities: BTreeSet<Capability>) -> ProviderDescriptor {
-        let id = ProviderId::new(name).expect("provider id");
-        ProviderDescriptor {
-            display_name: name.to_owned(),
-            capabilities,
-            pid_sweep_interval_ms: 3_000,
-            state_directory: "states".to_owned(),
-            session_directory: "sessions".to_owned(),
-            cwd_events_directory: None,
-            process_names: Vec::new(),
-            session_end_drop_reasons: Vec::new(),
-            id,
-        }
-    }
-
-    fn claude() -> ProviderDescriptor {
-        let mut claude = descriptor(
-            "claude",
-            BTreeSet::from([
-                Capability::SessionTitle,
-                Capability::SessionEndDropsSession,
-                Capability::Resume,
-                Capability::CwdEvents,
-                Capability::TurnSnapshot,
-            ]),
-        );
-        claude.session_end_drop_reasons = ["clear", "logout", "exit", "prompt_input_exit", "quit"]
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
-        claude
-    }
-
-    fn codex() -> ProviderDescriptor {
-        descriptor(
-            "codex",
-            BTreeSet::from([Capability::Resume, Capability::TurnSnapshot]),
-        )
-    }
-
-    fn started(title: Option<&str>) -> AgentEvent {
-        AgentEvent::SessionStarted {
-            compact: false,
-            session_id: Some("session-1".into()),
-            session_title: title.map(str::to_owned),
-            cwd: Some("/repo".into()),
-        }
-    }
-
-    fn prompt(text: &str) -> AgentEvent {
-        AgentEvent::PromptSubmitted {
-            prompt: text.into(),
-            titles: None,
-            cwd: Some("/repo".into()),
-        }
-    }
-
-    /// Applies `events` in order and returns the final record plus every
-    /// side write and snapshot op, the way the runtime would see them.
-    fn run(
-        descriptor: &ProviderDescriptor,
-        events: &[AgentEvent],
-    ) -> (RunRecord, Vec<SideWrite>, Vec<TurnSnapshotOp>) {
-        let mut record: Option<RunRecord> = None;
-        let mut sides = Vec::new();
-        let mut snapshots = Vec::new();
-        for event in events {
-            let writes = apply(record.as_ref(), event, &context(), descriptor, NOW);
-            sides.extend(writes.side);
-            snapshots.extend(writes.snapshot);
-            if let Some(next) = writes.run {
-                record = Some(next);
-            }
-        }
-        (
-            record.expect("at least one event writes a record"),
-            sides,
-            snapshots,
-        )
-    }
-
-    #[test]
-    fn session_start_resets_the_run_and_remembers_the_session() {
-        let writes = apply(None, &started(Some("Formal")), &context(), &claude(), NOW);
-        let record = writes.run.expect("record");
-        assert_eq!(record.schema_version, 3);
-        assert_eq!(record.state, RunState::Idle);
-        assert_eq!(record.revision, Some(1));
-        assert_eq!(record.state_episode_token.as_deref(), Some("1"));
-        assert_eq!(record.session_started_at.as_deref(), Some(NOW));
-        assert_eq!(record.run_started_at, None);
-        assert_eq!(record.session_id.as_deref(), Some("session-1"));
-        assert_eq!(record.provider_session_title.as_deref(), Some("Formal"));
-        assert_eq!(record.pid.as_deref(), Some("4242"));
-        assert_eq!(record.run_id.as_deref(), Some(context().run_id.as_str()));
-        assert_eq!(record.last_hook_event.as_deref(), Some("session_started"));
-        assert_eq!(
-            writes.side,
-            vec![SideWrite::SessionHint {
-                session_id: "session-1".into(),
-                cwd: Some("/repo".into())
-            }]
-        );
-        assert_eq!(writes.snapshot, None);
-    }
-
-    #[test]
-    fn a_turn_carries_prompts_and_ends_without_erasing_them() {
-        let (record, sides, snapshots) = run(
-            &claude(),
-            &[
-                started(None),
-                prompt("first"),
-                AgentEvent::ToolStarted {
-                    tool: "Bash".into(),
-                    detail: Some("Bash: ls".into()),
-                },
-                AgentEvent::ApprovalRequested {
-                    detail: Some("Claude needs your permission".into()),
-                },
-            ],
-        );
-        assert_eq!(record.state, RunState::NeedsInput);
-        assert_eq!(record.detail.as_deref(), Some("Bash: ls"));
-        assert_eq!(record.run_started_at.as_deref(), Some(NOW));
-        assert_eq!(record.first_prompt.as_deref(), Some("first"));
-        assert_eq!(record.last_prompt.as_deref(), Some("first"));
-        assert_eq!(record.revision, Some(4));
-        assert_eq!(sides.len(), 1);
-        assert_eq!(
-            snapshots,
-            vec![TurnSnapshotOp::Capture {
-                cwd: Some("/repo".into())
-            }]
-        );
-
-        let finished = apply(
-            Some(&record),
-            &AgentEvent::TurnFinished {
-                titles: None,
-                cache: None,
-            },
-            &context(),
-            &claude(),
-            LATER,
-        )
-        .run
-        .expect("record");
-        assert_eq!(finished.state, RunState::Finished);
-        assert_eq!(finished.run_started_at, None);
-        assert_eq!(finished.detail, None);
-        assert_eq!(finished.last_prompt.as_deref(), Some("first"));
-        assert_eq!(finished.updated_at, LATER);
-
-        let second = apply(
-            Some(&finished),
-            &prompt("second"),
-            &context(),
-            &claude(),
-            LATER,
-        )
-        .run
-        .expect("record");
-        assert_eq!(second.first_prompt.as_deref(), Some("first"));
-        assert_eq!(second.last_prompt.as_deref(), Some("second"));
-
-        let failed = apply(
-            Some(&second),
-            &AgentEvent::Failed {
-                error: "server_error".into(),
-            },
-            &context(),
-            &claude(),
-            LATER,
-        )
-        .run
-        .expect("record");
-        assert_eq!(failed.state, RunState::Error);
-        assert_eq!(failed.detail.as_deref(), Some("server_error"));
-        assert_eq!(failed.run_started_at, None);
-        // Unified reset rule: an error keeps what the notification body needs.
-        assert_eq!(failed.last_prompt.as_deref(), Some("second"));
-        assert_eq!(failed.session_started_at.as_deref(), Some(NOW));
-    }
-
-    fn window(observed_at: &str) -> limpid_agent_model::CacheWindow {
-        limpid_agent_model::CacheWindow {
-            observed_at: observed_at.to_owned(),
-            ttl_seconds: 3600,
-            rewrite_tokens: Some(573_000),
-            precision: limpid_agent_model::CachePrecision::Estimated,
-        }
-    }
-
-    fn finished_with(observed_at: &str) -> AgentEvent {
-        AgentEvent::TurnFinished {
-            titles: None,
-            cache: Some(window(observed_at)),
-        }
-    }
-
-    #[test]
-    fn a_finished_turn_records_its_cache_window_and_quiet_events_keep_it() {
-        let (record, _, _) = run(
-            &claude(),
-            &[
-                started(None),
-                prompt("first"),
-                finished_with(NOW),
-                // A waiting-for-input event and a late title neither start
-                // nor end work, so the window still describes the cache.
-                AgentEvent::WaitingForInput { detail: None },
-                AgentEvent::TitleChanged {
-                    titles: Titles {
-                        session_title: None,
-                        generated_title: Some("Title".into()),
-                    },
-                },
-            ],
-        );
-        assert_eq!(record.cache_window, Some(window(NOW)));
-        let encoded = String::from_utf8(record.encode().expect("encodes")).expect("utf8");
-        assert!(encoded.contains("\"cacheWindow\":{"));
-
-        // The next turn's window replaces it, and a turn that could not read
-        // one leaves the cache unknown rather than reusing the old numbers.
-        let (record, _, _) = run(
-            &claude(),
-            &[
-                started(None),
-                prompt("first"),
-                finished_with(NOW),
-                prompt("second"),
-                finished_with(LATER),
-            ],
-        );
-        assert_eq!(record.cache_window, Some(window(LATER)));
-        let (record, _, _) = run(
-            &claude(),
-            &[
-                started(None),
-                prompt("first"),
-                finished_with(NOW),
-                AgentEvent::TurnFinished {
-                    titles: None,
-                    cache: None,
-                },
-            ],
-        );
-        assert_eq!(record.cache_window, None);
-    }
-
-    #[test]
-    fn every_event_that_starts_or_ends_work_clears_the_cache_window() {
-        let (finished, _, _) = run(&claude(), &[started(None), prompt("p"), finished_with(NOW)]);
-        assert!(finished.cache_window.is_some());
-        let clearing = [
-            prompt("next"),
-            started(None),
-            AgentEvent::SessionStarted {
-                compact: true,
-                session_id: Some("session-1".into()),
-                session_title: None,
-                cwd: None,
-            },
-            AgentEvent::SessionEnded {
-                reason: Some("exit".into()),
-                session_id: Some("session-1".into()),
-            },
-            AgentEvent::Compacting {
-                context_tokens: Some(1),
-            },
-            AgentEvent::CompactionFinished,
-            AgentEvent::Failed {
-                error: "server_error".into(),
-            },
-            AgentEvent::Interrupted,
-        ];
-        for event in &clearing {
-            let next = apply(Some(&finished), event, &context(), &claude(), LATER)
-                .run
-                .expect("record");
-            assert_eq!(next.cache_window, None, "{event:?} must clear the window");
-            assert_eq!(next.revision, finished.revision.map(|it| it + 1));
-        }
-    }
-
-    #[test]
-    fn session_end_without_the_snapshot_capability_removes_nothing() {
-        let (record, _, _) = run(&claude(), &[started(None), prompt("first")]);
-        let writes = apply(
-            Some(&record),
-            &AgentEvent::SessionEnded {
-                reason: Some("exit".into()),
-                session_id: None,
-            },
-            &context(),
-            &descriptor("claude", BTreeSet::from([Capability::Resume])),
-            LATER,
-        );
-        assert_eq!(writes.snapshot, None);
-        assert_eq!(writes.run.expect("record").state, RunState::Unknown);
-    }
-
-    #[test]
-    fn session_end_keeps_prompts_drops_the_hint_and_removes_the_snapshot() {
-        let (mut record, _, _) = run(&claude(), &[started(None), prompt("first")]);
-        record.turn_base_tree = Some("abc".into());
-        record.turn_root = Some("/repo".into());
-        let writes = apply(
-            Some(&record),
-            &AgentEvent::SessionEnded {
-                reason: Some("prompt_input_exit".into()),
-                session_id: Some("session-1".into()),
-            },
-            &context(),
-            &claude(),
-            LATER,
-        );
-        let ended = writes.run.expect("record");
-        assert_eq!(ended.state, RunState::Unknown);
-        assert_eq!(ended.first_prompt.as_deref(), Some("first"));
-        assert_eq!(ended.session_started_at.as_deref(), Some(NOW));
-        assert_eq!(ended.turn_base_tree, None);
-        assert_eq!(
-            writes.snapshot,
-            Some(TurnSnapshotOp::Remove {
-                cwd: Some("/repo".into())
-            })
-        );
-        assert_eq!(
-            writes.side,
-            vec![SideWrite::DeleteSessionHint {
-                session_id: "session-1".into()
-            }]
-        );
-
-        // A signal keeps the hint for auto-resume.
-        let writes = apply(
-            Some(&record),
-            &AgentEvent::SessionEnded {
-                reason: Some("other".into()),
-                session_id: Some("session-1".into()),
-            },
-            &context(),
-            &claude(),
-            LATER,
-        );
-        assert!(writes.side.is_empty());
-
-        // Codex never drops the hint because `/quit` reports `other`.
-        let writes = apply(
-            Some(&record),
-            &AgentEvent::SessionEnded {
-                reason: Some("exit".into()),
-                session_id: Some("session-1".into()),
-            },
-            &context(),
-            &codex(),
-            LATER,
-        );
-        assert!(writes.side.is_empty());
-    }
-
-    #[test]
-    fn compaction_keeps_the_opening_prompt_and_generated_title() {
-        let (record, _, _) = run(
-            &claude(),
-            &[
-                started(Some("Formal")),
-                AgentEvent::PromptSubmitted {
-                    prompt: "first".into(),
-                    titles: Some(Titles {
-                        session_title: None,
-                        generated_title: Some("Generated".into()),
-                    }),
-                    cwd: None,
-                },
-                AgentEvent::Compacting {
-                    context_tokens: Some(120_000),
-                },
-            ],
-        );
-        assert_eq!(record.state, RunState::Compacting);
-        assert_eq!(record.context_tokens, Some(120_000));
-        assert_eq!(record.run_started_at.as_deref(), Some(NOW));
-
-        let restarted = apply(
-            Some(&record),
-            &AgentEvent::SessionStarted {
-                compact: true,
-                session_id: Some("session-1".into()),
-                session_title: None,
-                cwd: None,
-            },
-            &context(),
-            &claude(),
-            LATER,
-        )
-        .run
-        .expect("record");
-        assert_eq!(restarted.state, RunState::Idle);
-        assert_eq!(restarted.first_prompt.as_deref(), Some("first"));
-        assert_eq!(restarted.last_prompt, None);
-        assert_eq!(restarted.provider_session_title.as_deref(), Some("Formal"));
-        assert_eq!(
-            restarted.provider_generated_title.as_deref(),
-            Some("Generated")
-        );
-        assert_eq!(restarted.session_started_at.as_deref(), Some(LATER));
-        // The token count is not carried; only the event that reports it sets it.
-        assert_eq!(restarted.context_tokens, None);
-
-        let fresh = apply(
-            Some(&restarted),
-            &started(None),
-            &context(),
-            &claude(),
-            LATER,
-        )
-        .run
-        .expect("record");
-        assert_eq!(fresh.first_prompt, None);
-        assert_eq!(fresh.provider_generated_title, None);
-        assert_eq!(fresh.provider_session_title, None);
-    }
-
-    #[test]
-    fn codex_compaction_and_interrupt_return_to_a_settled_state() {
-        let (record, _, _) = run(
-            &codex(),
-            &[
-                started(None),
-                prompt("first"),
-                AgentEvent::Compacting {
-                    context_tokens: None,
-                },
-                AgentEvent::CompactionFinished,
-            ],
-        );
-        assert_eq!(record.state, RunState::Running);
-        let interrupted = apply(
-            Some(&record),
-            &AgentEvent::Interrupted,
-            &context(),
-            &codex(),
-            LATER,
-        )
-        .run
-        .expect("record");
-        assert_eq!(interrupted.state, RunState::Finished);
-        assert_eq!(interrupted.run_started_at, None);
-        assert_eq!(interrupted.first_prompt.as_deref(), Some("first"));
-    }
-
-    #[test]
-    fn episode_token_survives_repeated_states_and_changes_with_the_state() {
-        let (record, _, _) = run(
-            &claude(),
-            &[
-                started(None),
-                prompt("first"),
-                AgentEvent::WaitingForInput {
-                    detail: Some("Which color?".into()),
-                },
-                AgentEvent::WaitingForInput {
-                    detail: Some("Which color?".into()),
-                },
-            ],
-        );
-        assert_eq!(record.revision, Some(4));
-        assert_eq!(record.state_episode_token.as_deref(), Some("3"));
-        let finished = apply(
-            Some(&record),
-            &AgentEvent::TurnFinished {
-                titles: None,
-                cache: None,
-            },
-            &context(),
-            &claude(),
-            LATER,
-        )
-        .run
-        .expect("record");
-        assert_eq!(finished.state_episode_token.as_deref(), Some("5"));
-    }
-
-    #[test]
-    fn tmux_hosting_marks_the_record_and_withholds_the_hint() {
-        let context = ApplyContext {
-            tmux: Some(TmuxEndpoint {
-                socket_path: "/tmp/tmux-501/limpid".into(),
-                pane: "%3".into(),
-                server_pid: 777,
-                server_started_at: Some(1_700_000_000),
-            }),
-            is_tmux_hosted: true,
-            pid: None,
-            ..self::context()
-        };
-        let writes = apply(None, &started(None), &context, &claude(), NOW);
-        let record = writes.run.expect("record");
-        assert_eq!(record.is_tmux_hosted, Some(true));
-        assert_eq!(
-            record.tmux_socket_path.as_deref(),
-            Some("/tmp/tmux-501/limpid")
-        );
-        assert_eq!(record.tmux_pane_id.as_deref(), Some("%3"));
-        assert_eq!(record.tmux_server_pid.as_deref(), Some("777"));
-        assert_eq!(record.tmux_server_started_at.as_deref(), Some("1700000000"));
-        assert_eq!(record.pid, None);
-        assert!(writes.side.is_empty());
-    }
-
-    #[test]
-    fn side_only_events_write_no_record() {
-        let cwd = AgentEvent::CwdChanged {
-            new_cwd: "/repo/.git".into(),
-            old_cwd: Some("/repo".into()),
-        };
-        let writes = apply(None, &cwd, &context(), &claude(), NOW);
-        assert_eq!(writes.run, None);
-        assert_eq!(
-            writes.side,
-            vec![SideWrite::CwdEvent {
-                new_cwd: "/repo/.git".into(),
-                old_cwd: Some("/repo".into())
-            }]
-        );
-        assert_eq!(
-            apply(None, &cwd, &context(), &codex(), NOW),
-            RecordWrites::default()
-        );
-        let extension = AgentEvent::Extension {
-            name: "Notification".into(),
-            payload: serde_json::json!({}),
-        };
-        assert_eq!(
-            apply(None, &extension, &context(), &claude(), NOW),
-            RecordWrites::default()
-        );
-    }
-
-    #[test]
-    fn titles_are_sanitized_and_absent_observations_keep_the_previous_value() {
-        let (record, _, _) = run(
-            &claude(),
-            &[
-                started(Some("  Safe\u{202e}\n\t title\u{200b}  ")),
-                AgentEvent::TurnFinished {
-                    titles: None,
-                    cache: None,
-                },
-                AgentEvent::TitleChanged {
-                    titles: Titles {
-                        session_title: None,
-                        generated_title: Some("Gen\u{7}erated".into()),
-                    },
-                },
-            ],
-        );
-        assert_eq!(record.provider_session_title.as_deref(), Some("Safe title"));
-        assert_eq!(
-            record.provider_generated_title.as_deref(),
-            Some("Generated")
-        );
-    }
-
-    #[test]
-    fn prompts_keep_line_breaks_but_are_bounded_and_cleaned() {
-        let long = format!(
-            "line one\nline\u{202e} two{}",
-            "x".repeat(MAX_RECORD_TEXT_BYTES)
-        );
-        let writes = apply(None, &prompt(&long), &context(), &claude(), NOW);
-        let record = writes.run.expect("record");
-        let stored = record.last_prompt.expect("prompt");
-        assert!(stored.starts_with("line one\nline two"));
-        assert_eq!(stored.len(), MAX_RECORD_TEXT_BYTES);
-        assert_eq!(sanitize_text("\u{1F600}\u{9f}ok"), "\u{1F600}ok");
-    }
-
-    #[test]
-    fn detail_belongs_to_one_event_only() {
-        let (record, _, _) = run(
-            &claude(),
-            &[
-                started(None),
-                prompt("first"),
-                AgentEvent::Failed {
-                    error: "server_error".into(),
-                },
-                prompt("second"),
-            ],
-        );
-        assert_eq!(
-            record.detail, None,
-            "a new prompt does not show the previous error"
-        );
-        let compacting = apply(
-            Some(&record),
-            &AgentEvent::Compacting {
-                context_tokens: None,
-            },
-            &context(),
-            &claude(),
-            LATER,
-        )
-        .run
-        .expect("record");
-        assert_eq!(compacting.detail, None);
-    }
-
-    #[test]
-    fn hostile_session_ids_never_become_hints() {
-        let event = AgentEvent::SessionStarted {
-            compact: false,
-            session_id: Some("bad\"id".into()),
-            session_title: None,
-            cwd: None,
-        };
-        let writes = apply(None, &event, &context(), &claude(), NOW);
-        assert!(writes.side.is_empty());
-        assert_eq!(
-            writes.run.expect("record").session_id.as_deref(),
-            Some("bad\"id")
-        );
-    }
-
-    #[test]
-    fn version_two_records_are_continued_with_a_higher_revision() {
-        let previous = RunRecord::decode(
-            br#"{"schemaVersion":2,"paneId":"P","state":"running","detail":"","runStartedAt":"2026-09-13T00:00:00Z","updatedAt":"2026-09-13T00:00:00Z","lastHookEvent":"UserPromptSubmit","lastPrompt":"old","firstPrompt":"old","revision":7,"stateEpisodeToken":"6","runId":"R","legacyField":1}"#,
-        )
-        .expect("decodes");
-        let writes = apply(
-            Some(&previous),
-            &AgentEvent::TurnFinished {
-                titles: None,
-                cache: None,
-            },
-            &context(),
-            &claude(),
-            NOW,
-        );
-        let record = writes.run.expect("record");
-        assert_eq!(record.revision, Some(8));
-        assert_eq!(record.state_episode_token.as_deref(), Some("8"));
-        assert_eq!(record.first_prompt.as_deref(), Some("old"));
-        assert_eq!(record.extra.get("legacyField"), Some(&serde_json::json!(1)));
-        assert_eq!(record.run_id.as_deref(), Some(context().run_id.as_str()));
-    }
-
-    #[test]
-    fn version_two_text_is_cleaned_and_bounded_when_the_writer_changes() {
-        let oversized_prompt = format!("old\u{202e}{}", "x".repeat(MAX_RECORD_TEXT_BYTES));
-        let oversized_detail = format!("command\u{202e}{}", "y".repeat(MAX_RECORD_TEXT_BYTES));
-        let previous = serde_json::json!({
-            "schemaVersion": 2,
-            "paneId": "P",
-            "state": "running",
-            "detail": oversized_detail,
-            "runStartedAt": "2026-09-13T00:00:00Z",
-            "updatedAt": "2026-09-13T00:00:00Z",
-            "lastHookEvent": "UserPromptSubmit",
-            "lastPrompt": oversized_prompt,
-            "firstPrompt": "opening\u{202e} prompt",
-            "providerSessionTitle": "Title\nline\u{202e}",
-            "providerGeneratedTitle": "Generated\u{7} title",
-            "revision": 7,
-            "runId": "R"
-        });
-        let previous =
-            RunRecord::decode(&serde_json::to_vec(&previous).expect("encodes")).expect("decodes");
-        let record = apply(
-            Some(&previous),
-            &AgentEvent::ApprovalRequested {
-                detail: Some("generic approval".into()),
-            },
-            &context(),
-            &claude(),
-            NOW,
-        )
-        .run
-        .expect("record");
-
-        let last_prompt = record.last_prompt.expect("last prompt");
-        assert_eq!(last_prompt.len(), MAX_RECORD_TEXT_BYTES);
-        assert!(!last_prompt.contains('\u{202e}'));
-        let detail = record.detail.expect("detail");
-        assert_eq!(detail.len(), MAX_RECORD_TEXT_BYTES);
-        assert!(!detail.contains('\u{202e}'));
-        assert_eq!(record.first_prompt.as_deref(), Some("opening prompt"));
-        assert_eq!(record.provider_session_title.as_deref(), Some("Title line"));
-        assert_eq!(
-            record.provider_generated_title.as_deref(),
-            Some("Generated title")
-        );
-    }
-}
+#[path = "lifecycle_tests/mod.rs"]
+mod tests;

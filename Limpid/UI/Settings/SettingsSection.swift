@@ -8,6 +8,23 @@ import Foundation
 import SwiftUI
 
 enum SettingsSection: String, CaseIterable, Identifiable {
+    /// Opens Settings on the Keyboard pane: the Settings scene reads the
+    /// last section from `lastSectionDefaultsKey` when it opens.
+    static func openKeyboard() {
+        open(.keyboard)
+    }
+
+    /// Opens Settings on the General pane, where the notice that saving
+    /// stopped is (`SavingSuspendedNotice`).
+    static func openGeneral() {
+        open(.general)
+    }
+
+    private static func open(_ section: Self) {
+        UserDefaults.standard.set(section.rawValue, forKey: lastSectionDefaultsKey)
+        NotificationCenter.default.post(name: .limpidOpenSettings, object: nil)
+    }
+
     /// `UserDefaults` key holding the last visible section's rawValue.
     /// `SettingsScene` reads it to pick the pane it opens on, and any
     /// surface that wants to land on a specific pane writes it before

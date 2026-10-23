@@ -1,0 +1,10 @@
+{
+  "cwd": "/Users/example/.codex/memories",
+  "hook_event_name": "UserPromptSubmit",
+  "model": "gpt-5.6-terra",
+  "permission_mode": "bypassPermissions",
+  "prompt": "<prompt for memory-agent>",
+  "session_id": "00000000-0000-4000-8000-000000000011",
+  "transcript_path": null,
+  "turn_id": "00000000-0000-4000-8000-000000000013"
+}

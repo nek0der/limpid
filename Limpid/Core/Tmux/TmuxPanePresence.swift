@@ -56,9 +56,18 @@ final class TmuxPanePresence {
     private var cursor = 0
     private static let queue = DispatchQueue(label: "dev.limpid.tmux.probe", qos: .utility)
 
-    init(bindingsByPaneID: [UUID: TmuxBinding] = [:], topology: TmuxTopology = TmuxTopology()) {
+    /// `surfaces` is what `refreshLocalSurfaces` reads until `start` hands
+    /// in the app's, so a test can tell the presence which panes show a
+    /// tmux client without starting the poll, which would ask the
+    /// machine's tmux.
+    init(
+        bindingsByPaneID: [UUID: TmuxBinding] = [:],
+        topology: TmuxTopology = TmuxTopology(),
+        surfaces: @escaping () -> [TmuxSurfaceSnapshot] = { [] }
+    ) {
         self.bindingsByPaneID = bindingsByPaneID
         self.topology = topology
+        surfaceProvider = surfaces
     }
 
     deinit { timer?.invalidate() }
@@ -206,6 +215,39 @@ final class TmuxPanePresence {
         return .unresolved
     }
 
+    /// Whether the tmux client in front of `paneID` is a client of the
+    /// server Limpid hosts its agents on (`PaneShellEnvironment
+    /// .defaultAgentSocketName`), as the last probe matched it to the
+    /// pane's tty. Not before the probe has matched it: a client not yet
+    /// known is no more Limpid's than the person's.
+    func isAgentHost(inPane paneID: UUID) -> Bool {
+        client(inPane: paneID).map { Self.isAgentHost($0, agentSocketPath: Self.agentSocketPath()) } ?? false
+    }
+
+    /// The session of the tmux client in front of `paneID`, with its
+    /// server's socket, as the last probe matched it to the pane's tty;
+    /// `nil` while no client is in front, or none is matched yet.
+    func client(inPane paneID: UUID) -> TmuxBinding? {
+        guard paneIDs.contains(paneID) else { return nil }
+        return bindingsByPaneID[paneID]
+    }
+
+    /// Where the shims' `-L` puts Limpid's agent server: in tmux's
+    /// default directory, under the socket name the panes are given.
+    nonisolated static func agentSocketPath(
+        serverDirectory: URL = TmuxClientProbe.defaultServerDirectory(),
+        socketName: String = PaneShellEnvironment.defaultAgentSocketName()
+    ) -> String {
+        serverDirectory.appendingPathComponent(socketName).path
+    }
+
+    /// Whether `binding` is a session of the server at `agentSocketPath`,
+    /// compared as the probe compares sockets (`TmuxSocketPath`), so
+    /// `/tmp` and `/private/tmp` name the same one.
+    nonisolated static func isAgentHost(_ binding: TmuxBinding, agentSocketPath: String) -> Bool {
+        TmuxClientProbe.normalizeSocketPath(binding.socketPath) == TmuxClientProbe.normalizeSocketPath(agentSocketPath)
+    }
+
     func paneIDs(socketPath: String, sessionID: String) -> Set<UUID> {
         Self.paneIDs(in: bindingsByPaneID, socketPath: socketPath, sessionID: sessionID, aliases: topology.socketAliases)
     }
@@ -219,10 +261,9 @@ final class TmuxPanePresence {
         })
     }
 
+    /// The kernel's accounting name, which is all a tmux client needs: its
+    /// name, `tmux`, is far below the 16 bytes the kernel keeps.
     nonisolated static func processName(of pid: pid_t) -> String? {
-        var buffer = [CChar](repeating: 0, count: 256)
-        let written = proc_name(pid, &buffer, UInt32(buffer.count))
-        guard written > 0 else { return nil }
-        return String(bytes: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, encoding: .utf8)
+        ProcessNames.accountingName(of: pid)
     }
 }

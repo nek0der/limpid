@@ -16,10 +16,10 @@ struct TerminalPane: View {
                 // landed at 5,000), an extra "Custom" row mirrors
                 // the current value so the Picker isn't shown blank.
                 Picker("Scrollback", selection: $store.settings.terminal.scrollbackLines) {
-                    Text("1,000 lines").tag(1000)
-                    Text("10,000 lines").tag(10000)
-                    Text("100,000 lines").tag(100_000)
-                    Text("1,000,000 lines").tag(1_000_000)
+                    SettingsDefaultMark.title(Text("1,000 lines"), value: 1000, of: \.terminal.scrollbackLines).tag(1000)
+                    SettingsDefaultMark.title(Text("10,000 lines"), value: 10000, of: \.terminal.scrollbackLines).tag(10000)
+                    SettingsDefaultMark.title(Text("100,000 lines"), value: 100_000, of: \.terminal.scrollbackLines).tag(100_000)
+                    SettingsDefaultMark.title(Text("1,000,000 lines"), value: 1_000_000, of: \.terminal.scrollbackLines).tag(1_000_000)
                     let current = store.settings.terminal.scrollbackLines
                     if ![1000, 10000, 100_000, 1_000_000].contains(current) {
                         Text("\(current, format: .number) lines (custom)").tag(current)
@@ -29,26 +29,34 @@ struct TerminalPane: View {
             } header: {
                 Text("History")
             } footer: {
-                Text("Applies to new terminals only.")
+                SettingsFootnote("Applies to new terminals only.")
             }
 
             Section {
-                Picker("Alert Style", selection: $store.settings.terminal.bellAction) {
-                    Text("None").tag(BellAction.none)
-                    Text("Visual").tag(BellAction.visual)
-                    Text("Audio").tag(BellAction.audio)
-                    Text("Visual + Audio").tag(BellAction.both)
-                }
+                // Two parts that each turn on or off, so two checkboxes
+                // rather than four combinations to read through (`BellAction`).
+                let bell = store.settings.terminal.bellAction
+                Toggle("Flash the screen", isOn: Binding(
+                    get: { bell.flashes },
+                    set: { store.settings.terminal.bellAction = BellAction(flashes: $0, sounds: bell.sounds) }
+                ))
+                .toggleStyle(.checkbox)
                 .settingsSearchTarget(SettingsSearchCatalog.bell.id)
+                Toggle("Play a sound", isOn: Binding(
+                    get: { bell.sounds },
+                    set: { store.settings.terminal.bellAction = BellAction(flashes: bell.flashes, sounds: $0) }
+                ))
+                .toggleStyle(.checkbox)
             } header: {
                 Text("Bell")
             }
 
             Section {
                 Picker("Style", selection: $store.settings.terminal.cursorStyle) {
-                    Text("Block").tag(CursorStyle.block)
-                    Text("I-Beam").tag(CursorStyle.bar)
-                    Text("Underline").tag(CursorStyle.underline)
+                    SettingsDefaultMark.title(Text("Block"), value: CursorStyle.block, of: \.terminal.cursorStyle).tag(CursorStyle.block)
+                    SettingsDefaultMark.title(Text("I-Beam"), value: CursorStyle.bar, of: \.terminal.cursorStyle).tag(CursorStyle.bar)
+                    SettingsDefaultMark.title(Text("Underline"), value: CursorStyle.underline, of: \.terminal.cursorStyle)
+                        .tag(CursorStyle.underline)
                 }
                 .settingsSearchTarget(SettingsSearchCatalog.cursorStyle.id)
                 SettingsToggle("Blink", isOn: Binding(

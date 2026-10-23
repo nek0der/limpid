@@ -1,6 +1,6 @@
 // LimpidUpdateDriver.swift
 // Limpid — full `SPUUserDriver` implementation that drives the
-// toolbar shippingbox + popover state machine. Mirrors the hybrid
+// main window's update control + popover state machine. Mirrors the hybrid
 // pattern Ghostty uses: every event updates our `UpdateStateModel`
 // for the inline UI, AND optionally forwards to a wrapped
 // `SPUStandardUserDriver` so users never miss an update found while
@@ -8,7 +8,7 @@
 //
 // Sparkle's lifecycle invokes ~20 protocol methods in a fixed order
 // (permission → check → found → release-notes → download → extract
-// → ready → install → installed). Each delegate reply / acknowledgement
+// → ready → install → installed). Each delegate reply / acknowledgment
 // / cancellation closure MUST be called exactly once — forgetting one
 // stalls Sparkle's internal state machine for the rest of the session,
 // calling it twice asserts. We protect both directions with `OneShot`
@@ -35,29 +35,29 @@ final class LimpidUpdateDriver: NSObject, SPUUserDriver {
     }
 
     /// True when at least one main Limpid window is visible — i.e.
-    /// somewhere `ToolbarUpdateButton` can actually render. The Settings
-    /// window is also titled & visible but doesn't host the terminal column toolbar,
-    /// so it's filtered out via the `isLimpidMainWindow` marker the
-    /// main `ContentView` sets on its host `NSWindow` (the SwiftUI
-    /// `Window(id:)` scene id does NOT propagate to
-    /// `NSWindow.identifier`, so identifier-based filtering doesn't
-    /// work).
+    /// somewhere an update control can actually render: the left rail's
+    /// icon. The Settings window is also titled and visible but has no
+    /// such control, so it's filtered out via the `isLimpidMainWindow`
+    /// marker the main window's root (`limpidMainWindowEnvironment`) sets
+    /// on its host `NSWindow`.
     private var hasInlineTarget: Bool {
         NSApp.windows.contains { window in
             // Both the main window and the Settings window host an
-            // inline `UpdatePopover` (GeneralPane mirrors the toolbar
-            // popover so the user who initiated the check from
+            // inline `UpdatePopover` (GeneralPane mirrors the main
+            // window's popover so the user who initiated the check from
             // Settings sees the result in place). Treating Settings as
             // a valid inline target stops the driver from layering
             // Sparkle's standard modal on top of the Settings popover
             // when the main window is hidden.
-            window.isVisible && (window.isLimpidMainWindow || window.isLimpidSettingsWindow)
+            // A main window whose rails are hidden shows no update control.
+            window.isVisible
+                && ((window.isLimpidMainWindow && !window.hidesUpdateControl) || window.isLimpidSettingsWindow)
         }
     }
 
     /// Pre-flight any pending OneShot embedded in the current state so
     /// it doesn't get dropped on the floor when we overwrite. Sparkle
-    /// treats unfired acknowledgements as a stall; this ensures every
+    /// treats unfired acknowledgments as a stall; this ensures every
     /// state transition consumes its predecessor's contract.
     private func consumePendingCallback() {
         switch stateModel.state {
@@ -123,8 +123,8 @@ final class LimpidUpdateDriver: NSObject, SPUUserDriver {
         let ackOnce = OneShot(acknowledgement)
         if hasInlineTarget {
             stateModel.state = .notFound(acknowledgement: ackOnce)
-            // Auto-dismiss after a moment so the toolbar doesn't keep
-            // a "no update" badge around forever. The OneShot ensures
+            // Auto-dismiss after a moment so the update control doesn't
+            // keep a "no update" badge around forever. The OneShot ensures
             // the auto-dismiss and a manual OK click never both fire
             // ack, and that ack ALWAYS fires before we leave the
             // state — Sparkle stalls otherwise.
@@ -173,7 +173,7 @@ final class LimpidUpdateDriver: NSObject, SPUUserDriver {
             // to the standard alert — otherwise a window that opens
             // mid-flow could let the user click Install in our popover
             // and in Sparkle's alert, racing the OneShot. With state
-            // unset, the toolbar stays empty and only the standard
+            // unset, no update control shows and only the standard
             // alert can answer.
             standard.showUpdateFound(
                 with: appcastItem,

@@ -53,6 +53,19 @@ impl HookContext {
             pane_id: Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0020),
             tmux: None,
             pid: Some(4242),
+            invocation_id: Some(Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0030)),
+            provider_home: None,
+        }
+    }
+
+    /// The fixture context for one provider: `fixture()` with the home the
+    /// scrubbed payloads name, `/Users/example/.<provider id>`, which is the
+    /// provider's default directory under the scrubbed home.
+    #[must_use]
+    pub fn fixture_for(descriptor: &crate::ProviderDescriptor) -> Self {
+        Self {
+            provider_home: Some(PathBuf::from(format!("/Users/example/.{}", descriptor.id))),
+            ..Self::fixture()
         }
     }
 }
@@ -85,7 +98,7 @@ pub fn run_normalize(
         for (index, payload) in payloads.iter().enumerate() {
             let bytes = fs::read(payload).expect("payload is readable");
             let transcript = transcript_for(payload);
-            let context = HookContext::fixture();
+            let context = HookContext::fixture_for(adapter.descriptor());
             let actual = adapter.normalize(
                 RawHookInput {
                     bytes: &bytes,
@@ -181,7 +194,7 @@ pub fn run_negative(
         oversized,
     ));
 
-    let context = HookContext::fixture();
+    let context = HookContext::fixture_for(adapter.descriptor());
     let mut failures = Vec::new();
     for (path, bytes) in inputs {
         let actual = adapter.normalize(
@@ -269,10 +282,9 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> T {
 mod tests {
     use super::*;
     use crate::{
-        ApprovalDecision, Capability, InstallRecipe, ProviderDescriptor, ProviderId,
-        ProviderOutput, parse_object,
+        ApprovalDecision, Capability, InstallRecipe, ProviderDescriptor, ProviderOutput,
+        parse_object,
     };
-    use std::collections::BTreeSet;
 
     /// Turns every object into one `Extension` named after its event, and
     /// treats a `PermissionRequest` as an approval for `tool_name`.
@@ -282,19 +294,8 @@ mod tests {
 
     impl PassThrough {
         fn new() -> Self {
-            let id = ProviderId::new("fake").expect("valid");
             Self {
-                descriptor: ProviderDescriptor {
-                    state_directory: ProviderDescriptor::default_state_directory(&id),
-                    session_directory: ProviderDescriptor::default_session_directory(&id),
-                    cwd_events_directory: None,
-                    id,
-                    display_name: "Fake".into(),
-                    capabilities: BTreeSet::from([Capability::ApprovalHook]),
-                    pid_sweep_interval_ms: 1000,
-                    process_names: vec!["fake".into()],
-                    session_end_drop_reasons: Vec::new(),
-                },
+                descriptor: ProviderDescriptor::fixture("fake", [Capability::ApprovalHook]),
             }
         }
     }

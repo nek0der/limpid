@@ -11,6 +11,9 @@ extension ReviewDiffTable.Coordinator {
     // MARK: - Keyboard
 
     func handle(_ key: ReviewTableKey) -> Bool {
+        // A key the reader presses in the diff is their move: the place the
+        // review tab came back with is not put back after it.
+        readerMoved()
         if let handled = handlePresentationGate(key) {
             return handled
         }
@@ -34,8 +37,6 @@ extension ReviewDiffTable.Coordinator {
             } else {
                 parent.onInsert()
             }
-        case .toggleTerminal:
-            parent.onToggleTerminal()
         case .comment:
             parent.selection.takeTextAsLines(rows: parent.rows, diffLines: parent.diffLines)
             guard !parent.selection.lines.isEmpty else { return true }
@@ -97,7 +98,7 @@ extension ReviewDiffTable.Coordinator {
             moveToFile(forward: true)
         case .previousFile:
             moveToFile(forward: false)
-        case .close, .comment, .markViewed, .insert, .toggleTerminal, .openInEditor:
+        case .close, .comment, .markViewed, .insert, .openInEditor:
             break
         }
     }
@@ -111,7 +112,7 @@ extension ReviewDiffTable.Coordinator {
 
     func openInEditor(clickedRow: Int?) {
         guard let row = openTarget(clickedRow: clickedRow), let line = editorLine(forRow: row) else { return }
-        parent.onOpenLine(line)
+        parent.onOpenLine(line, closedFileID(forRow: row))
     }
 
     /// The row the open action goes to, which is always one the reader can
@@ -150,7 +151,7 @@ extension ReviewDiffTable.Coordinator {
                 line.kind == .added || line.kind == .removed
             case let .splitCode(pair):
                 pair.old?.kind == .removed || pair.new?.kind == .added
-            case .notice, .hunk, .comment, .composer, .expander:
+            case .notice, .hunk, .comment, .composer, .expander, .file:
                 false
             }
         }
@@ -163,7 +164,7 @@ extension ReviewDiffTable.Coordinator {
         switch parent.rows[row].kind {
         case .code, .splitCode, .composer:
             return ReviewEditorLine.line(at: row, in: parent.rows.map(\.editorLineSlot))
-        case .hunk, .notice, .comment, .expander:
+        case .hunk, .notice, .comment, .expander, .file:
             return nil
         }
     }
@@ -199,8 +200,8 @@ extension ReviewDiffTable.Coordinator {
     private func moveLine(forward: Bool, extend: Bool) {
         let side = cursorSide
         let next = forward
-            ? (((currentIndex.map { $0 + 1 }) ?? 0)..<parent.rows.count).first(where: isCommentableCode)
-            : (0..<(currentIndex ?? parent.rows.count)).reversed().first(where: isCommentableCode)
+            ? (((currentIndex.map { $0 + 1 }) ?? stackStartRow(forward: true) ?? 0)..<parent.rows.count).first(where: isCommentableCode)
+            : (0..<(currentIndex ?? stackStartRow(forward: false) ?? parent.rows.count)).reversed().first(where: isCommentableCode)
         guard let next,
               let lineID = parent.rows[next].commentableLineID(on: side) else { return }
         guard extend else {
@@ -238,13 +239,14 @@ extension ReviewDiffTable.Coordinator {
         return starts
     }
 
-    /// Moving backward used to search for the previous `@@` row and then
-    /// forward again for a line, which found the current block's own start
-    /// and went nowhere. Stepping through the starts themselves is what
-    /// makes `[` leave the block it is in.
+    /// Steps through the blocks' starts themselves. Searching back for the
+    /// previous `@@` row and then forward for a line would find the current
+    /// block's own start and go nowhere; this is what makes `[` leave the
+    /// block it is in.
     private func moveToHunk(forward: Bool) {
         let starts = hunkStarts
-        let current = currentIndex
+        // With no cursor, from the open file rather than the range's start.
+        let current = currentIndex ?? stackStartRow(forward: forward).map { forward ? $0 - 1 : $0 }
         let target = forward
             ? starts.first { current == nil || $0 > (current ?? 0) }
             : starts.last { current == nil || $0 < (current ?? 0) }

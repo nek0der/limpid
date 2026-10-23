@@ -65,33 +65,26 @@ struct AppLocaleTests {
         #expect(locale == base)
     }
 
-    @Test func system_followsTheOSLanguageList() {
+    /// The first language of the OS list that we ship, matched past its
+    /// script subtag, in the user's own region.
+    @Test(arguments: [
+        (["ja-JP", "en-JP"], ["Base", "en", "ja"], "en_JP", "JP"),
+        (["ja-Jpan-JP"], ["en", "ja"], "en_US", "US"),
+        (["zh-Hans-CN", "fr-FR", "ja-JP"], ["en", "ja"], "zh_CN", "CN")
+    ])
+    func system_followsTheOSLanguageList_toALanguageWeShip(
+        preferred: [String],
+        available: [String],
+        base: String,
+        region: String
+    ) {
         let locale = AppLanguage.system.resolvedLocale(
-            preferredLanguages: ["ja-JP", "en-JP"],
-            availableLocalizations: ["Base", "en", "ja"],
-            base: Locale(identifier: "en_JP")
+            preferredLanguages: preferred,
+            availableLocalizations: available,
+            base: Locale(identifier: base)
         )
         #expect(locale.language.languageCode == .japanese)
-        #expect(locale.region == Locale.Region("JP"))
-    }
-
-    @Test func system_matchesScriptSubtags() {
-        let locale = AppLanguage.system.resolvedLocale(
-            preferredLanguages: ["ja-Jpan-JP"],
-            availableLocalizations: shipped,
-            base: Locale(identifier: "en_US")
-        )
-        #expect(locale.language.languageCode == .japanese)
-    }
-
-    @Test func system_skipsLanguagesWeDoNotShip() {
-        let locale = AppLanguage.system.resolvedLocale(
-            preferredLanguages: ["zh-Hans-CN", "fr-FR", "ja-JP"],
-            availableLocalizations: shipped,
-            base: Locale(identifier: "zh_CN")
-        )
-        #expect(locale.language.languageCode == .japanese)
-        #expect(locale.region == Locale.Region("CN"))
+        #expect(locale.region == Locale.Region(region))
     }
 
     @Test(arguments: [

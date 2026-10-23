@@ -111,7 +111,7 @@ mod tests {
     }
 
     #[test]
-    fn output_bytes_match_the_swift_adapter() {
+    fn decisions_render_the_hook_output_the_agent_reads() {
         let allow = approval_output(&ApprovalDecision::AllowOnce, &Value::Null)
             .stdout
             .expect("bytes");
@@ -125,6 +125,18 @@ mod tests {
         assert_eq!(
             String::from_utf8(deny).expect("utf8"),
             r#"{"hookSpecificOutput":{"decision":{"behavior":"deny"},"hookEventName":"PermissionRequest"}}"#
+        );
+        let told = approval_output(
+            &ApprovalDecision::Deny {
+                message: Some("Blocked".into()),
+            },
+            &Value::Null,
+        )
+        .stdout
+        .expect("bytes");
+        assert_eq!(
+            String::from_utf8(told).expect("utf8"),
+            r#"{"hookSpecificOutput":{"decision":{"behavior":"deny","message":"Blocked"},"hookEventName":"PermissionRequest"}}"#
         );
         assert_eq!(
             approval_output(&ApprovalDecision::Delegate, &Value::Null).stdout,

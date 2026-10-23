@@ -1,0 +1,36 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "source": "startup",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for ask-user-question-declined>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "どの色が好みですか？",
+      "type": "waiting_for_input"
+    }
+  ],
+  [
+    {
+      "detail": "Claude needs your permission",
+      "type": "approval_requested"
+    }
+  ],
+  [
+    {
+      "awaited_call_ended": true,
+      "type": "awaiting_prompt"
+    }
+  ]
+]

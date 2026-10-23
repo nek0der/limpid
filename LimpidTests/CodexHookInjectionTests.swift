@@ -43,6 +43,8 @@ struct CodexHookInjectionTests {
             )
         }
         #expect(args.contains("tui.terminal_title=[]"))
+        // Codex's own notifications would double Limpid's.
+        #expect(args.contains("tui.notifications=false"))
         // Every value is preceded by its own `-c`.
         #expect(args.count(where: { $0 == "-c" }) == args.count / 2)
     }

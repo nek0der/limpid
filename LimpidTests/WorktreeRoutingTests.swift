@@ -67,6 +67,35 @@ struct WorktreeRoutingTests {
         #expect(steps[1]["cwd"] as? String == "sub")
     }
 
+    @Test("the checks and worktrees the hook reads are optional items")
+    func checks_areWrittenOnlyWhenTheProjectSetsThem() throws {
+        let root = URL(fileURLWithPath: "/tmp/repo")
+        var mine = project(root: root)
+        mine.worktrees = [Worktree(
+            id: UUID(),
+            label: "feat",
+            workingDirectory: URL(fileURLWithPath: "/tmp/repo-feat"),
+            gitRef: nil,
+            origin: .userPinned
+        )]
+        mine.checkCommands = ["just check"]
+        let defaults = project(root: URL(fileURLWithPath: "/tmp/other"))
+
+        let projects = try #require(
+            try object(WorktreeRouting(projects: [mine, defaults]))["projects"] as? [[String: Any]]
+        )
+
+        #expect(json(projects[0], "checks") == ["just check"])
+        #expect(json(projects[0], "worktrees") == ["/tmp/repo-feat"])
+        // The defaults are the hook's own, so nothing is written for them,
+        // and the file stays version 1 for a hook that predates checks.
+        #expect(projects[1]["checks"] == nil)
+    }
+
+    private func json(_ entry: [String: Any], _ key: String) -> [String]? {
+        entry[key] as? [String]
+    }
+
     @Test("a custom placement names the directory worktrees go in")
     func customPlacement_carriesItsParent() throws {
         let routing = WorktreeRouting(projects: [
@@ -87,11 +116,8 @@ struct WorktreeRoutingTests {
         try withTempDir { root in
             let store = SessionStore(directory: root)
             store.saveSynchronously(SessionSnapshot(
-                groups: [],
                 projects: [project(root: root.appendingPathComponent("repo"))],
-                tabs: [],
-                activeTabID: nil,
-                sidebarWidth: 240
+                tabs: []
             ))
             let url = root.appendingPathComponent(WorktreeRouting.fileName)
             try FileManager.default.removeItem(at: url)
@@ -110,11 +136,8 @@ struct WorktreeRoutingTests {
             // of the projects cannot lag behind it.
             let store = SessionStore(directory: root)
             store.saveSynchronously(SessionSnapshot(
-                groups: [],
                 projects: [project(root: root.appendingPathComponent("repo"))],
-                tabs: [],
-                activeTabID: nil,
-                sidebarWidth: 240
+                tabs: []
             ))
 
             let url = root.appendingPathComponent(WorktreeRouting.fileName)
@@ -123,6 +146,28 @@ struct WorktreeRoutingTests {
             #expect(decoded.schemaVersion == WorktreeRouting.currentVersion)
             #expect(decoded.projects.count == 1)
             #expect(decoded.projects[0].root.hasSuffix("/repo"))
+        }
+    }
+
+    /// Every session save writes the routing beside it, and most saves (a
+    /// tab moved, a pane split) leave the projects as they were: the same
+    /// routing is not written again.
+    @Test func theSameRouting_isNotWrittenAgain() throws {
+        try withTempDir { root in
+            let session = root.appendingPathComponent("state.json")
+            let projects = [project(root: root.appendingPathComponent("repo"))]
+            let url = root.appendingPathComponent(WorktreeRouting.fileName)
+            WorktreeRouting.write(projects: projects, beside: session)
+            let first = try FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? Int
+
+            WorktreeRouting.write(projects: projects, beside: session)
+            let second = try FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? Int
+            #expect(first != nil)
+            #expect(first == second, "a write replaces the file, so the same file means no write")
+
+            WorktreeRouting.write(projects: [project(root: root.appendingPathComponent("other"))], beside: session)
+            let third = try FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? Int
+            #expect(third != second, "a changed routing is written")
         }
     }
 }

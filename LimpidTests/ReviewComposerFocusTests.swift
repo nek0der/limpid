@@ -1,5 +1,5 @@
 // ReviewComposerFocusTests.swift
-// Limpid — focus and IME state after AppKit creates a delayed composer row.
+// Limpid — the comment composer: whether it holds text, and its focus and IME state after AppKit creates its row.
 
 import AppKit
 import SwiftUI
@@ -21,7 +21,8 @@ struct ReviewComposerFocusTests {
         window.contentView = table
         table.reloadData()
         window.makeFirstResponder(table)
-        let candidate = coordinator.tableView(table, viewFor: column, row: 1) as? ReviewComposerRowView
+        // Under the file's header and its line.
+        let candidate = coordinator.tableView(table, viewFor: column, row: 2) as? ReviewComposerRowView
         let composer = try #require(candidate)
         #expect(!composer.focusText())
         table.addSubview(composer)
@@ -33,7 +34,7 @@ struct ReviewComposerFocusTests {
         coordinator.prepareComposerForReload(in: table)
         composer.removeFromSuperview()
         window.makeFirstResponder(table)
-        _ = coordinator.tableView(table, viewFor: column, row: 1)
+        _ = coordinator.tableView(table, viewFor: column, row: 2)
         table.addSubview(composer)
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async { continuation.resume() }
@@ -109,7 +110,8 @@ struct ReviewComposerFocusTests {
         let dataSource = FixedReviewTableDataSource(rowCount: parent.rows.count)
         table.dataSource = dataSource
         table.reloadData()
-        let anchor = ReviewTextPosition(rowIndex: 0, lineID: 0, side: nil, utf16Offset: 0)
+        // Row 1: the line, under its file's header.
+        let anchor = ReviewTextPosition(rowIndex: 1, lineID: 0, side: nil, utf16Offset: 0)
 
         let result = coordinator.textPosition(
             at: NSPoint(x: 200, y: 10000),
@@ -117,12 +119,8 @@ struct ReviewComposerFocusTests {
             in: table
         )
 
-        #expect(result?.rowIndex == 0)
+        #expect(result?.rowIndex == 1)
         #expect(result?.lineID == 0)
-    }
-
-    private func descendants(of view: NSView) -> [NSView] {
-        view.subviews.flatMap { [$0] + descendants(of: $0) }
     }
 
     private func makeTable(
@@ -136,23 +134,32 @@ struct ReviewComposerFocusTests {
         let line = ReviewLine(id: 0, kind: .added, text: "new", oldLine: nil, newLine: 1)
         var selection = ReviewDiffSelection()
         selection.updateLines { $0.select(line.id) }
-        return ReviewDiffTable(
+        return ReviewTableFixture.table(
+            file,
             rows: [ReviewRow(id: 0, kind: .code(line)), ReviewRow(id: 1, kind: .composer(line))],
-            diffLines: [line], intralineHighlights: ReviewIntralineHighlights(),
-            contentKey: "focus", widthKey: "focus", layout: .unified,
-            files: [file], lineCommentCounts: [:], numberWidth: 26, expandedFileID: file.id, contentIdentity: file.id,
-            isInteractionEnabled: isInteractionEnabled,
+            lines: [line],
+            key: "focus",
             selection: .constant(selection),
-            composerLineID: line.id, composerStartLine: nil,
-            composerIsEditing: false, composerText: .constant("focus-keep"),
-            onSelectFile: { _ in }, onCompose: onCompose, onCancelCompose: {}, onCommit: {}, onInsert: {}, onToggleTerminal: {},
-            search: ReviewSearch(), onCloseSearch: {}, searchTargetLineID: nil, language: nil,
-            onToggleViewed: {}, fileApplication: .macOSDefault, onOpenLine: { _ in }, onExpand: { _, _ in }, onResolve: { _ in },
-            onEdit: { _ in },
-            onDelete: { _ in },
-            isOverlayPresented: isOverlayPresented, onCloseOverlay: onCloseOverlay, onClose: onClose,
-            locale: Locale(identifier: "en")
+            composer: .init(lineID: line.id, text: .constant("focus-keep")),
+            locale: Locale(identifier: "en"),
+            isInteractionEnabled: isInteractionEnabled,
+            isOverlayPresented: isOverlayPresented,
+            onCompose: onCompose,
+            onCloseOverlay: onCloseOverlay,
+            onClose: onClose
         )
+    }
+
+    @Test func composerDistinguishesAuthoredTextFromAnEmptyDraft() {
+        var composer = ReviewComposerState()
+        composer.compose(start: 1, end: 1, side: .new)
+        #expect(!composer.hasUnsavedText)
+
+        composer.text = "  Keep this feedback.  "
+        #expect(composer.hasUnsavedText)
+
+        composer.text = " \n\t "
+        #expect(!composer.hasUnsavedText)
     }
 }
 

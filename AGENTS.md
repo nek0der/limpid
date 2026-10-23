@@ -4,10 +4,13 @@
 
 Limpid is a macOS 26 terminal app written primarily in Swift 6 + SwiftUI. It
 embeds `libghostty` through its C ABI and links OS-independent Rust code through
-a separate versioned C ABI. It ships a native macOS three-pane sidebar
-(container slab + flush tab / terminal columns), Tabs / Groups / Projects with git-worktree CRUD,
-Sparkle auto-update, JSON session restoration, and en/ja localization. It is
-an individual open-source project; expect a single-active-developer cadence.
+a separate versioned C ABI. At its center is a supervision window for coding
+agents. Each window shows one project at a time: a sidebar of every
+project's worktrees, the session's pane strip and terminal with a decision bar under each agent pane,
+and a Changes panel of the agent's turns. Limpid also ships tabs, projects
+with Git worktree management, Sparkle auto-update, JSON session restoration,
+and en/ja localization. It is an individual open-source project, so expect
+the cadence of a single active developer.
 
 ## Table of contents
 
@@ -21,21 +24,23 @@ an individual open-source project; expect a single-active-developer cadence.
 
 ## 1. Build / Test / Run
 
-The Makefile is the canonical entry point — `make help` lists every target.
+The Makefile is the canonical entry point — `make help` lists the common targets.
 
 ```bash
-make dev         # Debug build + launch
-make build       # Debug build only
-make run         # Launch the most recently built app
-make test        # Rust, XCTest, and Swift Testing suites
-make rust-test   # Rust workspace tests only
-make review-core # the terminal-probe scenario that runs outside the test target
-make release-check # unsigned Release archive, checked for what `exportArchive` needs
-make dmg         # Release DMG artifact
-make screenshot  # Regenerate .github/assets/hero.png (builds Release first)
-make xcodegen    # Regenerate Limpid.xcodeproj from project.yml
-make ghostty     # Build vendored libghostty
-make clean       # Remove DerivedData for this project
+make dev           # Debug build + launch
+make build         # Debug build only
+make run           # Launch the most recently built app
+make test          # Rust and Swift Testing suites
+make test-measure  # Timing suite that `make test` leaves out (prints, checks nothing)
+make rust-test     # Rust workspace tests only
+make review-core   # Terminal-probe review scenario that runs outside the test target
+make lint          # Rust and Swift lint plus the repo checks (mirrors CI)
+make release-check # Unsigned Release archive, checked for what `exportArchive` needs
+make dmg           # Release DMG artifact
+make screenshot    # Regenerate .github/assets/hero.png (builds Release first)
+make xcodegen      # Regenerate Limpid.xcodeproj from project.yml
+make ghostty       # Build vendored libghostty
+make clean         # Remove DerivedData for this project
 ```
 
 Each target is a thin wrapper around the underlying tool (`xcodebuild`,
@@ -48,7 +53,7 @@ Agent-side tips:
   available. It returns structured diff logs and reuses Xcode's index cache, so
   iteration is dramatically faster than `make build` shelling out to
   `xcodebuild`.
-- Debug builds are ad-hoc signed by default, so the approval service never
+- Debug builds are ad-hoc signed by default. The approval service then never
   becomes ready, and Claude and Codex use their own permission prompts. To
   exercise native approvals, set `LIMPID_DEVELOPMENT_TEAM`; `CONTRIBUTING.md`
   has the details.
@@ -61,15 +66,17 @@ Agent-side tips:
 
 ```
 Limpid/
-  App/         entry point, scenes, commands
-  Core/        models, settings, notifications, git, persistence, clipboard
+  App/         entry point, AppState, window controllers and syncs, commands
+  Core/        models, settings, notifications, git, persistence, clipboard, agents
+               (`Domain/`: plain values and pure rules)
+  Presentation/ display stores: window registry, attention list, view models
   FFI/         libghostty C ABI wrapper (`GhosttyFFI`)
-  UI/          SwiftUI views (sidebar, tab column, terminal column, toolbar, design system, clipboard sheet, review surface)
+  UI/          SwiftUI views (`Supervision/` window, panes, review, settings, design system, clipboard sheet)
   Resources/   Info.plist, Localizable.xcstrings, assets
-LimpidTests/   Swift Testing (new) + XCTest (legacy, being migrated)
+AgentIntegrationService/  launchd-managed XPC service for native approvals
+LimpidTests/   Swift Testing suites (no XCTest)
 rust/          OS-independent Rust crates; `limpid-rust-bridge` owns the C ABI
-vendor/ghostty/  submodule of our fork github.com/nek0der/ghostty (branch `limpid`),
-                 currently pinned to `23c1ffad0 "Add scrollback save/restore C API"`.
+vendor/ghostty/  submodule of our fork github.com/nek0der/ghostty (branch `limpid`).
                  Upstream ghostty-org is tracked via the `upstream` remote for rebases.
                  Run `git -C vendor/ghostty describe` for the current pin.
 scripts/       Rust/Ghostty build bridges, packaging, and validation scripts
@@ -82,7 +89,7 @@ project.yml    xcodegen source of truth for the .xcodeproj
 Most of the style is enforced by `make lint` (`cargo fmt`, Clippy,
 `swiftformat --lint`, and `swiftlint --strict`). The rules a linter can't check:
 
-- **English only** for source, comments, commits, PR titles / bodies.
+- **English only** for source, comments, commits, and PR titles and bodies.
   No emoji anywhere. US spelling (`color`, `normalize`, `gray`); some
   older files still use British forms, so match the rule rather than
   the file you are editing.
@@ -95,11 +102,11 @@ Most of the style is enforced by `make lint` (`cargo fmt`, Clippy,
   that takes a value-typed snapshot and routes through
   `SecureFileWrite.writeAtomic` (see `SessionStore`,
   `NotificationHistoryStore`, `FrecencyStore`, `SettingsStore`,
-  `PaneStore`). Use `actor` only when MainActor serialises too much.
+  `TurnReadStore`). Use `actor` only when `MainActor` serializes too much.
 - **FFI requires explicit `Sendable` proof.** The canonical wrapper is
   `GhosttyFFI.swift`. `nonisolated(unsafe)` is reserved for `deinit`
-  cleanup of resources captured during a known-safe lifetime —
-  document the safety argument in the property doc comment.
+  cleanup of resources captured during a known-safe lifetime.
+  Document the safety argument in the property's doc comment.
 - **Comments answer why**, not what. Full sentences, first-person
   plural (`we` / `our`), no `I`. Every Swift file starts with a
   banner: `// FileName.swift` / `// Limpid — one-line description`.
@@ -118,8 +125,8 @@ Most of the style is enforced by `make lint` (`cargo fmt`, Clippy,
 - **Accessibility:** every interactive element has an
   `.accessibilityLabel`. Read `@Environment(\.accessibilityReduceMotion)`
   and gate decorative transitions on it. Liquid Glass appearance
-  shouldn't be the only thing carrying meaning.
-- **New tests use Swift Testing** (`@Test`, `#expect`). Reuse fixtures
+  must not be the only thing that carries meaning.
+- **Tests use Swift Testing** (`@Test`, `#expect`). Reuse fixtures
   from `LimpidTests/Support/`. Never write to `~/Library/...` from a
   test — inject the directory.
 
@@ -131,15 +138,22 @@ Short index of load-bearing files. Skim these before touching their domain.
   and the forced-override keys handed to `libghostty`.
 - `Limpid/Core/Rust/LimpidRustBridge.swift` — typed Swift entry point for the
   versioned Rust C ABI; `scripts/build-rust-bridge.sh` owns Xcode integration.
-- `Limpid/Core/Models/WindowSession.swift` — the session-state hub used by
-  tabs, groups, projects, and restore.
-- `Limpid/UI/Design/GlassSurfaces.swift` — entry point for the macOS 26
-  `.glassEffect` panel treatment.
-- `Limpid/UI/Design/VerticalSplitView.swift` — the container slab's list /
-  Waiting split, and why its position is persisted only from a divider
-  drag. Records `NSSplitView` behavior measured on macOS 26 that the SDK
-  headers describe differently.
-- `Limpid/Core/Review/ReviewStore.swift` — the review's state machine: what
+- `Limpid/Core/Models/WorkspaceSession.swift` — the session-state hub every
+  window shares: projects, worktrees, tabs, each window's selection, and
+  restore.
+- `Limpid/UI/Supervision/SupervisionWindowView.swift` — the supervision
+  window's root; `ARCHITECTURE.md` maps each part to its view and model.
+- `Limpid/Presentation/Window/WindowRegistry.swift` — the windows, which one
+  commands act on, and how a window switches projects in place.
+- `Limpid/Presentation/Attention/AttentionQueueStore.swift` — the app's one
+  attention list behind ⌘J, Needs Attention, and the decision bars.
+- `Limpid/Core/Agent/ApprovalPresentationStore.swift` — native approvals as
+  the app holds them: the requests, their ledger, and when a request goes to
+  the agent's own prompt. Each window's approval card is
+  `Limpid/Presentation/Approval/WindowApprovalCard.swift`.
+- `Limpid/Core/Persistence/TurnReadStore.swift` — which turns are read; with
+  `ViewedLineStore`, what decides an unread turn.
+- `Limpid/Core/Review/ReviewSession.swift` — the review's state machine: what
   each comment state means, why a comment is validated against Git rather than
   trusted, and which failures the banner is allowed to clear.
 - `Limpid/Core/Updates/SparkleUpdater.swift` — Sparkle auto-update wiring.
@@ -160,11 +174,12 @@ Short index of load-bearing files. Skim these before touching their domain.
   (`background-opacity=0`, `shell-integration-features=no-cursor`, …). They
   protect the UI compositor; removing one will silently break the rendering
   path. `clipboard-paste-protection = true` is in that block for a different
-  reason: review pastes repository content into whatever the pane is running,
-  and the confirmation an unbracketed multi-line paste goes through is what
-  keeps a shell from taking those lines as commands. It overrides a user's own
-  opt-out in `~/.config/ghostty/config` for every pane, which the Advanced pane
-  says out loud — there is no per-surface form of it in the C ABI.
+  reason. Review pastes repository content into whatever the pane is running.
+  An unbracketed multi-line paste then needs confirmation, and that
+  confirmation keeps a shell from running those lines as commands. The key
+  overrides a user's own opt-out in `~/.config/ghostty/config` for every pane,
+  because the C ABI has no per-surface form of it. Settings → Review tells the
+  user so.
 - `Localizable.xcstrings` — if you hand-edit the JSON, validate that Xcode can
   re-parse it. A malformed `xcstrings` file fails the build.
 
@@ -174,7 +189,7 @@ Short index of load-bearing files. Skim these before touching their domain.
   `chore/<short>`, `docs/<short>`.
 - Commit messages follow Conventional Commits: `feat(scope): summary`,
   `fix(scope): summary`, etc. Scopes are lowercase (kebab-case if
-  multi-word); re-use a scope that already appears in `git log` when
+  multi-word); reuse a scope that already appears in `git log` when
   one fits, and coin a new one only when nothing matches. Singular
   vs. plural follows what reads naturally for the area
   (`fix(tab)`, `chore(deps)`).
@@ -182,10 +197,12 @@ Short index of load-bearing files. Skim these before touching their domain.
   in commits.
 - PRs must follow `.github/pull_request_template.md`. Use
   `gh pr create --body-file` so the template is honored.
-- CI runs PR title check, CodeQL, release-please, and dependabot auto-merge.
-  See `.github/workflows/` for the exact matrix.
-- Contributor checklist lives in `CONTRIBUTING.md`; security disclosures in
-  `SECURITY.md`.
+- CI runs the build, test, lint, review-core, and release-archive jobs, the
+  guardrails (secrets, forbidden terms, notices), PR title check, CodeQL,
+  release-please, and dependabot auto-merge. See `.github/workflows/` for the
+  exact matrix.
+- The contributor checklist lives in `CONTRIBUTING.md`, and the security
+  disclosure policy in `SECURITY.md`.
 
 ## 7. Agent-specific tips
 
@@ -199,30 +216,40 @@ Short index of load-bearing files. Skim these before touching their domain.
   English-only entry is considered incomplete.
 - **Never edit `project.pbxproj` by hand**: add files via `project.yml`, then
   run `make xcodegen` to regenerate the project.
-- **Tests**: new test files use Swift Testing (`@Test`, `#expect`); only
-  extend an existing XCTest class when adding to a legacy suite (don't mix
-  the two in one file). Reuse fixtures from `LimpidTests/Support/`
+- **Tests**: every test file uses Swift Testing (`@Test`, `#expect`);
+  XCTest is not used. Reuse fixtures from `LimpidTests/Support/`
   (`RepoFixture`, `TempGitRepo`, `WithTempDir`, `FakeGit`,
-  `WindowSessionFixture`, `Tags`) instead of rolling your own. Name tests
-  as descriptive function names — no `test_` prefix since `@Test`
-  identifies them (e.g. `@Test func addOrActivateProject_existingPath_activatesContainer()`).
-  Stateful/UI suites need
-  `@MainActor`. Smoke tests that require a local repo gate on
+  `WorkspaceSessionFixture`, `TurnSummaryFixture`, `Tags`) instead of
+  rolling your own. Give tests descriptive function names with no `test_`
+  prefix, since `@Test` already marks them (e.g.
+  `@Test func addOrActivateProject_existingPath_activatesContainer()`).
+  Stateful and UI suites need `@MainActor`. Smoke tests that require a
+  local repo gate on
   `.disabled(if: !RepoFixture.hasLocalRepo)`. **Never** write to
   `~/Library/...` from a test — inject the directory via `init(directory:)`
   (see `NotificationHistoryStore`) or use `WithTempDir`. Real user data
-  has been corrupted this way before.
+  has been corrupted this way before. Under the test host,
+  `LimpidPaths.applicationSupportDirectory()` is a per-run folder in the
+  temporary directory, and `TestWriteGuard` refuses any change under the
+  real `~/Library` or `~/.codex` that goes through `SecureFileWrite`
+  (search the `dev.limpid` / `fs.guard` log for a fault after a run).
+  Change files in Limpid's data folder through `SecureFileWrite`, not
+  `FileManager`.
 - **When stuck**, search GitHub issues/PRs, OSS projects, and WWDC sessions
   before guessing. Web-first beats trial-and-error rebuilds.
 - **Demo mode**: set `LIMPID_DEMO=1` in the launching shell to swap the
-  on-disk session for `DemoFixture` (6 containers, 2 worktrees, an
-  editor split with staged output). Persistence is short-circuited
-  while the env var is set, so the user's real `state.json` is not
-  touched. Demo mode also skips the approval service, so a demo run does
-  not replace the running app's service, and agents use their native
-  prompts. The hero screenshot at `.github/assets/hero.png` is
-  regenerated by `make screenshot` (requires Screen Recording
-  permission on the calling terminal, one-time grant), which depends
-  on demo mode being reproducible — when you change `Tab` /
-  `SplitTree` / `SessionSnapshot` shapes, run `DemoFixtureTests`
-  first and update the fixture before shipping the model change.
+  on-disk session for `DemoFixture` (a made-up invoicing product: 3
+  projects, 16 worktree rows (one ready to clean up, five other worktrees,
+  one project folded) with staged agents, turns, Git facts, and pane
+  output, in one 1440×900 window with the Changes panel open).
+  Persistence is short-circuited while the variable is set, so the
+  user's real `state.json` is not touched. Demo mode also skips the
+  approval service, so a demo run does not replace the running app's
+  service and agents use their native prompts. It starts no updater
+  either. `make screenshot` regenerates the hero screenshot at
+  `.github/assets/hero.png`. It needs a one-time Screen Recording grant
+  for the calling terminal and a 2x display with room for the window,
+  and it depends on demo mode being reproducible. When you change the
+  shape of `Tab`, `SplitTree`, or `SessionSnapshot`, run
+  `DemoFixtureTests` first and update the fixture before shipping the
+  model change.

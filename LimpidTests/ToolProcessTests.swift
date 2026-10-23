@@ -39,15 +39,6 @@ struct ToolProcessTests {
         )
     }
 
-    @Test("finds an executable on a supplied PATH")
-    func searchPathVariable_findsExecutable() throws {
-        try withTempDir { directory in
-            try writeStub(named: "faketool", into: directory)
-            let found = ToolLocator.searchPathVariable(directory.path, for: "faketool")
-            #expect(found?.path == directory.appendingPathComponent("faketool").path)
-        }
-    }
-
     /// A tool that exists is reachable or not purely by which `PATH`
     /// it is looked up on — the same stub, found on one and missed on
     /// launchd's. That is the shape of the Finder-launch defect, and
@@ -58,7 +49,10 @@ struct ToolProcessTests {
     func searchPathVariable_launchdPathMissesUserInstalls() throws {
         try withTempDir { directory in
             try writeStub(named: "faketool", into: directory)
-            #expect(ToolLocator.searchPathVariable(directory.path, for: "faketool") != nil)
+            #expect(
+                ToolLocator.searchPathVariable(directory.path, for: "faketool")?.path
+                    == directory.appendingPathComponent("faketool").path
+            )
             #expect(
                 ToolLocator.searchPathVariable("/usr/bin:/bin:/usr/sbin:/sbin", for: "faketool") == nil
             )
@@ -142,7 +136,7 @@ struct ToolProcessTests {
     /// from "the process happened to be quick".
     @Test("a hung process is cut off at the timeout")
     func runTool_timeoutTerminatesChild() async {
-        let clock = ContinuousClock()
+        let clock = SuspendingClock()
         let started = clock.now
         let result = await runTool(
             executable: URL(fileURLWithPath: "/bin/sleep"),
@@ -155,6 +149,84 @@ struct ToolProcessTests {
         // Generous bound: the point is that we did not wait out the
         // full 30 seconds, not that the timer is precise.
         #expect(elapsed < .seconds(10))
+    }
+
+    /// A child that ignores SIGTERM is killed once the grace after its timeout
+    /// has passed: the timeout holds whatever the child does with the signal.
+    @Test func runTool_aChildThatIgnoresTerm_isEndedAfterItsTimeout() async {
+        let clock = SuspendingClock()
+        let started = clock.now
+        let result = await runTool(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "trap '' TERM; sleep 20; :"],
+            workingDirectory: nil,
+            timeout: .milliseconds(400)
+        )
+        #expect(result == nil)
+        // The timeout, the two seconds' grace, and the read that stops once
+        // the shell is gone: well short of the twenty seconds.
+        #expect(clock.now - started < .seconds(5))
+    }
+
+    /// A child that leaves a process behind holding its output returns once
+    /// it has exited: what it wrote is read, and nothing waits for the
+    /// process it left behind to close the pipe.
+    @Test func runTool_aChildThatLeavesItsOutputOpen_returnsWhenItExits() async {
+        let clock = SuspendingClock()
+        let started = clock.now
+        let result = await runTool(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "printf done; sleep 20 & exit 0"],
+            workingDirectory: nil,
+            timeout: .milliseconds(400)
+        )
+        #expect(clock.now - started < .seconds(3))
+        #expect(result?.stdout == "done")
+        #expect(result?.exitCode == 0)
+    }
+
+    /// A login shell's output goes through a file, since a process its profile
+    /// left running may go on writing to it; stderr is not read then.
+    @Test func runTool_outputThroughAFile_isReadWhenTheChildExits() async {
+        let clock = SuspendingClock()
+        let started = clock.now
+        let result = await runTool(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "printf done; echo noise 1>&2; sleep 20 & exit 0"],
+            workingDirectory: nil,
+            readsOutputFromFile: true,
+            timeout: .seconds(5)
+        )
+        #expect(clock.now - started < .seconds(3))
+        #expect(result?.stdout == "done")
+        #expect(result?.stderr == "")
+    }
+
+    /// A canceled run ends its child rather than waiting for it.
+    @Test func runTool_cancelled_endsTheChild() async throws {
+        try await withTempDir { directory in
+            // The child says it is running, so the cancel reaches a child
+            // rather than a run that has not spawned one yet.
+            let started = directory.appendingPathComponent("started")
+            let task = Task {
+                await runTool(
+                    executable: URL(fileURLWithPath: "/bin/sh"),
+                    arguments: ["-c", "touch \"$1\"; exec sleep 20", "sh", started.path],
+                    workingDirectory: nil,
+                    timeout: .seconds(30)
+                )
+            }
+            await pollUntil(timeout: .seconds(5), interval: .milliseconds(10)) {
+                FileManager.default.fileExists(atPath: started.path)
+            }
+            #expect(FileManager.default.fileExists(atPath: started.path))
+            let clock = SuspendingClock()
+            let canceled = clock.now
+            task.cancel()
+            let result = await task.value
+            #expect(result == nil)
+            #expect(clock.now - canceled < .seconds(3))
+        }
     }
 
     @Test("the working directory is honored")

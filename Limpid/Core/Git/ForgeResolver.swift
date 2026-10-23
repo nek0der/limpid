@@ -69,6 +69,13 @@ enum ForgeKind: String, CaseIterable {
     }
 }
 
+/// A remote of a checkout: its name, its host, and the URL it has.
+struct ForgeRemote: Equatable, Sendable {
+    let name: String
+    let host: String
+    let url: String
+}
+
 /// Resolves and caches the forge for a working directory.
 ///
 /// Two caches with different lifetimes and keys:
@@ -103,7 +110,7 @@ actor ForgeResolver {
     private var generation = 0
 
     /// Thrown when a tool we needed did not complete — a timeout, a
-    /// cancelled task, a binary we could not locate.
+    /// canceled task, a binary we could not locate.
     ///
     /// Distinct from "resolved, and there is no forge here", because
     /// the two must not be cached alike: a present `nil` stops us
@@ -133,8 +140,8 @@ actor ForgeResolver {
 
     /// Drop caches so the next tick re-reads remotes. Called when the
     /// user adds a remote or authenticates a CLI mid-session — we
-    /// can't observe either, so the sidebar's manual refresh and the
-    /// settings toggle both route through here.
+    /// can't observe either, so the sidebar's manual refresh routes
+    /// through here.
     func invalidate() {
         generation &+= 1
         byWorkingDirectory.removeAll()
@@ -145,7 +152,7 @@ actor ForgeResolver {
 
     private func resolve(workingDirectory: URL) async throws -> ForgeKind? {
         let started = generation
-        guard let host = try await remoteHost(workingDirectory: workingDirectory) else {
+        guard let host = try await remote(workingDirectory: workingDirectory)?.host else {
             log.debug("no usable remote in \(workingDirectory.path, privacy: .private)")
             return nil
         }
@@ -159,9 +166,19 @@ actor ForgeResolver {
         return resolved
     }
 
-    /// Host of the remote we should ask about, or nil when the
+    /// The remote a pull request of the checkout comes from, chosen by the
+    /// rule the forge is resolved by. The new worktree sheet names its
+    /// repository to the CLI (`--repo`) and fetches the request's head from
+    /// it, so the request read and the head fetched are one
+    /// repository's. `nil` when the checkout has no remote with a host, or
+    /// `git config` did not answer.
+    func pullRequestRemote(for workingDirectory: URL) async -> ForgeRemote? {
+        try? await remote(workingDirectory: workingDirectory)
+    }
+
+    /// The remote we should ask about and its host, or nil when the
     /// checkout has no remote at all.
-    private func remoteHost(workingDirectory: URL) async throws -> String? {
+    private func remote(workingDirectory: URL) async throws -> ForgeRemote? {
         let remotes = try await remoteURLs(workingDirectory: workingDirectory)
         guard !remotes.isEmpty else { return nil }
         // Check the names `gh` itself prefers, in its order, so we
@@ -171,12 +188,14 @@ actor ForgeResolver {
         // to be stable across launches.
         for name in ["upstream", "github", "origin"] {
             if let url = remotes[name], let host = Self.host(fromRemoteURL: url) {
-                return host
+                return ForgeRemote(name: name, host: host, url: url)
             }
         }
         return remotes.sorted { $0.key < $1.key }
             .lazy
-            .compactMap { Self.host(fromRemoteURL: $0.value) }
+            .compactMap { remote in
+                Self.host(fromRemoteURL: remote.value).map { ForgeRemote(name: remote.key, host: $0, url: remote.value) }
+            }
             .first
     }
 
@@ -189,7 +208,7 @@ actor ForgeResolver {
             timeout: .seconds(5)
         )
         // A nil result is `git config` never finishing — a timeout or a
-        // cancelled task. Reading it as "no remotes" would cache a
+        // canceled task. Reading it as "no remotes" would cache a
         // permanent no for a question we never asked.
         guard let result else { throw LookupUnavailable() }
         // Exit 1 with empty output is `git config`'s way of saying
@@ -239,11 +258,36 @@ actor ForgeResolver {
         return host.isEmpty ? nil : host
     }
 
-    /// Internal so tests can drive the probe tier directly. The
-    /// heuristic tier is pure and covered separately; this one spawns
-    /// a CLI, and it is the tier that decides whether GitHub
-    /// Enterprise and self-hosted GitLab work at all.
-    func classify(host: String) async throws -> ForgeKind? {
+    /// The repository a remote URL names, as `host/owner/repo` (a GitLab
+    /// group's subgroups in between), which `gh --repo` and `glab -R` take:
+    /// `https://github.com/acme/app.git` and `git@github.com:acme/app` are
+    /// both `github.com/acme/app`. `nil` for a URL with no such path.
+    static func repository(fromRemoteURL raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard let host = host(fromRemoteURL: trimmed) else { return nil }
+        var path: Substring
+        if trimmed.contains("://") {
+            guard let components = URLComponents(string: trimmed) else { return nil }
+            path = Substring(components.path)
+        } else {
+            guard let colon = trimmed.firstIndex(of: ":") else { return nil }
+            path = trimmed[trimmed.index(after: colon)...]
+        }
+        path = path.drop { $0 == "/" }
+        while path.hasSuffix("/") {
+            path = path.dropLast()
+        }
+        if path.hasSuffix(".git") {
+            path = path.dropLast(4)
+        }
+        guard path.contains("/") else { return nil }
+        return "\(host)/\(path)"
+    }
+
+    /// The heuristic tier, then the probe tier. The probe spawns a CLI,
+    /// and it is the tier that decides whether GitHub Enterprise and
+    /// self-hosted GitLab work at all.
+    private func classify(host: String) async throws -> ForgeKind? {
         if let heuristic = Self.heuristicKind(host: host) {
             log.debug("host \(host, privacy: .private) → \(heuristic.rawValue, privacy: .public) (heuristic)")
             return heuristic
@@ -291,8 +335,10 @@ actor ForgeResolver {
     /// the two answer, and why the timeout below is generous enough
     /// for `glab` to complete a round trip.
     /// `nil` when the probe could not be run at all — see `classify`
-    /// for why that is not the same answer as "no".
-    private func isAuthenticated(kind: ForgeKind, host: String) async -> Bool? {
+    /// for why that is not the same answer as "no". The new worktree
+    /// sheet asks it too, for a host the heuristic named without a probe:
+    /// it offers a pull request only to a CLI that can read one.
+    func isAuthenticated(kind: ForgeKind, host: String) async -> Bool? {
         // Not installed is a real no: a CLI we don't have cannot hold a
         // credential, and installing one is not something we could
         // miss and want to re-probe for mid-session.

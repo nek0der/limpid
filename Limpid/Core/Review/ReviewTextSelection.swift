@@ -119,7 +119,7 @@ struct ReviewTextSelection: Equatable {
                 position.side == nil && line.id == position.lineID
             case let .splitCode(pair):
                 position.side.flatMap { pair.line(on: $0) }?.id == position.lineID
-            case .notice, .hunk, .comment, .composer, .expander:
+            case .notice, .hunk, .comment, .composer, .expander, .file:
                 false
             }
         }
@@ -138,7 +138,7 @@ extension ReviewCopyPayload {
                 anchor.side == nil ? value : nil
             case let .splitCode(pair):
                 anchor.side.flatMap { pair.line(on: $0) }
-            case .notice, .hunk, .comment, .composer, .expander:
+            case .notice, .hunk, .comment, .composer, .expander, .file:
                 nil
             }
             guard let line, line.isTextSelectable,

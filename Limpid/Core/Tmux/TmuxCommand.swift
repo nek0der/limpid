@@ -2,6 +2,7 @@
 // Limpid — bounded, cancellable execution of our own tmux client processes.
 
 import Foundation
+import Synchronization
 
 enum TmuxTiming {
     static let queryTimeout: TimeInterval = 0.5
@@ -11,6 +12,14 @@ enum TmuxTiming {
     static let snapshotLifetime: TimeInterval = 6
     static let readPollMilliseconds: Int32 = 10
     static let outputLimit = 2 * 1024 * 1024
+
+    /// The graces above, as the shared runner takes them. Short, because the
+    /// client is asked many times within `pollBudget`.
+    static let drain = ProcessDrainTiming(
+        terminationGrace: .seconds(terminationGrace),
+        drainGrace: .seconds(drainGrace),
+        pollMilliseconds: readPollMilliseconds
+    )
 }
 
 enum TmuxCommandResult: Equatable {
@@ -23,17 +32,15 @@ enum TmuxCommandResult: Equatable {
     case outputLimit
 }
 
-/// The lock protects launch/cancellation and every access to the owned Process.
-/// Only run() owns the pipe descriptor and output buffer. No borrowed FFI state
-/// crosses threads, and each instance executes at most one command.
-final class TmuxCommand: @unchecked Sendable {
-    private let lock = NSLock()
-    private let process = Process()
-    private var isCancelled = false
-    private var hasStarted = false
+/// One tmux client run, on the shared runner (`drainAndWait`) with tmux's
+/// own timeout, graces, and output cap. Each instance runs at most one
+/// command; `cancel` may come from another thread, before or during it.
+final class TmuxCommand: Sendable {
+    private let stop = ProcessStopRequest()
+    private let hasStarted = Mutex(false)
 
     func cancel() {
-        lock.withLock { isCancelled = true }
+        stop.request()
     }
 
     func run(
@@ -42,127 +49,52 @@ final class TmuxCommand: @unchecked Sendable {
         timeout: TimeInterval = TmuxTiming.queryTimeout,
         outputLimit: Int = TmuxTiming.outputLimit
     ) -> TmuxCommandResult {
+        guard !stop.isRequested else { return .cancelled }
+        // A second run of the same instance is refused: its cancellation
+        // would reach a run it was not meant for.
+        let isSecondRun = hasStarted.withLock { started in
+            defer { started = true }
+            return started
+        }
+        guard !isSecondRun else { return .launchFailed }
+        let process = Process()
         let pipe = Pipe()
         defer { try? pipe.fileHandleForReading.close() }
-        let deadline = ProcessInfo.processInfo.systemUptime + max(0, timeout)
-        if let failure = launch(executable: executable, arguments: arguments, pipe: pipe) {
-            return failure
-        }
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
+        do { try process.run() } catch { return .launchFailed }
         // The parent must not keep a writer alive after its child exits.
         try? pipe.fileHandleForWriting.close()
-        let fd = pipe.fileHandleForReading.fileDescriptor
-        guard fcntl(fd, F_SETFL, O_NONBLOCK) == 0 else {
-            stopOwnedProcess(force: true)
+        let output = drainAndWait(
+            process,
+            stdout: pipe,
+            stderr: nil,
+            timeout: .seconds(max(0, timeout)),
+            stop: stop,
+            stdoutLimitBytes: outputLimit,
+            timing: TmuxTiming.drain
+        )
+        return Self.result(of: output, status: process.terminationStatus)
+    }
+
+    /// What the run comes to. A client that exited while something it left
+    /// behind still held its output gave no whole answer in time.
+    private static func result(of output: DrainedOutput, status: Int32) -> TmuxCommandResult {
+        switch output.ending {
+        case .stopped: return .cancelled
+        case .timedOut: return .timedOut
+        case .outputLimit: return .outputLimit
+        case .exited: break
+        }
+        if output.hasStdoutReadFailed {
             return .invalidOutput
         }
-        var output = OutputState()
-        var stopDeadline: TimeInterval?
-        while true {
-            let now = ProcessInfo.processInfo.systemUptime
-            if output.failure == nil {
-                if lock.withLock({ isCancelled }) {
-                    output.failure = .cancelled
-                } else if now >= deadline {
-                    output.failure = .timedOut
-                }
-            }
-            if output.failure != nil, stopDeadline == nil {
-                stopOwnedProcess(force: false)
-                stopDeadline = now + TmuxTiming.terminationGrace
-            }
-            if let stopDeadline, now >= stopDeadline {
-                stopOwnedProcess(force: true)
-                if now >= stopDeadline + TmuxTiming.drainGrace {
-                    break
-                }
-            }
-            output.readChunk(fd: fd, limit: outputLimit)
-            if output.shouldFinish(isRunning: lock.withLock { process.isRunning }, now: now) {
-                break
-            }
-            // Nonblocking reads and a bounded poll avoid a reader task that
-            // outlives the command when a descendant retains the write end.
-            var descriptor = pollfd(fd: fd, events: Int16(POLLIN | POLLHUP), revents: 0)
-            if output.hasReachedEOF {
-                _ = poll(nil, 0, TmuxTiming.readPollMilliseconds)
-            } else {
-                _ = poll(&descriptor, 1, TmuxTiming.readPollMilliseconds)
-            }
-        }
-        return result(for: output)
-    }
-
-    private func result(for output: OutputState) -> TmuxCommandResult {
-        if let failure = output.failure {
-            return failure
-        }
-        let status = lock.withLock { process.terminationStatus }
+        guard output.isStdoutComplete else { return .timedOut }
         guard status == 0 else { return .failed(status) }
-        guard let text = String(data: output.bytes, encoding: .utf8) else { return .invalidOutput }
+        guard let text = String(data: output.stdout, encoding: .utf8) else { return .invalidOutput }
         return .success(text)
-    }
-
-    private func launch(executable: String, arguments: [String], pipe: Pipe) -> TmuxCommandResult? {
-        lock.withLock {
-            guard !isCancelled else { return .cancelled }
-            guard !hasStarted else { return .launchFailed }
-            hasStarted = true
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = arguments
-            process.standardOutput = pipe
-            process.standardError = FileHandle.nullDevice
-            process.standardInput = FileHandle.nullDevice
-            do { try process.run() } catch { return .launchFailed }
-            return nil
-        }
-    }
-
-    private struct OutputState {
-        var bytes = Data()
-        var buffer = [UInt8](repeating: 0, count: 8192)
-        var failure: TmuxCommandResult?
-        var hasReachedEOF = false
-        var exitObservedAt: TimeInterval?
-
-        mutating func readChunk(fd: Int32, limit: Int) {
-            let count = read(fd, &buffer, buffer.count)
-            if count > 0 {
-                if count > max(0, limit) - bytes.count {
-                    failure = .outputLimit
-                } else {
-                    bytes.append(contentsOf: buffer.prefix(count))
-                }
-            } else if count == 0 {
-                hasReachedEOF = true
-            } else if errno != EAGAIN, errno != EINTR {
-                failure = failure ?? .invalidOutput
-            }
-        }
-
-        mutating func shouldFinish(isRunning: Bool, now: TimeInterval) -> Bool {
-            guard !isRunning else { return false }
-            if hasReachedEOF {
-                return true
-            }
-            if exitObservedAt == nil {
-                exitObservedAt = now
-            }
-            if now - (exitObservedAt ?? now) >= TmuxTiming.drainGrace {
-                failure = failure ?? .timedOut
-                return true
-            }
-            return false
-        }
-    }
-
-    private func stopOwnedProcess(force: Bool) {
-        lock.withLock {
-            guard process.isRunning else { return }
-            if force {
-                kill(process.processIdentifier, SIGKILL)
-            } else {
-                process.terminate()
-            }
-        }
     }
 }

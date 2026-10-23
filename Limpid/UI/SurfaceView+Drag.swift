@@ -1,7 +1,7 @@
 // SurfaceView+Drag.swift
 // Limpid — ⌥⌘+drag from a pane initiates an AppKit dragging session that
-// the tab list catches: drop onto a tab row merges the pane into that
-// tab, drop onto the empty area detaches it into a new tab. The modifier
+// the pane strip's tabs and the other panes catch: drop onto a tab merges
+// the pane into that tab, onto a pane swaps or splits it there. The modifier
 // gate keeps ordinary text-selection drags untouched, and matches
 // macOS's "explicit pickup" convention (⌘+drag in Finder, ⌥+drag for
 // copies elsewhere).
@@ -20,7 +20,7 @@ extension SurfaceView: NSDraggingSource {
         // Move semantics — the pane leaves its source tab when the drop
         // lands. SwiftUI's drop targets read `DropProposal(.move)` to
         // suppress the green "+" badge, so matching here keeps the cursor
-        // toolbar consistent end-to-end.
+        // badge consistent end-to-end.
         .move
     }
 
@@ -42,7 +42,7 @@ extension SurfaceView: NSDraggingSource {
         // Belt-and-braces dragState teardown: SwiftUI's drop delegate
         // calls `dragState.end()` on every drop result, but if AppKit
         // ends the session without ever entering a SwiftUI drop target
-        // (cursor released outside tab column entirely) the delegate never runs
+        // (cursor released outside every drop target) the delegate never runs
         // and the hover state would linger. The mouse-up monitor in
         // LimpidDragState handles the common case; this is the AppKit
         // mirror for safety.
@@ -52,13 +52,13 @@ extension SurfaceView: NSDraggingSource {
     }
 
     /// Open an AppKit drag session that carries this pane's id to the
-    /// tab column drop targets. Called from `mouseDragged` once the cursor has
+    /// pane strip's drop targets. Called from `mouseDragged` once the cursor has
     /// moved far enough from the ⌥⌘-mouseDown anchor, and from a split pane's
     /// header, where a plain drag picks the pane up (`PaneHeaderView`).
     func beginPaneDrag(with event: NSEvent) {
         guard let paneID, let dragState else { return }
 
-        // Hand the tab column drop targets the same wire format the sidebar uses
+        // Hand the pane strip's drop targets the same wire format the sidebar uses
         // (`<prefix>:<uuid>`). SwiftUI's `.dropDestination(for: String.self)`
         // matches pasteboard items conforming to `public.text`, so we
         // write both `public.utf8-plain-text` (`NSPasteboard.PasteboardType.string`)
@@ -95,7 +95,7 @@ extension SurfaceView: NSDraggingSource {
         dragState.begin(.pane, sourceID: paneID.uuidString)
         // Origin tab id (when wired) gives log readers a way to
         // correlate this drag-start with the matching `paneDropLog`
-        // event from `PaneTabColumnDropTargets.performDrop`. Surface
+        // event from `PaneTabDropTargets.performDrop`. Surface
         // dimensions help spot "drag that started at frame zero"
         // bugs without needing a screen recording.
         let originTab = ownerTabIDForLogging?() ?? "?"
@@ -113,8 +113,7 @@ extension SurfaceView: NSDraggingSource {
     ///
     /// Renders under the source window's effective appearance so the
     /// pill background, stroke, and glyph all pick up the right
-    /// light / dark variant of `NSColor.windowBackgroundColor`,
-    /// `.separatorColor`, and `.labelColor`. Without the explicit
+    /// light / dark variant of their `SupervisionTokens`. Without the explicit
     /// `performAsCurrentDrawingAppearance` call, `NSImage.lockFocus`
     /// may resolve semantic colors against the app's default appearance
     /// rather than the window the user actually sees.
@@ -124,21 +123,24 @@ extension SurfaceView: NSDraggingSource {
         let appearance = window?.effectiveAppearance ?? NSApp.effectiveAppearance
         image.lockFocus()
         defer { image.unlockFocus() }
+        // The chip is drawn in the window's own tokens, as a tab's drag
+        // preview is (`limpidDragPreview`).
         appearance.performAsCurrentDrawingAppearance {
-            let rect = NSRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5)
+            let lineWidth: CGFloat = 1
+            let rect = NSRect(origin: .zero, size: size).insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
             let path = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
-            NSColor.windowBackgroundColor.withAlphaComponent(0.92).setFill()
+            SupervisionTokens.popover.nsColor.setFill()
             path.fill()
-            NSColor.separatorColor.setStroke()
-            path.lineWidth = 0.5
+            SupervisionTokens.line.nsColor.setStroke()
+            path.lineWidth = lineWidth
             path.stroke()
 
-            // `paletteColors` applies `.labelColor` directly to the
+            // `paletteColors` applies the text color directly to the
             // symbol's strokes — cleaner than `setFill` + template
             // tricks, and the color resolves under
             // `performAsCurrentDrawingAppearance` above.
             let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
-                .applying(NSImage.SymbolConfiguration(paletteColors: [.labelColor]))
+                .applying(NSImage.SymbolConfiguration(paletteColors: [SupervisionTokens.text.nsColor]))
             if let symbol = NSImage(
                 systemSymbolName: "apple.terminal",
                 accessibilityDescription: nil

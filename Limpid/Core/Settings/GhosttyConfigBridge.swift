@@ -21,9 +21,8 @@ enum GhosttyConfigBridge {
 
     /// Vertical padding, in points, we give every surface through
     /// `window-padding-y`. We own it for the reason we own the horizontal
-    /// one, and because the review strip trims its height to whole rows:
-    /// that needs the padding libghostty will apply, and the C API cannot
-    /// read a user's value back. The quick terminal subtracts it too.
+    /// one. The quick terminal subtracts it too, which needs the padding
+    /// libghostty will apply, and the C API cannot read a user's value back.
     nonisolated static let windowPaddingY = 8
 
     // MARK: - Serialization
@@ -215,21 +214,34 @@ enum GhosttyConfigBridge {
             resourcesDir: resourcesDir
         )
         let dir = directory?.path ?? (NSTemporaryDirectory() as NSString).appendingPathComponent("dev.limpid")
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         // We isolate concurrent Dev and Release instances so one cannot replace
         // the file between another instance writing it and libghostty reading it.
         let name = "ghostty-config-\(processID).limpid"
         let path = (dir as NSString).appendingPathComponent(name)
         do {
+            // A test hands its own folder; the guard keeps one that names the
+            // user's real data from being written to.
+            try TestWriteGuard.check(URL(fileURLWithPath: path))
+            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
             try body.write(toFile: path, atomically: true, encoding: .utf8)
             return path
         } catch {
-            log.error("config file write failed: \(String(describing: error), privacy: .public)")
+            log.error("config file write failed: \(String(describing: error), privacy: .private)")
             return nil
         }
     }
 
     // MARK: - Live reload
+
+    /// When libghostty last read the person's own Ghostty config, at launch
+    /// or in a reload; nil while it has not. Integrations compares the
+    /// file's date with it to say an edit has not been read yet.
+    private(set) static var userConfigReadAt: Date?
+
+    /// Records that the user config was just read.
+    static func noteUserConfigRead(at date: Date = Date()) {
+        userConfigReadAt = date
+    }
 
     /// Finalize a config and copy its diagnostics. A path validates that file;
     /// `nil` validates Ghostty's default user config. Runtime callers invoke
@@ -259,8 +271,11 @@ enum GhosttyConfigBridge {
     /// theme, opacity, cursor) reach every running surface
     /// immediately.
     ///
-    /// Returns diagnostics copied from the finalized user config, or `nil`
-    /// when its validation handle could not be created.
+    /// Returns diagnostics copied from the finalized user config (empty
+    /// when its validation handle could not be created), or `nil` when
+    /// nothing was applied: Limpid's layer could not be written, or no
+    /// config could be made. The running config then stays as it is, with
+    /// its forced overrides.
     static func reloadConfig(
         app: GhosttyApp,
         settings: LimpidSettings,
@@ -268,8 +283,8 @@ enum GhosttyConfigBridge {
         includeUserConfig: Bool,
         surfaces: [SurfaceView] = []
     ) -> [String]? {
-        let diagnostics: [String]? = if includeUserConfig {
-            configDiagnostics()
+        let diagnostics: [String] = if includeUserConfig {
+            configDiagnostics() ?? []
         } else {
             []
         }
@@ -278,7 +293,7 @@ enum GhosttyConfigBridge {
             resourcesDir: resourcesDir
         )
         guard let cfg = makeConfig(path: path, includeUserConfig: includeUserConfig) else {
-            log.error("ghostty_config_new() returned nil during reload")
+            log.error("no config to reload; keeping the running one")
             return nil
         }
         // Ownership moves to GhosttyApp so a later conditional-state soft
@@ -290,19 +305,28 @@ enum GhosttyConfigBridge {
 
     /// Build a finalized libghostty config from the on-disk Limpid
     /// config file. The caller owns the returned handle — pass it to
-    /// exactly one `ghostty_*_update_config` call.
-    private static func makeConfig(path: String?, includeUserConfig: Bool) -> ghostty_config_t? {
-        guard let cfg = ghostty_config_new() else { return nil }
+    /// exactly one `ghostty_*_update_config` call. `nil` when `path` is
+    /// `nil` (the file could not be written): a config without Limpid's layer
+    /// lacks the forced overrides the compositor and review's paste rely
+    /// on, so no config is better than that one.
+    static func makeConfig(path: String?, includeUserConfig: Bool) -> ghostty_config_t? {
+        guard let path else {
+            log.error("Limpid's config layer is missing; building no config")
+            return nil
+        }
+        guard let cfg = ghostty_config_new() else {
+            log.error("ghostty_config_new() returned nil")
+            return nil
+        }
         // Optional Layer 2: user's ~/.config/ghostty/config.
         // Forbidden keys still get neutralized because our forced
         // overrides append below them.
         if includeUserConfig {
             ghostty_config_load_default_files(cfg)
+            noteUserConfigRead()
         }
         // Layer 3 + 4: Limpid settings + forced overrides.
-        if let path {
-            path.withCString { ghostty_config_load_file(cfg, $0) }
-        }
+        path.withCString { ghostty_config_load_file(cfg, $0) }
         ghostty_config_finalize(cfg)
         return cfg
     }

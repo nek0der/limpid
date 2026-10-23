@@ -23,6 +23,27 @@ struct AccentColorPicker: View {
                 swatch(choice)
             }
         }
+        // One choice among several, so one stop for the keyboard: ← and →
+        // move the selection, as a macOS radio group does, rather than
+        // a Tab stop per swatch. VoiceOver reads the row as the "Accent" group,
+        // each swatch with its name and whether it is the selected one.
+        .focusable()
+        .onKeyPress(.leftArrow) { step(by: -1) }
+        .onKeyPress(.rightArrow) { step(by: 1) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Accent"))
+    }
+
+    /// Selects the swatch `offset` places from the current one, held to
+    /// the row's ends.
+    private func step(by offset: Int) -> KeyPress.Result {
+        let choices = AccentColor.allCases
+        guard let index = choices.firstIndex(of: current) else { return .ignored }
+        let next = min(max(index + offset, 0), choices.count - 1)
+        if next != index {
+            onSelect(choices[next])
+        }
+        return .handled
     }
 
     @ViewBuilder
@@ -47,8 +68,12 @@ struct AccentColorPicker: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // The row takes the keyboard as one stop; a swatch is clicked.
+        .focusable(false)
         .help(Text(choice.displayName))
         .accessibilityLabel(Text(choice.displayName))
+        // The ring alone carries the choice on screen; this carries it to VoiceOver.
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     /// `.default` paints the macOS Multicolor swatch — an angular

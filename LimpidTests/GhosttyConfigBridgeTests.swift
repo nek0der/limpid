@@ -36,7 +36,7 @@ struct GhosttyConfigBridgeTests {
 
     // MARK: - Padding
 
-    /// The review strip fits its height with the padding it expects
+    /// The quick terminal insets its text with the padding it expects
     /// libghostty to apply, so the generated layer has to carry both values
     /// and win over a user's own config file loaded before it.
     @Test("window padding is emitted on both axes")
@@ -84,18 +84,11 @@ struct GhosttyConfigBridgeTests {
         #expect(value(of: "font-feature", in: config) == expected)
     }
 
-    @Test("adjust-cell-height appears only when lineHeight is non-zero")
-    func makeConfig_lineHeight_omittedWhenZero() {
+    @Test("adjust-cell-height appears only when lineHeight is non-zero", arguments: [(Double(0), String?.none), (4, "4")])
+    func makeConfig_lineHeight_emittedOnlyWhenNonZero(lineHeight: Double, expected: String?) {
         var settings = LimpidSettings.default
-        settings.font.lineHeight = 0
-        #expect(value(of: "adjust-cell-height", in: generate(settings)) == nil)
-    }
-
-    @Test("adjust-cell-height appears when lineHeight is non-zero")
-    func makeConfig_lineHeight_emittedWhenNonZero() {
-        var settings = LimpidSettings.default
-        settings.font.lineHeight = 4
-        #expect(value(of: "adjust-cell-height", in: generate(settings)) == "4")
+        settings.font.lineHeight = lineHeight
+        #expect(value(of: "adjust-cell-height", in: generate(settings)) == expected)
     }
 
     // MARK: - Terminal
@@ -173,7 +166,7 @@ struct GhosttyConfigBridgeTests {
         process.standardOutput = output
         process.standardError = output
         try process.run()
-        process.waitUntilExit()
+        #expect(process.waitUntilExit(within: 10), "infocmp did not finish")
         let data = output.fileHandleForReading.readDataToEndOfFile()
         let text = try #require(String(bytes: data, encoding: .utf8))
 
@@ -214,22 +207,19 @@ struct GhosttyConfigBridgeTests {
         )
     }
 
-    @Test("fixed appearance wins over the system", arguments: [false, true])
-    func fixedAppearanceWinsOverSystem(systemIsDark: Bool) {
-        #expect(
-            GhosttyApp.resolvedColorScheme(preference: .light, systemIsDark: systemIsDark) ==
-                GHOSTTY_COLOR_SCHEME_LIGHT
-        )
-        #expect(
-            GhosttyApp.resolvedColorScheme(preference: .dark, systemIsDark: systemIsDark) ==
-                GHOSTTY_COLOR_SCHEME_DARK
-        )
-    }
-
-    @Test("system appearance follows the resolved macOS value", arguments: [false, true])
-    func systemAppearanceFollowsMacOS(systemIsDark: Bool) {
-        let expected = systemIsDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
-        #expect(GhosttyApp.resolvedColorScheme(preference: .system, systemIsDark: systemIsDark) == expected)
+    /// A fixed appearance wins over the system's; the system one follows
+    /// the resolved macOS value.
+    @Test("the terminal's color scheme follows the appearance chosen", arguments: [
+        (ColorSchemePreference.light, false, false),
+        (.light, true, false),
+        (.dark, false, true),
+        (.dark, true, true),
+        (.system, false, false),
+        (.system, true, true)
+    ])
+    func resolvedColorScheme_followsTheAppearanceChosen(preference: ColorSchemePreference, systemIsDark: Bool, isDark: Bool) {
+        let expected = isDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
+        #expect(GhosttyApp.resolvedColorScheme(preference: preference, systemIsDark: systemIsDark) == expected)
     }
 
     @Test("generated config is accepted for every Bell choice", arguments: BellAction.allCases)
@@ -264,28 +254,81 @@ struct GhosttyConfigBridgeTests {
         #expect(userIdx.lowerBound < overridesIdx.lowerBound)
     }
 
-    // MARK: - Menu-owned shortcut guards
+    // MARK: - Keybinds
 
-    @Test("menu-owned shortcuts emit `=ignore` so a disabled menu item never leaks the keystroke to the terminal")
-    func makeConfig_menuOwnedShortcuts_emitIgnore() {
-        let config = generate(.default)
-        // `nextAttention` (⌘J) and `renameTab` (⌘⇧R) are menu-owned
-        // (ghosttyAction == nil) and have printable defaults — the two
-        // cases most likely to type "j" / "R" into the terminal when
-        // their menu item is disabled. Their defaults must round-trip
-        // to `ignore`.
-        #expect(config.contains("keybind = super+j=ignore"))
-        #expect(config.contains("keybind = super+shift+j=ignore"))
-        #expect(config.contains("keybind = super+shift+r=ignore"))
+    /// The bridge emits the person's keybinds after its own `keybind = …`
+    /// lines, so libghostty's last-write-wins merging lets the person's
+    /// choice beat Ghostty's defaults. The action is one libghostty runs
+    /// (font size): a menu-owned action's binding is not emitted as one.
+    @Test("User overrides appear after forced-override keybinds")
+    func keybinds_overridesAppearLast() throws {
+        var settings = LimpidSettings.default
+        settings.keyboard.setOverride(.init(key: "k", modifiers: [.command, .control]), for: .increaseFontSize)
+        let config = generate(settings)
+        let forced = try #require(config.range(of: "keybind = super+q=unbind"))
+        let user = try #require(config.range(of: "keybind = super+ctrl+k=increase_font_size:1"))
+        #expect(forced.lowerBound < user.lowerBound)
     }
 
-    @Test("libghostty-dispatched actions still emit their real action, not ignore")
-    func makeConfig_ghosttyOwnedShortcuts_keepRealAction() {
+    /// `keybind = clear` comes before the bindings, so it wipes libghostty's
+    /// built-in macOS defaults without erasing ours on the lines after it.
+    @Test("keybind = clear precedes user-effective bindings")
+    func keybinds_clearBeforeUserBindings() throws {
         let config = generate(.default)
-        // `nextPrompt` (⌘↓) has `ghosttyAction == "jump_to_prompt:1"`;
-        // the ignore loop must not shadow these.
-        #expect(config.contains("jump_to_prompt:1"))
-        #expect(!config.contains("keybind = super+down=ignore"))
+        let clear = try #require(config.range(of: "keybind = clear"))
+        // Font size is one of the few actions libghostty runs, so its
+        // default shortcut is in the config.
+        let user = try #require(config.range(of: "keybind = super+shift+==increase_font_size:1"))
+        #expect(clear.lowerBound < user.lowerBound)
+    }
+
+    @Test("Every libghostty-routed action with a default emits its keybind line, never an ignore")
+    func keybinds_defaultsEmitEveryGhosttyAction() {
+        let config = generate(.default)
+        for action in LimpidShortcutAction.allCases {
+            guard let ghosttyAction = action.ghosttyAction,
+                  let shortcut = action.defaultShortcut
+            else { continue }
+            let expected = "keybind = \(shortcut.ghosttyTrigger)=\(ghosttyAction)"
+            #expect(config.contains(expected), "expected default binding for \(action.rawValue): \(expected)")
+            #expect(!config.contains("keybind = \(shortcut.ghosttyTrigger)=ignore"), "\(action.rawValue)")
+        }
+    }
+
+    /// Only actions with no menu item reach libghostty as actions: an
+    /// action with a menu Button bound there too would run twice for one
+    /// keystroke (two splits per ⌘D, two tab closes per ⌘⌥W). Adding a
+    /// `ghosttyAction` fails here until the action is confirmed menu-less.
+    @Test("Emitted libghostty actions stay limited to menu-less actions")
+    func onlyMenulessActions_reachLibghosttyAsActions() {
+        let emitted = Set(LimpidShortcutAction.allCases.compactMap(\.ghosttyAction))
+        let expected: Set = [
+            "increase_font_size:1",
+            "decrease_font_size:1",
+            "reset_font_size",
+            "jump_to_prompt:1",
+            "jump_to_prompt:-1"
+        ]
+        #expect(emitted == expected, """
+        `ghosttyAction` names an action that also has a menu Button, which \
+        would run twice for one keystroke. See `LimpidShortcutAction.ghosttyAction`.
+        """)
+    }
+
+    /// A menu-owned action reaches libghostty only as `=ignore`: the menu
+    /// runs the enabled Button first (`SurfaceView.performKeyEquivalent`
+    /// probes it when the event hits a keybind), and the ignore swallows
+    /// the keystroke while the item is disabled, so its key is never typed
+    /// into the terminal.
+    @Test("Menu-owned shortcuts reach libghostty as =ignore, never as a real action")
+    func keybinds_menuOwnedShortcuts_emitIgnore() throws {
+        let config = generate(.default)
+        let menuOwned = LimpidShortcutAction.allCases.filter { $0.ghosttyAction == nil && $0.defaultShortcut != nil }
+        #expect(!menuOwned.isEmpty)
+        for action in menuOwned {
+            let trigger = try #require(action.defaultShortcut?.ghosttyTrigger)
+            #expect(config.contains("keybind = \(trigger)=ignore"), "menu-owned action \(action.rawValue) missing its =ignore guard")
+        }
     }
 
     @Test("user config diagnostics distinguish invalid and clean files")
@@ -325,4 +368,26 @@ struct GhosttyConfigBridgeTests {
         }
     }
 
+    /// Without Limpid's own layer the config would lack the forced
+    /// overrides (`background-opacity = 0`, `clipboard-paste-protection`),
+    /// so a layer that could not be written builds no config at all and the
+    /// running one stays.
+    @Test func aLayerThatCouldNotBeWritten_buildsNoConfig() {
+        let config = GhosttyConfigBridge.makeConfig(path: nil, includeUserConfig: false)
+        if let config {
+            ghostty_config_free(config)
+        }
+        #expect(config == nil)
+    }
+
+    @Test func aFolderThatCannotBeWritten_givesNoPath() throws {
+        try withTempDir { directory in
+            try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+            let path = GhosttyConfigBridge.writeConfigFile(
+                settings: .default, resourcesDir: nil, directory: directory, processID: 303
+            )
+            #expect(path == nil)
+        }
+    }
 }

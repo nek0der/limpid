@@ -4,8 +4,8 @@
 import SwiftUI
 
 /// Apply with `.background(LimpidWindowRoleMarker(role: .main))` inside the
-/// scene's content. The main window hosts `ToolbarTerminalColumnSegment`
-/// and the Settings window's `GeneralPane` renders its own `UpdatePopover`;
+/// scene's content. The main window's `LeftRailView` and the Settings
+/// window's `GeneralPane` each render their own `UpdatePopover`;
 /// tagging Settings too keeps Check Now… from opening Sparkle's standard
 /// modal alongside the inline popover when the main window is hidden.
 struct LimpidWindowRoleMarker: NSViewRepresentable {

@@ -1,6 +1,5 @@
 // AgentStatusText.swift
-// Limpid — the tooltips and spoken labels that describe agent states in
-// the rows and pane headers.
+// Limpid — the tooltips and spoken lists the views join from several facts.
 //
 // Each phrase is one catalog format string, so a translator can change
 // the word order and the separators; the views only show the result. The
@@ -9,22 +8,17 @@
 
 import Foundation
 
-extension AgentState {
-    /// What VoiceOver says for the state's glyph. `description` stands in
-    /// for the bare state name where a site has more to say — the rows
-    /// speak their pane breakdown — and a viewed completion is named as
-    /// such either way, since the outline that shows it is drawn, not said.
-    func accessibilityLabel(isViewedFinished: Bool, description: String? = nil, locale: Locale) -> String {
-        let base = description ?? localizedLabel.resolved(in: locale)
-        guard self == .finished, isViewedFinished else { return base }
+enum AgentStatusText {
+    /// What sets two facts apart (" · "): `joined`'s own words, with
+    /// nothing on either side.
+    static func separator(locale: Locale) -> String {
+        let nothing = ""
         return LocalizedStringResource(
-            "\(base), Viewed",
-            comment: "Spoken label of a finished turn the user has looked at; argument: the state or the pane breakdown"
+            "\(nothing) · \(nothing)",
+            comment: "Separates two facts in an agent tooltip; arguments: what came before, the next fact"
         ).resolved(in: locale)
     }
-}
 
-enum AgentStatusText {
     /// Facts in a tooltip, in order, each set off from the one before.
     static func joined(_ pieces: [String], locale: Locale) -> String {
         pieces.filter { !$0.isEmpty }.reduce("") { text, piece in
@@ -37,53 +31,50 @@ enum AgentStatusText {
         }
     }
 
-    /// The container row's tooltip: how many panes are in each state, most
-    /// urgent first ("1 error · 2 needs input"), or the dominant state alone
-    /// when there is no breakdown.
-    static func breakdown(_ counts: [AgentState: Int], dominant: AgentState, locale: Locale) -> String {
-        let order: [AgentState] = [.error, .needsInput, .finished, .running, .compacting, .idle, .unknown]
-        let parts = order.compactMap { state -> String? in
-            guard let count = counts[state], count > 0 else { return nil }
-            return LocalizedStringResource(
-                "\(count) \(state.localizedLabel)",
-                comment: "Agent breakdown tooltip entry; arguments: a pane count, an agent state"
-            ).resolved(in: locale)
-        }
-        return parts.isEmpty ? dominant.localizedLabel.resolved(in: locale) : joined(parts, locale: locale)
+    /// Returns what a line says before its `fact`, and the separator that
+    /// joins the two, as `joined` joins them: that joined line less the fact
+    /// it ends with ("limpid · "), so a view can set the two apart, in two
+    /// colors or cut one before the other. It is `lead` alone when there is
+    /// no fact.
+    static func lead(_ lead: String, before fact: String, locale: Locale) -> String {
+        guard !fact.isEmpty else { return lead }
+        let line = joined([lead, fact], locale: locale)
+        return line.hasSuffix(fact) ? String(line.dropLast(fact.count)) : lead + " · "
     }
 
-    /// The tab row's tooltip: the state, how many of the tab's panes share
-    /// it (`panes`) when more than one does, what the most recent of them is
-    /// doing, and for a running turn how long it has run.
-    static func tab(
-        state: AgentState,
-        panes: (matching: Int, total: Int),
-        detail: String?,
-        elapsedSeconds: Int?,
-        locale: Locale
-    ) -> String {
-        var label = state.hasVisibleBadge ? state.localizedLabel.resolved(in: locale) : ""
-        if panes.matching > 1 {
-            label = LocalizedStringResource(
-                "\(label) (\(panes.matching) of \(panes.total) panes)",
-                comment: "Agent state tooltip; arguments: the state, the panes in it, the panes in the tab"
-            ).resolved(in: locale)
-        }
-        let elapsed = elapsedSeconds.map {
-            Duration.seconds($0).formatted(.units(allowed: [.seconds], width: .narrow).locale(locale))
-        }
-        return joined([label, detail ?? "", elapsed ?? ""], locale: locale)
-    }
-
-    /// A pane header's state tooltip: the state, then what the agent is
-    /// doing when the badge says, as the tab row phrases a single pane.
-    static func pane(state: AgentState, detail: String?, locale: Locale) -> String {
-        joined([state.localizedLabel.resolved(in: locale), detail ?? ""], locale: locale)
+    /// A pane header's state tooltip: the state glyph's name ("Needs
+    /// approval"), then what the agent is doing when the badge says.
+    static func pane(name: String, detail: String?, locale: Locale) -> String {
+        joined([name, detail ?? ""], locale: locale)
     }
 
     /// Several spoken facts read as one element, in the locale's own list
     /// style ("a, b, c" / "a、b、c").
     static func spokenList(_ pieces: [String], locale: Locale) -> String {
         pieces.filter { !$0.isEmpty }.formatted(.list(type: .and, width: .narrow).locale(locale))
+    }
+
+    /// Facts that `joined` set off for the eye, as VoiceOver reads them:
+    /// VoiceOver says " · " as a symbol ("middle dot") or runs the facts
+    /// together, so they are read again as the locale's list.
+    static func spoken(_ text: String, locale: Locale) -> String {
+        spokenList(text.components(separatedBy: separator(locale: locale)), locale: locale)
+    }
+
+    /// Writes a place as the attention list and all projects' cards write
+    /// it: "project / worktree", or the project alone when the checkout is
+    /// not known or is the project's name over again. The worktree goes by
+    /// its branch, or by its folder for a row the person named
+    /// (`WorkspaceSession.rowFolder(of:)`).
+    static func place(project: String, checkout: String?) -> String {
+        guard let checkout, !checkout.isEmpty, checkout != project else { return project }
+        return "\(project) / \(checkout)"
+    }
+
+    /// A place written "project / worktree" (`WorkspaceSession.containerLabel`),
+    /// as VoiceOver reads it: "project, worktree", not "slash". Only the
+    /// spaced " / " sets the two apart; a branch's own "/" stays in its name.
+    static func spokenPlace(_ text: String, locale: Locale) -> String {
+        spokenList(text.components(separatedBy: " / "), locale: locale)
     }
 }

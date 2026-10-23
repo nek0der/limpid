@@ -2,7 +2,7 @@
 // Limpid — SwiftUI wrapper around `PaneHostView` that adds the
 // header of a split pane, the "process exited" overlay banner and the
 // bell flash overlay. State is
-// read from `WindowSession.paneTransients` via `session.childExitCode`
+// read from `WorkspaceSession.paneTransients` via `session.childExitCode`
 // / `session.isBellRinging` — both go through the same `@Observable`
 // parent, so SwiftUI re-renders automatically on every mutation.
 
@@ -19,10 +19,14 @@ struct PaneContainerView: View {
     /// the UUID. See `ResolvedSplitNode` for the rationale.
     let surfaceView: SurfaceView
     @Environment(\.surfaceRegistry) private var registry
-    @Environment(WindowSession.self) private var session
+    @Environment(WorkspaceSession.self) private var session
     @Environment(SettingsStore.self) private var settingsStore
     @Environment(ApprovalPresentationStore.self) private var approvalPresentation
-    @Environment(ReviewPresentation.self) private var reviewPresentation
+    /// The window the pane is in, whose card its badge opens. Panes are
+    /// drawn only by `PaneAreaView` and its splits, inside a main window,
+    /// whose `MainWindowContent` puts the window in the environment.
+    @Environment(ProjectWindowState.self) private var window
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `1.0` when this leaf is focused, sits in a single-pane tab, or
     /// is the zoomed leaf; otherwise the user-picked
@@ -42,15 +46,18 @@ struct PaneContainerView: View {
         return tab.splitTree.effectiveFocusedLeafID == paneID
     }
 
+    /// The line under an exited process. Close Pane (⌘W by default) is
+    /// what closes this pane, so we name whatever it is bound to now.
+    private var exitHint: LocalizedStringResource {
+        PaneExitText.hint(closeKey: settingsStore.settings.keyboard.shortcut(for: .closeSurface)?.displayString)
+    }
+
     /// The same predicate the terminal's "Rename Pane…" item reads, so the
-    /// item is offered exactly while this header is drawn. Review's docked
-    /// strip is the only pane mounted while review is up, and it shows the
-    /// pane under a heading of its own, so the predicate leaves it bare.
+    /// item is offered exactly while this header is drawn.
     private var showsHeader: Bool {
         PaneHeaderRules.showsHeader(
             in: session.tab(containing: paneID),
-            isEnabled: settingsStore.settings.terminal.showsSplitPaneHeaders,
-            isReviewPresented: reviewPresentation.isPresented
+            isEnabled: settingsStore.settings.terminal.showsSplitPaneHeaders
         )
     }
 
@@ -60,7 +67,7 @@ struct PaneContainerView: View {
 
     var body: some View {
         // Bell + child-exit moved off `Tab.paneStates` and onto
-        // `WindowSession.paneTransients` so flipping them doesn't
+        // `WorkspaceSession.paneTransients` so flipping them doesn't
         // trip the autosave hook. UI still observes through the same
         // `@Observable` parent.
         let exitCode = session.childExitCode(paneID: paneID)
@@ -77,6 +84,11 @@ struct PaneContainerView: View {
                     .transition(.identity)
             }
             terminal(exitCode: exitCode, bellRinging: bellRinging, opacity: opacity)
+            // Under the terminal, inside the pane, so each leaf of a split
+            // has its own. No transition, for the same reason as the
+            // header: animating its height would resize the pty.
+            DecisionBarView(paneID: paneID)
+                .transition(.identity)
         }
         // A split or zoom that runs inside `withAnimation` would otherwise
         // carry the header in with it.
@@ -102,17 +114,14 @@ struct PaneContainerView: View {
                     // a routine BEL). Pane-scoped so a split layout
                     // tells the user which pane rang.
                     Rectangle()
-                        // 0.22 here is an OPACITY strength (not a duration).
-                        // It happens to numerically match the easeOut
-                        // duration below; the values are unrelated — one
-                        // tints, the other paces — and should NOT be
-                        // consolidated into a single constant.
+                        // 0.22 here is an opacity strength, not a
+                        // duration: it is unrelated to `bellFlash`'s.
                         .fill(Color.white.opacity(bellRinging ? 0.22 : 0.0))
                         .allowsHitTesting(false)
                 )
-                .animation(.easeOut(duration: 0.22), value: bellRinging)
+                .animation(LimpidMotion.bellFlash, value: bellRinging)
                 .opacity(opacity)
-                .animation(.easeOut(duration: 0.15), value: opacity)
+                .animation(LimpidMotion.paneDim, value: opacity)
 
             if let state = session.paneSearchStates[paneID] {
                 PaneSearchOverlay(
@@ -130,27 +139,39 @@ struct PaneContainerView: View {
                     }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .modalTransition(.paneBar, reduceMotion: reduceMotion)
             }
 
             if let exitCode {
-                VStack(spacing: 8) {
-                    Image(systemName: exitCode == 0 ? "checkmark.circle" : "exclamationmark.triangle")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(exitCode == 0 ? .secondary : LimpidColor.warning)
+                VStack(spacing: LimpidLayout.Supervision.spaceS) {
+                    if exitCode == 0 {
+                        Image(systemName: "checkmark.circle")
+                            .font(.supervision(.display, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    } else {
+                        // A failing exit is a stop (an abnormal exit),
+                        // so it wears the stopped glyph. The line below
+                        // says what happened, so the glyph is not read.
+                        StateGlyph(kind: .stopped, size: LimpidLayout.paneFailureGlyphSize)
+                            .accessibilityHidden(true)
+                    }
                     Text("Process exited (code \(exitCode))")
                         .font(LimpidFont.bodySecondary)
                         .foregroundStyle(.primary)
-                    Text("Press ⌘W to close, or ↵ to restart")
+                    Text(exitHint)
                         .font(LimpidFont.caption)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.vertical, 16)
-                .padding(.horizontal, 24)
-                .background(
-                    .thinMaterial,
-                    in: RoundedRectangle(cornerRadius: LimpidLayout.paneBannerCornerRadius, style: .continuous)
-                )
+                .padding(.vertical, LimpidLayout.Supervision.spaceL)
+                .padding(.horizontal, LimpidLayout.Supervision.spaceXL)
+                // On the floating parts' ground, opaque while transparency
+                // is off or reduced, so the terminal's text does not show
+                // through the notice.
+                .background(FloatingPanelFill(
+                    shape: RoundedRectangle(cornerRadius: LimpidLayout.paneBannerCornerRadius, style: .continuous),
+                    material: .thinMaterial
+                ))
                 .overlay(
                     RoundedRectangle(
                         cornerRadius: LimpidLayout.paneBannerCornerRadius,
@@ -160,24 +181,35 @@ struct PaneContainerView: View {
                 )
                 .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
                 .pointerStyle(.default)
-                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                .modalTransition(.floatingPanel, reduceMotion: reduceMotion)
             }
             if let approval = approvalPresentation.approval(forPaneID: paneID, in: session) {
                 Button {
-                    approvalPresentation.present(approval)
+                    window.approvalCard.present(approval, from: approvalPresentation)
                 } label: {
-                    // A pending approval is the needs-input state, so the
-                    // badge is that state's mark.
-                    AgentStateMark(state: .needsInput, placement: .paneBadge)
+                    // A pending request is a wait, so the badge is the wait's
+                    // glyph, named as the request it is.
+                    AgentStateMark(
+                        kind: approval.isQuestion ? .needsAnswer : .needsApproval,
+                        placement: .paneBadge
+                    )
                 }
                 .buttonStyle(.plain)
-                .padding(8)
+                .padding(LimpidLayout.Supervision.spaceS)
                 .padding(.top, session.paneSearchStates[paneID] == nil ? 0 : 52)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .accessibilityLabel(Text("Open approval for \(approval.toolName)"))
+                // A question is no tool's approval; its tool's name
+                // (AskUserQuestion) would say it is.
+                .accessibilityLabel(approval.isQuestion
+                    ? Text("Answer the Question", comment: "Pane, VoiceOver: the badge of a question the agent asks")
+                    : Text("Answer approval request for \(approval.toolName)"))
+                .accessibilityHint(Text("Opens the approval card"))
             }
         }
-        .animation(.easeOut(duration: 0.18), value: exitCode)
-        .animation(.easeOut(duration: 0.15), value: session.paneSearchStates[paneID] != nil)
+        .overlay {
+            PaneAttentionFrame(paneID: paneID)
+        }
+        .animation(ModalMotion.floatingPanel.animation(reduceMotion: reduceMotion), value: exitCode)
+        .animation(ModalMotion.paneBar.animation(reduceMotion: reduceMotion), value: session.paneSearchStates[paneID] != nil)
     }
 }

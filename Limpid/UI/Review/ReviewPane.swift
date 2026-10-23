@@ -1,8 +1,15 @@
 // ReviewPane.swift
-// Limpid — the review surface, docked above the terminal it writes back to.
+// Limpid — the review tab's surface, drawn where the terminal it writes back to was.
 
 import AppKit
 import SwiftUI
+
+/// How long the review waits before saying it is still opening or still
+/// loading: long enough that a warm read never flashes a spinner. One value
+/// for the open and the load, which read as one wait.
+enum ReviewLoadingTiming {
+    static let spinnerDelay: Duration = .milliseconds(250)
+}
 
 struct ReviewPane: View {
     let directory: URL
@@ -11,11 +18,17 @@ struct ReviewPane: View {
     /// table on every frame of a divider drag.
     let available: CGFloat
     let onClose: () -> Void
-    var draftDirectory: URL?
     var onInserted: ((UUID) -> Void)?
+    /// The review to show, which its owner keeps across showings (the
+    /// window's review tab, `ProjectWindowState.reviewSession`). The surface
+    /// opens no review of its own: one drawn in place of the owner's would
+    /// take a comment the window never sees. `nil` draws none.
+    var session: ReviewSession?
 
-    @Environment(\.reviewStores) private var reviewStores
-    @State private var store: ReviewStore?
+    @Environment(\.reviewTabHandler) private var reviewTabHandler
+    @Environment(ProjectWindowState.self) private var window
+    /// `session`, once its worktree resolves to the review's own.
+    @State private var reviewSession: ReviewSession?
     @State private var failure: DisplayText?
     /// Bumped by Try Again. The open is keyed on it as well as on the
     /// directory, so asking again re-runs it without the reader having to
@@ -26,9 +39,9 @@ struct ReviewPane: View {
 
     var body: some View {
         Group {
-            if let store {
+            if let reviewSession {
                 ReviewWorkspaceView(
-                    store: store,
+                    reviewSession: reviewSession,
                     available: available,
                     onClose: onClose,
                     onInserted: onInserted
@@ -36,12 +49,20 @@ struct ReviewPane: View {
                 // Retargeting to another worktree keeps this view's identity,
                 // which would otherwise carry the previous root's selection
                 // and composer into a diff they do not belong to.
-                .id(store.root)
+                .id(reviewSession.root)
             } else {
-                loadingView
+                VStack(spacing: 0) {
+                    loadingView
+                    // The review tab's band stays while its review opens, or
+                    // fails to: its Close is the way out, and a row that came
+                    // and went would move everything above it.
+                    if let tab = window.review, let reviewTabHandler {
+                        ReviewTabBand(tab: tab, reviewSession: window.reviewSession, handler: reviewTabHandler)
+                    }
+                }
             }
         }
-        .task(id: [directory.path, String(reloadToken)]) { await loadStore() }
+        .task(id: [directory.path, String(reloadToken)]) { await loadSession() }
     }
 
     /// What stands in until the repository is resolved.
@@ -52,83 +73,88 @@ struct ReviewPane: View {
     /// the surface failing to open rather than as it opening. It is the wait
     /// that needs explaining, not the open.
     private var loadingView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: LimpidLayout.Supervision.spaceL) {
             if let failure {
+                // A comment the review cannot show is offered here: the tab
+                // can be closed once it is copied or thrown away.
+                if let session {
+                    ReviewUnplacedCommentBanner(reviewSession: session)
+                }
                 Text(display: failure)
-                HStack(spacing: 12) {
+                HStack(spacing: LimpidLayout.Supervision.spaceM) {
                     // The messages that land here name a retry — "Refresh to
-                    // try again" — and this screen had nothing but Close on it.
+                    // try again". No Close beside it: the band under this
+                    // carries the tab's (one place for a button).
                     Button("Try Again") { reloadToken += 1 }
                         .accessibilityLabel(Text("Try Again"))
-                    closeButton
                 }
             } else if isSlowToOpen {
                 ProgressView("Loading changes…")
-                closeButton
             }
         }
+        // No fill of its own: the review tab stands on the session's
+        // surface, as the terminal it replaces does.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // The surface's own background, so what the reader sees is the panel
-        // arriving rather than a hole where the terminal used to be.
-        .background(LimpidColor.terminalColumnBackground)
         .task(id: directory) {
             isSlowToOpen = false
-            try? await Task.sleep(for: .milliseconds(250))
+            try? await Task.sleep(for: ReviewLoadingTiming.spinnerDelay)
             isSlowToOpen = !Task.isCancelled
         }
     }
 
-    private var closeButton: some View {
-        Button("Close", action: onClose)
-            .accessibilityLabel(Text("Close"))
-    }
-
-    private func loadStore() async {
+    private func loadSession() async {
         failure = nil
+        guard let session else { return }
         do {
             let root = try await ReviewGit.root(at: directory)
             try Task.checkCancellation()
             // Nothing to do when this task ran again for the repository
-            // already on screen. It used to clear the store first, which drops
-            // the last strong reference to a pooled one — the pool holds them
-            // weakly — so the store came back as a new instance and took the
-            // scope, the open file and what had been marked stale with it.
+            // already on screen: clearing the review session would start the
+            // one that replaced it over, in another scope with no open file.
             // The previous target's surface still goes away before another
-            // repository's arrives, which is what that clearing was for: left
-            // up, its diff and its Insert button belonged to a worktree the
-            // reader had already navigated away from.
-            guard store?.root != root else { return }
-            if let draftDirectory {
-                store = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: draftDirectory))
-            } else {
-                store = reviewStores.store(root: root)
-            }
+            // repository's arrives: left up, its diff and its Insert button
+            // would belong to a worktree the reader had already navigated
+            // away from.
+            guard reviewSession?.root != root else { return }
+            open(ReviewPaneOpening.choose(kept: session, resolved: .success(root)), kept: session)
         } catch is CancellationError {
             // A newer directory took over; that task owns the screen now.
         } catch {
+            open(ReviewPaneOpening.choose(kept: session, resolved: .failure(error)), kept: session)
+        }
+    }
+
+    private func open(_ choice: ReviewPaneOpening.Choice, kept: ReviewSession) {
+        switch choice {
+        case .kept:
+            reviewSession = kept
+        case let .cannotOpen(message):
+            // The review tab's comment cannot be shown with no review to
+            // show it in, nor kept unseen: it goes to the banner this
+            // screen draws.
+            kept.setComposerAside()
             // The surface belongs to a repository we could not resolve.
             // Leaving the previous one up left its diff and its Insert button
             // pointed at a worktree the reader had navigated away from — and
-            // the message below is drawn where the store is not, so without
-            // this it was never shown at all.
-            store = nil
-            failure = DisplayText(error: error)
+            // the message below is drawn where the review session is not, so
+            // without this it was never shown at all.
+            reviewSession = nil
+            failure = message
         }
     }
 }
 
-/// A comment the reader asked to be taken to, held while its file loads.
-struct ReviewJump: Equatable {
-    let fileID: String
-    let start: Int
-    let end: Int
-    /// The column the comment was written in, so landing on it in the split
-    /// layout selects the run the reader will recognize.
-    var side: ReviewSide?
-}
-
 struct ReviewWorkspaceView: View {
-    let store: ReviewStore
+    let reviewSession: ReviewSession
+    @Environment(\.isReviewInFront) private var isReviewInFront
+    @Environment(\.reviewTabHandler) var reviewTabHandler
+    /// The opening of the review tab this view draws. The window's tab can
+    /// change under a view that is going (`ReviewViewWork`).
+    @Environment(\.reviewTabOpening) var reviewTabOpening
+    /// Raised when the review tab comes back in front, so the diff takes the
+    /// keyboard (`ReviewDiffTable.focusRequest`).
+    @State private var tableFocusRequest = 0
+    @Environment(ProjectWindowState.self) var window
     /// Whether a read has been running long enough to be worth saying so.
     ///
     /// Separate from `isSlowToOpen`, which covers the surface arriving. This
@@ -141,13 +167,13 @@ struct ReviewWorkspaceView: View {
     let onClose: () -> Void
     var onInserted: ((UUID) -> Void)?
 
-    @Environment(WindowSession.self) var session
+    @Environment(WorkspaceSession.self) var session
     @Environment(ReviewPresentation.self) var reviewPresentation
-    @Environment(AttentionState.self) var attention
     @Environment(\.surfaceRegistry) var registry
     @Environment(ToastCenter.self) var toastCenter
     @Environment(SettingsStore.self) var settingsStore
     @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @Environment(\.supervisionSurfaceOpacity) private var surfaceOpacity
     @Environment(\.locale) var locale
     @State var fileID: String?
     /// The line run a comment will cover and the text dragged for copying,
@@ -155,11 +181,22 @@ struct ReviewWorkspaceView: View {
     @State var selection = ReviewDiffSelection()
     /// Editing reuses the composer rather than opening a modal on top of a
     /// surface that already covers the window, so which comment is being
-    /// rewritten has to travel with it.
-    @State var composer = ReviewComposerState()
+    /// rewritten has to travel with it. The review's own
+    /// (`ReviewSession.composer`), so a surface drawn anew, for a review tab
+    /// that comes back, draws the comment it was left with.
+    var composer: ReviewComposerState {
+        get { reviewSession.composer }
+        nonmutating set { reviewSession.composer = newValue }
+    }
+
     /// Polled rather than computed: resolving what is in front of the pane's
     /// terminal blocks on a `sysctl` and, under tmux hosting, on tmux itself.
     @State var destination: ReviewDestination?
+    /// What runs in front of each pane the band's destination menu offers,
+    /// by pane, so each item says what it would write into, as the band
+    /// does for the chosen one. Polled with `destination`, for the same
+    /// reason.
+    @State var choiceForegrounds: [UUID: String] = [:]
     @State var isInserting = false
     @State var isShowingPrompt = false
     /// Incremented every time the reader asks for the find bar. See
@@ -170,7 +207,7 @@ struct ReviewWorkspaceView: View {
     /// a hundred-thousand-line diff scanned it once per letter.
     @State var scannedQuery = ""
     /// True until the first probe for the current pane answers. Without it the
-    /// chip claims there is no terminal while it is still looking.
+    /// band claims there is no terminal while it is still looking.
     @State var isResolvingDestination = true
     /// Not observable state: a place to keep the last row list so the body can
     /// read it without rebuilding it. See `rows`.
@@ -182,6 +219,8 @@ struct ReviewWorkspaceView: View {
     @State var pendingJump: ReviewJump?
     @State var isTreeLayout = false
     @State var hidesViewedFiles = false
+    /// The checked files opened again from their headers.
+    @State var openedViewedFiles = ReviewStackOpenedFiles()
     /// The file list becomes a transient drawer when it cannot coexist with a
     /// readable diff. This is presentation state, not a saved review choice.
     @State var isCompactFileRailPresented = false
@@ -193,20 +232,24 @@ struct ReviewWorkspaceView: View {
     /// computed: the scan is over every line of the diff, and a computed
     /// property would repeat it on every keystroke in the composer.
     @State var numberWidth = ReviewRowMetrics.defaultNumberWidth
-    /// The pooled store may still contain the snapshot from the previous time
-    /// this repository was open. Keep it behind the loading surface until Git
-    /// has confirmed what belongs to this opening.
+    /// Whether this opening's first read has answered. Until then the
+    /// surface shows that it is loading, not an empty list it has not read.
     @State var hasPreparedInitialSnapshot = false
-    /// A navigation command names its destination before Git finishes loading
-    /// it. Keep that target so the scope pill can arrive there without
-    /// replaying a picker gesture the reader did not make.
-    @State var scopeSelectionWithoutAnimation: ReviewScope?
+    /// The file the stacked diff was last asked to put at its top.
+    @State var stackScroll = ReviewStackScroll()
+    /// Where the tab that came back was scrolled, until put back (`takeStackRestore`).
+    @State var stackRestore: ReviewScrollAnchor?
+    /// The paths the stacked diff's headers mark "Changed Outside Turns".
+    @Environment(\.reviewPathsOutsideTurns) var pathsOutsideTurns
+    /// The conversations whose turns changed each file, by path, for the
+    /// stacked diff's headers.
+    @Environment(\.reviewFileTags) var fileTags
 
     /// The comments that still stand. Resolved ones stay in the draft as the
     /// record of what was asked, and leave everything that acts on a comment:
     /// the diff, the counts, and the prompt.
-    private var openComments: [ReviewComment] {
-        store.comments.filter { !$0.isResolved }
+    var openComments: [ReviewComment] {
+        reviewSession.shownComments.filter { !$0.isResolved }
     }
 
     /// The files the reader is being shown, which is what `n` and `p` walk.
@@ -215,70 +258,72 @@ struct ReviewWorkspaceView: View {
     /// on screen was there would be answering a different question from the
     /// diff beside it. The rail narrows this further by its own text filter,
     /// which is a search rather than a scope and does not belong here.
-    private var listedFiles: [ReviewFile] {
+    var listedFiles: [ReviewFile] {
         // In the order the rail draws them, which is what `n` and `p` walk.
         ReviewFileTree.listed(
-            ReviewFileTree.ordered(store.files, isTree: isTreeLayout),
+            ReviewFileTree.ordered(reviewSession.files, isTree: isTreeLayout),
             hidingViewed: hidesViewedFiles,
-            viewed: Set(store.viewed.keys),
+            viewed: Set(reviewSession.viewed.keys),
             open: fileID
         )
     }
 
-    /// The largest line number the gutter may ever have to draw for this file.
+    /// The largest line number the gutter may ever have to draw.
     ///
-    /// The whole file rather than the patch: unfolding reveals numbers the
-    /// diff never showed, and a gutter that grew a digit part-way through
-    /// would shift every line of the diff sideways as the reader read it.
-    /// The store publishes the file's content and its diff together so that
-    /// this is answerable the first time it is asked.
+    /// The stacked diff draws every file's numbers in one gutter, as wide as
+    /// the range has needed (`ReviewStackLoader.highestLine`, the open file's
+    /// whole content included: unfolding reveals numbers the diff never
+    /// showed); it does not narrow for a short file, which would shift every
+    /// line of the diff sideways as the reader read on.
     private var highestLine: Int {
-        let patch = store.diff?.lines.reduce(0) { highest, line in
+        let patch = reviewSession.diff?.lines.reduce(0) { highest, line in
             max(highest, max(line.oldLine ?? 0, line.newLine ?? 0))
         } ?? 0
-        return max(patch, store.source.count)
+        return max(reviewSession.stackLoader.highestLine, patch, Self.stackedGutterFloor)
     }
 
     /// How many comments the banner is about. A resolved comment can also be
     /// stale — resolving is what the banner's own bulk action does to them —
     /// and counting those would leave it standing with nothing left to act on.
     private var staleOpenComments: Int {
-        openComments.count { store.staleCommentIDs.contains($0.id) }
+        openComments.count { reviewSession.staleCommentIDs.contains($0.id) }
     }
 
-    private var rows: [ReviewRow] {
-        // Memoized against `contentKey`. The body re-evaluates on every
+    /// The open file's rows, which the stack draws in its place
+    /// (`ReviewStackBuilder.Input.openRows`).
+    var openRows: [ReviewRow] {
+        // Memoized against `openRowsKey`. The body re-evaluates on every
         // keystroke in the composer — the text is a binding — and rebuilding
         // a hundred thousand rows per character is the difference between a
         // usable surface and an unusable one. The cache is a plain class held
         // in `@State`, so reading through it does not invalidate anything.
-        rowCache.rows(for: contentKey) {
+        rowCache.rows(for: openRowsKey) {
             ReviewRowBuilder.rows(
-                expanded: store.diff,
+                expanded: reviewSession.diff,
                 comments: openComments,
                 composerLineID: composer.lineID,
                 editingCommentID: composer.editingCommentID,
-                staleCommentIDs: store.staleCommentIDs,
+                staleCommentIDs: reviewSession.staleCommentIDs,
                 layout: reviewPresentation.diffLayout,
-                source: store.source,
-                gapSpans: store.gapSpans
+                source: reviewSession.source,
+                gapSpans: reviewSession.gapSpans
             )
         }
     }
 
     /// Which lines of the open file already carry feedback. Stale comments do
     /// not mark a line: they are no longer about the line they were written on.
-    private var lineCommentCounts: [Int: Int] {
-        rowCache.counts(for: contentKey) {
+    var openLineCommentCounts: [Int: Int] {
+        rowCache.counts(for: openRowsKey) {
             ReviewRowBuilder.lineCommentCounts(
-                comments: store.insertableComments,
+                comments: reviewSession.insertableComments,
                 fileID: fileID,
-                lines: store.diff?.lines ?? []
+                lines: reviewSession.diff?.lines ?? []
             )
         }
     }
 
-    /// Every place the query appears in the file on screen.
+    /// Every place the query appears in the files read.
     var searchHits: [ReviewSearchHit] {
         guard search.isActive, !scannedQuery.isEmpty else { return [] }
         return rowCache.hits(for: contentKey + "|" + scannedQuery) {
@@ -304,6 +349,7 @@ struct ReviewWorkspaceView: View {
     private func openSearch() {
         guard fileID != nil, !isCompactFileRailPresented else { return }
         search.isPresented = true
+        loadStackForSearch()
         // Asked for again even when it is already up: the reader may have
         // moved the keyboard elsewhere, and the Find key naming a field that
         // does not answer reads as the key having stopped working.
@@ -312,6 +358,7 @@ struct ReviewWorkspaceView: View {
 
     private func closeSearch() {
         search.isPresented = false
+        reviewSession.stackLoader.endSearch()
     }
 
     /// Moves the cursor to a match, which is also what scrolls to it: the
@@ -354,34 +401,39 @@ struct ReviewWorkspaceView: View {
     /// keystroke in the composer.
     private var widthKey: String {
         [
-            store.diff?.fingerprint ?? "",
+            reviewSession.diff?.fingerprint ?? "",
             fileID ?? "",
             reviewPresentation.diffLayout.rawValue,
-            String(store.source.count),
-            store.gapSpans.keys.sorted().map { "\($0):\(store.gapSpans[$0]?.above ?? 0):\(store.gapSpans[$0]?.below ?? 0)" }
+            String(reviewSession.source.count),
+            reviewSession.gapSpans.keys.sorted()
+                .map { "\($0):\(reviewSession.gapSpans[$0]?.above ?? 0):\(reviewSession.gapSpans[$0]?.below ?? 0)" }
                 .joined(separator: ",")
-        ].joined(separator: "|")
+        ].joined(separator: "|") + "|" + stackKey
     }
 
-    private var contentKey: String {
-        let comments = store.comments
-            // Both marks are drawn — the card carries "Inserted", and neither a
-            // resolved nor a stale comment is drawn at all — so both have to
-            // be able to rebuild the rows.
-            .map { "\($0.id.uuidString):\($0.body.hashValue):\($0.isResolved):\($0.insertedAt != nil)" }
-            .joined(separator: ",")
+    /// What the table reloads on: the rows, and the gutter's width they are
+    /// laid out against.
+    var contentKey: String {
+        // The gutter's width is part of what the rows are laid out
+        // against, so a file whose line numbers need another digit has to
+        // reload rather than keep the previous file's inset.
+        openRowsKey + "|" + String(describing: numberWidth) + "|" + stackKey
+    }
+
+    /// What the open file's rows depend on.
+    var openRowsKey: String {
+        // Every mark changes what is drawn — the card carries "Inserted",
+        // and a resolved or stale comment is not drawn at all — so each has
+        // to be able to rebuild the rows.
+        let comments = ReviewCommentRenderKey.of(reviewSession.shownComments, stale: reviewSession.staleCommentIDs)
         return [
-            store.diff?.fingerprint ?? "",
+            reviewSession.diff?.fingerprint ?? "",
             fileID ?? "",
-            String(store.files.count),
+            String(reviewSession.files.count),
             String(composer.startLineID ?? -1),
             String(composer.lineID ?? -1),
             composer.editingCommentID?.uuidString ?? "",
-            // The gutter's width is part of what the rows are laid out
-            // against, so a file whose line numbers need another digit has to
-            // reload rather than keep the previous file's inset.
-            String(describing: numberWidth),
-            store.staleCommentIDs.map(\.uuidString).sorted().joined(separator: ","),
+            reviewSession.staleCommentIDs.map(\.uuidString).sorted().joined(separator: ","),
             // The selection is deliberately not part of this. It changes
             // nothing about the row list, and keying the table's reload on it
             // rebuilt every row of the diff — a hundred thousand of them on a
@@ -394,8 +446,9 @@ struct ReviewWorkspaceView: View {
             reviewPresentation.diffLayout.rawValue,
             // What the reader has unfolded is part of the row list, and the
             // content behind it arrives after the diff does.
-            String(store.source.count),
-            store.gapSpans.keys.sorted().map { "\($0):\(store.gapSpans[$0]?.above ?? 0):\(store.gapSpans[$0]?.below ?? 0)" }
+            String(reviewSession.source.count),
+            reviewSession.gapSpans.keys.sorted()
+                .map { "\($0):\(reviewSession.gapSpans[$0]?.above ?? 0):\(reviewSession.gapSpans[$0]?.below ?? 0)" }
                 .joined(separator: ","),
             comments
         ].joined(separator: "|")
@@ -404,18 +457,18 @@ struct ReviewWorkspaceView: View {
     /// What Copy hands over, which has to be what Insert would send.
     ///
     /// Built from the comments Insert would keep, not from everything open:
-    /// the preview marks a stale comment and says it will not be sent, and the
-    /// text beside that mark used to carry it anyway. Insert re-checks against
+    /// the preview marks a stale comment and says it will not be sent, so the
+    /// text beside that mark must not carry it. Insert re-checks against
     /// the worktree, so this can still be a comment ahead of its file — but it
     /// is never one review already knows it is holding back.
-    private var prompt: String {
-        guard !store.insertableComments.isEmpty else { return "" }
+    var prompt: String {
+        guard !reviewSession.insertableComments.isEmpty else { return "" }
         // Empty rather than thrown: the preview is a reading of the draft, and
         // a prompt that cannot be assembled is reported by Insert, which is the
         // control that acts on it.
         return (try? ReviewPromptBuilder.build(
-            root: store.root,
-            comments: store.insertableComments,
+            root: reviewSession.root,
+            comments: reviewSession.insertableComments,
             instructions: settingsStore.settings.advanced.reviewInstructions,
             locale: settingsStore.appLocale
         ))?.text ?? ""
@@ -425,7 +478,7 @@ struct ReviewWorkspaceView: View {
     /// first line is still in the loaded diff.
     private var composerStartLine: ReviewLine? {
         guard let start = composer.startLineID, start != composer.lineID else { return nil }
-        return store.diff?.lines.first { $0.id == start }
+        return reviewSession.diff?.lines.first { $0.id == start }
     }
 
     private var canInsert: Bool {
@@ -433,71 +486,64 @@ struct ReviewWorkspaceView: View {
         // the worktree when Insert is pressed, and that path says what is
         // wrong; a button that grays out with nothing on screen explaining it
         // was worse than an error the reader can read.
-        !isInserting && !isResolvingDestination && !openComments.isEmpty && destination != nil
+        // The review tab's pane can close between two probes; the band
+        // already says so, and the button agrees at once.
+        let isPaneOpen = window.review.map { reviewTabHandler?.isDestinationOpen($0) ?? false } ?? false
+        return !isInserting && !isResolvingDestination && !openComments.isEmpty && destination != nil && isPaneOpen
     }
 
+    /// The diff column: the find bar over the stacked diff. The range's size
+    /// and the layout are in the tab's top edge (`ReviewStackBar`), and each
+    /// file's own name is on its header in the diff.
     var diffColumn: some View {
         VStack(spacing: 0) {
-            selectedFileChrome
+            findBar
+            // The review tab writes its keys in the menus, the tooltips, and
+            // the shortcut list rather than along its foot (no standing
+            // notes).
             content
-            Divider()
-            ReviewFooterHints()
         }
     }
 
     @ViewBuilder
-    private var selectedFileChrome: some View {
-        if let file = store.files.first(where: { $0.id == fileID }) {
-            ReviewFileBar(
-                root: store.root,
-                file: file,
-                stat: store.stats[file.id],
-                // Only about the file actually loaded: the rest of the list
-                // keeps the counts it was read with.
-                isEmpty: store.diff?.file.id == file.id
-                    && store.diff?.hasVanished == true,
-                isComposerOpen: composer.isOpen,
-                isViewed: store.viewed.keys.contains(file.id),
-                layout: layoutBinding,
-                showsFileListButton: !showsInlineFileRail && !composer.isOpen && !search.isPresented,
-                onShowFiles: presentCompactFileRail,
-                onToggleViewed: { toggleViewed(file.id) }
+    var findBar: some View {
+        if search.isPresented {
+            ReviewFindBar(
+                search: $search,
+                hitCount: searchHits.count,
+                position: searchPosition,
+                onMove: moveSearch,
+                onClose: closeSearch,
+                focusRequest: findFocusRequest,
+                note: findNote
             )
             Divider()
-            if search.isPresented {
-                ReviewFindBar(
-                    search: $search,
-                    hitCount: searchHits.count,
-                    position: searchPosition,
-                    onMove: moveSearch,
-                    onClose: closeSearch,
-                    focusRequest: findFocusRequest
-                )
-                Divider()
-            }
         }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            if let error = store.errorMessage {
+            if let tab = window.review, let reviewTabHandler {
+                tabTop(tab, handler: reviewTabHandler)
+            }
+            ReviewLegacyComments(reviewSession: reviewSession)
+            ReviewUnplacedCommentBanner(reviewSession: reviewSession)
+            if let error = reviewSession.errorMessage {
                 ReviewBanner(
                     systemImage: "exclamationmark.triangle.fill",
                     message: Text(display: error),
-                    tint: LimpidColor.error
+                    tone: .error
                 )
             }
             // Above the stale banner, because it explains why that one is
             // about to appear.
-            if store.hasPendingChanges {
+            if reviewSession.hasPendingChanges {
                 ReviewBanner(
                     systemImage: "arrow.trianglehead.2.clockwise",
-                    message: Text("The worktree has changed since this was loaded."),
-                    tint: LimpidColor.secondaryText,
-                    fill: LimpidColor.rowActiveFill.opacity(0.5),
+                    message: Text("Files in the worktree changed after this was loaded."),
+                    tone: .notice,
                     actionTitle: "Refresh",
-                    isActionEnabled: !store.isLoading && !isInserting,
+                    isActionEnabled: !reviewSession.isLoading && !isInserting,
                     action: { Task { await refresh() } }
                 )
             }
@@ -505,9 +551,9 @@ struct ReviewWorkspaceView: View {
                 ReviewBanner(
                     systemImage: "exclamationmark.triangle.fill",
                     message: Text(
-                        "\(staleOpenComments) comments no longer match the current diff and will not be sent."
+                        "\(staleOpenComments) comments no longer match the current diff and won’t be sent."
                     ),
-                    tint: LimpidColor.warning,
+                    tone: .warning,
                     actionTitle: "Show Comments",
                     isActionEnabled: !isInserting,
                     action: { isShowingPrompt = true },
@@ -526,25 +572,52 @@ struct ReviewWorkspaceView: View {
                 if isSlowToLoad {
                     ProgressView()
                         .controlSize(.small)
-                        .padding(8)
-                        .background(.regularMaterial, in: Capsule())
+                        .padding(LimpidLayout.Supervision.spaceS)
+                        // Floating over the diff, on the floating parts'
+                        // ground: opaque while transparency is off or reduced.
+                        .background(FloatingPanelFill(shape: Capsule()))
                         .allowsHitTesting(false)
                         .accessibilityLabel(Text("Loading changes…"))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The review tab's band, which carries this review's insert:
+            // the destination it polls and the comments it would send.
+            if let tab = window.review, let reviewTabHandler {
+                ReviewTabBand(
+                    tab: tab,
+                    reviewSession: reviewSession,
+                    handler: reviewTabHandler,
+                    insert: ReviewTabInsert(
+                        destination: destination,
+                        isResolving: isResolvingDestination,
+                        choiceForegrounds: choiceForegrounds,
+                        count: openComments.count,
+                        canInsert: canInsert,
+                        isInserting: isInserting,
+                        onInsert: insert
+                    )
+                )
+            }
         }
-        .background(LimpidColor.terminalColumnBackground)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // No fill of its own: the review tab stands on the session's
+        // surface, as the terminal it replaces does.
+        // Exactly the width it was given, and cut there: a stack is as
+        // wide as its widest child, so one row that asked for more (the
+        // band once did) laid the whole review out past the column, with
+        // its right side out of sight.
+        .frame(width: available)
+        .frame(maxHeight: .infinity)
+        .clipped()
         // A warm read should not flash a spinner, but a slow initial read must
         // still explain the otherwise empty protected snapshot area.
-        .task(id: store.isLoading) {
-            guard store.isLoading else {
+        .task(id: reviewSession.isLoading) {
+            guard reviewSession.isLoading else {
                 isSlowToLoad = false
                 return
             }
-            try? await Task.sleep(for: .milliseconds(250))
-            isSlowToLoad = !Task.isCancelled && store.isLoading
+            try? await Task.sleep(for: ReviewLoadingTiming.spinnerDelay)
+            isSlowToLoad = !Task.isCancelled && reviewSession.isLoading
         }
         .onChange(of: showsInlineFileRail) { _, isInline in
             if isInline {
@@ -556,6 +629,18 @@ struct ReviewWorkspaceView: View {
             isCompactFileRailPresented = false
             isCompactFileRailMounted = false
         }
+        // The review tab comes back as it was left, after going with its
+        // project (`ReviewTabViewState`).
+        .keptInReviewTab($isTreeLayout, as: \.isTreeLayout)
+        .keptInReviewTab($hidesViewedFiles, as: \.hidesViewedFiles)
+        .keptInReviewTab($openedViewedFiles, as: \.openedViewedFiles)
+        .onChange(of: reviewSession.viewed) { _, viewed in
+            openedViewedFiles.prune(viewed: viewed)
+        }
+        // Counted already: the find bar comes back on the match it was on,
+        // rather than landing on the first and moving the cursor there.
+        .keptInReviewTab($search, as: \.search) { scannedQuery = $0.query }
+        .onAppear(perform: takeStackRestore)
         .onExitCommand {
             if isCompactFileRailPresented {
                 dismissCompactFileRail()
@@ -563,67 +648,64 @@ struct ReviewWorkspaceView: View {
                 onClose()
             }
         }
-        .task {
-            // Before the first list, so the choice is on screen with it rather
-            // than appearing a moment later.
-            store.offerTurnScope(availableTurnScope)
-            await store.loadBase()
-            if let requestedScope = reviewPresentation.requestedScope {
-                _ = await changeScope(requestedScope, animatesSelection: false)
-                hasPreparedInitialSnapshot = true
-            } else {
-                await refresh()
-            }
-        }
+        .task { await readFirst() }
         .onChange(of: reviewPresentation.scopeRequestID) { _, _ in
             guard let requestedScope = reviewPresentation.requestedScope else { return }
-            Task { await changeScope(requestedScope, animatesSelection: false) }
-        }
-        .onChange(of: availableTurnScope) { _, scope in
-            store.offerTurnScope(scope)
+            Task { await changeScope(requestedScope) }
         }
         // The pane below can change under review — the user switches tab, an
         // agent starts or exits — and what is in front of its terminal changes
-        // constantly. One cheap poll keeps the chip honest without putting a
-        // process spawn in a view body.
-        .task {
-            while !Task.isCancelled {
+        // constantly. One cheap poll keeps the band's destination honest
+        // without putting a process spawn in a view body.
+        .task(id: isReviewInFront) {
+            // The menu's other panes are read on every tick only while the
+            // tab writes nowhere, when the band offers them as the next
+            // step; otherwise on every third, for a menu that is opened
+            // now and then.
+            var tick = 0
+            while isReviewInFront, !Task.isCancelled {
                 await refreshDestination()
+                if destination == nil || tick.isMultiple(of: 3) {
+                    await refreshChoiceForegrounds()
+                }
+                tick += 1
                 try? await Task.sleep(for: .seconds(2))
             }
         }
         // Slower than the destination poll beside it, because each tick
-        // spawns Git rather than reading a process name. Sleeping first
-        // leaves the load that just ran to answer for the first interval.
-        .task {
-            while !Task.isCancelled {
+        // spawns Git rather than reading a process name. It asks at once
+        // each time the review tab comes to the front: what changed while
+        // the tab was behind a terminal tab is news now.
+        .task(id: isReviewInFront) {
+            while isReviewInFront, !Task.isCancelled {
+                await reviewSession.detectChanges()
                 try? await Task.sleep(for: .seconds(5))
-                await store.detectChanges()
             }
         }
-        // A pane switch re-resolves at once. Waiting for the next tick of the
-        // poll showed "No terminal" for up to two seconds over a pane that has
-        // one, and left Insert disabled while it said so.
-        .onReceive(NotificationCenter.default.publisher(for: .limpidReviewFind)) { notification in
-            guard let owner = notification.object as? WindowSession, owner === session,
-                  let action = notification.userInfo?["action"] as? LimpidShortcutAction else { return }
+        .onChange(of: isReviewInFront) { _, isInFront in
+            if isInFront {
+                tableFocusRequest += 1
+            }
+        }
+        .onWindowCommand(of: window) { command in
+            // The review of the window Find was asked in. The review is
+            // drawn only by `PaneAreaView` and the review tab inside it, in a
+            // main window, whose `MainWindowContent` puts the window in the
+            // environment.
+            guard case let .reviewFind(action) = command else { return false }
             switch action {
             case .find: openSearch()
             case .findNext: moveSearch(by: 1)
             case .findPrevious: moveSearch(by: -1)
             default: break
             }
+            return true
         }
+        // A pane switch re-resolves at once. Waiting for the next tick of the
+        // poll showed "No terminal" for up to two seconds over a pane that has
+        // one, and left Insert disabled while it said so.
         .onChange(of: reviewPresentation.originPaneID) { _, _ in
             resolveDestinationNow()
-        }
-        // Collapsing unmounts the pane and expanding mounts it again, and the
-        // chip is answering for a surface that comes and goes with it. Left to
-        // the poll it spent up to two seconds claiming there was no terminal
-        // over one that was right there — but the destination itself has not
-        // changed, so this re-probes without emptying the chip first.
-        .onChange(of: reviewPresentation.isStripCollapsed) { _, _ in
-            Task<Void, Never> { await refreshDestination() }
         }
         // The scan follows the field by a moment. Long enough that a word typed
         // at speed is scanned once, short enough that the count does not read
@@ -643,6 +725,11 @@ struct ReviewWorkspaceView: View {
             }
         }
         .onChange(of: selection.lines) { old, new in
+            // A cursor or a run that reached another file of the stacked
+            // diff opens that file and lands there.
+            if routeIntoStack(new) {
+                return
+            }
             // Only while the run is still being extended. A plain click
             // somewhere else is the reader leaving, and dragging the draft
             // along committed it to lines they never selected. The anchor is
@@ -653,31 +740,52 @@ struct ReviewWorkspaceView: View {
             // keystroke — `c` on dragged text picks the run and composes at
             // once — so that change is not the reader leaving.
             guard let start = new.startLineID, let end = new.endLineID else { return }
-            let isComposingNewRun = composer.startLineID == start && composer.lineID == end
-            if old.anchorLineID != new.anchorLineID, composer.editingCommentID == nil, !isComposingNewRun {
+            switch ReviewComposerSelection.change(
+                of: composer,
+                holdsText: reviewSession.composerHoldsUnsavedText,
+                from: old,
+                to: new
+            ) {
+            case .keep:
+                break
+            case .retarget:
+                composer.retarget(start: start, end: end, side: new.side)
+            case .cancel:
                 cancelComposing()
-                return
             }
-            composer.retarget(start: start, end: end, side: new.side)
         }
         // A fingerprint describes content, not identity. Two files can have
         // the same patch, so include the file id or a selection and pending
         // jump from the previous file can survive the switch.
-        .onChange(of: store.diff.map { $0.file.id + "|" + $0.fingerprint }, initial: true) { _, _ in
+        .onChange(of: reviewSession.diff.map { $0.file.id + "|" + $0.fingerprint }, initial: true) { _, _ in
             selection.clear()
-            cancelComposing()
+            // A comment being written has followed the diff already, in the
+            // review (`ReviewComposerFollow`): onto the same code, or into
+            // the banner. An empty composer closes with the lines it was on.
+            if !composer.hasUnsavedText {
+                cancelComposing()
+            }
             // A comment opened from the list names a line in a file that may
             // still be loading; the jump lands once the diff is here.
-            if let target = pendingJump, store.diff?.file.id == target.fileID {
-                selection.updateLines { lines in
-                    lines.select(target.start, on: target.side)
-                    if target.end != target.start {
-                        lines.extend(to: target.end)
-                    }
-                }
-                pendingJump = nil
-            }
+            landPendingJump()
             numberWidth = ReviewRowMetrics.numberWidth(forHighestLine: highestLine)
+        }
+        // The stacked diff's gutter widens as files with longer line numbers
+        // are read, and the open file's contents arrive after its diff.
+        .onChange(of: reviewSession.stackLoader.highestLine) { _, _ in
+            numberWidth = ReviewRowMetrics.numberWidth(forHighestLine: highestLine)
+        }
+        // A composer that closes lets go of the stack's hold in any case.
+        .onChange(of: composer.isOpen, initial: true) { _, isOpen in
+            if !isOpen {
+                holdStack(isComposingInputMethodText: false)
+            }
+        }
+        // Find stays open across a refresh or another range, and searches
+        // what the list now holds.
+        .onChange(of: reviewSession.listReadCount) { _, _ in
+            guard search.isPresented else { return }
+            loadStackForSearch()
         }
         // Cards, composers and expanded gaps can move the same code to another
         // rendered row. Rebase by line identity and clear only if an endpoint
@@ -687,31 +795,7 @@ struct ReviewWorkspaceView: View {
         }
     }
 
-    // MARK: - Header
-
-    private var header: some View {
-        ReviewHeader(
-            store: store,
-            destination: destination,
-            isResolvingDestination: isResolvingDestination,
-            isInserting: isInserting,
-            isSnapshotReady: hasPreparedInitialSnapshot,
-            scopeSelectionWithoutAnimation: scopeSelectionWithoutAnimation,
-            canInsert: canInsert,
-            offeredTurnScope: availableTurnScope,
-            prompt: prompt,
-            isShowingPrompt: $isShowingPrompt,
-            onSelectScope: { scope in
-                Task { await changeScope(scope) }
-            },
-            onRefresh: { Task { await refresh() } },
-            onInsert: insert,
-            onClose: onClose,
-            onJump: jump
-        )
-    }
-
-    private var layoutBinding: Binding<ReviewDiffLayout> {
+    var layoutBinding: Binding<ReviewDiffLayout> {
         Binding(
             get: { reviewPresentation.diffLayout },
             set: { setLayout($0) }
@@ -722,81 +806,8 @@ struct ReviewWorkspaceView: View {
         guard layout != reviewPresentation.diffLayout else { return }
         reviewPresentation.diffLayout = layout
         selection.clearText()
-        let head = selection.lines.headLineID.flatMap { id in store.diff?.lines.first { $0.id == id } }
-        selection.updateLines { $0.follow(layout, head: head, lines: store.diff?.lines ?? []) }
-    }
-
-    func toggleViewed(_ fileID: String) {
-        store.setViewed(fileID, !store.viewed.keys.contains(fileID))
-    }
-
-    /// Resolves everything the worktree has moved past, in one action, with the
-    /// draft it replaced held for the length of the toast.
-    private func resolveStale() {
-        let before = openComments.count
-        guard let previous = store.resolveStale() else { return }
-        let committed = store.comments
-        let resolved = before - openComments.count
-        toastCenter.show(ToastItem(
-            message: .localized("Resolved \(resolved) comments."),
-            undo: { store.restore(previous, from: committed) }
-        ))
-    }
-
-    private func jump(to comment: ReviewComment) {
-        isShowingPrompt = false
-        // The preview lists every comment in the draft, whichever view it was
-        // written in, so the one the reader picked can name a layer this scope
-        // does not carry. Its file id is then in no list, nothing loads, and
-        // the diff of the file that was open stays on screen under a file bar
-        // that has gone — so the scope moves to the comment before the file
-        // does. Without a base there is no branch view to move to, and a
-        // branch comment cannot be reached at all.
-        if !store.scope.layers.contains(comment.file.layer) {
-            let targetScope = store.scopeForFile(comment.file)
-            guard targetScope.layers.contains(comment.file.layer) else { return }
-            Task {
-                guard await changeScope(targetScope), store.scope.layers.contains(comment.file.layer) else { return }
-                jump(to: comment)
-            }
-            return
-        }
-        pendingJump = ReviewJump(
-            fileID: comment.file.id,
-            start: comment.lineID,
-            end: comment.lastLineID,
-            side: comment.side
-        )
-        if fileID == comment.file.id {
-            // A comment written in the unified layout has no column; landing on
-            // it in the split one has to pick the column that draws it, the
-            // same way a layout switch does.
-            let head = store.diff?.lines.first { $0.id == comment.lastLineID }
-            let layout = reviewPresentation.diffLayout
-            let diffLines = store.diff?.lines ?? []
-            selection.updateLines { lines in
-                lines.select(comment.lineID, on: comment.side)
-                if comment.lastLineID != comment.lineID {
-                    lines.extend(to: comment.lastLineID)
-                }
-                lines.follow(layout, head: head, lines: diffLines)
-            }
-            pendingJump = nil
-        } else {
-            select(comment.file.id)
-        }
-    }
-
-    private var availableTurnScope: ReviewScope? {
-        ReviewAgents.turnScope(
-            session: session,
-            attention: attention,
-            // The presentation owns the destination identity. The resolved
-            // destination is briefly nil during every probe and can still
-            // describe the previous pane while focus is changing.
-            paneID: reviewPresentation.originPaneID,
-            root: store.root
-        )
+        let head = selection.lines.headLineID.flatMap { id in reviewSession.diff?.lines.first { $0.id == id } }
+        selection.updateLines { $0.follow(layout, head: head, lines: reviewSession.diff?.lines ?? []) }
     }
 
     // MARK: - Content
@@ -806,56 +817,71 @@ struct ReviewWorkspaceView: View {
             if !hasPreparedInitialSnapshot {
                 Color.clear
                     .accessibilityHidden(true)
-            } else if store.files.isEmpty, store.hasLoaded, !store.hasListRefreshFailed {
-                Text("No changes to review.")
-                    .foregroundStyle(LimpidColor.secondaryText)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if reviewSession.files.isEmpty, reviewSession.hasLoaded, !reviewSession.hasListRefreshFailed {
+                // The review tab reads a range, and says so of it.
+                SupervisionEmptyState(.noChangesInScope, size: .regular)
             } else {
                 ReviewDiffTable(
-                    rows: rows,
-                    diffLines: store.diff?.lines ?? [],
-                    intralineHighlights: store.diff?.intralineHighlights ?? ReviewIntralineHighlights(),
+                    stack: stack,
+                    diffLines: reviewSession.diff?.lines ?? [],
                     contentKey: contentKey,
                     widthKey: widthKey,
                     layout: reviewPresentation.diffLayout,
                     files: listedFiles,
-                    lineCommentCounts: lineCommentCounts,
                     numberWidth: numberWidth,
                     expandedFileID: fileID,
-                    contentIdentity: (fileID ?? "") + "|" + (store.diff?.fingerprint ?? ""),
-                    isInteractionEnabled: !store.isLoading,
+                    isInteractionEnabled: !reviewSession.isLoading,
                     selection: $selection,
                     composerLineID: composer.lineID,
                     composerStartLine: composerStartLine,
                     composerIsEditing: composer.editingCommentID != nil,
-                    composerText: $composer.text,
+                    composerText: Binding(get: { composer.text }, set: { composer.text = $0 }),
                     onSelectFile: { select($0.id) },
                     onCompose: beginComposing,
                     onCancelCompose: cancelComposing,
                     onCommit: commitComposer,
                     onInsert: {
-                        if canInsert {
-                            insert()
-                        }
+                        // ⌘⏎ in the review tab is the band's "Mark as Viewed";
+                        // inserting is the button's.
+                        reviewTabHandler?.primaryKey()
                     },
-                    onToggleTerminal: toggleTerminal,
                     search: search.isActive ? search : ReviewSearch(query: "", isPresented: search.isPresented),
                     onCloseSearch: closeSearch,
                     searchTargetLineID: searchTargetLineID,
-                    language: store.diff.map { ReviewSyntax.language(for: $0.file.path) } ?? nil,
+                    language: reviewSession.diff.map { ReviewSyntax.language(for: $0.file.path) } ?? nil,
                     onToggleViewed: {
                         if let fileID {
                             toggleViewed(fileID)
                         }
                     },
+                    focusRequest: tableFocusRequest,
                     fileApplication: FileOpener.application(
                         for: settingsStore.settings.advanced.fileApplication
                     ),
-                    onOpenLine: openInEditor(line:),
-                    onExpand: { store.expand($0, $1) },
-                    onResolve: { store.setResolved($0.id, true) },
+                    onOpenLine: openInEditor(line:fileID:),
+                    onExpand: { reviewSession.expand($0, $1) },
+                    onResolve: { reviewSession.setResolved($0.id, true) },
                     onEdit: beginEditing,
-                    onDelete: { store.remove($0.id) },
+                    onDelete: { reviewSession.remove($0.id) },
+                    hunkActions: hunkActions,
+                    onDiscardHunk: { hunk, fileID in
+                        hunkCall(hunk, in: fileID) { handler, tab, file, header in handler.discardHunk(tab, file, header, locale) }
+                    },
+                    onUndoDiscard: { hunk, fileID in
+                        hunkCall(hunk, in: fileID) { handler, tab, file, header in handler.undoDiscard(tab, file, header, locale) }
+                    },
+                    onCommentHunk: commentOnHunk(_:in:),
+                    surfaceOpacity: surfaceOpacity,
+                    scrollRequest: stackScroll,
+                    stackRestore: stackRestore,
+                    onStackRestored: stackRestoreFinished,
+                    onScrollReader: stackScrollReader,
+                    onNeedDiffs: { reviewSession.loadStacked(window: $0) },
+                    onComposerInputMethodText: holdStack(isComposingInputMethodText:),
+                    onReadingFile: readOn,
+                    onToggleFileViewed: toggleViewed,
+                    onToggleFileFold: toggleFold,
+                    root: reviewSession.root,
                     isOverlayPresented: isCompactFileRailPresented,
                     onCloseOverlay: dismissCompactFileRail,
                     onClose: onClose,
@@ -863,11 +889,12 @@ struct ReviewWorkspaceView: View {
                 )
             }
         }
-        // The diff column's floor is the one the rail math is built on: with
-        // the list inline, the two add up to `ReviewRail.inlineMinimumWidth`,
-        // which is what the window layout keeps clear for the surface. Any
-        // other number here makes the column wider than that sum and the
-        // surface wider than the window.
-        .frame(minWidth: ReviewRail.diffMinimum, maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: hunkDiscardKey) {
+            guard hunkDiscardKey != nil, let tab = window.review else { return }
+            await reviewTabHandler?.prepareHunkDiscards(tab)
+        }
+        // The column's floor is `ReviewInlineSplit`'s, which puts this
+        // beside the file list.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

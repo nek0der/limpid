@@ -71,3 +71,189 @@ custom_rules:
       LocalizedStringResource, or use resolved(in:) with the environment or
       app locale.
     severity: error
+
+  # Core and Presentation decide what the app does; AppKit and SwiftUI are the
+  # boundary where that is drawn and wired to the system (CLAUDE.md, "SwiftUI
+  # before AppKit"), and code below it that imports them cannot be tested
+  # without a window server. The excluded files predate the rule: they
+  # observe NSWindow, NSWorkspace, or NSApp, bridge libghostty's callbacks,
+  # or post notifications and the Dock badge. Each leaves the list when it
+  # moves to App/ or sits behind a port that App/ implements, as the window
+  # syncs and SurfaceRegistry's occlusion did with the per-window state of
+  # the supervision UI; the rest leave as their callers are rewritten. Do
+  # not add a file here: put the AppKit part in App/ or UI/. `Cocoa` and
+  # `SwiftUICore` are matched because they carry AppKit and SwiftUI under
+  # another name.
+  layer_ui_framework_import:
+    name: "UI framework below the UI layer"
+    regex: '^\s*(?:@\w+(?:\([^)]*\))?\s+)*import\s+(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?(?:AppKit|SwiftUI|SwiftUICore|Cocoa)\b'
+    included: 'Limpid/(?:Core|Presentation)/'
+    excluded_match_kinds:
+      - comment
+      - comment.mark
+      - comment.url
+      - doccomment
+      - doccomment.field
+      - string
+    excluded:
+      - 'Limpid/Core/Actions/PaneActions\.swift$'
+      - 'Limpid/Core/Agent/AgentIntegrationServiceRegistrar\.swift$'
+      - 'Limpid/Core/Clipboard/ClipboardConfirmationCoordinator\.swift$'
+      - 'Limpid/Core/Files/FileOpener\.swift$'
+      - 'Limpid/Core/GhosttyActionRouter\.swift$'
+      - 'Limpid/Core/GhosttyApp\.swift$'
+      - 'Limpid/Core/GhosttyEventCoordinator\.swift$'
+      - 'Limpid/Core/Git/GitSyncCoordinator\.swift$'
+      - 'Limpid/Core/Git/PRStatusSyncer\.swift$'
+      - 'Limpid/Core/Links/TerminalLinkOpener\.swift$'
+      - 'Limpid/Core/Notifications/LimpidNotificationManager\.swift$'
+      - 'Limpid/Core/Notifications/NotificationDelegate\.swift$'
+      - 'Limpid/Core/QuickTerminal/QuickTerminalHotKeyCenter\.swift$'
+      - 'Limpid/Core/Review/ReviewFileAction\.swift$'
+      - 'Limpid/Core/SecureInputManager\.swift$'
+      - 'Limpid/Core/Settings/KeyboardShortcut\+Capture\.swift$'
+      - 'Limpid/Core/Settings/KeyboardShortcut\.swift$'
+      - 'Limpid/Core/Settings/ReduceTransparencyResolver\.swift$'
+      - 'Limpid/Core/SurfaceRegistry\.swift$'
+      - 'Limpid/Core/Updates/LimpidUpdateDriver\.swift$'
+      - 'Limpid/Core/Updates/LimpidWindowRole\.swift$'
+    message: >-
+      Core and Presentation do not import AppKit or SwiftUI. Put the AppKit
+      or SwiftUI part in App/ or UI/ and pass values or a port in.
+    severity: error
+
+  # Domain holds the rules every layer above can test as plain values, so it
+  # sees Foundation only and performs no I/O; the processes, files, and network
+  # it needs reach it through ports Infrastructure implements.
+  domain_foundation_only:
+    name: "Domain imports Foundation only"
+    regex: '^\s*(?:@\w+(?:\([^)]*\))?\s+)*import\s+(?!(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?Foundation\b)\w+'
+    included: 'Limpid/Core/Domain/'
+    excluded_match_kinds:
+      - comment
+      - comment.mark
+      - comment.url
+      - doccomment
+      - doccomment.field
+      - string
+    message: >-
+      Domain imports Foundation only. Define a port here and implement it
+      in Infrastructure.
+    severity: error
+  domain_side_effect:
+    name: "Side effect in Domain"
+    regex: '\b(?:Process|FileManager|URLSession)\b'
+    included: 'Limpid/Core/Domain/'
+    excluded_match_kinds:
+      - comment
+      - comment.mark
+      - comment.url
+      - doccomment
+      - doccomment.field
+    message: >-
+      Domain does no I/O. Ask for it through a port that Infrastructure
+      implements.
+    severity: error
+
+  # Core is below Presentation, so it never names the per-window display
+  # state; the window's saved selection is the Core value `WindowSelection`.
+  # A name check, not a full dependency check: it catches the types that
+  # would most tempt a shortcut, the display stores and the models that
+  # word what the window shows (a banner reached for `SessionRowFactText`
+  # once; the wording now sits beside its value in Domain).
+  core_names_presentation_type:
+    name: "Core names a Presentation type"
+    regex: '\b(?:ProjectWindowState|WindowRegistry|SessionRowFactText|SessionSidebarModel|NeedsAttentionListModel|DecisionBarModel)\b'
+    included: 'Limpid/Core/'
+    # Code only: a doc comment may explain how a Core value relates to the
+    # display state built on top of it.
+    excluded_match_kinds:
+      - comment
+      - comment.mark
+      - comment.url
+      - doccomment
+      - doccomment.field
+    message: >-
+      Core does not depend on Presentation. Keep the saved part in
+      WindowSelection, and words beside their Domain value, and let
+      Presentation read them.
+    severity: error
+
+  # Core is below UI too, so it never names the window's sizes, tokens, or
+  # glyphs: a Core type that needs one takes the value from its caller.
+  # The excluded files predate the rule (main's palette catalog and sidebar drop); each leaves
+  # the list when `ContainerSymbol` and `DropPosition` move below UI or the
+  # callers take a Core value in their place. Do not add a file here.
+  core_names_ui_type:
+    name: "Core names a UI type"
+    regex: '\b(?:LimpidLayout|SupervisionTokens|StateGlyph|ContainerSymbol|DropPosition)\b'
+    included: 'Limpid/Core/'
+    excluded:
+      - 'Limpid/Core/CommandPalette/CommandPaletteCatalog\.swift$'
+      - 'Limpid/Core/Models/WorkspaceSession\.swift$'
+      - 'Limpid/Core/Models/WorkspaceSession\+Worktree\.swift$'
+    excluded_match_kinds:
+      - comment
+      - comment.mark
+      - comment.url
+      - doccomment
+      - doccomment.field
+    message: >-
+      Core does not depend on UI. Hand the size, token, or glyph in from
+      the caller, or keep a Core value the UI maps.
+    severity: error
+
+  # Domain receives facts as its own small values (ARCHITECTURE.md), so it
+  # never names the stores, settings, or wire types of the Core around it.
+  # A name check of the types that would most tempt a shortcut. The excluded
+  # file predates the rule: it leaves the list when `TurnRetention` takes
+  # the days and turns as its own value instead of `TurnRetentionSettings`,
+  # and its protection takes turn ids instead of `ReviewTurnRange`.
+  domain_names_core_type:
+    name: "Domain names a Core type"
+    regex: '\b(?:TurnRetentionSettings|ReviewTurnRange|AgentIntegrationApprovalWire|PRInfo|WorkspaceSession|SettingsStore|LimpidSettings|ApprovalPresentation|AgentRuntimePresentation)\b'
+    included: 'Limpid/Core/Domain/'
+    excluded:
+      - 'Limpid/Core/Domain/TurnRetention\.swift$'
+    excluded_match_kinds:
+      - comment
+      - comment.mark
+      - comment.url
+      - doccomment
+      - doccomment.field
+    message: >-
+      Domain does not depend on the rest of Core. Take the facts as a
+      Domain value and let the caller build it.
+    severity: error
+
+  # US spelling in comments (AGENTS.md §3), which no compiler checks. Code
+  # is left alone: an identifier or a label spelled otherwise is an API's
+  # name, and one in backticks or after a dot in a comment names it too.
+  # `PRInfo.swift` explains GitHub's own spelling of a canceled run, and
+  # `CatalogWordingTests.swift` names the spellings the catalog may not use.
+  british_spelling:
+    name: "British spelling in a comment"
+    regex: '(?<![`.\w])(?:[Cc]ancell(?:ed|ing)|[Ss]ignall(?:ed|ing)|[Aa]cknowledgements?|[Ii]nitialis(?:e|ed|es|ing|ation)|[Mm]odell(?:ed|ing)|[Rr]ecognis(?:e|ed|es|ing)|[Bb]ehaviours?|[Nn]ormalis(?:e|ed|er|es|ing|ation)|[Ss]ynchronis(?:e|ed|es|ing|ation)|[Gg]rey(?:s|ed|ing)?)\b'
+    match_kinds:
+      - comment
+      - doccomment
+    excluded:
+      - 'Limpid/Core/Git/PRInfo\.swift$'
+      - 'LimpidTests/CatalogWordingTests\.swift$'
+    message: >-
+      Comments use US spelling: canceled, signaling, acknowledgment,
+      initialize, modeled, recognize, behavior, normalize, synchronize, gray.
+    severity: error
+
+  # An error's description, and a tool's stderr, can carry an absolute path:
+  # `SecureFileWrite` and Foundation put the file's path in theirs, and Git
+  # names the repository. Paths are user content (AGENTS.md §3), so they go
+  # into the log `.private`, which a shared sysdiagnose redacts. An error's
+  # kind or a status code may stay `.public`.
+  public_error_description_log:
+    name: "Error description logged public"
+    regex: '(?:String\(describing:\s*error\)|\berror\.localizedDescription|\\\(error|\.stderr)\s*,\s*privacy:\s*\.public\b'
+    message: >-
+      An error's description or stderr can carry an absolute path. Log it
+      with privacy: .private.
+    severity: error

@@ -28,5 +28,6 @@ Limpid/Core/Persistence/DemoFixture.swift:lazygit
 Limpid/Core/Files/EditorLineLaunch.swift:"com.microsoft.VSCode
 Limpid/Core/Files/EditorLineLaunch.swift:scheme: "vscode
 LimpidTests/FileOpenerTests.swift:"com.microsoft.VSCode
+LimpidTests/FileApplicationCandidatesTests.swift:"com.microsoft.VSCode
 LimpidTests/FileOpenerTests.swift:"vscode://file/
 LimpidTests/FileOpenerTests.swift:"vscode-insiders://file/

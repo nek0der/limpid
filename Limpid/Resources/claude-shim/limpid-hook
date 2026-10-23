@@ -1,15 +1,11 @@
 #!/bin/sh
 # Limpid claude lifecycle hook — the entry point the provider calls on every
-# subscribed hook event. It only chooses a backend and exec's it, so the
-# provider's hook command never changes when the receiver does:
-#   - `rust` (the default): the signed
-#     Hook Helper runs the runtime in-process without opening XPC.
-#   - `shell`: the previous receiver, kept as `limpid-hook.legacy` for one
-#     release as the rollback path.
-# The backend is chosen by LIMPID_AGENT_HOOK_BACKEND, which the pane
-# environment sets. A missing helper falls back to the shell receiver rather
-# than dropping the event; once we exec the helper there is no return, so a
-# helper that fails at runtime is not covered.
+# subscribed hook event. It execs the Rust hook runtime inside the signed
+# Hook Helper, so the provider's hook command never changes when the runtime
+# does. The helper is the only receiver: it alone writes the turn records the
+# changes panel, unread turns, and Restore Code read. A missing helper is a
+# broken bundle, and we say so (`limpid_hook_helper_missing`) rather than
+# record the run in a way that leaves those empty without a word.
 
 set -u
 
@@ -31,7 +27,16 @@ hook_dir="$(CDPATH='' cd -- "$(dirname -- "$hook_path")" 2>/dev/null && pwd -P)"
 # LIMPID_HOOK_HELPER exists for the test suites, which run this script
 # from the source tree where no bundle surrounds it.
 helper="${LIMPID_HOOK_HELPER:-$hook_dir/../../MacOS/AgentIntegrationHookHelper}"
-if [ "${LIMPID_AGENT_HOOK_BACKEND:-rust}" != "shell" ] && [ -x "$helper" ]; then
-  exec "$helper" hook claude
+if [ ! -x "$helper" ]; then
+  . "$hook_dir/../agent-shim/runtime-common.sh"
+  limpid_hook_helper_missing "$helper"
 fi
-exec /bin/sh "$hook_dir/limpid-hook.legacy"
+# One id per hook call, which a turn record applies once. Always minted
+# here, never taken from the environment: a value that leaked into the
+# agent's environment would give every later call the same id, and each
+# would be dropped as a repeat of the first. Without `uuidgen` the id is
+# empty, which the runtime reads as absent: the run is still recorded,
+# only its turns are not.
+LIMPID_HOOK_INVOCATION_ID="$(/usr/bin/uuidgen 2>/dev/null)"
+export LIMPID_HOOK_INVOCATION_ID
+exec "$helper" hook claude

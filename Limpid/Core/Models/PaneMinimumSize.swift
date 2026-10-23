@@ -1,9 +1,9 @@
 // PaneMinimumSize.swift
 // Limpid — the smallest width and height a pane in a split may take.
 //
-// One number used to serve both axes. A split pane can carry a header,
-// which takes height from the terminal and needs a width of its own to
-// keep its glyph and menu, so the two axes stopped having the same floor.
+// One floor per axis. A split pane can carry a header, which takes
+// height from the terminal and needs a width of its own to keep its glyph
+// and menu, so the two axes do not share a floor.
 
 import CoreGraphics
 

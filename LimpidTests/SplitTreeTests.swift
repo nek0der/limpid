@@ -18,6 +18,23 @@ struct SplitTreeTests {
         #expect(tree.focusedLeafID == leaf)
     }
 
+    @Test("the bottom edge holds both sides of a side-by-side split and the lower half of a stacked one")
+    func bottomEdgeLeafIDs_followTheShape() {
+        let a = UUID()
+        let b = UUID()
+        let c = UUID()
+        // a | (b / c)
+        let tree = SplitTree(root: .split(PaneSplit(
+            direction: .horizontal,
+            ratio: 0.3,
+            first: .leaf(id: a),
+            second: .split(PaneSplit(direction: .vertical, ratio: 0.5, first: .leaf(id: b), second: .leaf(id: c)))
+        )))
+        #expect(tree.bottomEdgeLeafIDs() == [a, c])
+        #expect(SplitTree(leafID: a).bottomEdgeLeafIDs() == [a])
+        #expect(SplitTree().bottomEdgeLeafIDs().isEmpty)
+    }
+
     // MARK: - Insertion
 
     @Test(
@@ -85,12 +102,12 @@ struct SplitTreeTests {
             .insert(at: a, direction: .horizontal, newID: b).tree
             .insert(at: b, direction: .vertical, newID: c).tree
 
-        #expect(horizontal.root?.minimumExtent(along: .horizontal, leafMinimum: 80) == 252)
-        #expect(mixed.root?.minimumExtent(along: .horizontal, leafMinimum: 80) == 166)
-        #expect(mixed.root?.minimumExtent(along: .vertical, leafMinimum: 80) == 166)
+        #expect(horizontal.root?.minimumExtent(along: .horizontal, leafMinimum: 80) == 242)
+        #expect(mixed.root?.minimumExtent(along: .horizontal, leafMinimum: 80) == 161)
+        #expect(mixed.root?.minimumExtent(along: .vertical, leafMinimum: 80) == 161)
     }
 
-    @Test("a parent divider reserves the full minimum width of its nested subtree")
+    @Test("an oversized drag keeps every leaf, and the parent divider reserves its nested subtree's minimum width")
     func resize_nestedSameAxisSplit_preservesEveryLeafFloor() throws {
         let a = UUID()
         let b = UUID()
@@ -105,13 +122,14 @@ struct SplitTreeTests {
             bounds: CGSize(width: 400, height: 300),
             minSize: 80
         )
+        #expect(Set(resized.allLeafIDs()) == [a, b, c])
         let root = try #require(resized.root)
         guard case let .split(split) = root else {
             Issue.record("Expected a split root")
             return
         }
         let secondVisibleExtent = 400 * (1 - split.ratio) - Double(PaneSplit.dividerThickness / 2)
-        #expect(abs(secondVisibleExtent - 166) < 0.001)
+        #expect(abs(secondVisibleExtent - 161) < 0.001)
     }
 
     @Test("a nested same-axis divider is resized by its unique structural path")
@@ -360,22 +378,6 @@ struct SplitTreeTests {
 
         #expect(tree.neighborLeaf(of: middle, direction: .up, rects: rects) == top)
         #expect(tree.neighborLeaf(of: middle, direction: .down, rects: rects) == bottom)
-    }
-
-    // MARK: - Resize ratio clamping
-
-    @Test("resize clamps absurd drag deltas to a valid ratio without crashing")
-    func resize_oversizedDelta_keepsBothLeavesIntact() {
-        let a = UUID()
-        let b = UUID()
-        let tree = SplitTree(leafID: a).insert(at: a, direction: .horizontal, newID: b).tree
-        let resized = tree.resize(
-            splitAt: [],
-            by: 99999,
-            bounds: CGSize(width: 800, height: 600),
-            minSize: 80
-        )
-        #expect(Set(resized.allLeafIDs()) == [a, b])
     }
 
     // MARK: - Codable wire format

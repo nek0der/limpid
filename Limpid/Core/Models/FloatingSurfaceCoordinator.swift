@@ -18,15 +18,19 @@ enum FloatingSurfaceKind: Hashable, CaseIterable {
     case paneRename
     case promptCache
     case containerColor
-    /// An approval card the user brought up, by a click on its row or a
-    /// command.
+    /// An approval card with keyboard focus in it: the person is working
+    /// in it. A card the person opened and then left for the terminal is
+    /// not a surface here: it stays on screen but holds nothing back.
     case approvalCard
-    /// An approval card showing only because the pointer rests on its
-    /// Waiting row: a hover peek, like the PR card.
-    case approvalPreview
     case notificationHistory
     case prCard
     case review
+    /// One of the supervision title bar's dropdowns (project, worktree, the
+    /// Needs Attention list). It takes the keyboard like a working surface,
+    /// and closes when another working surface comes up in its place. An
+    /// approval card is the exception: the list opens it with Answer…, and
+    /// it stays under the card, whose Escape comes first.
+    case titleBarMenu
 
     /// One of Limpid's own small floating panels, which close for each
     /// other: the rename field, the cache panel, the color picker.
@@ -44,7 +48,7 @@ enum FloatingSurfaceKind: Hashable, CaseIterable {
     /// commits when it loses it.
     var makesPanelsGiveWay: Bool {
         switch self {
-        case .commandPalette, .approvalCard, .notificationHistory, .review: true
+        case .commandPalette, .approvalCard, .notificationHistory, .review, .titleBarMenu: true
         default: false
         }
     }
@@ -56,16 +60,20 @@ enum FloatingSurfaceRules {
     /// A floating panel closes the other floating panels, a rename in
     /// progress included: opened by keyboard or VoiceOver there is no click
     /// elsewhere to end the rename, and two panels would stand side by side.
-    /// A working surface closes the cache panel and the color picker. A hover
-    /// peek (the PR card, an approval preview) closes nothing.
+    /// A working surface closes the cache panel and the color picker, and a
+    /// title bar dropdown it opened over, except an approval card, which the
+    /// Needs Attention list opens and stays under. A hover peek (the PR
+    /// card) closes nothing.
     static func surfacesToClose(
         whenPresenting opening: FloatingSurfaceKind,
         open: Set<FloatingSurfaceKind>
     ) -> Set<FloatingSurfaceKind> {
         let closing: Set<FloatingSurfaceKind> = if opening.isFloatingPanel {
             [.paneRename, .promptCache, .containerColor]
-        } else if opening.makesPanelsGiveWay {
+        } else if opening == .approvalCard {
             [.promptCache, .containerColor]
+        } else if opening.makesPanelsGiveWay {
+            [.promptCache, .containerColor, .titleBarMenu]
         } else {
             []
         }
@@ -101,11 +109,10 @@ struct FloatingSurfaceCoordinator {
     /// Ends a rename in progress the way a click elsewhere does, committing
     /// what was typed: the keyboard goes back to the pane's terminal.
     let endRename: () -> Void
+    /// Closes the window's title bar dropdown. Nothing by default, for a
+    /// coordinator made without a window (tests).
+    var closeTitleBarMenu: () -> Void = {}
 
-    /// `opening` has just presented, and `open` is what is up now. Two
-    /// panels opening in the same update each report presenting; the one
-    /// already closed by the other must not close it in turn, so a surface
-    /// no longer open does nothing.
     /// Tells the panels what may open while `open` is up: whether the cache
     /// panel may open under the pointer or by itself, and whether either
     /// panel may open at all.
@@ -129,6 +136,10 @@ struct FloatingSurfaceCoordinator {
         }
     }
 
+    /// `opening` has just presented, and `open` is what is up now. Two
+    /// panels opening in the same update each report presenting; the one
+    /// already closed by the other must not close it in turn, so a surface
+    /// no longer open does nothing.
     func makeWay(for opening: FloatingSurfaceKind, open: Set<FloatingSurfaceKind>) {
         guard open.contains(opening) else { return }
         for kind in FloatingSurfaceRules.surfacesToClose(whenPresenting: opening, open: open) {
@@ -139,7 +150,9 @@ struct FloatingSurfaceCoordinator {
                 promptCache.close()
             case .containerColor:
                 containerColor.close()
-            case .commandPalette, .approvalCard, .approvalPreview, .notificationHistory, .prCard, .review:
+            case .titleBarMenu:
+                closeTitleBarMenu()
+            case .commandPalette, .approvalCard, .notificationHistory, .prCard, .review:
                 // Never in the closing set: these are the app's own
                 // surfaces, which close by their own controls.
                 break

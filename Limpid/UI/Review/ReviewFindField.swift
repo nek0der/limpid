@@ -28,7 +28,7 @@ struct ReviewFindField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 11)
+        field.font = .systemFont(ofSize: LimpidFont.Supervision.Size.caption.rawValue)
         field.lineBreakMode = .byTruncatingTail
         field.cell?.usesSingleLineMode = true
         field.stringValue = text

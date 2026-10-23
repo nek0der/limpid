@@ -3,7 +3,7 @@
 //
 // Lives parallel to `Worktree` rather than as a field on it so the
 // session model stays unaware of external forge state. The sidebar
-// (`ContainerRow`) reads `info(for:)` during render; the syncer
+// and the session header read `info(for:)` during render; the syncer
 // (`PRStatusSyncer`) writes via `update`. All access is @MainActor:
 // the store performs no IO and schedules nothing, so there is nothing
 // here to take off the main actor. Same posture as
@@ -22,12 +22,26 @@ final class PRStatusStore {
     ///
     /// Absent entry means either "we haven't fetched yet" or "this
     /// container has no linked request". Both render the same way (no
-    /// mark), so we don't distinguish them.
+    /// mark); what tells them apart, where an action depends on it, is
+    /// `forges`, which holds an entry only once a lookup was answered.
     private(set) var perContainer: [ContainerID: PRInfo] = [:]
+    /// The forge each container's remote is on, kept only when its CLI is
+    /// installed: what "Create PR" needs before any request exists.
+    /// Absent for no remote, an unsupported host, or no CLI.
+    private(set) var forges: [ContainerID: ForgeKind] = [:]
 
     init() {}
 
     // MARK: - Mutations
+
+    /// `update(container:info:)` with the forge the lookup found, written
+    /// as idempotently.
+    func update(container: ContainerID, info: PRInfo?, forge: ForgeKind?) {
+        update(container: container, info: info)
+        if forges[container] != forge {
+            forges[container] = forge
+        }
+    }
 
     /// Idempotent write: only mutate when the new value actually
     /// differs from the stored one. Avoids Observation churn when
@@ -43,17 +57,6 @@ final class PRStatusStore {
         }
     }
 
-    /// Drop every cached entry. Called by `PRStatusSyncer` when the
-    /// user turns the feature off. The sidebar already renders nothing
-    /// while the flag is off, so this is not what hides the marks —
-    /// it's what stops a stale entry from flashing when the user turns
-    /// the feature back on, before the first fetch has landed.
-    func clear() {
-        if !perContainer.isEmpty {
-            perContainer.removeAll()
-        }
-    }
-
     /// Forget every container outside `live`. The syncer calls this
     /// with the rows it is willing to fetch for, so hiding a worktree,
     /// closing a project, or a worktree going missing on disk drops
@@ -64,10 +67,11 @@ final class PRStatusStore {
     /// running would hold the whole syncer at the active cadence for
     /// the rest of the session.
     func prune(keeping live: Set<ContainerID>) {
-        let stale = perContainer.keys.filter { !live.contains($0) }
+        let stale = Set(perContainer.keys).union(forges.keys).filter { !live.contains($0) }
         guard !stale.isEmpty else { return }
         for container in stale {
             perContainer.removeValue(forKey: container)
+            forges.removeValue(forKey: container)
         }
     }
 
@@ -75,5 +79,9 @@ final class PRStatusStore {
 
     func info(for container: ContainerID) -> PRInfo? {
         perContainer[container]
+    }
+
+    func forge(for container: ContainerID) -> ForgeKind? {
+        forges[container]
     }
 }

@@ -7,61 +7,69 @@ struct CommandPaletteRow: View {
     let item: CommandPaletteItem
     let isSelected: Bool
     let matchedIndices: [Int]
-    let onTap: () -> Void
+    /// Runs the row; `true` when it was clicked with ⌘.
+    let onTap: (_ holdsCommand: Bool) -> Void
 
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        content
+            .opacity(item.isEnabled ? 1.0 : 0.4)
+            .padding(LimpidLayout.Supervision.paletteRowInsets)
+            .contentShape(Rectangle())
+            .dropdownRowBackground(
+                isSelected: isSelected,
+                isHovering: isHovering,
+                cornerRadius: LimpidLayout.Supervision.smallControlCornerRadius,
+                cornerStyle: .circular
+            )
+            .onClick { holdsCommand in
+                if item.isEnabled {
+                    onTap(holdsCommand)
+                }
+            }
+            // VoiceOver's press runs the row as a plain click, said here
+            // rather than left to how SwiftUI exposes a pair of taps.
+            .accessibilityAction {
+                if item.isEnabled {
+                    onTap(false)
+                }
+            }
+            .onHover { isHovering = $0 }
+    }
+
+    /// The row: one line, the icon, the name in the text color, what
+    /// goes with it (its English name, its detail) after it in the muted
+    /// token and cut short first, and the keys in a cap at the end.
+    private var content: some View {
+        HStack(alignment: .firstTextBaseline, spacing: LimpidLayout.Supervision.spaceS) {
             Image(systemName: item.icon)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+                .font(.supervision(.label))
+                .foregroundStyle(SupervisionTokens.muted.color)
                 .frame(width: 20, alignment: .center)
-
-            VStack(alignment: .leading, spacing: 1) {
-                highlightedTitle
-                    .font(LimpidFont.paletteItem)
+            highlightedTitle
+                .font(.supervision(.label))
+                .foregroundStyle(SupervisionTokens.text.color)
+                .lineLimit(1)
+                .layoutPriority(1)
+            if let detail {
+                Text(verbatim: detail)
+                    .font(.supervision(.meta))
+                    .foregroundStyle(SupervisionTokens.muted.color)
                     .lineLimit(1)
-
-                if let alias = item.searchAlias {
-                    Text(alias)
-                        .font(LimpidFont.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                if let subtitle = item.subtitle {
-                    Text(subtitle)
-                        .font(LimpidFont.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                    .truncationMode(.tail)
             }
-
-            Spacer(minLength: 4)
-
+            Spacer(minLength: LimpidLayout.Supervision.spaceXS)
             if let shortcut = item.shortcutDisplay {
-                Text(shortcut)
-                    .font(LimpidFont.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Color.primary.opacity(0.06),
-                        in: RoundedRectangle(cornerRadius: 4)
-                    )
+                SupervisionKeycap(keys: shortcut, size: .meta, color: SupervisionTokens.muted)
             }
         }
-        .opacity(item.isEnabled ? 1.0 : 0.4)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
-        .background(rowBackground, in: RoundedRectangle(cornerRadius: 6))
-        .onTapGesture {
-            if item.isEnabled {
-                onTap()
-            }
-        }
-        .onHover { isHovering = $0 }
+    }
+
+    /// The English name and the detail, one after the other.
+    private var detail: String? {
+        let pieces = [item.searchAlias, item.subtitle].compactMap(\.self).filter { !$0.isEmpty }
+        return pieces.isEmpty ? nil : pieces.joined(separator: " · ")
     }
 
     // MARK: - Highlighted title
@@ -76,17 +84,5 @@ struct CommandPaletteRow: View {
             attributed[start..<end].inlinePresentationIntent = .stronglyEmphasized
         }
         return Text(attributed)
-    }
-
-    // MARK: - Background
-
-    private var rowBackground: Color {
-        if isSelected {
-            return LimpidColor.rowActiveFill
-        }
-        if isHovering {
-            return LimpidColor.rowHoverFill
-        }
-        return .clear
     }
 }

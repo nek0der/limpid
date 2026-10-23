@@ -1,12 +1,12 @@
 // ContainerColorPicker.swift
-// Limpid — changing a Group / Project palette color: the floating panel
+// Limpid — changing a project's palette color: the floating panel
 // with its swatch grid, and the host that draws that panel.
 //
 // The panel is one of Limpid's floating panels (`FloatingPanel.swift`),
 // drawn over a whole window like the pane rename field and the prompt cache
 // panel: it shares their surface, its arrow points at the color dot it was
-// opened from, and it may overlap the rows below. A sidebar row opens it
-// from "Change Color"; the settings sheet from its Color row.
+// opened from, and it may overlap the rows below. The project settings
+// sheet opens it from its Color row.
 
 import SwiftUI
 
@@ -15,7 +15,9 @@ import SwiftUI
 /// Picking applies at once; there is nothing to confirm.
 struct ContainerColorPicker: View {
     let current: Int?
-    let onSelect: (Int) -> Void
+    /// A palette slot, or nil for "Automatic": no color of the project's
+    /// own, which draws in the accent (`LimpidColor.paletteColor`).
+    let onSelect: (Int?) -> Void
 
     /// The swatch VoiceOver is on, moved to the current one when the panel
     /// appears; see the `onAppear` below.
@@ -28,6 +30,7 @@ struct ContainerColorPicker: View {
                 .foregroundStyle(.secondary)
                 .accessibilityAddTraits(.isHeader)
             grid
+            automatic
         }
         .padding(LimpidLayout.floatingPanelPadding)
         .accessibilityElement(children: .contain)
@@ -37,7 +40,7 @@ struct ContainerColorPicker: View {
         // swatches exist to receive it.
         .onAppear {
             DispatchQueue.main.async {
-                focusedSwatch = current ?? 0
+                focusedSwatch = current ?? -1
             }
         }
     }
@@ -64,41 +67,76 @@ struct ContainerColorPicker: View {
         return Button {
             onSelect(index)
         } label: {
-            ZStack {
+            swatchFace(paletteIndex: index, isSelected: isSelected)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(Text(Self.name(of: index)))
+        .accessibilityLabel(Text(Self.name(of: index)))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityFocused($focusedSwatch, equals: index)
+    }
+
+    /// Draws a swatch in its slot: the fill the project's mark takes
+    /// (`ProjectMarkRule`), so the swatch picked is the color the mark
+    /// shows, in a ring while it is the project's. `nil` is Automatic's,
+    /// the accent.
+    private func swatchFace(paletteIndex: Int?, isSelected: Bool) -> some View {
+        ZStack {
+            Circle()
+                .fill(SupervisionTokens.projectMarkFill(paletteIndex: paletteIndex))
+                .frame(width: LimpidLayout.containerColorSwatchSize, height: LimpidLayout.containerColorSwatchSize)
+            if isSelected {
                 Circle()
-                    .fill(LimpidColor.projectPalette[index])
-                    .frame(width: LimpidLayout.containerColorSwatchSize, height: LimpidLayout.containerColorSwatchSize)
-                if isSelected {
-                    Circle()
-                        .stroke(Color.primary.opacity(0.85), lineWidth: 2)
-                        .frame(
-                            width: LimpidLayout.containerColorSelectionRingSize,
-                            height: LimpidLayout.containerColorSelectionRingSize
-                        )
-                }
+                    .stroke(Color.primary.opacity(0.85), lineWidth: 2)
+                    .frame(
+                        width: LimpidLayout.containerColorSelectionRingSize,
+                        height: LimpidLayout.containerColorSelectionRingSize
+                    )
             }
-            .frame(width: LimpidLayout.containerColorSwatchSlot, height: LimpidLayout.containerColorSwatchSlot)
+        }
+        .frame(width: LimpidLayout.containerColorSwatchSlot, height: LimpidLayout.containerColorSwatchSlot)
+    }
+
+    private static func name(of index: Int) -> LocalizedStringResource {
+        LimpidColor.projectPaletteNames.indices.contains(index)
+            ? LimpidColor.projectPaletteNames[index]
+            : LocalizedStringResource("Color \(index + 1)")
+    }
+
+    /// Back to no color of the project's own, which a picked swatch had no
+    /// way to undo: under the grid, a swatch in the accent and its name.
+    private var automatic: some View {
+        let isSelected = current == nil
+        return Button {
+            onSelect(nil)
+        } label: {
+            HStack(spacing: LimpidLayout.floatingPanelPadding / 2) {
+                swatchFace(paletteIndex: nil, isSelected: isSelected)
+                Text("Automatic", comment: "Project color picker: no color of the project's own")
+                    .font(LimpidFont.caption)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Color \(index + 1)")
-        .accessibilityLabel(Text("Color \(index + 1)"))
+        .help(Text("Use the accent color", comment: "Project color picker: tooltip of Automatic"))
+        .accessibilityLabel(Text("Automatic", comment: "Project color picker: no color of the project's own"))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityFocused($focusedSwatch, equals: index)
+        .accessibilityFocused($focusedSwatch, equals: -1)
     }
 }
 
 /// Hosts the open color picker over the window it is placed in, below the
-/// color dot it was opened from: the main window's sidebar rows, or the
-/// container settings sheet's Color row, each with its own presentation in
-/// the environment. Picking applies the color to the container and closes.
+/// color dot it was opened from, with the presentation in that window's
+/// environment: the project settings sheet's Color row opens it. Picking
+/// applies the color to the project and closes.
 struct ContainerColorPanelHost: View {
     /// Whether a press on the color dot is left to the dot, a button that
     /// toggles the panel (the settings sheet), rather than closing it.
     var isAnchorPressLeftToAnchor = false
 
     @Environment(ContainerColorPresentation.self) private var presentation
-    @Environment(WindowSession.self) private var session
+    @Environment(WorkspaceSession.self) private var session
 
     var body: some View {
         FloatingPanelHost(
@@ -111,9 +149,9 @@ struct ContainerColorPanelHost: View {
             content: { request in
                 // Read live, so the ring follows a color changed elsewhere
                 // while the panel is open.
-                ContainerColorPicker(current: session.paletteIndex(of: request.container)) { index in
+                ContainerColorPicker(current: session.project(request.projectID)?.paletteIndex) { index in
                     if let pick = presentation.pick(index) {
-                        session.setPaletteIndex(pick.paletteIndex, for: pick.container)
+                        session.setProjectPaletteIndex(pick.projectID, to: pick.paletteIndex)
                     }
                 }
             }

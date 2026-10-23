@@ -1,17 +1,31 @@
 //! Stable C ABI boundary between Limpid's Swift application and Rust core.
 
+#[cfg(test)]
+mod contract_tests;
 mod projection;
 mod providers;
+mod restore;
+#[cfg(test)]
+mod test_support;
+mod turns;
 
 pub use projection::{
+    limpid_projection_engine_commit_v1, limpid_projection_engine_create_v1,
+    limpid_projection_engine_free_v1, limpid_projection_engine_pass_v1,
+    limpid_projection_engine_turns_taken_v1, limpid_projection_engine_v1,
     limpid_projection_on_launch_v1, limpid_projection_on_terminate_v1,
-    limpid_projection_project_v1, limpid_projection_providers_v1, limpid_projection_result,
+    limpid_projection_providers_v1, limpid_projection_result,
 };
 pub use providers::{
     LIMPID_HOOK_KIND_LIFECYCLE, LIMPID_HOOK_KIND_WORKTREE, limpid_hook_run_v1,
     limpid_provider_approval_output_v1, limpid_provider_approval_output_v2,
     limpid_provider_approval_request_v1, limpid_provider_result,
 };
+pub use restore::{
+    limpid_discard_hunks_v1, limpid_restore_recover_v1, limpid_restore_turn_v1,
+    limpid_restore_undo_v1,
+};
+pub use turns::{limpid_declined_wait_end_v1, limpid_turn_gc_apply_v1, limpid_turn_result};
 
 use limpid_agent_core::{
     MAX_FIRST_PROMPT_BYTES, MAX_TITLE_BYTES, Principal, RunId, TitleCandidates, TitleError,
@@ -36,7 +50,7 @@ enum TitleCandidateKind {
 ///
 /// Additive symbols keep the current version. We increment it only when an
 /// existing exported contract must change incompatibly.
-pub(crate) const ABI_VERSION: u32 = 2;
+pub(crate) const ABI_VERSION: u32 = 4;
 
 /// Status codes returned by the approval ABI functions.
 ///
@@ -266,9 +280,7 @@ pub unsafe extern "C" fn limpid_approval_session_exchange_v1(
         let response = session
             .exchange_json(input)
             .map_err(|error| exchange_status(&error))?;
-        let response = response.into_boxed_slice();
-        let length = response.len();
-        let data = Box::into_raw(response).cast::<u8>();
+        let (data, length) = into_caller_bytes(response);
         // SAFETY: The caller guarantees `output` is writable, and these bytes
         // are now owned by the caller until it invokes the matching free.
         unsafe { ptr::write(output, limpid_approval_bytes_v1 { data, len: length }) };
@@ -291,6 +303,31 @@ pub unsafe extern "C" fn limpid_approval_bytes_free_v1(data: *mut u8, len: usize
     if !data.is_null() {
         // SAFETY: The bytes originate from `Box<[u8]>` with this exact length.
         unsafe { drop(Box::from_raw(ptr::slice_from_raw_parts_mut(data, len))) };
+    }
+}
+
+/// Gives up ownership of `body` as the `Box<[u8]>` allocation
+/// `limpid_approval_bytes_free_v1` releases, and returns its pointer and
+/// length. Every call that hands bytes out goes through here, so the shape
+/// the free expects is decided in one place.
+pub(crate) fn into_caller_bytes(body: Vec<u8>) -> (*mut u8, usize) {
+    let body = body.into_boxed_slice();
+    let length = body.len();
+    (Box::into_raw(body).cast::<u8>(), length)
+}
+
+/// Hands `body` to the caller through an `out`/`out_len` pair, to be
+/// released with `limpid_approval_bytes_free_v1`.
+///
+/// # Safety
+///
+/// Both output pointers must be writable.
+pub(crate) unsafe fn transfer(body: Vec<u8>, out: *mut *mut u8, out_len: *mut usize) {
+    let (data, length) = into_caller_bytes(body);
+    // SAFETY: The caller guarantees both output pointers are writable.
+    unsafe {
+        ptr::write(out, data);
+        ptr::write(out_len, length);
     }
 }
 
@@ -523,10 +560,9 @@ mod tests {
             )
         };
         assert_eq!(status, APPROVAL_OK);
-        // SAFETY: A successful exchange returns this exact owned byte pair.
-        let response = unsafe { slice::from_raw_parts(output.data, output.len) }.to_vec();
-        // SAFETY: This releases the exact allocation from the successful call.
-        unsafe { limpid_approval_bytes_free_v1(output.data, output.len) };
+        // SAFETY: The pair is what this call wrote.
+        let response = unsafe { crate::test_support::take_bytes(output.data, output.len) }
+            .expect("a successful exchange returns a body");
         serde_json::from_slice(&response).unwrap()
     }
 
@@ -619,17 +655,19 @@ mod tests {
         }
     }
 
+    /// The ABI hands the session's refusals back as they are: an error
+    /// frame with the session's code. Who may resolve what, and which epoch
+    /// is current, are the session's rules, tested with it.
     #[test]
-    fn requester_cannot_resolve_its_own_or_another_run() {
+    fn a_session_refusal_returns_as_an_error_frame_with_its_code() {
         // SAFETY: Each handle is released exactly once before the test returns.
         unsafe {
             let service = limpid_approval_service_create_v1(8);
-            let own_run = Uuid::new_v4();
-            let requester = requester(service, own_run);
+            let run_id = Uuid::new_v4();
+            let requester = requester(service, run_id);
             let epoch = hello(requester);
-            for run_id in [own_run, Uuid::new_v4()] {
-                let response = exchange(
-                    requester,
+            for (request, code) in [
+                (
                     json!({
                         "version": 1,
                         "message_id": Uuid::new_v4(),
@@ -641,34 +679,23 @@ mod tests {
                             "decision": {"decision": "deny"}
                         }
                     }),
-                );
-                assert_eq!(response["type"], "error");
-                assert_eq!(response["body"]["code"], "unauthorized");
+                    "unauthorized",
+                ),
+                (
+                    json!({
+                        "version": 1,
+                        "message_id": Uuid::new_v4(),
+                        "service_epoch": Uuid::new_v4(),
+                        "type": "approval.snapshot",
+                        "body": null
+                    }),
+                    "epoch_mismatch",
+                ),
+            ] {
+                let response = exchange(requester, request);
+                assert_eq!(response["type"], "error", "{code}");
+                assert_eq!(response["body"]["code"], code);
             }
-            limpid_approval_session_free_v1(requester);
-            limpid_approval_service_free_v1(service);
-        }
-    }
-
-    #[test]
-    fn approval_abi_rejects_stale_epoch() {
-        // SAFETY: Each handle is released exactly once before the test returns.
-        unsafe {
-            let service = limpid_approval_service_create_v1(8);
-            let requester = requester(service, Uuid::new_v4());
-            hello(requester);
-            let response = exchange(
-                requester,
-                json!({
-                    "version": 1,
-                    "message_id": Uuid::new_v4(),
-                    "service_epoch": Uuid::new_v4(),
-                    "type": "approval.snapshot",
-                    "body": null
-                }),
-            );
-            assert_eq!(response["type"], "error");
-            assert_eq!(response["body"]["code"], "epoch_mismatch");
             limpid_approval_session_free_v1(requester);
             limpid_approval_service_free_v1(service);
         }
@@ -735,11 +762,6 @@ mod tests {
     }
 
     #[test]
-    fn exported_abi_version_matches_constant() {
-        assert_eq!(limpid_rust_abi_version(), ABI_VERSION);
-    }
-
-    #[test]
     fn abi_resolves_into_caller_owned_buffer() {
         let provider_session = "  Session title  ".as_bytes();
         let generated = "Generated".as_bytes();
@@ -790,29 +812,58 @@ mod tests {
         assert_eq!(output_length, title.len());
     }
 
-    #[test]
-    fn abi_does_not_reject_unused_oversized_fallback() {
-        let title = "Formal title".as_bytes();
-        let oversized = vec![b'x'; MAX_TITLE_BYTES + 1];
-        let mut output = [0_u8; 64];
+    /// Resolves the three candidates through the ABI, an empty slice
+    /// standing for an absent one, and returns the status and the title.
+    fn resolve(session: &[u8], generated: &[u8], prompt: &[u8]) -> (i32, Vec<u8>) {
+        let mut output = vec![0_u8; MAX_TITLE_BYTES];
         let mut output_length = 0_usize;
-
         // SAFETY: Every pointer references its matching live byte region.
         let result = unsafe {
             limpid_resolve_title_v1(
-                title.as_ptr(),
-                title.len(),
-                ptr::null(),
-                0,
-                oversized.as_ptr(),
-                oversized.len(),
+                session.as_ptr(),
+                session.len(),
+                generated.as_ptr(),
+                generated.len(),
+                prompt.as_ptr(),
+                prompt.len(),
                 output.as_mut_ptr(),
                 output.len(),
                 &raw mut output_length,
             )
         };
+        output.truncate(output_length);
+        (result, output)
+    }
 
-        assert_eq!(result, TITLE_RESOLVE_OK);
-        assert_eq!(&output[..output_length], title);
+    /// The ABI takes the candidates in their order, one at a time: an absent
+    /// or blank one gives way to the next, and none at all is `EMPTY`.
+    #[test]
+    fn abi_falls_through_the_candidates_in_order() {
+        assert_eq!(
+            resolve(b"", b"Generated", b"Opening prompt"),
+            (TITLE_RESOLVE_OK, b"Generated".to_vec())
+        );
+        assert_eq!(
+            resolve(b" \n ", b"", b"Opening prompt"),
+            (TITLE_RESOLVE_OK, b"Opening prompt".to_vec())
+        );
+        assert_eq!(resolve(b"", b"", b""), (TITLE_RESOLVE_EMPTY, Vec::new()));
+    }
+
+    /// A candidate the ABI never reaches is never decoded, so one past its
+    /// kind's limit does not refuse the title an earlier one gives.
+    #[test]
+    fn abi_never_decodes_a_candidate_it_does_not_reach() {
+        let title = b"Formal title";
+        let oversized_title = vec![b'x'; MAX_TITLE_BYTES + 1];
+        let oversized_prompt = vec![b'x'; MAX_FIRST_PROMPT_BYTES + 1];
+        assert_eq!(
+            resolve(title, &oversized_title, &oversized_prompt),
+            (TITLE_RESOLVE_OK, title.to_vec())
+        );
+        assert_eq!(
+            resolve(b"", &oversized_title, b"Opening prompt"),
+            (TITLE_RESOLVE_TOO_LONG, Vec::new())
+        );
     }
 }

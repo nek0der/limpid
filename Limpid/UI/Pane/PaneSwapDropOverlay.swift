@@ -46,6 +46,7 @@ struct PaneSwapDropOverlay: View {
     /// the highlight follows the user's chosen accent instead of the
     /// macOS system one.
     @Environment(\.limpidAccent) private var accent
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Edge zones take 25% of the matching axis. Matches the standard
     /// pane-rearrangement UX seen across tiling terminals / editors.
@@ -79,19 +80,26 @@ struct PaneSwapDropOverlay: View {
                     ZStack {
                         zoneGrid(in: geo.size)
                         if let zone = hoverZone {
-                            // Inset the visual highlight to the same rect
-                            // as `PaneContainerView`'s clipped surface +
-                            // bell flash, so the drop-target outline lines
-                            // up with the "this pane" rectangle the user
-                            // already reads elsewhere. The hit grid above
-                            // keeps the full slot extent so drops between
-                            // panes still register.
-                            highlight(for: zone, in: geo.size)
-                                .allowsHitTesting(false)
-                                .transition(.opacity)
+                            // The hit grid above keeps the pane's full
+                            // extent so a drop near its edge still lands;
+                            // only the drawn mark steps in. The pane's
+                            // place on the surface, read with its size in
+                            // one go, says which of its corners are the
+                            // surface's.
+                            highlight(
+                                for: zone,
+                                fit: SurfaceFrameFit.fit(
+                                    size: geo.size,
+                                    surfaceBounds: geo.bounds(of: .named(SupervisionWindowView.surfaceSpace))
+                                )
+                            )
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
                         }
                     }
-                    .animation(LimpidMotion.reorderLive, value: hoverZone)
+                    // The highlight follows the pointer; under Reduce Motion
+                    // it moves at once rather than slides.
+                    .animation(reduceMotion ? nil : LimpidMotion.reorderLive, value: hoverZone)
                 }
             } else {
                 // No pane drag in flight — let underlying gestures
@@ -179,52 +187,46 @@ struct PaneSwapDropOverlay: View {
 
     // MARK: - Visual highlight
 
-    /// The visual is always anchored to the *whole pane* — a single
-    /// accent frame + a translucent overlay covering the entire leaf —
-    /// so the user reads "this pane is the drop target" regardless of
-    /// where the cursor sits. A small SF Symbol at the center hints
-    /// at *what* the drop will do (swap / insert above / below / left /
-    /// right). Splitting the highlight into per-zone tints used to
-    /// suggest distinct actions for what is really one and the same
-    /// target.
+    /// The visual is always anchored to the *whole pane*, so the user
+    /// reads "this pane is the drop target" regardless of where the cursor
+    /// sits. A small SF Symbol at the center hints at *what* the drop will
+    /// do (swap / insert above / below / left / right). Splitting the
+    /// highlight into per-zone tints used to suggest distinct actions for
+    /// what is really one and the same target.
+    ///
+    /// The mark is every drop target's mark (`SupervisionDropMark`), run
+    /// along every line around the pane (`dropTargetPaneInset`): inside the
+    /// surface's border where the pane meets the surface, against the seam
+    /// where it meets another pane. It rounds only at the corners the pane
+    /// shares with the surface, there following the surface's curve, and is
+    /// square at a seam, where the pane itself is square
+    /// (`SurfaceFrameFit.inset(by:)`). Every value is a whole point or a
+    /// whole pixel, so its edges land on the pixel grid. A zone that would
+    /// move nothing keeps only a dashed `faint` edge. The symbol sits on the popovers' surface, edged
+    /// in `line`, as the window's other floating marks do.
     @ViewBuilder
-    private func highlight(for zone: PaneDropZone, in size: CGSize) -> some View {
+    private func highlight(for zone: PaneDropZone, fit: SurfaceFrameFit) -> some View {
+        let layout = LimpidLayout.Supervision.self
         let active = isEffective(zone)
-        let strokeColor = active
-            ? accent.opacity(0.7)
-            : Color.secondary.opacity(0.5)
-        let fillColor = active
-            ? accent.opacity(0.10)
-            : Color.secondary.opacity(0.06)
-        let symbolColor = active
-            ? accent
-            : Color.secondary
+        let ring = fit.inset(by: layout.dropTargetPaneInset)
+        let shape = UnevenRoundedRectangle(cornerRadii: ring.radii, style: .continuous)
         ZStack {
-            Rectangle()
-                .fill(fillColor)
-            Group {
-                if active {
-                    Rectangle()
-                        .strokeBorder(strokeColor, lineWidth: 2)
-                } else {
-                    Rectangle()
-                        .strokeBorder(
-                            strokeColor,
-                            style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
-                        )
-                }
+            if active {
+                SupervisionDropMark(shape: shape)
+            } else {
+                shape.strokeBorder(
+                    SupervisionTokens.faint.color,
+                    style: StrokeStyle(lineWidth: layout.dropTargetRingWidth, dash: [4, 3])
+                )
             }
             Image(systemName: Self.symbolName(for: zone))
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(symbolColor)
-                .padding(14)
-                .background(
-                    Circle().fill(Material.regular)
-                )
-                .overlay(
-                    Circle().strokeBorder(strokeColor.opacity(0.5), lineWidth: 1)
-                )
+                .font(.supervision(.symbolLarge, weight: .semibold))
+                .foregroundStyle(active ? accent : SupervisionTokens.muted.color)
+                .padding(layout.spaceM)
+                .background(Circle().fill(SupervisionTokens.popover.color))
+                .overlay(Circle().strokeBorder(SupervisionTokens.line.color, lineWidth: 1))
         }
+        .padding(ring.insets)
     }
 
     /// SF Symbol hinting at the action the drop will perform.

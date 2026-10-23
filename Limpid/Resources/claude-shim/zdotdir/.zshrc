@@ -38,6 +38,28 @@ for _limpid_shim in "${LIMPID_SHIM_DIR:-}" "${LIMPID_CODEX_SHIM_DIR:-}"; do
 done
 builtin unset _limpid_shim
 
+# Record the PATH this shell ended up with, after the user's .zshrc has
+# turned on whatever version manager (nvm, mise, asdf, volta, ...) adds to
+# it. Limpid's new workspace sheet looks for the installed agents on this
+# PATH: the login shell it can ask itself reads only .zprofile, and would
+# miss an agent installed under one of them. Each project's panes name a
+# record of their own, and a scratch pane none: this PATH can hold the
+# pane's own folders ($PWD/bin), which must never start as another
+# project's agent (`AgentCatalog.panePathRecordURL`). We write the record
+# to a temporary file and move it into place, so a reader never sees half a
+# line; zsh's own mv saves a fork per shell. Errors are dropped: the record
+# is a hint.
+if [[ -n "${LIMPID_PANE_PATH_RECORD:-}" && -d "${LIMPID_PANE_PATH_RECORD:h}" ]]; then
+  {
+    builtin print -r -- "$PATH" >| "${LIMPID_PANE_PATH_RECORD}.$$" &&
+      if builtin zmodload -F zsh/files b:zf_mv 2>/dev/null; then
+        zf_mv -f -- "${LIMPID_PANE_PATH_RECORD}.$$" "$LIMPID_PANE_PATH_RECORD"
+      else
+        command mv -f -- "${LIMPID_PANE_PATH_RECORD}.$$" "$LIMPID_PANE_PATH_RECORD"
+      fi
+  } 2>/dev/null
+fi
+
 # Chain Ghostty's zsh shell integration. Relocating ZDOTDIR for the
 # shim bypasses libghostty's own integration (it also injects via
 # ZDOTDIR), which otherwise silently disables OSC 7 cwd reporting,

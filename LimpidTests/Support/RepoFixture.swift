@@ -22,7 +22,7 @@ enum RepoFixture {
     }()
 
     /// True when the test host can shell out to `git` against a real
-    /// working copy. Smoke tests should `XCTSkipUnless(hasLocalRepo)`.
+    /// working copy. Smoke tests gate on `.disabled(if: !RepoFixture.hasLocalRepo)`.
     static var hasLocalRepo: Bool {
         limpidRoot != nil
     }

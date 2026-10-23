@@ -1,8 +1,9 @@
 // CwdEventProjectionTests.swift
-// Limpid — the cwd dispatch rules the projection owns.
+// Limpid — the host's half of the cwd events behind the worktree-move banner.
 //
-// The cases describe what the worktree-move banner depends on: which cwd
-// changes are reported, once, and only for panes that still exist.
+// Which moves are reported, and when, is the Rust rules' and is tested in
+// `events.rs`. These check what the host adds: a reported move reaches
+// `onCwdChanged`, and the files the rules sweep are removed from disk.
 
 import Foundation
 import Testing
@@ -13,20 +14,11 @@ import Testing
 struct CwdEventProjectionTests {
     private struct Harness {
         let adapter: AgentProjectionAdapter
-        let session: WindowSession
+        let session: WorkspaceSession
         let pane: UUID
         let events: URL
         /// Every cwd change the projection reported, in order.
-        let moves: Box<[(pane: UUID, newCwd: String)]>
-    }
-
-    /// A reference cell, because the adapter reports through a closure and the
-    /// cases need to read what it reported after the fact.
-    final class Box<T> {
-        var value: T
-        init(_ value: T) {
-            self.value = value
-        }
+        let moves: Recorded<[(pane: UUID, newCwd: String)]>
     }
 
     private func harness(in root: URL) throws -> Harness {
@@ -36,17 +28,16 @@ struct CwdEventProjectionTests {
         for directory in [state, sessions, events] {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
-        let (session, _, pane) = WindowSessionFixture.withLooseTab()
-        let adapter = AgentProjectionAdapter(
-            directories: ["claude": AgentDirectories(state: state, sessions: sessions, cwdEvents: events)],
-            descriptors: AgentProviderRegistry.descriptors.filter { $0.key == "claude" },
-            resumeIntents: AgentResumeIntentStore(
-                directory: root.appendingPathComponent("resume-intents", isDirectory: true)
-            ),
+        let (session, _, pane) = WorkspaceSessionFixture.withLooseTab()
+        let adapter = ProjectionFixture.adapter(
+            provider: "claude",
+            state: state,
+            sessions: sessions,
+            cwdEvents: events,
             processStatus: { _ in .dead }
         )
-        let moves = Box<[(pane: UUID, newCwd: String)]>([])
-        adapter.onCwdChanged = { pane, newCwd, _ in moves.value.append((pane, newCwd)) }
+        let moves = Recorded<[(pane: UUID, newCwd: String)]>([])
+        adapter.onCwdChanged = { pane, newCwd, _ in moves.update { $0.append((pane, newCwd)) } }
         return Harness(adapter: adapter, session: session, pane: pane, events: events, moves: moves)
     }
 
@@ -73,22 +64,6 @@ struct CwdEventProjectionTests {
         )
     }
 
-    @Test("the first pass takes note of what is there without reporting it")
-    func bootstrap_snapshotsWithoutDispatching() throws {
-        try withTempDir { root in
-            let harness = try harness(in: root)
-            try write(harness, pane: harness.pane, updatedAt: "2026-09-14T12:00:00Z")
-
-            harness.adapter.bootstrap(into: harness.session, attention: AttentionState())
-            #expect(harness.moves.value.isEmpty)
-
-            // The note is what suppresses it: another pass over the same record
-            // stays silent, so an event from a prior launch never fires.
-            harness.adapter.refresh()
-            #expect(harness.moves.value.isEmpty)
-        }
-    }
-
     @Test("a record with a new timestamp is reported exactly once")
     func freshRecord_dispatchesOnce() throws {
         try withTempDir { root in
@@ -109,25 +84,6 @@ struct CwdEventProjectionTests {
             harness.adapter.refresh()
             #expect(harness.moves.value.count == 2)
             #expect(harness.moves.value.last?.newCwd == "/tmp/later")
-        }
-    }
-
-    @Test("an event for a pane that is gone is consumed, not reported")
-    func recordForDeadPane_isSeenButNotDispatched() throws {
-        try withTempDir { root in
-            let harness = try harness(in: root)
-            let absent = UUID()
-            harness.adapter.bootstrap(into: harness.session, attention: AttentionState())
-
-            try write(harness, pane: absent, updatedAt: "2026-09-14T12:01:00Z")
-            try write(harness, pane: harness.pane, updatedAt: "2026-09-14T12:01:00Z")
-            harness.adapter.refresh()
-
-            // Only the live pane's move is worth suggesting; the other pane's
-            // event is moot because there is nothing left to move.
-            #expect(harness.moves.value.count == 1)
-            #expect(harness.moves.value.first?.pane == harness.pane)
-            #expect(try !exists(harness, pane: absent))
         }
     }
 

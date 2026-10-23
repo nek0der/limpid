@@ -1,6 +1,6 @@
 // TitleFormatting.swift
 // Limpid — pure helpers for synthesizing tab/window titles. Pulled out
-// of `WindowSession` so the session can stay focused on state and so
+// of `WorkspaceSession` so the session can stay focused on state and so
 // these strings stay easy to unit-test without spinning up a session.
 
 import Foundation

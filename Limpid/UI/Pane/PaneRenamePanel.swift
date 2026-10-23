@@ -17,7 +17,7 @@ import SwiftUI
 /// watcher for Escape or that click would compete with it.
 struct PaneRenamePanelHost: View {
     @Environment(PaneRenamePresentation.self) private var presentation
-    @Environment(WindowSession.self) private var session
+    @Environment(WorkspaceSession.self) private var session
     @Environment(\.surfaceRegistry) private var registry
 
     var body: some View {
@@ -45,7 +45,12 @@ struct PaneRenamePanelHost: View {
             get: { presentation.request?.id == request.id },
             set: { editing in
                 guard !editing, let finished = presentation.finish(requestID: request.id) else { return }
-                PaneRenameFocus.returnToTerminal(paneID: finished.paneID, registry: registry)
+                KeyboardHandoff.returnToTerminal(
+                    paneID: finished.paneID,
+                    registry: registry,
+                    keeper: .terminalOrTextField,
+                    timing: .nextTurn
+                )
             }
         )
     }
@@ -70,12 +75,15 @@ private struct PaneRenamePanel: View {
             InlineRenameField(
                 name: request.name,
                 isEditing: isEditing,
-                font: .system(size: LimpidLayout.paneRenameFieldFontSize),
+                font: .supervision(LimpidLayout.paneRenameFieldFontSize),
                 foregroundColor: .primary,
                 onRename: onRename,
-                submitsEmptyName: true
+                submitsEmptyName: true,
+                fieldName: "Pane name",
+                // The box drawn here is the field's edge, so the field keeps
+                // to it rather than standing in a well of its own.
+                editingStyle: .boxed
             )
-            .accessibilityLabel(Text("Pane name"))
             .padding(.vertical, LimpidLayout.paneRenameFieldVerticalPadding)
             .padding(.horizontal, LimpidLayout.paneRenameFieldHorizontalPadding)
             .background(
@@ -88,28 +96,5 @@ private struct PaneRenamePanel: View {
             )
         }
         .padding(LimpidLayout.floatingPanelPadding)
-    }
-}
-
-/// Where the keyboard goes once a pane rename ends, in the header or in the
-/// floating panel: back to the pane's terminal, unless the edit ended
-/// because the user went somewhere else. A click on another pane ends it
-/// too, and by the time this runs that pane already holds the keyboard; so
-/// does another field the click landed in. Deferred a tick so AppKit has
-/// settled who owns first responder after the field is torn down.
-@MainActor
-enum PaneRenameFocus {
-    static func returnToTerminal(paneID: UUID, registry: any SurfaceViewProviding) {
-        DispatchQueue.main.async {
-            guard let view = registry.view(for: paneID), let window = view.window else { return }
-            switch window.firstResponder {
-            case is SurfaceView:
-                return
-            case let editor as NSText where (editor.delegate as? NSView)?.window != nil:
-                return
-            default:
-                window.makeFirstResponder(view)
-            }
-        }
     }
 }

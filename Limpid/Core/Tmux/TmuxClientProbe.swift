@@ -84,7 +84,7 @@ enum TmuxClientProbe {
     static func attachedClients(
         tmuxPath: String,
         serverDirectory: URL,
-        timeout: TimeInterval = 0.5
+        timeout: TimeInterval = TmuxTiming.queryTimeout
     ) -> [String: TmuxBinding] {
         attachedClients(
             tmuxPath: tmuxPath,
@@ -96,7 +96,7 @@ enum TmuxClientProbe {
     static func attachedClients(
         tmuxPath: String,
         socketPaths: [URL],
-        timeout: TimeInterval = 0.5
+        timeout: TimeInterval = TmuxTiming.queryTimeout
     ) -> [String: TmuxBinding] {
         var clients: [String: TmuxBinding] = [:]
         for socket in socketPaths {
@@ -114,7 +114,7 @@ enum TmuxClientProbe {
         return clients
     }
 
-    static func topology(tmuxPath: String, socketPaths: [URL], timeout: TimeInterval = 0.5) -> TmuxTopology {
+    static func topology(tmuxPath: String, socketPaths: [URL], timeout: TimeInterval = TmuxTiming.queryTimeout) -> TmuxTopology {
         probe(tmuxPath: tmuxPath, paths: Set(socketPaths.map(\.path)), timeout: timeout).snapshot
     }
 
@@ -172,7 +172,7 @@ enum TmuxClientProbe {
         }
         let paneResult = query(TmuxTopology.paneArguments)
         guard case let .success(paneText) = paneResult else { return ServerResult(outcome: paneResult) }
-        let panes = TmuxTopology.parsePanes(paneText, socketPath: socketPath)
+        var panes = TmuxTopology.parsePanes(paneText, socketPath: socketPath)
         guard !panes.isEmpty, panes.count == paneText.split(separator: "\n").count else { return ServerResult(outcome: .invalidOutput) }
         let clientResult = query(listClientsArguments)
         guard case let .success(clientText) = clientResult else { return ServerResult(outcome: clientResult) }
@@ -183,12 +183,28 @@ enum TmuxClientProbe {
         let expected = identity.trimmingCharacters(in: .whitespacesAndNewlines)
         guard panes.allSatisfy({ expected == "\($0.serverPID)\t\($0.serverStartedAt)" })
         else { return ServerResult(outcome: .invalidOutput) }
+        // The start a run's record names, read once for the server.
+        let processStart = panes.first.flatMap { pid_t($0.serverPID) }.flatMap(processStartSecond(of:))
+        for index in panes.indices {
+            panes[index].serverProcessStartedAt = processStart
+        }
         for tty in Array(clients.keys) {
             clients[tty]?.serverPID = panes.first?.serverPID
             clients[tty]?.serverStartedAt = panes.first?.serverStartedAt
             clients[tty]?.isProvisional = false
         }
         return ServerResult(outcome: .success(""), panes: panes, clients: clients)
+    }
+
+    /// The Unix second the kernel started `pid`, as text: the value `ps -o
+    /// lstart=` prints, which a run's hook records as its tmux server's start
+    /// (`process.rs`, `runtime-common.sh`). `nil` when the process is gone or
+    /// not ours to read.
+    static func processStartSecond(of pid: pid_t) -> String? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return String(info.pbi_start_tvsec)
     }
 
     static func selectPane(tmuxPath: String, location: TmuxPaneLocation) {
@@ -201,7 +217,7 @@ enum TmuxClientProbe {
             arguments: [
                 "if-shell", "-F", "-t", target, condition,
                 "select-window -t '\(target)' ; select-pane -t '\(target)'"
-            ], timeout: 0.5
+            ], timeout: TmuxTiming.queryTimeout
         )
     }
 
@@ -215,7 +231,7 @@ enum TmuxClientProbe {
         tmuxPath: String,
         socketPath: String,
         sessionID: String,
-        timeout: TimeInterval = 0.5
+        timeout: TimeInterval = TmuxTiming.queryTimeout
     ) -> String? {
         guard let output = runTmux(
             tmuxPath: tmuxPath,
@@ -228,26 +244,6 @@ enum TmuxClientProbe {
         return parsePaneTTY(output)
     }
 
-    /// The working directory of the active pane receiving a client's input.
-    ///
-    /// The surface-side OSC 7 value belongs to the outer shell that launched
-    /// the tmux client. Asking the server is the only way to validate the
-    /// repository that an insertion will actually reach after reattachment.
-    static func activePanePath(
-        tmuxPath: String,
-        socketPath: String,
-        sessionID: String,
-        timeout: TimeInterval = 0.5
-    ) -> String? {
-        guard let output = runTmux(
-            tmuxPath: tmuxPath,
-            socketPath: socketPath,
-            arguments: ["display-message", "-p", "-t", sessionID, "#{pane_current_path}"],
-            timeout: timeout
-        ) else { return nil }
-        return parsePanePath(output)
-    }
-
     /// `nil` unless tmux answered with one device path. A server that cannot
     /// resolve the target prints an error to stderr and an empty line here.
     static func parsePaneTTY(_ output: String) -> String? {
@@ -255,15 +251,6 @@ enum TmuxClientProbe {
         let tty = String(line)
         guard tty.hasPrefix("/dev/"), !tty.contains(" ") else { return nil }
         return tty
-    }
-
-    /// `nil` unless tmux answered with one absolute path. Spaces are valid in
-    /// a working directory, so only the line boundary is structural.
-    static func parsePanePath(_ output: String) -> String? {
-        guard let line = output.split(separator: "\n", omittingEmptySubsequences: true).first else { return nil }
-        let path = String(line)
-        guard path.hasPrefix("/") else { return nil }
-        return path
     }
 
     /// `nil` on any failure — a dead socket, a wedged server, a tmux

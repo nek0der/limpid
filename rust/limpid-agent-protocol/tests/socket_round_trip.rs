@@ -10,7 +10,7 @@ use limpid_agent_protocol::{
 };
 use serde_json::json;
 use std::os::unix::net::UnixStream;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -59,6 +59,7 @@ fn approval(run_id: Uuid, request_id: Uuid) -> ApprovalRequestWire {
         input: json!({"command": "make test"}),
         timeout_ms: 5_000,
         questions: Vec::new(),
+        agent_run_id: None,
     }
 }
 
@@ -242,8 +243,13 @@ fn controller_subscription_wakes_when_requester_submits() {
     let controller_epoch = hello(&mut controller);
     assert_eq!(requester_epoch, controller_epoch);
 
+    // The subscription is on the wire before the submit goes out. Whether
+    // the service is already waiting on it by then is not something it
+    // shows, so the assertions hold either way: a subscription that starts
+    // after the submit reads the same snapshot at once.
+    let (sent, subscription_sent) = mpsc::channel();
     let subscriber = thread::spawn(move || {
-        let response = exchange(
+        write_frame(
             &mut controller,
             &WireRequest {
                 version: PROTOCOL_VERSION,
@@ -254,8 +260,17 @@ fn controller_subscription_wakes_when_requester_submits() {
                     maximum_wait_ms: 5_000,
                 },
             },
-        );
-        let ResponseBody::ApprovalSnapshotResult { sequence, requests } = response.body else {
+            MAXIMUM_REQUEST_BYTES,
+        )
+        .unwrap();
+        sent.send(()).unwrap();
+        let response: WireResponse = read_frame(&mut controller, MAXIMUM_RESPONSE_BYTES)
+            .unwrap()
+            .unwrap();
+        let ResponseBody::ApprovalSnapshotResult {
+            sequence, requests, ..
+        } = response.body
+        else {
             panic!("expected approval snapshot result");
         };
         assert_eq!(sequence, 1);
@@ -264,7 +279,9 @@ fn controller_subscription_wakes_when_requester_submits() {
         drop(controller);
     });
 
-    thread::sleep(Duration::from_millis(20));
+    subscription_sent
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the subscription is sent");
     let submit = exchange(
         &mut requester,
         &WireRequest {
@@ -526,6 +543,224 @@ fn bounded_snapshot_remains_response_safe_at_capacity() {
         panic!("expected approval snapshot");
     };
     assert_eq!(requests.len(), MAXIMUM_RECORDS);
+
+    drop(requester);
+    drop(controller);
+    requester_task.join().unwrap();
+    controller_task.join().unwrap();
+}
+
+fn request(epoch: Uuid, body: RequestBody) -> WireRequest {
+    WireRequest {
+        version: PROTOCOL_VERSION,
+        message_id: Uuid::new_v4(),
+        service_epoch: Some(epoch),
+        body,
+    }
+}
+
+#[test]
+fn only_controller_responses_carry_the_service_clock() {
+    let service = Arc::new(ApprovalService::new(8));
+    let run_id = Uuid::new_v4();
+    let request_id = Uuid::new_v4();
+    let (mut requester, requester_task) = start_connection(
+        Arc::clone(&service),
+        Principal::Requester {
+            run_id: RunId::new(run_id),
+        },
+    );
+    let (mut controller, controller_task) =
+        start_connection(Arc::clone(&service), Principal::Controller);
+    let epoch = hello(&mut requester);
+    assert_eq!(hello(&mut controller), epoch);
+    let key = ApprovalKeyWire { run_id, request_id };
+    let submitted = exchange(
+        &mut requester,
+        &request(
+            epoch,
+            RequestBody::ApprovalSubmit(approval(run_id, request_id)),
+        ),
+    );
+    let ResponseBody::ApprovalResult(submitted) = submitted.body else {
+        panic!("expected approval result");
+    };
+    assert_eq!(submitted.now_ms, None);
+
+    let snapshot = exchange(
+        &mut controller,
+        &request(epoch, RequestBody::ApprovalSnapshot),
+    );
+    let ResponseBody::ApprovalSnapshotResult {
+        requests, now_ms, ..
+    } = snapshot.body
+    else {
+        panic!("expected approval snapshot");
+    };
+    let now_ms = now_ms.expect("a controller snapshot carries the service clock");
+    assert!(requests[0].deadline_ms > now_ms);
+
+    let controller_get = exchange(
+        &mut controller,
+        &request(epoch, RequestBody::ApprovalGet(key.clone())),
+    );
+    let ResponseBody::ApprovalResult(controller_get) = controller_get.body else {
+        panic!("expected approval result");
+    };
+    assert!(controller_get.now_ms.is_some());
+
+    // A requester's response keeps its current shape: the key is absent,
+    // not null.
+    let requester_get = exchange(
+        &mut requester,
+        &request(epoch, RequestBody::ApprovalGet(key)),
+    );
+    let encoded = serde_json::to_value(&requester_get).unwrap();
+    assert!(encoded["body"].get("now_ms").is_none());
+
+    drop(requester);
+    drop(controller);
+    requester_task.join().unwrap();
+    controller_task.join().unwrap();
+}
+
+#[test]
+fn responses_from_an_older_service_still_decode() {
+    let epoch = Uuid::new_v4();
+    let snapshot = json!({
+        "version": PROTOCOL_VERSION,
+        "message_id": Uuid::new_v4(),
+        "in_reply_to": Uuid::new_v4(),
+        "service_epoch": epoch,
+        "type": "approval.snapshot.result",
+        "body": {"sequence": 3, "requests": []}
+    });
+    let decoded: WireResponse = serde_json::from_value(snapshot).unwrap();
+    let ResponseBody::ApprovalSnapshotResult {
+        sequence, now_ms, ..
+    } = decoded.body
+    else {
+        panic!("expected approval snapshot");
+    };
+    assert_eq!(sequence, 3);
+    assert_eq!(now_ms, None);
+
+    let run_id = Uuid::new_v4();
+    let request_id = Uuid::new_v4();
+    let get = json!({
+        "version": PROTOCOL_VERSION,
+        "message_id": Uuid::new_v4(),
+        "in_reply_to": Uuid::new_v4(),
+        "service_epoch": epoch,
+        "type": "approval.result",
+        "body": {
+            "request": serde_json::to_value(approval(run_id, request_id)).unwrap(),
+            "state": {"status": "pending"},
+            "created_at_ms": 10,
+            "deadline_ms": 5_010,
+            "sequence": 1
+        }
+    });
+    let decoded: WireResponse = serde_json::from_value(get).unwrap();
+    let ResponseBody::ApprovalResult(snapshot) = decoded.body else {
+        panic!("expected approval result");
+    };
+    assert_eq!(snapshot.now_ms, None);
+}
+
+#[test]
+fn a_requesters_wait_consumes_its_result_and_a_controller_get_does_not() {
+    let service = Arc::new(ApprovalService::new(2));
+    let run_id = Uuid::new_v4();
+    let (mut requester, requester_task) = start_connection(
+        Arc::clone(&service),
+        Principal::Requester {
+            run_id: RunId::new(run_id),
+        },
+    );
+    let (mut controller, controller_task) =
+        start_connection(Arc::clone(&service), Principal::Controller);
+    let epoch = hello(&mut requester);
+    assert_eq!(hello(&mut controller), epoch);
+    let answered = Uuid::new_v4();
+    for request_id in [answered, Uuid::new_v4()] {
+        let submitted = exchange(
+            &mut requester,
+            &request(
+                epoch,
+                RequestBody::ApprovalSubmit(approval(run_id, request_id)),
+            ),
+        );
+        assert!(matches!(submitted.body, ResponseBody::ApprovalResult(_)));
+    }
+    let key = ApprovalKeyWire {
+        run_id,
+        request_id: answered,
+    };
+    let resolved = exchange(
+        &mut controller,
+        &request(
+            epoch,
+            RequestBody::ApprovalResolve {
+                key: key.clone(),
+                decision: ApprovalDecisionWire::AllowOnce,
+            },
+        ),
+    );
+    assert!(matches!(resolved.body, ResponseBody::ApprovalResult(_)));
+
+    // The app looking up how it ended keeps the result for the hook.
+    exchange(
+        &mut controller,
+        &request(epoch, RequestBody::ApprovalGet(key.clone())),
+    );
+    let third = exchange(
+        &mut requester,
+        &request(
+            epoch,
+            RequestBody::ApprovalSubmit(approval(run_id, Uuid::new_v4())),
+        ),
+    );
+    assert!(matches!(
+        third.body,
+        ResponseBody::Error {
+            code: ErrorCode::CapacityExceeded,
+            ..
+        }
+    ));
+    let snapshot = exchange(
+        &mut controller,
+        &request(epoch, RequestBody::ApprovalSnapshot),
+    );
+    let ResponseBody::ApprovalSnapshotResult {
+        unevictable_records,
+        ..
+    } = snapshot.body
+    else {
+        panic!("expected approval snapshot");
+    };
+    assert_eq!(unevictable_records, Some(2));
+
+    // The hook's wait returns the result and frees its slot.
+    let waited = exchange(
+        &mut requester,
+        &request(
+            epoch,
+            RequestBody::ApprovalWait {
+                key,
+                maximum_wait_ms: 1_000,
+            },
+        ),
+    );
+    assert!(matches!(waited.body, ResponseBody::ApprovalResult(_)));
+    let fourth = exchange(
+        &mut requester,
+        &request(
+            epoch,
+            RequestBody::ApprovalSubmit(approval(run_id, Uuid::new_v4())),
+        ),
+    );
+    assert!(matches!(fourth.body, ResponseBody::ApprovalResult(_)));
 
     drop(requester);
     drop(controller);

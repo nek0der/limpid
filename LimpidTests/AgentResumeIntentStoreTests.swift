@@ -25,6 +25,22 @@ struct AgentResumeIntentStoreTests {
         )
     }
 
+    @Test("demo mode saves no intent and moves none an earlier build left")
+    func demoMode_writesNothing() throws {
+        try withTempDir { root in
+            let legacyStore = AgentResumeIntentStore(directory: root.appendingPathComponent("legacy", isDirectory: true))
+            try legacyStore.save(intent(runID: Self.runID, pid: "4242"))
+            let demoDirectory = root.appendingPathComponent("resume-intents", isDirectory: true)
+            let demo = AgentResumeIntentStore(directory: demoDirectory, writesFiles: false)
+
+            try demo.save(intent(runID: "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3", pid: "1"))
+            demo.adoptLegacyIntents(from: legacyStore.directory)
+
+            #expect(!FileManager.default.fileExists(atPath: demoDirectory.path))
+            #expect(legacyStore.record(runID: Self.runID) != nil, "the earlier build's intent stays where it was")
+        }
+    }
+
     @Test("an intent the previous build left behind is adopted")
     func adoptLegacyIntents_movesTheIntentAndMakesItReadable() throws {
         try withTempDir { root in

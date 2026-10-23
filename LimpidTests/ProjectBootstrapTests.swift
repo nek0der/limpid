@@ -1,5 +1,5 @@
 // ProjectBootstrapTests.swift
-// Limpid — Covers the on-disk Codable shape of `Project.bootstrap` and `BootstrapItem`.
+// Limpid — the on-disk shape of a project's setup (`Project.bootstrap`, `BootstrapItem`) and its worktree routing.
 
 import Foundation
 import Testing
@@ -9,12 +9,12 @@ struct ProjectBootstrapTests {
 
     // MARK: - Project Codable forward-compat
 
+    /// A project as a build before the setup and the worktree routing
+    /// wrote it still loads: a `keyNotFound` would lose every project on
+    /// the first launch of the new build. It has no setup, and Limpid
+    /// routes both agents' worktrees, as it did then.
     @Test
-    func projectDecodes_legacyStateJsonWithoutBootstrap() throws {
-        // Snapshot of how a Project was serialized before the bootstrap
-        // field existed. The loader must not fail here — a
-        // `keyNotFound("bootstrap")` would lose every existing user
-        // project on first launch with the new build.
+    func projectDecodes_aFileWithoutSetupOrRouting_withTheirDefaults() throws {
         let legacy = #"""
         {
           "id": "11111111-1111-1111-1111-111111111111",
@@ -25,11 +25,11 @@ struct ProjectBootstrapTests {
           "worktreePlacement": { "siblingPrefixed": {} }
         }
         """#
-        let project = try JSONDecoder().decode(
-            Project.self, from: Data(legacy.utf8)
-        )
-        #expect(project.bootstrap.isEmpty)
+        let project = try JSONDecoder().decode(Project.self, from: Data(legacy.utf8))
         #expect(project.name == "Test")
+        #expect(project.bootstrap.isEmpty)
+        #expect(project.routeClaudeWorktrees)
+        #expect(project.routeCodexWorktrees)
     }
 
     @Test
@@ -119,117 +119,20 @@ struct ProjectBootstrapTests {
         #expect(BootstrapDetail.defaultTimeoutSeconds == 600)
     }
 
-    // MARK: - Smart-punctuation normalisation
+    // MARK: - Worktree routing
 
-    @Test
-    func sanitiseSmartPunctuation_normalisesCurlyDoubleQuotes() {
-        // macOS' default `NSTextView` rewrites a typed `"` into
-        // U+201C / U+201D. PlainTextEditor disables that at the input
-        // layer; sanitiseSmartPunctuation is the belt-and-braces pass
-        // for state.json hand-edits or older snapshots.
-        let input = "echo \u{201C}hi\u{201D}"
-        let output = ContainerSettingsSheet.sanitiseSmartPunctuation(input)
-        #expect(output == "echo \"hi\"")
-    }
-
-    @Test
-    func sanitiseSmartPunctuation_normalisesCurlySingleQuotes() {
-        let input = "git commit -m \u{2018}fix\u{2019}"
-        let output = ContainerSettingsSheet.sanitiseSmartPunctuation(input)
-        #expect(output == "git commit -m 'fix'")
-    }
-
-    @Test
-    func sanitiseSmartPunctuation_isNoopOnAscii() {
-        let input = "echo \"hi\" && rm -f /tmp/x"
-        #expect(ContainerSettingsSheet.sanitiseSmartPunctuation(input) == input)
-    }
-
-    // MARK: - routeClaudeWorktrees forward-compat
-
-    @Test
-    func projectDecodes_legacyStateJsonWithoutRouteClaude_defaultsToTrue() throws {
-        // Older state.json predates the per-project Claude-routing
-        // toggle. The loader must default to `true` so existing users
-        // stay on the wedge ("Limpid governs Claude's git worktree
-        // add") after upgrading.
-        let legacy = #"""
-        {
-          "id": "22222222-2222-2222-2222-222222222222",
-          "name": "Test",
-          "rootURL": "file:///tmp/test",
-          "worktrees": [],
-          "isExpanded": true,
-          "worktreePlacement": { "siblingPrefixed": {} }
-        }
-        """#
-        let project = try JSONDecoder().decode(
-            Project.self, from: Data(legacy.utf8)
-        )
-        #expect(project.routeClaudeWorktrees)
-    }
-
-    @Test
-    func projectRoundtrips_routeClaudeWorktrees() throws {
+    /// Each agent's routing is saved on its own: a person who trusts
+    /// Claude's worktrees to Limpid can leave Codex on its defaults.
+    @Test(arguments: [(false, true), (true, false), (false, false)])
+    func projectRoundtrips_eachAgentsWorktreeRouting(claude: Bool, codex: Bool) throws {
         let project = Project(
             name: "Test",
             rootURL: URL(fileURLWithPath: "/tmp/test"),
-            routeClaudeWorktrees: false
+            routeClaudeWorktrees: claude,
+            routeCodexWorktrees: codex
         )
-        let data = try JSONEncoder().encode(project)
-        let decoded = try JSONDecoder().decode(Project.self, from: data)
-        #expect(decoded.routeClaudeWorktrees == false)
-    }
-
-    // MARK: - routeCodexWorktrees forward-compat
-
-    @Test
-    func projectDecodes_legacyStateJsonWithoutRouteCodex_defaultsToTrue() throws {
-        // State.json predating the per-agent Codex toggle must still
-        // load — and default to `true` so the wedge stays active
-        // after upgrade, same opinionation as routeClaudeWorktrees.
-        let legacy = #"""
-        {
-          "id": "33333333-3333-3333-3333-333333333333",
-          "name": "Test",
-          "rootURL": "file:///tmp/test",
-          "worktrees": [],
-          "isExpanded": true,
-          "worktreePlacement": { "siblingPrefixed": {} }
-        }
-        """#
-        let project = try JSONDecoder().decode(
-            Project.self, from: Data(legacy.utf8)
-        )
-        #expect(project.routeCodexWorktrees)
-    }
-
-    @Test
-    func projectRoundtrips_routeCodexWorktrees() throws {
-        let project = Project(
-            name: "Test",
-            rootURL: URL(fileURLWithPath: "/tmp/test"),
-            routeCodexWorktrees: false
-        )
-        let data = try JSONEncoder().encode(project)
-        let decoded = try JSONDecoder().decode(Project.self, from: data)
-        #expect(decoded.routeCodexWorktrees == false)
-    }
-
-    @Test
-    func projectToggles_areIndependent() throws {
-        // Two per-agent flags must round-trip independently — e.g. a
-        // user who trusts Claude with bootstrap but wants Codex on
-        // its defaults flips one without touching the other.
-        let project = Project(
-            name: "Test",
-            rootURL: URL(fileURLWithPath: "/tmp/test"),
-            routeClaudeWorktrees: false,
-            routeCodexWorktrees: true
-        )
-        let data = try JSONEncoder().encode(project)
-        let decoded = try JSONDecoder().decode(Project.self, from: data)
-        #expect(decoded.routeClaudeWorktrees == false)
-        #expect(decoded.routeCodexWorktrees == true)
+        let decoded = try JSONDecoder().decode(Project.self, from: JSONEncoder().encode(project))
+        #expect(decoded.routeClaudeWorktrees == claude)
+        #expect(decoded.routeCodexWorktrees == codex)
     }
 }

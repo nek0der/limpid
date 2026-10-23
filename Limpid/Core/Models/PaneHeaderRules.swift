@@ -27,6 +27,9 @@ struct PaneHeaderLabel: Equatable {
     var detail: String?
     var isAgent: Bool
     var agentName: String?
+    /// The name is one the person gave the pane, rather than one read from
+    /// its agent or its folder.
+    var isNamedByPerson = false
 }
 
 /// How much of a header a row has room for, widest first. The kind glyph
@@ -102,10 +105,9 @@ enum PaneHeaderRules {
     /// Whether `paneID`'s header is on screen, zoomed or not: the one
     /// predicate the header itself and the terminal's "Rename Pane…" item
     /// both read, so the item never offers a rename with no header to take
-    /// it. Review replaces the split with its own surface and docks the pane
-    /// under a heading of its own, so no split header shows while it is up.
-    static func showsHeader(in tab: Tab?, isEnabled: Bool, isReviewPresented: Bool) -> Bool {
-        guard let tab, !isReviewPresented else { return false }
+    /// it.
+    static func showsHeader(in tab: Tab?, isEnabled: Bool) -> Bool {
+        guard let tab else { return false }
         return showsHeaders(in: tab, isEnabled: isEnabled)
     }
 
@@ -271,7 +273,8 @@ enum PaneHeaderRules {
         fallbackName: String
     ) -> PaneHeaderLabel {
         let directory = normalizedName(workingDirectory)
-        let name = normalizedName(customName)
+        let personName = normalizedName(customName)
+        let name = personName
             ?? normalizedName(agent?.title)
             ?? directory.flatMap(directoryName(of:))
             ?? fallbackName
@@ -280,7 +283,70 @@ enum PaneHeaderRules {
             name: name,
             detail: detail == name ? nil : detail,
             isAgent: agent != nil,
-            agentName: agent.flatMap { normalizedName($0.providerName) }
+            agentName: agent.flatMap { normalizedName($0.providerName) },
+            isNamedByPerson: personName != nil
         )
+    }
+}
+
+/// What a pane header's state mark says: the glyph, and what the agent the
+/// glyph stands for reported last, for the hover text.
+struct PaneHeaderMark: Equatable {
+    let glyph: SessionRowFact.Glyph
+    let detail: String?
+}
+
+extension PaneHeaderRules {
+    /// The header's state mark: the glyph a row holding only this pane
+    /// wears, decided by the row's own function (`SessionRowFact.make`).
+    ///
+    /// The pane takes what the attention list places in it: its items (by
+    /// the pane each item names) and the runs shown in it
+    /// (`AttentionState.shownPane`), the rule the list and the sidebar
+    /// place a run by. So two runs in one pane (a finished Claude beside a
+    /// running Codex) are weighed as the row weighs them, and a tmux run
+    /// shown in several panes marks only the one it is placed in, as its
+    /// items do.
+    ///
+    /// The detail is the reporting agent's: the run the pane's leading
+    /// item (`PanePriority.dominant`) is about, else the agent the row
+    /// speaks for (`leadAgentIndex`).
+    ///
+    /// `nil` at rest, before the agent is matched, and for a shell, so a
+    /// quiet pane's header stays quiet.
+    @MainActor
+    static func mark(
+        paneID: UUID,
+        items: [AttentionItem],
+        runtimes: [AgentRuntimePresentation],
+        session: WorkspaceSession
+    ) -> PaneHeaderMark? {
+        mark(
+            paneItems: items.filter { $0.subject.paneID == paneID },
+            shown: runtimes.filter { AttentionState.shownPane(of: $0, in: session) == paneID }
+        )
+    }
+
+    /// `mark(paneID:items:runtimes:session:)` for a pane whose items and
+    /// runs are already picked out: for a caller that marks many panes at
+    /// once and places each run once (`PaneStripModel`), rather than once
+    /// per pane.
+    static func mark(paneItems: [AttentionItem], shown: [AgentRuntimePresentation]) -> PaneHeaderMark? {
+        let fact = SessionRowFact.make(.init(
+            items: paneItems,
+            agents: shown.map { SessionRowFact.Agent(provider: $0.kind, state: $0.badge.state, detail: $0.badge.detail) }
+        ))
+        switch fact.glyph {
+        case .idle, .unknown, .shell:
+            return nil
+        case .needsAnswer, .needsApproval, .needsResponse, .stopped, .unread, .running:
+            break
+        }
+        let speaker: AgentRuntimePresentation? = if case let .runtime(id, _, _, _, _) = PanePriority.dominant(paneItems)?.subject {
+            shown.first { $0.id == id }
+        } else {
+            SessionRowFact.leadAgentIndex(of: shown.map(\.badge.state)).map { shown[$0] }
+        }
+        return PaneHeaderMark(glyph: fact.glyph, detail: speaker?.badge.detail.flatMap { $0.isEmpty ? nil : $0 })
     }
 }

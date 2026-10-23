@@ -19,6 +19,24 @@ struct LimpidProjectionBridgeTests {
         #expect(registry["codex"]?.capabilities.contains("session_title") == false)
     }
 
+    /// The host hands the descriptors back to the rules in every pass. A
+    /// field the Swift type does not name would be dropped on the way and
+    /// reach the rules as its default: an empty list of internal agent
+    /// directories, say, which would quietly turn their guard off.
+    @Test("the descriptors go back to the rules as the registry reported them")
+    func providers_roundTripUnchanged() throws {
+        let body = try LimpidProjectionBridge.providers()
+        let registry = try JSONDecoder().decode([String: AgentProviderDescriptor].self, from: body)
+        /// A `null` and a missing key are the same `None` to the rules, and
+        /// Swift leaves a `nil` out, so the nulls are not compared.
+        func withoutNulls(_ data: Data) throws -> [String: NSDictionary] {
+            let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: [String: Any]])
+            return object.mapValues { NSDictionary(dictionary: $0.filter { !($0.value is NSNull) }) }
+        }
+        #expect(try withoutNulls(JSONEncoder().encode(registry)) == withoutNulls(body))
+        #expect(registry["codex"]?.internalAgentDirectories.isEmpty == false)
+    }
+
     @Test("the record layout crosses the boundary and is what the registry reads")
     func recordLayout_isReported() throws {
         let layout = try JSONDecoder().decode(
@@ -37,21 +55,81 @@ struct LimpidProjectionBridgeTests {
         #expect(AgentProviderRegistry.recordLayout == layout)
     }
 
-    @Test("an empty pass round-trips and carries state forward")
-    func emptyPass_roundTrips() throws {
+    @Test("an empty pass answers and commits")
+    func emptyPass_answersAndCommits() throws {
+        let engine = LimpidProjectionBridge.Engine()
         let now = Data(#"{"wall":"2026-09-14T12:00:00Z","monotonicMs":0}"#.utf8)
         let input = try JSONEncoder().encode(AgentProjectionInput())
-        let body = try LimpidProjectionBridge.project(state: nil, input: input, now: now)
-        let response = try JSONDecoder().decode(AgentProjectionResponse.self, from: body)
+        let pass = try engine.pass(input: input, now: now)
+        let response = try JSONDecoder().decode(AgentProjectionResponse.self, from: pass.body)
         #expect(response.projection.runtimes.isEmpty)
+        try engine.commit(pass.proposal)
+        // Committed already, so there is nothing by that number to keep.
+        #expect(throws: LimpidProjectionError.self) {
+            try engine.commit(pass.proposal)
+        }
 
         // Both clocks are required: the rules compare records against wall
         // time and age pending notifications against uptime, and guessing
         // either would make a retention rule depend on the wrong one.
         let halfAnEnvelope = Data(#"{"wall":"2026-09-14T12:00:00Z"}"#.utf8)
         #expect(throws: LimpidProjectionError.self) {
-            try LimpidProjectionBridge.project(state: nil, input: input, now: halfAnEnvelope)
+            try engine.pass(input: input, now: halfAnEnvelope)
         }
+    }
+
+    @Test("a finished turn's notice waits for the pass the rules ask for")
+    func finishedNotice_isHeldUntilTheAskedForPass() throws {
+        let pane = UUID()
+        let engine = LimpidProjectionBridge.Engine()
+        var input = AgentProjectionInput()
+        input.providers = try JSONDecoder().decode(
+            [String: AgentProviderDescriptor].self,
+            from: LimpidProjectionBridge.providers()
+        )
+        input.tabs = [AgentProjectionTabPanes(id: UUID(), panes: [pane])]
+        input.pidStatus = ["4242": "alive"]
+        func pass(_ state: String, revision: Int, at milliseconds: Int) throws -> AgentProjectionResponse {
+            let record: [String: Any] = [
+                "schemaVersion": 3,
+                "paneId": pane.uuidString,
+                "runId": "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+                "revision": revision,
+                "stateEpisodeToken": "\(revision)",
+                "state": state,
+                "updatedAt": "2026-09-14T12:00:0\(revision)Z",
+                "pid": "4242"
+            ]
+            input.records = try [AgentProjectionFile(
+                provider: "claude",
+                name: "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+                content: String(data: JSONSerialization.data(withJSONObject: record), encoding: .utf8)
+            )]
+            let now = Data(#"{"wall":"2026-09-14T12:01:00Z","monotonicMs":\#(milliseconds)}"#.utf8)
+            let answer = try engine.pass(input: JSONEncoder().encode(input), now: now)
+            try engine.commit(answer.proposal)
+            return try JSONDecoder().decode(AgentProjectionResponse.self, from: answer.body)
+        }
+        func notices(_ response: AgentProjectionResponse) -> [AgentNotificationKind] {
+            response.commands.compactMap {
+                if case let .notify(payload) = $0.op {
+                    payload.kind
+                } else {
+                    nil
+                }
+            }
+        }
+
+        _ = try pass("running", revision: 1, at: 0)
+        // Nothing the host watches changes when the hold ends, so the rules
+        // say when to look again. How long they hold is theirs
+        // (`notifications.rs`); the host needs the delay to arrive, and the
+        // notice to come on the pass it schedules.
+        let finished = try pass("finished", revision: 2, at: 10)
+        #expect(notices(finished).isEmpty)
+        let delay = try #require(finished.projection.nextPassInMs)
+        let settled = try pass("finished", revision: 2, at: 10 + Int(delay))
+        #expect(notices(settled) == [.finished])
     }
 
     @Test("a tmux-hosted run reaches the pane the host says its endpoint is in")
@@ -68,7 +146,10 @@ struct LimpidProjectionBridgeTests {
             "updatedAt": "2026-09-14T12:00:00Z",
             "pid": "4242",
             "tmuxSocketPath": socket,
-            "tmuxPaneId": "%7"
+            "tmuxPaneId": "%7",
+            "tmuxServerPID": "42",
+            "tmuxServerStartedAt": "100",
+            "sessionId": "session-1"
         ]
         var input = AgentProjectionInput()
         input.providers = try JSONDecoder().decode(
@@ -83,20 +164,98 @@ struct LimpidProjectionBridgeTests {
         input.pidStatus = ["4242": "alive"]
         input.tabs = [AgentProjectionTabPanes(id: UUID(), panes: [pane])]
         // The host writes this key; the rules rebuild it from the record's own
-        // socket and pane. If the two spellings ever diverge the run simply
-        // stops appearing, with nothing logged anywhere, so the agreement is
-        // what this asserts.
+        // socket, server, and pane. If the two spellings ever diverge the run
+        // simply stops appearing, with nothing logged anywhere, so the
+        // agreement is what this asserts.
         input.presence.attachments[
-            AgentProjectionPresence.key(socketPath: socket, pane: "%7")
+            AgentProjectionPresence.key(for: TmuxRuntimeEndpoint(
+                socketPath: socket, serverPID: "42", serverStartedAt: "100", paneID: "%7"
+            ))
         ] = [pane]
 
-        let body = try LimpidProjectionBridge.project(
-            state: nil,
+        let pass = try LimpidProjectionBridge.Engine().pass(
             input: JSONEncoder().encode(input),
             now: Data(#"{"wall":"2026-09-14T12:01:00Z","monotonicMs":60000}"#.utf8)
         )
-        let response = try JSONDecoder().decode(AgentProjectionResponse.self, from: body)
+        let response = try JSONDecoder().decode(AgentProjectionResponse.self, from: pass.body)
 
         #expect(response.projection.badgesByPane[pane]?["claude"]?.state == "running")
+    }
+
+    /// The host's reading of a symlinked default home reaches the rules
+    /// under the key they read: a hint the memory agent left under the
+    /// link's target is no session of the pane's with it, and is one
+    /// without it.
+    @Test("a resolved default home keeps the memory agent's hint from the pane")
+    func resolvedHomes_reachTheRules() throws {
+        let pane = UUID()
+        let hint: [String: Any] = [
+            "schemaVersion": 1,
+            "paneId": pane.uuidString,
+            "sessionId": "memory-thread",
+            "cwd": "/Volumes/Dotfiles/.codex/memories",
+            "updatedAt": "2026-09-14T12:00:00Z"
+        ]
+        var input = AgentProjectionInput()
+        input.providers = try JSONDecoder().decode(
+            [String: AgentProviderDescriptor].self,
+            from: LimpidProjectionBridge.providers()
+        )
+        input.home = "/Users/me"
+        input.sessionRecords = try [AgentProjectionFile(
+            provider: "codex",
+            name: pane.uuidString,
+            content: String(data: JSONSerialization.data(withJSONObject: hint), encoding: .utf8)
+        )]
+        input.tabs = [AgentProjectionTabPanes(id: UUID(), panes: [pane])]
+        func session(_ input: AgentProjectionInput) throws -> String? {
+            let pass = try LimpidProjectionBridge.Engine().pass(
+                input: JSONEncoder().encode(input),
+                now: Data(#"{"wall":"2026-09-14T12:01:00Z","monotonicMs":60000}"#.utf8)
+            )
+            let response = try JSONDecoder().decode(AgentProjectionResponse.self, from: pass.body)
+            // Keyed as the rules spell a pane, which is not `uuidString`'s case.
+            return response.projection.sessions.first { UUID(uuidString: $0.key) == pane }?.value["codex"]?.sessionID
+        }
+
+        #expect(try session(input) == "memory-thread")
+        input.resolvedHomes = ["codex": "/Volumes/Dotfiles/.codex"]
+        #expect(try session(input) == nil)
+    }
+
+    /// The host reads a few run record fields itself (`AgentRunRecordFacts`).
+    /// The Rust corpus records are what the hook writes, so a key renamed on
+    /// that side fails here rather than reading as "no tmux pane".
+    @Test("the facts the host reads come out of records the Rust side wrote", .disabled(if: !RepoFixture.hasLocalRepo))
+    func runRecordFacts_readCorpusRecords() throws {
+        let root = try #require(RepoFixture.limpidRoot)
+        func facts(_ scenario: String, _ name: String) throws -> AgentRunRecordFacts? {
+            let url = root.appendingPathComponent("rust/fixtures/projection/\(scenario)/agent-states/\(name).state.json")
+            let file = try AgentProjectionFile(
+                provider: "claude",
+                name: name,
+                content: String(contentsOf: url, encoding: .utf8)
+            )
+            return file.recordFacts
+        }
+        let tmux = try #require(try facts("tmux-hosted", "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1"))
+        #expect(tmux.sessionID == "00000000-0000-4000-8000-000000000001")
+        #expect(tmux.tmuxEndpoint == TmuxRuntimeEndpoint(
+            socketPath: "/tmp/limpid-corpus-socket",
+            serverPID: "4242",
+            serverStartedAt: "",
+            paneID: "%3"
+        ))
+        let plain = try #require(try facts("orphan-dead-pid", "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3"))
+        #expect(plain.pid == "9999")
+        #expect(plain.tmuxEndpoint == nil)
+    }
+
+    @Test("a field of an unexpected type reads as absent without hiding the others")
+    func runRecordFacts_unexpectedTypeIsAbsent() throws {
+        let facts = try #require(AgentRunRecordFacts(content: #"{"pid": 42, "sessionId": "S"}"#))
+        #expect(facts.pid == nil)
+        #expect(facts.sessionID == "S")
+        #expect(AgentRunRecordFacts(content: "not json") == nil)
     }
 }

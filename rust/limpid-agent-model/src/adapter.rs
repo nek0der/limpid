@@ -1,10 +1,11 @@
 //! The contract a provider crate implements.
 
 use crate::{
-    AgentEvent, ApprovalDecision, ApprovalRequest, InstallRecipe, ProviderDescriptor,
+    AgentEvent, ApprovalDecision, ApprovalRequest, EventId, InstallRecipe, ProviderDescriptor,
     WorktreeIntent,
 };
 use serde_json::{Map, Value};
+use std::path::PathBuf;
 use uuid::Uuid;
 
 /// Longest hook payload an adapter accepts, matching the protocol's client
@@ -29,6 +30,17 @@ pub struct HookContext {
     pub pane_id: Uuid,
     pub tmux: Option<TmuxEndpoint>,
     pub pid: Option<u32>,
+    /// The id the shim minted for this hook call
+    /// (`LIMPID_HOOK_INVOCATION_ID`), a new one for every call. `None` when
+    /// the shim did not set one (an older shim).
+    pub invocation_id: Option<Uuid>,
+    /// The provider's own configuration directory (`~/.codex`, or what
+    /// `home_directory_variable` names), resolved by the runtime from the
+    /// environment the agent runs in. An adapter reads it to tell the
+    /// provider's internal work from the person's: the descriptor's
+    /// `internal_agent_directories` lie under this one. `None` when the
+    /// environment names no home at all.
+    pub provider_home: Option<PathBuf>,
 }
 
 /// The tmux server and pane hosting the agent, captured from `TMUX` and
@@ -59,6 +71,20 @@ pub trait ProviderAdapter: Send + Sync {
 
     /// What the platform must place so the provider's hooks reach Limpid.
     fn install_recipe(&self) -> InstallRecipe;
+
+    /// The environment variable that moves the provider's configuration
+    /// directory (`CODEX_HOME`), when the provider has one. The runtime reads
+    /// it to fill `HookContext::provider_home`, falling back to the
+    /// descriptor's `default_home`. Hooks run in the agent's own environment,
+    /// so the variable the agent honors is the one the hook sees. The value
+    /// is handed over as written: an adapter that compares paths resolves
+    /// symlinks itself. A relative value, which the agent resolves against
+    /// the directory it starts in, cannot be resolved here, where the hook
+    /// runs in the session's `cwd`; the provider's shim makes it absolute
+    /// before the agent starts.
+    fn home_directory_variable(&self) -> Option<&'static str> {
+        None
+    }
 
     /// Maps one hook payload to neutral events. Unknown event names become
     /// `AgentEvent::Extension`; unrecognized fields on known events are ignored.
@@ -97,6 +123,27 @@ pub trait ProviderAdapter: Send + Sync {
         request: &Value,
     ) -> crate::ProviderOutput;
 
+    /// The identity of this hook call for a turn record (`EventId`). The
+    /// default is the shim's invocation id; a provider whose payload carries
+    /// an id of its own for the call (Claude's tool use id) uses that. `None`
+    /// means the call cannot be told apart from a retry, and the turn record
+    /// rejects it rather than risk applying it twice.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NormalizeError` only for input that is too large or is not a
+    /// JSON object.
+    fn event_id(
+        &self,
+        input: RawHookInput<'_>,
+        context: &HookContext,
+    ) -> Result<Option<EventId>, NormalizeError> {
+        let _ = input;
+        Ok(context
+            .invocation_id
+            .map(|id| EventId::invocation(&self.descriptor().id, id)))
+    }
+
     /// Names the transcript the runtime should read alongside this payload,
     /// when the provider keeps one and this event's normalization uses it.
     /// Reading the transcript costs a file read per hook, so adapters answer
@@ -110,6 +157,36 @@ pub trait ProviderAdapter: Send + Sync {
     fn transcript_path(&self, input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {
         let _ = input;
         Ok(None)
+    }
+
+    /// Names the transcript that will show whether the wait this call opens
+    /// is over, for a call that puts the run in `NeedsInput`. Only the path
+    /// is taken, not the file: the runtime keeps it on the run record, and
+    /// the app reads the transcript while the run waits
+    /// (`transcript_shows_wait_declined`). A provider whose every wait ends
+    /// with a hook of its own keeps the default.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NormalizeError` only for input that is too large or is not a
+    /// JSON object.
+    fn wait_transcript_path(
+        &self,
+        input: RawHookInput<'_>,
+    ) -> Result<Option<String>, NormalizeError> {
+        let _ = input;
+        Ok(None)
+    }
+
+    /// Returns whether the transcript tail shows that the person declined
+    /// the call the run waits on and the turn stopped there, which no hook
+    /// reports. The app reads it on its own schedule rather than in a hook,
+    /// from the path `wait_transcript_path` named. `false` means "not seen",
+    /// which keeps the wait: ending a live question would hide it from the
+    /// person.
+    fn transcript_shows_wait_declined(&self, transcript: &[u8]) -> bool {
+        let _ = transcript;
+        false
     }
 
     /// Reads a `git worktree add` the agent is about to run out of a tool
@@ -129,6 +206,45 @@ pub trait ProviderAdapter: Send + Sync {
         let _ = input;
         Ok(None)
     }
+
+    /// Reads a shell command the agent ran, and how it exited, out of a tool
+    /// payload, so the hook runtime can record a turn's checks.
+    /// Reported alongside the neutral events rather than as one: it is an
+    /// observation about the turn, not a change in the run's state, and a
+    /// provider that answers a question while a command finishes must keep
+    /// the question waiting. Providers that report no exit status keep the
+    /// default.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NormalizeError` only for input that is too large or is not a
+    /// JSON object.
+    fn command_run(&self, input: RawHookInput<'_>) -> Result<Option<CommandRun>, NormalizeError> {
+        let _ = input;
+        Ok(None)
+    }
+
+    /// Returns whether this call's events are about the run `record`
+    /// describes now. The runtime asks under the record lock, just before it
+    /// applies them, and drops every event of the call when the answer is no.
+    /// A provider's own hooks run while it waits, so they are always current;
+    /// a report made from outside the agent (the Codex helper's usage-limit
+    /// watcher) can arrive after the run moved on to another conversation or
+    /// turn, and only the payload says which one it observed.
+    fn applies_to(&self, input: RawHookInput<'_>, record: Option<&crate::RunRecord>) -> bool {
+        let _ = (input, record);
+        true
+    }
+}
+
+/// A shell command the agent ran, as a tool payload reports it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommandRun {
+    pub command: String,
+    /// `None` when the run was interrupted, or the provider gave none.
+    pub exit_code: Option<i32>,
+    /// The directory the agent ran it in, when the payload says.
+    pub cwd: Option<String>,
 }
 
 /// Parses a payload as a JSON object under the shared size limit.
@@ -147,9 +263,77 @@ pub fn parse_object(bytes: &[u8], limit: usize) -> Result<Map<String, Value>, No
     }
 }
 
+/// Returns the payload's `transcript_path` when its `hook_event_name` is one
+/// of `events` and the path names a `.jsonl` file (in any case), for an
+/// adapter's `transcript_path` or `wait_transcript_path`. For
+/// `transcript_path`, each provider passes only the events whose
+/// normalization reads the transcript, since every one named there costs a
+/// file read per hook; `wait_transcript_path` only keeps the path.
+///
+/// # Errors
+///
+/// Returns `NormalizeError` only for input that is too large or is not a
+/// JSON object.
+pub fn transcript_path_for_events(
+    input: RawHookInput<'_>,
+    events: &[&str],
+) -> Result<Option<String>, NormalizeError> {
+    let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)?;
+    let text = |key: &str| object.get(key).and_then(Value::as_str);
+    if !text("hook_event_name").is_some_and(|event| events.contains(&event)) {
+        return Ok(None);
+    }
+    Ok(text("transcript_path")
+        .filter(|path| {
+            std::path::Path::new(path)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("jsonl"))
+        })
+        .map(str::to_owned))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn transcript(payload: &str, events: &[&str]) -> Option<String> {
+        transcript_path_for_events(
+            RawHookInput {
+                bytes: payload.as_bytes(),
+                transcript: None,
+            },
+            events,
+        )
+        .expect("an object")
+    }
+
+    #[test]
+    fn the_transcript_is_named_only_for_the_events_given() {
+        let stop = r#"{"hook_event_name":"Stop","transcript_path":"/tmp/a.JSONL"}"#;
+        assert_eq!(transcript(stop, &["Stop"]), Some("/tmp/a.JSONL".to_owned()));
+        assert_eq!(transcript(stop, &["Other"]), None);
+        assert_eq!(
+            transcript(
+                r#"{"hook_event_name":"Stop","transcript_path":"/tmp/a.txt"}"#,
+                &["Stop"]
+            ),
+            None
+        );
+        assert_eq!(
+            transcript(r#"{"transcript_path":"/a.jsonl"}"#, &["Stop"]),
+            None
+        );
+        assert_eq!(
+            transcript_path_for_events(
+                RawHookInput {
+                    bytes: b"[]",
+                    transcript: None
+                },
+                &["Stop"]
+            ),
+            Err(NormalizeError::NotAnObject)
+        );
+    }
 
     #[test]
     fn parse_object_enforces_the_limit_before_parsing() {

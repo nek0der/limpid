@@ -64,7 +64,7 @@ extension ReviewDiffTable.Coordinator {
             guard anchor != nil || point.x >= textOrigin else { return nil }
             let cellEnd = cellOrigin + width - ReviewRowMetrics.codeTrailingInset
             hitX = min(max(point.x, textOrigin), cellEnd)
-        case .notice, .hunk, .comment, .composer, .expander:
+        case .notice, .hunk, .comment, .composer, .expander, .file:
             return nil
         }
         let x = max(0, hitX - textOrigin + (parent.layout == .sideBySide ? codeOffset : 0))
@@ -97,7 +97,7 @@ extension ReviewDiffTable.Coordinator {
                 utf16Offset: NSMaxRange(range)
             )
         )
-        parent.selection.selectText(selection, keepingLines: isComposing)
+        parent.selection.selectText(selection, keepsLines: isComposing)
     }
 
     /// An open composer keeps its lines highlighted: they show which lines
@@ -125,7 +125,7 @@ extension ReviewDiffTable.Coordinator {
                     return previous.range(in: line, at: index, on: side)
                         != parent.selection.text.range(in: line, at: index, on: side)
                 }
-            case .notice, .hunk, .comment, .composer, .expander:
+            case .notice, .hunk, .comment, .composer, .expander, .file:
                 false
             }
         })
@@ -140,7 +140,7 @@ extension ReviewDiffTable.Coordinator {
             position.side == nil ? value : nil
         case let .splitCode(pair):
             position.side.flatMap { pair.line(on: $0) }
-        case .notice, .hunk, .comment, .composer, .expander:
+        case .notice, .hunk, .comment, .composer, .expander, .file:
             nil
         }
         return line?.id == position.lineID ? line : nil
@@ -155,7 +155,7 @@ extension ReviewDiffTable.Coordinator {
                 side == nil ? value : nil
             case let .splitCode(pair):
                 side.flatMap { pair.line(on: $0) }
-            case .notice, .hunk, .comment, .composer, .expander:
+            case .notice, .hunk, .comment, .composer, .expander, .file:
                 nil
             }
             if line?.isTextSelectable == true {

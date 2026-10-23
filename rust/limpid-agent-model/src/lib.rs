@@ -15,17 +15,22 @@ mod command;
 mod event;
 mod layout;
 mod projection;
+mod prompt;
 mod provider;
 mod record;
+mod restore;
+mod serde_helpers;
 mod timestamp;
+mod turn;
+mod usage;
 mod worktree;
 
 #[cfg(feature = "conformance")]
 pub mod conformance;
 
 pub use adapter::{
-    HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, RawHookInput, TmuxEndpoint,
-    parse_object,
+    CommandRun, HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, RawHookInput,
+    TmuxEndpoint, parse_object, transcript_path_for_events,
 };
 pub use approval::{
     ApprovalDecision, ApprovalQuestion, ApprovalQuestionOption, ApprovalRequest, ProviderOutput,
@@ -36,27 +41,43 @@ pub use command::{
     NotifyCommand, OnMismatch, PaneStoreKind, Patch, Precondition, RETIRED_RECORD_LIFETIME_SECS,
     RecordPatch, ResumeIntent, Target,
 };
-pub use event::{AgentEvent, Titles};
+pub use event::{AgentEvent, EventId, SessionSource, Titles};
 pub use layout::{
-    CWD_EVENT_FILE_SUFFIX, LOCK_FILE_SUFFIX, SESSION_HINT_FILE_SUFFIX, WORKTREE_EVENT_FILE_SUFFIX,
-    WORKTREE_EVENTS_DIRECTORY, cwd_event_file_name, session_hint_file_name,
+    CWD_EVENT_FILE_SUFFIX, LOCK_FILE_SUFFIX, SESSION_HINT_FILE_SUFFIX, TURNS_DIRECTORY,
+    WORKTREE_EVENT_FILE_SUFFIX, WORKTREE_EVENTS_DIRECTORY, cwd_event_file_name,
+    session_hint_file_name,
 };
 pub use projection::{
-    AcceptedRun, AttachmentResolution, AttentionMarks, Badge, EpisodeStamp, Focus, Instants,
-    LifecycleInput, NOTIFICATION_BODY_CHARS, NOTIFICATION_PENDING_LIFETIME_MS, ObservedRuntime,
-    OutboxState, PaneLocation, PanePresence, PendingNotification, PidStatus, Projection,
-    ProjectionInput, ProjectionState, RESUME_WINDOW_SECS, RecordFile, RuntimePresentation,
-    SessionInfo, TabPanes, VIEWED_FINISHED_RETENTION_SECS, WorktreeEventFile,
+    AcceptedRun, AttachmentResolution, AttentionMarks, Badge, EpisodeStamp,
+    FINISHED_NOTICE_HOLD_MS, Focus, Instants, LifecycleInput, MAX_TURN_DELETIONS_PER_PASS,
+    NOTIFICATION_BODY_CHARS, NOTIFICATION_PENDING_LIFETIME_MS, ObservedRuntime, OutboxState,
+    PaneLocation, PanePresence, PendingNotification, PidStatus, Projection, ProjectionInput,
+    ProjectionState, RESUME_WINDOW_SECS, RecordFile, RuntimePresentation, SessionInfo, StopReason,
+    TURNS_KEPT_PER_SHOWN_CONVERSATION, TabPanes, TurnSweepInput, VIEWED_FINISHED_RETENTION_SECS,
+    WorktreeEventFile,
 };
+pub use prompt::{PromptKind, RecordedPromptKind, classify_prompt};
 pub use provider::{
     Capability, InstallRecipe, ProviderDescriptor, ProviderId, ProviderIdError, RecipePlaceholder,
     RecipeVariable, SettingsFragment,
 };
 pub use record::{
     MAX_RECORD_TEXT_BYTES, RUN_RECORD_FILE_SUFFIX, RecordError, RunRecord, RunRecordV2, RunState,
-    run_record_file_name,
+    WaitKind, run_record_file_name,
+};
+pub use restore::{
+    FailedPath, FailedReason, PathChange, PathChangeKind, RESTORE_DIRECTORY,
+    RESTORE_JOURNAL_FILE_SUFFIX, RestoreContext, RestoreJournal, RestoreOperation, RestoreStage,
+    StageReason, restore_current_ref, restore_expected_ref, restore_refs, restore_target_ref,
+    restore_undo_ref,
 };
 pub use timestamp::{
     days_from_civil, format_utc_seconds, parse_utc_seconds, seconds_between, unix_seconds,
 };
+pub use turn::{
+    ChangeSummary, CheckResult, ConversationKey, ConversationTurns, DiffStat, EventApplication,
+    GitContext, SkippedFile, SnapshotStatus, TURN_COUNTER_FILE_SUFFIX, TURN_RECORD_FILE_SUFFIX,
+    TurnCounter, TurnPhase, TurnRecord, TurnRecordError, TurnSummary, turn_record_file_name,
+};
+pub use usage::UsageLimit;
 pub use worktree::WorktreeIntent;

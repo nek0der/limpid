@@ -1,16 +1,25 @@
 // DemoFixture.swift
-// Limpid — fixed SessionSnapshot used when LIMPID_DEMO=1 is set in
-// the environment. Powers the hero-screenshot recipe in
-// `scripts/screenshot.sh`: the same JSON every launch means the
-// README PNG can be regenerated without recreating groups /
-// projects / worktrees by hand. Persistence is short-circuited in
-// demo mode (see `SessionStore.load()` / `scheduleSave`), so the
-// in-memory snapshot is the whole truth for that process.
+// Limpid — the fixed session demo mode shows: a made-up invoicing product's three projects and their worktrees, for the hero screenshot.
+//
+// Powers `scripts/screenshot.sh`: the same session every launch means the
+// README image can be made again without setting up projects, worktrees,
+// and agents by hand. Persistence is short-circuited in demo mode (see
+// `SessionStore.load()` / `scheduleSave`), so the in-memory snapshot is the
+// whole truth for that process.
+//
+// The scene is duesmith, an invoicing web app nobody makes, an afternoon with
+// nine agents across its TypeScript monorepo, the Rust worker that
+// renders its invoice PDFs, and a dotfiles folder. The sidebar lists all
+// three under their headers: duesmith's working worktrees, one ready to clean
+// up, and the agents' own worktrees Git reports; pdf-worker folded, with its
+// wait on the header; dotfiles' folder alone. Everything in it is made
+// up: no customer, person, company, address, or repository is real, and the
+// amounts are placeholders.
 
+import CoreGraphics
 import Foundation
 
 enum DemoFixture {
-
     /// Set `LIMPID_DEMO=1` (any non-empty value works) before launching
     /// the app to bypass the on-disk session and use the fixture
     /// instead. Read once per process — toggling at runtime won't take.
@@ -24,351 +33,452 @@ enum DemoFixture {
     // MARK: - Stable IDs
 
     //
-    // Hand-rolled UUIDs anchor the fixture's structure across runs:
-    // tests assert against them and the screenshot pipeline always
-    // sees the same containers / tabs / panes. Wall-clock timestamps
-    // on agent badges intentionally drift (relative to `Date()` so the
-    // Waiting row reads as "2m ago" forever — see the comment near
-    // the badge), so the encoded JSON is not bit-identical across
-    // runs. **Don't change these UUIDs once a hero image is shipped**
-    // — tests anchor on them.
+    // Hand-made IDs anchor the fixture's structure across runs: tests
+    // assert against them and the screenshot pipeline always sees the same
+    // containers, tabs, and panes. Each role has its own range in the last
+    // two bytes (projects 0xB0nn, worktrees 0xC0nn, tabs 0xD0nn, panes
+    // 0xE0nn), built from bytes so no string has to parse. Wall-clock
+    // timestamps on badges and turns are relative to now, so the encoded JSON
+    // is not bit-identical across runs; the IDs are.
 
-    static let agentsGroupID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
-    static let scratchGroupID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A2")!
+    fileprivate static func fixtureID(_ role: UInt8, _ index: UInt8) -> UUID {
+        UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, role, index))
+    }
 
-    static let limpidProjectID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!
-    static let dotfilesProjectID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!
-    static let personalSiteProjectID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B3")!
+    static let duesmithProjectID = fixtureID(0xB0, 1)
+    static let pdfWorkerProjectID = fixtureID(0xB0, 2)
+    static let dotfilesProjectID = fixtureID(0xB0, 3)
 
-    static let limpidMainWorktreeID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!
-    static let limpidFeatWorktreeID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!
+    /// duesmith's worktrees, in the order they were made, which is the
+    /// sidebar's.
+    static let remindersWorktreeID = fixtureID(0xC0, 1)
+    static let taxRoundingWorktreeID = fixtureID(0xC0, 2)
+    static let prorationWorktreeID = fixtureID(0xC0, 3)
+    static let webhookWorktreeID = fixtureID(0xC0, 4)
+    static let docsWorktreeID = fixtureID(0xC0, 5)
+    /// pdf-worker's.
+    static let pageBreaksWorktreeID = fixtureID(0xC0, 6)
+    static let batchRenderWorktreeID = fixtureID(0xC0, 7)
+    /// duesmith's worktree whose pull request was merged, with nothing open
+    /// or uncommitted in it: ready to clean up.
+    static let csvExportWorktreeID = fixtureID(0xC0, 8)
+    /// Worktrees Git reports in duesmith that nobody opened in Limpid: four
+    /// an agent made for itself under `.claude/worktrees/`, and one on a
+    /// detached HEAD, which goes by its folder's name.
+    static let agentWorktreeIDs = (9...12).map { fixtureID(0xC0, UInt8($0)) }
+    static let bisectWorktreeID = fixtureID(0xC0, 13)
 
-    private static let looseTabID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D1")!
-    private static let agentsClaudeTabID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D2")!
-    private static let agentsCodexTabID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D3")!
-    private static let scratchNotesTabID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D4")!
-    private static let limpidMainTabID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D5")!
-    static let editorTabID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D6")!
-    private static let gitTabID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D7")!
-    private static let buildTabID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D8")!
-    private static let agentTabID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D9")!
+    /// Every tab of the fixture, each with one pane, in the order the
+    /// session lists them. A tab and its pane share the slot's number.
+    enum Slot: UInt8, CaseIterable {
+        case prReview = 1
+        case reminders
+        case dev
+        case git
+        case taxRounding
+        case proration
+        case webhook
+        case docs
+        case pdfMain
+        case pageBreaks
+        case batchRender
+        case dotfiles
+        case scratch
+        /// The selected worktree's second agent, a Codex conversation in
+        /// the same worktree, so the changes panel's timeline shows two
+        /// conversations' turns in one list. Last, so the earlier
+        /// slots keep their ids.
+        case remindersCodex
 
-    private static let looseTabPaneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000E3")!
-    private static let agentsClaudePaneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000E4")!
-    private static let agentsCodexPaneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000E5")!
-    private static let scratchNotesPaneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000E6")!
-    private static let limpidMainPaneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000E7")!
-    static let editorTopPaneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000E1")!
-    static let editorBottomPaneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000E2")!
-    private static let gitTabPaneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000E8")!
-    private static let buildTabPaneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000E9")!
-    private static let agentTabPaneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000EA")!
+        var tabID: UUID {
+            DemoFixture.fixtureID(0xD0, rawValue)
+        }
 
-    // MARK: - Stub command output
-
-    //
-    // Heredoc'd `cat` commands so each pane shows a deterministic,
-    // environment-independent scene. We deliberately don't run real
-    // tools like `lazygit` / `bat`, both because demo machines may
-    // not have them installed and because their output drifts with
-    // upstream releases. `clear &&` keeps the demo from
-    // accumulating shell-init banners above the staged output.
-    //
-    // Each command first resets the prompt to a neutral `limpid $ `
-    // (assignments with no command word modify the live shell; the
-    // value is single-quoted so `$` stays literal in both zsh and
-    // bash). Without this the post-`cat` live prompt renders the demo
-    // machine's real `user@host` — e.g. the hero screenshot would
-    // leak the maintainer's username. `PROMPT` covers zsh, `PS1`
-    // covers bash; both resolve to the same neutral string.
-
-    private static let editorCommand = """
-    PROMPT='limpid $ ' PS1='limpid $ ' && clear && cat <<'EOF'
-    // WindowSession+Containers.swift
-    extension WindowSession {
-        @discardableResult
-        func addOrActivateProject(
-            rootURL: URL,
-            suggestedName: String? = nil
-        ) -> Project {
-            let normalized = rootURL.standardizedFileURL
-            promoteRecent(normalized)
-            if let existing = projects.first(where: {
-                $0.rootURL.standardizedFileURL == normalized
-            }) {
-                activateProject(existing.id)
-                return existing
-            }
-            let project = Project(
-                name: suggestedName ?? normalized.lastPathComponent,
-                rootURL: normalized,
-                paletteIndex: projects.count % 8
-            )
-            projects.append(project)
-            return project
+        var paneID: UUID {
+            DemoFixture.fixtureID(0xE0, rawValue)
         }
     }
-    EOF
-    """
 
-    private static let gitStatusCommand = """
-    PROMPT='limpid $ ' PS1='limpid $ ' && clear && cat <<'EOF'
-    \u{0024} git status
-    On branch feat/agents
-    Your branch is up to date with 'origin/feat/agents'.
+    // MARK: - Folders
 
-    Changes to be committed:
-      (use \"git restore --staged <file>...\" to unstage)
-            modified:   Limpid/Core/Models/WindowSession+Containers.swift
-            new file:   LimpidTests/WindowSessionContainersTests.swift
-    EOF
-    """
+    private static let home = URL(fileURLWithPath: "/Users/demo")
 
-    private static let gitTabCommand = """
-    PROMPT='limpid $ ' PS1='limpid $ ' && clear && cat <<'EOF'
-    \u{0024} git log --oneline --graph -5
-    * 6686ad5 feat(agents): cross-pane waiting list and ⌘J cursor
-    * 3c195bd feat(tab): name tabs from the agent conversation
-    * 7e5c875 feat(toolbar): scale up header icons to Apple metrics
-    * 98372c9 fix(codex): only export CODEX_HOME when shadow dir exists
-    * 0155870 feat(transparency): follow Reduce Transparency live
-    EOF
-    """
+    /// A folder of the demo home's `code`, where every project and worktree
+    /// of the fixture is said to be. None of them exists.
+    static func folder(_ name: String) -> URL {
+        home.appendingPathComponent("code/\(name)")
+    }
 
-    private static let buildTabCommand = """
-    PROMPT='limpid $ ' PS1='limpid $ ' && clear && cat <<'EOF'
-    \u{0024} xcodebuild -scheme Limpid build | xcbeautify
-    > Building Limpid (Debug)
-      Compile WindowSession+Containers.swift
-      Compile DemoFixture.swift
-      Link Limpid
-    > Build Succeeded
-    EOF
-    """
+    static var duesmithRoot: URL {
+        folder("duesmith")
+    }
 
-    private static let agentTabCommand = """
-    PROMPT='limpid $ ' PS1='limpid $ ' && clear && cat <<'EOF'
-    [Claude Code session]
-    > Refactor addOrActivateProject to return a Result so callers can
-      surface filesystem errors instead of silently falling back.
+    static var pdfWorkerRoot: URL {
+        folder("pdf-worker")
+    }
 
-    Read WindowSession+Containers.swift
-    Edit WindowSession+Containers.swift
-    Done.
-    EOF
-    """
+    static var dotfilesRoot: URL {
+        folder("dotfiles")
+    }
+
+    /// The worktree the window shows, whose folder the staged turns name as
+    /// their root. `scripts/screenshot.sh` starts the demo shells in the same
+    /// path under its isolated home, so the pane footer reads it too.
+    static var selectedWorktreeRoot: URL {
+        folder("duesmith-feat-overdue-reminders")
+    }
+
+    /// `selectedWorktreeRoot` below the demo home, as the script spells it.
+    static var selectedWorktreeHomeRelativePath: String {
+        "code/duesmith-feat-overdue-reminders"
+    }
+
+    // MARK: - Containers
+
+    static var remindersContainer: ContainerID {
+        .worktree(projectID: duesmithProjectID, worktreeID: remindersWorktreeID)
+    }
+
+    static var docsContainer: ContainerID {
+        .worktree(projectID: duesmithProjectID, worktreeID: docsWorktreeID)
+    }
+
+    static var pageBreaksContainer: ContainerID {
+        .worktree(projectID: pdfWorkerProjectID, worktreeID: pageBreaksWorktreeID)
+    }
+
+    static var batchRenderContainer: ContainerID {
+        .worktree(projectID: pdfWorkerProjectID, worktreeID: batchRenderWorktreeID)
+    }
+
+    static var csvExportContainer: ContainerID {
+        .worktree(projectID: duesmithProjectID, worktreeID: csvExportWorktreeID)
+    }
+
+    static var prorationContainer: ContainerID {
+        .worktree(projectID: duesmithProjectID, worktreeID: prorationWorktreeID)
+    }
+
+    /// The third of the agents' own worktrees, `agent-a19e5b`, whose
+    /// request was closed without merging.
+    static var closedAgentContainer: ContainerID {
+        .worktree(projectID: duesmithProjectID, worktreeID: agentWorktreeIDs[2])
+    }
+
+    private static func duesmith(_ worktreeID: UUID) -> ContainerID {
+        .worktree(projectID: duesmithProjectID, worktreeID: worktreeID)
+    }
+
+    // MARK: - Layout
+
+    /// The window the hero is: 1440×900 points, the size whose 2x capture
+    /// the script checks for, at (16, 16) so it also fits a 1470×956 display.
+    static let windowFrame = CGRect(x: 16, y: 16, width: 1440, height: 900)
+    /// Narrower than the default sidebar and changes panel, so a terminal of
+    /// 100 columns at the demo's 12-point font fits beside both and the
+    /// changes panel opens without folding the sidebar away.
+    static let sidebarWidth: Double = 264
+    static let changesPanelWidth: Double = 312
 
     // MARK: - Snapshot
 
     static var snapshot: SessionSnapshot {
-        let demoHome = URL(fileURLWithPath: "/Users/demo")
-        let limpidRoot = demoHome.appendingPathComponent("code/limpid")
-
-        let groups: [TabGroup] = [
-            TabGroup(id: agentsGroupID, name: "Agents", paletteIndex: 0),
-            TabGroup(id: scratchGroupID, name: "Scratch", paletteIndex: 2)
-        ]
-
-        let limpidMainWorktree = Worktree(
-            id: limpidMainWorktreeID,
-            label: "main",
-            workingDirectory: limpidRoot,
-            origin: .userPinned
+        var window = WindowRecord(
+            projectID: duesmithProjectID,
+            activeTabID: Slot.reminders.tabID,
+            activeContainerID: remindersContainer,
+            frame: WindowFrame(windowFrame),
+            sidebarWidth: sidebarWidth
         )
-        let limpidFeatWorktree = Worktree(
-            id: limpidFeatWorktreeID,
-            label: "feat/agents",
-            workingDirectory: limpidRoot.deletingLastPathComponent()
-                .appendingPathComponent("limpid-feat-agents"),
-            origin: .userPinned
-        )
+        window.isChangesPanelPresented = true
+        window.changesPanelWidth = changesPanelWidth
+        window.isFront = true
+        window.sidebar = sidebarArrangement
 
-        let projects: [Project] = [
+        return SessionSnapshot(
+            projects: projects,
+            tabs: duesmithTabs() + pdfWorkerTabs() + otherTabs(),
+            windows: [window],
+            recentProjectPaths: [duesmithRoot, pdfWorkerRoot, dotfilesRoot],
+            projectViews: [
+                // Switched to, pdf-worker comes back on the agent waiting in
+                // it, as a project the person had open would.
+                ProjectView(
+                    projectID: pdfWorkerProjectID,
+                    activeContainerID: pageBreaksContainer,
+                    activeTabID: Slot.pageBreaks.tabID
+                ),
+                ProjectView(
+                    projectID: dotfilesProjectID,
+                    activeContainerID: .project(dotfilesProjectID),
+                    activeTabID: Slot.dotfiles.tabID
+                )
+            ]
+        )
+    }
+
+    /// How the window lists the projects: in the order they were opened,
+    /// with pdf-worker folded, so its header carries the wait inside it.
+    /// duesmith and dotfiles are open, and neither folded section of
+    /// duesmith is.
+    static var sidebarArrangement: SidebarArrangement {
+        SidebarArrangement(
+            projectOrder: [duesmithProjectID, pdfWorkerProjectID, dotfilesProjectID],
+            collapsedProjects: [pdfWorkerProjectID]
+        )
+    }
+
+    /// The worktrees are `.userPinned` so `GitSyncCoordinator` leaves them
+    /// alone: their folders do not exist, and a scan would drop them. Each
+    /// project names its main folder's branch, which its first row reads.
+    private static var projects: [Project] {
+        [
             Project(
-                id: limpidProjectID,
-                name: "limpid",
-                rootURL: limpidRoot,
-                worktrees: [limpidMainWorktree, limpidFeatWorktree],
+                id: duesmithProjectID,
+                name: "duesmith",
+                rootURL: duesmithRoot,
+                worktrees: [
+                    worktree(remindersWorktreeID, "feat/overdue-reminders", "duesmith-feat-overdue-reminders"),
+                    worktree(taxRoundingWorktreeID, "fix/tax-rounding", "duesmith-fix-tax-rounding"),
+                    worktree(prorationWorktreeID, "feat/proration", "duesmith-feat-proration"),
+                    worktree(webhookWorktreeID, "fix/webhook-timeout", "duesmith-fix-webhook-timeout"),
+                    worktree(docsWorktreeID, "docs/invoices-api", "duesmith-docs-invoices-api"),
+                    worktree(csvExportWorktreeID, "fix/csv-export", "duesmith-fix-csv-export")
+                ] + agentWorktrees + [bisectWorktree],
                 paletteIndex: 12, // sky
-                isExpanded: true
+                mainBranchName: "main"
+            ),
+            Project(
+                id: pdfWorkerProjectID,
+                name: "pdf-worker",
+                rootURL: pdfWorkerRoot,
+                worktrees: [
+                    worktree(pageBreaksWorktreeID, "fix/page-breaks", "pdf-worker-fix-page-breaks"),
+                    worktree(batchRenderWorktreeID, "feat/batch-render", "pdf-worker-feat-batch-render")
+                ],
+                paletteIndex: 5, // moss
+                mainBranchName: "main"
             ),
             Project(
                 id: dotfilesProjectID,
-                name: "config",
-                rootURL: demoHome.appendingPathComponent("code/config"),
+                name: "dotfiles",
+                rootURL: dotfilesRoot,
                 paletteIndex: 4, // lavender
-                isExpanded: false
-            ),
-            Project(
-                id: personalSiteProjectID,
-                name: "marketing-site",
-                rootURL: demoHome.appendingPathComponent("code/marketing-site"),
-                paletteIndex: 5, // moss
-                isExpanded: false
+                mainBranchName: "main"
             )
         ]
+    }
 
-        let featContainer = ContainerID.worktree(
-            projectID: limpidProjectID,
-            worktreeID: limpidFeatWorktreeID
+    /// A worktree Limpid made, which is among the working rows unless its
+    /// pull request says it is done.
+    private static func worktree(_ id: UUID, _ branch: String, _ folderName: String) -> Worktree {
+        Worktree(
+            id: id,
+            label: branch,
+            workingDirectory: folder(folderName),
+            gitRef: GitRef(branchName: branch),
+            origin: .userPinned,
+            admission: .created
         )
+    }
 
-        // Editor tab — vertical SplitDirection means the divider runs
-        // horizontally and the panes stack (editor on top, git status
-        // below). 65/35 keeps the staged code dominant.
-        var editorTab = Tab(
-            id: editorTabID,
-            title: "editor",
-            // Pin the label so OSC 2 (`~`) doesn't replace "editor" when
-            // the split panes activate — matches `singlePaneTab`'s
-            // titleOverride trick.
-            titleOverride: "editor",
-            splitTree: SplitTree(
-                root: .split(PaneSplit(
-                    direction: .vertical,
-                    ratio: 0.65,
-                    first: .leaf(id: editorTopPaneID),
-                    second: .leaf(id: editorBottomPaneID)
-                )),
-                focusedLeafID: editorTopPaneID
-            ),
-            container: featContainer
-        )
-        editorTab.initialCommands[editorTopPaneID] = editorCommand
-        editorTab.initialCommands[editorBottomPaneID] = gitStatusCommand
-        // Named the way a user would name them, so the hero screenshot
-        // shows split-pane headers with names rather than two copies of the
-        // demo home directory.
-        editorTab.paneStates[editorTopPaneID] = PaneState(name: "WindowSession+Containers.swift")
-        editorTab.paneStates[editorBottomPaneID] = PaneState(name: "git status")
+    /// The agents' own worktrees in duesmith, which Git reports and nobody
+    /// opened: folded among the other worktrees.
+    private static var agentWorktrees: [Worktree] {
+        zip(agentWorktreeIDs, ["agent-3f2a91", "agent-7c0d44", "agent-a19e5b", "agent-e62b07"]).map { id, name in
+            Worktree(
+                id: id,
+                label: name,
+                workingDirectory: duesmithRoot.appendingPathComponent(".claude/worktrees/\(name)"),
+                gitRef: GitRef(branchName: "worktree-\(name)"),
+                origin: .userPinned,
+                admission: .discovered
+            )
+        }
+    }
 
-        var gitTab = singlePaneTab(
-            id: gitTabID,
-            title: "git",
-            container: featContainer,
-            paneID: gitTabPaneID
+    /// A checkout on a detached HEAD beside duesmith, left from a bisect.
+    private static var bisectWorktree: Worktree {
+        Worktree(
+            id: bisectWorktreeID,
+            label: "duesmith-bisect",
+            workingDirectory: folder("duesmith-bisect"),
+            gitRef: GitRef(branchName: nil, headSHA: "4be1c09"),
+            origin: .userPinned,
+            admission: .discovered
         )
-        gitTab.initialCommands[gitTabPaneID] = gitTabCommand
+    }
 
-        var buildTab = singlePaneTab(
-            id: buildTabID,
-            title: "build",
-            container: featContainer,
-            paneID: buildTabPaneID
-        )
-        buildTab.initialCommands[buildTabPaneID] = buildTabCommand
+    // MARK: - Worktrees
 
-        var agentTab = singlePaneTab(
-            id: agentTabID,
-            title: "agent",
-            container: featContainer,
-            paneID: agentTabPaneID
-        )
-        agentTab.initialCommands[agentTabPaneID] = agentTabCommand
-        // Park the agent pane on a finished turn so the container column Waiting list
-        // carries one entry and the tab column row shows a green checkmark —
-        // the shape a real Claude `Stop` event produces. Timestamps
-        // are relative to *now* (not a fixed epoch) so the Waiting row
-        // reads as a fresh "2m ago" each launch instead of drifting
-        // into "514d ago" as the README ages. The snapshot is no
-        // longer bit-identical across runs, but the demo is captured
-        // to a PNG before that matters — tests anchor on UUIDs.
-        agentTab.agentBadges[.claude, default: [:]][agentTabPaneID] = ClaudeAgentBadge(
-            state: .finished,
-            detail: nil,
-            runStartedAt: nil,
-            contextTokens: nil,
-            updatedAt: Date(timeIntervalSinceNow: -120),
-            lastPrompt: "Refactor addOrActivateProject to return a Result"
-                + " so callers can surface filesystem errors"
-                + " instead of silently falling back.",
-            turnBaseTree: "0123456789abcdef0123456789abcdef01234567",
-            turnRoot: limpidRoot.path,
-            sessionStartedAt: Date(timeIntervalSinceNow: -3600)
+    //
+    // Rows are named as a real session's usually are, by their first agent
+    // conversation (`Tab.conversationName`), not by a name the person gave:
+    // no worktree has one (`Worktree.displayName`) and no tab has one
+    // (`titleOverride`). A given name would put the row's folder at the
+    // head of its second line (`WorkspaceSession.rowFolder(of:)`), and the
+    // hero has no room for it; a conversation's name does not
+    // (`RowName.folderBeside`). Each agent's tab comes first in its
+    // worktree, and its terminal's title is the conversation's, which the
+    // pane strip reads; a worktree of shells alone has no conversation, and
+    // its row reads as its branch. Badge times sit 20 seconds past a whole
+    // minute, so the rows' minutes do not tick over in the seconds before
+    // the capture.
+
+    private static func duesmithTabs() -> [Tab] {
+        let review = agentTab(
+            .prReview,
+            .codex,
+            in: .project(duesmithProjectID),
+            badge: badge(
+                .finished,
+                secondsAgo: prReviewFinishedSecondsAgo,
+                prompt: prReviewLastPrompt,
+                root: duesmithRoot
+            )
         )
 
-        // Park the `claude` tab in the Agents group on a *running* turn
-        // so the container column Agents row carries the blue bolt — a live agent
-        // working off-screen, the other half of the Waiting story.
-        var agentsClaudeTab = singlePaneTab(
-            id: agentsClaudeTabID,
-            title: "claude",
-            container: .group(agentsGroupID),
-            paneID: agentsClaudePaneID
-        )
-        agentsClaudeTab.agentBadges[.claude, default: [:]][agentsClaudePaneID] = ClaudeAgentBadge(
-            state: .running,
-            detail: "Edit",
-            runStartedAt: Date(timeIntervalSinceNow: -30),
-            contextTokens: nil,
-            updatedAt: Date(timeIntervalSinceNow: -5),
-            lastPrompt: "Audit the sidebar selection contrast in light mode.",
-            sessionStartedAt: Date(timeIntervalSinceNow: -900)
+        let reminders = agentTab(
+            .reminders,
+            .claude,
+            in: remindersContainer,
+            badge: badge(
+                .finished,
+                // This is when its last staged turn ended (`DemoFixture.conversations`).
+                secondsAgo: remindersFinishedSecondsAgo,
+                prompt: remindersLastPrompt,
+                root: selectedWorktreeRoot
+            )
         )
 
-        // Park the `codex` tab on a permission prompt so the Waiting list
-        // shows the orange "needs input" tier above the green finished
-        // one — the two states the list exists to tell apart. `detail`
-        // takes the "tool: argument" shape the Codex hook writes for a
-        // PreToolUse that then asks for permission.
-        var agentsCodexTab = singlePaneTab(
-            id: agentsCodexTabID,
-            title: "codex",
-            container: .group(agentsGroupID),
-            paneID: agentsCodexPaneID
-        )
-        agentsCodexTab.agentBadges[.codex, default: [:]][agentsCodexPaneID] = CodexAgentBadge(
-            state: .needsInput,
-            detail: "Bash: git push origin feat/pricing-page",
-            runStartedAt: Date(timeIntervalSinceNow: -400),
-            contextTokens: nil,
-            updatedAt: Date(timeIntervalSinceNow: -240),
-            lastPrompt: "Ship the pricing page copy and open a PR.",
-            sessionStartedAt: Date(timeIntervalSinceNow: -2400)
+        let migration = agentTab(
+            .remindersCodex,
+            .codex,
+            in: remindersContainer,
+            badge: badge(
+                .finished,
+                secondsAgo: remindersCodexFinishedSecondsAgo,
+                prompt: remindersCodexLastPrompt,
+                sessionStartedSecondsAgo: remindersCodexSessionStartedSecondsAgo,
+                root: selectedWorktreeRoot
+            )
         )
 
-        let tabs: [Tab] = [
-            singlePaneTab(
-                id: looseTabID,
-                title: "shell",
-                container: .loose,
-                paneID: looseTabPaneID
-            ),
-            agentsClaudeTab,
-            agentsCodexTab,
-            singlePaneTab(
-                id: scratchNotesTabID,
-                title: "notes",
-                container: .group(scratchGroupID),
-                paneID: scratchNotesPaneID
-            ),
-            singlePaneTab(
-                id: limpidMainTabID,
-                title: "main",
-                container: .worktree(
-                    projectID: limpidProjectID,
-                    worktreeID: limpidMainWorktreeID
-                ),
-                paneID: limpidMainPaneID
-            ),
-            editorTab,
-            gitTab,
-            buildTab,
-            agentTab
+        // A permission request at Codex's own prompt, which demo mode leaves
+        // to the agent (it runs no approval service). Codex's hook records
+        // only the tool's name; the demo stages the "Tool: argument" words
+        // Claude's hook records instead, so the row has a command to show.
+        // The record says it is an approval of that tool, as a wait's
+        // record does.
+        var tax = agentTab(
+            .taxRounding,
+            .codex,
+            in: duesmith(taxRoundingWorktreeID),
+            badge: badge(
+                .needsInput,
+                detail: "Bash: tsc",
+                secondsAgo: 200,
+                prompt: "Round tax per line item, not on the invoice total",
+                runningFor: 330,
+                root: folder("duesmith-fix-tax-rounding")
+            )
+        )
+        tax.agentBadges[.codex]?[Slot.taxRounding.paneID]?.waitKind = PromptWaitKind.approval.rawValue
+        tax.agentBadges[.codex]?[Slot.taxRounding.paneID]?.tool = "Bash"
+
+        let proration = agentTab(
+            .proration,
+            .claude,
+            in: duesmith(prorationWorktreeID),
+            badge: badge(
+                .running,
+                detail: "Bash: pnpm test src/billing",
+                secondsAgo: 80,
+                prompt: "Charge the difference when a customer upgrades mid-cycle",
+                runningFor: 260,
+                root: folder("duesmith-feat-proration")
+            )
+        )
+
+        let webhook = agentTab(
+            .webhook,
+            .claude,
+            in: duesmith(webhookWorktreeID),
+            badge: badge(
+                .error,
+                detail: "API Error: Request timed out.",
+                secondsAgo: webhookStoppedSecondsAgo,
+                prompt: webhookLastPrompt,
+                root: folder("duesmith-fix-webhook-timeout")
+            )
+        )
+
+        let docs = agentTab(
+            .docs,
+            .codex,
+            in: docsContainer,
+            badge: badge(
+                .idle,
+                secondsAgo: 1940,
+                prompt: "Document the invoices API and open a pull request",
+                root: folder("duesmith-docs-invoices-api")
+            )
+        )
+
+        return [
+            review,
+            reminders,
+            migration,
+            shellTab(.dev, in: remindersContainer, title: "dev"),
+            shellTab(.git, in: remindersContainer, title: "git"),
+            tax,
+            proration,
+            webhook,
+            docs
         ]
+    }
 
-        return SessionSnapshot(
-            groups: groups,
-            projects: projects,
-            tabs: tabs,
-            activeTabID: editorTabID,
-            activeContainerID: featContainer,
-            sidebarWidth: Double(SessionLayoutDefaults.containerColumnWidth),
-            tabColumnWidth: Double(SessionLayoutDefaults.tabColumnWidth),
-            sidebarHidden: false,
-            windowFrame: WindowFrame(CGRect(x: 100, y: 100, width: 1280, height: 800)),
-            recentProjectPaths: [limpidRoot]
+    private static func pdfWorkerTabs() -> [Tab] {
+        var pageBreaks = agentTab(
+            .pageBreaks,
+            .codex,
+            in: pageBreaksContainer,
+            badge: badge(
+                .needsInput,
+                detail: "Bash: cargo test -p layout",
+                secondsAgo: 380,
+                prompt: "Keep line items from splitting across page breaks",
+                runningFor: 520,
+                root: folder("pdf-worker-fix-page-breaks")
+            )
         )
+        pageBreaks.agentBadges[.codex]?[Slot.pageBreaks.paneID]?.waitKind = PromptWaitKind.approval.rawValue
+        pageBreaks.agentBadges[.codex]?[Slot.pageBreaks.paneID]?.tool = "Bash"
+
+        let batchRender = agentTab(
+            .batchRender,
+            .claude,
+            in: batchRenderContainer,
+            badge: badge(
+                .idle,
+                secondsAgo: 10820,
+                prompt: "Render invoices in batches of 50",
+                root: folder("pdf-worker-feat-batch-render")
+            )
+        )
+
+        return [
+            shellTab(.pdfMain, in: .project(pdfWorkerProjectID)),
+            pageBreaks,
+            batchRender
+        ]
+    }
+
+    private static func otherTabs() -> [Tab] {
+        [
+            shellTab(.dotfiles, in: .project(dotfilesProjectID)),
+            shellTab(.scratch, in: .loose)
+        ]
     }
 
     // MARK: - Pull-request status
@@ -379,12 +489,19 @@ enum DemoFixture {
     /// The hero screenshot has to look the same on every
     /// contributor's Mac, and the live path cannot promise that — it
     /// shells out to `gh` / `glab` against whatever is on disk under
-    /// whatever credentials happen to be present. `PRStatusSyncer`
-    /// stops at the door in demo mode and takes this instead.
+    /// whatever credentials happen to be present. In demo mode `AppState`
+    /// hands this to `PRStatusSyncer` as its source
+    /// (`PRStatusSource.fixture`) instead.
     ///
-    /// Two rows only: one with failing checks, the single state that
-    /// also earns a badge, and one merged on another project so the
-    /// merge glyph appears too.
+    /// One open request with passing checks; a draft whose checks are
+    /// still running, on the worktree whose agent is running, so its row
+    /// keeps the running action as its second line and carries the mark on
+    /// the right; one closed without merging, on an agent's own worktree
+    /// folded among the other worktrees, so no top row shows it; one merged
+    /// in the other project, with a tab still open in it; and one merged in
+    /// duesmith, whose worktree has nothing open, which puts it among those
+    /// ready to clean up. No failing checks:
+    /// their red mark reads too much like a stop beside the scene's real one.
     ///
     /// The demo's worktrees are `.userPinned` to stop
     /// `GitSyncCoordinator` replacing them with a scan of paths that
@@ -392,21 +509,48 @@ enum DemoFixture {
     /// about the row, so it carries an ordinary worktree's status.
     static var prStatus: [ContainerID: PRInfo] {
         [
-            .worktree(projectID: limpidProjectID, worktreeID: limpidFeatWorktreeID): PRInfo(
-                number: 128,
+            docsContainer: PRInfo(
+                number: 324,
                 state: .open,
                 isDraft: false,
-                title: "Track agent state per pane",
-                url: demoPullRequestURL(repo: "limpid", number: 128),
+                title: "docs(api): document the invoices endpoints",
+                url: demoPullRequestURL(repo: "duesmith", number: 324),
                 forge: .gitHub,
-                checks: PRChecks(conclusion: .failure, counts: .init(passed: 7, total: 9))
+                checks: PRChecks(conclusion: .success, counts: .init(passed: 3, total: 3))
             ),
-            .project(personalSiteProjectID): PRInfo(
-                number: 42,
+            prorationContainer: PRInfo(
+                number: 326,
+                state: .open,
+                isDraft: true,
+                title: "feat(billing): prorate plan changes mid-cycle",
+                url: demoPullRequestURL(repo: "duesmith", number: 326),
+                forge: .gitHub,
+                checks: PRChecks(conclusion: .pending, counts: .init(passed: 2, total: 4))
+            ),
+            closedAgentContainer: PRInfo(
+                number: 317,
+                state: .closed,
+                isDraft: false,
+                title: "refactor(billing): split the invoice totals module",
+                url: demoPullRequestURL(repo: "duesmith", number: 317),
+                forge: .gitHub,
+                checks: PRChecks(conclusion: .success, counts: .init(passed: 3, total: 3))
+            ),
+            csvExportContainer: PRInfo(
+                number: 311,
                 state: .merged,
                 isDraft: false,
-                title: "Rewrite the pricing page",
-                url: demoPullRequestURL(repo: "marketing-site", number: 42),
+                title: "fix(export): quote commas in the CSV export",
+                url: demoPullRequestURL(repo: "duesmith", number: 311),
+                forge: .gitHub,
+                checks: PRChecks(conclusion: .success, counts: .init(passed: 3, total: 3))
+            ),
+            batchRenderContainer: PRInfo(
+                number: 57,
+                state: .merged,
+                isDraft: false,
+                title: "feat(render): render invoices in batches",
+                url: demoPullRequestURL(repo: "pdf-worker", number: 57),
                 forge: .gitHub,
                 checks: PRChecks(conclusion: .success, counts: .init(passed: 4, total: 4))
             )
@@ -428,29 +572,96 @@ enum DemoFixture {
     /// entry, so an edit that reached the fallback fails there instead
     /// of shipping a link into the demo.
     private static func demoPullRequestURL(repo: String, number: Int) -> URL {
-        URL(string: "https://example.invalid/limpid/\(repo)/pull/\(number)")
+        URL(string: "https://example.invalid/demo/\(repo)/pull/\(number)")
             ?? URL(fileURLWithPath: "/")
     }
 
     // MARK: - Helpers
 
-    private static func singlePaneTab(
-        id: UUID,
-        title: String,
-        container: ContainerID,
-        paneID: UUID
-    ) -> Tab {
-        Tab(
-            id: id,
-            title: title,
-            // Demo tabs pin a `titleOverride` matching `title` so the
-            // shell's OSC 2 pwd report (e.g. `~`) doesn't clobber the
-            // fixture's named label once the pane is activated. Same
-            // mechanism the user's manual rename uses, so `displayTitle`
-            // keeps "agent" / "git" / "build" across taps.
-            titleOverride: title,
-            splitTree: SplitTree(leafID: paneID),
+    /// Returns what each agent's first conversation is called, as its
+    /// provider titled it, which names the agent's row and its tab. It is
+    /// `nil` for a shell's slot.
+    static func conversationTitle(of slot: Slot) -> String? {
+        switch slot {
+        case .prReview: "Review PR #318"
+        case .reminders: "Send overdue invoice reminders"
+        case .remindersCodex: "Migrate the reminder schedules"
+        case .taxRounding: "Fix tax rounding on line items"
+        case .proration: "Add proration to plan changes"
+        case .webhook: "Retry webhooks on timeout"
+        case .docs: "Document the invoices API"
+        case .pageBreaks: "Fix page breaks in long invoices"
+        case .batchRender: "Render invoices in batches"
+        case .dev, .git, .pdfMain, .dotfiles, .scratch: nil
+        }
+    }
+
+    /// Makes an agent's tab, with `badge` on its one pane and named by the
+    /// conversation in it, staged as a pass leaves a tab once the provider
+    /// has titled the conversation: the tab keeps the conversation's name
+    /// (`Tab.conversationName`), which names the row, and its title is that
+    /// name too, as the agent last set it. Demo mode runs no pass, so the
+    /// name stays as staged; a scene that holds the screen sets the same
+    /// title again once its shell starts (`transcript(for:)`), in place of
+    /// the folder the shell reports first. A slot missing from
+    /// `conversationTitle(of:)` falls back to the provider's name, which
+    /// `DemoFixtureTests` catches.
+    private static func agentTab(_ slot: Slot, _ agent: AgentKind, in container: ContainerID, badge: AgentBadge) -> Tab {
+        let name = conversationTitle(of: slot) ?? agent.rawValue
+        var tab = Tab(
+            id: slot.tabID,
+            title: name,
+            splitTree: SplitTree(leafID: slot.paneID),
             container: container
+        )
+        tab.agentBadges[agent, default: [:]][slot.paneID] = badge
+        tab.conversationName = ConversationName(
+            name: name,
+            provider: agent,
+            paneID: slot.paneID,
+            conversationID: badge.conversationID,
+            startedAt: badge.sessionStartedAt
+        )
+        tab.initialCommands[slot.paneID] = transcript(for: slot)
+        return tab
+    }
+
+    /// A shell tab with no name of its own, so its row reads as its branch.
+    /// `title` is what its terminal last reported, which the pane strip
+    /// shows until the shell starts and reports its own: only the selected
+    /// tab's pane starts in the hero.
+    private static func shellTab(_ slot: Slot, in container: ContainerID, title: String = "shell") -> Tab {
+        var tab = Tab(
+            id: slot.tabID,
+            title: title,
+            splitTree: SplitTree(leafID: slot.paneID),
+            container: container
+        )
+        tab.initialCommands[slot.paneID] = transcript(for: slot)
+        return tab
+    }
+
+    /// A badge as the hook would leave it, its times relative to now so the
+    /// rows read as fresh on every launch. Its session began an hour before
+    /// it last reported, unless `sessionStartedSecondsAgo` says when.
+    private static func badge(
+        _ state: AgentState,
+        detail: String? = nil,
+        secondsAgo: Int,
+        prompt: String,
+        runningFor: Int? = nil,
+        sessionStartedSecondsAgo: Int? = nil,
+        root: URL
+    ) -> AgentBadge {
+        AgentBadge(
+            state: state,
+            detail: detail,
+            runStartedAt: runningFor.map { Date(timeIntervalSinceNow: -TimeInterval($0)) },
+            contextTokens: nil,
+            updatedAt: Date(timeIntervalSinceNow: -TimeInterval(secondsAgo)),
+            lastPrompt: prompt,
+            worktreeRoot: root.path,
+            sessionStartedAt: Date(timeIntervalSinceNow: -TimeInterval(sessionStartedSecondsAgo ?? secondsAgo + 3600))
         )
     }
 }

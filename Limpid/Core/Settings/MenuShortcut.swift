@@ -1,12 +1,11 @@
 // MenuShortcut.swift
-// Limpid — which keyboard shortcut an item in one of Limpid's own menus
-// (the terminal's right-click menu, the pane header's and toolbar's "⋯"
-// menus, the row context menus) shows beside its title.
+// Limpid — which shortcut an item in one of Limpid's own menus (right-click, a header's ⋯, a row's) shows.
 
 import Foundation
 
 /// A command one of Limpid's menus offers that a keyboard shortcut also
-/// performs.
+/// performs: the menu item is another way in to the same command, such as
+/// the decision bar's ⋯ "Review Unviewed" for the menu bar's.
 ///
 /// The rule every such menu follows: an item whose command a shortcut
 /// performs shows that shortcut, read from the user's settings, so a
@@ -34,6 +33,7 @@ enum MenuCommand: CaseIterable {
     case closeTab
     case newWorktree
     case keyboardShortcuts
+    case reviewChanges
 
     var shortcutSource: MenuShortcutSource {
         switch self {
@@ -49,6 +49,7 @@ enum MenuCommand: CaseIterable {
         case .closeTab: .action(.closeTab)
         case .newWorktree: .action(.newWorktree)
         case .keyboardShortcuts: .action(.keyboardShortcuts)
+        case .reviewChanges: .action(.review)
         }
     }
 

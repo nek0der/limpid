@@ -1,30 +1,14 @@
 // ContainerActions.swift
-// Limpid — destructive verbs over Groups / Projects / Worktrees that
-// also unregister the freed `SurfaceView`s so the registry doesn't
-// leak. Third slice from the `TabActions` namespace split; see
-// `SearchActions` for the pattern.
+// Limpid — destructive verbs over Projects / Worktrees that also unregister the freed `SurfaceView`s so the registry doesn't leak.
 
 import Foundation
 
 @MainActor
 enum ContainerActions {
-    /// Delete a Group + every tab / pane it contained, unregistering
-    /// the affected `SurfaceView`s so the registry doesn't leak.
-    static func removeGroup(
-        _ session: WindowSession,
-        registry: any SurfaceViewProviding,
-        groupID: UUID
-    ) {
-        let leafIDs = session.removeGroup(groupID)
-        for id in leafIDs {
-            registry.unregister(id)
-        }
-    }
-
     /// Delete a Project (worktrees + project-direct tabs) and free
     /// every `SurfaceView` that lived inside.
     static func removeProject(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
         projectID: UUID
     ) {
@@ -39,7 +23,7 @@ enum ContainerActions {
     /// `git worktree remove`. Hide-from-sidebar uses `hideWorktree`
     /// instead because that flow needs to keep tabs alive.
     static func removeWorktree(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
         projectID: UUID,
         worktreeID: UUID
@@ -53,7 +37,7 @@ enum ContainerActions {
     /// Prune all `isMissing` rows under a project and free their
     /// `SurfaceView`s.
     static func pruneMissingWorktrees(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
         projectID: UUID
     ) {
@@ -63,10 +47,10 @@ enum ContainerActions {
         }
     }
 
-    /// Async wrapper around `WindowSession.deleteGitWorktree` that
+    /// Async wrapper around `WorkspaceSession.deleteGitWorktree` that
     /// also frees the affected `SurfaceView`s on success.
     static func deleteGitWorktree(
-        _ session: WindowSession,
+        _ session: WorkspaceSession,
         registry: any SurfaceViewProviding,
         projectID: UUID,
         worktreeID: UUID,

@@ -11,6 +11,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 limpid-agent-model = { path = "../limpid-agent-model", features = ["conformance"] }
+uuid.workspace = true
 
 [lints]
 workspace = true

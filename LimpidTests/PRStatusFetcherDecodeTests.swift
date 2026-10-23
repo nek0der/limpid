@@ -38,6 +38,17 @@ struct PRStatusFetcherDecodeTests {
         #expect(info.state == expected)
     }
 
+    /// The forge's link opens on a click without asking, so one that is
+    /// not a web page (a file, a custom scheme) is not taken as the PR's.
+    @Test(arguments: ["file:///Applications/Calculator.app", "x-custom:open", "https:relative"])
+    func decode_aLinkThatIsNotHTTPS_isRefused(_ link: String) {
+        let json = makeMinimalJSON(state: "OPEN").replacingOccurrences(
+            of: "https://github.example.com/acme/app/pull/142",
+            with: link
+        )
+        #expect(PRStatusFetcher.decode(stdout: json, forge: .gitHub) == nil)
+    }
+
     @Test("isDraft flag is honored")
     func decode_isDraft_isPropagated() throws {
         let json = makeMinimalJSON(state: "OPEN", isDraft: true)
@@ -107,38 +118,27 @@ struct PRStatusFetcherDecodeTests {
         #expect(counts.passed == 1)
     }
 
-    @Test("missing rollup yields nil checks (no-CI case)")
-    func decode_noRollup_returnsNilChecks() throws {
-        let json = makeMinimalJSON(state: "OPEN")
-        let info = try #require(PRStatusFetcher.decode(stdout: json, forge: .gitHub))
-        #expect(info.checks == nil)
-    }
-
-    @Test("empty rollup yields nil checks")
-    func decode_emptyRollup_returnsNilChecks() throws {
-        let json = makeJSON(checks: [])
+    /// A missing rollup (no CI) and an empty one both mean no checks.
+    @Test("a missing or empty rollup yields nil checks", arguments: [false, true])
+    func decode_noOrEmptyRollup_returnsNilChecks(hasRollup: Bool) throws {
+        let json = hasRollup ? makeJSON(checks: []) : makeMinimalJSON(state: "OPEN")
         let info = try #require(PRStatusFetcher.decode(stdout: json, forge: .gitHub))
         #expect(info.checks == nil)
     }
 
     // MARK: - Failure modes
 
-    @Test("empty stdout returns nil")
-    func decode_emptyStdout_returnsNil() {
-        #expect(PRStatusFetcher.decode(stdout: "", forge: .gitHub) == nil)
-    }
-
-    @Test("malformed JSON returns nil rather than throwing")
-    func decode_invalidJSON_returnsNil() {
-        #expect(PRStatusFetcher.decode(stdout: "not json {{", forge: .gitHub) == nil)
-    }
-
-    @Test("missing required field returns nil")
-    func decode_missingNumber_returnsNil() {
-        let json = """
-        {"state": "OPEN", "isDraft": false, "title": "x", "url": "https://example.com/pr/1"}
-        """
-        #expect(PRStatusFetcher.decode(stdout: json, forge: .gitHub) == nil)
+    @Test(
+        "empty stdout, malformed JSON, or a missing required field returns nil rather than throwing",
+        arguments: [
+            "",
+            "not json {{",
+            // No `number`.
+            #"{"state": "OPEN", "isDraft": false, "title": "x", "url": "https://example.com/pr/1"}"#
+        ]
+    )
+    func decode_unreadableStdout_returnsNil(stdout: String) {
+        #expect(PRStatusFetcher.decode(stdout: stdout, forge: .gitHub) == nil)
     }
 
     // MARK: - Unknown status vocabulary
@@ -190,13 +190,10 @@ struct PRStatusFetcherDecodeTests {
     @Test(
         "maps head_pipeline status to a conclusion without counts",
         arguments: [
+            // The vocabulary is `PRChecksConclusionTests`'; two words show
+            // the status reaching the conclusion.
             ("success", PRChecksConclusion.success),
-            ("failed", PRChecksConclusion.failure),
-            ("canceled", PRChecksConclusion.failure),
-            ("running", PRChecksConclusion.pending),
-            ("manual", PRChecksConclusion.pending),
-            ("skipped", PRChecksConclusion.success),
-            ("some_future_state", PRChecksConclusion.pending)
+            ("failed", PRChecksConclusion.failure)
         ]
     )
     func decodeGitLab_pipelineStatus_mapsToConclusion(
@@ -307,6 +304,32 @@ struct PRStatusFetcherDecodeTests {
     func decode_forgeMismatch_returnsNil() {
         let github = makeMinimalJSON(state: "OPEN")
         #expect(PRStatusFetcher.decode(stdout: github, forge: .gitLab) == nil)
+    }
+
+    // MARK: - Answer, no request, or no answer
+
+    @Test("a run that did not finish, or wrote what we cannot read, is no answer")
+    func answer_timeoutAndUnreadableOutput_areUnanswered() {
+        #expect(PRStatusFetcher.answer(nil, forge: .gitHub) == .unanswered)
+        let unreadable = ToolResult(exitCode: 0, stdout: "{not json", stderr: "")
+        #expect(PRStatusFetcher.answer(unreadable, forge: .gitHub) == .unanswered)
+        let found = ToolResult(exitCode: 0, stdout: makeMinimalJSON(state: "MERGED"), stderr: "")
+        guard case let .found(info) = PRStatusFetcher.answer(found, forge: .gitHub) else {
+            Issue.record("a readable request was not found")
+            return
+        }
+        #expect(info.state == .merged)
+    }
+
+    @Test("gh saying no request is the only failure that means none")
+    func answer_onlyGhsNoRequestMessage_isNone() {
+        func failed(_ stderr: String) -> ToolResult {
+            ToolResult(exitCode: 1, stdout: "", stderr: stderr)
+        }
+        #expect(PRStatusFetcher.answer(failed("no pull requests found for branch \"feat/x\""), forge: .gitHub) == .none)
+        #expect(PRStatusFetcher.answer(failed("error connecting to api.github.com"), forge: .gitHub) == .unanswered)
+        #expect(PRStatusFetcher.answer(failed("HTTP 401: Bad credentials"), forge: .gitHub) == .unanswered)
+        #expect(PRStatusFetcher.answer(failed("anything"), forge: .gitLab) == .none)
     }
 
     // MARK: - Fixture builders

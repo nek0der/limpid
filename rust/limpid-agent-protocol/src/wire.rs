@@ -75,6 +75,21 @@ pub enum ResponseBody {
     ApprovalSnapshotResult {
         sequence: u64,
         requests: Vec<ApprovalIndexWire>,
+        /// The service's clock when it answered, in the milliseconds
+        /// `deadline_ms` counts. The controller subtracts the two here and
+        /// carries only the difference on its own clock, because the
+        /// service's clock starts when the service does and the app cannot
+        /// read it. Optional on the wire as a defensive measure: the app
+        /// only talks to the service bundled with it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        now_ms: Option<u64>,
+        /// How many records could not be evicted to make room: pending ones
+        /// and terminal ones their requester has not read. A capacity
+        /// warning compares this, because the broker keeps consumed results
+        /// until a new request needs the slot, so the record count alone
+        /// stays at the limit once it is reached.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unevictable_records: Option<u64>,
     },
     #[serde(rename = "error")]
     Error { code: ErrorCode, message: String },
@@ -124,6 +139,13 @@ pub struct ApprovalRequestWire {
     /// its old shape.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub questions: Vec<ApprovalQuestion>,
+    /// The agent run whose hook asked, as the run's environment names it.
+    /// Correlation only, like `session_id`: it lets the app tell this run's
+    /// request from one of another run in the same conversation, and grants
+    /// nothing. Optional and omitted when absent, so a request from outside
+    /// a Limpid run keeps its old shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_run_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -148,6 +170,12 @@ pub struct ApprovalSnapshotWire {
     pub created_at_ms: u64,
     pub deadline_ms: u64,
     pub sequence: u64,
+    /// The service's clock when it answered, as in
+    /// `ApprovalSnapshotResult`. Only a controller's `approval.get` carries
+    /// it: a requester has no use for the time left, so its responses keep
+    /// their current shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub now_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -209,6 +237,7 @@ impl ApprovalRequestWire {
             input_json: serde_json::to_string(&self.input)?,
             timeout_ms: self.timeout_ms,
             questions: self.questions,
+            agent_run_id: self.agent_run_id,
         })
     }
 }
@@ -239,6 +268,7 @@ impl ApprovalSnapshotWire {
                 input,
                 timeout_ms: value.request.timeout_ms,
                 questions: value.request.questions,
+                agent_run_id: value.request.agent_run_id,
             },
             state: match value.state {
                 ApprovalState::Pending => ApprovalStateWire::Pending,
@@ -260,6 +290,7 @@ impl ApprovalSnapshotWire {
             created_at_ms: value.created_at_ms,
             deadline_ms: value.deadline_ms,
             sequence: value.sequence,
+            now_ms: None,
         })
     }
 }
@@ -388,5 +419,42 @@ mod tests {
         .unwrap();
         let domain = question.into_domain().unwrap();
         assert_eq!(domain.questions[0].prompt, "Which color?");
+    }
+
+    #[test]
+    fn the_asking_agent_run_is_optional_on_the_wire_and_round_trips() {
+        let run_id = Uuid::from_u128(3);
+        let request_id = Uuid::from_u128(4);
+        let agent_run = Uuid::from_u128(5);
+        let plain: ApprovalRequestWire = serde_json::from_value(json!({
+            "run_id": run_id, "request_id": request_id, "provider": "claude",
+            "tool_name": "Bash", "input": {}, "timeout_ms": 1
+        }))
+        .unwrap();
+        assert_eq!(plain.agent_run_id, None);
+        assert!(
+            serde_json::to_value(&plain)
+                .unwrap()
+                .get("agent_run_id")
+                .is_none()
+        );
+
+        let named: ApprovalRequestWire = serde_json::from_value(json!({
+            "run_id": run_id, "request_id": request_id, "provider": "claude",
+            "tool_name": "Bash", "input": {}, "timeout_ms": 1,
+            "agent_run_id": agent_run.to_string().to_uppercase()
+        }))
+        .unwrap();
+        let domain = named.into_domain().unwrap();
+        assert_eq!(domain.agent_run_id, Some(agent_run));
+
+        // Only a UUID names a run.
+        assert!(
+            serde_json::from_value::<ApprovalRequestWire>(json!({
+                "run_id": run_id, "request_id": request_id, "provider": "claude",
+                "tool_name": "Bash", "input": {}, "timeout_ms": 1, "agent_run_id": "pane"
+            }))
+            .is_err()
+        );
     }
 }

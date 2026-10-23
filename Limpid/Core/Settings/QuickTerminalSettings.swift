@@ -22,6 +22,12 @@ enum QuickTerminalPosition: String, Codable, CaseIterable {
         let raw = try decoder.singleValueContainer().decode(String.self)
         self = QuickTerminalPosition(rawValue: raw) ?? .unknownFallback
     }
+
+    /// Whether the panel's size is a share of the screen's height or width:
+    /// a panel on a side edge grows across the screen, the others down it.
+    var isSizedByWidth: Bool {
+        self == .left || self == .right
+    }
 }
 
 struct QuickTerminalSettings: Codable, Equatable {

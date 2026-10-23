@@ -95,7 +95,7 @@ extension AttentionState {
         promptCache.update(windows: windows)
     }
 
-    /// The clock a Waiting row shows for one run in one pane, or `nil`.
+    /// The clock one run shows in one pane, or `nil`.
     func promptCacheMark(runtimeID: String, paneID: UUID) -> PromptCacheMark? {
         guard let runtime = allRuntimes.first(where: { $0.id == runtimeID }) else { return nil }
         return visibleMark(for: runtime, paneID: paneID, at: promptCache.now)
@@ -152,7 +152,7 @@ extension AttentionState {
     /// `PromptCacheRules.paneLine(for:)`. The same label the pane header
     /// shows, read the same way for a single-pane tab, which has no header,
     /// so a panel opened from the tab row names its pane too.
-    func promptCachePaneLine(for target: PromptCacheTarget, in session: WindowSession, locale: Locale) -> String {
+    func promptCachePaneLine(for target: PromptCacheTarget, in session: WorkspaceSession, locale: Locale) -> String {
         PromptCacheRules.paneLine(for: paneHeaderLabel(paneID: target.paneID, in: session, locale: locale))
     }
 

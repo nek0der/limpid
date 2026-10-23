@@ -1,15 +1,16 @@
 // LimpidColors.swift
-// Limpid — semantic color tokens; maps design-rules.md §5 into
-// SwiftUI `Color` values used across the app.
+// Limpid — semantic color tokens as SwiftUI `Color` values used across the app.
 
 import SwiftUI
 
-/// Semantic colors for Limpid. Maps design-rules.md §5 into SwiftUI Color.
+/// Semantic colors for Limpid, as SwiftUI `Color` values.
 ///
 /// **Guidelines**:
 /// - Accent colors look muted alone but pop through glass.
-/// - Status colors go through system semantics so they follow dark/light.
-/// - Only one accent color per screen (the "5% rule", §5.3).
+/// - State and status colors (waiting, stopped, unread, a check's pass)
+///   are not here: they are `SupervisionTokens`, so every surface draws a
+///   state in the one color it has.
+/// - Only one accent color per screen (the "5% rule").
 enum LimpidColor {
     /// Resolves to the macOS System Accent the user has picked in
     /// System Settings → Appearance. Painted whenever Limpid's own
@@ -30,37 +31,15 @@ enum LimpidColor {
         choice.color ?? defaultAccent
     }
 
-    /// Success / completion / running.
-    static let success: Color = .green
-
-    /// Warning / waiting.
-    static let warning: Color = .yellow
-
-    /// Error / failure.
-    static let error: Color = .red
-
-    /// A merged pull request. Its own token rather than one of the
-    /// three above because merged is neither success nor warning: the
+    /// A merged pull request. Its own token rather than a status color
+    /// because merged is neither success nor warning: the
     /// work is finished and the branch is spent, which the forges
     /// themselves render in purple and users read that way.
     static let merged: Color = .purple
 
-    /// Ground a knocked-out status glyph is composited over, so the
-    /// shape cut out of it reads as the mark rather than showing the
-    /// row behind. Follows the appearance rather than being white,
-    /// because the glyph sits on the slab and a white cut-out would
-    /// glare against it in dark mode.
-    static let statusGlyphKnockout = Color(
-        light: .white,
-        dark: Color(white: 0.14)
-    )
-
     /// Text and glyphs drawn on a solid saturated fill: the user's
     /// accent (selected segments, the Move button, the review's
-    /// add-comment marker), and the status fills that stand in for it
-    /// on a badge — the unread count's bell orange, the update
-    /// button's green and red. The fill's own hue carries the meaning,
-    /// so the mark on top stays neutral.
+    /// add-comment marker). The fill's own hue carries the meaning, so the mark on top stays neutral.
     static let onAccent: Color = .white
 
     /// Primary text.
@@ -69,9 +48,6 @@ enum LimpidColor {
     /// Secondary text (60% opacity).
     static let secondaryText: Color = .secondary
 
-    /// Tertiary text (e.g. empty-state captions).
-    static let tertiaryText: Color = .primary.opacity(0.5)
-
     /// Row-state fills shared by the sidebar pills and the tab bar pills.
     /// Picking once here keeps the two strips visually in lockstep.
     /// The fill is the whole "selected" signal now that the pills carry
@@ -79,38 +55,9 @@ enum LimpidColor {
     /// selection becoming hard to find.
     static let rowActiveFill: Color = .primary.opacity(0.08)
     static let rowHoverFill: Color = .primary.opacity(0.04)
-    /// Subdued fill used on a parent row when one of its descendants
-    /// owns selection (e.g. a project header whose worktree is the
-    /// active container). Lighter than `rowActiveFill`, which is the
-    /// whole difference now that no pill strokes itself: the ancestor
-    /// reads as "in the path of selection" without competing with the
-    /// selected row below it.
-    static let rowAncestorActiveFill: Color = .primary.opacity(0.03)
-    /// Stroke color for a control that outlines itself without leaning
-    /// on the accent palette — the Command Palette field
-    /// (`ToolbarPaletteField`) and the pane search overlay, since the
-    /// row pills stopped stroking themselves. Adaptive so it reads
-    /// against the near-white light-mode `.glassEffect` background as
-    /// well as the dark-mode sidebar.
-    static let rowActiveBorder: Color = .init(
-        light: Color.black.opacity(0.18),
-        dark: Color.white.opacity(0.28)
-    )
     /// Hairline along the sidebar's trailing edge and around the
     /// floating glass capsule.
-    static let toolbarHairline: Color = .primary.opacity(0.08)
-
-    /// Color used for the notification bell across tab column / container column / toolbar.
-    /// Orange reads clearly on the dark slab and matches the warmth
-    /// of a "needs attention" cue without the urgency of red.
-    static let notificationBell: Color = .orange
-
-    /// Dirty-worktree dot in the sidebar's Worktree row.
-    static let gitDirtyDot: Color = .orange
-
-    /// Ahead/behind indicators next to a Worktree label. Kept subdued
-    /// since they appear on every git-backed row.
-    static let gitAheadBehindText: Color = .primary.opacity(0.55)
+    static let glassHairline: Color = .primary.opacity(0.08)
 
     /// Opaque fills for the two navigation surfaces when transparency is
     /// reduced. macOS resolves `windowBackgroundColor` and
@@ -123,13 +70,13 @@ enum LimpidColor {
     /// These step away from the content the way the system's own
     /// sidebars do, and in the same direction the glass tints run:
     /// darker in light, lighter in dark, with the sidebar one step
-    /// further out than the tab column so the ramp reads sidebar →
-    /// list → content.
+    /// further out than the review's file rail so the ramp reads
+    /// sidebar → rail → content.
     static let sidebarSolidFill: Color = .init(
         light: Color(white: 0.94),
         dark: Color(white: 0.16)
     )
-    static let tabColumnSolidFill: Color = .init(
+    static let reviewRailSolidFill: Color = .init(
         light: Color(white: 0.97),
         dark: Color(white: 0.14)
     )
@@ -146,44 +93,22 @@ enum LimpidColor {
         dark: Color.white.opacity(0.22)
     )
 
-    /// The clock on an expired prompt cache. Softer than `error`: it marks
-    /// a cost waiting to be paid, not a failure, and the full system red
-    /// shouted over every other status mark in the row.
-    static let promptCacheExpired: Color = .init(
-        light: Color(red: 0.84, green: 0.33, blue: 0.31),
-        dark: Color(red: 1.00, green: 0.541, blue: 0.502)
-    )
-
-    /// Background tint for the tab column (tab list). Slightly lighter
-    /// than the toolbar / window root so the column reads as a distinct
-    /// surface without using a hairline.
-    static let tabColumnBackground: Color = .init(
+    /// Background tint for a surface beside the review's diff (the file
+    /// rail's pinned headings, earlier comments). Slightly lighter than
+    /// the surface it stands on, so it reads as a distinct surface
+    /// without using a hairline.
+    static let reviewAsideBackground: Color = .init(
         light: Color.white.opacity(0.45),
         dark: Color.black.opacity(0.18)
     )
 
-    /// Background tint for the terminal column detail pane. Marginally darker than
-    /// tab column so the dividing line reads even without a stroked hairline.
+    /// Background tint for a recessed surface: the diff's number strip,
+    /// the quick terminal, and the clipboard sheet. Marginally darker
+    /// than `reviewAsideBackground` so the dividing line reads even
+    /// without a stroked hairline.
     static let terminalColumnBackground: Color = .init(
         light: Color.white.opacity(0.30),
         dark: Color.black.opacity(0.28)
-    )
-
-    /// Bottom hairline between the horizontal tab bar and terminal content.
-    /// It is visible only in light mode; the dark-mode tints already separate
-    /// the two regions, so the line stays clear there.
-    static let horizontalTabBarBottomDivider: Color = .init(
-        light: Color.black.opacity(0.08),
-        dark: Color.clear
-    )
-
-    /// Vertical hairline used in reduce-transparency mode. The tab and
-    /// terminal columns take opaque tones one step apart there, which
-    /// is thin enough at a column seam to want an explicit boundary in
-    /// both appearances.
-    static let tabColumnTrailingDividerOpaque: Color = .init(
-        light: Color.black.opacity(0.08),
-        dark: Color.white.opacity(0.10)
     )
 
     /// Fills for the one-line header above each pane of a split tab. Washes
@@ -212,7 +137,8 @@ enum LimpidColor {
         dark: Color.black.opacity(0.35)
     )
 
-    /// Accent palette for groups / projects. Indices are stable —
+    /// Accent palette for projects (and the scratch tabs that kept a
+    /// group's color). Indices are stable —
     /// never reorder, only append, so persisted `paletteIndex` values
     /// stay valid across upgrades. 16 entries laid out as 8×2 in the
     /// picker.

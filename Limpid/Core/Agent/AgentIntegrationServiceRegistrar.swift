@@ -135,7 +135,7 @@ struct AgentIntegrationServiceIssue: Identifiable, Equatable, Sendable {
     }
 
     var title: LocalizedStringResource {
-        "Native approvals are unavailable"
+        "Native Approvals Unavailable"
     }
 
     var detail: LocalizedStringResource {
@@ -143,9 +143,9 @@ struct AgentIntegrationServiceIssue: Identifiable, Equatable, Sendable {
         case .requiresApproval:
             "Enable Limpid in System Settings → General → Login Items & Extensions, then return to Limpid."
         case .serviceNotFound:
-            "The bundled approval service could not be found. Reinstall Limpid and try again."
+            "The bundled approval service couldn’t be found. Reinstall Limpid and try again."
         case .reconciliationFailed:
-            "Limpid could not start its approval service. Claude and Codex will use their native permission prompts."
+            "Limpid couldn’t start its approval service. Claude and Codex will use their own permission prompts."
         }
     }
 }
@@ -296,7 +296,7 @@ final class AgentIntegrationServiceRegistrar {
                     isSigningUnsupported = true
                     return
                 }
-                Self.log.error("Service reconciliation failed: \(String(describing: error), privacy: .public)")
+                Self.log.error("Service reconciliation failed: \(String(describing: error), privacy: .private)")
                 setUnavailable(issue.reason, diagnostic: issue.diagnostic)
             }
         }

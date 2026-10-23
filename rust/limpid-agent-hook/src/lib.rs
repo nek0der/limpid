@@ -3,7 +3,7 @@
 //!
 //! One call reads the payload, asks the provider adapter for neutral events,
 //! applies them to the run record, and performs the writes `apply` asked
-//! for under the same lock the shell receivers and the Swift stores use.
+//! for under the same lock the Swift stores use.
 //! It never opens the approval service; approval stays a separate path.
 //!
 //! The runtime owns the provider registry; the bridge resolves adapters
@@ -12,32 +12,48 @@
 //! `cfg(unix)`; the crate compiles everywhere so the workspace tests run on
 //! every CI operating system, but only Unix hosts can run hooks.
 
+mod declined_waits;
 mod env;
 mod git;
+mod hunks;
 mod process;
 mod records;
+pub mod restore;
+mod swap;
 mod tmux;
+mod turn;
+mod turn_gc;
 mod worktree;
+pub mod worktree_lock;
 
-pub use env::{HookEnv, ResolvedDirectories};
-pub use git::{GitSnapshots, NoSnapshots, SnapshotRunner, TurnSnapshot};
+pub use declined_waits::{DeclinedWaitEnd, DeclinedWaitRequest, DeclinedWaits, end_declined_wait};
+pub use env::{HookEnv, PANE_ID_VARIABLE, ResolvedDirectories};
+pub use git::{GitSnapshots, LARGE_FILE_BYTES, NoSnapshots, SnapshotRunner, TurnSide};
+pub use limpid_agent_model::TURNS_DIRECTORY;
 pub use limpid_agent_model::format_utc_seconds;
 pub use records::{HookLog, atomic_write, ensure_user_only_directory, with_record_lock};
-pub use worktree::InterceptResult;
+pub use turn_gc::{TurnDeletion, delete_turns, delete_turns_waiting};
+pub use worktree::{InterceptResult, WORKTREE_ROUTING_FILE};
 
 use limpid_agent_core::{
-    ApplyContext, RecordWrites, SideWrite, TurnSnapshotOp, apply, turn_snapshot_cwd,
+    ApplyContext, DEFAULT_CHECK_PATTERNS, RecordWrites, SideWrite, TurnSnapshotOp, TurnStep, apply,
+    classify_check, event_id_for, idle_outcome, sanitize_text, turn_step,
 };
 use limpid_agent_model::{
-    Capability, HookContext, InstallRecipe, ProviderAdapter, ProviderDescriptor, ProviderId,
-    RawHookInput, RunRecord, TmuxEndpoint, cwd_event_file_name, run_record_file_name,
-    session_hint_file_name,
+    Capability, EventId, HookContext, InstallRecipe, ProviderAdapter, ProviderDescriptor,
+    ProviderId, RawHookInput, RunRecord, SnapshotStatus, TmuxEndpoint, cwd_event_file_name,
+    parse_utc_seconds, run_record_file_name, session_hint_file_name,
 };
 use limpid_provider_claude::ClaudeAdapter;
 use limpid_provider_codex::CodexAdapter;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use worktree_lock::{Shared, WorktreeLockPaths};
+
+/// How many times a prompt's hook tries a busy run record lock: two
+/// seconds, against the 200 milliseconds every other event gets.
+const PROMPT_RECORD_LOCK_ATTEMPTS: u32 = 200;
 
 /// Longest transcript slice the runtime hands an adapter. Title lines sit
 /// near the end, so a longer transcript is read from its tail.
@@ -124,8 +140,12 @@ pub struct HookRuntime<'a> {
     pub env: &'a HookEnv,
     pub snapshots: &'a dyn SnapshotRunner,
     /// The wall clock at the start of the call, formatted once so every
-    /// field written by this call carries the same second.
+    /// field written by this call carries the same second. A prompt in a
+    /// worktree is the one exception: its writes carry the time its wait for
+    /// the worktree lock was over (`begin_time`).
     pub now: String,
+    /// How long a prompt waits for a restore (`worktree_lock`).
+    pub lock_limits: worktree_lock::Limits,
 }
 
 impl<'a> HookRuntime<'a> {
@@ -136,6 +156,7 @@ impl<'a> HookRuntime<'a> {
             env,
             snapshots,
             now: format_utc_seconds(SystemTime::now()),
+            lock_limits: worktree_lock::Limits::HOOK,
         }
     }
 }
@@ -152,7 +173,6 @@ pub fn run_hook(provider: &str, stdin: &[u8], runtime: &HookRuntime<'_>) -> Hook
         log.line(&format!("unknown provider {provider:?}"));
         return HookOutcome::UnknownProvider;
     };
-    let descriptor = adapter.descriptor();
     let recipe = adapter.install_recipe();
 
     let Some(pane_id) = runtime.env.pane_id() else {
@@ -183,7 +203,11 @@ pub fn run_hook(provider: &str, stdin: &[u8], runtime: &HookRuntime<'_>) -> Hook
         transcript: transcript.as_deref(),
     };
 
-    let (context, apply_context) = identity(runtime.env, descriptor, &pane_id);
+    let (context, mut apply_context) = identity(runtime.env, adapter, &pane_id);
+    // We take only the path, for a call that opens a wait: the app reads the
+    // file while the run waits (`declined_waits`), so this call costs no
+    // read.
+    apply_context.transcript_path = adapter.wait_transcript_path(input).ok().flatten();
 
     let events = match adapter.normalize(input, &context) {
         Ok(events) => events,
@@ -192,24 +216,107 @@ pub fn run_hook(provider: &str, stdin: &[u8], runtime: &HookRuntime<'_>) -> Hook
             return HookOutcome::Rejected(error.to_string());
         }
     };
+    // The payload already normalized, so it cannot fail here; an id that
+    // cannot be had only keeps the call out of the turn records.
+    let call_id = adapter.event_id(input, &context).ok().flatten();
 
     write_events(
-        &events,
+        &HookCall {
+            adapter,
+            input,
+            events: &events,
+            id: call_id.as_ref(),
+        },
         &directories,
         &apply_context,
-        adapter.descriptor(),
         runtime,
         &log,
     );
+    if let Ok(Some(run)) = adapter.command_run(input) {
+        write_check(
+            &run,
+            call_id.as_ref(),
+            &directories,
+            &apply_context,
+            adapter.descriptor(),
+            runtime,
+            &log,
+        );
+    }
     HookOutcome::Applied
+}
+
+/// Records a shell command the agent ran as its turn's last check, when the
+/// project counts it as one.
+fn write_check(
+    run: &limpid_agent_model::CommandRun,
+    call_id: Option<&EventId>,
+    directories: &ResolvedDirectories,
+    apply_context: &ApplyContext,
+    descriptor: &ProviderDescriptor,
+    runtime: &HookRuntime<'_>,
+    log: &HookLog,
+) {
+    // A check is part of a turn record, so only a provider that records
+    // turns has one.
+    if !descriptor.has(Capability::TurnSnapshot) {
+        return;
+    }
+    let cwd = run
+        .cwd
+        .as_deref()
+        .map_or_else(turn::current_directory, PathBuf::from);
+    let patterns = directories
+        .state
+        .parent()
+        .and_then(|support| worktree::check_patterns(support, &cwd))
+        .unwrap_or_else(|| {
+            DEFAULT_CHECK_PATTERNS
+                .iter()
+                .map(|&pattern| pattern.to_owned())
+                .collect()
+        });
+    let Some(check) = classify_check(&run.command, &patterns) else {
+        return;
+    };
+    let record_path = directories
+        .state
+        .join(run_record_file_name(&apply_context.run_id));
+    let turns = turn::Turns {
+        directory: directories.state.join(TURNS_DIRECTORY),
+        descriptor,
+        run_id: &apply_context.run_id,
+        pane_id: &apply_context.pane_id,
+        now: &runtime.now,
+        log,
+    };
+    let written = with_record_lock(&record_path, || {
+        turns.record_check(
+            records::read_record(&record_path).as_ref(),
+            call_id,
+            limpid_agent_model::CheckResult {
+                // Kept to the record's text contract: a heredoc can make a
+                // command kilobytes long, and the record is shown as text.
+                command: sanitize_text(&check.command),
+                // The call's status is the check's only when nothing came
+                // after it (`cargo test | tail` reports `tail`'s).
+                exit_code: run.exit_code.filter(|_| check.is_exit_its_own),
+                is_filtered: check.is_filtered,
+            },
+        );
+    });
+    if written.is_none() {
+        log.line(&format!("record lock busy for {}", record_path.display()));
+    }
 }
 
 /// The identity fields every record carries, resolved from the environment.
 fn identity(
     env: &HookEnv,
-    descriptor: &limpid_agent_model::ProviderDescriptor,
+    adapter: &dyn ProviderAdapter,
     pane_id: &str,
 ) -> (HookContext, ApplyContext) {
+    let descriptor = adapter.descriptor();
     // A pane-keyed fallback is uppercased like a minted run id so the file
     // name matches what the Swift store derives.
     let run_id = env.run_id().unwrap_or_else(|| pane_id.to_uppercase());
@@ -228,6 +335,8 @@ fn identity(
         pane_id: uuid::Uuid::parse_str(pane_id).unwrap_or_default(),
         tmux: tmux.clone(),
         pid,
+        invocation_id: env.invocation_id(),
+        provider_home: env.provider_home(adapter.home_directory_variable(), descriptor),
     };
     let apply_context = ApplyContext {
         run_id,
@@ -235,55 +344,162 @@ fn identity(
         pid,
         tmux,
         is_tmux_hosted,
+        // The payload names it, not the environment; `run_hook` sets it.
+        transcript_path: None,
     };
     (context, apply_context)
 }
 
-/// Applies each event under the record lock and performs its side writes.
+fn write_record(path: &Path, record: &RunRecord, log: &HookLog) {
+    match record.encode() {
+        Ok(bytes) => {
+            if let Err(error) = atomic_write(path, &bytes) {
+                log.line(&format!("write {}: {error}", path.display()));
+            }
+        }
+        Err(error) => log.line(&format!("encode record: {error}")),
+    }
+}
+
+/// This is one hook call as `write_events` applies it.
+struct HookCall<'a> {
+    adapter: &'a dyn ProviderAdapter,
+    input: RawHookInput<'a>,
+    events: &'a [limpid_agent_model::AgentEvent],
+    /// Identifies the call, for the turn records.
+    id: Option<&'a EventId>,
+}
+
+/// Returns, for the idle prompt, whether it saw the call the run waited on
+/// end (`idle_outcome`); it is `None` for every other event.
+fn idle_prompt(event: &limpid_agent_model::AgentEvent) -> Option<bool> {
+    match event {
+        limpid_agent_model::AgentEvent::AwaitingPrompt { awaited_call_ended } => {
+            Some(*awaited_call_ended)
+        }
+        _ => None,
+    }
+}
+
+/// Applies each event of `call` under the record lock and performs its side
+/// writes.
 fn write_events(
-    events: &[limpid_agent_model::AgentEvent],
+    call: &HookCall<'_>,
     directories: &ResolvedDirectories,
     apply_context: &ApplyContext,
-    descriptor: &limpid_agent_model::ProviderDescriptor,
     runtime: &HookRuntime<'_>,
     log: &HookLog,
 ) {
+    let descriptor = call.adapter.descriptor();
+    let applies = |record: Option<&RunRecord>| call.adapter.applies_to(call.input, record);
     let run_id = &apply_context.run_id;
     let pane_id = &apply_context.pane_id;
     let record_path = directories.state.join(run_record_file_name(run_id));
-    for event in events {
-        // `git add -A` can take long in a large repository, so the capture
-        // happens before the record lock is taken, as the shell receiver did;
-        // the result is copied into the record under the lock.
-        let captured = capture_before_lock(event, descriptor, pane_id, runtime.snapshots);
-        let outcome = with_record_lock(&record_path, || {
-            let previous = records::read_record(&record_path);
-            let mut writes = apply(
-                previous.as_ref(),
+    let turns = turn::Turns {
+        directory: directories.state.join(TURNS_DIRECTORY),
+        descriptor,
+        run_id,
+        pane_id,
+        now: &runtime.now,
+        log,
+    };
+    for (index, event) in call.events.iter().enumerate() {
+        // Read before the lock, like the snapshot it decides: a step that
+        // depends on the run (the idle prompt's) is judged from the same
+        // record the turn's end is prepared from.
+        let before = records::read_record(&record_path);
+        // A report about a run that has already moved on costs no snapshot,
+        // and is dropped as under the lock.
+        let applies_before = applies(before.as_ref());
+        let step = applies_before
+            .then(|| turn_step(event, descriptor, before.as_ref(), &runtime.now))
+            .flatten();
+        let idle = idle_prompt(event);
+        let idle_before = idle.and_then(|ended| idle_outcome(before.as_ref(), ended, &runtime.now));
+        // A prompt holds the worktree lock shared from its snapshot until
+        // the run record names it, so a restore neither runs under the
+        // snapshot nor lets the agent start while it writes. Dropped once
+        // the record is written. A turn's end takes no lock: a restore
+        // reads the run records under its own and refuses while one is
+        // running, waiting for an answer, or compacting.
+        let worktree = matches!(step, Some(TurnStep::Begin))
+            .then(|| lock_worktree(&turns.begin_directory(event), run_id, runtime, log))
+            .flatten();
+        // Once the wait for the lock is over, and before the snapshot. A
+        // prompt outside a repository takes no lock and keeps the call's
+        // time.
+        let stamp = worktree
+            .as_ref()
+            .map(|_| begin_time(&runtime.now, SystemTime::now()));
+        let now = stamp.as_deref().unwrap_or(&runtime.now);
+        let turns = turns.at(now);
+        let (worktree, worktree_root) = worktree.unzip();
+        // `git add -A` can take long in a large repository, so the snapshot
+        // is taken before the record lock; the result is written under the
+        // lock.
+        let prepared = step.map(|step| {
+            turns.prepare(
+                step,
                 event,
-                apply_context,
-                descriptor,
-                &runtime.now,
-            );
-            attach_snapshot(&mut writes, captured.as_ref());
-            if let Some(record) = &writes.run {
-                match record.encode() {
-                    Ok(bytes) => {
-                        if let Err(error) = atomic_write(&record_path, &bytes) {
-                            log.line(&format!("write {}: {error}", record_path.display()));
-                        }
-                    }
-                    Err(error) => log.line(&format!("encode record: {error}")),
-                }
-            }
-            writes
+                event_id_for(call.id, index),
+                before.as_ref(),
+                runtime.snapshots,
+                worktree.as_ref().and_then(Shared::snapshot_skip_reason),
+            )
         });
-        let Some(writes) = outcome else {
+        // A prompt's record is what a restore reads to see the agent at
+        // work, so it waits longer for a busy lock than other events: lost,
+        // the agent would start with its record still at rest.
+        let attempts = if worktree.is_some() {
+            PROMPT_RECORD_LOCK_ATTEMPTS
+        } else {
+            records::RECORD_LOCK_ATTEMPTS
+        };
+        let outcome = records::with_record_lock_attempts(&record_path, attempts, || {
+            let previous = records::read_record(&record_path);
+            // The idle prompt ends what the run showed when the end was
+            // prepared. A `Stop` or a prompt that came while the snapshot
+            // ran changed that, and the end prepared for it would replace
+            // the real one, so the idle prompt is dropped whole.
+            if let Some(ended) = idle
+                && (idle_outcome(previous.as_ref(), ended, &runtime.now) != idle_before
+                    || turn_step(event, descriptor, previous.as_ref(), &runtime.now) != step
+                    || !is_same_stretch(before.as_ref(), previous.as_ref()))
+            {
+                log.line("idle prompt dropped: the run moved on while its end was prepared");
+                return (RecordWrites::default(), None);
+            }
+            // We ask again under the lock: a report about the turn before
+            // must not touch the prompt or session that came meanwhile.
+            if !applies_before || !applies(previous.as_ref()) {
+                log.line("event dropped: the run moved on while its end was prepared");
+                return (RecordWrites::default(), None);
+            }
+            let mut writes = apply(previous.as_ref(), event, apply_context, descriptor, now);
+            attach_snapshot(&mut writes, prepared.as_ref());
+            if let (Some(record), Some(root)) = (writes.run.as_mut(), &worktree_root) {
+                record.worktree_root = Some(root.to_string_lossy().into_owned());
+            }
+            let pin = prepared.and_then(|prepared| {
+                turns.commit(prepared, previous.as_ref(), writes.run.as_mut())
+            });
+            if let Some(record) = &writes.run {
+                write_record(&record_path, record, log);
+            }
+            (writes, pin)
+        });
+        drop(worktree);
+        let Some((writes, pin)) = outcome else {
             log.line(&format!("record lock busy for {}", record_path.display()));
             continue;
         };
+        if let Some(pin) = &pin {
+            turns.pin(pin, runtime.snapshots);
+        }
         if let Some(TurnSnapshotOp::Remove { cwd }) = &writes.snapshot {
-            let cwd = cwd.clone().map_or_else(current_directory, PathBuf::from);
+            let cwd = cwd
+                .clone()
+                .map_or_else(turn::current_directory, PathBuf::from);
             if let Err(error) = runtime.snapshots.remove(&cwd, pane_id) {
                 log.line(&format!("remove turn snapshot: {error}"));
             }
@@ -294,7 +510,7 @@ fn write_events(
                 directories,
                 pane_id,
                 run_id,
-                &runtime.now,
+                now,
                 descriptor.has(Capability::SessionEndDropsSession),
                 log,
             );
@@ -302,32 +518,100 @@ fn write_events(
     }
 }
 
-/// Captures the turn snapshot `apply` will ask for, before any lock is held.
-fn capture_before_lock(
-    event: &limpid_agent_model::AgentEvent,
-    descriptor: &limpid_agent_model::ProviderDescriptor,
-    pane_id: &str,
-    snapshots: &dyn SnapshotRunner,
-) -> Option<TurnSnapshot> {
-    let cwd = turn_snapshot_cwd(event, descriptor)?;
-    let cwd = cwd.map_or_else(current_directory, PathBuf::from);
-    snapshots.capture(&cwd, pane_id)
+/// The time a prompt in a worktree is stamped with once its hook is through
+/// with the worktree lock (`clock`), never earlier than `called`, the time
+/// of the hook call. Every field the prompt writes (the turn's `startedAt`,
+/// the run's `runStartedAt`) carries it.
+///
+/// The app counts a turn that began before a restore ran as one the restore
+/// took back (`RestoredTurns` in the app), and a restore's time is taken
+/// before it asks for the lock. A hook called just before a restore can find
+/// the restore holding the lock by the time it asks for it, or even find it
+/// already done, so the call's time can come before a restore the agent
+/// never ran under. Taken once the lock is held, the stamp is no earlier
+/// than any restore that ran before it, and the agent cannot start before
+/// this hook returns, so it is when the turn really began. That holds when
+/// the snapshot was given up at its limit too (`Shared::HeldLate`): the hook
+/// goes on waiting for the restore to let go and is stamped once it has.
+/// Only when the restore never lets go (`Shared::NotReleased`) does the
+/// agent start beside it; the stamp is then when the hook gave up, which is
+/// when the agent starts, and a restore still alive stops at its next look.
+/// A clock set back during the wait would put the turn before the call, and
+/// before turns the call already saw, so the call's time is the floor.
+fn begin_time(called: &str, clock: SystemTime) -> String {
+    let after = format_utc_seconds(clock);
+    match (parse_utc_seconds(called), parse_utc_seconds(&after)) {
+        (Some(called_at), Some(after_at)) if after_at < called_at => called.to_owned(),
+        _ => after,
+    }
 }
 
-/// Copies a capture into the record `apply` produced; a failed capture
-/// leaves the turn fields empty, as the shell receiver did.
-fn attach_snapshot(writes: &mut RecordWrites, captured: Option<&TurnSnapshot>) {
+/// Whether two reads of a run record show the same stretch of work: the
+/// same episode, turn, and rest outside a turn. A run that left and came
+/// back to the same state between the reads (a `Stop`, then another late
+/// tool) differs here though its state reads the same. The revision is not
+/// compared: every write moves it, a title change too, and that does not
+/// change what the idle prompt ends.
+fn is_same_stretch(before: Option<&RunRecord>, now: Option<&RunRecord>) -> bool {
+    let stretch = |record: Option<&RunRecord>| {
+        record.map(|record| {
+            (
+                record.state_episode_token.clone(),
+                record.run_started_at.clone(),
+                record.outside_turn_rest,
+            )
+        })
+    };
+    stretch(before) == stretch(now)
+}
+
+/// The worktree lock for a prompt in `cwd`, with the worktree's root, or
+/// `None` outside a repository. What kept the hook waiting goes to the log.
+fn lock_worktree(
+    cwd: &Path,
+    run_id: &str,
+    runtime: &HookRuntime<'_>,
+    log: &HookLog,
+) -> Option<(Shared, PathBuf)> {
+    let (git_dir, root) = runtime.snapshots.worktree(cwd)?;
+    let shared = worktree_lock::acquire_shared(
+        &WorktreeLockPaths::new(&git_dir),
+        run_id,
+        runtime.lock_limits,
+    );
+    match &shared {
+        Shared::Held(_) => {}
+        Shared::HeldLate(_) => {
+            log.line("worktree lock: a restore held it past the snapshot's limit");
+        }
+        Shared::NotReleased => {
+            log.line("worktree lock: a restore did not let go; went on without it");
+        }
+        Shared::Unavailable(reason) => log.line(&format!("worktree lock unavailable: {reason}")),
+    }
+    Some((shared, root))
+}
+
+/// Copies the begin snapshot into the record `apply` produced. The app
+/// reads `turnRoot` to tell where the run's turn was recorded (restore);
+/// `turnBaseTree` stays beside it so the record keeps the shape every
+/// earlier build wrote and read. A failed capture leaves the fields empty;
+/// a retried prompt, which takes no snapshot, leaves them as they were.
+fn attach_snapshot(writes: &mut RecordWrites, prepared: Option<&turn::Prepared>) {
     if !matches!(writes.snapshot, Some(TurnSnapshotOp::Capture { .. })) {
         return;
     }
+    let Some(taken) = prepared.and_then(turn::Prepared::begin_snapshot) else {
+        return;
+    };
     if let Some(record) = &mut writes.run {
-        record.turn_base_tree = captured.map(|snapshot| snapshot.tree.clone());
-        record.turn_root = captured.map(|snapshot| snapshot.root.clone());
+        let captured = match &taken.status {
+            SnapshotStatus::Captured { tree, root } => Some((tree.clone(), root.clone())),
+            _ => None,
+        };
+        record.turn_base_tree = captured.as_ref().map(|(tree, _)| tree.clone());
+        record.turn_root = captured.map(|(_, root)| root);
     }
-}
-
-fn current_directory() -> PathBuf {
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
 fn perform_side_write(
@@ -498,4 +782,28 @@ pub fn tmux_endpoint_from(env: &HookEnv) -> Option<TmuxEndpoint> {
 #[must_use]
 pub fn read_record(path: &Path) -> Option<RunRecord> {
     records::read_record(path)
+}
+
+#[cfg(test)]
+mod stamp_tests {
+    use super::begin_time;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn a_prompt_is_stamped_with_the_clock_after_the_lock() {
+        let after = UNIX_EPOCH + Duration::from_secs(1_789_315_231);
+        assert_eq!(
+            begin_time("2026-09-13T16:00:01Z", after),
+            "2026-09-13T16:00:31Z"
+        );
+    }
+
+    #[test]
+    fn a_clock_set_back_during_the_wait_keeps_the_call_time() {
+        let after = UNIX_EPOCH + Duration::from_secs(1_789_315_141);
+        assert_eq!(
+            begin_time("2026-09-13T16:00:01Z", after),
+            "2026-09-13T16:00:01Z"
+        );
+    }
 }

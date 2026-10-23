@@ -27,8 +27,8 @@ extension ReviewValidationScenarios {
             encoding: .utf8
         )
         let storage = directory.appendingPathComponent("drafts")
-        let store = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage))
-        await store.refresh()
+        let store = ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage))
+        await store.refreshAsTheAppDoes()
         await store.flushNavigationSave()
         guard let file = store.files.first else { throw ReviewValidationFailure(message: "File missing") }
         await store.load(file)
@@ -48,31 +48,17 @@ extension ReviewValidationScenarios {
             "A new comment did not start unsent and unresolved"
         )
         let sent = try await store.insertable(store.comments)
-        try require(store.markInserted(sent.map(\.id)), "The delivery could not be recorded")
-        let afterSending = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage)).comments
+        try require(store.markInserted(sent).wasRecorded, "The delivery could not be recorded")
+        let afterSending = ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage)).comments
         try require(
             afterSending.count == 2 && afterSending.allSatisfy { $0.insertedAt != nil },
             "Delivery did not persist"
         )
         // Sent, and still asked for: the agent may have answered none of it.
         try await require(store.insertable(store.comments).count == 2, "A sent comment was held back")
-        // A paste refused at the confirmation sheet delivered nothing, and the
-        // mark comes back off. The refusal arrives long after the paste action
-        // answered, so this runs against a store review has already left.
-        store.unmarkInserted(sent.map(\.id))
-        try require(
-            store.comments.allSatisfy { $0.insertedAt == nil },
-            "A refused paste left its comments recorded as delivered"
-        )
-        let unmarked = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage)).comments
-        try require(
-            unmarked.count == 2 && unmarked.allSatisfy { $0.insertedAt == nil },
-            "Taking the mark back did not persist"
-        )
-        try require(store.markInserted(sent.map(\.id)), "The delivery could not be recorded again")
         let resolved = store.comments[0].id
         store.setResolved(resolved, true)
-        let reloaded = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage))
+        let reloaded = ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage))
         try require(reloaded.comments.count == 2, "A draft carrying dates did not reload")
         try require(reloaded.comments.first?.isResolved == true, "Resolution did not persist")
         let remaining = try await store.insertable(store.comments)
@@ -109,7 +95,9 @@ extension ReviewValidationScenarios {
         // been. `markInserted` is called with what went into the prompt, and this
         // is what stops a wider call from marking the rest.
         let untouched = store.comments.map(\.insertedAt)
-        store.markInserted([UUID()])
+        guard var stranger = store.comments.first else { throw ReviewValidationFailure(message: "Comment missing") }
+        stranger.id = UUID()
+        store.markInserted([stranger])
         try require(store.comments.map(\.insertedAt) == untouched, "Delivery was recorded for a comment that was not sent")
         // Undo defers to a newer edit rather than overwriting it.
         store.restore([], from: [])
@@ -142,8 +130,8 @@ extension ReviewValidationScenarios {
         )
         try "one\nTWO\nthree\n".write(to: fileURL, atomically: true, encoding: .utf8)
         let storage = directory.appendingPathComponent("viewed-drafts")
-        let store = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage))
-        await store.refresh()
+        let store = ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage))
+        await store.refreshAsTheAppDoes()
         await store.flushNavigationSave()
         let file = try require(store.files.first, "File missing")
         await store.load(file)
@@ -151,20 +139,18 @@ extension ReviewValidationScenarios {
         store.setViewed(file.id, true)
         try require(store.viewed[file.id]?.fingerprint != nil, "An open file was marked without its fingerprint")
         try require(
-            ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage)).viewed[file.id] != nil,
+            ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage)).viewed[file.id] != nil,
             "The mark did not persist: \(store.errorMessage.map { $0.resolved(in: Locale(identifier: "en")) } ?? "")"
         )
         // A refresh that finds the file unchanged leaves the mark alone.
-        await store.refresh()
+        await store.refreshAsTheAppDoes()
         await store.flushNavigationSave()
         try require(store.viewed[file.id] != nil, "An unchanged file lost its mark")
         // One line swapped for another: the counts are the same, so only
-        // opening the file can tell that the reader has not seen this.
+        // reading the file can tell that the reader has not seen this, and
+        // Refresh reads the open file again.
         try "one\nTHREE\nthree\n".write(to: fileURL, atomically: true, encoding: .utf8)
-        await store.refresh()
-        await store.flushNavigationSave()
-        try require(store.viewed[file.id] != nil, "A change the counts cannot see moved them")
-        await store.load(file)
+        await store.refreshAsTheAppDoes()
         await store.flushNavigationSave()
         try require(store.viewed[file.id] == nil, "An edited file kept its mark")
         // A line added moves the counts, which is what a mark made from the
@@ -172,28 +158,42 @@ extension ReviewValidationScenarios {
         store.setViewed(file.id, true)
         try require(store.viewed[file.id] != nil, "The file could not be marked again")
         try "one\nTHREE\nthree\nfour\n".write(to: fileURL, atomically: true, encoding: .utf8)
-        await store.refresh()
+        await store.refreshAsTheAppDoes()
         await store.flushNavigationSave()
         try require(store.viewed[file.id] == nil, "A file that grew kept its mark")
         // A mark made from the list has no fingerprint behind it: nothing has
         // been read to produce one. Opening the file is the first chance to
         // record it, and without that the mark would never be checked against
-        // anything at all.
-        let listed = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage))
-        await listed.refresh()
+        // anything at all. Another changed file comes first in the list, so a
+        // session of its own opens that one and the mark is made on a file
+        // that is not open.
+        let other = root.appendingPathComponent("a-other.txt")
+        try "a\n".write(to: other, atomically: true, encoding: .utf8)
+        _ = try await checkedGit(["add", "a-other.txt"], cwd: root)
+        _ = try await checkedGit(
+            ["-c", "user.email=review@example.com", "-c", "user.name=Review", "commit", "-qm", "other"],
+            cwd: root
+        )
+        try "b\n".write(to: other, atomically: true, encoding: .utf8)
+        let listed = ReviewSession(
+            root: root,
+            drafts: FileReviewDraftStore(directory: directory.appendingPathComponent("listed-drafts"))
+        )
+        await listed.refreshAsTheAppDoes()
+        try require(listed.diff?.file.id != file.id, "The list opened the file it was about to mark")
         listed.setViewed(file.id, true)
         try require(listed.viewed[file.id]?.fingerprint == nil, "A mark made from the list carries no fingerprint")
         await listed.load(file)
         let adopted = try require(listed.viewed[file.id]?.fingerprint, "Opening the file did not record a fingerprint")
         try require(adopted == listed.diff?.fingerprint, "The recorded fingerprint is not the one on screen")
         listed.setViewed(file.id, false)
-        await store.refresh()
+        await store.refreshAsTheAppDoes()
         await store.flushNavigationSave()
         // A file put back the way it was leaves the change list, and a mark on
         // work that is no longer there is a mark on nothing.
         store.setViewed(file.id, true)
         _ = try await checkedGit(["checkout", "--", "tracked.txt"], cwd: root)
-        await store.refresh()
+        await store.refreshAsTheAppDoes()
         await store.flushNavigationSave()
         try require(store.viewed.isEmpty, "A file that left the list kept its mark")
     }
@@ -213,15 +213,15 @@ extension ReviewValidationScenarios {
         let root = try await ReviewGit.root(at: repository)
         try "one\ntwo\n".write(to: root.appendingPathComponent("new.txt"), atomically: true, encoding: .utf8)
         let storage = directory.appendingPathComponent("legacy-drafts")
-        let store = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage))
-        await store.refresh()
+        let store = ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage))
+        await store.refreshAsTheAppDoes()
         await store.flushNavigationSave()
         guard let file = store.files.first else { throw ReviewValidationFailure(message: "File missing") }
         await store.load(file)
         await store.flushNavigationSave()
         guard let line = store.diff?.lines.first else { throw ReviewValidationFailure(message: "Line missing") }
         store.add(line: line, body: "Written before the dates existed.")
-        store.markInserted(store.comments.map(\.id))
+        store.markInserted(store.comments)
         try require(
             store.comments.count == 1,
             "Setup failed: \(store.errorMessage.map { $0.resolved(in: Locale(identifier: "en")) } ?? "")"
@@ -240,7 +240,7 @@ extension ReviewValidationScenarios {
         comments[0].removeValue(forKey: "resolvedAt")
         draft["comments"] = comments
         try JSONSerialization.data(withJSONObject: draft).write(to: saved)
-        let reopened = ReviewStore(root: root, drafts: FileReviewDraftStore(directory: storage))
+        let reopened = ReviewSession(root: root, drafts: FileReviewDraftStore(directory: storage))
         try require(
             reopened.comments.count == 1,
             "An old draft did not reload: \(reopened.errorMessage.map { $0.resolved(in: Locale(identifier: "en")) } ?? "")"

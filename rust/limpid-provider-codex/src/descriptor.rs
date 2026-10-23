@@ -55,6 +55,11 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
             // has no `SessionEndDropsSession` capability and its hint always
             // survives for the next launch to resume from.
             session_end_drop_reasons: Vec::new(),
+            // Where its memory agent works, one directory per memory format
+            // version (`MemoryVersion::directory_name`): a thread of Codex's
+            // own, which runs the person's hooks with its own session id and
+            // no marker (`normalize`).
+            internal_agent_directories: vec!["memories".to_owned(), "memories_v2".to_owned()],
             id,
         }
     })

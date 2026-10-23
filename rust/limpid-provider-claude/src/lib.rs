@@ -4,13 +4,16 @@
 //! them to run records.
 
 mod approval;
+mod awaited;
 mod cache;
 mod descriptor;
 mod normalize;
+mod usage;
 
 use limpid_agent_model::{
-    AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe, NormalizeError,
-    ProviderAdapter, ProviderDescriptor, ProviderOutput, RawHookInput, WorktreeIntent,
+    AgentEvent, ApprovalDecision, ApprovalRequest, CommandRun, EventId, HookContext, InstallRecipe,
+    NormalizeError, ProviderAdapter, ProviderDescriptor, ProviderOutput, RawHookInput,
+    WorktreeIntent,
 };
 use serde_json::Value;
 
@@ -49,8 +52,27 @@ impl ProviderAdapter for ClaudeAdapter {
         approval::approval_output(decision, request)
     }
 
+    fn event_id(
+        &self,
+        input: RawHookInput<'_>,
+        context: &HookContext,
+    ) -> Result<Option<EventId>, NormalizeError> {
+        normalize::event_id(input, context, &self.descriptor().id)
+    }
+
     fn transcript_path(&self, input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {
         normalize::transcript_path(input)
+    }
+
+    fn wait_transcript_path(
+        &self,
+        input: RawHookInput<'_>,
+    ) -> Result<Option<String>, NormalizeError> {
+        normalize::wait_transcript_path(input)
+    }
+
+    fn transcript_shows_wait_declined(&self, transcript: &[u8]) -> bool {
+        awaited::transcript_awaited_call_interrupted(transcript)
     }
 
     fn worktree_intent(
@@ -58,5 +80,9 @@ impl ProviderAdapter for ClaudeAdapter {
         input: RawHookInput<'_>,
     ) -> Result<Option<WorktreeIntent>, NormalizeError> {
         WorktreeIntent::from_hook_payload(input.bytes, "Bash")
+    }
+
+    fn command_run(&self, input: RawHookInput<'_>) -> Result<Option<CommandRun>, NormalizeError> {
+        normalize::command_run(input)
     }
 }

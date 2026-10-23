@@ -17,14 +17,18 @@ struct LibghosttyInitFailureView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("libghostty failed to initialize")
+            Text("Couldn’t Initialize libghostty")
                 .font(LimpidFont.title)
             Text("libghostty \(GhosttyFFI.version())")
                 .font(LimpidFont.bodySecondary.monospaced())
                 .foregroundStyle(LimpidColor.secondaryText)
+            // One literal: a `+` made it a runtime String, which Text shows
+            // unlocalized.
             Text(
-                "Most failures are caused by a malformed user-side ghostty config. " +
-                    "Open Settings to disable advanced overrides, or reset settings.json to defaults."
+                """
+                Most failures come from a malformed ~/.config/ghostty/config. Open Settings and turn off \
+                Use Ghostty config file in Integrations, or choose Restore Default Settings.
+                """
             )
             .font(LimpidFont.body)
             .foregroundStyle(LimpidColor.secondaryText)
@@ -34,10 +38,10 @@ struct LibghosttyInitFailureView: View {
                 Button("Open Settings") {
                     openWindow(id: LimpidApp.settingsWindowID)
                 }
-                Button("Reveal Logs in Console") {
+                Button("Show Logs in Console") {
                     revealConsole()
                 }
-                Button("Reset Settings to Defaults") {
+                Button("Restore Default Settings") {
                     SettingsStore.moveSettingsFileAside()
                 }
                 Button("Quit Limpid") {

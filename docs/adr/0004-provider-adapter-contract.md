@@ -5,7 +5,7 @@
 - Amends: ADR 0002 by defining the provider adapter, the neutral event
   vocabulary, and the split of the portable rules into `apply`, `project`,
   `on_launch`, and `on_terminate`; and by recording that a second operating
-  system is not planned, so the portability ADR 0002 motivates is kept as a
+  system is not planned, so the portability that ADR 0002 motivates is kept as a
   dependency constraint on the Rust crates rather than as a roadmap item.
 
 ## Context
@@ -23,8 +23,8 @@ translation in `AgentApprovalHookAdapter.swift`.
 This change implements the crate layout, provider adapters, approval
 translation, `apply`, and the hook runtime. The application-side `project`,
 `on_launch`, and `on_terminate` rules followed in a second change, which
-replaced the per-provider Swift trackers with one projection adapter that reads the
-directories, asks the rules, and applies the answer.
+replaced the per-provider Swift trackers with one projection adapter that
+reads the directories, asks the rules, and applies the answer.
 
 ADR 0002 assigns provider input normalization, output models, and
 provider-neutral event and projection rules to the portable Rust core, but it
@@ -129,7 +129,7 @@ moved into the sidebar's containers, and created worktrees in the wrong place
 until someone noticed. The routing file is narrow enough to be stable, is
 versioned, and is left alone by a hook that does not recognize the version:
 passing the command through puts the worktree where the agent asked, which is
-recoverable, where guessing at an unknown shape could put it anywhere.
+recoverable, whereas guessing at an unknown shape could put it anywhere.
 
 Input limits: a hook payload is at most 1 MiB, the same bound the protocol
 places on a client request, and record prompt, title, and detail fields are
@@ -151,19 +151,197 @@ The core and the UI branch on capabilities, never on provider ids.
 | `approval_hook` | Approval is answered by a hook process. | yes | yes |
 | `approval_protocol` | Approval is requested over a connection. | no | no |
 | `subagents` | The provider emits subagent events. | yes | yes |
-| `turn_snapshot` | A turn snapshot can be captured on prompt submit. | yes | yes |
+| `turn_snapshot` | Turns are recorded: a snapshot on prompt submit and another when the turn ends. | yes | yes |
 | `cache_window` | The provider reports when its prompt cache expires, on `TurnFinished`. | yes | no |
 
 ### Event vocabulary
 
 `SessionStarted`, `SessionEnded`, `PromptSubmitted`, `ToolStarted`,
 `ToolFinished`, `WaitingForInput`, `ApprovalRequested`, `Compacting`,
-`CompactionFinished`, `TurnFinished`, `Failed`, `Interrupted`, `CwdChanged`,
-`WorktreeCreated`, `TitleChanged`, and `Extension`.
+`CompactionFinished`, `AwaitingPrompt`, `TurnFinished`, `Failed`,
+`Interrupted`, `CwdChanged`, `WorktreeCreated`, `TitleChanged`, and
+`Extension`.
 
 An extension is promoted to a named event only when two providers emit the same
 thing. `CompactionFinished` is the recorded exception: only Codex emits it, but
 it closes the existing `Compacting` event rather than introducing a concept.
+`AwaitingPrompt`, Claude's idle `Notification`, is the second exception, for
+the same reason (see "Work outside a turn").
+
+### Stops that continue a turn
+
+`TurnFinished` carries `continues_after_stop_hook`, true when the provider
+reports that the stop follows work another stop hook asked for (Claude's and
+Codex's `stop_hook_active`). The turn the earlier stop ended went on, so the
+hook runtime takes that turn's end again. Any other stop of a turn that has
+already ended is a stop with no prompt of its own, such as an agent answering
+a background task; such a stop gets an end-only record rather than changing
+the earlier turn. The field is omitted when false.
+
+### Work outside a turn
+
+One rule: an event outside a turn reopens the run and records that it is
+outside a turn, and the sign that the agent settled closes it. A turn is open
+while the run record has `runStartedAt`. `PromptSubmitted` sets it;
+`TurnFinished`, `Failed`, `Interrupted`, `SessionEnded`, a session start other
+than a compaction, and the idle prompt after a turn that stopped without a
+`Stop` clear it. A compaction is not the end of a turn: one in the middle of a
+turn restarts the session while the turn goes on, so a compact
+`SessionStarted` keeps `runStartedAt` and leaves the run `running`, while one
+the person asked for after the turn leaves the run resting in `idle`. Codex's
+`CompactionFinished` likewise returns to `running` only inside a turn, and to
+`idle` outside one.
+
+Work does arrive outside a turn. Claude's TUI has sent a turn's `Stop` before
+the `PreToolUse` of a tool the turn still ran, with no `Stop` after it, and a
+turn that another stop hook holds open (a review gate, say) goes on for
+minutes after its first `Stop`. A `ToolStarted` or `ToolFinished` then shows
+the run `running` with its tool, as within a turn, but leaves `runStartedAt`
+empty. From `finished`, `error`, or `idle`, the run stays in the episode it
+rested in, so the event announces nothing and leaves a finish the person saw
+marked as seen.
+
+The tool event records the rest the run left in `outsideTurnRest`: `idle` for
+work that began at the prompt after a session start, and `finished` otherwise
+(after an error too; see below). A value other than those two reads as
+`finished`. The field is kept while the stretch lasts, including through a
+wait in it, and dropped once the run is in a turn or at rest.
+
+Two events close the stretch. A `Stop` is the turn's real end, as it is for
+the stop hook's turn (`stop_hook_active`): it always begins a new episode,
+even from `finished`, and is announced, so a `Stop` that comes after the idle
+prompt settled the stretch is announced too. Claude's idle `Notification`
+(`AwaitingPrompt`) closes a stretch that no `Stop` follows: a run that is
+`running` with no `runStartedAt` returns to its `outsideTurnRest` (`finished`
+when a record lacks it) in the same episode, and the cache window is cleared,
+because the stretch's requests refreshed the cache after the window was read.
+The idle prompt closes the same stretch in the turn record: it takes the end
+snapshot and difference of the run's current turn again
+(`TurnStep::Retake`), so what the late tools changed is in the turn whose
+`Stop` came first. The turn keeps the phase it ended in: a turn that failed or
+was interrupted and then went on is still failed or interrupted, with the late
+changes in it. A stretch from `idle` has no turn of its own and takes no end.
+
+The notification rules announce a finish only after the run was seen
+`running` or `compacting`, and not in the episode of the end (a finish or a
+failure) that the outbox last announced or last saw with nothing to announce.
+That is what keeps the stretch's finish quiet, and it is why the finish is
+compared with that end rather than with the previous pass: a `Stop` and the
+late tool after it can land inside one pass, which then never sees the
+finish, and a finish held for a tmux pane is dropped when the run goes back to
+`running`. Either way, the idle prompt's finish is the first one the outbox is
+done with, and it is announced. A finish straight after a finish is announced
+when it begins an episode, which only a `Stop` does. A stretch that went
+through a wait does not stay in the rest's episode: the wait begins one
+episode, and the work after it another, so the stretch's finish is announced
+and unread like a turn's, because the person was asked something during it.
+
+`AwaitingPrompt` is the recorded exception to the two-provider rule for the
+same reason as `CompactionFinished`: it closes an existing state rather than
+introducing a concept. It also ends a turn that stopped without saying so. A
+run that is `running` or `compacting` and whose `runStartedAt` is at least
+55 seconds old, such as one the person stopped with Esc and then compacted, is
+ended as `Interrupted` ends it: `runStartedAt` is cleared, a new episode
+begins, and the turn record is ended as interrupted. Claude sends the idle
+prompt after its TUI has sat at the prompt for a minute, so one that arrives
+sooner after a prompt belongs to the stretch before it, delivered late, and
+the turn just begun is left open (`STOPPED_TURN_IDLE_SECS`).
+
+A turn waiting on the person (`needsInput`, a question or a permission
+prompt) ends the same way only when the transcript says the call it waits on
+is over. Esc at Claude's question or permission prompt refuses the call before
+it runs, so no `PostToolUse` or `PostToolUseFailure` follows, and Claude runs
+no `Stop` for a stop the user interrupted. The transcript gains the call's
+`tool_result` ("User rejected tool use", `toolDenialKind: user-rejected`) and
+the line "[Request interrupted by user for tool use]", and the idle prompt is
+the first hook after them. So the adapter reads the transcript tail on the
+idle prompt (and on no other notification) and sets `awaited_call_ended` when
+every tool call of the latest assistant message that made one has a result,
+or an interrupt line follows it. A wait with that fact, in a turn open at
+least 55 seconds, ends as interrupted; without it the wait stays, because a
+minute idle is also a person who has not answered yet, and ending a live
+question would hide it. A wait outside a turn (a late tool's permission) is
+left as it is either way. The idle prompt writes nothing for any other run: a
+run at rest already rests.
+
+On a real Claude Code 2.1.309 run, the idle prompt did not come at all after
+an Esc that declined a question: twice, nothing followed for 85 and 110
+seconds. So the record cannot be the only place that ends the wait. The
+call that opens a wait (the question tool's `PreToolUse`, the permission
+prompt's `Notification`) names its transcript, which the record keeps in
+`transcriptPath` while the run waits (`ProviderAdapter::wait_transcript_path`;
+nothing is read then). The app's projection pass asks, for each run that
+waits inside a turn and names one, whether the transcript shows the wait
+declined (`ProviderAdapter::transcript_shows_wait_declined`), and shows such
+a run as its turn stopped: `finished`, with neither the wait's words nor its
+kind, in the wait's episode, which announces nothing, and with the stop
+reason `waitDeclined`, so the decision bar says the wait was declined rather
+than answered. That badge is the instant answer. The same pass also returns
+an `endDeclinedWait` command naming the wait as it read it: its episode
+token, its turn, and its transcript. The app runs the command once per wait,
+off its main thread (`DeclinedWaitCloser`, at most three tries for a write
+that does not land), through `limpid_declined_wait_end_v1`. That writer is
+the hook runtime's own (`limpid_agent_hook::end_declined_wait`), and it ends
+the wait as the idle prompt's `EndsStoppedTurn` does. The turn's end snapshot
+and difference are taken before the record lock, as a hook takes them. Under
+the lock the record is read again, and the write goes ahead only if it is
+still that wait in the same episode and turn, naming the same transcript,
+and the transcript still reads declined. The run record then ends
+`finished`, outside the turn, without `waitKind` or `transcriptPath`, and its
+turn ends `interrupted` with its end snapshot. The prompt the person types
+next takes the same lock, so a write that comes after it finds a new episode
+and writes nothing. Unlike the idle prompt, the write keeps the wait's
+episode: the badge already showed the finish in it, and a new episode would
+announce a second finish. Nor does it rebuild the record from a hook call's
+identity: the app is the writer, so the record's own fields are carried. This
+read is stricter than the idle prompt's: only an
+interrupt line after the call counts. With no idle minute behind it, a result
+alone is also an answered question or an approved command a moment before its
+own hook moves the run on, and a refusal with words lets the turn go on. The
+bridge's engine reads the transcript tail under the hook's limit and only when
+its size or modification time changed since the last pass that asked
+(`limpid_agent_hook::DeclinedWaits`), so an unchanged transcript costs a
+`stat` per pass. The core names no file and no provider: the bridge answers
+for it through the adapter.
+
+The end snapshot the idle prompt takes runs before the record lock, so the
+hook judges the idle prompt again from the record under the lock and drops it
+whole if the run has moved on in the meantime: if what it ends or the turn
+step differs, or if the run's episode, `runStartedAt`, or `outsideTurnRest`
+changed, even when the state reads the same again (a `Stop`, then another late
+tool). A real `Stop` or a prompt that arrived during the snapshot changed what
+the run shows, and the end prepared for the idle prompt would replace the
+real one. The revision is not compared: a title change moves it and changes
+nothing the idle prompt ends.
+
+In the recorded payloads, the idle prompt comes only once the turn has ended
+(after its `Stop` or `StopFailure`), never during a permission prompt, but
+none of them waited long enough to prove that it cannot; the declined
+question case (`claude/2026-10/ask-user-question-declined`) is written from
+the transcript lines Claude leaves, not recorded. Should an idle prompt come
+while the prompt is still open, the call has no result yet and the wait
+stays. A wait that outlives
+its approval is a visible failure; a wait settled while the person still had
+to answer would hide the request and return the request the app holds to the
+TUI. The rare case that remains is a request the app holds whose run
+the idle prompt settles from `running` before the run reports the wait: the
+settled run reads as past its turn, and the app gives the request back to the
+TUI, which still asks. Codex sends no idle signal, and no recorded Codex case
+has a tool after its `Stop`, so a Codex stretch ends at the next `Stop` or
+prompt. The shell receivers, while they were the rollback path, had none of
+this: they reopened the run on a late tool and left it running until the next
+prompt.
+
+A stretch that began in `error` settles as `finished`, not back in `error`.
+The agent went on working after the failure, and that work ended without a
+failure. The failure was already announced and listed, and its stop item ended
+when the run left the error, so returning to it would list the same failure
+again. The settled finish stays in the failure's episode, which the outbox
+counts as an end it is done with, so it is not announced either. While the
+stretch runs, the run shows its tool, and a permission prompt in it names that
+tool, never the earlier error.
+
+Tool events open no turn record, inside a turn or outside one.
 
 ### Prompt cache window
 
@@ -173,7 +351,8 @@ record timestamp format), `ttl_seconds`, `rewrite_tokens`, and a `precision` of
 camelCase on the wire (`observedAt`, `ttlSeconds`, `rewriteTokens`). It is an
 observation attached to the event that ends a turn, not an event of its own:
 it has no moment of its own to report, and attaching it keeps the vocabulary
-rule above intact while only one provider supplies it. `None` means unknown and is never read as "no cache".
+rule above intact while only one provider supplies it. `None` means unknown and
+is never read as "no cache".
 
 The agent caches the conversation prefix on the model provider's servers for a
 fixed time after the last request: an hour on a Claude subscription and five
@@ -185,14 +364,14 @@ can decide before returning to a pane.
 `apply` stores the window on the run record (`cacheWindow`, absent in older
 records) when a turn finishes, and clears it on `PromptSubmitted`, every
 `SessionStarted`, `SessionEnded`, `Compacting`, `CompactionFinished`, `Failed`,
-and `Interrupted`, because after any of those the window no longer describes
-the cache. A window the reader cannot decode costs only the window, never the
-record. `project` passes it to the badge only for a provider with
-`cache_window`, and the interface derives "expiring soon" and "expired" from it
-with its own clock, so the projection does not run on a timer. "Expiring soon"
-starts when a fifth of the TTL is left, at most five minutes ahead: an hour's
-window warns five minutes before it expires, a five-minute window one minute
-before.
+`Interrupted`, and an `AwaitingPrompt` that ends work, because after any of
+those the window no longer describes the cache. A window the reader cannot
+decode costs only the window, never the record. `project` passes it to the badge
+only for a provider with `cache_window`, and the interface derives "expiring
+soon" and "expired" from it with its own clock, so the projection does not run
+on a timer. "Expiring soon" starts when a fifth of the TTL is left, at most five
+minutes ahead: an hour's window warns five minutes before it expires, a
+five-minute window one minute before.
 
 Claude Code exposes the expiry only on the status line command's standard input
 (`prompt_cache.expires_at`). We do not install a status line to read it:
@@ -206,13 +385,13 @@ already reads on `Stop`: the last main-thread request (lines grouped by
 line, with the TTL named by the bucket its usage wrote
 (`cache_creation.ephemeral_1h_input_tokens` or `ephemeral_5m_input_tokens`). A
 request that only read the cache inherits the bucket of the nearest earlier
-write; with no known bucket, or no cache counters at all, the window is
-unknown rather than assumed to be five minutes. It is unknown too when a
-main-thread user line, a tool result or a prompt, is newer than the last usage
-line, which means the turn's final response was not yet written when `Stop`
-ran; anchoring on the request before it would show the cache expiring early. `rewrite_tokens`
-follows the plugin API's definition of the prompt the next request re-sends:
-the last main-thread response's input, cache read, cache creation, and output
+write; with no known bucket, or no cache counters at all, the window is unknown
+rather than assumed to be five minutes. It is unknown too when a main-thread
+user line (a tool result or a prompt) is newer than the last usage line, which
+means the turn's final response was not yet written when `Stop` ran; anchoring
+on the request before it would show the cache expiring early. `rewrite_tokens`
+follows the plugin API's definition of the prompt the next request re-sends: the
+last main-thread response's input, cache read, cache creation, and output
 tokens.
 
 The interface types the agent's own `/compact` or `/clear` when the user
@@ -235,18 +414,18 @@ code changes.
 | Status | Implemented | Implemented | Implemented |
 | Runs in | the hook process (Rust inside the Hook Helper) | the application, on every watcher event | the application, before session bootstrap and in `applicationWillTerminate` |
 | Input | previous record bytes (v2 or v3, or none), one `AgentEvent`, `HookContext`, the provider's capabilities, `now` | all record bytes, attention marks, tmux presence, live pane and PID sets, focus, resume intents, the previous `ProjectionState`, wall and monotonic clocks | record, resume intent, and resume hint bytes, live PID set, `now` |
-| Output | `RecordWrites`: the run record (`schemaVersion: 3`) plus side writes for the resume hint, cwd event, and turn snapshot operations | `ProjectionState`, `Projection` (runtimes per pane, dominant badge and title per tab, notification transitions), `Vec<Command>` | `Vec<Command>` |
-| Replaces | both `limpid-hook` event maps, hint and cwd writes, both worktree scripts | `AgentStateTracker` merge, dominance, notifications, and GC; `AgentSessionTracker`; `CwdEventTracker`; `WorktreeEventTracker`; `AgentLifecyclePolicy`; `AgentNotificationOutbox`; `applyTabTitle` and `limpid_resolve_title_v1` | Codex's launch cleanup and terminate preservation, applied to every provider with `resume` |
+| Output | `RecordWrites`: the run record (`schemaVersion: 3`) plus side writes for the resume hint, cwd event, and turn snapshot operations | `ProjectionState` (kept in the bridge's engine, never handed to the host), `Projection` (runtimes per pane, dominant badge and title per tab, notification transitions), `Vec<Command>` | `Vec<Command>` |
+| Replaces | both `limpid-hook` event maps, hint and cwd writes, both worktree scripts | `AgentStateTracker` merge, dominance, notifications, and GC; `AgentSessionTracker`; `CwdEventTracker`; `WorktreeEventTracker`; `AgentLifecyclePolicy`; `AgentNotificationOutbox`; `applyTabTitle` (the pane header still resolves its title through `limpid_resolve_title_v1`) | Codex's launch cleanup and terminate preservation, applied to every provider with `resume` |
 
 None of these rule functions owns a file, a timer, or a provider branch. They
 describe side effects without performing them: the hook runtime executes the
 `RecordWrites` returned by `apply`, while the application-side rules return
-`Command` values that the Swift host executes under the record lock. Two clocks are passed because
-record comparison and retention use wall time while the notification outbox's
-pending lifetime uses monotonic uptime. Notification delivery stays in Swift:
-`project` returns the transition, the target pane, and the focus suppression
-condition, and the host decides whether the pane is focused and applies rate
-limits.
+`Command` values that the Swift host executes under the record lock. Two clocks
+are passed because record comparison and retention use wall time while the
+notification outbox's pending lifetime uses monotonic uptime. Notification
+delivery stays in Swift: `project` returns the transition, the target pane, and
+the focus suppression condition, and the host decides whether the pane is
+focused and applies rate limits.
 
 ### Command semantics
 
@@ -268,21 +447,24 @@ watcher and the directory layout stay. Records are decoded on both sides in
 Rust: the hook writes them and the projection reads them, so Swift never
 parses a record beyond the fields a command asks it to compare. `apply`
 accepts a v2 record and writes v3, and revision monotonicity makes a writer
-change in the middle of a run safe.
-The shim reads
-`LIMPID_AGENT_HOOK_BACKEND` (`rust` or `shell`), which the pane environment sets
-and the tmux `hosted_env_names` allow list forwards. The shell backend remains
-for one release as the rollback path and is then deleted with the scripts.
+change in the middle of a run safe. The shim read `LIMPID_AGENT_HOOK_BACKEND`
+(`rust` or `shell`) for one release, with the shell backend as the rollback
+path. Both are gone now. The wrappers exec only the Hook Helper and, when it
+is missing, fail the hook call and say why, because the shell receivers wrote
+no turn records, and a fallback to them emptied the changes panel without a
+word.
 
 ### Lifecycle and storage decisions
 
-1. Every `SessionStarted` clears `lastPrompt` and `runStartedAt` and refreshes
-   `sessionStartedAt`. A non-compact start also clears `firstPrompt` and
-   replaces both title fields; a compact start retains those fields unless it
-   supplies a session title. `runStartedAt` is also cleared by `TurnFinished`,
-   `Failed`, `Interrupted`, and `SessionEnded`. Claude's `StopFailure`
-   previously erased the last prompt that the error notification body is built
-   from.
+1. Every `SessionStarted` clears `lastPrompt` and refreshes
+   `sessionStartedAt`. A non-compact start also clears `runStartedAt` and
+   `firstPrompt` and replaces both title fields; a compact start retains those
+   fields unless it supplies a session title, and keeps `runStartedAt`, since
+   the turn it arrived in goes on (see "Work outside a turn"). The shell
+   receivers cleared `runStartedAt` on every start. `runStartedAt` is also
+   cleared by `TurnFinished`, `Failed`, `Interrupted`, `SessionEnded`, and the
+   idle prompt that ends a stopped turn. Claude's `StopFailure` previously
+   erased the last prompt that the error notification body is built from.
 2. Kill markers on terminate and restore on launch apply to every provider
    with `resume`; the Codex-only scope was an accident of the generic
    extension it lived in.
@@ -315,12 +497,28 @@ for one release as the rollback path and is then deleted with the scripts.
 
 Message-shaped calls keep the hand-written C ABI with JSON envelopes. The
 current bridge exposes approval exchange, approval translation, and a combined
-hook entry point. Future application-side rule calls will use the same
-convention. The header is generated by cbindgen from the bridge crate and the
+hook entry point, and the application-side rules use the same convention: the
+projection engine's pass (`limpid_projection_engine_pass_v1`) and the
+lifecycle rules (`limpid_projection_on_launch_v1`,
+`limpid_projection_on_terminate_v1`), beside the restore, discard, and turn
+GC calls. The header is generated by cbindgen from the bridge crate and the
 committed file is diffed in CI, so the header can no longer drift from the
-exported symbols. The bridge ABI version stays 2; new symbols carry a `_v1`
-suffix and existing contracts do not change. Panics never cross the boundary.
-Typed records crossing the boundary would trigger an evaluation of a binding
+exported symbols. New symbols carry a `_v1` suffix, and the bridge ABI version
+moves only when an exported contract changes incompatibly. It moved to 3 when
+the projection state stopped crossing the boundary. Each pass had handed the
+whole `ProjectionState` back and forth as JSON; the state holds a summary of
+every kept turn, and that round trip came to cost more than the rules
+themselves. The state now stays in an engine that the host holds by an opaque
+pointer (`limpid_projection_engine_v1`), and `limpid_projection_project_v1` was
+removed. A pass proposes the next state under a number, and the host commits
+that number once it has read the answer; a proposal made from a state another
+commit has since replaced is refused. It moved to 4 when
+`limpid_restore_recover_v1` stopped failing as a whole on one unreadable
+journal. It now settles and returns the journals it could read, with
+`isIncomplete`, where it had returned `LIMPID_TURN_UNREADABLE`. A caller
+that does not know the flag would read an incomplete list as whole. Panics
+never cross the boundary. Typed
+records crossing the boundary would trigger an evaluation of a binding
 generator, recorded in its own ADR.
 
 ### Conformance harness
@@ -356,12 +554,13 @@ directory):
 | Cargo build of the bridge, no-op | 0.1 |
 
 Fixture recording exposes user content; scrubbing is mandatory and the corpus
-is reviewed like code. Two implementations of one rule exist in `main` only
-during the one release in which the shell backend remains.
+is reviewed like code. Two implementations of one rule existed in `main` only
+during the one release in which the shell backend remained.
 
 Swift keeps file watching, PID sweeps at the descriptor's interval, tmux
-presence, the locked command executor, `WindowSession`, `Tab`, `AttentionState`,
-notification delivery, XPC, signing, `SMAppService`, and all UI.
+presence, the locked command executor, `WorkspaceSession`, `Tab`,
+`AttentionState`, notification delivery, XPC, signing, `SMAppService`, and all
+UI.
 
 ## Acceptance criteria
 

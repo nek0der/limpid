@@ -115,8 +115,29 @@ extension SurfaceView {
     // MARK: - Motion events
 
     override func mouseMoved(with event: NSEvent) {
+        // A view laid over the terminal (the changes panel when there is
+        // no room beside it) takes the pointer: the tracking area still
+        // reports the move, and the TUI would see a pointer that is not
+        // over it.
+        guard !isPointerCovered(event) else {
+            // Off the terminal, as libghostty reads a position outside it:
+            // a link's underline or a TUI's hover left at the panel's edge
+            // would stay there.
+            if let surface {
+                ghostty_surface_mouse_pos(surface, -1, -1, Self.translateMods(event.modifierFlags))
+            }
+            return
+        }
         updatePaneDragCursor(event)
         sendMousePos(event)
+    }
+
+    /// Whether another view is what the pointer is over.
+    private func isPointerCovered(_ event: NSEvent) -> Bool {
+        guard let frameView = window?.contentView?.superview else { return false }
+        let point = frameView.convert(event.locationInWindow, from: nil)
+        guard let hit = frameView.hitTest(point) else { return false }
+        return hit !== self && !hit.isDescendant(of: self)
     }
 
     override func mouseDragged(with event: NSEvent) {

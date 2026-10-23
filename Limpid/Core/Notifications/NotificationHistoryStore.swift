@@ -1,10 +1,9 @@
 // NotificationHistoryStore.swift
 // Limpid — keeps the recent-notifications list in memory and on disk.
 //
-// One @Observable singleton drives the toolbar bell button (popover
-// presentation state) and the rolling notifications.json file. We keep
-// up to `maxEntries` rows; the oldest fall off the end when new
-// entries arrive.
+// One @Observable store drives every window's history panel and the
+// rolling notifications.json file. We keep up to `maxEntries` rows; the
+// oldest fall off the end when new entries arrive.
 
 import Foundation
 import Observation
@@ -22,27 +21,48 @@ final class NotificationHistoryStore {
     /// Newest first.
     private(set) var entries: [NotificationEntry] = []
 
-    /// Number of unread entries — surfaces as the toolbar bell badge.
+    /// Number of unread entries — surfaces as the rail button's badge and
+    /// the Unread filter's count.
     var unreadCount: Int {
         entries.lazy.count(where: { !$0.isRead })
     }
 
-    private let fileURL: URL
-    private var pendingSave: DispatchWorkItem?
-    private let saveQueue = DispatchQueue(label: "dev.limpid.notifications.history")
-
-    /// Production callers use the no-arg `init()`; tests pass an
-    /// isolated temp directory via `init(directory:)` so they don't
-    /// clobber the user's real notifications.json. The override is
-    /// internal-only — production code should never call it.
-    convenience init() {
-        self.init(directory: LimpidPaths.applicationSupportDirectory())
+    /// Whether an unread entry came from a command rather than an agent
+    /// (OSC 9 / 777, a long command finishing). The attention list counts
+    /// the agents' news; this is what the Dock dot stands for instead.
+    var hasUnreadCommandEntries: Bool {
+        entries.contains { !$0.isRead && $0.kind.isFromACommand }
     }
 
-    init(directory: URL) {
-        SecureFileWrite.ensureUserOnlyDirectory(directory)
+    private let fileURL: URL
+    private let saveDebounce = DebouncedSave()
+    /// An unreadable notifications.json could not be moved aside; saving
+    /// would replace it with what this launch records, so it stops.
+    private var isSavingSuspended = false
+    /// False in demo mode: the history starts empty and stays in memory.
+    /// The file belongs to the build the person runs, which demo mode
+    /// shares (`SettingsStore.writesFiles`), and its rows (real paths and
+    /// prompts) must not reach a demo's screenshot.
+    private let writesFiles: Bool
+    private let saveQueue = DispatchQueue(label: "dev.limpid.notifications.history")
+
+    /// The app builds it with `init(writesFiles:)`, its own decision for
+    /// every store; tests pass an isolated temp directory via
+    /// `init(directory:)` so they don't clobber the user's real
+    /// notifications.json.
+    convenience init(writesFiles: Bool) {
+        self.init(directory: LimpidPaths.applicationSupportDirectory(), writesFiles: writesFiles)
+    }
+
+    init(directory: URL, writesFiles: Bool = true) {
+        self.writesFiles = writesFiles
+        if writesFiles {
+            SecureFileWrite.ensureUserOnlyDirectory(directory)
+        }
         self.fileURL = directory.appendingPathComponent("notifications.json")
-        load()
+        if writesFiles {
+            load()
+        }
     }
 
     // MARK: - Mutations
@@ -126,8 +146,8 @@ final class NotificationHistoryStore {
     /// received in the last ~400 ms (the debounce window) still lands
     /// on disk before the process exits.
     func flushSynchronously() {
-        pendingSave?.cancel()
-        pendingSave = nil
+        saveDebounce.cancel()
+        guard writesFiles, !isSavingSuspended else { return }
         let snapshot = entries
         let url = fileURL
         saveQueue.sync {
@@ -138,33 +158,48 @@ final class NotificationHistoryStore {
     // MARK: - Persistence
 
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
+        // No file yet is the first launch; a file that is there but cannot
+        // be read is kept like one that does not decode.
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            log.error("failed to read notifications.json: \(String(describing: error), privacy: .private)")
+            setAside(reason: "read-failed")
+            return
+        }
         do {
             let decoder = PersistenceCoders.makeDecoder()
             entries = try decoder.decode([NotificationEntry].self, from: data)
         } catch {
-            log.error("failed to decode notifications.json: \(String(describing: error), privacy: .public)")
-            // A subsequent `record` / `markRead` would otherwise debounce
-            // a write of the empty `entries` array and destroy the bad-
-            // but-maybe-recoverable file. Move it aside first.
-            SecureFileWrite.quarantine(fileURL, reason: "decode-failed")
+            log.error("failed to decode notifications.json: \(String(describing: error), privacy: .private)")
+            setAside(reason: "decode-failed")
+        }
+    }
+
+    /// A subsequent `record` / `markRead` would otherwise debounce a write
+    /// of the empty `entries` array and destroy the bad-but-maybe-
+    /// recoverable file. Move it aside first, or stop saving when it
+    /// cannot be moved.
+    private func setAside(reason: String) {
+        guard writesFiles else { return }
+        if SecureFileWrite.setAside(fileURL, reason: reason) == .keptInPlace {
+            log.error("notifications.json stays in place; saving is suspended for this launch")
+            isSavingSuspended = true
         }
     }
 
     private func scheduleSave() {
-        pendingSave?.cancel()
+        saveDebounce.cancel()
+        guard writesFiles, !isSavingSuspended else { return }
         let snapshot = entries
         let url = fileURL
-        let work = DispatchWorkItem { [saveQueue] in
+        saveDebounce.schedule { [saveQueue] in
             saveQueue.async {
                 Self.write(snapshot, to: url)
             }
         }
-        pendingSave = work
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + .milliseconds(PersistenceTiming.coalescingMs),
-            execute: work
-        )
     }
 
     private nonisolated static func write(_ entries: [NotificationEntry], to url: URL) {
@@ -173,7 +208,7 @@ final class NotificationHistoryStore {
             let data = try encoder.encode(entries)
             try SecureFileWrite.writeAtomic(data, to: url)
         } catch {
-            log.error("failed to write notifications.json: \(String(describing: error), privacy: .public)")
+            log.error("failed to write notifications.json: \(String(describing: error), privacy: .private)")
         }
     }
 }

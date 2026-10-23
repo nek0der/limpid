@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""Measures one hook call's wall-clock latency for each backend.
+"""Measures one hook call's wall-clock latency, direct and through the wrapper.
 
 Usage: scripts/measure-hook-latency.py [--iterations N] [--provider claude|codex] [--payload FILE]
+                                      [--turn-repo DIR]
 
-Feeds the same recorded PreToolUse payload to the legacy shell receiver, to
-the Hook Helper's `hook` subcommand directly, and to the production wrapper
-that chooses the Rust backend, N times each against a scratch state
-directory, and prints p50 / p95 / max in milliseconds. Turn snapshots are
-disabled because both backends run the same git commands for them.
+Feeds the same recorded PreToolUse payload to the Hook Helper's `hook`
+subcommand directly and to the production wrapper that execs it, N times
+each against a scratch state directory, and prints p50 / p95 / max in
+milliseconds. Turn snapshots are disabled because both run the same git
+commands for them.
+
+With --turn-repo, it instead times the two calls that record a turn, the
+prompt submit and the stop, through the production wrapper with snapshots
+on, against the repository at DIR. Each pair writes a turn and pins two
+refs there; the script removes the refs and the scratch index files it made
+before it exits.
 
 The newest executable helper from a Debug build is used unless
 LIMPID_HOOK_HELPER is set.
@@ -15,6 +22,7 @@ LIMPID_HOOK_HELPER is set.
 
 import argparse
 import glob
+import json
 import os
 import shutil
 import statistics
@@ -36,6 +44,7 @@ def main():
     parser.add_argument("--iterations", type=int, default=200)
     parser.add_argument("--provider", choices=["claude", "codex"], default="claude")
     parser.add_argument("--payload")
+    parser.add_argument("--turn-repo")
     args = parser.parse_args()
 
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -64,7 +73,6 @@ def main():
         return 1
     helper = max(helper_candidates, key=lambda path: (os.path.getmtime(path), path))
     shim_dir = os.path.join(repo, "Limpid", "Resources", f"{args.provider}-shim")
-    legacy = os.path.join(shim_dir, "limpid-hook.legacy")
     wrapper = os.path.join(shim_dir, "limpid-hook")
 
     scratch = tempfile.mkdtemp(prefix="limpid-hook-latency.")
@@ -81,10 +89,18 @@ def main():
         "LIMPID_HOOK_HELPER": helper,
     }
     backends = {
-        "shell (legacy receiver)": (["/bin/sh", legacy], {}),
         "rust (helper direct)": ([helper, "hook", args.provider], {}),
-        "rust (wrapper)": (["/bin/sh", wrapper], {"LIMPID_AGENT_HOOK_BACKEND": "rust"}),
+        "rust (wrapper)": (["/bin/sh", wrapper], {}),
     }
+    if args.turn_repo:
+        if args.provider != "claude":
+            # The prompt and stop payloads below are Claude's.
+            print("error: --turn-repo measures the claude hooks only", file=sys.stderr)
+            return 1
+        try:
+            return measure_turns(args, base_env, wrapper, scratch)
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
     try:
         results = {}
         for name, (command, extra) in backends.items():
@@ -104,6 +120,59 @@ def main():
             )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+    return 0
+
+
+def git(repo, *arguments):
+    return subprocess.run(
+        ["git", "-C", repo, *arguments], capture_output=True, text=True, check=False
+    ).stdout.strip()
+
+
+def measure_turns(args, base_env, wrapper, scratch):
+    """Times prompt submit and stop with snapshots on, then removes the refs."""
+    repo = os.path.abspath(os.path.expanduser(args.turn_repo))
+    env = dict(base_env)
+    del env["LIMPID_TURN_SNAPSHOT"]
+    prompt = (
+        '{"hook_event_name":"UserPromptSubmit","session_id":"latency","prompt":"measure","cwd":%s}'
+        % json.dumps(repo)
+    ).encode()
+    stop = b'{"hook_event_name":"Stop","session_id":"latency"}'
+    session = b'{"hook_event_name":"SessionStart","session_id":"latency","source":"startup"}'
+    subprocess.run(["/bin/sh", wrapper], input=session, env=env, cwd=repo, check=False)
+    begins, ends = [], []
+    try:
+        for _ in range(args.iterations):
+            for payload, samples in ((prompt, begins), (stop, ends)):
+                started = time.perf_counter()
+                subprocess.run(
+                    ["/bin/sh", wrapper], input=payload, env=env, cwd=repo,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                )
+                samples.append((time.perf_counter() - started) * 1000)
+    finally:
+        turns = os.path.join(env["LIMPID_AGENT_STATES_DIR"], "turns")
+        for name in os.listdir(turns) if os.path.isdir(turns) else []:
+            if name.endswith(".turn.json"):
+                turn_id = name[: -len(".turn.json")]
+                for side in ("begin", "end"):
+                    git(repo, "update-ref", "-d", f"refs/limpid/turns/{turn_id}/{side}")
+        key = env["LIMPID_PANE_ID"].lower()
+        git(repo, "update-ref", "-d", f"refs/limpid/turn/{key}")
+        git_dir = git(repo, "rev-parse", "--absolute-git-dir")
+        for suffix in ("index", "end.index"):
+            path = os.path.join(git_dir, "limpid", f"turn-{key}.{suffix}")
+            if os.path.exists(path):
+                os.remove(path)
+    files = len(git(repo, "ls-files").splitlines())
+    print(f"iterations: {args.iterations}, repository: {repo} ({files} tracked files)")
+    print(f"{'call':<26}{'p50 ms':>10}{'p95 ms':>10}{'max ms':>10}{'mean ms':>10}")
+    for name, samples in (("prompt submit (begin)", begins), ("stop (end)", ends)):
+        print(
+            f"{name:<26}{percentile(samples, 0.50):>10.1f}{percentile(samples, 0.95):>10.1f}"
+            f"{max(samples):>10.1f}{statistics.fmean(samples):>10.1f}"
+        )
     return 0
 
 

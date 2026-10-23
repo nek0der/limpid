@@ -13,6 +13,15 @@ final class TerminalScrollView: NSView {
     private let surfaceView: SurfaceView
     private var isLiveScrolling = false
     private var lastSentRow: UInt64?
+    /// The size SwiftUI's layout gives the pane (`applyExpectedSize`). In an
+    /// animation it is already the end size while the frame is still on
+    /// its way (`TerminalSlideHold`). `nil` until the first layout.
+    private var layoutSize: CGSize?
+    /// The size the terminal was last laid at; `nil` before the first.
+    private var laidSize: CGSize?
+    /// Lays the terminal at the layout's size once the frame has stopped
+    /// short of it, so a frame that ends a point off still ends the hold.
+    private var settleCheck: DispatchWorkItem?
 
     /// SwiftUI can retain an old host after reparenting its persistent surface.
     /// We use the actual view hierarchy as the authority for geometry and input.
@@ -25,6 +34,9 @@ final class TerminalScrollView: NSView {
         super.init(frame: .zero)
 
         autoresizesSubviews = true
+        // A terminal held at its final width while its pane slides is wider
+        // than the frame until the frame has grown to it.
+        clipsToBounds = true
         scrollView.drawsBackground = false
         scrollView.hasHorizontalScroller = false
         scrollView.scrollerStyle = .overlay
@@ -57,7 +69,7 @@ final class TerminalScrollView: NSView {
 
     override func layout() {
         super.layout()
-        layoutContent(for: bounds.size)
+        layoutHeld()
     }
 
     override func updateTrackingAreas() {
@@ -83,7 +95,27 @@ final class TerminalScrollView: NSView {
     /// Metal surface and the native scroller resize in the same frame.
     func applyExpectedSize(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
-        layoutContent(for: size)
+        layoutSize = size
+        layoutHeld()
+    }
+
+    /// Lays the terminal out by `TerminalSlideHold`: at the layout's size,
+    /// except that while the frame animates toward it a side that shrinks
+    /// keeps its size until the frame gets there. Each step of a slide
+    /// would otherwise resize the pty.
+    private func layoutHeld() {
+        layoutContent(for: TerminalSlideHold.size(frame: bounds.size, layout: layoutSize, laid: laidSize))
+        settleCheck?.cancel()
+        settleCheck = nil
+        guard let layoutSize, TerminalSlideHold.isMoving(frame: bounds.size, layout: layoutSize) else { return }
+        let check = DispatchWorkItem { [weak self] in
+            guard let self, let layoutSize = self.layoutSize,
+                  TerminalSlideHold.isMoving(frame: self.bounds.size, layout: layoutSize)
+            else { return }
+            self.layoutContent(for: layoutSize)
+        }
+        settleCheck = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: check)
     }
 
     private func observeScrollView() {
@@ -148,7 +180,10 @@ final class TerminalScrollView: NSView {
 
     private func layoutContent(for size: CGSize) {
         guard isSurfaceMounted else { return }
-        scrollView.frame = NSRect(origin: .zero, size: size)
+        laidSize = size
+        // Kept to the top edge when it stands taller than the frame.
+        let originY = isFlipped ? 0 : bounds.height - size.height
+        scrollView.frame = NSRect(origin: CGPoint(x: 0, y: originY), size: size)
         let viewport = scrollView.contentSize
         documentView.frame.size.width = viewport.width
         surfaceView.frame.size = viewport

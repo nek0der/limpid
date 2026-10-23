@@ -1,0 +1,70 @@
+// ProcessDrainTests.swift
+// Limpid — the shared runner's cap on stdout and its report of an output left unfinished, on real child processes.
+
+import Foundation
+import Testing
+@testable import Limpid
+
+@Suite("Shared process runner")
+struct ProcessDrainTests {
+    /// Starts `script` under `/bin/sh` with both pipes, and runs it on the
+    /// shared runner.
+    private func run(
+        _ script: String,
+        stdoutLimitBytes: Int? = nil,
+        timeout: Duration = .seconds(5),
+        timing: ProcessDrainTiming = .standard
+    ) throws -> DrainedOutput {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", script]
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        process.standardInput = FileHandle.nullDevice
+        try process.run()
+        return drainAndWait(process, stdout: stdout, stderr: stderr, timeout: timeout, stdoutLimitBytes: stdoutLimitBytes, timing: timing)
+    }
+
+    @Test func aChildWritingPastTheCap_isEnded_andKeepsNoMoreThanTheCap() throws {
+        let start = SuspendingClock.now
+        // `yes` never stops on its own: only the cap ends it.
+        let output = try run("exec /usr/bin/yes", stdoutLimitBytes: 4096)
+        #expect(output.ending == .outputLimit)
+        #expect(output.stdout.count <= 4096)
+        #expect(SuspendingClock.now - start < .seconds(4))
+    }
+
+    @Test func aChildThatExitedOverTheCap_isStillReportedOverIt() throws {
+        let output = try run("printf abcdef", stdoutLimitBytes: 3)
+        #expect(output.ending == .outputLimit)
+    }
+
+    @Test func outputUnderTheCap_isWhole() throws {
+        let output = try run("printf abc; printf oops >&2", stdoutLimitBytes: 3)
+        #expect(output.ending == .exited)
+        #expect(output.isStdoutComplete)
+        #expect(String(data: output.stdout, encoding: .utf8) == "abc")
+        #expect(String(data: output.stderr, encoding: .utf8) == "oops")
+    }
+
+    /// The grandchild holds stdout until the test lets it go, after the
+    /// run returned, so the output is unfinished unless the run outlasts
+    /// the grandchild. It gives up on its own after 600 polls 0.05 s apart,
+    /// about half a minute, and the test's one-minute time limit stands
+    /// watch over a run that would not return.
+    @Test(.timeLimit(.minutes(1)))
+    func aGrandchildHoldingStdout_leavesTheOutputUnfinished_afterTheDrainGrace() throws {
+        try withTempDir { directory in
+            let release = directory.appendingPathComponent("release")
+            defer { FileManager.default.createFile(atPath: release.path, contents: nil) }
+            let timing = ProcessDrainTiming(terminationGrace: .milliseconds(200), drainGrace: .milliseconds(200), pollMilliseconds: 10)
+            let script = "(i=0; while [ ! -e '\(release.path)' ] && [ $i -lt 600 ]; do sleep 0.05; i=$((i+1)); done) & exit 0"
+            let output = try run(script, timing: timing)
+            #expect(output.ending == .exited)
+            #expect(!output.isStdoutComplete)
+            #expect(!output.hasStdoutReadFailed)
+        }
+    }
+}

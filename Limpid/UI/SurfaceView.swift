@@ -23,19 +23,27 @@ final class SurfaceView: NSView {
     /// so Swift-side mutations stay confined to main.
     nonisolated(unsafe) var surface: ghostty_surface_t?
 
+    /// What libghostty hands back as `userdata`: a token of this view's own
+    /// (`SurfaceUserdataToken`), retained until `ghostty_surface_free` has
+    /// returned. Not the view's address: the view is freed before its
+    /// surface, and a new view at the same address would receive the old
+    /// surface's last callbacks. `nonisolated(unsafe)` for `deinit`; never written.
+    nonisolated(unsafe) let userdata: UnsafeMutableRawPointer =
+        Unmanaged.passRetained(SurfaceUserdataToken()).toOpaque()
+
     /// Text to hand the next clipboard read on this surface in place of the
     /// system pasteboard. Review stages its feedback here so it can be
     /// delivered through libghostty's paste path without touching what the
     /// user has copied. See `deliverReviewText(_:receipt:)`.
     @MainActor private var stagedPaste: String?
 
-    /// What the staged paste was carrying, so a refusal at the confirmation
-    /// sheet can reach the comments it was meant to deliver. Cleared with the
-    /// request it belongs to. See `deliverReviewText(_:receipt:)`.
+    /// What the staged paste was carrying, so the clipboard read that takes
+    /// the text can tell the insert waiting on it whether it arrived. Cleared
+    /// with the request it belongs to. See `deliverReviewText(_:receipt:)`.
     @MainActor var reviewPasteReceipt: ReviewPasteReceipt?
 
     /// Hand over the receipt and forget it: a request is answered once, and a
-    /// later paste must not be able to unmark comments this one delivered.
+    /// later paste must not be able to answer for this one.
     @MainActor
     func takeReviewPasteReceipt() -> ReviewPasteReceipt? {
         defer { reviewPasteReceipt = nil }
@@ -122,16 +130,10 @@ final class SurfaceView: NSView {
     /// overlay. Scrollbar state also changes while output streams, so it cannot
     /// serve as evidence of user interaction without making the overlay blink.
     var onScrollGesture: (() -> Void)?
-
-    /// The live cell height in points, or `nil` off screen, where there is no
-    /// backing scale to convert libghostty's pixels with.
-    var cellHeight: CGFloat? {
-        guard let surface,
-              let pixels = GhosttyFFI.surfaceCellHeightPixels(surface),
-              let scale = window?.backingScaleFactor, scale > 0
-        else { return nil }
-        return CGFloat(pixels) / scale
-    }
+    /// The grid's columns or rows changed, called once the layout pass is
+    /// over: on a new frame, on a font change, or when the view joins a
+    /// window (`reportGridSizeIfChanged`).
+    var onGridSizeChange: (() -> Void)?
 
     func updateScrollbarState(_ state: TerminalScrollbarState) {
         scrollbarState = state
@@ -139,20 +141,18 @@ final class SurfaceView: NSView {
     }
 
     /// Live SurfaceViews keyed by the raw pointer libghostty uses as
-    /// `userdata`. The value side is a `WeakBox` so a deallocated view
-    /// auto-drops to `nil` without us having to chase removal from
-    /// every code path — `liveView(forUserdata:)` cleans the entry
-    /// lazily on a nil hit. Pre-Phase-3 this was an
-    /// `NSHashTable<SurfaceView>.weakObjects()` walked linearly on
-    /// every C-callback dispatch (`O(n)` per call, with `n` running
-    /// up to the count of every pane ever opened in the session); the
-    /// dict makes the lookup `O(1)`.
+    /// `userdata` (the view's `SurfaceUserdataToken`). The value side is a
+    /// `WeakBox` so a deallocated view auto-drops to `nil` without us
+    /// having to chase removal from every code path —
+    /// `liveView(forUserdata:)` cleans the entry lazily on a nil hit. A
+    /// dictionary, because every C-callback dispatch looks a view up here,
+    /// and a linear walk would cost one step for every pane opened in the
+    /// session.
     @MainActor private static var liveViewsByPointer: [UnsafeRawPointer: WeakBox] = [:]
 
     /// `weak` wrapper so a value-type dictionary can hold a weak class
-    /// reference. Identical shape to the box `SurfaceRegistry` uses
-    /// internally; lifted here so the surface-view lookup table can
-    /// follow the same pattern.
+    /// reference: the userdata lookup must not keep a view alive past the
+    /// pane that owns it.
     private final class WeakBox {
         weak var view: SurfaceView?
         init(_ view: SurfaceView) {
@@ -167,12 +167,13 @@ final class SurfaceView: NSView {
     /// `ghostty_surface_free` returns (deinit hops to MainActor
     /// asynchronously), where a raw `takeUnretainedValue` would
     /// dereference freed memory. Must be called on MainActor — the
-    /// registry isn't synchronised.
+    /// registry isn't synchronized.
     ///
     /// O(1) average via the `liveViewsByPointer` dict. A nil
     /// `box.view` (the SurfaceView deallocated but the deinit task
-    /// hasn't run yet) cleans the entry inline so a pointer reuse for
-    /// a freshly-allocated SurfaceView doesn't read the stale slot.
+    /// hasn't run yet) cleans the entry inline; the token it is keyed by
+    /// stays retained until then, so no other view can be registered
+    /// under it.
     @MainActor
     static func liveView(forUserdata ptr: UnsafeMutableRawPointer) -> SurfaceView? {
         let key = UnsafeRawPointer(ptr)
@@ -185,7 +186,7 @@ final class SurfaceView: NSView {
     }
 
     /// Initial working directory for the first shell launched inside
-    /// this surface. Set by `PaneHostView` from `Tab.workingDirectory`
+    /// this surface. Set by `PaneHostView` from `Tab.newPaneWorkingDirectory`
     /// before `viewDidMoveToWindow` triggers `createSurface`.
     var initialWorkingDirectory: String?
 
@@ -215,9 +216,21 @@ final class SurfaceView: NSView {
     /// prompt first so the typed command lands on a clean line. See
     /// `Tab.initialCommands` for the model-level documentation.
     var initialCommand: String?
+    /// How far `initialCommand` has got: to be typed from the surface's
+    /// creation, then typed, then its program seen taking the terminal,
+    /// which a review's paste waits for (`isReadyForReviewPaste`). Nil for a
+    /// pane started with none.
+    var stagedCommand: ReviewPasteReadiness.StagedCommand?
+    /// Told once `initialCommand` is typed into the terminal, with when it
+    /// was: what watches a restored pane's resume hears of it here,
+    /// from the one place that types it, rather than when the view was
+    /// made. Never told when there was no terminal to type into. `nil` for
+    /// a pane nothing watches.
+    var onInitialCommandTyped: (@MainActor (Date) -> Void)?
 
-    /// One-shot guard for the shell title emitted when Limpid submits its own
-    /// initial command. Kept on the surface because the title callback carries
+    /// Guard for the shell title emitted when Limpid types a command of its
+    /// own (the restore's resume, the decision bar's resume, a new
+    /// conversation). Kept on the surface because the title callback carries
     /// that same identity but does not identify who emitted the OSC sequence.
     private var injectedCommandTitleGuard = InjectedCommandTitleGuard()
 
@@ -241,16 +254,16 @@ final class SurfaceView: NSView {
 
     /// Callback fired on `mouseDown` so the host can mark the pane as
     /// acknowledged (clears the unread dot). Set by `PaneHostView` —
-    /// SurfaceView itself doesn't know its pane id or the WindowSession.
+    /// SurfaceView itself doesn't know its pane id or the WorkspaceSession.
     var onUserAcknowledge: (() -> Void)?
 
     /// Callback fired when this pane gains keyboard focus (becomes first
-    /// responder — on mount/restore, click, ⌘J, tab switch, arrow). Set
-    /// by `PaneHostView`. The host uses it to track which pane currently
-    /// holds attention focus so leaving a finished pane drops it from the
-    /// Waiting list. Fired synchronously here (not deferred) so focus
-    /// transitions are processed in order, never acking the pane we just
-    /// arrived at.
+    /// responder — on mount/restore, click, ⌘J, tab switch, arrow). Set by
+    /// `PaneHostView`, which records the arriving pane's finished agent
+    /// episode as viewed and the pane's notifications as read
+    /// (`AttentionState.focusMoved`). That mark is separate from which turns
+    /// count as read. Fired synchronously here (not deferred) so focus
+    /// transitions are processed in the order they happen.
     var onFocusEntry: (() -> Void)?
 
     /// Reports keyboard focus changes to the process-wide Secure Event Input
@@ -260,7 +273,14 @@ final class SurfaceView: NSView {
     /// The user's last input here, and whether text came since the last
     /// submit; read through `AgentCommandTyping`, kept by `noteKeyInput(_:)`.
     var lastKeyInputAt: Date?
-    var hasUnsubmittedInput = false
+
+    /// The job in front when text came since the last submit, `nil` when
+    /// none did (`hasUnsubmittedInput`).
+    var draftOwner: DraftOwner?
+
+    /// This is the Return a typed command waits to send (`typeAgentCommand(_:)`).
+    /// It is a `var` so a test can hold its wait.
+    var commandSubmit = PendingCommandSubmit()
 
     var hasSecureInputFocus: Bool {
         window?.isKeyWindow == true && window?.firstResponder === self
@@ -272,7 +292,7 @@ final class SurfaceView: NSView {
 
     /// Context-menu plumbing back to `TabActions`. Set by
     /// `PaneHostView`; `SurfaceView` calls into the focused pane via
-    /// these so we don't have to thread a `WindowSession` reference
+    /// these so we don't have to thread a `WorkspaceSession` reference
     /// through AppKit. `onRequestFocus` MUST run before the others —
     /// they read `splitTree.focusedLeafID` and would otherwise target
     /// whichever pane was focused before the right-click.
@@ -310,22 +330,29 @@ final class SurfaceView: NSView {
     /// (`PaneHostView`, the quick terminal) the way `keyboardSettings` is.
     var appLocale: (@MainActor () -> Locale)?
 
+    /// Where ⌘⏎ goes before the terminal: true when the window took
+    /// the key for its decision bar. Installed by `PaneHostView` in a
+    /// supervision window; nil elsewhere, where ⌘⏎ is the terminal's.
+    var primaryActionHandler: (@MainActor (PrimaryKeyPress) -> Bool)?
+    /// See `TakenKeyRelease`.
+    var takenKeyRelease = TakenKeyRelease()
+
     /// The pane this view represents. Set by `PaneHostView`; lets the
     /// AppKit drag-source path write a `pane:<UUID>` payload to the
     /// pasteboard without threading the id through every drag handler.
     /// Nil before mount (the registry assigns it on `register`).
     var paneID: UUID?
 
-    /// Shared tab column drag-state. Set by `PaneHostView`. Used to announce
-    /// `.pane` kind on drag start (so tab column drop targets gate their
-    /// indicators) and to clear state via `end()` if AppKit's drag
-    /// session ends without the SwiftUI drop delegate firing.
+    /// Shared drag state. Set by `PaneHostView`. Used to announce the `.pane`
+    /// kind on drag start (so the drop targets in the sidebar,
+    /// `ReorderableDropTarget`, and on the pane strip gate their indicators) and
+    /// to clear state via `end()` if AppKit's drag session ends without the SwiftUI drop delegate firing.
     var dragState: LimpidDragState?
 
     /// Closure returning the owning tab's id as a string (or "?" when
     /// the lookup fails). Threaded through `PaneHostView` so the
     /// pane-drag log line can name both pane and tab; `SurfaceView`
-    /// itself has no `WindowSession` reference.
+    /// itself has no `WorkspaceSession` reference.
     var ownerTabIDForLogging: (() -> String)?
 
     /// Anchor for an in-progress ⌥⌘+drag. Captured on `mouseDown`; the
@@ -394,8 +421,7 @@ final class SurfaceView: NSView {
         // `userdata` so `liveView(forUserdata:)` is an O(1) lookup.
         // Deinit removes the entry from the same MainActor task that
         // hands the handle to `ghostty_surface_free`.
-        Self.liveViewsByPointer[UnsafeRawPointer(Unmanaged.passUnretained(self).toOpaque())] =
-            WeakBox(self)
+        Self.liveViewsByPointer[UnsafeRawPointer(userdata)] = WeakBox(self)
         registerForDraggedTypes([.fileURL])
     }
 
@@ -413,7 +439,7 @@ final class SurfaceView: NSView {
     /// The pty device this surface's shell is on (`/dev/ttys016`), or
     /// `nil` before the surface exists. Read at quit to ask tmux which
     /// session — if any — is driving this pane; see
-    /// `WindowSession.captureTmuxBindings`.
+    /// `WorkspaceSession.captureTmuxBindings`.
     var ttyName: String? {
         guard let surface else { return nil }
         return GhosttyFFI.surfaceTTYName(surface)
@@ -435,6 +461,8 @@ final class SurfaceView: NSView {
     /// scale hasn't actually changed since the last push.
     private var lastPushedSize: (width: UInt32, height: UInt32)?
     private var lastPushedScale: Double?
+    /// See `GridSizeReport`.
+    var gridSizeReport = GridSizeReport()
 
     private func pushSurfaceSize() {
         guard let surface, let window else { return }
@@ -448,9 +476,13 @@ final class SurfaceView: NSView {
         let width = UInt32(backing.width)
         let height = UInt32(backing.height)
         if lastPushedSize?.width != width || lastPushedSize?.height != height {
+            #if DEBUG // Each call resizes the pty: a SIGWINCH for the program in it.
+                log.debug("surface set_size \(width, privacy: .public)x\(height, privacy: .public)")
+            #endif
             ghostty_surface_set_size(surface, width, height)
             lastPushedSize = (width, height)
         }
+        reportGridSizeIfChanged()
     }
 
     @available(*, unavailable)
@@ -465,7 +497,7 @@ final class SurfaceView: NSView {
     /// is therefore invisible to VoiceOver — focus walks straight
     /// past, and a VO user can't even tell that there is a terminal
     /// here. Tag the view as a text-area role and label it "Terminal"
-    /// so chrome traversal (sidebar / toolbar / pane navigation) at
+    /// so chrome traversal (sidebar / title bar / pane navigation) at
     /// least lands on a discoverable element. Reading the buffer
     /// would need a separate `accessibilityValue` that snapshots the
     /// scrollback through libghostty's C API — defer that to a
@@ -519,11 +551,13 @@ final class SurfaceView: NSView {
 
         guard let window else {
             onSecureInputFocusChange?(false)
+            forgetReportedGridSize()
             return
         }
         if surface == nil {
             createSurface()
         }
+        reportGridSizeIfChanged()
         // Focused leaf grabs the keyboard; others are marked unfocused so
         // they don't all render an active cursor. See `shouldFocusOnMount`.
         if shouldFocusOnMount?() ?? true {
@@ -549,29 +583,24 @@ final class SurfaceView: NSView {
         let envKeys = envKeyBuffers
         let envValues = envValueBuffers
         let envArray = envVarsBuffer
-        // Capture `self`'s pointer while we still have a live reference
-        // so the MainActor cleanup task can remove the live-view entry
-        // even after the object's memory is freed. Reused as the dict
-        // key in `liveViewsByPointer` (= what libghostty hands us as
-        // `userdata`).
-        let pointerKey = UnsafeRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        // The token is this view's alone and stays retained until the
+        // surface is freed, so its entry is ours to remove, and the
+        // surface's last callbacks find no view rather than another one.
+        let userdata = userdata
+        let clipboardRequests = Self.clipboardRequests(forUserdata: userdata)
         Task { @MainActor in
-            // The allocator routinely reuses NSView pointers after
-            // free, and a fresh `SurfaceView` allocated at the same
-            // address will have already written its own `WeakBox`
-            // into `liveViewsByPointer[pointerKey]`. An unconditional
-            // remove would wipe THAT entry — every subsequent
-            // libghostty callback for the new surface (`liveView(forUserdata:)`)
-            // would then return nil and silently drop close /
-            // clipboard / action requests. Only clear the slot if
-            // its weak reference still points at a deallocated box
-            // (matches the inline-cleanup case in `liveView`).
-            if let box = SurfaceView.liveViewsByPointer[pointerKey], box.view == nil {
-                SurfaceView.liveViewsByPointer.removeValue(forKey: pointerKey)
+            SurfaceView.liveViewsByPointer.removeValue(forKey: UnsafeRawPointer(userdata))
+            // libghostty frees a clipboard request's state only when it is
+            // answered, never with the surface, so we deny what is left.
+            clipboardRequests.denyUnanswered { state in
+                if let s {
+                    ghostty_surface_deny_clipboard_request(s, state.pointer)
+                }
             }
             if let s {
                 ghostty_surface_free(s)
             }
+            Unmanaged<SurfaceUserdataToken>.fromOpaque(userdata).release()
             if let obs {
                 NotificationCenter.default.removeObserver(obs)
             }
@@ -662,8 +691,8 @@ final class SurfaceView: NSView {
         // has to actively click into the pane to acknowledge.
         //
         // We DO track attention focus here, though: gaining focus by
-        // *any* means (tab switch included) acks the *arriving* pane's
-        // finished turn — the row stays in WAITING but fades to viewed.
+        // *any* means (tab switch included) marks the *arriving* pane's
+        // finished run as viewed (`AttentionState.markViewed`).
         // Unread is intentionally not cleared here (see the mouseDown
         // path); only the agent-state ack flows through `onFocusEntry`.
         onFocusEntry?()
@@ -672,6 +701,7 @@ final class SurfaceView: NSView {
     }
 
     override func resignFirstResponder() -> Bool {
+        takenKeyRelease.reset()
         if let surface {
             ghostty_surface_set_focus(surface, false)
         }
@@ -729,7 +759,7 @@ extension SurfaceView {
 
     // MARK: - Surface creation
 
-    /// Initialise the libghostty surface and bind it to this view.
+    /// Initialize the libghostty surface and bind it to this view.
     /// Idempotent in spirit — buffers from a prior `createSurface`
     /// (e.g. a re-mount where `ghostty_surface_new` returned NULL) are
     /// freed first. `PaneHostView` calls this from `updateNSView` as a
@@ -748,7 +778,7 @@ extension SurfaceView {
         config.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
         config.platform_tag = GHOSTTY_PLATFORM_MACOS
         config.platform.macos.nsview = viewPtr
-        config.userdata = viewPtr
+        config.userdata = userdata
         config.scale_factor = scale
 
         // Point ghostty at the tab's stored cwd so the shell starts in
@@ -801,9 +831,9 @@ extension SurfaceView {
             // libghostty hands back NULL when allocation or its own
             // init fails. The pane otherwise stays mounted but
             // invisible — no shell, no cursor, no recovery — so the
-            // user only notices that one Waiting-list row is gone.
+            // user sees only a blank pane.
             // Flip a one-shot flag the `PaneHostView` can read to
-            // render an in-pane "Terminal failed to start" card with
+            // render an in-pane "Couldn’t Start the Terminal" card with
             // a Retry button.
             log.fault("ghostty_surface_new returned NULL")
             creationFailed = true
@@ -835,50 +865,31 @@ extension SurfaceView {
     private func scheduleInitialCommandIfNeeded() {
         guard let command = initialCommand, !command.isEmpty else { return }
         let body = command.hasSuffix("\n") ? String(command.dropLast()) : command
+        stagedCommand = ReviewPasteReadiness.StagedCommand()
+        // Armed before the wait: nothing else in this pane reports this
+        // command as its title before the shell runs it.
+        noteTypedOwnCommand(body)
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
-            guard let self, let surface = self.surface else { return }
-            self.injectedCommandTitleGuard.arm(body)
-            body.withCString { ptr in
-                ghostty_surface_text(surface, ptr, UInt(strlen(ptr)))
-            }
-            self.sendReturnKey(to: surface)
+            self?.typeInitialCommand(body)
         }
     }
 
-    /// Suppress the shell's exact preexec title while allowing prompt and
-    /// program titles through unchanged.
-    func consumeInjectedCommandTitle(_ title: String) -> Bool {
-        injectedCommandTitleGuard.consumeIfMatching(title)
+    /// Remembers a command Limpid itself types into this pane, so the title
+    /// the shell reports for it is not taken for a name. Every path
+    /// that types one calls this: the initial command and `typeAgentCommand`.
+    func noteTypedOwnCommand(_ command: String) {
+        injectedCommandTitleGuard.arm(command)
+    }
+
+    /// Whether `title` is the shell's title for a command Limpid typed,
+    /// which the coordinator leaves off the tab; every other title passes.
+    func isInjectedCommandTitle(_ title: String) -> Bool {
+        injectedCommandTitleGuard.matches(title)
     }
 
     func clearInjectedCommandTitleGuard() {
         injectedCommandTitleGuard.clear()
-    }
-
-    /// Synthesize a Return keypress (press + release) on `surface`.
-    /// Used by `scheduleInitialCommandIfNeeded` and `typeAgentCommand(_:)` to
-    /// submit typed text without depending on shell paste-mode quirks.
-    func sendReturnKey(to surface: ghostty_surface_t) {
-        let returnKeyCode = UInt32(NamedKey.return.primaryKeyCode)
-        for action in [GHOSTTY_ACTION_PRESS, GHOSTTY_ACTION_RELEASE] {
-            var key = ghostty_input_key_s()
-            key.action = action
-            key.keycode = returnKeyCode
-            key.mods = ghostty_input_mods_e(0)
-            key.consumed_mods = ghostty_input_mods_e(0)
-            key.unshifted_codepoint = 0x0D
-            key.composing = false
-            if action == GHOSTTY_ACTION_PRESS {
-                "\r".withCString { ptr in
-                    key.text = ptr
-                    _ = ghostty_surface_key(surface, key)
-                }
-            } else {
-                key.text = nil
-                _ = ghostty_surface_key(surface, key)
-            }
-        }
     }
 
 }

@@ -8,7 +8,7 @@
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@", "timeout": 600 }] }
     ],
     "PreToolUse": [
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] },
@@ -21,10 +21,10 @@
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ],
     "PostToolUse": [
-      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+      { "matcher": "AskUserQuestion|Bash", "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ],
     "PostToolUseFailure": [
-      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+      { "matcher": "AskUserQuestion|Bash", "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ],
     "PermissionRequest": [
       { "hooks": [{ "type": "command", "command": "@@APPROVAL_HELPER@@ permission-request claude", "timeout": 600 }] }
@@ -34,13 +34,13 @@
     ],
     "Stop": [
       { "hooks": [
-        { "type": "command", "command": "@@HOOK@@" },
+        { "type": "command", "command": "@@HOOK@@", "timeout": 600 },
         { "type": "command", "command": "@@APPROVAL_HELPER@@ question-turn-ended" }
       ] }
     ],
     "StopFailure": [
       { "hooks": [
-        { "type": "command", "command": "@@HOOK@@" },
+        { "type": "command", "command": "@@HOOK@@", "timeout": 600 },
         { "type": "command", "command": "@@APPROVAL_HELPER@@ question-turn-ended" }
       ] }
     ],

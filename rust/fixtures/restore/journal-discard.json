@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "opId": "OP",
+  "operation": "discard",
+  "root": "/repo",
+  "turnId": "T",
+  "turnNumber": 7,
+  "paneId": "P",
+  "contextBefore": {
+    "head": "abc",
+    "branch": "main"
+  },
+  "beforeTree": "b",
+  "targetTree": "t",
+  "expectedAfterTree": "e",
+  "plannedPaths": [
+    {
+      "path": "a.txt",
+      "kind": "modify"
+    }
+  ],
+  "recordedUntracked": [],
+  "stage": {
+    "kind": "applied"
+  },
+  "at": "2026-10-13T00:00:00Z",
+  "ranAt": "2026-10-12T23:59:00Z"
+}

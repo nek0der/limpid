@@ -29,7 +29,7 @@ private struct SettingsSearchTargetModifier: ViewModifier {
         content
             .id(id)
             .listRowBackground(isHighlighted ? accent.opacity(0.10) : Color.clear)
-            .animation(shouldReduceMotion ? nil : .easeOut(duration: 0.18), value: isHighlighted)
+            .animation(shouldReduceMotion ? nil : LimpidMotion.highlight, value: isHighlighted)
     }
 }
 

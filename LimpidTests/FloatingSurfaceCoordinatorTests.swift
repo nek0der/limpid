@@ -1,7 +1,8 @@
 // FloatingSurfaceCoordinatorTests.swift
 // Limpid — one floating panel at a time: which surfaces give way when
 // another presents, what keeps the prompt cache panel from opening under the
-// pointer, and the coordinator carrying that out against real presentations.
+// pointer, the coordinator carrying that out against real presentations,
+// and the one dropdown a window's title bar has open.
 
 import CoreGraphics
 import Foundation
@@ -56,6 +57,21 @@ struct FloatingSurfaceRulesTests {
             #expect(FloatingSurfaceRules.isAnotherSurfaceOpen(than: .promptCache, open: [kind]))
         }
     }
+
+    @Test func workingSurfaces_keepTheCacheAndColorPanelsFromOpening() {
+        for working in [FloatingSurfaceKind.commandPalette, .approvalCard, .notificationHistory, .review] {
+            #expect(FloatingSurfaceRules.isOpeningBlocked(.promptCache, open: [working]))
+            #expect(FloatingSurfaceRules.isOpeningBlocked(.containerColor, open: [working]))
+            #expect(!FloatingSurfaceRules.isOpeningBlocked(.paneRename, open: [working]), "a rename is not one of them")
+        }
+    }
+
+    @Test func peeksAndOtherPanels_doNotBlockAnOpening() {
+        for kind in [FloatingSurfaceKind.prCard, .paneRename, .promptCache, .containerColor] {
+            #expect(!FloatingSurfaceRules.isOpeningBlocked(.containerColor, open: [kind]))
+            #expect(!FloatingSurfaceRules.isOpeningBlocked(.promptCache, open: [kind]))
+        }
+    }
 }
 
 @MainActor
@@ -78,7 +94,7 @@ struct FloatingSurfaceCoordinatorTests {
         var renameEnded = false
         let coordinator = FloatingSurfaceCoordinator(promptCache: cache, containerColor: color) { renameEnded = true }
         openCache(cache)
-        color.open(container: .group(UUID()), anchor: anchor)
+        color.open(projectID: UUID(), anchor: anchor)
 
         coordinator.makeWay(for: .containerColor, open: [.promptCache, .containerColor, .paneRename])
         #expect(cache.request == nil)
@@ -92,62 +108,13 @@ struct FloatingSurfaceCoordinatorTests {
         var renameEnded = false
         let coordinator = FloatingSurfaceCoordinator(promptCache: cache, containerColor: color) { renameEnded = true }
         openCache(cache)
-        color.open(container: .project(UUID()), anchor: anchor)
+        color.open(projectID: UUID(), anchor: anchor)
 
         coordinator.makeWay(for: .commandPalette, open: [.commandPalette, .promptCache, .containerColor, .paneRename])
         #expect(cache.request == nil)
         #expect(color.request == nil)
         #expect(!renameEnded, "the palette takes the keyboard, which ends the rename by itself")
     }
-
-    @Test func twoPanelsOpeningTogether_doNotCloseEachOther() {
-        let cache = PromptCachePanelPresentation()
-        let color = ContainerColorPresentation()
-        let coordinator = FloatingSurfaceCoordinator(promptCache: cache, containerColor: color) {}
-        openCache(cache)
-        color.open(container: .group(UUID()), anchor: anchor)
-
-        // Both report presenting in the same update. The first closes the
-        // second; the second, no longer open, then closes nothing.
-        coordinator.makeWay(for: .promptCache, open: [.promptCache, .containerColor])
-        #expect(color.request == nil)
-        coordinator.makeWay(for: .containerColor, open: [.promptCache])
-        #expect(cache.request != nil, "one panel stays")
-    }
-}
-
-struct FloatingSurfaceBlockingTests {
-    @Test func workingSurfaces_keepTheCacheAndColorPanelsFromOpening() {
-        for working in [FloatingSurfaceKind.commandPalette, .approvalCard, .notificationHistory, .review] {
-            #expect(FloatingSurfaceRules.isOpeningBlocked(.promptCache, open: [working]))
-            #expect(FloatingSurfaceRules.isOpeningBlocked(.containerColor, open: [working]))
-            #expect(!FloatingSurfaceRules.isOpeningBlocked(.paneRename, open: [working]), "a rename is not one of them")
-        }
-    }
-
-    @Test func peeksAndOtherPanels_doNotBlockAnOpening() {
-        for kind in [FloatingSurfaceKind.prCard, .approvalPreview, .paneRename, .promptCache, .containerColor] {
-            #expect(!FloatingSurfaceRules.isOpeningBlocked(.containerColor, open: [kind]))
-            #expect(!FloatingSurfaceRules.isOpeningBlocked(.promptCache, open: [kind]))
-        }
-    }
-
-    @Test func anApprovalPreview_closesNothing() {
-        #expect(
-            FloatingSurfaceRules.surfacesToClose(
-                whenPresenting: .approvalPreview,
-                open: [.approvalPreview, .containerColor, .promptCache]
-            ).isEmpty
-        )
-        // It still holds back pointer opens of the cache panel, as the PR
-        // card does.
-        #expect(FloatingSurfaceRules.isAnotherSurfaceOpen(than: .promptCache, open: [.approvalPreview]))
-    }
-}
-
-@MainActor
-struct FloatingSurfaceGateTests {
-    private let anchor = CGRect(x: 40, y: 80, width: 16, height: 16)
 
     @Test func gates_followWhatIsOpen() {
         let cache = PromptCachePanelPresentation()
@@ -175,7 +142,7 @@ struct FloatingSurfaceGateTests {
         let coordinator = FloatingSurfaceCoordinator(promptCache: cache, containerColor: color) {}
         coordinator.updateGates(open: [.notificationHistory])
 
-        color.open(container: .group(UUID()), anchor: anchor)
+        color.open(projectID: UUID(), anchor: anchor)
         #expect(color.request == nil, "Change Color does nothing over the history")
 
         let place = PromptCacheClockPlace.tabRow(tabID: UUID())
@@ -192,7 +159,7 @@ struct FloatingSurfaceGateTests {
         let place = PromptCacheClockPlace.tabRow(tabID: UUID())
         cache.clockMoved(place: place, instance: UUID(), anchor: anchor)
         cache.open(target: PromptCacheTarget(runtimeID: "claude:run", paneID: UUID()), place: place, trigger: .accessibility)
-        color.open(container: .group(UUID()), anchor: anchor)
+        color.open(projectID: UUID(), anchor: anchor)
 
         func live() -> Set<FloatingSurfaceKind> {
             var open: Set<FloatingSurfaceKind> = []
@@ -212,9 +179,59 @@ struct FloatingSurfaceGateTests {
         #expect(color.request == nil)
 
         // A surface already open before the update is not handled again.
-        color.open(container: .group(UUID()), anchor: anchor)
+        color.open(projectID: UUID(), anchor: anchor)
         coordinator.makeWay(from: [.containerColor], to: [.containerColor], live: live)
         #expect(cache.request != nil)
         #expect(color.request != nil)
+    }
+}
+
+@MainActor
+struct TitleBarMenuToggleTests {
+    private let anchor = CGRect(x: 80, y: 10, width: 120, height: 28)
+
+    @Test func aControl_opensItsDropdown_closesItAgain_andReplacesAnother() {
+        let window = ProjectWindowState(id: WindowID())
+
+        window.toggleTitleBarMenu(.project, anchor: anchor)
+        #expect(window.titleBarMenu?.menu == .project)
+
+        window.toggleTitleBarMenu(.needsAttention, anchor: anchor)
+        #expect(window.titleBarMenu?.menu == .needsAttention, "only one hangs from the title bar")
+
+        window.toggleTitleBarMenu(.needsAttention, anchor: anchor)
+        #expect(window.titleBarMenu == nil)
+    }
+
+    @Test func aWorkingSurface_closesTheDropdown_whichHoldsBackTheSmallPanels() {
+        #expect(
+            FloatingSurfaceRules.surfacesToClose(whenPresenting: .commandPalette, open: [.commandPalette, .titleBarMenu])
+                == [.titleBarMenu]
+        )
+        #expect(
+            FloatingSurfaceRules.surfacesToClose(whenPresenting: .titleBarMenu, open: [.titleBarMenu, .promptCache])
+                == [.promptCache]
+        )
+        #expect(FloatingSurfaceRules.isOpeningBlocked(.containerColor, open: [.titleBarMenu]))
+
+        let window = ProjectWindowState(id: WindowID())
+        window.toggleTitleBarMenu(.worktree, anchor: anchor)
+        let coordinator = FloatingSurfaceCoordinator(
+            promptCache: PromptCachePanelPresentation(),
+            containerColor: ContainerColorPresentation(),
+            endRename: {},
+            closeTitleBarMenu: { window.titleBarMenu = nil }
+        )
+        coordinator.makeWay(for: .notificationHistory, open: [.notificationHistory, .titleBarMenu])
+        #expect(window.titleBarMenu == nil)
+    }
+
+    @Test func anApprovalCard_leavesTheListItOpenedFrom() {
+        // Answer… opens the card over the list; Escape closes the card
+        // first, then the list.
+        #expect(
+            FloatingSurfaceRules.surfacesToClose(whenPresenting: .approvalCard, open: [.approvalCard, .titleBarMenu])
+                .isEmpty
+        )
     }
 }

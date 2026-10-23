@@ -168,7 +168,9 @@ struct PromptCachePanelPresentationTests {
     }
 
     /// Outwaits a pending open or dismiss and the main-actor turn after it,
-    /// with a generous margin so a loaded machine does not turn it flaky.
+    /// with a generous margin, for a test that shows nothing happened: no
+    /// hook tells when a timer fired without acting. A transition that does
+    /// happen is waited for with `pollUntil` instead.
     private func settle() async throws {
         try await Task.sleep(for: Self.delay * 10)
         await Task.yield()
@@ -183,15 +185,15 @@ struct PromptCachePanelPresentationTests {
         #expect(presentation.isOpen(place: place))
     }
 
-    @Test func hover_opensAfterRestingAndClosesAfterLeaving() async throws {
+    @Test func hover_opensAfterRestingAndClosesAfterLeaving() async {
         let presentation = makePresentation()
         presentation.clockEntered(place: place, instance: clock, anchor: frame, target: target)
         #expect(presentation.request == nil, "not before the pointer has rested")
-        try await settle()
+        await pollUntil(interval: .milliseconds(5)) { presentation.request?.trigger == .pointer }
         #expect(presentation.request?.trigger == .pointer)
 
         presentation.clockExited(place: place, instance: clock)
-        try await settle()
+        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
         #expect(presentation.request == nil)
     }
 
@@ -213,7 +215,7 @@ struct PromptCachePanelPresentationTests {
         #expect(presentation.request != nil)
 
         presentation.panelHoverChanged(false)
-        try await settle()
+        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
         #expect(presentation.request == nil)
     }
 
@@ -230,7 +232,7 @@ struct PromptCachePanelPresentationTests {
         // Once the pointer is seen arriving, leaving closes it.
         presentation.clockEntered(place: place, instance: clock, anchor: frame, target: target)
         presentation.clockExited(place: place, instance: clock)
-        try await settle()
+        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
         #expect(presentation.request == nil)
     }
 
@@ -246,7 +248,7 @@ struct PromptCachePanelPresentationTests {
         let presentation = makePresentation()
         let replacement = UUID()
         presentation.clockEntered(place: place, instance: clock, anchor: frame, target: target)
-        try await settle()
+        await pollUntil(interval: .milliseconds(5)) { presentation.request != nil }
         #expect(presentation.request != nil)
 
         // A row swapping layouts: its new clock reports the pointer before
@@ -254,11 +256,15 @@ struct PromptCachePanelPresentationTests {
         presentation.clockEntered(place: place, instance: replacement, anchor: frame, target: target)
         presentation.clockExited(place: place, instance: clock)
         presentation.clockDisappeared(place: place, instance: clock)
+        await pollUntil(interval: .milliseconds(5)) { presentation.request?.clock.instance == replacement }
+        // The dismiss the old clock's exit scheduled comes due: with the
+        // pointer on the replacement, it closes nothing. This proves that
+        // nothing happens, so it waits past the delay.
         try await settle()
         #expect(presentation.request?.clock.instance == replacement)
 
         presentation.clockExited(place: place, instance: replacement)
-        try await settle()
+        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
         #expect(presentation.request == nil)
     }
 
@@ -279,7 +285,7 @@ struct PromptCachePanelPresentationTests {
 
         presentation.panelHoverChanged(true)
         presentation.panelHoverChanged(false)
-        try await settle()
+        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
         #expect(presentation.request == nil)
     }
 
@@ -308,7 +314,7 @@ struct PromptCachePanelPresentationTests {
         #expect(presentation.request == nil)
     }
 
-    @Test func clockDisappearing_closesItsPanelUnlessAReplacementTookOver() async throws {
+    @Test func clockDisappearing_closesItsPanelUnlessAReplacementTookOver() async {
         let presentation = PromptCachePanelPresentation()
         let old = UUID()
         let new = UUID()
@@ -324,12 +330,12 @@ struct PromptCachePanelPresentationTests {
         #expect(presentation.anchor(for: place) == moved)
 
         presentation.clockDisappeared(place: place, instance: new)
-        try await settle()
+        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
         #expect(presentation.request == nil)
         #expect(presentation.anchor(for: place) == nil)
     }
 
-    @Test func clockDisappearing_beforeItsReplacementReports_keepsThePanel() async throws {
+    @Test func clockDisappearing_beforeItsReplacementReports_keepsThePanel() async {
         let presentation = PromptCachePanelPresentation()
         let old = UUID()
         presentation.clockMoved(place: place, instance: old, anchor: frame)
@@ -340,11 +346,11 @@ struct PromptCachePanelPresentationTests {
         let moved = frame.offsetBy(dx: 0, dy: 12)
         presentation.clockDisappeared(place: place, instance: old)
         presentation.clockMoved(place: place, instance: UUID(), anchor: moved)
-        try await settle()
+        await pollUntil(interval: .milliseconds(5)) { presentation.request?.anchor == moved }
         #expect(presentation.request?.anchor == moved)
     }
 
-    @Test func pointer_opensBelowTheClockItIsOn_whateverAnotherClockOfThePlaceReported() async throws {
+    @Test func pointer_opensBelowTheClockItIsOn_whateverAnotherClockOfThePlaceReported() async {
         let presentation = PromptCachePanelPresentation(openDelay: Self.delay, dismissDelay: Self.delay)
         // Two clocks for one place, as two windows on one session draw, with
         // the other one reporting last.
@@ -363,7 +369,7 @@ struct PromptCachePanelPresentationTests {
         presentation.close()
 
         presentation.clockEntered(place: place, instance: clock, anchor: here, target: target)
-        try await settle()
+        await pollUntil(interval: .milliseconds(5)) { presentation.request != nil }
         #expect(presentation.request?.anchor == here)
     }
 
@@ -381,88 +387,6 @@ struct PromptCachePanelPresentationTests {
 
         presentation.clockDisappeared(place: place, instance: clock)
         #expect(presentation.request?.anchor == elsewhere)
-    }
-}
-
-// MARK: - Unsent input
-
-struct PromptInputEffectTests {
-    private func effect(
-        _ key: NamedKey?,
-        _ characters: String?,
-        _ modifiers: NSEvent.ModifierFlags = []
-    ) -> SurfaceView.PromptInputEffect {
-        SurfaceView.promptInputEffect(key: key, charactersIgnoringModifiers: characters, modifiers: modifiers)
-    }
-
-    @Test func plainReturnAndControlC_submit() {
-        #expect(effect(.return, "\r") == .submit)
-        #expect(effect(nil, "c", .control) == .submit)
-    }
-
-    @Test func lineBreaksAndEverythingElse_leaveADraft() {
-        #expect(effect(.return, "\r", .shift) == .draft, "Shift-Return inserts a line break")
-        #expect(effect(.return, "\r", .option) == .draft, "so does Option-Return")
-        #expect(effect(nil, "a") == .draft)
-        #expect(effect(.escape, "\u{1b}") == .draft, "an open picker may still be there")
-        #expect(effect(.up, nil) == .draft, "history recall fills the prompt")
-        #expect(effect(nil, "d", .control) == .draft)
-    }
-
-    @Test func commandShortcuts_doNotReachThePromptExceptPaste() {
-        #expect(effect(nil, "k", .command) == .none)
-        #expect(effect(nil, "j", .command) == .none)
-        #expect(effect(nil, "v", .command) == .draft)
-    }
-}
-
-// MARK: - Which pane
-
-@MainActor
-struct PromptCachePaneLineTests {
-    @Test func paneLine_isTheNameThenTheDirectory() {
-        let withDetail = PaneHeaderLabel(name: "review", detail: "~/work/tamurakanto", isAgent: true, agentName: "Claude")
-        #expect(PromptCacheRules.paneLine(for: withDetail) == "review · ~/work/tamurakanto")
-        let bare = PaneHeaderLabel(name: "Terminal", detail: nil, isAgent: false, agentName: nil)
-        #expect(PromptCacheRules.paneLine(for: bare) == "Terminal")
-    }
-
-    @Test func paneLine_namesThePaneAsItsHeaderDoes() {
-        let (session, tab, paneID) = WindowSessionFixture.withLooseTab()
-        let attention = AttentionState()
-        let target = PromptCacheTarget(runtimeID: "claude:run", paneID: paneID)
-        session.update(tab.id) { $0.pwd = NSHomeDirectory() + "/work/tamurakanto" }
-        var badge = AgentBadge(state: .finished, updatedAt: Date())
-        badge.conversationID = "c"
-        badge.providerSessionTitle = "Fix the parser"
-        attention.replaceRuntimes([AgentRuntimePresentation(
-            kind: .claude, runID: "run", revision: 1, badge: badge,
-            paneIDs: [paneID], tmuxLocations: [:], stateEpisodeToken: "1"
-        )], kind: .claude)
-
-        // The same label the header resolves, whichever clock opened it.
-        let en = Locale(identifier: "en")
-        let header = attention.paneHeaderLabel(paneID: paneID, in: session, locale: en)
-        #expect(attention.promptCachePaneLine(for: target, in: session, locale: en) == PromptCacheRules.paneLine(for: header))
-        #expect(attention.promptCachePaneLine(for: target, in: session, locale: en).hasSuffix(" · ~/work/tamurakanto"))
-
-        // A name the user gave the pane wins over the agent's title.
-        session.renamePane(paneID, to: "review")
-        #expect(attention.promptCachePaneLine(for: target, in: session, locale: en) == "review · ~/work/tamurakanto")
-    }
-}
-
-// MARK: - Review fixes
-
-@MainActor
-struct PromptCacheOpeningTests {
-    private static let delay = Duration.milliseconds(20)
-    private let target = PromptCacheTarget(runtimeID: "claude:run", paneID: UUID())
-    private let frame = CGRect(x: 100, y: 40, width: 16, height: 16)
-
-    private func settle() async throws {
-        try await Task.sleep(for: Self.delay * 10)
-        await Task.yield()
     }
 
     @Test func hover_opensNothingWhileAnotherPanelIsUp_butAClickStillDoes() async throws {
@@ -512,9 +436,79 @@ struct PromptCacheOpeningTests {
         let window = AgentCacheWindow(observedAt: Date(), ttlSeconds: 3600, rewriteTokens: nil, precision: .estimated)
         let expired = PromptCacheMark(status: .expired, window: window, target: target)
         let soon = PromptCacheMark(status: .expiringSoon, window: window, target: target)
+        #expect(expired.spokenStatus.resolved(in: Locale(identifier: "en")) == "Prompt cache expired")
+        #expect(soon.spokenStatus.resolved(in: Locale(identifier: "en")) == "Prompt cache expires soon")
+        #expect(expired.spokenStatus.resolved(in: Locale(identifier: "ja")) == "プロンプトキャッシュの期限が切れています")
+        #expect(soon.spokenStatus.resolved(in: Locale(identifier: "ja")) == "プロンプトキャッシュの期限が近づいています")
+    }
+}
+
+// MARK: - Unsent input
+
+struct PromptInputEffectTests {
+    private func effect(
+        _ key: NamedKey?,
+        _ characters: String?,
+        _ modifiers: NSEvent.ModifierFlags = []
+    ) -> SurfaceView.PromptInputEffect {
+        SurfaceView.promptInputEffect(key: key, charactersIgnoringModifiers: characters, modifiers: modifiers)
+    }
+
+    @Test func plainReturnAndControlC_submit() {
+        #expect(effect(.return, "\r") == .submit)
+        #expect(effect(nil, "c", .control) == .submit)
+    }
+
+    @Test func lineBreaksAndEverythingElse_leaveADraft() {
+        #expect(effect(.return, "\r", .shift) == .draft, "Shift-Return inserts a line break")
+        #expect(effect(.return, "\r", .option) == .draft, "so does Option-Return")
+        #expect(effect(nil, "a") == .draft)
+        #expect(effect(.escape, "\u{1b}") == .draft, "an open picker may still be there")
+        #expect(effect(.up, nil) == .draft, "history recall fills the prompt")
+        #expect(effect(nil, "d", .control) == .draft)
+    }
+
+    @Test func commandShortcuts_doNotReachThePromptExceptPaste() {
+        #expect(effect(nil, "k", .command) == .none)
+        #expect(effect(nil, "j", .command) == .none)
+        #expect(effect(nil, "v", .command) == .draft)
+    }
+}
+
+// MARK: - Which pane
+
+@MainActor
+struct PromptCachePaneLineTests {
+    @Test func paneLine_isTheNameThenTheDirectory() {
+        let withDetail = PaneHeaderLabel(name: "review", detail: "~/work/tamurakanto", isAgent: true, agentName: "Claude")
+        #expect(PromptCacheRules.paneLine(for: withDetail) == "review · ~/work/tamurakanto")
+        let bare = PaneHeaderLabel(name: "Terminal", detail: nil, isAgent: false, agentName: nil)
+        #expect(PromptCacheRules.paneLine(for: bare) == "Terminal")
+    }
+
+    @Test func paneLine_namesThePaneAsItsHeaderDoes() {
+        let (session, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
+        let attention = AttentionState()
+        let target = PromptCacheTarget(runtimeID: "claude:run", paneID: paneID)
+        session.update(tab.id) { $0.pwd = NSHomeDirectory() + "/work/tamurakanto" }
+        var badge = AgentBadge(state: .finished, updatedAt: Date())
+        badge.conversationID = "c"
+        badge.providerSessionTitle = "Fix the parser"
+        attention.replaceRuntimes([AgentRuntimePresentation.test(
+            badge: badge,
+            paneIDs: [paneID],
+            stateEpisodeToken: "1"
+        )], kind: .claude)
+
+        // The same label the header resolves, whichever clock opened it.
         let en = Locale(identifier: "en")
-        #expect(!expired.spokenStatus.resolved(in: en).isEmpty)
-        #expect(expired.spokenStatus.resolved(in: en) != soon.spokenStatus.resolved(in: en))
+        let header = attention.paneHeaderLabel(paneID: paneID, in: session, locale: en)
+        #expect(attention.promptCachePaneLine(for: target, in: session, locale: en) == PromptCacheRules.paneLine(for: header))
+        #expect(attention.promptCachePaneLine(for: target, in: session, locale: en).hasSuffix(" · ~/work/tamurakanto"))
+
+        // A name the user gave the pane wins over the agent's title.
+        session.renamePane(paneID, to: "review")
+        #expect(attention.promptCachePaneLine(for: target, in: session, locale: en) == "review · ~/work/tamurakanto")
     }
 }
 
@@ -536,33 +530,6 @@ struct PromptCacheReasonTests {
     }
 }
 
-struct PromptCacheHeaderFitTests {
-    @Test func inlineRename_keepsAUsableFieldBesideTheClock() {
-        let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, isZoomed: false)
-        let withClock = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true, isZoomed: false)
-        #expect(plain == PaneHeaderMetrics.inlineRenameMinimumWidth)
-        #expect(withClock - plain == PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.markSlot)
-        // Everything but the field, with the clock, still leaves the field
-        // its minimum.
-        let fixedParts = PaneHeaderMetrics.minimumWidth
-            + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.markSlot // state mark
-            + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.markSlot // clock
-            + PaneHeaderMetrics.itemSpacing // glyph to field
-        #expect(withClock - fixedParts >= PaneHeaderMetrics.inlineRenameFieldMinimumWidth)
-    }
-
-    @Test func inlineRename_endsWhenTheHeaderNarrowsBelowAUsableField() {
-        let threshold = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true, isZoomed: false)
-        #expect(PaneHeaderRules.shouldEndInlineRename(isEditing: true, headerWidth: threshold - 1, threshold: threshold))
-        #expect(!PaneHeaderRules.shouldEndInlineRename(isEditing: true, headerWidth: threshold, threshold: threshold))
-        #expect(!PaneHeaderRules.shouldEndInlineRename(isEditing: false, headerWidth: 40, threshold: threshold))
-        #expect(
-            !PaneHeaderRules.shouldEndInlineRename(isEditing: true, headerWidth: 0, threshold: threshold),
-            "a header not measured yet is not narrow"
-        )
-    }
-}
-
 struct PromptCacheAnchorTests {
     private let window = CGRect(x: 0, y: 0, width: 1200, height: 800)
 
@@ -580,7 +547,7 @@ struct PromptCacheAnchorTests {
 /// from leaving unsent text the panel would type after.
 @MainActor
 struct PromptCacheClipboardTests {
-    @Test(.tags(.ffi), .enabled("libghostty is unavailable") { await QuickTerminalTests.isGhosttyAvailable() })
+    @Test(.tags(.ffi), .enabled("libghostty is unavailable") { await GhosttyAvailability.isAvailable() })
     func clipboardRead_marksUnsentInput_butAListingDoesNot() throws {
         let ghosttyApp = try #require(GhosttyApp.placeholder.target)
         let view = PaneHostRepresentable.makeSurfaceView(ghosttyApp: ghosttyApp, environment: [:])
@@ -591,5 +558,75 @@ struct PromptCacheClipboardTests {
         view.noteClipboardRead(isListing: false)
         #expect(view.hasUnsubmittedInput)
         #expect(view.lastKeyInputAt != nil)
+    }
+}
+
+/// These cover the Return a typed command sends a moment after its text: the
+/// person's input in the meantime takes it away, or a ⌃C and ↑ at a shell
+/// would have it run the history line they brought back.
+@MainActor
+@Suite(.timeLimit(.minutes(1)))
+struct PendingCommandSubmitTests {
+    /// This holds a submit whose wait the test holds, and whether it ran.
+    @MainActor
+    private final class Held {
+        let gate: Gate<Void>
+        let submit: PendingCommandSubmit
+        var hasRun = false
+
+        init() {
+            let gate = Gate<Void>()
+            self.gate = gate
+            submit = PendingCommandSubmit(sleep: { _ in await gate.wait() })
+        }
+
+        func schedule() {
+            submit.schedule(after: SurfaceView.commandSubmitDelay) { [weak self] in
+                self?.hasRun = true
+            }
+        }
+
+        /// Ends the wait and returns once the submit ran or was dropped.
+        func release() async {
+            gate.open()
+            await submit.settled()
+        }
+    }
+
+    @Test func aSubmitLeftAlone_runs() async {
+        let held = Held()
+        held.schedule()
+        await held.gate.waitUntilRequested()
+        await held.release()
+        #expect(held.hasRun)
+    }
+
+    @Test func aSubmitCanceledDuringItsWait_neverRuns() async {
+        let held = Held()
+        held.schedule()
+        await held.gate.waitUntilRequested()
+        held.submit.cancel()
+        await held.release()
+        #expect(!held.hasRun)
+    }
+
+    @Test(.tags(.ffi), .enabled("libghostty is unavailable") { await GhosttyAvailability.isAvailable() })
+    func aKeyOrTextOfThePersons_takesTheReturnAway() async throws {
+        let ghosttyApp = try #require(GhosttyApp.placeholder.target)
+        let inputs: [(SurfaceView) throws -> Void] = [
+            { try $0.noteKeyInput(NSEvent.testKeyDown(keyCode: 8, modifiers: .control, characters: "c")) },
+            { try $0.noteKeyInput(NSEvent.testKeyDown(keyCode: 126)) },
+            { $0.noteTextInput() }
+        ]
+        for input in inputs {
+            let view = PaneHostRepresentable.makeSurfaceView(ghosttyApp: ghosttyApp, environment: [:])
+            let held = Held()
+            view.commandSubmit = held.submit
+            held.schedule()
+            await held.gate.waitUntilRequested()
+            try input(view)
+            await held.release()
+            #expect(!held.hasRun)
+        }
     }
 }

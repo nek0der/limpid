@@ -1,8 +1,5 @@
 // GitStatusParserTests.swift
 // Limpid — Swift Testing coverage for the `GitStatus` porcelain v2 parser.
-// Reference template for new tests: `@Suite` struct, `@Test`, `#expect`,
-// `@Test(arguments:)` for parameterization, and smoke tests gated by
-// `RepoFixture.hasLocalRepo` + `.tags(.smoke)`.
 
 import Testing
 @testable import Limpid
@@ -12,9 +9,9 @@ struct GitStatusParserTests {
 
     /// Exercises `parse` over hand-crafted porcelain v2 fragments — no IO.
     @Test(
-        "parses branch + ahead/behind metadata",
+        "parses the branch and counts the changed entries",
         arguments: [
-            // (porcelain, branch, ahead, behind, isDirty)
+            // (porcelain, branch, changedEntries)
             (
                 """
                 # branch.oid abc
@@ -22,78 +19,74 @@ struct GitStatusParserTests {
                 # branch.upstream origin/main
                 # branch.ab +0 -0
                 """,
-                "main", 0, 0, false
-            ),
-            (
-                """
-                # branch.oid aaa
-                # branch.head feat
-                # branch.upstream origin/feat
-                # branch.ab +3 -2
-                """,
-                "feat", 3, 2, false
+                "main", 0
             ),
             (
                 """
                 # branch.oid bbb
                 # branch.head dev
-                # branch.ab +0 -5
                 1 .M N... 100644 100644 100644 aaa bbb file.swift
                 """,
-                "dev", 0, 5, true
+                "dev", 1
+            ),
+            (
+                """
+                # branch.oid aaa
+                # branch.head main
+                ? newfile.txt
+                """,
+                "main", 1
             )
         ]
     )
     func parse_porcelainV2_extractsBranchAndStatus(
         porcelain: String,
         expectedBranch: String,
-        expectedAhead: Int,
-        expectedBehind: Int,
-        expectedDirty: Bool
+        expectedChanged: Int
     ) {
         let status = GitStatus.parse(porcelain)
         #expect(status.branch == expectedBranch)
-        #expect(status.ahead == expectedAhead)
-        #expect(status.behind == expectedBehind)
-        #expect(status.isDirty == expectedDirty)
+        #expect(status.changedEntries == expectedChanged)
     }
 
-    @Test("dirty flag toggles on tracked file modification")
-    func parse_withTrackedModification_marksDirty() {
+    @Test func parse_countsEachChangedRenamedUnmergedAndUntrackedEntry_butNotIgnoredOnes() {
         let porcelain = """
         # branch.oid aaa
         # branch.head main
-        1 .M N... 100644 100644 100644 aaa bbb path/to/file.swift
+        1 .M N... 100644 100644 100644 aaa bbb changed.swift
+        2 R. N... 100644 100644 100644 aaa bbb R100 new.swift\told.swift
+        u UU N... 100644 100644 100644 100644 aaa bbb ccc conflict.swift
+        ? untracked.txt
+        ! ignored.log
         """
-        #expect(GitStatus.parse(porcelain).isDirty)
+        #expect(GitStatus.parse(porcelain).changedEntries == 4)
+        #expect(GitStatus.parse("# branch.oid aaa\n# branch.head main").changedEntries == 0)
     }
 
-    @Test("dirty flag toggles on untracked file")
-    func parse_withUntrackedFile_marksDirty() {
-        let porcelain = """
-        # branch.oid aaa
-        # branch.head main
-        ? newfile.txt
-        """
-        #expect(GitStatus.parse(porcelain).isDirty)
+    @Test func parse_tellsAnUpstreamWithCountsFromOneGoneFromTheRemote() {
+        let tracked = GitStatus.parse("""
+        # branch.head feat
+        # branch.upstream origin/feat
+        # branch.ab +2 -0
+        """)
+        #expect(tracked.hasAheadBehind)
+
+        // Git reports the upstream but no counts once its branch is gone.
+        let gone = GitStatus.parse("""
+        # branch.head feat
+        # branch.upstream origin/feat
+        """)
+        #expect(gone.upstream == "origin/feat")
+        #expect(!gone.hasAheadBehind)
     }
 
-    @Test("empty input yields no branch and no SHA")
+    @Test("a detached HEAD names no branch")
+    func parse_detachedHead_hasNoBranch() {
+        #expect(GitStatus.parse("# branch.oid aaa\n# branch.head (detached)").branch == nil)
+    }
+
+    @Test("empty input yields the empty status")
     func parse_emptyInput_returnsEmptyStatus() {
-        let status = GitStatus.parse("")
-        #expect(status.branch == nil)
-        #expect(status.headSHA == nil)
-    }
-
-    /// Smoke test against a freshly-initialized git repo. Skipped when
-    /// `git` is unavailable or `RepoFixture.hasLocalRepo` is false.
-    @Test(.tags(.smoke), .disabled(if: !RepoFixture.hasLocalRepo, "no local git"))
-    func fetch_freshTempRepo_reportsMainBranchAndCleanTree() async throws {
-        let repo = try await TempGitRepo.make()
-        defer { repo.cleanup() }
-        let status = try await GitStatus.fetch(workingDirectory: repo.url)
-        try #require(status != nil)
-        #expect(status?.branch == "main")
-        #expect(status?.isDirty == false)
+        #expect(GitStatus.parse("") == GitWorktreeStatus())
     }
 }

@@ -121,9 +121,11 @@ enum TerminalLinkPolicy {
         case "file":
             return fileURLAction(for: url)
         default:
-            // A matched link's scheme is one of libghostty's and is spelled
-            // out on screen. A hyperlink's can name any handler.
-            return source == .matchedText ? .open(url) : .confirm(url)
+            // Whatever registered the scheme gets the link: an ssh client
+            // connects, a torrent client downloads. A match spells the
+            // scheme out on screen, but the program in the pane wrote that
+            // text as much as it picks a hyperlink's target, so both ask.
+            return .confirm(url)
         }
     }
 

@@ -1,13 +1,16 @@
 // CommandPaletteDropdown.swift
 // Limpid — material-backed results list for the command palette.
-// Positioned by ContentView via PreferenceKey; this view only
-// renders the scrollable result list.
+// Positioned by WindowChromeHost from the field's frame in
+// `ProjectWindowState.paletteFieldFrame`; this view only renders the
+// scrollable result list.
 
 import SwiftUI
 
 struct CommandPaletteDropdown: View {
     @Bindable var state: CommandPaletteState
     let onDismiss: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(WindowRegistry.self) private var windowRegistry
 
     var body: some View {
         // Outer vertical padding shortens the inner `ScrollView`, which
@@ -15,11 +18,16 @@ struct CommandPaletteDropdown: View {
         // keeps the track from running flush into the palette's rounded
         // top + bottom corners. Clip BEFORE the surface treatment so the
         // scroller (track + thumb) is bounded by the rounded shape too.
-        resultsList
-            .padding(.vertical, 10)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .floatingPanelSurface(cornerRadius: 16)
-            .pointerStyle(.default)
+        VStack(spacing: 0) {
+            resultsList
+            // Inside the surface's padding, rule and all, as the rows are.
+            PrefixFoot()
+                .padding(.horizontal, LimpidLayout.Supervision.paletteDropdownPadding)
+        }
+        .padding(.vertical, LimpidLayout.Supervision.paletteDropdownPadding)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .floatingPanelSurface(cornerRadius: 16)
+        .pointerStyle(.default)
     }
 
     // MARK: - Results
@@ -33,7 +41,7 @@ struct CommandPaletteDropdown: View {
                         emptyState
                     } else {
                         ForEach(grouped, id: \.category) { section in
-                            sectionHeader(section.category)
+                            sectionHeader(section.category, isFirst: section.category == grouped.first?.category)
                             ForEach(Array(section.items.enumerated()), id: \.element.id) { offset, scored in
                                 let gi = globalIndex(
                                     for: offset,
@@ -44,19 +52,20 @@ struct CommandPaletteDropdown: View {
                                     item: scored.item,
                                     isSelected: gi == state.selectedIndex,
                                     matchedIndices: scored.matchedIndices,
-                                    onTap: { execute(scored.item.action) }
+                                    onTap: { execute(scored.item.action, opensInNewWindow: $0) }
                                 )
                                 .id(scored.id)
                             }
                         }
                     }
                 }
-                .padding(.vertical, 4)
-                .padding(.horizontal, 4)
+                // The rows keep to the surface's own inset: the outer
+                // padding is its top and bottom.
+                .padding(.horizontal, LimpidLayout.Supervision.paletteDropdownPadding)
             }
             .onChange(of: state.selectedIndex) { _, newIndex in
                 guard newIndex >= 0, newIndex < state.results.count else { return }
-                withAnimation(.easeOut(duration: 0.1)) {
+                withAnimation(reduceMotion ? nil : LimpidMotion.selectionScroll) {
                     proxy.scrollTo(state.results[newIndex].id, anchor: .center)
                 }
             }
@@ -64,21 +73,17 @@ struct CommandPaletteDropdown: View {
     }
 
     private var emptyState: some View {
-        Text("No results")
-            .font(LimpidFont.bodySecondary)
-            .foregroundStyle(.tertiary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+        SupervisionEmptyState(.noResults, size: .compact)
     }
 
-    private func sectionHeader(_ category: CommandPaletteCategory) -> some View {
+    /// Muted and in its own case: uppercase only shouts in English and does
+    /// nothing in Japanese.
+    private func sectionHeader(_ category: CommandPaletteCategory, isFirst: Bool) -> some View {
         Text(category.localizedTitle)
-            .font(LimpidFont.caption)
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
+            .font(.supervision(.caption, weight: .semibold))
+            .foregroundStyle(SupervisionTokens.muted.color)
+            .padding(LimpidLayout.Supervision.paletteHeadingInsets(isFirst: isFirst))
+            .accessibilityAddTraits(.isHeader)
     }
 
     // MARK: - Grouping
@@ -105,10 +110,39 @@ struct CommandPaletteDropdown: View {
         return index + offset
     }
 
-    private func execute(_ action: CommandPaletteAction) {
-        NotificationCenter.default.post(
-            name: .limpidCommandPaletteExecute,
-            object: action
-        )
+    /// A click with ⌘ held opens another project's row in a new window,
+    /// as ⌘Return does from the field.
+    private func execute(_ action: CommandPaletteAction, opensInNewWindow: Bool) {
+        CommandPaletteActions.postExecution(of: action, from: state, opensInNewWindow: opensInNewWindow, commands: windowRegistry)
+    }
+}
+
+/// The prefixes the palette takes, along its foot below the rows:
+/// each character in the monospaced face and the text color, then what it
+/// narrows to, so the modes are found without typing "?".
+private struct PrefixFoot: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(SupervisionTokens.line.color)
+                .frame(height: 1)
+            HStack(spacing: LimpidLayout.Supervision.paletteFootSpacing) {
+                ForEach(PalettePrefix.allCases, id: \.self) { prefix in
+                    HStack(spacing: LimpidLayout.Supervision.spaceXS) {
+                        Text(verbatim: String(prefix.character))
+                            .font(.supervision(.meta, design: .monospaced))
+                            .foregroundStyle(SupervisionTokens.text.color)
+                        Text(prefix.shortName)
+                    }
+                    .lineLimit(1)
+                    .fixedSize()
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.supervision(.meta))
+            .foregroundStyle(SupervisionTokens.muted.color)
+            .padding(LimpidLayout.Supervision.paletteFootInsets)
+        }
+        .accessibilityElement(children: .combine)
     }
 }

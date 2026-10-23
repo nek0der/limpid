@@ -1,5 +1,5 @@
 // TabsAndPanesPane.swift
-// Limpid — Settings for pane layout and Quick Tab creation defaults.
+// Limpid — Settings for pane layout and the scratch tabs' creation defaults.
 
 import SwiftUI
 
@@ -11,7 +11,7 @@ struct TabsAndPanesPane: View {
     /// key, and splitting it across source lines would change the key.
     private let paneHeadersFooterKey: LocalizedStringKey =
         // swiftlint:disable:next line_length
-        "Names each pane of a split tab and shows what it is running. Double-click a pane's name to rename it. A zoomed pane shows its header even when this is off."
+        "Names each pane of a split tab and shows what it is running. Double-click a pane’s name to rename it. A zoomed pane shows its header even when this is off."
 
     var body: some View {
         @Bindable var store = store
@@ -23,10 +23,19 @@ struct TabsAndPanesPane: View {
                     Spacer(minLength: 12)
 
                     HStack(spacing: 8) {
+                        RestoreDefaultSlot(
+                            title: "Minimum pane size",
+                            isShown: RestoreDefaultSlot.isShown(
+                                value: store.settings.terminal.minPaneSize,
+                                defaultValue: TerminalSettings.defaultMinPaneSize
+                            )
+                        ) {
+                            store.settings.terminal.minPaneSize = TerminalSettings.defaultMinPaneSize
+                        }
                         Text("\(Int(store.settings.terminal.minPaneSize)) pt")
                             .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .frame(width: 56, alignment: .trailing)
+                            .foregroundStyle(SettingsFootnote.style.color)
+                            .frame(width: LimpidLayout.settingsSliderValueWidth, alignment: .trailing)
                         Stepper(
                             "Minimum pane size",
                             value: $store.settings.terminal.minPaneSize,
@@ -35,15 +44,23 @@ struct TabsAndPanesPane: View {
                         )
                         .labelsHidden()
                         .accessibilityLabel(Text("Minimum pane size"))
-                        .accessibilityValue(Text("\(Int(store.settings.terminal.minPaneSize)) pt"))
+                        // "pt" in words: VoiceOver spells the unit out, and
+                        // would leave it English in Japanese.
+                        .accessibilityValue(Text(
+                            "\(Int(store.settings.terminal.minPaneSize)) points",
+                            comment: "Settings, Tabs & Panes, VoiceOver: the minimum pane size in points"
+                        ))
                     }
+                    // A container, so the ↺ is read after the stepper
+                    // (`RestoreDefaultSlot`).
+                    .accessibilityElement(children: .contain)
                 }
-                .settingsControlRow()
+                .settingsStepperRow()
                 .settingsSearchTarget(SettingsSearchCatalog.minimumPaneSize.id)
             } header: {
                 Text("Pane Layout")
             } footer: {
-                Text("Splits and divider drags can't push any pane below this floor.")
+                SettingsFootnote("Splits and divider drags can’t make a pane smaller than this.")
             }
 
             Section {
@@ -55,20 +72,20 @@ struct TabsAndPanesPane: View {
             } header: {
                 Text("Pane Headers")
             } footer: {
-                Text(paneHeadersFooterKey)
+                SettingsFootnote(paneHeadersFooterKey)
             }
 
             Section {
                 WorkingDirectoryField(
-                    label: "Default working directory",
+                    label: "Working folder",
                     mode: $store.settings.terminal.quickTabCwdMode,
                     path: $store.settings.terminal.quickTabCwdPath
                 )
                 .settingsSearchTarget(SettingsSearchCatalog.defaultWorkingDirectory.id)
             } header: {
-                Text("Quick Tabs")
+                Text("Scratch")
             } footer: {
-                Text("Where new Quick Tabs open. Containers can override this in their own settings.")
+                SettingsFootnote("Where new Scratch tabs open.")
             }
         }
     }

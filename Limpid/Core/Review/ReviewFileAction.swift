@@ -20,11 +20,7 @@ enum ReviewFileAction {
 
         let root = repositoryRoot.standardizedFileURL.resolvingSymlinksInPath()
         let resolved = candidate.standardizedFileURL.resolvingSymlinksInPath()
-        var rootPath = root.path
-        if !rootPath.hasSuffix("/") {
-            rootPath += "/"
-        }
-        guard resolved.path.hasPrefix(rootPath) else { return nil }
+        guard RepositoryPath.isStrictDescendant(resolved.path, of: root.path) else { return nil }
         return resolved
     }
 

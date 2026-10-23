@@ -1,11 +1,12 @@
 // AgentPassCoalescer.swift
-// Limpid — folds a burst of file events into as few projection passes as it can.
+// Limpid — folds a burst of file events into as few projection passes as it can,
+// and runs the one the rules ask for later.
 
 import Foundation
 
 /// One hook write lands as several file events: one per directory it touches,
 /// and one per stage of the temporary-then-rename it uses to land atomically.
-/// Each event used to run a full pass, so a single badge change cost several
+/// A full pass for each event would make a single badge change cost several
 /// directory reads, encodes, and round trips through the rules.
 ///
 /// The first event of a burst still runs its pass at once, because that is
@@ -28,6 +29,11 @@ final class AgentPassCoalescer {
     private var lastRunAt: TimeInterval = -.infinity
     /// The pass that will close the current window, when one is owed.
     private var trailing: Task<Void, Never>?
+    /// The pass the rules asked for at a later moment, when a finished
+    /// turn's notice is held (`AgentProjection.nextPassInMs`): nothing
+    /// watched changes when the hold ends, and the sweep may be seconds
+    /// away or not running.
+    private var due: Task<Void, Never>?
 
     init(
         window: TimeInterval = AgentPassCoalescer.defaultWindow,
@@ -65,6 +71,22 @@ final class AgentPassCoalescer {
         lastRunAt = now()
         trailing?.cancel()
         trailing = nil
+    }
+
+    /// The rules asked for a pass in `delay`, or for none (`nil`). Each
+    /// answer says all that is held, so it replaces what an earlier one
+    /// asked for. Unlike the trailing pass, a pass by another route does not
+    /// settle it: that pass came before the moment it is for.
+    func request(in delay: Duration?) {
+        due?.cancel()
+        due = nil
+        guard let delay else { return }
+        due = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled else { return }
+            due = nil
+            fire()
+        }
     }
 
     private func fire() {

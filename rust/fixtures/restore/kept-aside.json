@@ -1,0 +1,20 @@
+{
+  "written": {
+    "path": "a.txt",
+    "reason": "keptAside",
+    "keptAt": ".limpid-OP/target/ready-1/a.txt"
+  },
+  "earlier": {
+    "path": "c.txt",
+    "reason": "keptAside:.limpid-OP/target/ready-1/c.txt"
+  },
+  "earlierDiagnostic": {
+    "path": "d.txt",
+    "reason": "Permission denied (os error 13)"
+  },
+  "writeFailed": {
+    "path": "b",
+    "reason": "writeFailed",
+    "detail": "checkout-index"
+  }
+}

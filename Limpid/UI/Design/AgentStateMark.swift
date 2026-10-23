@@ -1,80 +1,68 @@
 // AgentStateMark.swift
-// Limpid — the glyph that says what an agent in a row is doing.
+// Limpid — the glyph that says what an agent in a pane is doing.
 //
-// The container rows, the tab rows, the Waiting list and the pane's
-// approval badge each drew this glyph themselves. The rows repeated
-// the same block line for line, and the two approval sites skipped
-// `AgentStatePresentation` entirely and spelled the needs-input symbol
-// and a hard-coded orange by hand. Drawing it here keeps the state's
-// symbol, tint and spoken label in one place, so a site chooses only
-// where the mark sits.
+// The pane headers and the pane's approval badge draw the state with the
+// one state glyph the sidebar, the lists, and the menu bar share, so a
+// state is the same icon wherever it shows. This view keeps the hover text
+// and the spoken label beside it, so a site chooses only where the mark
+// sits.
 
 import SwiftUI
 
 struct AgentStateMark: View {
-    /// Where the mark sits. Each placement keeps the metrics its site
-    /// already had; what they share is the glyph, the tint, and the
-    /// label.
+    /// Where the mark sits. Each placement keeps the slot its site already
+    /// had; what they share is the glyph and the label.
     enum Placement {
-        /// The trailing status column of a container or tab row, one
-        /// slot wide like the bell beside it.
-        case rowStatus
-        /// The leading glyph of a Waiting list row.
-        case waitingList
-        /// The badge floated over a pane's top-trailing corner, on its
-        /// own material so it reads over any terminal content.
+        /// A status slot of a header, one slot wide
+        /// (`LimpidLayout.stateMarkSlot`) like the prompt
+        /// cache clock beside it.
+        case headerStatus
+        /// The badge floated over a pane's top-trailing corner. The glyph
+        /// is a solid disc, so it reads over any terminal content without
+        /// a material behind it; the slot around it is the badge's target.
         case paneBadge
     }
 
-    let state: AgentState
-    /// A finished turn the user has already looked at. Drawn as an
-    /// outline so acknowledgement does not rest on color alone.
-    var isViewedFinished = false
-    var placement: Placement = .rowStatus
-    /// Hover text, which the rows build from their pane breakdown. When
-    /// set it is also the spoken label: the tint is the only thing that
-    /// tells the filled glyphs apart by sight, and the symbol's name
-    /// tells VoiceOver nothing.
+    let kind: StateGlyph.Kind
+    var placement: Placement = .headerStatus
+    /// Hover text, which a header builds from the state's name and what
+    /// the agent is doing. It is also the spoken label; without it the
+    /// mark says the state's name alone.
     var tooltip: String?
 
     @Environment(\.locale) private var locale
+    /// The window surface's opacity, so the badge's halo is the color the
+    /// terminal actually sits on.
+    @Environment(\.supervisionSurfaceOpacity) private var surfaceOpacity
 
     var body: some View {
-        if let symbol = state.iconName(isViewedFinished: isViewedFinished),
-           let tint = state.iconColor(isViewedFinished: isViewedFinished)
-        {
-            placed(
-                Image(systemName: symbol)
-                    .foregroundStyle(tint)
-            )
-            // Empty rather than absent where there is no tooltip, the
-            // way `TabRow` leaves its identity icon: a tooltip with no
-            // text shows nothing.
-            .help(tooltip ?? "")
-            .accessibilityLabel(Text(
-                state.accessibilityLabel(isViewedFinished: isViewedFinished, description: tooltip, locale: locale)
-            ))
-        }
+        let label = tooltip ?? kind.name.resolved(in: locale)
+        placed(StateGlyph(kind: kind))
+            .help(label)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: label))
     }
 
     @ViewBuilder
-    private func placed(_ glyph: some View) -> some View {
+    private func placed(_ glyph: StateGlyph) -> some View {
         switch placement {
-        case .rowStatus:
+        case .headerStatus:
             glyph
-                .font(.system(size: 12, weight: .semibold))
                 .frame(
-                    width: LimpidLayout.containerColumnTrailingSlot,
-                    height: LimpidLayout.containerColumnTrailingSlot
+                    width: LimpidLayout.stateMarkSlot,
+                    height: LimpidLayout.stateMarkSlot
                 )
-        case .waitingList:
-            glyph
-                .font(.system(size: 13))
         case .paneBadge:
             glyph
-                .font(.system(size: 13, weight: .medium))
+                // A 1pt edge in the surface behind the terminal, so the disc
+                // stays a disc over text or a color of the same hue.
+                .background {
+                    Circle()
+                        .fill(SupervisionTokens.window.color.opacity(surfaceOpacity))
+                        .padding(-1)
+                }
                 .frame(width: 24, height: 24)
-                .background(.ultraThinMaterial, in: Capsule())
+                .contentShape(Rectangle())
         }
     }
 }

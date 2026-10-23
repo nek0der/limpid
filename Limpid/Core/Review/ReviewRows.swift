@@ -5,10 +5,10 @@ import Foundation
 
 /// One rendered row. The table shows more than diff lines: a hunk header
 /// separates the blocks, comments sit under the line they were written on, an
-/// expander stands in for what is folded, and the composer opens in place. The
-/// file's own name is drawn in a fixed bar above the scroll rather than as a
-/// row. Git's file metadata (`diff --git`, `index`, `---`, `+++`) contributes
-/// nothing a reader needs and is dropped here.
+/// expander stands in for what is folded, and the composer opens in place.
+/// Each file's name is a header row of its own, over its rows in the stacked
+/// diff (`ReviewStackBuilder`). Git's file metadata (`diff --git`, `index`,
+/// `---`, `+++`) contributes nothing a reader needs and is dropped here.
 struct ReviewRow: Identifiable, Equatable {
     enum Kind: Equatable {
         case notice(LocalizedStringResource)
@@ -21,6 +21,8 @@ struct ReviewRow: Identifiable, Equatable {
         case composer(ReviewLine)
         /// The control standing in for the lines a unified diff left out.
         case expander(ReviewExpander)
+        /// A file's header in the review tab's stacked diff.
+        case file(ReviewStackHeader)
     }
 
     /// Position in the built list. The table addresses rows by index, and
@@ -36,7 +38,7 @@ struct ReviewRow: Identifiable, Equatable {
     var line: ReviewLine? {
         switch kind {
         case let .code(line), let .composer(line): line
-        case .notice, .hunk, .comment, .splitCode, .expander: nil
+        case .notice, .hunk, .comment, .splitCode, .expander, .file: nil
         }
     }
 
@@ -44,7 +46,7 @@ struct ReviewRow: Identifiable, Equatable {
         switch kind {
         case let .code(line), let .composer(line): line
         case let .splitCode(pair): pair.line(on: side)
-        case .notice, .hunk, .comment, .expander: nil
+        case .notice, .hunk, .comment, .expander, .file: nil
         }
     }
 
@@ -57,7 +59,7 @@ struct ReviewRow: Identifiable, Equatable {
             [line.text]
         case let .splitCode(pair):
             [pair.old?.text, pair.new?.text].compactMap(\.self)
-        case .notice, .hunk, .comment, .expander:
+        case .notice, .hunk, .comment, .expander, .file:
             []
         }
     }
@@ -73,7 +75,7 @@ struct ReviewRow: Identifiable, Equatable {
         switch kind {
         case let .code(line), let .hunk(line), let .composer(line): line
         case let .splitCode(pair): pair.new ?? pair.old
-        case .notice, .comment, .expander: nil
+        case .notice, .comment, .expander, .file: nil
         }
     }
 
@@ -81,7 +83,7 @@ struct ReviewRow: Identifiable, Equatable {
         switch kind {
         case let .code(line), let .composer(line), let .hunk(line): line.id == lineID
         case let .splitCode(pair): pair.contains(lineID: lineID)
-        case .notice, .comment, .expander: false
+        case .notice, .comment, .expander, .file: false
         }
     }
 
@@ -100,7 +102,7 @@ struct ReviewRow: Identifiable, Equatable {
                 pair.old.flatMap { $0.isCommentable ? $0.id : nil }
                     ?? pair.new.flatMap { $0.isCommentable ? $0.id : nil }
             }
-        case .notice, .hunk, .comment, .composer, .expander:
+        case .notice, .hunk, .comment, .composer, .expander, .file:
             nil
         }
     }
@@ -109,7 +111,7 @@ struct ReviewRow: Identifiable, Equatable {
         switch kind {
         case let .code(line): line.isCommentable
         case let .splitCode(pair): pair.isSelectable
-        case .notice, .hunk, .comment, .composer, .expander: false
+        case .notice, .hunk, .comment, .composer, .expander, .file: false
         }
     }
 }
@@ -162,6 +164,15 @@ struct ReviewComposerState: Equatable {
         startLineID = min(start, end)
         lineID = max(start, end)
         self.side = side
+    }
+
+    /// The same comment on the run `start`…`end`: the code it
+    /// was written on, found again in a diff that changed under it
+    /// (`ReviewComposerFollow`).
+    mutating func move(start: Int, end: Int) {
+        guard isOpen else { return }
+        startLineID = min(start, end)
+        lineID = max(start, end)
     }
 
     mutating func cancel() {
@@ -313,12 +324,11 @@ enum ReviewRowBuilder {
         return (byLine, trailing)
     }
 
-    /// The scroll carries one file: its header, then its diff. Listing the
-    /// other changed files here as collapsed headers only repeated the rail,
-    /// which already names them and carries their size and comment count. It
-    /// would earn its place only if those files expanded in the same scroll,
-    /// and expanding them would make `ReviewLine.id` ambiguous across the
-    /// snapshots comments are written against.
+    /// One file's rows: its diff, with its comments, its composer, and what
+    /// has been unfolded. The stacked diff puts every file's rows under its
+    /// header (`ReviewStackBuilder`) and moves the ids of the files that are
+    /// not open into bands of their own, so `ReviewLine.id` stays
+    /// unambiguous across the snapshots comments are written against.
     static func rows(
         expanded: ReviewDiff?,
         comments: [ReviewComment],
@@ -424,7 +434,7 @@ enum ReviewRowBuilder {
             // Every line of a run carries the marker, so the block a comment
             // covers is visible while scrolling past it — but only the lines
             // the comment's own column covers. A run that crosses a change
-            // block put dots on lines `ReviewStore.add` had already dropped,
+            // block put dots on lines `ReviewSession.add` had already dropped,
             // which claimed the comment quoted code it does not.
             for lineID in comment.lineIDs {
                 if let line = byID[lineID], !ReviewSide.covers(line, on: comment.side) {
@@ -449,6 +459,16 @@ final class ReviewRowCache {
     private var cachedCounts: [Int: Int] = [:]
     private var hitKey: String?
     private var cachedHits: [ReviewSearchHit] = []
+    private var stackKey: String?
+    private var cachedStack = ReviewStack()
+    /// The rows and the comment markers of each file that is not open, with
+    /// the key they were built for: a file's rows change only with its diff,
+    /// its comments, and the layout, and the stack is rebuilt far more often
+    /// than that (a composer opening, ⇧J, a file read).
+    private var closedPieces: [String: (key: String, piece: ReviewStackPiece)] = [:]
+    private var closedCounts: [String: (key: String, counts: [Int: Int])] = [:]
+    /// The files the build in progress asked for.
+    private var closedUsed: Set<String> = []
 
     func rows(for key: String, build: () -> [ReviewRow]) -> [ReviewRow] {
         if key == rowKey {
@@ -471,6 +491,44 @@ final class ReviewRowCache {
         return cachedHits
     }
 
+    /// Same reasoning as `rows`, over every file of the review tab's range.
+    func stack(for key: String, build: () -> ReviewStack) -> ReviewStack {
+        if key == stackKey {
+            return cachedStack
+        }
+        closedUsed = []
+        cachedStack = build()
+        stackKey = key
+        // Only the files this build asked for are kept: a file that left the
+        // list, or was opened, would otherwise hold its rows for good.
+        closedPieces = closedPieces.filter { closedUsed.contains($0.key) }
+        closedCounts = closedCounts.filter { closedUsed.contains($0.key) }
+        return cachedStack
+    }
+
+    /// One closed file's rows, built again only when `key` changes.
+    func closedPiece(of fileID: String, key: String, build: () -> ReviewStackPiece) -> ReviewStackPiece {
+        closedUsed.insert(fileID)
+        if let cached = closedPieces[fileID], cached.key == key {
+            return cached.piece
+        }
+        let piece = build()
+        closedPieces[fileID] = (key, piece)
+        return piece
+    }
+
+    /// One closed file's comment markers, built again only when `key`
+    /// changes.
+    func closedCounts(of fileID: String, key: String, build: () -> [Int: Int]) -> [Int: Int] {
+        closedUsed.insert(fileID)
+        if let cached = closedCounts[fileID], cached.key == key {
+            return cached.counts
+        }
+        let counts = build()
+        closedCounts[fileID] = (key, counts)
+        return counts
+    }
+
     /// Same reasoning as `rows`: the marker counts walk every line of every
     /// comment, and nothing about them changes between keystrokes.
     func counts(for key: String, build: () -> [Int: Int]) -> [Int: Int] {
@@ -480,6 +538,44 @@ final class ReviewRowCache {
         cachedCounts = build()
         countKey = key
         return cachedCounts
+    }
+}
+
+/// The run a hunk header's "Comment" covers: the hunk's changed
+/// lines, and the context between them, as one comment names a span of
+/// one hunk. Context around the change is left out, as the reader means the
+/// change. A hunk with no changed line to comment on (every one of them
+/// expanded away, or a patch git wrote with context alone) is taken whole.
+enum ReviewHunkRun {
+    struct Run: Equatable {
+        let start: Int
+        let end: Int
+        /// The column, side by side; `nil` in the unified layout, where one
+        /// row shows each line.
+        let side: ReviewSide?
+    }
+
+    static func run(ofHunk header: ReviewLine, in lines: [ReviewLine], layout: ReviewDiffLayout) -> Run? {
+        guard header.kind == .hunk, let index = header.hunkIndex else { return nil }
+        let hunk = lines.filter { $0.hunkIndex == index && $0.isCommentable }
+        let changed = hunk.filter { $0.kind == .added || $0.kind == .removed }
+        // Side by side, a comment lives in one column: the new one wherever
+        // the hunk added lines, as the state under review, else the old.
+        let side: ReviewSide? = switch layout {
+        case .unified: nil
+        case .sideBySide: changed.contains { $0.kind == .removed } && !changed.contains { $0.kind == .added } ? .old : .new
+        }
+        let covered = (changed.isEmpty ? hunk : changed).filter { ReviewSide.covers($0, on: side) }
+        guard let first = covered.first, let last = covered.last else { return nil }
+        return Run(start: first.id, end: last.id, side: side)
+    }
+
+    /// The headers, by line id, whose hunk has a line to comment on, which
+    /// is when `run` has a run for them: the column it picks always shows
+    /// some of the hunk's lines.
+    static func commentableHeaders(in lines: [ReviewLine]) -> Set<Int> {
+        let withLines = Set(lines.filter(\.isCommentable).compactMap(\.hunkIndex))
+        return Set(lines.filter { $0.kind == .hunk && $0.hunkIndex.map(withLines.contains) == true }.map(\.id))
     }
 }
 

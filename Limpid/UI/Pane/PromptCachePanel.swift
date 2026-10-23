@@ -20,9 +20,9 @@ import SwiftUI
 struct PromptCachePanelHost: View {
     @Environment(PromptCachePanelPresentation.self) private var presentation
     @Environment(AttentionState.self) private var attention
-    @Environment(WindowSession.self) private var session
+    @Environment(WorkspaceSession.self) private var session
     @Environment(SettingsStore.self) private var settingsStore
-    @Environment(ReviewPresentation.self) private var reviewPresentation
+    @Environment(ProjectWindowState.self) private var window
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.appearsActive) private var appearsActive
     @Environment(\.locale) private var locale
@@ -50,7 +50,7 @@ struct PromptCachePanelHost: View {
     /// The pane the keyboard is in, by the split tree's reading, and its tab.
     /// Focus arriving there is what the panel opens by itself on.
     private var focusedPane: PromptCacheFocusedPane? {
-        guard let tab = session.activeTab, let paneID = tab.splitTree.effectiveFocusedLeafID else { return nil }
+        guard let tab = session.activeTab(in: window.id), let paneID = tab.splitTree.effectiveFocusedLeafID else { return nil }
         return PromptCacheFocusedPane(tabID: tab.id, paneID: paneID)
     }
 
@@ -116,7 +116,10 @@ struct PromptCachePanelHost: View {
         guard appearsActive else { return }
         autoOpenTask = Task { @MainActor in
             try? await Task.sleep(for: PromptCacheRules.autoOpenSettle)
-            guard !Task.isCancelled, let pane = focusedPane, let tab = session.tab(containing: pane.paneID) else {
+            // A pane behind the review tab is not one the person is at.
+            guard !Task.isCancelled, window.review?.isShown != true, let pane = focusedPane,
+                  let tab = session.tab(containing: pane.paneID)
+            else {
                 return
             }
             attention.autoOpenPromptCachePanel(
@@ -125,8 +128,7 @@ struct PromptCachePanelHost: View {
                     tabID: pane.tabID,
                     showsPaneHeader: PaneHeaderRules.showsHeader(
                         in: tab,
-                        isEnabled: settingsStore.settings.terminal.showsSplitPaneHeaders,
-                        isReviewPresented: reviewPresentation.isPresented
+                        isEnabled: settingsStore.settings.terminal.showsSplitPaneHeaders
                     ),
                     // Read now, when the panel would open: a surface that
                     // came up during the wait counts.
@@ -158,8 +160,15 @@ struct PromptCachePanelHost: View {
             NSSound.beep()
         }
         if isDone, action.command != nil, let tabID = session.tab(containing: paneID)?.id {
-            PaneActions.activateAndFocus(session, registry: registry, tabID: tabID, paneID: paneID)
-        } else if session.activeTab?.splitTree.allLeafIDs().contains(paneID) == true {
+            PaneActions.activateAndFocus(
+                session,
+                registry: registry,
+                tabID: tabID,
+                paneID: paneID,
+                in: window.id,
+                intent: .person
+            )
+        } else if session.activeTab(in: window.id)?.splitTree.allLeafIDs().contains(paneID) == true {
             PaneActions.pullKeyboardFocus(to: paneID, registry: registry)
         }
     }
@@ -202,12 +211,12 @@ struct PromptCachePanelView: View {
                 VStack(alignment: .leading, spacing: LimpidLayout.promptCachePanelPaneLineSpacing) {
                     HStack(spacing: LimpidLayout.promptCachePanelTitleGlyphSpacing) {
                         Image(systemName: "clock")
-                            .font(.system(size: LimpidLayout.promptCacheClockFontSize, weight: .semibold))
-                            .foregroundStyle(content.isExpired ? LimpidColor.promptCacheExpired : LimpidColor.warning)
+                            .font(.supervision(LimpidLayout.promptCacheClockFontSize, weight: .semibold))
+                            .foregroundStyle(content.isExpired ? SupervisionTokens.stopped.color : SupervisionTokens.waiting.color)
                             .frame(width: LimpidLayout.promptCachePanelTitleGlyphWidth)
                             .accessibilityHidden(true)
                         Text(content.title)
-                            .font(.system(size: LimpidLayout.promptCachePanelTitleFontSize, weight: .semibold))
+                            .font(.supervision(LimpidLayout.promptCachePanelTitleFontSize, weight: .semibold))
                             .foregroundStyle(LimpidColor.primaryText)
                             .accessibilityAddTraits(.isHeader)
                     }
@@ -216,7 +225,7 @@ struct PromptCachePanelView: View {
                     // neighbor would otherwise leave that to guesswork.
                     // Spoken as part of the panel's label instead.
                     Text(verbatim: paneLine)
-                        .font(.system(size: LimpidLayout.promptCachePanelPaneLineFontSize))
+                        .font(.supervision(LimpidLayout.promptCachePanelPaneLineFontSize))
                         .foregroundStyle(LimpidColor.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -232,7 +241,7 @@ struct PromptCachePanelView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .font(.system(size: LimpidLayout.promptCachePanelTextFontSize))
+                .font(.supervision(LimpidLayout.promptCachePanelTextFontSize))
                 .foregroundStyle(LimpidColor.primaryText)
             }
             if !content.actions.isEmpty {
@@ -242,7 +251,7 @@ struct PromptCachePanelView: View {
                     // macOS, so the help alone would leave them unexplained.
                     if let block = content.commandBlock {
                         Text(block.reason)
-                            .font(.system(size: LimpidLayout.promptCachePanelTextFontSize))
+                            .font(.supervision(LimpidLayout.promptCachePanelTextFontSize))
                             .foregroundStyle(LimpidColor.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             // The buttons carry it as their hint already.
@@ -256,7 +265,12 @@ struct PromptCachePanelView: View {
         }
         .padding(LimpidLayout.promptCachePanelPadding)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text(verbatim: "\(content.title.resolved(in: locale)), \(paneLine)"))
+        .accessibilityLabel(Text(LocalizedStringResource(
+            // Joined by the catalog: 「、」 in Japanese, ", " in English.
+            "promptCache.accessibilityLabel",
+            defaultValue: "\(content.title.resolved(in: locale)), \(AgentStatusText.spoken(paneLine, locale: locale))",
+            comment: "Prompt cache panel: its VoiceOver label; the panel’s title, then the pane it is about"
+        )))
     }
 
     @ViewBuilder
@@ -264,13 +278,13 @@ struct PromptCachePanelView: View {
         switch action {
         case .summarize:
             command(
-                Text("Summarize and continue"),
+                Text("Summarize and Continue"),
                 help: Text("Reads the whole conversation once; later turns are light."),
                 action: action
             )
         case .newConversation:
             command(
-                Text("Continue in a new conversation"),
+                Text("Continue in a New Conversation"),
                 help: Text("No re-write cost. Return with /resume."),
                 action: action
             )
@@ -278,7 +292,7 @@ struct PromptCachePanelView: View {
             let button = Button {
                 onAction(action)
             } label: {
-                Text("Continue as is")
+                Text("Continue as Is")
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
             }
@@ -333,7 +347,7 @@ private struct PromptCacheButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let shape = RoundedRectangle(cornerRadius: LimpidLayout.promptCacheButtonCornerRadius, style: .continuous)
         configuration.label
-            .font(.system(size: LimpidLayout.promptCachePanelTextFontSize))
+            .font(.supervision(LimpidLayout.promptCachePanelTextFontSize))
             .foregroundStyle(isProminent ? LimpidColor.primaryText : LimpidColor.secondaryText)
             .padding(.horizontal, LimpidLayout.promptCacheButtonHorizontalPadding)
             .padding(

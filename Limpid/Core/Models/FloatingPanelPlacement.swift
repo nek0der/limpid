@@ -30,13 +30,16 @@ enum FloatingPanelPlacement {
         case top
         /// The panel sits above the anchor, near the window's bottom.
         case bottom
+        /// The panel stands beside the anchor, to its trailing side.
+        case leading
     }
 
     /// Where the panel's arrow goes: the edge facing the anchor, and the
-    /// arrow's center along that edge in the panel's own coordinates.
+    /// arrow's center along that edge in the panel's own coordinates (from
+    /// the leading edge on `top` and `bottom`, from the top on `leading`).
     struct Arrow: Equatable {
         let edge: ArrowEdge
-        let x: CGFloat
+        let offset: CGFloat
     }
 
     /// How a panel hangs from its anchor: lined up how, how far off, and
@@ -94,8 +97,7 @@ enum FloatingPanelPlacement {
         case .leading: anchor.minX
         case .centered: anchor.midX - panelSize.width / 2
         }
-        let maximumX = container.width - panelSize.width - margin
-        let x = maximumX >= margin ? min(max(preferredX, margin), maximumX) : margin
+        let x = clampX(preferredX: preferredX, panelWidth: panelSize.width, containerWidth: container.width, margin: margin)
 
         let below = anchor.maxY + gap
         let above = anchor.minY - gap - panelSize.height
@@ -108,6 +110,17 @@ enum FloatingPanelPlacement {
             max(margin, maximumY)
         }
         return CGPoint(x: x, y: min(max(y, margin), max(margin, maximumY)))
+    }
+
+    /// Returns a panel's left edge as near `preferredX` as the window
+    /// allows, kept `margin` from either side of a container `containerWidth` wide. In a
+    /// container too narrow for the panel and both margins it starts at the
+    /// left margin, where its rows begin. Every panel placed across the
+    /// window clamps through here (`origin`, `beside`, and the command
+    /// palette's dropdown), so none of them can hold a different edge.
+    static func clampX(preferredX: CGFloat, panelWidth: CGFloat, containerWidth: CGFloat, margin: CGFloat) -> CGFloat {
+        let maximumX = containerWidth - panelWidth - margin
+        return maximumX >= margin ? min(max(preferredX, margin), maximumX) : margin
     }
 
     /// The arrow for a panel placed at `panelOrigin`, in the same
@@ -135,7 +148,87 @@ enum FloatingPanelPlacement {
         let wanted = anchor.midX - panelOrigin.x
         let maximum = panelSize.width - minimumInset
         let x = maximum >= minimumInset ? min(max(wanted, minimumInset), maximum) : panelSize.width / 2
-        return Arrow(edge: edge, x: x)
+        return Arrow(edge: edge, offset: x)
+    }
+
+    /// The least a panel's scrolling body is given, a few lines of text,
+    /// so a short window still shows some of what is asked.
+    static let minimumScrollingHeight: CGFloat = 80
+
+    /// The tallest a panel may be: the window less `margin` above and below.
+    /// A panel with more to say scrolls its body (`scrollingBodyHeight`), so
+    /// its heading and its actions stay on screen. The floor reaches into
+    /// the margins only below `minimumScrollingHeight + 2 * margin`,
+    /// which no window reaches: the window's own minimum height is far above.
+    static func maximumHeight(container: CGFloat, margin: CGFloat) -> CGFloat {
+        max(minimumScrollingHeight, container - margin * 2)
+    }
+
+    /// What a panel capped at `cap` leaves its scrolling body, when the rest
+    /// of it (heading, status, actions, insets) measures `chrome`.
+    static func scrollingBodyHeight(cap: CGFloat, chrome: CGFloat) -> CGFloat {
+        max(minimumScrollingHeight, cap - max(0, chrome))
+    }
+
+    /// Does the same for a list with a height of its own to stop at
+    /// (`preferred`), such as a dropdown's: it returns that height while the
+    /// panel has room for it, and less when it does not.
+    static func scrollingBodyHeight(preferred: CGFloat, cap: CGFloat, chrome: CGFloat) -> CGFloat {
+        min(preferred, scrollingBodyHeight(cap: cap, chrome: chrome))
+    }
+
+    /// Returns the tallest a panel hung `gap` below `anchor` may be and
+    /// still end `margin` above the window's bottom (`containerMaxY`, in the
+    /// anchor's coordinates). A title bar dropdown needs this, as it has no
+    /// room above its control to flip to. The result is never below
+    /// `minimumScrollingHeight`.
+    static func roomBelow(anchor: CGRect, containerMaxY: CGFloat, gap: CGFloat, margin: CGFloat) -> CGFloat {
+        max(minimumScrollingHeight, containerMaxY - anchor.maxY - gap - margin)
+    }
+
+    /// How a panel stands beside its anchor (`beside`): kept `margin` inside
+    /// the window, `gap` from the anchor, and its arrow at least
+    /// `arrowInset` from either corner.
+    struct BesideStyle: Equatable {
+        let margin: CGFloat
+        let gap: CGFloat
+        let arrowInset: CGFloat
+    }
+
+    /// A panel beside its anchor, to the trailing side and centered on it
+    /// vertically: the approval card beside the row that opened it. Placed
+    /// by `placementHeight` rather than the panel's own height, so a panel
+    /// that shrinks keeps its top edge where it was. The arrow points at the
+    /// anchor's middle from the leading edge; nil when the window is too
+    /// narrow to keep the panel clear of the anchor, or the anchor's middle
+    /// is not beside the panel (the row scrolled away).
+    static func beside(
+        anchor: CGRect,
+        panelSize: CGSize,
+        placementHeight: CGFloat,
+        container: CGSize,
+        style: BesideStyle
+    ) -> (origin: CGPoint, arrow: Arrow?) {
+        let margin = style.margin
+        let x = clampX(
+            preferredX: anchor.maxX + style.gap,
+            panelWidth: panelSize.width,
+            containerWidth: container.width,
+            margin: margin
+        )
+        let y: CGFloat = if container.height > placementHeight + margin * 2 {
+            min(max(anchor.midY - placementHeight / 2, margin), container.height - placementHeight - margin)
+        } else {
+            (container.height - panelSize.height) / 2
+        }
+        let offset = anchor.midY - y
+        // Pulled in by a narrow window, the panel would cover the arrow's
+        // tip or the anchor itself.
+        guard x >= anchor.maxX + style.gap,
+              offset >= style.arrowInset,
+              offset <= panelSize.height - style.arrowInset
+        else { return (CGPoint(x: x, y: y), nil) }
+        return (CGPoint(x: x, y: y), Arrow(edge: .leading, offset: offset))
     }
 }
 

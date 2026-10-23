@@ -177,6 +177,7 @@ ghostty_components=(
 # dependency.
 not_linked=(
   "cbindgen"     # build-dependency of limpid-rust-bridge (generates the C header)
+  "tempfile"     # dev-dependency of the workspace crates (tests only)
   "r-efi"        # getrandom's backend for UEFI targets only
   "js-sys"       # uuid's backend for wasm32 targets only
   "wasm-bindgen" # uuid's backend for wasm32 targets only

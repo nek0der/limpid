@@ -112,7 +112,7 @@ struct LimpidDynamicKey: CodingKey {
 // MARK: - Sidecar helpers
 
 enum CodableSidecar {
-    /// Pull every key the typed `CodingKeys` doesn't recognise out of
+    /// Pull every key the typed `CodingKeys` doesn't recognize out of
     /// the supplied decoder and return them as a JSON-valued map. Pass
     /// the typed keys' raw string values in `knownKeys`; everything
     /// else lands in the result.

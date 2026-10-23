@@ -155,6 +155,34 @@ mod tests {
         );
     }
 
+    /// The host matches a record's tmux server on the kernel's start second
+    /// of the server process (`TmuxClientProbe.processStartSecond`), not on
+    /// tmux's `#{start_time}`, which tmux sets a moment later and so can be a
+    /// second ahead. Both sides read one value only if `ps` reports exactly
+    /// the kernel's second, which this pins.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_start_recorded_is_the_kernels_start_second() {
+        let pid = std::process::id();
+        // SAFETY: `proc_bsdinfo` is plain integers and byte arrays, for
+        // which all zeroes is a valid value.
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        let size = i32::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).expect("size");
+        // SAFETY: `info` is a writable `proc_bsdinfo` of exactly `size` bytes,
+        // which is what this flavor fills.
+        let written = unsafe {
+            libc::proc_pidinfo(
+                i32::try_from(pid).expect("pid"),
+                libc::PROC_PIDTBSDINFO,
+                0,
+                std::ptr::addr_of_mut!(info).cast(),
+                size,
+            )
+        };
+        assert_eq!(written, size);
+        assert_eq!(start_epoch(pid), Some(info.pbi_start_tvsec));
+    }
+
     #[test]
     fn lstart_is_read_as_utc() {
         assert_eq!(parse_lstart("Thu Jan  1 00:00:00 1970\n"), Some(0));

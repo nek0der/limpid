@@ -20,6 +20,8 @@ enum AgentFileLock {
     /// sidecar named by the layout's lock suffix.
     static func withLock(for url: URL, _ body: () throws -> RecordMutationOutcome) throws -> RecordMutationOutcome {
         guard let suffix = AgentProviderRegistry.recordLayout?.lockSuffix else { throw LayoutUnavailable() }
+        // Opening the sidecar creates it, so it is a write like any other.
+        try TestWriteGuard.check(URL(fileURLWithPath: url.path + suffix))
         let fd = open(url.path + suffix, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
         guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { close(fd) }

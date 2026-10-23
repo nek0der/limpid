@@ -14,17 +14,27 @@ import SwiftUI
 /// Monospaced, scrolling text editor that doesn't rewrite user input.
 struct PlainTextEditor: NSViewRepresentable {
     @Binding var text: String
+    /// What Esc does while the editor has the keyboard. `nil` leaves Esc
+    /// to the text view (its completion list); a sheet whose
+    /// Esc closes it passes the close, since the text view takes
+    /// `cancelOperation(_:)` before the sheet's exit command sees it.
+    var onCancel: (() -> Void)?
+    /// Whether long lines wrap. Off for commands, where a wrapped line reads
+    /// as two; on for prose such as the review instructions.
+    var wrapsLines = false
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = true
+        scrollView.hasHorizontalScroller = !wrapsLines
         scrollView.drawsBackground = false
         scrollView.autohidesScrollers = true
         if let textView = scrollView.documentView as? NSTextView {
             configure(textView, with: context.coordinator)
-            disableWordWrap(textView)
+            if !wrapsLines {
+                disableWordWrap(textView)
+            }
         }
         return scrollView
     }
@@ -49,7 +59,8 @@ struct PlainTextEditor: NSViewRepresentable {
         }
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context _: Context) {
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.onCancel = onCancel
         guard let textView = scrollView.documentView as? NSTextView else { return }
         // Only push to the view when the binding actually diverged.
         // Without this we'd clobber the user's selection on every
@@ -86,15 +97,25 @@ struct PlainTextEditor: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
+        Coordinator(text: $text, onCancel: onCancel)
     }
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
+        var onCancel: (() -> Void)?
 
-        init(text: Binding<String>) {
+        init(text: Binding<String>, onCancel: (() -> Void)? = nil) {
             _text = text
+            self.onCancel = onCancel
+        }
+
+        /// Esc arrives as `cancelOperation(_:)`; with no `onCancel`, the
+        /// text view handles it as it always has.
+        func textView(_: NSTextView, doCommandBy selector: Selector) -> Bool {
+            guard selector == #selector(NSResponder.cancelOperation(_:)), let onCancel else { return false }
+            onCancel()
+            return true
         }
 
         func textDidChange(_ notification: Notification) {

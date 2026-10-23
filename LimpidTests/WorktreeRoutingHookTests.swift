@@ -40,10 +40,8 @@ struct WorktreeRoutingHookTests {
                 at: support.appendingPathComponent("agent-states"),
                 withIntermediateDirectories: true
             )
-            _ = try await GitProcess.run(["init", "-q", "-b", "main"], cwd: repo)
-            _ = try await GitProcess.run(["config", "user.email", "test@limpid.invalid"], cwd: repo)
-            _ = try await GitProcess.run(["config", "user.name", "Limpid Test"], cwd: repo)
-            _ = try await GitProcess.run(["commit", "--allow-empty", "-m", "init"], cwd: repo)
+            try await TempGitRepo.initialize(repo)
+            try await TempGitRepo.git(["commit", "-q", "--allow-empty", "-m", "init"], in: repo)
             return Scratch(root: root, repo: repo, support: support)
         }
 
@@ -67,35 +65,37 @@ struct WorktreeRoutingHookTests {
             routeCodexWorktrees: true
         )
         SessionStore(directory: scratch.support).saveSynchronously(SessionSnapshot(
-            groups: [],
             projects: [project],
-            tabs: [],
-            activeTabID: nil,
-            sidebarWidth: 240
+            tabs: []
         ))
     }
 
-    private func interceptWorktreeAdd(_ scratch: Scratch, branch: String) throws -> Int32 {
+    /// Runs `executable` with a `PreToolUse` payload for `git worktree add -b
+    /// <branch>` on stdin and answers its exit status. Given thirty seconds,
+    /// the bootstrap command included: a helper that hangs fails its test
+    /// rather than holding the run.
+    private func intercept(
+        _ scratch: Scratch,
+        branch: String,
+        executable: URL,
+        arguments: [String],
+        environment: [String: String]
+    ) throws -> Int32 {
         let payload = try JSONSerialization.data(withJSONObject: [
             "hook_event_name": "PreToolUse",
             "tool_name": "Bash",
             "cwd": scratch.repo.path,
             "tool_input": ["command": "git worktree add -b \(branch) ../elsewhere"]
         ])
-        // Bound first: assigned straight to the optional property, the
-        // requirement type-checks against `URL?` and never fails.
-        let helper = try #require(HookHelperFixture.helperURL)
         let process = Process()
-        process.executableURL = helper
-        process.arguments = ["hook", "claude", "worktree"]
-        process.environment = IsolatedProcessEnvironment.make([
+        process.executableURL = executable
+        process.arguments = arguments
+        process.environment = IsolatedProcessEnvironment.make(environment.merging([
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": scratch.root.path,
             "LIMPID_PANE_ID": UUID().uuidString,
-            "LIMPID_TURN_SNAPSHOT": "0",
-            "LIMPID_AGENT_STATES_DIR": scratch.support.appendingPathComponent("agent-states").path,
-            "LIMPID_SESSIONS_DIR": scratch.support.appendingPathComponent("sessions").path
-        ])
+            "LIMPID_TURN_SNAPSHOT": "0"
+        ]) { own, _ in own })
         let stdin = Pipe()
         process.standardInput = stdin
         process.standardOutput = FileHandle.nullDevice
@@ -103,47 +103,36 @@ struct WorktreeRoutingHookTests {
         try process.run()
         try stdin.fileHandleForWriting.write(contentsOf: payload)
         try stdin.fileHandleForWriting.close()
-        process.waitUntilExit()
+        #expect(process.waitUntilExit(within: 30), "the hook did not exit within thirty seconds")
         return process.terminationStatus
     }
 
-    /// Runs the wrapper the provider calls, asking it for the shell receiver
-    /// kept as the rollback path rather than the helper.
-    private func interceptWithShellReceiver(
+    /// Runs the helper itself, as Claude's hook.
+    private func interceptWorktreeAdd(_ scratch: Scratch, branch: String) throws -> Int32 {
+        // Bound first: assigned straight to the optional property, the
+        // requirement type-checks against `URL?` and never fails.
+        let helper = try #require(HookHelperFixture.helperURL)
+        return try intercept(scratch, branch: branch, executable: helper, arguments: ["hook", "claude", "worktree"], environment: [
+            "LIMPID_AGENT_STATES_DIR": scratch.support.appendingPathComponent("agent-states").path,
+            "LIMPID_SESSIONS_DIR": scratch.support.appendingPathComponent("sessions").path
+        ])
+    }
+
+    /// Runs the wrapper the provider calls, which execs the helper.
+    private func interceptThroughWrapper(
         _ scratch: Scratch,
         provider: String,
         branch: String
     ) throws -> Int32 {
         let root = try #require(RepoFixture.limpidRoot)
-        let payload = try JSONSerialization.data(withJSONObject: [
-            "hook_event_name": "PreToolUse",
-            "tool_name": "Bash",
-            "cwd": scratch.repo.path,
-            "tool_input": ["command": "git worktree add -b \(branch) ../elsewhere"]
-        ])
+        let helper = try #require(HookHelperFixture.helperURL)
         let prefix = provider == "claude" ? "LIMPID" : "LIMPID_CODEX"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = [
-            root.appendingPathComponent("Limpid/Resources/\(provider)-shim/limpid-pretool-worktree-hook").path
-        ]
-        process.environment = IsolatedProcessEnvironment.make([
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-            "HOME": scratch.root.path,
-            "LIMPID_AGENT_HOOK_BACKEND": "shell",
-            "LIMPID_PANE_ID": UUID().uuidString,
+        let wrapper = root.appendingPathComponent("Limpid/Resources/\(provider)-shim/limpid-pretool-worktree-hook")
+        return try intercept(scratch, branch: branch, executable: URL(fileURLWithPath: "/bin/sh"), arguments: [wrapper.path], environment: [
+            "LIMPID_HOOK_HELPER": helper.path,
             "\(prefix)_AGENT_STATES_DIR": states(scratch, provider: provider).path,
             "\(prefix)_SESSIONS_DIR": scratch.support.appendingPathComponent("sessions").path
         ])
-        let stdin = Pipe()
-        process.standardInput = stdin
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        try stdin.fileHandleForWriting.write(contentsOf: payload)
-        try stdin.fileHandleForWriting.close()
-        process.waitUntilExit()
-        return process.terminationStatus
     }
 
     private func states(_ scratch: Scratch, provider: String) -> URL {
@@ -184,16 +173,16 @@ struct WorktreeRoutingHookTests {
         #expect(event["branch"] as? String == "feature/alpha")
     }
 
-    /// The shell receivers spell the event directory and the file ending
-    /// themselves, so looking for each one's event by the names the
-    /// application lists is what catches a receiver that drifts.
-    @Test("the shell receiver leaves its event where the application looks", arguments: ["claude", "codex"])
-    func shellReceiver_writesTheEventTheApplicationReads(provider: String) async throws {
+    /// Each provider's wrapper names its own subcommand of the helper, so
+    /// looking for each one's event by the names the application lists is
+    /// what catches a wrapper that hands the helper the wrong provider.
+    @Test("each provider's wrapper leaves its event where the application looks", arguments: ["claude", "codex"])
+    func wrapper_writesTheEventTheApplicationReads(provider: String) async throws {
         let scratch = try await Scratch.make()
         defer { scratch.cleanup() }
         writeRouting(scratch, routeClaude: true)
 
-        let status = try interceptWithShellReceiver(scratch, provider: provider, branch: "feature/\(provider)")
+        let status = try interceptThroughWrapper(scratch, provider: provider, branch: "feature/\(provider)")
 
         #expect(status == 2)
         let event = try #require(try event(in: states(scratch, provider: provider)))

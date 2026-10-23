@@ -1,15 +1,17 @@
 // GhosttyFFI.swift
-// Limpid — Swift-friendly wrapper around libghostty's C ABI; the only
-// place in the app allowed to call `ghostty_*` symbols directly.
+// Limpid — Swift-friendly wrapper around libghostty's C ABI, where new
+// calls to `ghostty_*` symbols go.
 
 import Foundation
 import GhosttyKit
 
 /// Thin wrapper around libghostty's C ABI.
 ///
-/// All C API access lives here. Upper layers must not call `ghostty_*`
-/// symbols directly — extend this enum with a Swift-friendly signature
-/// instead.
+/// New C API access goes here: extend this enum with a Swift-friendly
+/// signature rather than calling `ghostty_*` symbols from upper layers.
+/// The surface, the app, and their callbacks (`SurfaceView`, `GhosttyApp`,
+/// `GhosttyActionRouter`, and the rest) still call them directly, from
+/// before this wrapper; they move here as they are rewritten.
 enum GhosttyFFI {
     /// Returns the modifiers AppKit should use to translate a physical key
     /// into text. The original modifiers still belong on the key event sent
@@ -116,6 +118,25 @@ enum GhosttyFFI {
         }
     }
 
+    /// The text a clipboard write carries: its `text/plain` representation,
+    /// else its first. `nil` when there is none. Read by each entry's `len`:
+    /// the bytes are not NUL-terminated (`ghostty_clipboard_content_s`), and
+    /// a NUL inside them is part of what was copied.
+    static func clipboardWriteText(
+        _ contents: UnsafePointer<ghostty_clipboard_content_s>,
+        count: Int
+    ) -> String? {
+        guard count > 0 else { return nil }
+        let entries = UnsafeBufferPointer(start: contents, count: count)
+        let plain = entries.first { entry in
+            entry.data != nil && entry.mime.map { String(cString: $0) == "text/plain" } == true
+        }
+        let entry = plain ?? entries[0]
+        guard let data = entry.data else { return nil }
+        let bytes = UnsafeRawBufferPointer(start: data, count: entry.len)
+        return String(bytes: bytes, encoding: .utf8)
+    }
+
     /// The first text-like representation carried by a clipboard
     /// confirmation payload, or an empty string when it holds none.
     ///
@@ -152,11 +173,19 @@ enum GhosttyFFI {
         return pid_t(pid)
     }
 
-    /// Height of one terminal cell in device pixels, or `nil` while the
+    /// Width of one terminal cell in device pixels, or `nil` while the
     /// surface has no font metrics yet.
-    static func surfaceCellHeightPixels(_ surface: ghostty_surface_t) -> UInt32? {
-        let height = ghostty_surface_size(surface).cell_height_px
-        return height > 0 ? height : nil
+    static func surfaceCellWidthPixels(_ surface: ghostty_surface_t) -> UInt32? {
+        let width = ghostty_surface_size(surface).cell_width_px
+        return width > 0 ? width : nil
+    }
+
+    /// The surface's grid in cells, or `nil` before it has a size and font
+    /// metrics to lay one out with.
+    static func surfaceGridSize(_ surface: ghostty_surface_t) -> TerminalGridSize? {
+        let size = ghostty_surface_size(surface)
+        guard size.columns > 0, size.rows > 0 else { return nil }
+        return TerminalGridSize(columns: Int(size.columns), rows: Int(size.rows))
     }
 
     /// Build mode libghostty was compiled with.

@@ -26,5 +26,8 @@ pedantic = "warn"
 libc = "0.2.189"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# Tests only: a scratch directory that goes when dropped, a failed assert
+# included. The bridge's cbindgen already brings this version.
+tempfile = "3.27.0"
 thiserror = "2.0.18"
 uuid = { version = "1.26.1", features = ["serde", "v4"] }

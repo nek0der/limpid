@@ -4,9 +4,15 @@
 import Foundation
 
 @MainActor
-func jumpToPane(_ paneID: UUID, session: WindowSession, registry: any SurfaceViewProviding) {
+func jumpToPane(
+    _ paneID: UUID,
+    session: WorkspaceSession,
+    registry: any SurfaceViewProviding,
+    in window: WindowID,
+    intent: SelectionIntent
+) {
     guard let tab = session.tab(containing: paneID) else { return }
-    session.setActiveTab(tab.id)
+    session.setActiveTab(tab.id, in: window, intent: intent)
     session.update(tab.id) { t in
         t.splitTree.focusedLeafID = paneID
     }
@@ -23,7 +29,7 @@ func jumpToPane(_ paneID: UUID, session: WindowSession, registry: any SurfaceVie
 private var flashTasks: [UUID: Task<Void, Never>] = [:]
 
 @MainActor
-func flashPane(_ paneID: UUID, session: WindowSession) {
+func flashPane(_ paneID: UUID, session: WorkspaceSession) {
     flashTasks[paneID]?.cancel()
     session.setBell(paneID: paneID, ringing: true)
     flashTasks[paneID] = Task { @MainActor [weak session] in

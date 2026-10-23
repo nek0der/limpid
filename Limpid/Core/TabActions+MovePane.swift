@@ -18,7 +18,12 @@ extension TabActions {
     /// "split off", and creating an empty source tab would surprise the
     /// user. The right-click menu hides the item in that case via
     /// `canMoveToNewTab`; the guard here covers programmatic callers.
-    static func movePaneToNewTab(_ session: WindowSession, paneID: UUID) {
+    static func movePaneToNewTab(
+        _ session: WorkspaceSession,
+        paneID: UUID,
+        in window: WindowID,
+        intent: SelectionIntent
+    ) {
         guard let sourceTab = session.tab(containing: paneID) else { return }
         guard sourceTab.splitTree.allLeafIDs().count > 1 else { return }
 
@@ -36,48 +41,25 @@ extension TabActions {
             splitTree: SplitTree(leafID: paneID),
             container: sourceTab.container
         )
+        // The name prefix, color, and folder default a scratch tab kept
+        // from its group stay with that tab: the new tab is the moved
+        // pane's own, not the group's.
         // Carry per-pane state across so the new tab is byte-identical
         // for the moved leaf — agent badges, unread, replay payloads.
-        if let s = sourceTab.paneStates[paneID] {
-            newTab.paneStates[paneID] = s
-        }
-        for (provider, sessions) in sourceTab.agentSessions {
-            if let hint = sessions[paneID] {
-                newTab.agentSessions[provider, default: [:]][paneID] = hint
-            }
-        }
-        if let s = sourceTab.tmuxBindings[paneID] {
-            newTab.tmuxBindings[paneID] = s
-        }
-        for (provider, badges) in sourceTab.agentBadges {
-            if let badge = badges[paneID] {
-                newTab.agentBadges[provider, default: [:]][paneID] = badge
-            }
-        }
-        if let s = sourceTab.scrollbackPaths[paneID] {
-            newTab.scrollbackPaths[paneID] = s
-        }
-        if let s = sourceTab.initialCommands[paneID] {
-            newTab.initialCommands[paneID] = s
-        }
+        newTab.apply(sourceTab.paneTransferState(of: paneID), to: paneID)
 
         session.update(sourceTab.id) { t in
+            // The conversation that names the row goes with its pane.
+            newTab.receiveConversationName(t.takeConversationName(of: paneID))
             let result = t.splitTree.remove(paneID)
             t.splitTree = result.tree
             if t.zoomedLeafID == paneID {
                 t.zoomedLeafID = nil
             }
-            t.paneStates.removeValue(forKey: paneID)
-            for provider in AgentKind.allCases {
-                t.agentSessions[provider]?.removeValue(forKey: paneID)
-                t.agentBadges[provider]?.removeValue(forKey: paneID)
-            }
-            t.scrollbackPaths.removeValue(forKey: paneID)
-            t.initialCommands.removeValue(forKey: paneID)
-            t.tmuxBindings.removeValue(forKey: paneID)
+            t.removePaneTransferState(of: paneID)
         }
 
         session.tabs.append(newTab)
-        session.setActiveTab(newTab.id)
+        session.setActiveTab(newTab.id, in: window, intent: intent)
     }
 }

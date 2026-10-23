@@ -26,51 +26,45 @@ struct TmuxReattachCommandBuilderTests {
         TmuxBinding(socketPath: socket, sessionID: id, sessionName: name)
     }
 
-    /// A legacy binding cannot authenticate its server-scoped id, so its
-    /// persistent name is the only safe restore target.
-    @Test("legacy bindings use the name instead of an unverified numeric id")
-    func initialCommand_legacyBinding_usesName() throws {
+    /// A legacy binding cannot authenticate its server-scoped id, and a
+    /// server restart drops ids, so either attaches by its persistent name.
+    @Test("attaches by name when the id is unverified or gone", arguments: ["$3", ""])
+    func initialCommand_withoutAVerifiedID_attachesByName(id: String) throws {
         let command = try #require(
-            TmuxReattachCommandBuilder.initialCommand(for: tab(binding()), paneID: pane)
+            TmuxReattachCommandBuilder.initialCommand(for: tab(binding(id: id)), paneID: pane)
         )
         #expect(command == "tmux -S '/private/tmp/tmux-501/default' attach -t '=work'")
     }
 
-    @Test("declines when the pane has no binding")
-    func initialCommand_noBinding_isNil() {
-        #expect(TmuxReattachCommandBuilder.initialCommand(for: tab(nil), paneID: pane) == nil)
+    /// Why a pane gets no reattach.
+    enum Decline: CaseIterable, Sendable {
+        /// The pane has no binding.
+        case noBinding
+        /// A command is already staged for the pane: `initialCommands` is
+        /// the explicit override that is never clobbered, which
+        /// `DemoFixture` stages commands through.
+        case stagedCommand
+        /// The binding has no target to attach to.
+        case noTarget
+        /// The binding has no socket.
+        case noSocket
     }
 
-    /// `initialCommands` is the explicit override that is never
-    /// clobbered — `DemoFixture` stages commands through it.
-    @Test("declines when a command is already staged for the pane")
-    func initialCommand_stagedCommand_isNil() {
-        var tab = tab(binding())
-        tab.initialCommands[pane] = "echo hello"
+    @Test("declines a pane it cannot reattach", arguments: Decline.allCases)
+    func initialCommand_declines(_ decline: Decline) {
+        var tab: Tab
+        switch decline {
+        case .noBinding:
+            tab = self.tab(nil)
+        case .stagedCommand:
+            tab = self.tab(binding())
+            tab.initialCommands[pane] = "echo hello"
+        case .noTarget:
+            tab = self.tab(binding(id: "", name: ""))
+        case .noSocket:
+            tab = self.tab(binding(socket: ""))
+        }
         #expect(TmuxReattachCommandBuilder.initialCommand(for: tab, paneID: pane) == nil)
-    }
-
-    @Test("declines a binding with no target to attach to")
-    func initialCommand_emptyIDAndName_isNil() {
-        let empty = binding(id: "", name: "")
-        #expect(TmuxReattachCommandBuilder.initialCommand(for: tab(empty), paneID: pane) == nil)
-    }
-
-    @Test("declines a binding with no socket")
-    func initialCommand_emptySocket_isNil() {
-        let empty = binding(socket: "")
-        #expect(TmuxReattachCommandBuilder.initialCommand(for: tab(empty), paneID: pane) == nil)
-    }
-
-    /// A name is enough on its own after a server restart drops ids.
-    @Test("attaches by name alone when the id is gone")
-    func initialCommand_nameOnly_attachesByName() throws {
-        let command = try #require(
-            TmuxReattachCommandBuilder.initialCommand(
-                for: tab(binding(id: "")), paneID: pane
-            )
-        )
-        #expect(command == "tmux -S '/private/tmp/tmux-501/default' attach -t '=work'")
     }
 
     @Test("a provisional binding still attempts the verified restore targets")
@@ -135,5 +129,37 @@ struct TmuxReattachCommandBuilderTests {
             )
         )
         #expect(command.contains("'=it'\\''s here; rm -rf /'"))
+    }
+
+    /// A binding on a socket whose path holds a space and a comma reattaches
+    /// to that socket, checking the server's generation first.
+    @Test("a custom socket's binding reattaches to that socket, its server checked")
+    func initialCommand_customSocket_checksTheServer() throws {
+        let path = "/private/tmp/custom socket,one"
+        let command = try #require(TmuxReattachCommandBuilder.initialCommand(
+            for: tab(TmuxBinding(
+                socketPath: path, sessionID: "$1", sessionName: "work", serverPID: "42", serverStartedAt: "100", isProvisional: false
+            )),
+            paneID: pane
+        ))
+        #expect(command.contains("if-shell -F"))
+        #expect(command.contains("#{pid},42"))
+        #expect(command.contains(path))
+    }
+
+    /// A binding still provisional after a detach comes back through its
+    /// reattach, never as a native resume beside the one tmux may still run.
+    @MainActor
+    @Test("a provisional binding reattaches instead of resuming natively")
+    func provisionalBinding_neverFallsThroughToNativeResume() {
+        var tab = tab(TmuxBinding(
+            socketPath: "/private/tmp/tmux-501/default", sessionID: "$3", sessionName: "work",
+            serverPID: "42", serverStartedAt: "100", isProvisional: true
+        ))
+        AgentResumeFixture.stage([.codex], on: &tab, paneID: pane, cwd: "/tmp")
+        #expect(CodexResumeCommandBuilder.initialCommand(for: tab, paneID: pane) == nil)
+        #expect(TmuxReattachCommandBuilder.initialCommand(for: tab, paneID: pane) != nil)
+        tab.tmuxBindings[pane] = nil
+        #expect(CodexResumeCommandBuilder.initialCommand(for: tab, paneID: pane) != nil)
     }
 }

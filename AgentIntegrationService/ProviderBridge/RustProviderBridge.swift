@@ -37,6 +37,30 @@ enum RustProviderBridge {
         }
     }
 
+    /// Returns the names `provider`'s process has, as its descriptor in the
+    /// Rust registry lists them, so a process search follows the descriptor
+    /// rather than a copy of it. The set is empty for a provider this build
+    /// does not have.
+    static func processNames(provider: String) throws -> Set<String> {
+        var out: UnsafeMutablePointer<UInt8>?
+        var outCount = 0
+        let status = limpid_projection_providers_v1(&out, &outCount)
+        guard let out else { throw AgentIntegrationError.rustFailure(status) }
+        // The bytes belong to us until the matching free, whatever the status
+        // turned out to be.
+        defer { limpid_approval_bytes_free_v1(out, outCount) }
+        guard status == Int32(LIMPID_PROJECTION_OK.rawValue) else {
+            throw AgentIntegrationError.rustFailure(status)
+        }
+        let body = Data(bytes: out, count: outCount)
+        guard let registry = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        else { throw AgentIntegrationError.invalidResponse }
+        guard let descriptor = registry[provider] else { return [] }
+        guard let names = (descriptor as? [String: Any])?["processNames"] as? [String]
+        else { throw AgentIntegrationError.invalidResponse }
+        return Set(names)
+    }
+
     /// Which hook entry point `runHook` invokes.
     enum HookKind {
         case lifecycle

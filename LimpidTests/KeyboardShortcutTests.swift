@@ -1,10 +1,10 @@
 // KeyboardShortcutTests.swift
-// Limpid — model + serializer + validation coverage for the
-// user-customizable shortcut layer. We can't drive `NSEvent` capture
-// from a unit test (no key delivery in a headless run), so the
-// recorder path is exercised indirectly: `StoredShortcut` round-trips
-// through Codable + the Ghostty trigger string, and the bridge proves
-// the lines reach the generated config.
+// Limpid — a shortcut as it is stored, shown, and checked before it is bound.
+
+// The recorder's `NSEvent` capture cannot be driven headlessly, so its path
+// is exercised through what it writes: `StoredShortcut` round-trips through
+// Codable and the Ghostty trigger string. The lines that reach libghostty
+// are `GhosttyConfigBridgeTests`'.
 
 import Foundation
 import Testing
@@ -30,16 +30,16 @@ struct KeyboardShortcutTests {
 
     // MARK: - StoredShortcut
 
-    @Test("Trigger string concatenates modifiers and key")
-    func ghosttyTrigger_format() {
-        let s = StoredShortcut(key: "t", modifiers: [.command, .shift])
-        #expect(s.ghosttyTrigger == "super+shift+t")
-    }
-
-    @Test("Stored Return uses Ghostty's Enter key name")
-    func ghosttyTrigger_returnUsesEnterAlias() {
-        let shortcut = StoredShortcut(key: "return", modifiers: [.command, .shift])
-        #expect(shortcut.ghosttyTrigger == "super+shift+enter")
+    /// Modifiers then the key; Return under Ghostty's Enter name; and `+`
+    /// under Ghostty's `plus` alias, since a literal `+` between the `+`
+    /// separators (`super++`) is ambiguous.
+    @Test("The trigger string is the modifiers and the key, in Ghostty's names", arguments: [
+        (StoredShortcut(key: "t", modifiers: [.command, .shift]), "super+shift+t"),
+        (StoredShortcut(key: "return", modifiers: [.command, .shift]), "super+shift+enter"),
+        (StoredShortcut(key: "+", modifiers: [.command]), "super+plus")
+    ])
+    func ghosttyTrigger_namesTheModifiersAndTheKey(shortcut: StoredShortcut, trigger: String) {
+        #expect(shortcut.ghosttyTrigger == trigger)
     }
 
     @Test("Display string maps named keys to glyphs")
@@ -72,13 +72,13 @@ struct KeyboardShortcutTests {
         #expect(kb.shortcut(for: .newTab) == LimpidShortcutAction.newTab.defaultShortcut)
     }
 
-    @Test("Review This Turn uses the View category and option-command-J")
-    func reviewTurn_hasExpectedDefault() {
-        #expect(LimpidShortcutAction.reviewTurn.category == .view)
-        #expect(LimpidShortcutAction.reviewTurn.localizedTitle == "Review This Turn")
-        #expect(LimpidShortcutAction.reviewTurn.iconName == ReviewPresentation.symbol)
+    @Test("Review Latest Turn is a View action on option-command-J")
+    func reviewLatestTurn_isAViewActionOnOptionCommandJ() {
+        #expect(LimpidShortcutAction.reviewLatestTurn.category == .view)
+        #expect(LimpidShortcutAction.reviewLatestTurn.localizedTitle == "Review Latest Turn")
+        #expect(LimpidShortcutAction.reviewLatestTurn.iconName == ReviewPresentation.symbol)
         #expect(
-            LimpidShortcutAction.reviewTurn.defaultShortcut
+            LimpidShortcutAction.reviewLatestTurn.defaultShortcut
                 == StoredShortcut(key: "j", modifiers: [.command, .option])
         )
     }
@@ -99,120 +99,6 @@ struct KeyboardShortcutTests {
         #expect(kb.shortcut(for: .newTab) == LimpidShortcutAction.newTab.defaultShortcut)
     }
 
-    // MARK: - GhosttyConfigBridge integration
-
-    /// The bridge MUST emit user keybinds *after* its hardcoded
-    /// `keybind = …` lines so libghostty's last-write-wins merging
-    /// guarantees the user's choice trumps Ghostty defaults.
-    @Test("User overrides appear after forced-override keybinds")
-    func bridge_overridesAppearLast() {
-        // Pick a libghostty-routed action (font size) so the
-        // override actually lands in the emitted config. Menu-owned
-        // actions like `.newTab` deliberately skip emit.
-        var settings = LimpidSettings.default
-        settings.keyboard.setOverride(
-            .init(key: "k", modifiers: [.command, .control]),
-            for: .increaseFontSize
-        )
-        let config = GhosttyConfigBridge.makeConfigString(
-            settings: settings,
-            resourcesDir: nil
-        )
-        guard
-            let forcedIdx = config.range(of: "keybind = super+q=unbind"),
-            let userIdx = config.range(of: "keybind = super+ctrl+k=increase_font_size:1")
-        else {
-            Issue.record("expected both forced override and user binding to appear in config")
-            return
-        }
-        #expect(forcedIdx.lowerBound < userIdx.lowerBound)
-    }
-
-    @Test("Every libghostty-routed action with a default emits a keybind line")
-    func bridge_defaultsEmitAllGhosttyActions() {
-        let config = GhosttyConfigBridge.makeConfigString(
-            settings: .default,
-            resourcesDir: nil
-        )
-        for action in LimpidShortcutAction.allCases {
-            guard let ghosttyAction = action.ghosttyAction,
-                  let shortcut = action.defaultShortcut
-            else { continue }
-            let expected = "keybind = \(shortcut.ghosttyTrigger)=\(ghosttyAction)"
-            #expect(
-                config.contains(expected),
-                "expected default binding for \(action.rawValue): \(expected)"
-            )
-        }
-    }
-
-    /// The set of `ghosttyAction` strings we emit must stay limited
-    /// to actions with **no menu item** — otherwise the menu's
-    /// `keyboardShortcut` and libghostty's keybind both fire for the
-    /// same keystroke, producing duplicate actions (e.g. ⌘D
-    /// splitting twice). Snapshot test — when someone adds a new
-    /// non-`nil` `ghosttyAction`, this fails until they confirm the
-    /// action has no menu Button.
-    @Test("Emitted libghostty actions stay limited to menu-less actions")
-    func bridge_emittedActionsMatchHandlers() {
-        let emitted = Set(LimpidShortcutAction.allCases.compactMap(\.ghosttyAction))
-        let expected: Set = [
-            // Font-size and prompt-navigation actions are the only ones
-            // libghostty owns — they have no menu item, so there's no
-            // risk of the menu path also firing.
-            "increase_font_size:1",
-            "decrease_font_size:1",
-            "reset_font_size",
-            "jump_to_prompt:1",
-            "jump_to_prompt:-1"
-        ]
-        #expect(emitted == expected, """
-        `ghosttyAction` set drifted. Adding a binding for an action \
-        that also has a menu Button reintroduces the double-fire bug \
-        (two splits per ⌘D, two tab closes per ⌘⌥W, etc.). See \
-        `LimpidShortcutAction.ghosttyAction` doc.
-        """)
-    }
-
-    /// Menu-owned actions must reach libghostty only as `=ignore`.
-    ///
-    /// Older versions skipped them entirely so `eventHitsKeybind`
-    /// wouldn't claim the event (which would have silently dropped the
-    /// `action_cb`). Now `SurfaceView.performKeyEquivalent` probes the
-    /// main menu first when `eventHitsKeybind` is true, so the menu
-    /// runs the live Button when enabled; we only need libghostty to
-    /// swallow the keystroke when the menu item is disabled, hence
-    /// `=ignore` instead of a real action. Regression guard against
-    /// the original "NEW_TAB never fires when a surface is focused"
-    /// bug and against the newer "disabled menu leaks the literal key
-    /// into the terminal" bug.
-    @Test("Menu-owned actions reach libghostty as =ignore, never as a real action")
-    func bridge_menuOwnedActionsResolveToIgnore() throws {
-        let config = GhosttyConfigBridge.makeConfigString(
-            settings: .default,
-            resourcesDir: nil
-        )
-        // newTab / nextTab / focus* live in the menu; newWorktree is
-        // Limpid-only (no ghostty action at all). All four must show
-        // up as `=ignore` — never bound to anything else.
-        for action: LimpidShortcutAction in [.newTab, .nextTab, .focusPaneLeft, .newWorktree] {
-            let trigger = try #require(action.defaultShortcut?.ghosttyTrigger)
-            #expect(
-                config.contains("keybind = \(trigger)=ignore"),
-                "menu-owned action \(action.rawValue) missing its =ignore guard"
-            )
-        }
-    }
-
-    @Test("keybind = clear is emitted to wipe libghostty defaults")
-    func bridge_emitsKeybindClear() {
-        let config = GhosttyConfigBridge.makeConfigString(
-            settings: .default,
-            resourcesDir: nil
-        )
-        #expect(config.contains("keybind = clear"))
-    }
-
     // MARK: - Validation
 
     @Test("Validate rejects a trigger already used by another action")
@@ -227,11 +113,15 @@ struct KeyboardShortcutTests {
         #expect(kb.overrides.isEmpty)
     }
 
-    @Test("Validate rejects ⌘1 (reserved for tab jump)")
-    func validate_reservedTrigger() {
-        let kb = KeyboardSettings()
-        let reserved = StoredShortcut(key: "1", modifiers: [.command])
-        #expect(kb.validate(reserved, for: .newTab) == .reserved)
+    @Test func validate_rejectsTheQuickTerminalHotKey() {
+        let hotKey = StoredShortcut(key: "`", modifiers: [.control])
+        let keyboard = KeyboardSettings()
+        #expect(keyboard.validate(hotKey, for: .newTab, quickTerminalHotKey: hotKey) == .quickTerminalConflict)
+        #expect(keyboard.validate(hotKey, for: .newTab, quickTerminalHotKey: nil) == .ok)
+        #expect(
+            keyboard.validate(.init(key: "`", modifiers: [.command]), for: .newTab, quickTerminalHotKey: hotKey)
+                == .ok
+        )
     }
 
     // MARK: - Encoding shape
@@ -249,24 +139,8 @@ struct KeyboardShortcutTests {
         #expect(decrease.key == "-")
         let reset = try #require(LimpidShortcutAction.resetFontSize.defaultShortcut)
         #expect(reset.key == "0")
-        let nextSection = try #require(LimpidShortcutAction.nextSection.defaultShortcut)
+        let nextSection = try #require(LimpidShortcutAction.nextSession.defaultShortcut)
         #expect(nextSection.key == "]")
-    }
-
-    /// The literal `+` character can't be emitted between `+`
-    /// separators (`super++` is ambiguous), so the trigger string
-    /// uses Ghostty's `plus` alias.
-    @Test("`+` key emits as `plus` alias in trigger")
-    func encoding_plusAlias() {
-        let s = StoredShortcut(key: "+", modifiers: [.command])
-        #expect(s.ghosttyTrigger == "super+plus")
-    }
-
-    @Test("Validate allows an unused trigger")
-    func validate_okOnFreeTrigger() {
-        let kb = KeyboardSettings()
-        let free = StoredShortcut(key: "k", modifiers: [.command, .control, .shift])
-        #expect(kb.validate(free, for: .newTab) == .ok)
     }
 
     /// Re-saving an action's own current shortcut must not flag
@@ -281,24 +155,22 @@ struct KeyboardShortcutTests {
         #expect(kb.validate(current, for: .newTab) == .ok)
     }
 
-    /// `super+q` is in `ReservedShortcuts.triggers` because Limpid
-    /// routes ⌘Q through AppKit's terminate path (state save). A
-    /// user binding to ⌘Q would race that path.
-    @Test("Validate rejects ⌘Q (reserved by quit path)")
-    func validate_reservedQuit() {
-        let kb = KeyboardSettings()
-        let quit = StoredShortcut(key: "q", modifiers: [.command])
-        #expect(kb.validate(quit, for: .newTab) == .reserved)
-    }
-
-    /// A bare letter (no ⌘/⌥/⌃/⇧) would hijack every plain
-    /// keypress of that character and break the terminal. The
-    /// recorder must reject it — `missingModifier` is the gate.
-    @Test("Validate rejects shortcut without any modifier")
-    func validate_missingModifier() {
-        let kb = KeyboardSettings()
-        let bare = StoredShortcut(key: "k", modifiers: [])
-        #expect(kb.validate(bare, for: .newTab) == .missingModifier)
+    /// An unused trigger is free. ⌘1 is reserved for the tab jump, and
+    /// ⌘Q because Limpid routes it through AppKit's terminate path (state
+    /// save), which a binding would race. A bare letter would hijack every
+    /// plain keypress of that character and break the terminal, so the
+    /// recorder rejects it.
+    @Test("Validate frees an unused trigger, and rejects a reserved or modifierless one", arguments: [
+        (StoredShortcut(key: "k", modifiers: [.command, .control, .shift]), ShortcutValidation.ok),
+        (StoredShortcut(key: "1", modifiers: [.command]), .reserved),
+        (StoredShortcut(key: "q", modifiers: [.command]), .reserved),
+        (StoredShortcut(key: "k", modifiers: []), .missingModifier)
+    ])
+    func validate_freesAnUnusedTrigger_andRejectsReservedOrBareOnes(
+        shortcut: StoredShortcut,
+        result: ShortcutValidation
+    ) {
+        #expect(KeyboardSettings().validate(shortcut, for: .newTab) == result)
     }
 
     // MARK: - Persistence
@@ -338,30 +210,5 @@ struct KeyboardShortcutTests {
         #expect(decoded.contains(.option))
         #expect(decoded.contains(.control))
         #expect(decoded.rawValue == 0xFF)
-    }
-
-    // MARK: - Bridge order
-
-    /// `keybind = clear` must appear before user bindings so it
-    /// wipes libghostty's built-in macOS defaults without erasing
-    /// our re-emitted bindings on the next line. Order regression
-    /// here would silently let Ghostty defaults leak through.
-    @Test("keybind = clear precedes user-effective bindings")
-    func bridge_clearBeforeUserBindings() {
-        let config = GhosttyConfigBridge.makeConfigString(
-            settings: .default,
-            resourcesDir: nil
-        )
-        guard
-            let clearIdx = config.range(of: "keybind = clear"),
-            // `.increaseFontSize` is one of the few actions still
-            // routed through libghostty (no menu item), so its
-            // default ⌘+ shortcut shows up in the emitted config.
-            let userIdx = config.range(of: "keybind = super+shift+==increase_font_size:1")
-        else {
-            Issue.record("expected `keybind = clear` and a default user binding to appear")
-            return
-        }
-        #expect(clearIdx.lowerBound < userIdx.lowerBound)
     }
 }

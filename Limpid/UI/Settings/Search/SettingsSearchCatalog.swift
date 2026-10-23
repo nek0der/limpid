@@ -8,12 +8,28 @@ enum SettingsSearchCatalog {
         var entries: [SettingsSearchEntry] = [
             makeEntry("general.display-language", .general, "Language", "Display Language", keywords: ["App Language"], order: 0),
             makeEntry(
+                "general.menu-bar-extra",
+                .general,
+                "Menu Bar",
+                "Show in menu bar",
+                keywords: ["Menu bar item", "Status item"],
+                order: 1
+            ),
+            makeEntry(
+                "general.usage-limit-reset",
+                .general,
+                "Usage Limits",
+                "Notify when a usage limit resets",
+                keywords: ["Rate limit", "Usage limit"],
+                order: 2
+            ),
+            makeEntry(
                 "general.quit-confirmation",
                 .general,
                 "Action Confirmations",
                 "Quit Limpid",
                 keywords: ["Quit confirmation"],
-                order: 1
+                order: 3
             ),
             makeEntry(
                 "general.close-tab-keyboard-confirmation",
@@ -21,15 +37,15 @@ enum SettingsSearchCatalog {
                 "Action Confirmations",
                 "Close Tab (Keyboard)",
                 keywords: ["Close confirmation"],
-                order: 2
+                order: 4
             ),
             makeEntry(
                 "general.close-tab-mouse-confirmation",
                 .general,
                 "Action Confirmations",
-                "Close Tab (X Button)",
+                "Close Tab (× Button)",
                 keywords: ["Close confirmation"],
-                order: 3
+                order: 5
             ),
             makeEntry(
                 "general.close-pane-confirmation",
@@ -37,15 +53,15 @@ enum SettingsSearchCatalog {
                 "Action Confirmations",
                 "Close Pane",
                 keywords: ["Close confirmation"],
-                order: 4
+                order: 6
             ),
             makeEntry(
                 "general.file-application",
                 .general,
                 "Open Files With",
-                "Choose App…",
+                "App",
                 keywords: ["Editor", "Open file in editor", "Review application"],
-                order: 5
+                order: 7
             ),
             makeEntry(
                 "general.automatic-updates",
@@ -53,15 +69,15 @@ enum SettingsSearchCatalog {
                 "Software Update",
                 "Automatically check for updates",
                 keywords: ["Auto update"],
-                order: 6
+                order: 8
             ),
-            makeEntry("general.check-for-updates", .general, "Software Update", "Check Now…", keywords: ["Check for updates"], order: 7),
-            makeEntry("general.version", .general, "About", "Limpid version", keywords: ["Version"], order: 8),
+            makeEntry("general.check-for-updates", .general, "Software Update", "Check Now…", keywords: ["Check for updates"], order: 9),
+            makeEntry("general.version", .general, "About", "Limpid version", keywords: ["Version"], order: 10),
 
-            makeEntry("appearance.theme", .appearance, "Theme", "Theme", keywords: ["Color scheme"], order: 0),
-            makeEntry("appearance.accent", .appearance, "Theme", "Accent", keywords: ["Accent color"], order: 1),
-            makeEntry("appearance.transparency", .appearance, "Transparency", "Transparency", order: 2),
-            makeEntry("appearance.background-opacity", .appearance, "Transparency", "Opacity", keywords: ["Background opacity"], order: 3),
+            makeEntry("appearance.theme", .appearance, "Color", "Theme", keywords: ["Color scheme"], order: 0),
+            makeEntry("appearance.accent", .appearance, "Color", "Accent", keywords: ["Accent color"], order: 1),
+            makeEntry("appearance.transparency", .appearance, "Transparency", "Translucent window", keywords: ["Transparency"], order: 2),
+            makeEntry("appearance.background-opacity", .appearance, "Transparency", "Background opacity", keywords: ["Opacity"], order: 3),
             makeEntry(
                 "appearance.unfocused-pane-opacity",
                 .appearance,
@@ -71,13 +87,20 @@ enum SettingsSearchCatalog {
                 order: 4
             ),
 
-            makeEntry("font.family", .font, "Font", "Family", keywords: ["Font family"], order: 0),
-            makeEntry("font.size", .font, "Font", "Size", keywords: ["Font size"], order: 1),
+            makeEntry("font.family", .font, "Typeface", "Family", keywords: ["Font family"], order: 0),
+            makeEntry("font.size", .font, "Typeface", "Size", keywords: ["Font size"], order: 1),
             makeEntry("font.ligatures", .font, "Typography", "Ligatures", order: 2),
-            makeEntry("font.line-height", .font, "Typography", "Line height", keywords: ["Line spacing"], order: 3),
+            makeEntry("font.line-height", .font, "Typography", "Line spacing", keywords: ["Line height"], order: 3),
 
             makeEntry("terminal.scrollback", .terminal, "History", "Scrollback", keywords: ["Scrollback lines"], order: 0),
-            makeEntry("terminal.bell", .terminal, "Bell", "Alert Style", keywords: ["Bell", "Terminal bell"], order: 1),
+            makeEntry(
+                "terminal.bell",
+                .terminal,
+                "Bell",
+                "Flash the screen",
+                keywords: ["Bell", "Terminal bell", "Play a sound"],
+                order: 1
+            ),
             makeEntry("terminal.cursor", .terminal, "Cursor", "Style", keywords: ["Cursor", "Cursor style"], order: 2),
             makeEntry("terminal.cursor-blink", .terminal, "Cursor", "Blink", keywords: ["Cursor blink", "Blinking cursor"], order: 3),
 
@@ -100,9 +123,9 @@ enum SettingsSearchCatalog {
             makeEntry(
                 "tabs-and-panes.default-working-directory",
                 .tabsAndPanes,
-                "Quick Tabs",
-                "Default working directory",
-                keywords: ["Quick Tab directory"],
+                "Scratch",
+                "Working folder",
+                keywords: ["Scratch directory"],
                 order: 2
             ),
 
@@ -115,7 +138,15 @@ enum SettingsSearchCatalog {
                 order: 0
             ),
             makeEntry("quick-terminal.position", .quickTerminal, "Layout", "Position", keywords: ["Screen edge"], order: 1),
-            makeEntry("quick-terminal.size", .quickTerminal, "Layout", "Size", keywords: ["Quick Terminal size"], order: 2),
+            // The row says Height or Width by position; the search finds it by either.
+            makeEntry(
+                "quick-terminal.size",
+                .quickTerminal,
+                "Layout",
+                "Size",
+                keywords: ["Quick Terminal size", "Height", "Width"],
+                order: 2
+            ),
             makeEntry(
                 "quick-terminal.hides-on-focus-loss",
                 .quickTerminal,
@@ -145,24 +176,6 @@ enum SettingsSearchCatalog {
                 order: 0
             ),
             makeEntry(
-                "integrations.pr-status",
-                .integrations,
-                "Pull Requests",
-                "Show PR status in sidebar",
-                keywords: ["Pull request status"],
-                technicalAliases: ["PR", "gh", "glab"],
-                order: 1
-            ),
-            makeEntry(
-                "integrations.pr-attention",
-                .integrations,
-                "Pull Requests",
-                "Mark only rows needing attention",
-                keywords: ["Pull request attention"],
-                technicalAliases: ["PR", "gh", "glab"],
-                order: 2
-            ),
-            makeEntry(
                 "integrations.tmux",
                 .integrations,
                 "tmux",
@@ -175,9 +188,9 @@ enum SettingsSearchCatalog {
             makeEntry(
                 "review.jump-opens-turn-review",
                 .review,
-                "Finished Agents",
-                "Open the turn's changes when jumping to a finished agent",
-                keywords: ["Waiting", "This turn"],
+                "Unread Turns",
+                "Open Review when jumping to an unread turn",
+                keywords: ["Needs Attention"],
                 order: 0
             ),
             makeEntry(
@@ -188,13 +201,21 @@ enum SettingsSearchCatalog {
                 keywords: ["Agent instructions", "Reset review instructions"],
                 order: 1
             ),
+            makeEntry(
+                "review.external-diff-command",
+                .review,
+                "External Diff Tool",
+                "Command",
+                keywords: ["External tool", "Diff tool"],
+                order: 2
+            ),
 
             makeEntry(
                 "advanced.reveal-settings-file",
                 .advanced,
                 "settings.json",
-                "Reveal settings.json in Finder",
-                keywords: ["Reveal in Finder", "Open settings file"],
+                "Show settings.json in Finder",
+                keywords: ["Show in Finder", "Open settings file"],
                 technicalAliases: ["json"],
                 order: 0
             ),
@@ -202,9 +223,25 @@ enum SettingsSearchCatalog {
                 "advanced.restore-all-defaults",
                 .advanced,
                 "Reset",
-                "Restore All Defaults",
+                "Restore Default Settings",
                 keywords: ["Reset all settings"],
+                order: 3
+            ),
+            makeEntry(
+                "advanced.turn-retention-days",
+                .advanced,
+                "Turn History",
+                "Keep turns for",
+                keywords: ["Turn records", "Retention"],
                 order: 1
+            ),
+            makeEntry(
+                "advanced.turn-retention-turns",
+                .advanced,
+                "Turn History",
+                "Turns per conversation",
+                keywords: ["Turn records", "Retention"],
+                order: 2
             )
         ]
 
@@ -227,6 +264,14 @@ enum SettingsSearchCatalog {
 
     static var displayLanguage: SettingsSearchEntry {
         requiredEntry("general.display-language")
+    }
+
+    static var menuBarExtra: SettingsSearchEntry {
+        requiredEntry("general.menu-bar-extra")
+    }
+
+    static var usageLimitReset: SettingsSearchEntry {
+        requiredEntry("general.usage-limit-reset")
     }
 
     static var confirmationQuit: SettingsSearchEntry {
@@ -349,16 +394,20 @@ enum SettingsSearchCatalog {
         requiredEntry("integrations.ghostty-config")
     }
 
-    static var showPRStatus: SettingsSearchEntry {
-        requiredEntry("integrations.pr-status")
-    }
-
-    static var showPRStatusOnlyWhenAttention: SettingsSearchEntry {
-        requiredEntry("integrations.pr-attention")
-    }
-
     static var hostsAgentsInTmux: SettingsSearchEntry {
         requiredEntry("integrations.tmux")
+    }
+
+    static var turnRetentionDays: SettingsSearchEntry {
+        requiredEntry("advanced.turn-retention-days")
+    }
+
+    static var turnRetentionTurns: SettingsSearchEntry {
+        requiredEntry("advanced.turn-retention-turns")
+    }
+
+    static var externalDiffCommand: SettingsSearchEntry {
+        requiredEntry("review.external-diff-command")
     }
 
     static var jumpOpensTurnReview: SettingsSearchEntry {

@@ -7,7 +7,7 @@ import Testing
 
 @Suite("Bounded tmux command")
 struct TmuxCommandTests {
-    @Test func successfulEmptyOutput_isNotFailure() {
+    @Test func exitStatusAndLaunchFailure_areToldApart_andEmptyOutputIsSuccess() {
         #expect(TmuxCommand().run(executable: "/usr/bin/true", arguments: []) == .success(""))
         #expect(TmuxCommand().run(executable: "/usr/bin/false", arguments: []) == .failed(1))
         #expect(TmuxCommand().run(executable: "/nonexistent/limpid-tmux", arguments: []) == .launchFailed)

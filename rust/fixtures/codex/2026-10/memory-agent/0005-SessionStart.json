@@ -1,0 +1,9 @@
+{
+  "cwd": "/Users/example/.codex/memories",
+  "hook_event_name": "SessionStart",
+  "model": "gpt-5.6-terra",
+  "permission_mode": "bypassPermissions",
+  "session_id": "00000000-0000-4000-8000-000000000011",
+  "source": "startup",
+  "transcript_path": null
+}

@@ -19,7 +19,36 @@ import OSLog
 
 private let log = Logger.limpid("git.pr")
 
-struct PRStatusFetcher {
+/// What `PRStatusSyncer` asks for a checkout's request through: the forge
+/// CLIs in the app, and a scripted stand-in in the tests, which have to
+/// hold one answer back to order it against another.
+protocol PRStatusLookups: Sendable {
+    func lookup(workingDirectory: URL) async -> PRStatusFetcher.Lookup
+    /// Forget what was resolved about each folder's forge, for a manual
+    /// refresh: the user may have just added a remote or signed a CLI in.
+    func invalidate() async
+}
+
+/// Which branch a checkout has out, as far as one side can tell: what ties
+/// a request to the checkout it was asked for, so that an answer for a
+/// branch the checkout has since left is not shown on it.
+enum CheckoutHead: Equatable {
+    /// Not known: a row before Git was first read for it, or a lookup that
+    /// ran no CLI.
+    case unknown
+    case detached
+    case branch(String)
+
+    /// Whether an answer asked for `answered` belongs to a checkout that is
+    /// at `self` now. A side that does not know agrees with anything: a row
+    /// before its first sync would otherwise show nothing until Git is
+    /// read, and a lookup that ran no CLI says nothing about a branch.
+    func admits(_ answered: CheckoutHead) -> Bool {
+        self == .unknown || answered == .unknown || self == answered
+    }
+}
+
+struct PRStatusFetcher: PRStatusLookups {
     private let resolver: ForgeResolver
     private let locator: ToolLocator
 
@@ -32,26 +61,90 @@ struct PRStatusFetcher {
     /// link, short enough that a hung binary cannot hold a sync tick.
     private static let timeout: Duration = .seconds(5)
 
-    /// Resolve the pull request linked to `workingDirectory`, or
-    /// `nil` when:
-    ///   - the worktree has no remote, or its host isn't a forge we
-    ///     support (resolved once and cached by `ForgeResolver`)
-    ///   - the forge CLI is not installed
-    ///   - the CLI exits non-zero (no PR linked, not authenticated,
-    ///     rate limited, network down, …)
-    ///   - JSON decode fails (unknown future shape)
-    ///   - the call outlives `timeout`
+    /// What one lookup learns: the request, and the forge whose CLI is
+    /// installed for the folder's remote whether or not a request was
+    /// found, which is what "Create PR" needs. `isAnswered` is false
+    /// when the CLI did not say whether there is a request (a timeout, the
+    /// network, rate limits, credentials): now that the changes panel
+    /// offers "Create PR" and "Clean Up Worktree…" by the request's state,
+    /// such a lookup must not read as "no request" and offer a second one
+    /// for a branch already merged.
     ///
-    /// We deliberately do not `throw` — the sidebar mark is opt-in
-    /// best-effort, not an interactive operation. Failures log at
-    /// `.debug` so anyone diagnosing can use `log show`, but nothing
-    /// reaches the UI.
-    func fetch(workingDirectory: URL) async -> PRInfo? {
-        guard let forge = await resolver.forge(for: workingDirectory) else { return nil }
+    /// No forge and no request, answered, when the worktree has no remote,
+    /// its host is not a forge we support (resolved once and cached by
+    /// `ForgeResolver`), or the CLI is not installed. We deliberately do
+    /// not `throw`: the lookup is best-effort, and failures log at
+    /// `.debug` so anyone diagnosing can use `log show`.
+    struct Lookup: Equatable {
+        var forge: ForgeKind?
+        var info: PRInfo?
+        var isAnswered = true
+        /// The branch the CLI was asked about. The CLI reads the branch
+        /// itself, so a checkout that moves to another branch while a
+        /// lookup runs gets the old branch's request; the syncer compares
+        /// this with the branch the row shows before it keeps the answer.
+        var head: CheckoutHead = .unknown
+    }
+
+    func invalidate() async {
+        await resolver.invalidate()
+    }
+
+    func lookup(workingDirectory: URL) async -> Lookup {
+        guard let forge = await resolver.forge(for: workingDirectory) else { return Lookup() }
         guard let executable = await locator.locate(forge.executableName) else {
             log.debug("\(forge.executableName, privacy: .public) not installed")
-            return nil
+            return Lookup()
         }
+        // Read on both sides of the CLI: the CLI reads the branch itself at
+        // some moment in between, so only a branch that held throughout is
+        // the one it answered for. A switch in between is no answer, which
+        // keeps what was known until the next lookup.
+        let head = await Self.head(of: workingDirectory)
+        let answer = await request(forge: forge, executable: executable, workingDirectory: workingDirectory)
+        guard await Self.head(of: workingDirectory) == head else {
+            log.debug("checkout changed branch during the lookup; no answer")
+            return Lookup(forge: forge, isAnswered: false)
+        }
+        switch answer {
+        case let .found(info): return Lookup(forge: forge, info: info, head: head)
+        case .none: return Lookup(forge: forge, head: head)
+        case .unanswered: return Lookup(forge: forge, isAnswered: false, head: head)
+        }
+    }
+
+    /// The branch `workingDirectory` has out, by its full name, which is
+    /// how `git worktree list` names the row's branch.
+    /// `symbolic-ref` rather than `rev-parse --abbrev-ref`: the latter
+    /// shortens a name a tag shares to `heads/…`, and fails on a branch
+    /// with no commit yet, so the two would never agree for such a branch.
+    /// Exit 1 is a detached HEAD; anything else that keeps git from naming
+    /// one (not a repository, a git that would not run) is not known.
+    private static func head(of workingDirectory: URL) async -> CheckoutHead {
+        guard let result = try? await GitProcess.run(["symbolic-ref", "--quiet", "HEAD"], cwd: workingDirectory) else {
+            return .unknown
+        }
+        switch result.exitCode {
+        case 0:
+            let ref = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            let prefix = "refs/heads/"
+            guard ref.hasPrefix(prefix), ref.count > prefix.count else { return .unknown }
+            return .branch(String(ref.dropFirst(prefix.count)))
+        case 1:
+            return .detached
+        default:
+            return .unknown
+        }
+    }
+
+    /// What the CLI said of the branch's request.
+    enum Answer: Equatable {
+        case found(PRInfo)
+        case none
+        case unanswered
+    }
+
+    private func request(forge: ForgeKind, executable: URL, workingDirectory: URL) async -> Answer {
         let result = await runTool(
             executable: executable,
             arguments: Self.arguments(for: forge),
@@ -59,20 +152,40 @@ struct PRStatusFetcher {
             environment: Self.quietEnvironment(for: forge),
             timeout: Self.timeout
         )
-        guard let result else {
-            log.debug("\(forge.executableName, privacy: .public) did not complete")
-            return nil
-        }
-        guard result.isSuccess else {
-            // "no pull requests found" exits non-zero, which is the
-            // common case for a newly created branch.
+        if let result, !result.isSuccess {
             log.debug("""
             \(forge.executableName, privacy: .public) exit \
             \(result.exitCode, privacy: .public): \(result.stderr, privacy: .private)
             """)
-            return nil
+        } else if result == nil {
+            log.debug("\(forge.executableName, privacy: .public) did not complete")
         }
-        return Self.decode(stdout: result.stdout, forge: forge)
+        return Self.answer(result, forge: forge)
+    }
+
+    /// What a run of the CLI says: `nil` (a timeout, a cancel) is no
+    /// answer, and so is output we cannot read, which a newer CLI may
+    /// write: neither says a request is gone.
+    static func answer(_ result: ToolResult?, forge: ForgeKind) -> Answer {
+        guard let result else { return .unanswered }
+        guard result.isSuccess else {
+            return saysNoRequest(result.stderr, forge: forge) ? .none : .unanswered
+        }
+        return decode(stdout: result.stdout, forge: forge).map(Answer.found) ?? .unanswered
+    }
+
+    /// Whether a failed lookup says the branch has no request, the common
+    /// case for a new branch, rather than that it could not ask. gh says
+    /// so in words ("no pull requests found for branch …"); any other
+    /// failure of gh is no answer. Any failure of glab reads as no request:
+    /// a merged request that glab fails to report loses its mark and
+    /// "Clean Up Worktree…" until the next answer, which offers less, never more. "Create PR",
+    /// which a wrong "none" could offer twice, runs gh only.
+    static func saysNoRequest(_ stderr: String, forge: ForgeKind) -> Bool {
+        switch forge {
+        case .gitHub: stderr.localizedCaseInsensitiveContains("no pull requests found")
+        case .gitLab: true
+        }
     }
 
     private static func arguments(for forge: ForgeKind) -> [String] {
@@ -112,16 +225,28 @@ struct PRStatusFetcher {
         guard let data = firstJSONObject(in: stdout) else { return nil }
         let decoder = JSONDecoder()
         do {
-            switch forge {
+            let info = switch forge {
             case .gitHub:
-                return try decoder.decode(GhPayload.self, from: data).toPRInfo()
+                try decoder.decode(GhPayload.self, from: data).toPRInfo()
             case .gitLab:
-                return try decoder.decode(GlabPayload.self, from: data).toPRInfo()
+                try decoder.decode(GlabPayload.self, from: data).toPRInfo()
             }
+            // The PR's link opens on a click without asking, so only a web
+            // page is taken: a file or a custom scheme from a forge (or
+            // whatever answers as one) would launch its handler. Plain http
+            // stays, for a self-hosted GitLab that serves no TLS; it opens
+            // in the browser like any web page.
+            guard let scheme = info.url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+                  info.url.host?.isEmpty == false
+            else {
+                log.debug("\(forge.executableName, privacy: .public) gave a link that is not a web page; ignoring the PR")
+                return nil
+            }
+            return info
         } catch {
             log.debug("""
             \(forge.executableName, privacy: .public) decode failed: \
-            \(String(describing: error), privacy: .public)
+            \(String(describing: error), privacy: .private)
             """)
             return nil
         }
