@@ -212,10 +212,25 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Install Mint
+        run: brew install mint
+      # Mint builds SwiftFormat from source, and the build jobs wait for this
+      # job. The build is kept between runs, keyed by Mintfile, so a new
+      # version builds once.
+      - name: Restore Mint package cache
+        id: cache-mint
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.mint
+          key: mint-v1-${{ runner.os }}-${{ hashFiles('Mintfile') }}
       - name: Install SwiftFormat (pinned via Mintfile)
-        run: |
-          brew install mint
-          mint bootstrap
+        run: mint bootstrap
+      - name: Save Mint package cache
+        if: steps.cache-mint.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.mint
+          key: ${{ steps.cache-mint.outputs.cache-primary-key }}
       - name: Run SwiftFormat (lint mode, gating)
         run: mint run swiftformat --lint .
 
