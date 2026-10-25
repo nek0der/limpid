@@ -5,13 +5,12 @@ import AppKit
 import SwiftUI
 
 /// Draws the window's open dropdown (project ▾, worktree ▾, the Needs
-/// Attention list, or the pane strip's "+") as a floating panel below its
-/// control. A
-/// popover's arrow, frame, and corners cannot be changed, so it could not
-/// match the surface every dropdown shares; this host uses the one the
-/// app's other floating panels share. A click elsewhere closes it, and so
-/// does Escape, unless an approval card the list opened has the keyboard:
-/// the card closes first.
+/// Attention list, or the pane strip's "+" or Open Tabs) as a floating
+/// panel below its control. A popover's arrow, frame, and corners cannot be
+/// changed, so it could not match the surface every dropdown shares; this
+/// host uses the one the app's other floating panels share. A click
+/// elsewhere closes it, and so does Escape, unless an approval card the
+/// list opened has the keyboard: the card closes first.
 struct TitleBarMenuHost: View {
     @Environment(ProjectWindowState.self) private var window
     @Environment(WorkspaceSession.self) private var session
@@ -36,6 +35,24 @@ struct TitleBarMenuHost: View {
     /// keyboard shortcuts panel is: the window can be shorter than the
     /// sheet's preferred height.
     @State private var windowHeight: CGFloat = 0
+    /// Where the window stood when the open dropdown opened. A dropdown
+    /// that closes because the window moved to another session or project
+    /// goes at once rather than fade (`FloatingPanelHost.fades`).
+    @State private var openedOn: Place?
+    /// The dropdown is closing for a press elsewhere, so it goes at once
+    /// too: the press is often on a sidebar row, which switches the window
+    /// on release, and a fade still running then stalls until the new
+    /// place is drawn.
+    @State private var isClosingForPress = false
+
+    private struct Place: Equatable {
+        let container: ContainerID
+        let isChoosingProject: Bool
+    }
+
+    private var place: Place {
+        Place(container: window.selection.activeContainerID, isChoosingProject: window.selection.isChoosingProject)
+    }
 
     /// The list's heading and padding, above the rows that scroll: the
     /// heading's line, as tall as its Next Action button, and the padding
@@ -45,18 +62,23 @@ struct TitleBarMenuHost: View {
         + LimpidLayout.Supervision.needsAttentionHeadingBottomInset
 
     var body: some View {
+        let shown = shownRequest
         GeometryReader { geometry in
             FloatingPanelHost(
-                request: window.titleBarMenu,
-                width: window.titleBarMenu.map { Self.width(of: $0.menu) } ?? 0,
-                style: .init(alignment: .leading, gap: window.titleBarMenu.map { Self.gap(of: $0.menu) } ?? 0, arrowInset: nil),
-                onPointerPressedOutside: { window.titleBarMenu = nil },
+                request: shown,
+                width: shown.map { Self.width(of: $0.menu) } ?? 0,
+                style: .init(alignment: .leading, gap: shown.map { Self.gap(of: $0.menu) } ?? 0, arrowInset: nil),
+                onPointerPressedOutside: {
+                    isClosingForPress = true
+                    window.titleBarMenu = nil
+                },
                 onKey: { key in
                     guard key.isEscape, !window.approvalCard.isFocused else { return false }
                     window.titleBarMenu = nil
                     return true
                 },
                 isAnchorPressLeftToAnchor: true,
+                fades: !isClosingForPress && (openedOn == nil || openedOn == place),
                 content: { menu($0, in: geometry) }
             )
         }
@@ -70,6 +92,8 @@ struct TitleBarMenuHost: View {
         // choice in it), the dropdown may have held the keyboard; what it
         // led to takes it, or else the terminal gets it back.
         .onChange(of: window.titleBarMenu?.id) { previous, current in
+            openedOn = current == nil ? nil : place
+            isClosingForPress = false
             if previous != nil, current == nil {
                 // At once: anything but a terminal holding the keys is the
                 // dropdown's own field or list, still fading out.
@@ -80,6 +104,14 @@ struct TitleBarMenuHost: View {
                     keeper: .terminal,
                     timing: .now
                 )
+            }
+        }
+        // A strip menu left behind is already off the screen
+        // (`shownRequest`); here it is closed for good, so it does not come
+        // back with its session and the keyboard is handed on.
+        .onChange(of: window.isTitleBarMenuLeftBehind) { _, isLeftBehind in
+            if isLeftBehind {
+                close()
             }
         }
         // The palette's and the sidebar headers' Project Settings…,
@@ -153,11 +185,21 @@ struct TitleBarMenuHost: View {
             }
         case let .addTab(container):
             AddTabMenu(container: container, dismiss: close)
+        case let .openTabs(container):
+            OpenTabsMenu(container: container, dismiss: close, maxHeight: room(below: request, in: geometry))
         }
     }
 
     private func close() {
         window.titleBarMenu = nil
+    }
+
+    /// The open dropdown, less a strip menu its session has left
+    /// (`isTitleBarMenuLeftBehind`). Left out in the same update that moves
+    /// the window, the panel goes with the old session's strip; closed a
+    /// turn later, it would first be drawn once over the new session.
+    private var shownRequest: TitleBarMenuRequest? {
+        window.isTitleBarMenuLeftBehind ? nil : window.titleBarMenu
     }
 
     /// What Close Project… confirms: the project, while it is still there.
@@ -171,15 +213,16 @@ struct TitleBarMenuHost: View {
         case .project, .worktree: LimpidLayout.Supervision.titleBarDropdownWidth
         case .needsAttention: LimpidLayout.Supervision.needsAttentionListWidth
         case .addTab: 300
+        case .openTabs: LimpidLayout.Supervision.openTabsListWidth
         }
     }
 
     /// Between the control and the panel: a title bar dropdown hangs just
-    /// under its control; the pane strip's "+" keeps its own air.
+    /// under its control; the pane strip's two keep their own air.
     private static func gap(of menu: TitleBarMenuRequest.Menu) -> CGFloat {
         switch menu {
         case .project, .worktree, .needsAttention: LimpidLayout.Supervision.titleBarDropdownGap
-        case .addTab: LimpidLayout.Supervision.addTabMenuGap
+        case .addTab, .openTabs: LimpidLayout.Supervision.addTabMenuGap
         }
     }
 

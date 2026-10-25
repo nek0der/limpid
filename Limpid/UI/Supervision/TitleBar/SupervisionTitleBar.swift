@@ -157,9 +157,12 @@ struct TitleBarMenuButton<Label: View>: View {
         .onHover { isHovering = $0 }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { newFrame in
             frame = newFrame
-            // ⌃⌘J opens the list from the keyboard, hung from here too.
-            if menu == .needsAttention {
-                window.needsAttentionAnchor = newFrame
+            // ⌃⌘J and ⇧⌘A open their lists from the keyboard, hung from
+            // here too.
+            switch menu {
+            case .needsAttention: window.needsAttentionAnchor = newFrame
+            case .openTabs: window.openTabsAnchor = newFrame
+            case .project, .worktree, .addTab: break
             }
         }
     }

@@ -78,7 +78,8 @@ struct WindowRoutingTests {
             (.notificationHistory, .toggleNotificationHistory), (.review, .review),
             (.reviewLatestTurn, .reviewLatestTurn), (.toggleChangesPanel, .toggleChangesPanel),
             (.allProjects, .toggleAllProjects), (.keyboardShortcuts, .toggleKeyboardShortcuts),
-            (.showNeedsAttention, .showNeedsAttention), (.focusSidebar, .focusSidebar)
+            (.showNeedsAttention, .showNeedsAttention), (.showOpenTabs, .showOpenTabs),
+            (.focusSidebar, .focusSidebar)
         ]
         for (action, command) in table {
             let commands = RecordingWindowCommands()

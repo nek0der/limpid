@@ -98,6 +98,12 @@ struct SupervisionCommands: Commands {
                 }
                 .limpidShortcut(.showNeedsAttention, in: state.settingsStore)
                 .disabled(window == nil)
+                Button("Show Open Tabs", systemImage: LimpidShortcutAction.showOpenTabs.iconName) {
+                    guard let window else { return }
+                    SupervisionWindowActions.showOpenTabs(in: window)
+                }
+                .limpidShortcut(.showOpenTabs, in: state.settingsStore)
+                .disabled(window == nil || window?.selection.isChoosingProject == true)
                 Button("Focus Sidebar", systemImage: LimpidShortcutAction.focusSidebar.iconName) {
                     guard let window else { return }
                     SupervisionWindowActions.focusSidebar(in: state.session, window: window)

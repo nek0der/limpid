@@ -42,6 +42,8 @@ enum WindowCommand: Equatable {
     case reviewFind(LimpidShortcutAction)
     /// Open the Needs Attention list from the title bar.
     case showNeedsAttention
+    /// Open the Open Tabs list from the pane strip.
+    case showOpenTabs
     /// Move the keyboard to the sessions sidebar.
     case focusSidebar
     /// Open the settings of the project `UUID` names, or of the window's

@@ -684,6 +684,13 @@ enum LimpidLayout {
         /// The pane strip's "+" menu keeps its own air below the tab strip.
         static let addTabMenuGap = spaceSnug
         static let addTabMenuItemCornerRadius = smallControlCornerRadius
+        /// Open Tabs: wide enough for a tab's title and its line beside the
+        /// badge, and narrower than the title bar's dropdowns, which hold
+        /// paths.
+        static let openTabsListWidth: CGFloat = 360
+        /// The Open Tabs button's square, inside the strip's height with
+        /// room above and below, as Chrome's tab search button sits.
+        static let openTabsButtonSize: CGFloat = 24
         /// The corners of the window's small bordered parts: a menu's
         /// trigger, a segment row, a command's well, a field drawn in a
         /// panel, a row of a short list.

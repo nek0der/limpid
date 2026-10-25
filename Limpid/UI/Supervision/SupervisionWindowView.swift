@@ -198,6 +198,8 @@ struct SupervisionWindowView: View {
             ChangesPanelActions.toggle(window, session: session)
         case .showNeedsAttention:
             SupervisionWindowActions.showNeedsAttention(in: window)
+        case .showOpenTabs:
+            SupervisionWindowActions.showOpenTabs(in: window)
         case .newWindow:
             SupervisionWindowActions.newWindow(from: window, session: session, registry: state.windowRegistry)
         case .closeWindow:

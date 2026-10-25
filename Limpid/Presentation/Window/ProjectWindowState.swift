@@ -88,6 +88,10 @@ final class ProjectWindowState: Identifiable {
     /// opens it rather than a click. Not observed: it moves with every
     /// resize, and only the next key press reads it.
     @ObservationIgnored var needsAttentionAnchor: CGRect = .zero
+    /// The frame of the pane strip's Open Tabs button, which the list hangs
+    /// from when ⇧⌘A opens it; not observed, for the same reason. `.zero`
+    /// until the window has shown a strip.
+    @ObservationIgnored var openTabsAnchor: CGRect = .zero
     /// Asks the sessions sidebar to take the keyboard (⌥⌘0); each
     /// request is new, so asking twice moves the keyboard twice.
     var sidebarFocusRequest: UUID?

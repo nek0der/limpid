@@ -109,7 +109,7 @@ struct PaneStripTab: View {
         .opacity(isBeingDragged ? LimpidLayout.Supervision.draggedItemOpacity : 1)
         .limpidDraggable(kind: .tab, prefix: "tab:", id: item.id.uuidString, dragState: dragState)
         .accessibilityElement(children: isEditing ? .contain : .ignore)
-        .accessibilityLabel(Text(verbatim: spokenLabel))
+        .accessibilityLabel(Text(verbatim: item.spokenLabel(locale: locale)))
         .accessibilityAddTraits(.isButton)
         .accessibilityAddTraits(item.isActive ? .isSelected : [])
         .accessibilityAction { onActivate() }
@@ -148,23 +148,6 @@ struct PaneStripTab: View {
         }
         .contextMenuShortcut(MenuCommand.closeTab.shortcut(in: keyboard))
         .tint(Color.primary)
-    }
-
-    /// The title, who runs in the tab (the badge's letters in words) with
-    /// the state its glyph shows ("Claude, Running"), then what the marks
-    /// say, since a glyph, a dot, and a color are not words.
-    private var spokenLabel: String {
-        var parts = [item.title, AgentStatusText.spoken(item.agentLine(locale: locale), locale: locale)]
-        if let code = item.failedExitCode {
-            parts.append(LocalizedStringResource("Process exited (code \(code))").resolved(in: locale))
-        }
-        if item.hasUnread {
-            parts.append(LocalizedStringResource("Unread notifications").resolved(in: locale))
-        }
-        if item.isInTmux {
-            parts.append(LocalizedStringResource("Running in tmux").resolved(in: locale))
-        }
-        return AgentStatusText.spokenList(parts, locale: locale)
     }
 }
 
@@ -229,8 +212,9 @@ struct PaneStripTabBadge: View {
 
 /// A tab's marks after its title: the failed exit, tmux, then the dot for
 /// unread output, most lasting first, so the dot that comes and goes
-/// is last and moves nothing when it does.
-private struct PaneStripTabMarks: View {
+/// is last and moves nothing when it does. Open Tabs draws them after a
+/// row's title too.
+struct PaneStripTabMarks: View {
     let item: PaneStripModel.Item
     @Environment(\.locale) private var locale
 

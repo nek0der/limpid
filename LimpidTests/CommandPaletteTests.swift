@@ -134,6 +134,7 @@ struct CommandPaletteTests {
             LimpidShortcutAction.openFolder,
             .closeWindow,
             .showNeedsAttention,
+            .showOpenTabs,
             .focusSidebar,
             .toggleChangesPanel,
             .newWorktree,
@@ -159,6 +160,17 @@ struct CommandPaletteTests {
 
         #expect(Self.isEnabled(.newWorktree, in: items) == false)
         #expect(Self.isEnabled(.newWorktreeNow, in: items) == false)
+    }
+
+    @Test("a window choosing a project has no pane strip, so it offers no Open Tabs")
+    func catalog_showOpenTabs_needsAPaneStrip() throws {
+        let (session, _, _) = WorkspaceSessionFixture.withLooseTab()
+        var facts = SupervisionPaletteFacts.empty
+        let showing = try Self.items(session, supervision: facts)
+        #expect(Self.isEnabled(.showOpenTabs, in: showing) == true)
+        facts.isChoosingProject = true
+        let choosing = try Self.items(session, supervision: facts)
+        #expect(Self.isEnabled(.showOpenTabs, in: choosing) == false)
     }
 
     @Test("a window with no project, or one whose project is gone, offers no project rows")

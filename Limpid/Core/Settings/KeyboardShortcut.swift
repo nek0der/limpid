@@ -117,6 +117,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
     case previousTab
     /// Opens the Needs Attention list from the keyboard.
     case showNeedsAttention
+    /// Opens the Open Tabs list: the session's tabs, from the pane strip.
+    case showOpenTabs
     /// Moves the keyboard to the sessions sidebar.
     case focusSidebar
     /// Move the project the sidebar's keys are on (or the window's) up or
@@ -196,7 +198,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .toggleSidebar, .notificationHistory, .review, .reviewLatestTurn,
              .toggleChangesPanel, .allProjects: .view
         case .nextSession, .previousSession, .nextTab, .previousTab,
-             .nextAttention, .previousAttention, .showNeedsAttention, .focusSidebar,
+             .nextAttention, .previousAttention, .showNeedsAttention, .showOpenTabs, .focusSidebar,
              .moveProjectUp, .moveProjectDown, .goBack, .goForward: .navigation
         case .splitRight, .splitDown, .equalizeSplits, .toggleSplitZoom,
              .focusPaneLeft, .focusPaneRight, .focusPaneUp, .focusPaneDown: .splits
@@ -234,7 +236,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
              .toggleSidebar,
              .notificationHistory, .review, .reviewLatestTurn, .toggleChangesPanel, .allProjects,
              .nextSession, .previousSession, .nextTab, .previousTab,
-             .nextAttention, .previousAttention, .showNeedsAttention, .focusSidebar,
+             .nextAttention, .previousAttention, .showNeedsAttention, .showOpenTabs, .focusSidebar,
              .moveProjectUp, .moveProjectDown, .goBack, .goForward,
              .splitRight, .splitDown,
              .equalizeSplits, .toggleSplitZoom,
@@ -275,6 +277,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .nextTab: "Next Tab"
         case .previousTab: "Previous Tab"
         case .showNeedsAttention: "Show Needs Attention"
+        case .showOpenTabs: "Show Open Tabs"
         case .focusSidebar: "Focus Sidebar"
         case .moveProjectUp: "Move Project Up"
         case .moveProjectDown: "Move Project Down"
@@ -332,6 +335,7 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .nextTab: "arrow.left.arrow.right"
         case .previousTab: "arrow.left.arrow.right"
         case .showNeedsAttention: "list.bullet.rectangle"
+        case .showOpenTabs: "chevron.down.square"
         case .focusSidebar: "sidebar.squares.left"
         case .moveProjectUp: "arrow.up.square"
         case .moveProjectDown: "arrow.down.square"
@@ -434,6 +438,8 @@ enum LimpidShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .previousTab: .init(key: "[", modifiers: [.command, .shift])
         // In the J row with ⌘J, ⇧⌘J, and ⌥⌘J.
         case .showNeedsAttention: .init(key: "j", modifiers: [.command, .control])
+        // Chrome's key for its tab search, which Open Tabs follows.
+        case .showOpenTabs: .init(key: "a", modifiers: [.command, .shift])
         case .focusSidebar: .init(key: "0", modifiers: [.command, .option])
         // Focus Pane Above and Below's keys, which the sidebar takes only
         // while it has the keyboard (`sharesKeys(with:)`).

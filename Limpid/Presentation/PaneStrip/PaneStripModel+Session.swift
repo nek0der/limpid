@@ -51,7 +51,8 @@ extension PaneStripModel {
                 paneItems: panes.flatMap { itemsByPane[$0] ?? [] },
                 hasUnread: session.hasUnread(in: tab),
                 isInTmux: tab.isHostedInTmux(mountedTmuxPaneIDs: mountedTmuxPaneIDs),
-                exitCodes: panes.compactMap { session.childExitCode(paneID: $0) }
+                exitCodes: panes.compactMap { session.childExitCode(paneID: $0) },
+                paneCount: panes.count
             )
         }
         self.init(items: inputs, activeTabID: session.selection(window)?.activeTabID, reviewTab: reviewTab)

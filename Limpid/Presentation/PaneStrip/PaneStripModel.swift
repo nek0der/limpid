@@ -58,6 +58,24 @@ extension PaneStripModel.Item {
         guard let stateGlyph else { return name }
         return AgentStatusText.joined([name, SessionRowFactText.stateName(stateGlyph, locale: locale)], locale: locale)
     }
+
+    /// What VoiceOver says for the tab, in the strip and in Open Tabs:
+    /// the title, who runs in it (the badge's letters in words) with the
+    /// state its glyph shows ("Claude, Running"), then what the marks say,
+    /// since a glyph, a dot, and a color are not words.
+    func spokenLabel(locale: Locale) -> String {
+        var parts = [title, AgentStatusText.spoken(agentLine(locale: locale), locale: locale)]
+        if let code = failedExitCode {
+            parts.append(LocalizedStringResource("Process exited (code \(code))").resolved(in: locale))
+        }
+        if hasUnread {
+            parts.append(LocalizedStringResource("Unread notifications").resolved(in: locale))
+        }
+        if isInTmux {
+            parts.append(LocalizedStringResource("Running in tmux").resolved(in: locale))
+        }
+        return AgentStatusText.spokenList(parts, locale: locale)
+    }
 }
 
 /// The strip under the session header: a tab for each of the
@@ -86,6 +104,9 @@ struct PaneStripModel: Equatable {
         /// The exit code of a pane whose process failed; `nil` while every
         /// pane runs or exited cleanly.
         let failedExitCode: UInt32?
+        /// How many panes the tab is split into. The strip does not show
+        /// it; Open Tabs says it for a split tab ("Shell · 2 panes").
+        let paneCount: Int
 
         /// Where the tab's title is cut: a name's end, but a path's start,
         /// as a shell's OSC 2 title for its folder is ("…/projects/alpha").
@@ -112,6 +133,9 @@ struct PaneStripModel: Equatable {
         let isInTmux: Bool
         /// Each exited pane's code, in the tab's pane order.
         let exitCodes: [UInt32]
+        /// How many panes the tab is split into; one for a tab read without
+        /// its split.
+        var paneCount = 1
     }
 
     /// Whether the window has a review tab, and whether it is the one in
@@ -144,7 +168,8 @@ struct PaneStripModel: Equatable {
                 stateGlyph: Self.tabGlyph(input.paneGlyphs, items: input.paneItems),
                 hasUnread: input.hasUnread,
                 isInTmux: input.isInTmux,
-                failedExitCode: input.exitCodes.first { $0 != 0 }
+                failedExitCode: input.exitCodes.first { $0 != 0 },
+                paneCount: input.paneCount
             )
         }
         self.reviewTab = reviewTab

@@ -1,6 +1,86 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Open Tabs": {
+      "comment": "The pane strip's leading button, its tooltip and VoiceOver name, and the heading of the list of the session's tabs it opens",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Tabs"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開いているタブ"
+          }
+        }
+      }
+    },
+    "Search Tabs": {
+      "comment": "Placeholder and VoiceOver name of the search field in Open Tabs",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search Tabs"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを検索"
+          }
+        }
+      }
+    },
+    "Show Open Tabs": {
+      "comment": "Menu, palette, keyboard settings: opens Open Tabs, the pane strip's list of the session's tabs",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Open Tabs"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開いているタブを表示"
+          }
+        }
+      }
+    },
+    "%lld panes": {
+      "comment": "Open Tabs: how many panes a split tab has, after who runs in it (\"Shell · 2 panes\")",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld pane"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld panes"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld ペイン"
+          }
+        }
+      }
+    },
     "%@ isn’t on the remote, so the worktree starts from %@.": {
       "comment": "New worktree: the fetch found no such branch; the remote's branch, then the branch it starts from",
       "localizations": {
