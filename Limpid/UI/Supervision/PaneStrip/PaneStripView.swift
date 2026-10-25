@@ -10,7 +10,8 @@ import SwiftUI
 /// (`PaneStripTabWidths`), keeping the selected tab in view and fading
 /// each end past which tabs continue (`PaneStripOverflow`). The review's
 /// tab is one of them, after the terminal tabs, so it never comes between
-/// them, and is cut and scrolled as they are; only "+" stays put. The selected tab
+/// them, and is cut and scrolled as they are; only Open Tabs at the
+/// leading end and "+" at the trailing end stay put. The selected tab
 /// is a folder tab open onto the terminal: the rule under the strip stops
 /// for it (`PaneStripRule`). A click picks a tab through
 /// `setActiveTab`, as ⌘1…9 and ⇧⌘[ ⇧⌘] do, so a held request is handed
@@ -69,6 +70,7 @@ private struct PaneStripContent: View, Equatable {
 
     var body: some View {
         HStack(spacing: LimpidLayout.Supervision.paneStripSpacing) {
+            OpenTabsButton(container: container)
             PaneStripScrollingTabs(selected: selectedTab(model), visibleRange: $tabsVisibleRange) {
                 tabs(model)
             }
@@ -482,6 +484,37 @@ extension ProjectWindowState {
     func reviewStripTab(in container: ContainerID, session: WorkspaceSession) -> PaneStripModel.ReviewTab {
         guard let review, ReviewTabActions.belongs(review, to: container, session: session) else { return .none }
         return review.isShown ? .inFront : .behind
+    }
+}
+
+/// The strip's leading button: Open Tabs, every tab of the session in a
+/// list to search and switch from, which a crowded strip cuts short or
+/// scrolls out of view. It stays put at the strip's start and looks as
+/// Chrome's tab search button does: a filled rounded square apart from the
+/// tabs, rather than a tab itself, since it is a control, not a place.
+private struct OpenTabsButton: View {
+    let container: ContainerID
+    @Environment(SettingsStore.self) private var settings
+
+    private typealias Layout = LimpidLayout.Supervision
+
+    var body: some View {
+        let shortcut = settings.settings.keyboard.shortcut(for: .showOpenTabs)?.displayString
+        TitleBarMenuButton(menu: .openTabs(container)) { isLit in
+            Image(systemName: "chevron.down")
+                .font(.supervision(.glyph, weight: .semibold))
+                .foregroundStyle(isLit ? SupervisionTokens.text.color : SupervisionTokens.muted.color)
+                .frame(width: Layout.openTabsButtonSize, height: Layout.openTabsButtonSize)
+                .background(
+                    RoundedRectangle(cornerRadius: Layout.paneStripTabCornerRadius, style: .continuous)
+                        .fill(isLit ? SupervisionTokens.selection.color : SupervisionTokens.hover.color)
+                )
+                // Centered over the strip's rule, as the tabs' content is.
+                .padding(.bottom, Layout.paneStripRuleWidth)
+                .frame(width: Layout.paneStripAddButtonWidth, height: Layout.paneStripHeight)
+                .contentShape(Rectangle())
+        }
+        .iconButtonHelp("Open Tabs", shortcut: shortcut)
     }
 }
 

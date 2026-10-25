@@ -27,6 +27,8 @@ enum CommandPaletteCatalog {
         let canReview: Bool
         let canGoBack: Bool
         let canGoForward: Bool
+        /// The window shows a session, whose strip Open Tabs hangs from.
+        let hasPaneStrip: Bool
     }
 
     private struct ShortcutDependencies {
@@ -133,7 +135,8 @@ enum CommandPaletteCatalog {
             // nothing to read.
             canReview: hasActiveTab,
             canGoBack: session.canNavigateBack(in: window),
-            canGoForward: session.canNavigateForward(in: window)
+            canGoForward: session.canNavigateForward(in: window),
+            hasPaneStrip: !supervision.isChoosingProject
         )
 
         for action in LimpidShortcutAction.allCases {
@@ -399,6 +402,7 @@ enum CommandPaletteCatalog {
         case .commandPalette, .quickOpen: false
         case .goBack: context.canGoBack
         case .goForward: context.canGoForward
+        case .showOpenTabs: context.hasPaneStrip
         default: true
         }
     }

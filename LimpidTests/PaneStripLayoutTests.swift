@@ -168,7 +168,8 @@ struct PaneStripTabsLayoutTests {
                 stateGlyph: nil,
                 hasUnread: false,
                 isInTmux: false,
-                failedExitCode: nil
+                failedExitCode: nil,
+                paneCount: 1
             )
         }
     }
@@ -309,7 +310,7 @@ struct PaneStripTabsLayoutTests {
             func item(_ glyph: SessionRowFact.Glyph?) -> PaneStripModel.Item {
                 PaneStripModel.Item(
                     id: UUID(), title: "claude", paletteIndex: nil, isActive: true, agent: .claude,
-                    stateGlyph: glyph, hasUnread: false, isInTmux: false, failedExitCode: nil
+                    stateGlyph: glyph, hasUnread: false, isInTmux: false, failedExitCode: nil, paneCount: 1
                 )
             }
             let atRest = Self.measure(Self.tab(item(nil)), settings: settings, window: window)

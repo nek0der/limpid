@@ -516,6 +516,8 @@ enum TabActions {
             attention.walkAttention?(false)
         case .showNeedsAttention:
             scope.perform(.showNeedsAttention)
+        case .showOpenTabs:
+            scope.perform(.showOpenTabs)
         case .focusSidebar:
             scope.perform(.focusSidebar)
         // From the palette the sidebar does not have the keyboard, so the

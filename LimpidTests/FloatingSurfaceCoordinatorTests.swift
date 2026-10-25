@@ -203,6 +203,26 @@ struct TitleBarMenuToggleTests {
         #expect(window.titleBarMenu == nil)
     }
 
+    /// The strip's "+" and Open Tabs belong to the session they opened on;
+    /// the title bar's dropdowns follow the window wherever it goes.
+    @Test func aStripMenu_isLeftBehind_whenTheWindowShowsAnotherSession_orTheProjectsToOpen() {
+        let shown = ContainerID.project(UUID())
+        let window = ProjectWindowState(selection: WindowSelection(activeContainerID: shown))
+
+        window.toggleTitleBarMenu(.openTabs(shown), anchor: anchor)
+        #expect(window.isTitleBarMenuLeftBehind == false)
+
+        window.selection.activeContainerID = .loose
+        #expect(window.isTitleBarMenuLeftBehind == true)
+
+        window.selection.activeContainerID = shown
+        window.selection.isChoosingProject = true
+        #expect(window.isTitleBarMenuLeftBehind == true)
+
+        window.toggleTitleBarMenu(.project, anchor: anchor)
+        #expect(window.isTitleBarMenuLeftBehind == false)
+    }
+
     @Test func aWorkingSurface_closesTheDropdown_whichHoldsBackTheSmallPanels() {
         #expect(
             FloatingSurfaceRules.surfacesToClose(whenPresenting: .commandPalette, open: [.commandPalette, .titleBarMenu])

@@ -58,6 +58,18 @@ enum SupervisionWindowActions {
         window.toggleTitleBarMenu(.needsAttention, anchor: window.needsAttentionAnchor, isOpenedFromKeyboard: true)
     }
 
+    /// ⇧⌘A: Open Tabs for the session the window shows, hung from its
+    /// strip's leading button. A window choosing a project shows no strip,
+    /// and so has nothing to list.
+    static func showOpenTabs(in window: ProjectWindowState) {
+        guard !window.selection.isChoosingProject, window.openTabsAnchor != .zero else { return }
+        window.toggleTitleBarMenu(
+            .openTabs(window.selection.activeContainerID),
+            anchor: window.openTabsAnchor,
+            isOpenedFromKeyboard: true
+        )
+    }
+
     /// Go Back, from the menu or the title bar's back button: one step back
     /// in `window`'s own history: the menu's focused window, or the
     /// window the button is in, which need not be the key one.

@@ -62,6 +62,10 @@ updates (when one is available), keyboard shortcuts, and **Settings**.
 The worktree's header with its commits and uncommitted files, the pane strip
 of tabs (agents, shells, the review), and the terminal.
 
+The **▾** at the strip's left end (⇧⌘A) opens **Open Tabs**: every tab of the
+session, with who runs in it and its state, to search, switch to, or close.
+Use it when the strip has more tabs than fit.
+
 ### Decision bar
 
 Under each agent pane. One line sums up the unviewed turns (their numbers,
@@ -174,6 +178,7 @@ encoding.
 | ⇧⌘W | Close Window (agents keep running) |
 | ⌘] / ⌘[ | Next / previous worktree |
 | ⇧⌘] / ⇧⌘[ | Next / previous tab |
+| ⇧⌘A | Show Open Tabs |
 | ⌃⌘1…⌃⌘9 | Go to worktree N |
 | ⌘1…⌘9 | Go to tab N |
 | ⌥⌘↑ / ⌥⌘↓ | Move the project up / down (while the sidebar has focus; the panes otherwise) |

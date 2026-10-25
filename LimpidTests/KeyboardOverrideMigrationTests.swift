@@ -66,6 +66,7 @@ struct KeyboardOverrideMigrationTests {
         #expect(LimpidShortcutAction.newWorktree.defaultShortcut == Self.commandN)
         #expect(LimpidShortcutAction.goBack.defaultShortcut == nil)
         #expect(LimpidShortcutAction.showNeedsAttention.defaultShortcut == StoredShortcut(key: "j", modifiers: [.command, .control]))
+        #expect(LimpidShortcutAction.showOpenTabs.defaultShortcut == StoredShortcut(key: "a", modifiers: [.command, .shift]))
     }
 
     @Test func unbound_removesDefault() {

@@ -31,6 +31,9 @@ struct SupervisionPaletteFacts: Equatable {
     /// terminal was (`ProjectWindowState.arePanesHidden`): the pane
     /// commands are off then (`isOffPaneCommand`).
     var arePanesHidden = false
+    /// Whether the window offers the projects to open instead of a
+    /// session, so it has no pane strip for Open Tabs to hang from.
+    var isChoosingProject = false
 
     /// Whether ⇧⌘[ ⇧⌘] have a tab to step to among `tabCount` terminal
     /// tabs: another one, or the window's review tab (`facts`). The menu

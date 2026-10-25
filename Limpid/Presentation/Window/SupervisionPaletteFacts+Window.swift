@@ -24,7 +24,8 @@ extension SupervisionPaletteFacts {
             restoreTurnNumber: restoreTurnNumber,
             rowOrder: session.projects.flatMap { sections.ordered($0).map(\.row) },
             rowSections: sections.sections,
-            arePanesHidden: window.arePanesHidden
+            arePanesHidden: window.arePanesHidden,
+            isChoosingProject: selection.isChoosingProject
         )
     }
 }

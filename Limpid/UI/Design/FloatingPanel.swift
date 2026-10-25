@@ -64,6 +64,10 @@ struct FloatingPanelHost<Request: FloatingPanelRequest, Content: View>: View {
     /// The pointer came onto or left the panel, for a panel that closes
     /// when the pointer has gone.
     var onHover: ((Bool) -> Void)?
+    /// Whether the panel fades as it opens and closes. False takes it off
+    /// at once, for a panel that closes as its window moves elsewhere: a
+    /// fade would run while the window draws the new place, and stall.
+    var fades = true
     @ViewBuilder let content: (Request) -> Content
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -88,7 +92,7 @@ struct FloatingPanelHost<Request: FloatingPanelRequest, Content: View>: View {
             }
         }
         .ignoresSafeArea()
-        .animation(ModalMotion.floatingPanel.animation(reduceMotion: reduceMotion), value: request?.id)
+        .animation(fades ? ModalMotion.floatingPanel.animation(reduceMotion: reduceMotion) : nil, value: request?.id)
     }
 }
 
