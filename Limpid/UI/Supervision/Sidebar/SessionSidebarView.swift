@@ -283,6 +283,19 @@ struct SessionSidebarView: View {
             canMoveDown: ProjectOrder.canMove(id, by: 1, in: order),
             toggle: { setCollapsed(!header.isCollapsed, id) },
             collapseOthers: { arrange { $0.collapseOthers(than: id, among: projectIDs) } },
+            syncWorktrees: {
+                NotificationCenter.default.post(name: .limpidGitSyncRequested, object: id)
+            },
+            showHiddenWorktrees: session.hasHiddenWorktrees(projectID: id)
+                ? { session.unhideAllWorktrees(projectID: id) }
+                : nil,
+            removeMissingWorktrees: session.hasMissingWorktrees(projectID: id)
+                ? {
+                    withAnimation(LimpidMotion.reorderUnlessReduced) {
+                        ContainerActions.pruneMissingWorktrees(session, registry: registry, projectID: id)
+                    }
+                }
+                : nil,
             openSettings: { [window] in window.commands.send(.openProjectSettings(id)) },
             revealInFinder: {
                 if let project = session.project(id) {
@@ -686,21 +699,6 @@ struct SessionSidebarView: View {
             // frozen into the row; an empty name hands the row back to the
             // name it would have.
             rename: other == nil ? { renamingRow = row.id } : nil,
-            // Every row offers the project-wide worktree operations, which
-            // the project's header menu does not carry.
-            showHiddenWorktrees: session.hasHiddenWorktrees(projectID: project.id)
-                ? { session.unhideAllWorktrees(projectID: project.id) }
-                : nil,
-            syncWorktrees: {
-                NotificationCenter.default.post(name: .limpidGitSyncRequested, object: project.id)
-            },
-            removeMissingWorktrees: session.hasMissingWorktrees(projectID: project.id)
-                ? {
-                    withAnimation(LimpidMotion.reorderUnlessReduced) {
-                        ContainerActions.pruneMissingWorktrees(session, registry: registry, projectID: project.id)
-                    }
-                }
-                : nil,
             openPullRequest: prStatusStore.info(for: row.id).map { info in
                 SessionRowActions.Entry(
                     title: "Open on \(info.forge.displayName)",
@@ -730,17 +728,15 @@ struct SessionSidebarView: View {
                     )
                 }
             },
-            removeFromSidebar: worktree.map { worktree in
-                SessionRowActions.Entry(
-                    title: worktree.isMissing ? "Remove Row" : "Remove from Sidebar",
-                    systemImage: worktree.isMissing ? "trash" : "eye.slash"
-                ) {
-                    if worktree.isMissing {
-                        WorktreeHiding.removeMissing(session: session, registry: registry, projectID: project.id, worktreeID: worktree.id)
-                    } else {
-                        WorktreeHiding.hide(session: session, toastCenter: toastCenter, projectID: project.id, worktree: worktree)
-                    }
+            hide: worktree.flatMap { worktree in
+                worktree.isMissing ? nil : {
+                    WorktreeHiding.hide(session: session, toastCenter: toastCenter, projectID: project.id, worktree: worktree)
                 }
+            },
+            removeMissing: worktree.flatMap { worktree in
+                worktree.isMissing ? {
+                    WorktreeHiding.removeMissing(session: session, registry: registry, projectID: project.id, worktreeID: worktree.id)
+                } : nil
             },
             deleteWorktree: worktree.flatMap { worktree in
                 worktree.isMissing ? nil : {
