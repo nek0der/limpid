@@ -105,8 +105,8 @@ enum SupervisionWindowActions {
         registry.close(window.id, in: session)
     }
 
-    /// ⌘N, the sidebar's "+", the worktree menu's "New Worktree…", and the
-    /// palette: the new worktree sheet for the project the window shows,
+    /// ⌘N, the worktree menu's "New Worktree…", and the palette: the new
+    /// worktree sheet for the project the window shows,
     /// or for `projectID` (a header's ＋, which a window that shows
     /// no project has too). With neither, nothing opens.
     static func newSession(in window: ProjectWindowState, session: WorkspaceSession, projectID: UUID? = nil) {

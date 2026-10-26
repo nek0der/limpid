@@ -17,8 +17,7 @@ enum WindowCommand: Equatable {
     /// Open a window that shows nothing yet.
     case newWindow
     /// "New Worktree…" (⌘N): the new worktree sheet for the window's
-    /// project, from the menu, the palette, the sidebar's ＋, and the
-    /// worktree ▾.
+    /// project, from the menu, the palette, and the worktree ▾.
     case newWorktree
     /// ⌥⌘N: a worktree made at once with the last choices, no sheet.
     case newWorktreeNow

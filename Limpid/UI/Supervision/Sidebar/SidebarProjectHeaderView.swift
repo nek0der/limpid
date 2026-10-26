@@ -8,8 +8,10 @@ import SwiftUI
 /// runs from the name to the count, so where one project ends and the next
 /// begins reads at a glance. A folded header shows what waits or runs
 /// inside it before its count; one another window shows says so in place
-/// of the count, and pressing that brings the window forward. The pointer
-/// on it shows a ＋ for a new worktree in the project.
+/// of the count, and pressing that brings the window forward. Its ＋ makes
+/// a new worktree in the project, and is always shown: the sidebar
+/// heading's ＋ opens a folder as a project, so this is the one in view
+/// for a worktree.
 ///
 /// Pressing anywhere on it opens or folds it, ⌥ held for every header; it
 /// never switches the window's project, which a row does. It is dragged
@@ -83,20 +85,21 @@ struct SidebarProjectHeaderView: View {
             }
             trailingMark
                 .layoutPriority(2)
-            if isHovering {
-                Button(action: actions.newWorktree) {
-                    Image(systemName: "plus")
-                        .font(.supervision(.row, weight: .medium))
-                        .foregroundStyle(SupervisionTokens.muted.color)
-                }
-                .buttonStyle(.plain)
-                // The pointer's alone: the keyboard and VoiceOver reach it
-                // through the header's actions and its menu.
-                .focusable(false)
-                .help(Text(SidebarHeaderText.newWorktree(in: header.name)))
-                .accessibilityHidden(true)
-                .layoutPriority(4)
+            // The sidebar heading's ＋ in its header's size: muted at rest,
+            // and filled under the pointer, so it reads as a click of its
+            // own rather than part of the header's fold.
+            Button(action: actions.newWorktree) {
+                Image(systemName: "plus")
+                    .font(.supervision(.row, weight: .medium))
+                    .frame(height: Layout.sidebarHeadingButtonHeight)
             }
+            .buttonStyle(.supervisionIcon)
+            // The pointer's alone: the keyboard and VoiceOver reach it
+            // through the header's actions and its menu.
+            .focusable(false)
+            .help(Text(SidebarHeaderText.newWorktree(in: header.name)))
+            .accessibilityHidden(true)
+            .layoutPriority(4)
             Image(systemName: "arrowtriangle.right.fill")
                 .font(.supervision(.disclosure, weight: .semibold))
                 .foregroundStyle(SupervisionTokens.muted.color)

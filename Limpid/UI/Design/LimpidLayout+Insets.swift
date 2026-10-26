@@ -42,7 +42,7 @@ extension LimpidLayout.Supervision {
     // MARK: Sidebar
 
     /// Either side of the heading's line (`surfaceHeadingLineHeight`), so
-    /// "Worktrees" starts where the rows' glyphs do, and the ＋'s glyph
+    /// "Projects" starts where the rows' glyphs do, and the ＋'s glyph
     /// ends as far in from the other edge.
     static let sidebarHeadingInsets = EdgeInsets(
         top: 0,

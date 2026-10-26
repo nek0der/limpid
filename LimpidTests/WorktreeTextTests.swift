@@ -9,13 +9,13 @@ struct WorktreeTextTests {
     private static let english = Locale(identifier: "en")
     private static let japanese = Locale(identifier: "ja")
 
-    @Test func theSidebarHeading_namesTheRowsWorktrees() {
-        #expect(WorktreeText.heading.resolved(in: Self.english) == "Worktrees")
-        #expect(WorktreeText.heading.resolved(in: Self.japanese) == "ワークツリー")
+    @Test func theRailEntry_namesTheRowsWorktrees() {
+        #expect(WorktreeText.railEntry.resolved(in: Self.english) == "Worktrees")
+        #expect(WorktreeText.railEntry.resolved(in: Self.japanese) == "ワークツリー")
     }
 
     /// The File menu, the palette, and the keyboard settings read the
-    /// action's title; the + button's tooltip reads it with the default key.
+    /// action's title, and a tooltip names it with its default key.
     /// There is one action for it, which ⌘N runs.
     @Test func theCreateAction_isNewWorktree_onCommandN_inTheMenuAndTheTooltip() throws {
         let title = LimpidShortcutAction.newWorktree.localizedTitle
@@ -26,9 +26,6 @@ struct WorktreeTextTests {
         #expect(key == "⌘N")
         #expect(ShortcutHelpText.make(name: title, shortcut: key, locale: Self.english) == "New Worktree… (⌘N)")
         #expect(ShortcutHelpText.make(name: title, shortcut: key, locale: Self.japanese) == "新規ワークツリー…（⌘N）")
-
-        #expect(WorktreeText.newWorktreeLabel.resolved(in: Self.english) == "New Worktree")
-        #expect(WorktreeText.newWorktreeLabel.resolved(in: Self.japanese) == "新規ワークツリー")
     }
 
     /// The sheet's title says it in the words of the project header's ＋.

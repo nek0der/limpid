@@ -28,10 +28,7 @@ struct EmptyWindowView: View {
                 .padding(.bottom, Layout.spaceS)
             if !model.rows.isEmpty {
                 // In the sidebar's order, as project ▾ lists them.
-                DropdownHeading(Text(
-                    "Projects",
-                    comment: "Heading over a list of projects (the project dropdown, a window that shows nothing), in the sidebar's order"
-                ))
+                DropdownHeading(Text(ProjectListText.heading))
                 ScrollView {
                     VStack(spacing: Layout.popoverRowSpacing) {
                         ForEach(model.rows) { row in

@@ -53,7 +53,8 @@ updates (when one is available), keyboard shortcuts, and **Settings**.
   **Other Worktrees**.
 - Fold a header and it shows what waits inside.
 - A header's **+** opens **New Worktree** for that project (⌘N for the
-  window's).
+  window's). The **+** beside the sidebar's **Projects** heading opens a
+  folder as a project (⌘O).
 - The **Scratch** row at the bottom holds terminals that belong to no
   project.
 

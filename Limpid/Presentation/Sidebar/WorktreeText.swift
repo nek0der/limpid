@@ -12,18 +12,13 @@ import Foundation
 /// conversation. The views and the tests read the same resources here, so
 /// a test pins the words the sidebar and the sheet show.
 enum WorktreeText {
-    /// The sidebar's heading, and the left rail's entry that shows it.
-    static let heading = LocalizedStringResource(
+    /// The left rail's entry that shows the sidebar: its rows are
+    /// worktrees. The sidebar's own heading names what it lists by, the
+    /// projects (`ProjectListText.heading`); "Projects" on the rail would
+    /// read as the All Projects entry beside it.
+    static let railEntry = LocalizedStringResource(
         "Worktrees",
-        comment: "Left rail and sidebar heading, the worktree menu's placeholder, and Project Settings' section: the worktrees"
-    )
-
-    /// The sidebar heading's + button, as VoiceOver names it. Its tooltip
-    /// names the action as the menu does (`LimpidShortcutAction.newWorktree`),
-    /// with the ellipsis that says a sheet follows.
-    static let newWorktreeLabel = LocalizedStringResource(
-        "New Worktree",
-        comment: "Sidebar, VoiceOver: the heading's + button, which opens the new worktree sheet"
+        comment: "Left rail entry that shows the sidebar, the worktree menu's placeholder, and Project Settings' section: the worktrees"
     )
 
     /// The new worktree sheet's title, which names the project the

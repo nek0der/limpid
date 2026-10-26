@@ -4,7 +4,7 @@
 import SwiftUI
 
 /// The first line of a surface whose heading has a glyph button at its end
-/// (the sidebar's "Worktrees" and ＋), on the surfaces' heading line:
+/// (the sidebar's "Projects" and ＋), on the surfaces' heading line:
 /// `surfaceHeadingLineHeight` tall, so its center sits where the rails'
 /// first icons are centered; the heading stands a surface heading's inset
 /// in from the leading edge, and the button's glyph as far in from the
