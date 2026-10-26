@@ -5,8 +5,10 @@ import SwiftUI
 
 /// What a sidebar row's right-click menu offers. Each entry is shown
 /// only when its action is set, in the order every row uses: reorder, name,
-/// worktrees, the pull request, Finder and the changes panel, then the
-/// destructive entries last.
+/// the pull request, Finder and the changes panel, then the entries that
+/// put the row away, with the one that deletes a folder last. Only what
+/// acts on the row is here; the operations on all of a project's worktrees
+/// are its header's (`SidebarProjectActions`).
 struct SessionRowActions {
     /// A menu entry whose words and symbol depend on the row's kind.
     struct Entry {
@@ -20,9 +22,6 @@ struct SessionRowActions {
     var canMoveUp = true
     var canMoveDown = true
     var rename: (() -> Void)?
-    var showHiddenWorktrees: (() -> Void)?
-    var syncWorktrees: (() -> Void)?
-    var removeMissingWorktrees: (() -> Void)?
     /// "Open on GitHub" (or the row's forge): the hover card's one action,
     /// for a person who does not point at the row's mark. Offered on
     /// rows with a pull request on file.
@@ -36,13 +35,18 @@ struct SessionRowActions {
     var openChangesPanel: (() -> Void)?
     /// Move to Other Worktrees: moves a worktree with nothing open among the
     /// other worktrees, where the ones Git only reported wait; it stays on
-    /// disk and in the sidebar, unlike Remove from Sidebar, which hides it.
+    /// disk and in the sidebar, unlike Hide Worktree, which hides it.
     var removeFromWorking: (() -> Void)?
-    /// Remove from Sidebar: hides a worktree's row and keeps the folder
-    /// (Remove Row once the folder is gone).
-    var removeFromSidebar: Entry?
+    /// Hide Worktree: hides a worktree's row and keeps the folder. The
+    /// toast's Undo or Show Hidden Worktrees brings it back, so it is not
+    /// marked destructive. It says "Hide", as the toast says "Hid".
+    var hide: (() -> Void)?
+    /// Remove from Sidebar, on a row whose folder is gone: there is nothing
+    /// left to hide, so the row goes with its tabs and no Undo brings it
+    /// back. That is why it does not share the hide's words.
+    var removeMissing: (() -> Void)?
     /// Hide All, on the line the worktrees ready to clean up fold into:
-    /// hides every one of them, as Remove from Sidebar hides one.
+    /// hides every one of them, as Hide Worktree hides one.
     var hideAll: (() -> Void)?
     /// Runs `git worktree remove`, after its own confirmation.
     var deleteWorktree: (() -> Void)?
@@ -52,12 +56,32 @@ struct SessionRowActions {
     var closeAllTabs: (() -> Void)?
 }
 
-/// The menu items for `actions`, for a `.contextMenu`.
+/// The menu items for `actions`, for a `.contextMenu`. A divider stands
+/// only between two groups that both have an entry: the scratch row and a
+/// fold line start their menus partway down the order, and a menu that
+/// opens on a divider reads as one with something missing.
 struct SessionRowActionsMenu: View {
     let actions: SessionRowActions
 
+    private var hasMoves: Bool {
+        actions.moveUp != nil || actions.moveDown != nil
+    }
+
+    private var hasPullRequest: Bool {
+        actions.openPullRequest != nil || actions.refreshPRStatus != nil
+    }
+
+    private var hasPlaces: Bool {
+        actions.revealInFinder != nil || actions.openChangesPanel != nil
+    }
+
+    private var hasPutAway: Bool {
+        actions.removeFromWorking != nil || actions.hide != nil || actions.hideAll != nil
+            || actions.removeMissing != nil || actions.closeAllTabs != nil || actions.deleteWorktree != nil
+    }
+
     var body: some View {
-        if actions.moveUp != nil || actions.moveDown != nil {
+        if hasMoves {
             if let moveUp = actions.moveUp {
                 Button(action: moveUp) {
                     Label("Move Up", systemImage: "arrow.up")
@@ -72,33 +96,17 @@ struct SessionRowActionsMenu: View {
                 .disabled(!actions.canMoveDown)
                 .tint(Color.primary)
             }
-            Divider()
         }
         if let rename = actions.rename {
+            if hasMoves {
+                Divider()
+            }
             Button(action: rename) {
                 Label("Rename…", systemImage: "pencil")
             }
             .tint(Color.primary)
         }
-        if let showHiddenWorktrees = actions.showHiddenWorktrees {
-            Button(action: showHiddenWorktrees) {
-                Label("Show Hidden Worktrees", systemImage: "eye")
-            }
-            .tint(Color.primary)
-        }
-        if let syncWorktrees = actions.syncWorktrees {
-            Button(action: syncWorktrees) {
-                Label("Sync Worktrees", systemImage: "arrow.clockwise")
-            }
-            .tint(Color.primary)
-        }
-        if let removeMissingWorktrees = actions.removeMissingWorktrees {
-            Button(action: removeMissingWorktrees) {
-                Label("Remove Missing Worktrees", systemImage: "exclamationmark.triangle")
-            }
-            .tint(Color.primary)
-        }
-        if actions.openPullRequest != nil || actions.refreshPRStatus != nil {
+        if hasPullRequest, hasMoves || actions.rename != nil {
             Divider()
         }
         if let openPullRequest = actions.openPullRequest {
@@ -110,7 +118,7 @@ struct SessionRowActionsMenu: View {
             }
             .tint(Color.primary)
         }
-        if actions.revealInFinder != nil || actions.openChangesPanel != nil {
+        if hasPlaces, hasMoves || actions.rename != nil || hasPullRequest {
             Divider()
         }
         if let revealInFinder = actions.revealInFinder {
@@ -127,7 +135,7 @@ struct SessionRowActionsMenu: View {
             }
             .tint(Color.primary)
         }
-        if actions.removeFromSidebar != nil || actions.closeAllTabs != nil || actions.removeFromWorking != nil {
+        if hasPutAway, hasMoves || actions.rename != nil || hasPullRequest || hasPlaces {
             Divider()
         }
         if let removeFromWorking = actions.removeFromWorking {
@@ -136,8 +144,11 @@ struct SessionRowActionsMenu: View {
             }
             .tint(Color.primary)
         }
-        if let removeFromSidebar = actions.removeFromSidebar {
-            entryButton(removeFromSidebar, role: .destructive)
+        if let hide = actions.hide {
+            Button(action: hide) {
+                Label("Hide Worktree", systemImage: "eye.slash")
+            }
+            .tint(Color.primary)
         }
         if let hideAll = actions.hideAll {
             Button(action: hideAll) {
@@ -145,9 +156,9 @@ struct SessionRowActionsMenu: View {
             }
             .tint(Color.primary)
         }
-        if let deleteWorktree = actions.deleteWorktree {
-            Button(role: .destructive, action: deleteWorktree) {
-                Label("Delete Worktree…", systemImage: "trash")
+        if let removeMissing = actions.removeMissing {
+            Button(role: .destructive, action: removeMissing) {
+                Label("Remove from Sidebar", systemImage: "trash")
             }
             .tint(Color.primary)
         }
@@ -157,10 +168,17 @@ struct SessionRowActionsMenu: View {
             }
             .tint(Color.primary)
         }
+        // Last, as the one entry that takes a folder off the disk.
+        if let deleteWorktree = actions.deleteWorktree {
+            Button(role: .destructive, action: deleteWorktree) {
+                Label("Delete Worktree…", systemImage: "trash")
+            }
+            .tint(Color.primary)
+        }
     }
 
-    private func entryButton(_ entry: SessionRowActions.Entry, role: ButtonRole? = nil) -> some View {
-        Button(role: role, action: entry.action) {
+    private func entryButton(_ entry: SessionRowActions.Entry) -> some View {
+        Button(action: entry.action) {
             Label {
                 Text(entry.title)
             } icon: {

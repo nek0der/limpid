@@ -76,7 +76,7 @@ struct WorktreeHidingTests {
         #expect(try shown() == .working)
     }
 
-    /// One row is hidden as Remove from Sidebar hides it: its toast names it.
+    /// One row is hidden as Hide Worktree hides it: its toast names it.
     @Test func hideAll_ofOneRow_namesIt() throws {
         let (session, project) = WorkspaceSessionFixture.withProject()
         let only = try WorkspaceSessionFixture.appendWorktree(to: project.id, in: session, admission: .created)

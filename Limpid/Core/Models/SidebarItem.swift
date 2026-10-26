@@ -282,7 +282,7 @@ struct Worktree: Codable, Equatable, Identifiable {
     /// User explicitly hid this worktree from the sidebar. Auto-detected
     /// `gitWorktree` rows reappear when the underlying git worktree
     /// changes; `userPinned` ones can stay hidden until manually
-    /// re-shown via the project's "Show Hidden Worktrees" toggle.
+    /// re-shown via "Show Hidden Worktrees" in the project header's menu.
     var isHidden: Bool = false
     /// When `GitSyncCoordinator` first found this worktree no longer
     /// reported by `git worktree list` (someone deleted it outside

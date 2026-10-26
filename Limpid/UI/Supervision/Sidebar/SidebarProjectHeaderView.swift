@@ -138,6 +138,13 @@ struct SidebarProjectHeaderView: View {
                 Button(action: actions.moveDown) { Text(SidebarProjectActionText.moveDown) }
             }
             Button(action: actions.newWorktree) { Text(SidebarHeaderText.newWorktree(in: header.name)) }
+            Button(action: actions.syncWorktrees) { Text(SidebarProjectActionText.syncWorktrees) }
+            if let showHiddenWorktrees = actions.showHiddenWorktrees {
+                Button(action: showHiddenWorktrees) { Text(SidebarProjectActionText.showHiddenWorktrees) }
+            }
+            if let removeMissingWorktrees = actions.removeMissingWorktrees {
+                Button(action: removeMissingWorktrees) { Text(SidebarProjectActionText.removeMissingWorktrees) }
+            }
             if let bringOtherWindowForward = actions.bringOtherWindowForward {
                 Button(action: bringOtherWindowForward) { Text(SidebarProjectActionText.bringForward) }
             }

@@ -172,7 +172,7 @@ struct SupervisionHistoryRow: View {
         Button("Mark as Read", action: onMarkRead)
             .disabled(!isUnread)
         Divider()
-        Button("Delete Notification", action: onDelete)
+        Button("Delete Notification", role: .destructive, action: onDelete)
     }
 
     private var fill: Color {

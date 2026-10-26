@@ -9205,6 +9205,7 @@
       }
     },
     "Remove Missing Worktrees": {
+      "comment": "Sidebar project header menu: removes from the sidebar every worktree whose folder is gone, and closes their tabs",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9215,23 +9216,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "存在しないワークツリーをサイドバーから外す"
-          }
-        }
-      }
-    },
-    "Remove Row": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remove Row"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サイドバーから外す"
+            "value": "見つからないワークツリーをすべて外す"
           }
         }
       }
@@ -9253,7 +9238,25 @@
         }
       }
     },
+    "Hide Worktree": {
+      "comment": "Sidebar row menu: hides the worktree's row and keeps its folder; Show Hidden Worktrees brings it back",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide Worktree"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーを非表示にする"
+          }
+        }
+      }
+    },
     "Remove from Sidebar": {
+      "comment": "Sidebar row menu, on a worktree whose folder is gone: removes its row and closes its tabs",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9659,6 +9662,7 @@
       }
     },
     "Show Hidden Worktrees": {
+      "comment": "Sidebar project header menu: brings back every worktree hidden from the sidebar",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9786,6 +9790,7 @@
       }
     },
     "Sync Worktrees": {
+      "comment": "Sidebar project header menu: asks Git for the project's worktrees again",
       "localizations": {
         "en": {
           "stringUnit": {

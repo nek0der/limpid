@@ -3,9 +3,10 @@
 
 import SwiftUI
 
-/// What a project's header offers: a new worktree in the project,
-/// the moves, the folds, and the project's own entries. The same entries
-/// are its VoiceOver actions, for a person who does not drag or right-click.
+/// What a project's header offers: a new worktree in the project, the
+/// moves, the folds, the operations on all of its worktrees, and the
+/// project's own entries. The same entries are its VoiceOver actions, for
+/// a person who does not drag or right-click.
 struct SidebarProjectActions {
     var newWorktree: () -> Void = {}
     /// The key the sheet's own command has (⌘N), shown beside the entry.
@@ -21,6 +22,14 @@ struct SidebarProjectActions {
     var canMoveDown = false
     var toggle: () -> Void = {}
     var collapseOthers: () -> Void = {}
+    /// Asks Git for the project's worktrees again.
+    var syncWorktrees: () -> Void = {}
+    /// Brings back every row hidden with Hide Worktree; `nil` with
+    /// none hidden.
+    var showHiddenWorktrees: (() -> Void)?
+    /// Takes every row whose folder is gone out of the sidebar, with its
+    /// tabs; `nil` with none missing.
+    var removeMissingWorktrees: (() -> Void)?
     var openSettings: () -> Void = {}
     var revealInFinder: () -> Void = {}
     var closeProject: () -> Void = {}
@@ -29,10 +38,9 @@ struct SidebarProjectActions {
     var bringOtherWindowForward: (() -> Void)?
 }
 
-/// The words of the header's entries. Keyed apart from the row menu's
-/// entries of the same English, as they read differently in Japanese: a
-/// project is moved as a whole ("上へ移す"), where a row's "Move Up" is
-/// "上へ移動".
+/// The words of the header's entries. The moves are keyed apart from the
+/// row menu's entries of the same English, so a project's can be worded
+/// on its own in Japanese.
 enum SidebarProjectActionText {
     static let moveUp = LocalizedStringResource(
         "sidebar.project.moveUp",
@@ -54,6 +62,22 @@ enum SidebarProjectActionText {
         "Collapse Others",
         comment: "Sidebar project header menu: folds every other project, and unfolds this one"
     )
+    /// The operations on all of a project's worktrees. They are the
+    /// header's, not a row's: a row's menu holds what acts on that row, and
+    /// "Remove Missing Worktrees" beside a row's own "Remove from Sidebar"
+    /// read as that row's alone.
+    static let syncWorktrees = LocalizedStringResource(
+        "Sync Worktrees",
+        comment: "Sidebar project header menu: asks Git for the project's worktrees again"
+    )
+    static let showHiddenWorktrees = LocalizedStringResource(
+        "Show Hidden Worktrees",
+        comment: "Sidebar project header menu: brings back every worktree hidden from the sidebar"
+    )
+    static let removeMissingWorktrees = LocalizedStringResource(
+        "Remove Missing Worktrees",
+        comment: "Sidebar project header menu: removes from the sidebar every worktree whose folder is gone, and closes their tabs"
+    )
     /// The title bar's own words for the same sheet.
     static let settings = LocalizedStringResource("Project Settings…")
     static let bringForward = LocalizedStringResource(
@@ -63,8 +87,9 @@ enum SidebarProjectActionText {
 }
 
 /// The header's right-click menu, in the order of the design: the new
-/// worktree, the moves, the folds, then the project's own entries, the one
-/// that takes the project away last.
+/// worktree, the moves, the folds, the operations on all of its worktrees,
+/// then the project's own entries, the one that takes the project away
+/// last.
 struct SidebarProjectActionsMenu: View {
     let header: SidebarProjectHeader
     let actions: SidebarProjectActions
@@ -114,6 +139,25 @@ struct SidebarProjectActionsMenu: View {
             Label { Text(SidebarProjectActionText.collapseOthers) } icon: { Image(systemName: "rectangle.compress.vertical") }
         }
         .tint(Color.primary)
+        Divider()
+        Button(action: actions.syncWorktrees) {
+            Label { Text(SidebarProjectActionText.syncWorktrees) } icon: { Image(systemName: "arrow.clockwise") }
+        }
+        .tint(Color.primary)
+        if let showHiddenWorktrees = actions.showHiddenWorktrees {
+            Button(action: showHiddenWorktrees) {
+                Label { Text(SidebarProjectActionText.showHiddenWorktrees) } icon: { Image(systemName: "eye") }
+            }
+            .tint(Color.primary)
+        }
+        // Marked destructive, as the row's own Remove from Sidebar is: the
+        // rows go with their tabs, and no Undo brings them back.
+        if let removeMissingWorktrees = actions.removeMissingWorktrees {
+            Button(role: .destructive, action: removeMissingWorktrees) {
+                Label { Text(SidebarProjectActionText.removeMissingWorktrees) } icon: { Image(systemName: "exclamationmark.triangle") }
+            }
+            .tint(Color.primary)
+        }
         Divider()
         Button(action: actions.openSettings) {
             Label { Text(SidebarProjectActionText.settings) } icon: { Image(systemName: "gearshape") }
