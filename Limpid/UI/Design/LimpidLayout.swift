@@ -365,7 +365,7 @@ enum LimpidLayout {
 
         static let changesPanelDefaultWidth: CGFloat = 360
         static let changesPanelWidthRange: ClosedRange<CGFloat> = 300...520
-        /// The first line of each surface (the sidebar's "Worktrees", the
+        /// The first line of each surface (the sidebar's "Projects", the
         /// session header, the changes panel's "Changes"), its heading and
         /// buttons centered in it. One height for the three, so their
         /// center lines run across the window on one line, 18pt under the

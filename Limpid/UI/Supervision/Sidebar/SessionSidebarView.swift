@@ -25,6 +25,7 @@ struct SessionSidebarView: View {
     @Environment(\.prStatusSyncer) private var prStatusSyncer
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.agentProjection) private var agentProjection
+    @Environment(\.frecencyStore) private var frecencyStore
     @Environment(\.locale) private var locale
     @Environment(UsageLimitResetSync.self) private var resetSync: UsageLimitResetSync?
     @State private var renamingRow: ContainerID?
@@ -75,31 +76,35 @@ struct SessionSidebarView: View {
         )
         VStack(alignment: .leading, spacing: 0) {
             SurfaceHeadingLine {
-                Text(WorktreeText.heading)
+                Text(ProjectListText.heading)
             } trailing: {
-                // A new worktree in the window's project; a header's ＋ is
-                // for its own.
+                // A folder opened as a project, as ⌘O does; a header's ＋
+                // makes a new worktree in its own.
                 Button {
-                    SupervisionWindowActions.newSession(in: window, session: session)
+                    SupervisionWindowActions.openFolder(
+                        from: window,
+                        session: session,
+                        registry: windowRegistry,
+                        frecency: frecencyStore
+                    )
                 } label: {
                     Image(systemName: "plus")
                         .font(.supervision(.icon, weight: .medium))
                         .frame(height: LimpidLayout.Supervision.sidebarHeadingButtonHeight)
                 }
                 .buttonStyle(.supervisionIcon)
-                // Out of ⇥'s stops with the rest of the sidebar; ⌘N is its
+                // Out of ⇥'s stops with the rest of the sidebar; ⌘O is its
                 // key, and VoiceOver reaches it as a button.
                 .focusable(false)
-                .disabled(window.selection.shownProjectID.flatMap { session.project($0) } == nil)
-                // The tooltip names the action as the File menu and the
-                // palette do, ellipsis included: the button opens the same
-                // sheet.
+                // The tooltip names the action as the File menu and
+                // project ▾ do, ellipsis included: the button opens the
+                // same panel.
                 .help(Text(verbatim: ShortcutHelpText.make(
-                    name: LimpidShortcutAction.newWorktree.localizedTitle,
-                    shortcut: settings.settings.keyboard.shortcut(for: .newWorktree)?.displayString,
+                    name: LimpidShortcutAction.openFolder.localizedTitle,
+                    shortcut: settings.settings.keyboard.shortcut(for: .openFolder)?.displayString,
                     locale: locale
                 )))
-                .accessibilityLabel(Text(WorktreeText.newWorktreeLabel))
+                .accessibilityLabel(Text(ProjectListText.openFolderLabel))
             }
             // With no project there is nothing to list: the empty state
             // takes the list's place and the room down to the scratch row,

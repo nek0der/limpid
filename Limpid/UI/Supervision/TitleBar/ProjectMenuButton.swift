@@ -209,10 +209,7 @@ struct ProjectDropdown: View {
                 // of the dropdown's edge.
                 .padding(LimpidLayout.Supervision.popoverFieldMargins)
             // In the sidebar's order, not by use.
-            DropdownHeading(Text(
-                "Projects",
-                comment: "Heading over a list of projects (the project dropdown, a window that shows nothing), in the sidebar's order"
-            ))
+            DropdownHeading(Text(ProjectListText.heading))
             if rows.isEmpty {
                 SupervisionEmptyState(.noResults, size: .compact)
                     // The rule under it keeps a step of its own over the

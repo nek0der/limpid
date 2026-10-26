@@ -31,7 +31,7 @@ struct LeftRailView: View {
             // symbol, which says where a panel goes, not what it holds.
             RailButton(
                 systemImage: "list.bullet.rectangle",
-                name: WorktreeText.heading,
+                name: WorktreeText.railEntry,
                 shortcut: shortcut(.toggleSidebar),
                 isSelected: window.isSidebarPresented
             ) {

@@ -17,7 +17,7 @@ struct SurfaceHeadingLineTests {
 
     // MARK: - The headings
 
-    /// The sidebar's heading line: "Worktrees" starts 16pt in, and the ＋
+    /// The sidebar's heading line: "Projects" starts 16pt in, and the ＋
     /// is centered on the heading line with its glyph, not its hover fill,
     /// 16pt in from the other edge.
     @Test func sidebarHeading_centersItsButtonOnTheLine_withItsGlyphInset() async throws {
@@ -25,7 +25,7 @@ struct SurfaceHeadingLineTests {
         let book = NamedFrameRecorder(space: Self.space)
         let view = VStack(spacing: 0) {
             SurfaceHeadingLine {
-                Text(verbatim: "Worktrees")
+                Text(verbatim: "Projects")
                     .recordFrame(in: book, as: "title")
             } trailing: {
                 Button {} label: {
@@ -111,7 +111,7 @@ struct SurfaceHeadingLineTests {
             }
             VStack(spacing: 0) {
                 SurfaceHeadingLine {
-                    Text(verbatim: "Worktrees")
+                    Text(verbatim: "Projects")
                 } trailing: {
                     EmptyView()
                 }

@@ -44,7 +44,7 @@ extension LimpidFont {
         /// beside it.
         static let codeScale: CGFloat = 0.92
 
-        /// A surface's heading: the sidebar's "Worktrees" and the changes
+        /// A surface's heading: the sidebar's "Projects" and the changes
         /// panel's "Changes", in one face so the two read as the same kind
         /// of title. The session header's name is two steps larger
         /// (`LimpidLayout.Supervision.sessionHeaderNameFontSize`).

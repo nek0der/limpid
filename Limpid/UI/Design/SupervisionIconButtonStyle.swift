@@ -3,10 +3,13 @@
 
 import SwiftUI
 
-/// A glyph or a short mark with no edge (the sidebar heading's ＋): muted
-/// at rest; hovered, it takes the `hover` fill and the text color, so it
-/// shows it can be pressed without a border competing with the heading.
-/// Pressing fills it with `selection`.
+/// A glyph with no edge (the sidebar heading's ＋): muted at rest;
+/// hovered, it takes the `hover` fill and the text color, so it shows it
+/// can be pressed without a border competing with the heading. Pressing
+/// fills it with `selection`. The fill is a square as tall as the button,
+/// centered on the glyph. The room either side of the glyph stays for the
+/// click and for where the glyph stands, but a fill that wide reads as a
+/// bar under a lone ＋.
 struct SupervisionIconButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         Face(configuration: configuration)
@@ -27,7 +30,7 @@ struct SupervisionIconButtonStyle: ButtonStyle {
                 .padding(.horizontal, LimpidLayout.Supervision.iconButtonHorizontalPadding)
                 // As see-through as the ground it is on (`SurfaceGround`),
                 // as the bordered buttons' fill is.
-                .background(SurfaceGround { shape.fill(fill(isLit: isLit)) })
+                .background(SurfaceGround { shape.fill(fill(isLit: isLit)).aspectRatio(1, contentMode: .fit) })
                 .contentShape(shape)
                 .opacity(isEnabled ? 1 : SupervisionTokens.disabledOpacity)
                 .onHover { isHovering = $0 }

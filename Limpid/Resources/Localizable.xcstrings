@@ -8535,19 +8535,19 @@
         }
       }
     },
-    "New Worktree": {
-      "comment": "Sidebar, VoiceOver: the heading's + button, which opens the new worktree sheet",
+    "Open Folder": {
+      "comment": "Sidebar, VoiceOver: the heading's + button, which opens a folder as a project",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "New Worktree"
+            "value": "Open Folder"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "新規ワークツリー"
+            "value": "フォルダを開く"
           }
         }
       }
@@ -10331,7 +10331,7 @@
       }
     },
     "Worktrees": {
-      "comment": "Left rail and sidebar heading, the worktree menu's placeholder, and Project Settings' section: the worktrees",
+      "comment": "Left rail entry that shows the sidebar, the worktree menu's placeholder, and Project Settings' section: the worktrees",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -19028,7 +19028,7 @@
       }
     },
     "Projects": {
-      "comment": "Heading over a list of projects (the project dropdown, a window that shows nothing), in the sidebar's order",
+      "comment": "Heading over a list of projects in the sidebar's order: the sidebar, the project dropdown, an empty window",
       "localizations": {
         "en": {
           "stringUnit": {
