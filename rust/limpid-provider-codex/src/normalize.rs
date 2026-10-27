@@ -20,6 +20,7 @@
 //! A subagent the person's agent spawns is marked, and only its tool calls
 //! and permission requests count as the pane's (`is_subagents_own`).
 
+use crate::json::string;
 use limpid_agent_model::{
     AgentEvent, HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, RawHookInput, RunRecord,
     SessionSource, UsageLimit, format_utc_seconds, parse_object, parse_utc_seconds,
@@ -210,9 +211,10 @@ pub(crate) fn applies_to(input: RawHookInput<'_>, record: Option<&RunRecord>) ->
         .is_none_or(|reached| started <= reached)
 }
 
-/// Only the watcher's event reads the rollout: no Codex event needs it.
+/// The watcher's event reads the rollout for the limit, and `Stop` for what
+/// the turn used and the commands it ran (`tokens`).
 pub(crate) fn transcript_path(input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {
-    transcript_path_for_events(input, &[LIMPID_USAGE_LIMIT_EVENT])
+    transcript_path_for_events(input, &[LIMPID_USAGE_LIMIT_EVENT, "Stop"])
 }
 
 /// Whether the payload comes from Codex's own memory agent rather than the
@@ -263,10 +265,6 @@ fn resolved(path: &Path) -> Cow<'_, Path> {
         return Cow::Borrowed(path);
     }
     std::fs::canonicalize(path).map_or(Cow::Borrowed(path), Cow::Owned)
-}
-
-fn string<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
-    object.get(key).and_then(Value::as_str)
 }
 
 /// A tool's argument as one line: the string it is, or an argv array
@@ -640,13 +638,26 @@ mod tests {
     }
 
     #[test]
-    fn no_codex_event_reads_the_rollout() {
-        let payload = br#"{"hook_event_name":"Stop","transcript_path":"/tmp/rollout.jsonl"}"#;
-        let input = RawHookInput {
-            bytes: payload,
-            transcript: None,
+    fn only_a_stop_among_codex_events_reads_the_rollout() {
+        let path = |event: &str| {
+            let payload = format!(
+                r#"{{"hook_event_name":"{event}","transcript_path":"/tmp/rollout.jsonl"}}"#
+            );
+            transcript_path(RawHookInput {
+                bytes: payload.as_bytes(),
+                transcript: None,
+            })
+            .unwrap()
         };
-        assert_eq!(transcript_path(input).unwrap(), None);
+        assert_eq!(path("Stop"), Some("/tmp/rollout.jsonl".into()));
+        for event in [
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PostToolUse",
+            "SessionStart",
+        ] {
+            assert_eq!(path(event), None, "{event}");
+        }
     }
 
     #[test]

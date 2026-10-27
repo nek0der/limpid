@@ -38,8 +38,24 @@ struct TurnSummary: Equatable, Sendable, Decodable {
     /// the counts in `changes` may be short.
     let largeFilesSkipped: Int
     let durationSeconds: Int?
-    /// The last check the turn ran, when it ran one.
+    /// The last check the turn ran, when it ran one, with how many of the
+    /// checks before it failed.
     let lastCheck: CheckSummary?
+    /// The turn's last checks in the order they ran, as many as the record
+    /// keeps (`MAX_CHECK_MARKS` in `limpid-agent-model`).
+    let checks: [CheckMark]
+    /// How many checks the turn ran, those `checks` no longer holds
+    /// included.
+    let checkCount: Int
+    /// How many of them failed, those `checks` no longer holds included.
+    let failureCount: Int
+    /// Whether the turn may have run checks the counts leave out: they were
+    /// read at its end from a part of the agent's transcript that no longer
+    /// held the turn's start.
+    let areChecksPartial: Bool
+    /// What the turn used, `nil` until it ended, or when the agent's
+    /// transcript did not say.
+    let usage: TurnUsage?
     /// False for an end-only record nobody prompted: the hook saw no prompt
     /// for it (the agent stopped on its own, answering a background task; or
     /// the prompt came before this build recorded turns). History, never
@@ -57,7 +73,8 @@ struct TurnSummary: Equatable, Sendable, Decodable {
         case conversation
         case runID = "runId"
         case paneID = "paneId"
-        case displayNumber, promptHead, promptKind, startedAt, finishedAt, phase, changes, durationSeconds, lastCheck, hasPrompt, begin, end
+        case displayNumber, promptHead, promptKind, startedAt, finishedAt, phase, changes, durationSeconds, lastCheck, checks, checkCount,
+             failureCount, areChecksPartial, usage, hasPrompt, begin, end
     }
 
     private enum ChangeKeys: String, CodingKey {
@@ -86,9 +103,30 @@ struct TurnSummary: Equatable, Sendable, Decodable {
         hasShellChanges = try details.decodeIfPresent(Bool.self, forKey: .hasShellChanges) ?? false
         largeFilesSkipped = try details.decodeIfPresent(Int.self, forKey: .largeFilesSkipped) ?? 0
         durationSeconds = try container.decodeIfPresent(Int.self, forKey: .durationSeconds)
-        // A check of a shape this build cannot read costs the check, not the
-        // turn.
-        lastCheck = (try? container.decodeIfPresent(CheckSummary.self, forKey: .lastCheck)) ?? nil
+        // Checks, or a usage, of a shape this build cannot read cost those
+        // facts, not the turn: a list of marks that does not read is lost
+        // whole, and the card shows the last check alone, as a record from
+        // before the marks were kept.
+        let checks = (try? container.decodeIfPresent([CheckMark].self, forKey: .checks)) ?? []
+        self.checks = checks
+        // Never fewer than the marks held, nor than the one last check a
+        // record from before the count was kept holds.
+        let hasLastCheck = container.contains(.lastCheck)
+        checkCount = max((try? container.decodeIfPresent(Int.self, forKey: .checkCount)) ?? 0, checks.count, hasLastCheck ? 1 : 0)
+        // Never fewer than the failed runs the marks hold, so the count and
+        // the marks never disagree.
+        let failureCount = max((try? container.decodeIfPresent(Int.self, forKey: .failureCount)) ?? 0, checks.count(where: \.hasFailed))
+        self.failureCount = failureCount
+        areChecksPartial = (try? container.decodeIfPresent(Bool.self, forKey: .areChecksPartial)) ?? false
+        lastCheck = ((try? container.decodeIfPresent(CheckSummary.self, forKey: .lastCheck)) ?? nil).map { check in
+            CheckSummary(
+                command: check.command,
+                isFiltered: check.isFiltered,
+                exitCode: check.exitCode,
+                earlierFailures: max(0, failureCount - (check.hasFailed ? 1 : 0))
+            )
+        }
+        usage = (try? container.decodeIfPresent(TurnUsage.self, forKey: .usage)) ?? nil
         hasPrompt = try container.decode(Bool.self, forKey: .hasPrompt)
         // Only a taken snapshot has a tree; any other state, or one this
         // build cannot read, has none.
@@ -222,6 +260,71 @@ extension CheckSummary: Decodable {
             isFiltered: container.decode(Bool.self, forKey: .isFiltered),
             exitCode: container.decodeIfPresent(Int.self, forKey: .exitCode)
         )
+    }
+}
+
+/// One check run of a turn: how it exited, and whether it ran only part of
+/// the suite.
+struct CheckMark: Equatable, Sendable, Decodable {
+    /// `nil` when the status was not the check's own (`CheckSummary`).
+    let exitCode: Int?
+    let isFiltered: Bool
+
+    init(exitCode: Int?, isFiltered: Bool) {
+        self.exitCode = exitCode
+        self.isFiltered = isFiltered
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case exitCode, isFiltered
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        exitCode = try container.decodeIfPresent(Int.self, forKey: .exitCode)
+        // Lenient where `CheckSummary` is not: one mark that does not read
+        // would cost the whole list.
+        isFiltered = try container.decodeIfPresent(Bool.self, forKey: .isFiltered) ?? false
+    }
+
+    /// The check's own exit code says it failed, as `CheckSummary.hasFailed`.
+    var hasFailed: Bool {
+        exitCode.map { $0 != 0 } ?? false
+    }
+}
+
+/// The tokens a turn's requests used, as the agent's transcript recorded
+/// them, its subagents' included where the transcript names their own
+/// (`TurnUsage` in `limpid-agent-model`).
+/// Counted, never priced: most people run the agents on a plan.
+struct TurnUsage: Equatable, Sendable, Decodable {
+    /// Input sent fresh, neither read from nor written to the prompt cache.
+    let inputTokens: Int
+    let cacheWriteTokens: Int
+    let cacheReadTokens: Int
+    let outputTokens: Int
+    /// Part of the turn could not be read, so the counts are short.
+    let isPartial: Bool
+
+    init(inputTokens: Int, cacheWriteTokens: Int, cacheReadTokens: Int, outputTokens: Int, isPartial: Bool = false) {
+        self.inputTokens = inputTokens
+        self.cacheWriteTokens = cacheWriteTokens
+        self.cacheReadTokens = cacheReadTokens
+        self.outputTokens = outputTokens
+        self.isPartial = isPartial
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens, isPartial
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        inputTokens = try container.decode(Int.self, forKey: .inputTokens)
+        cacheWriteTokens = try container.decode(Int.self, forKey: .cacheWriteTokens)
+        cacheReadTokens = try container.decode(Int.self, forKey: .cacheReadTokens)
+        outputTokens = try container.decode(Int.self, forKey: .outputTokens)
+        isPartial = try container.decodeIfPresent(Bool.self, forKey: .isPartial) ?? false
     }
 }
 

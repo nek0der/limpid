@@ -4,9 +4,10 @@
 
 use crate::lifecycle::IdleOutcome;
 use limpid_agent_model::{
-    AgentEvent, Capability, ChangeSummary, ConversationKey, DiffStat, EventId, GitContext,
-    PromptKind, ProviderDescriptor, ProviderId, RecordedPromptKind, RunRecord, RunState,
-    SkippedFile, SnapshotStatus, TurnPhase, TurnRecord, classify_prompt, seconds_between,
+    AgentEvent, Capability, ChangeSummary, CheckResult, ConversationKey, DiffStat, EventId,
+    GitContext, PromptKind, ProviderDescriptor, ProviderId, RecordedPromptKind, RunRecord,
+    RunState, SkippedFile, SnapshotStatus, TurnPhase, TurnRecord, TurnUsage, classify_prompt,
+    seconds_between,
 };
 use std::collections::BTreeMap;
 
@@ -164,6 +165,8 @@ pub struct TurnStart<'a> {
     pub now: &'a str,
     pub begin: SnapshotTaken,
     pub event: &'a EventId,
+    /// The provider's own id for the turn (`TurnRecord::provider_turn_id`).
+    pub provider_turn_id: Option<String>,
 }
 
 /// The record a submitted prompt writes.
@@ -193,6 +196,12 @@ pub fn begin_record(start: TurnStart<'_>) -> TurnRecord {
         added_bytes: None,
         applied_events: Vec::new(),
         last_check: None,
+        checks: Vec::new(),
+        check_count: 0,
+        failure_count: 0,
+        are_checks_partial: false,
+        provider_turn_id: start.provider_turn_id,
+        usage: None,
         extra: BTreeMap::new(),
         was_decoded_lossily: false,
     };
@@ -218,6 +227,15 @@ pub struct TurnEnd<'a> {
     /// The difference between the begin and end trees; `None` when it could
     /// not be taken.
     pub diff: Option<DiffStat>,
+    /// What the turn used, read from the transcript as it ended; `None`
+    /// keeps what the record held.
+    pub usage: Option<TurnUsage>,
+    /// Every check the turn ran, for a provider that reports them only at
+    /// the end; `None` keeps the checks recorded as they ran.
+    pub checks: Option<Vec<CheckResult>>,
+    /// Whether `checks` may leave out the turn's first runs, the turn's
+    /// start gone from the part of the transcript read.
+    pub are_checks_partial: bool,
 }
 
 /// The record with its ending filled in, judged from both snapshots.
@@ -236,6 +254,32 @@ pub fn end_record(previous: &TurnRecord, end: TurnEnd<'_>) -> TurnRecord {
         seconds_between(&record.started_at, end.now)
     };
     record.added_bytes = end.diff.and_then(|diff| diff.added_bytes);
+    // A later end of the same turn reads again from where the turn began,
+    // so a whole reading holds the earlier one. A partial one may hold
+    // less: the turn went on past the first end, and its start left the
+    // part of the transcript read. Each count is then the larger of the
+    // two, and both readings short of the whole, so it says so.
+    if let Some(usage) = end.usage {
+        record.usage = Some(match record.usage {
+            Some(known) if usage.is_partial => known.fuller(usage),
+            _ => usage,
+        });
+    }
+    // A partial list of checks never replaces a longer one; the turn then
+    // ran more than either says.
+    if let Some(checks) = end.checks {
+        let is_longer = u32::try_from(checks.len()).is_ok_and(|count| count >= record.check_count);
+        if !end.are_checks_partial {
+            record.set_checks(checks);
+        } else if is_longer {
+            // The failures the start of the turn held, which the partial
+            // list no longer does, are still the turn's.
+            let failures = record.failure_count;
+            record.set_checks(checks);
+            record.failure_count = record.failure_count.max(failures);
+        }
+        record.are_checks_partial = end.are_checks_partial;
+    }
     record.changes = ChangeSummary::judge(
         record.phase,
         &record.begin,
@@ -283,6 +327,7 @@ mod tests {
             now: "2026-10-12T00:00:00Z",
             begin,
             event,
+            provider_turn_id: None,
         })
     }
 
@@ -456,6 +501,9 @@ mod tests {
                     has_shell_changes: false,
                     added_bytes: Some(10),
                 }),
+                usage: None,
+                checks: None,
+                are_checks_partial: false,
             },
         );
         assert_eq!(ended.phase, TurnPhase::Interrupted);
@@ -536,6 +584,9 @@ mod tests {
                     now: "2026-10-12T00:00:10Z",
                     end,
                     diff: None,
+                    usage: None,
+                    checks: None,
+                    are_checks_partial: false,
                 },
             );
             assert_eq!(ended.phase, TurnPhase::Finished, "{reason}");
@@ -546,5 +597,81 @@ mod tests {
                 }
             );
         }
+    }
+
+    /// A continued stop reads the turn again: a whole reading replaces what
+    /// the turn held; a partial one keeps the larger of each count and says
+    /// it is short; a partial list of checks does not replace a longer one.
+    #[test]
+    fn a_later_end_keeps_the_fuller_reading() {
+        let event =
+            EventId::invocation(&ProviderId::new("claude").expect("id"), Uuid::from_u128(1));
+        let usage = |input, output, is_partial| TurnUsage {
+            input_tokens: input,
+            output_tokens: output,
+            is_partial,
+            ..TurnUsage::default()
+        };
+        let check = |exit_code| CheckResult {
+            command: "cargo test".into(),
+            exit_code: Some(exit_code),
+            is_filtered: false,
+        };
+        let end = |usage, checks, are_checks_partial| TurnEnd {
+            phase: TurnPhase::Finished,
+            now: "2026-10-12T00:00:10Z",
+            end: captured("b"),
+            diff: None,
+            usage,
+            checks,
+            are_checks_partial,
+        };
+        let begun = start(captured("a"), &event);
+        let first = end_record(
+            &begun,
+            end(
+                Some(usage(5, 10, false)),
+                Some(vec![check(1), check(0)]),
+                false,
+            ),
+        );
+        assert_eq!((first.check_count, first.failure_count), (2, 1));
+
+        let partial = end_record(
+            &first,
+            end(Some(usage(3, 20, true)), Some(vec![check(0)]), true),
+        );
+        assert_eq!(partial.usage, Some(usage(5, 20, true)));
+        assert_eq!(partial.check_count, 2);
+        assert!(
+            partial.are_checks_partial,
+            "more ran than the record counts"
+        );
+
+        let longer = end_record(
+            &first,
+            end(None, Some(vec![check(0), check(0), check(0)]), true),
+        );
+        assert_eq!(
+            (longer.check_count, longer.failure_count),
+            (3, 1),
+            "a failure the partial list lost is still counted"
+        );
+
+        let whole = end_record(
+            &partial,
+            end(
+                Some(usage(9, 30, false)),
+                Some(vec![check(1), check(0), check(0)]),
+                false,
+            ),
+        );
+        assert_eq!(whole.usage, Some(usage(9, 30, false)));
+        assert_eq!((whole.check_count, whole.failure_count), (3, 1));
+        assert!(!whole.are_checks_partial);
+
+        let unread = end_record(&whole, end(None, None, false));
+        assert_eq!(unread.usage, whole.usage);
+        assert_eq!(unread.checks, whole.checks);
     }
 }

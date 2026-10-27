@@ -162,6 +162,15 @@ struct CheckSummary: Equatable, Sendable {
     /// own (interrupted, in the background, piped on, `|| true`): the
     /// command is shown with no ✓ or ✗.
     let exitCode: Int?
+    /// How many of the turn's checks before this one failed: a pass after
+    /// two failures says so, since the turn had trouble getting there.
+    var earlierFailures = 0
+
+    /// The check's own exit code says it failed: the ✗ the receipt draws
+    /// in red. Not an exit code that was another command's.
+    var hasFailed: Bool {
+        exitCode.map { $0 != 0 } ?? false
+    }
 }
 
 /// Turns that ended and have not been read, as one item: one turn, or the

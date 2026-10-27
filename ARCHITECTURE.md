@@ -580,7 +580,8 @@ That snapshot begins a turn record. At the end of the turn (`Stop`, a
 failure, or an interrupt the provider reports) the hook takes a second
 snapshot in the repository the turn began in, through
 `turn-<pane>.end.index`, and writes what changed between the two trees to
-`<state>/turns/<turn-id>.turn.json`. A stop that follows work another stop
+`<state>/turns/<turn-id>.turn.json`, with the tokens the turn used as the
+agent's transcript records them (and, for Codex, the checks it ran). A stop that follows work another stop
 hook asked for (`stop_hook_active`) takes the end again, since the turn went
 on; any other stop of an ended turn, or an end with no turn, writes an
 end-only record that reads as incomplete. Each tree is pinned by

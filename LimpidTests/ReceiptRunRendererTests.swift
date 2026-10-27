@@ -17,17 +17,19 @@ struct ReceiptRunRendererTests {
         #expect(!even.isSemibold)
     }
 
-    @Test func receipt_unviewedIsUnreadBlueInSemibold() {
-        let unviewed = ReceiptRunRenderer.appearance(
-            of: .unviewed,
-            style: .receipt(base: SupervisionTokens.muted.color, showsEmphasis: false)
+    /// A pass of part of the suite is a step quieter than the muted words
+    /// around it, yet a mark held to 3:1.
+    @Test func receipt_quietMarkIsQuieterThanMuted() {
+        let mark = ReceiptRunRenderer.appearance(
+            of: .quietMark,
+            style: .receipt(base: SupervisionTokens.muted.color, showsEmphasis: true)
         )
-        #expect(unviewed.color == SupervisionTokens.unreadText.color)
-        #expect(unviewed.isSemibold)
+        #expect(mark.color == SupervisionTokens.closedMark.color)
+        #expect(!mark.isSemibold)
     }
 
     @Test func mutedFacts_wordsAreMutedAndRegular_countsKeepDiffColors() {
-        let words: [ReceiptRun.Role] = [.emphasized, .plain, .quiet, .unviewed]
+        let words: [ReceiptRun.Role] = [.emphasized, .plain, .quiet, .quietMark]
         for role in words {
             let appearance = ReceiptRunRenderer.appearance(of: role, style: .mutedFacts)
             #expect(appearance.color == SupervisionTokens.muted.color)

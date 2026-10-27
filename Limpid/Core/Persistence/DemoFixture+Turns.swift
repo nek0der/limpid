@@ -94,7 +94,8 @@ extension DemoFixture {
                 endedSecondsAgo: 2760,
                 seconds: 360,
                 prompt: "Sketch the reminder schedule model",
-                changes: Changes(files: 3, added: 88, removed: 0)
+                changes: Changes(files: 3, added: 88, removed: 0),
+                usage: TurnUsage(inputTokens: 1800, cacheWriteTokens: 21000, cacheReadTokens: 140_000, outputTokens: 4100)
             ),
             StagedTurn(
                 number: 2,
@@ -102,14 +103,17 @@ extension DemoFixture {
                 seconds: 540,
                 prompt: "Add a job that finds overdue invoices",
                 changes: Changes(files: 3, added: 121, removed: 8),
-                check: CheckSummary(command: "pnpm test src/jobs", isFiltered: true, exitCode: 0)
+                check: CheckSummary(command: "pnpm test src/jobs", isFiltered: true, exitCode: 0),
+                earlierChecks: [1],
+                usage: TurnUsage(inputTokens: 3100, cacheWriteTokens: 38000, cacheReadTokens: 410_000, outputTokens: 7200)
             ),
             StagedTurn(
                 number: 3,
                 endedSecondsAgo: 1500,
                 seconds: 120,
                 prompt: "How does the mailer handle bounced emails?",
-                changes: nil
+                changes: nil,
+                usage: TurnUsage(inputTokens: 900, cacheWriteTokens: 6000, cacheReadTokens: 90000, outputTokens: 1200)
             ),
             StagedTurn(
                 number: 4,
@@ -117,7 +121,9 @@ extension DemoFixture {
                 seconds: 662,
                 prompt: "Show the reminder settings on the billing page",
                 changes: Changes(files: 2, added: 47, removed: 9),
-                check: check(1)
+                check: check(1),
+                earlierChecks: [1],
+                usage: TurnUsage(inputTokens: 4200, cacheWriteTokens: 61000, cacheReadTokens: 1_200_000, outputTokens: 9800)
             ),
             StagedTurn(
                 number: 5,
@@ -125,7 +131,9 @@ extension DemoFixture {
                 seconds: 330,
                 prompt: remindersLastPrompt,
                 changes: Changes(files: 2, added: 89, removed: 4),
-                check: check(0)
+                check: check(0),
+                earlierChecks: [1, 1],
+                usage: TurnUsage(inputTokens: 3000, cacheWriteTokens: 75000, cacheReadTokens: 2_100_000, outputTokens: 6200)
             )
         ]
     }
@@ -141,7 +149,8 @@ extension DemoFixture {
                 endedSecondsAgo: remindersCodexFinishedSecondsAgo,
                 seconds: 95,
                 prompt: remindersCodexLastPrompt,
-                changes: Changes(files: 1, added: 24, removed: 0)
+                changes: Changes(files: 1, added: 24, removed: 0),
+                usage: TurnUsage(inputTokens: 1649, cacheWriteTokens: 0, cacheReadTokens: 94464, outputTokens: 807)
             )
         ]
     }
@@ -195,7 +204,8 @@ extension DemoFixture {
     }
 
     /// One staged turn: what it was asked, when it ended and how long it ran,
-    /// what it changed (nothing for an answer), and the check it ran last.
+    /// what it changed (nothing for an answer), the check it ran last and
+    /// how the ones before it exited, and the tokens it used.
     private struct StagedTurn {
         let number: Int
         let endedSecondsAgo: Int
@@ -203,6 +213,8 @@ extension DemoFixture {
         let prompt: String
         let changes: Changes?
         var check: CheckSummary?
+        var earlierChecks: [Int] = []
+        var usage: TurnUsage?
         var phase: TurnPhase = .finished
 
         /// Read through the same decoder a pass's turns go through, so the
@@ -243,6 +255,21 @@ extension DemoFixture {
                     lastCheck["exitCode"] = exitCode
                 }
                 fields["lastCheck"] = lastCheck
+                let exits: [Int?] = earlierChecks + [check.exitCode]
+                fields["checks"] = exits.map { exit -> [String: Any] in
+                    var mark: [String: Any] = ["isFiltered": check.isFiltered]
+                    mark["exitCode"] = exit
+                    return mark
+                }
+                fields["checkCount"] = exits.count
+            }
+            if let usage {
+                fields["usage"] = [
+                    "inputTokens": usage.inputTokens,
+                    "cacheWriteTokens": usage.cacheWriteTokens,
+                    "cacheReadTokens": usage.cacheReadTokens,
+                    "outputTokens": usage.outputTokens
+                ]
             }
             guard let data = try? JSONSerialization.data(withJSONObject: fields) else { return nil }
             return try? JSONDecoder().decode(TurnSummary.self, from: data)

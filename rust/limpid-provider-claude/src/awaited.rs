@@ -20,7 +20,7 @@ use serde_json::{Map, Value};
 /// This is the text Claude writes as a user line when the person interrupts it.
 /// Claude adds " for tool use" when the interrupt refused a tool call, and
 /// writes the bare form for an interrupt while the model was writing.
-const INTERRUPT_PREFIX: &str = "[Request interrupted by user";
+pub(crate) const INTERRUPT_PREFIX: &str = "[Request interrupted by user";
 
 /// This says how the tool call Claude made last stands in the transcript tail.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -6,7 +6,7 @@ use limpid_agent_hook::{
 };
 use limpid_agent_model::{
     ChangeSummary, LOCK_FILE_SUFFIX, RunRecord, RunState, SnapshotStatus, TurnPhase, TurnRecord,
-    cwd_event_file_name, run_record_file_name, session_hint_file_name,
+    TurnUsage, cwd_event_file_name, run_record_file_name, session_hint_file_name,
 };
 use serde_json::Value;
 use std::fs;
@@ -1163,4 +1163,448 @@ fn a_nested_project_keeps_its_own_checks() {
         None,
         "the inner project's list applies"
     );
+}
+
+#[test]
+fn a_turn_keeps_its_checks_in_order_and_counts_them() {
+    let scratch = Scratch::new("turn-checks");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    for _ in 0..2 {
+        scratch.call(
+            RUN,
+            Some(&new_call()),
+            &bash(
+                "PostToolUseFailure",
+                "cargo test",
+                r#","error":"Exit code 101\nfailed","is_interrupt":false"#,
+            ),
+        );
+    }
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        &bash("PostToolUse", "cargo test", ""),
+    );
+
+    let turn = scratch.turns().remove(0);
+    let exits: Vec<_> = turn.checks.iter().map(|mark| mark.exit_code).collect();
+    assert_eq!(exits, vec![Some(101), Some(101), Some(0)]);
+    assert_eq!((turn.check_count, turn.failure_count), (3, 2));
+    assert_eq!(turn.last_check.expect("a check").exit_code, Some(0));
+}
+
+/// One line of a Claude transcript, in the shape Claude Code writes it.
+fn transcript_line(line: &str) -> String {
+    format!("{line}\n")
+}
+
+/// `path` as it goes between a JSON string's quotes, so that a Windows
+/// path's backslashes reach the hook as backslashes.
+fn json_text(path: &Path) -> String {
+    let quoted = serde_json::to_string(&path.display().to_string()).expect("path");
+    quoted[1..quoted.len() - 1].to_owned()
+}
+
+#[test]
+fn a_claude_turn_reads_what_it_and_its_subagents_used_at_its_stop() {
+    let scratch = Scratch::new("turn-usage-claude");
+    let session = scratch.root.join("session.jsonl");
+    let subagents = scratch.root.join("session").join("subagents");
+    fs::create_dir_all(&subagents).expect("subagents");
+    let lines = [
+        r#"{"type":"user","isSidechain":false,"promptId":"p0","message":{"content":"earlier"}}"#,
+        r#"{"type":"assistant","isSidechain":false,"requestId":"r0","message":{"usage":{"input_tokens":50,"output_tokens":50}}}"#,
+        r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":"add tests"}}"#,
+        r#"{"type":"assistant","isSidechain":false,"requestId":"r1","message":{"usage":{"input_tokens":2,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000,"output_tokens":10}}}"#,
+        r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":[{"type":"tool_result"}]},"toolUseResult":{"status":"completed","agentId":"a1"}}"#,
+        r#"{"type":"assistant","isSidechain":false,"requestId":"r2","message":{"usage":{"input_tokens":2,"cache_creation_input_tokens":20,"cache_read_input_tokens":1100,"output_tokens":5}}}"#,
+    ];
+    fs::write(&session, lines.map(transcript_line).concat()).expect("transcript");
+    fs::write(
+        subagents.join("agent-a1.jsonl"),
+        transcript_line(
+            r#"{"type":"assistant","isSidechain":true,"requestId":"s1","message":{"usage":{"input_tokens":1,"cache_creation_input_tokens":7,"cache_read_input_tokens":0,"output_tokens":3}}}"#,
+        ),
+    )
+    .expect("subagent");
+    let path = json_text(&session);
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(
+            r#"{{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"add tests","prompt_id":"p1","transcript_path":"{path}"}}"#
+        )
+        .as_bytes(),
+    );
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(r#"{{"hook_event_name":"Stop","session_id":"s1","transcript_path":"{path}"}}"#)
+            .as_bytes(),
+    );
+
+    let turn = scratch.turns().remove(0);
+    assert_eq!(turn.provider_turn_id.as_deref(), Some("p1"));
+    assert_eq!(
+        turn.usage,
+        Some(TurnUsage {
+            input_tokens: 5,
+            cache_write_tokens: 127,
+            cache_read_tokens: 2100,
+            output_tokens: 18,
+            is_partial: false,
+        })
+    );
+}
+
+#[test]
+fn a_codex_turn_reads_its_usage_and_checks_from_the_rollout_at_its_stop() {
+    let scratch = Scratch::new("turn-usage-codex");
+    let rollout = scratch.root.join("rollout.jsonl");
+    let command = |script: &str, status: &str, exit: i32| {
+        format!(
+            r#"{{"type":"event_msg","payload":{{"type":"item_completed","turn_id":"t1","item":{{"type":"CommandExecution","command":["/bin/zsh","-lc","{script}"],"status":"{status}","exit_code":{exit}}}}}}}"#
+        )
+    };
+    let lines = [
+        command("cargo test", "failed", 101),
+        command("ls", "completed", 0),
+        command("cargo test", "completed", 0),
+        r#"{"type":"token_usage_record","payload":{"turn_id":"t1","turn_token_usage":{"input_tokens":1000,"cached_input_tokens":900,"cache_write_input_tokens":0,"output_tokens":40}}}"#.to_owned(),
+    ];
+    fs::write(&rollout, lines.map(|line| line + "\n").concat()).expect("rollout");
+    let path = json_text(&rollout);
+    let codex = |payload: String| {
+        scratch.call_as("codex", RUN, Some(&new_call()), payload.as_bytes());
+    };
+    codex(
+        r#"{"hook_event_name":"SessionStart","session_id":"s1","source":"startup","cwd":"/tmp"}"#
+            .to_owned(),
+    );
+    codex(format!(
+        r#"{{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"fix it","turn_id":"t1","cwd":"/tmp","transcript_path":"{path}"}}"#
+    ));
+    codex(format!(
+        r#"{{"hook_event_name":"Stop","session_id":"s1","turn_id":"t1","stop_hook_active":false,"cwd":"/tmp","transcript_path":"{path}"}}"#
+    ));
+
+    let turn = scratch.turns().remove(0);
+    assert_eq!(turn.provider_turn_id.as_deref(), Some("t1"));
+    assert_eq!(
+        turn.usage,
+        Some(TurnUsage {
+            input_tokens: 100,
+            cache_write_tokens: 0,
+            cache_read_tokens: 900,
+            output_tokens: 40,
+            is_partial: false,
+        })
+    );
+    let exits: Vec<_> = turn.checks.iter().map(|mark| mark.exit_code).collect();
+    assert_eq!(exits, vec![Some(101), Some(0)]);
+    assert_eq!((turn.check_count, turn.failure_count), (2, 1));
+    assert_eq!(turn.last_check.expect("a check").command, "cargo test");
+}
+
+#[test]
+fn a_subagent_transcript_past_the_limit_leaves_the_usage_partial() {
+    let scratch = Scratch::new("turn-usage-large-subagent");
+    let session = scratch.root.join("session.jsonl");
+    let subagents = scratch.root.join("session").join("subagents");
+    fs::create_dir_all(&subagents).expect("subagents");
+    let lines = [
+        r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":"explore"}}"#,
+        r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":[{"type":"tool_result"}]},"toolUseResult":{"status":"completed","agentId":"a1"}}"#,
+        r#"{"type":"assistant","isSidechain":false,"requestId":"r1","message":{"usage":{"input_tokens":2,"output_tokens":5}}}"#,
+    ];
+    fs::write(&session, lines.map(transcript_line).concat()).expect("transcript");
+    // Padding the size of the hook's limit, then the subagent's last
+    // request: the tail holds the request, but not the start of the file.
+    let mut large = vec![b' '; limpid_agent_hook::MAX_TRANSCRIPT_BYTES];
+    large.extend(transcript_line(
+        r#"{"type":"assistant","isSidechain":true,"requestId":"s1","message":{"usage":{"input_tokens":1,"output_tokens":3}}}"#,
+    ).bytes());
+    fs::write(subagents.join("agent-a1.jsonl"), large).expect("subagent");
+    let path = json_text(&session);
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(
+            r#"{{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"explore","prompt_id":"p1","transcript_path":"{path}"}}"#
+        )
+        .as_bytes(),
+    );
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(r#"{{"hook_event_name":"Stop","session_id":"s1","transcript_path":"{path}"}}"#)
+            .as_bytes(),
+    );
+
+    assert_eq!(
+        scratch.turns().remove(0).usage,
+        Some(TurnUsage {
+            input_tokens: 3,
+            cache_write_tokens: 0,
+            cache_read_tokens: 0,
+            output_tokens: 8,
+            is_partial: true,
+        })
+    );
+}
+
+#[test]
+fn a_stop_nobody_prompted_reads_the_turn_from_the_last_prompt() {
+    let scratch = Scratch::new("turn-usage-end-only");
+    let session = scratch.root.join("session.jsonl");
+    let lines = [
+        r#"{"type":"user","isSidechain":false,"promptId":"p0","message":{"content":"earlier"}}"#,
+        r#"{"type":"assistant","isSidechain":false,"requestId":"r0","message":{"usage":{"input_tokens":50,"output_tokens":50}}}"#,
+        r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":"go on"}}"#,
+        r#"{"type":"assistant","isSidechain":false,"requestId":"r1","message":{"usage":{"input_tokens":2,"output_tokens":5}}}"#,
+    ];
+    fs::write(&session, lines.map(transcript_line).concat()).expect("transcript");
+    let path = json_text(&session);
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(r#"{{"hook_event_name":"Stop","session_id":"s1","transcript_path":"{path}"}}"#)
+            .as_bytes(),
+    );
+
+    let turn = scratch.turns().remove(0);
+    assert_eq!(turn.provider_turn_id, None);
+    assert_eq!(
+        turn.usage,
+        Some(TurnUsage {
+            input_tokens: 2,
+            cache_write_tokens: 0,
+            cache_read_tokens: 0,
+            output_tokens: 5,
+            is_partial: false,
+        })
+    );
+}
+
+#[test]
+fn a_second_stop_of_an_ended_turn_does_not_count_it_again() {
+    let scratch = Scratch::new("turn-usage-second-stop");
+    let session = scratch.root.join("session.jsonl");
+    let lines = [
+        r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":"go"}}"#,
+        r#"{"type":"assistant","isSidechain":false,"requestId":"r1","message":{"usage":{"input_tokens":2,"output_tokens":5}}}"#,
+    ];
+    fs::write(&session, lines.map(transcript_line).concat()).expect("transcript");
+    let path = json_text(&session);
+    let stop =
+        format!(r#"{{"hook_event_name":"Stop","session_id":"s1","transcript_path":"{path}"}}"#);
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(
+            r#"{{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"go","prompt_id":"p1","transcript_path":"{path}"}}"#
+        )
+        .as_bytes(),
+    );
+    scratch.call(RUN, Some(&new_call()), stop.as_bytes());
+    // Background work ends with a stop nobody prompted; the transcript's
+    // last prompt is still the ended turn's.
+    scratch.call(RUN, Some(&new_call()), stop.as_bytes());
+
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 2, "the second stop is an end-only record");
+    let usages: Vec<_> = turns.iter().map(|turn| turn.usage).collect();
+    assert!(
+        usages.contains(&None),
+        "the end-only record counts nothing: {usages:?}"
+    );
+    assert_eq!(usages.iter().flatten().count(), 1);
+}
+
+#[test]
+fn a_stop_waits_for_the_last_response_to_reach_the_transcript() {
+    let scratch = Scratch::new("turn-usage-late-response");
+    let session = scratch.root.join("session.jsonl");
+    let lines = [
+        r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":"go"}}"#,
+        r#"{"type":"assistant","isSidechain":false,"requestId":"r1","message":{"usage":{"input_tokens":2,"output_tokens":5}}}"#,
+        r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":[{"type":"tool_result"}]}}"#,
+    ];
+    fs::write(&session, lines.map(transcript_line).concat()).expect("transcript");
+    let path = json_text(&session);
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(
+            r#"{{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"go","prompt_id":"p1","transcript_path":"{path}"}}"#
+        )
+        .as_bytes(),
+    );
+    // The last response lands a moment after Stop begins, as an interactive
+    // Claude Code writes it.
+    let late = session.clone();
+    let writer = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(late)
+            .expect("open");
+        std::io::Write::write_all(
+            &mut file,
+            transcript_line(
+                r#"{"type":"assistant","isSidechain":false,"requestId":"r2","message":{"usage":{"input_tokens":3,"output_tokens":7}}}"#,
+            )
+            .as_bytes(),
+        )
+        .expect("append");
+    });
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(r#"{{"hook_event_name":"Stop","session_id":"s1","transcript_path":"{path}"}}"#)
+            .as_bytes(),
+    );
+    writer.join().expect("writer");
+
+    assert_eq!(
+        scratch.turns().remove(0).usage,
+        Some(TurnUsage {
+            input_tokens: 5,
+            cache_write_tokens: 0,
+            cache_read_tokens: 0,
+            output_tokens: 12,
+            is_partial: false,
+        })
+    );
+}
+
+#[test]
+fn a_stop_waits_for_a_turns_only_response() {
+    let scratch = Scratch::new("turn-usage-only-response");
+    let session = scratch.root.join("session.jsonl");
+    fs::write(
+        &session,
+        transcript_line(
+            r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":"what is 2 + 2?"}}"#,
+        ),
+    )
+    .expect("transcript");
+    let path = json_text(&session);
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(
+            r#"{{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"what is 2 + 2?","prompt_id":"p1","transcript_path":"{path}"}}"#
+        )
+        .as_bytes(),
+    );
+    let late = session.clone();
+    let writer = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(late)
+            .expect("open");
+        std::io::Write::write_all(
+            &mut file,
+            transcript_line(
+                r#"{"type":"assistant","isSidechain":false,"requestId":"r1","message":{"usage":{"input_tokens":3,"output_tokens":7}}}"#,
+            )
+            .as_bytes(),
+        )
+        .expect("append");
+    });
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(r#"{{"hook_event_name":"Stop","session_id":"s1","transcript_path":"{path}"}}"#)
+            .as_bytes(),
+    );
+    writer.join().expect("writer");
+
+    assert_eq!(
+        scratch.turns().remove(0).usage,
+        Some(TurnUsage {
+            input_tokens: 3,
+            cache_write_tokens: 0,
+            cache_read_tokens: 0,
+            output_tokens: 7,
+            is_partial: false,
+        })
+    );
+}
+
+#[test]
+fn a_continued_stop_of_an_end_only_record_does_not_count_the_turn_before() {
+    let scratch = Scratch::new("turn-usage-end-only-continued");
+    let session = scratch.root.join("session.jsonl");
+    let lines = [
+        r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":"go"}}"#,
+        r#"{"type":"assistant","isSidechain":false,"requestId":"r1","message":{"usage":{"input_tokens":2,"output_tokens":5}}}"#,
+    ];
+    fs::write(&session, lines.map(transcript_line).concat()).expect("transcript");
+    let path = json_text(&session);
+    let stop = |active: bool| {
+        format!(
+            r#"{{"hook_event_name":"Stop","session_id":"s1","stop_hook_active":{active},"transcript_path":"{path}"}}"#
+        )
+    };
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(
+            r#"{{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"go","prompt_id":"p1","transcript_path":"{path}"}}"#
+        )
+        .as_bytes(),
+    );
+    scratch.call(RUN, Some(&new_call()), stop(false).as_bytes());
+    // A stop nobody prompted, then the stop a hook's feedback continued.
+    scratch.call(RUN, Some(&new_call()), stop(false).as_bytes());
+    scratch.call(RUN, Some(&new_call()), stop(true).as_bytes());
+
+    let usages: Vec<_> = scratch.turns().iter().map(|turn| turn.usage).collect();
+    assert_eq!(usages.iter().flatten().count(), 1, "{usages:?}");
+}
+
+#[test]
+fn a_response_that_never_comes_leaves_the_turn_without_usage() {
+    let scratch = Scratch::new("turn-usage-no-response");
+    let session = scratch.root.join("session.jsonl");
+    fs::write(
+        &session,
+        transcript_line(
+            r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":"hi"}}"#,
+        ),
+    )
+    .expect("transcript");
+    let path = json_text(&session);
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(
+            r#"{{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"hi","prompt_id":"p1","transcript_path":"{path}"}}"#
+        )
+        .as_bytes(),
+    );
+    let started = std::time::Instant::now();
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(r#"{{"hook_event_name":"Stop","session_id":"s1","transcript_path":"{path}"}}"#)
+            .as_bytes(),
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(3),
+        "the wait is bounded"
+    );
+    assert_eq!(scratch.turns().remove(0).usage, None);
 }

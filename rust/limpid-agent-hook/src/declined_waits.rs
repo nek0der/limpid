@@ -258,6 +258,8 @@ pub fn end_declined_wait(
         pane_id: &waiting.pane_id,
         now,
         log,
+        // The app ends the wait; no hook call brought a transcript.
+        transcript: None,
     };
     // The turn ends as an interrupt ends it, which is what the person did;
     // a provider that records no turns takes no step.

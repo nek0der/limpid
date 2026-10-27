@@ -10,6 +10,7 @@
 //! the rest here. Neither shape is documented, so what cannot be read leaves
 //! a limit with no time rather than no limit.
 
+use crate::json::string;
 use limpid_agent_model::{UsageLimit, format_utc_seconds};
 use serde_json::{Map, Value};
 use std::time::{Duration, UNIX_EPOCH};
@@ -109,10 +110,6 @@ fn window_name(minutes: u64) -> Option<&'static str> {
         10_080 => Some("seven_day"),
         _ => None,
     }
-}
-
-fn string<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
-    object.get(key).and_then(Value::as_str)
 }
 
 #[cfg(test)]

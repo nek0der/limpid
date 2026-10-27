@@ -307,6 +307,11 @@ mod tests {
             added_bytes: None,
             repository: None,
             last_check: None,
+            checks: Vec::new(),
+            check_count: 0,
+            failure_count: 0,
+            are_checks_partial: false,
+            usage: None,
             has_prompt: true,
             is_deletable: true,
         }

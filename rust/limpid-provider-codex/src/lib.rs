@@ -5,12 +5,15 @@
 
 mod approval;
 mod descriptor;
+mod json;
 mod normalize;
+mod tokens;
 mod usage;
 
 use limpid_agent_model::{
-    AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe, NormalizeError,
-    ProviderAdapter, ProviderDescriptor, ProviderOutput, RawHookInput, RunRecord, WorktreeIntent,
+    AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe,
+    MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, ProviderDescriptor, ProviderOutput,
+    RawHookInput, RunRecord, TurnReading, WorktreeIntent, parse_object,
 };
 use serde_json::Value;
 
@@ -66,5 +69,79 @@ impl ProviderAdapter for CodexAdapter {
 
     fn applies_to(&self, input: RawHookInput<'_>, record: Option<&RunRecord>) -> bool {
         normalize::applies_to(input, record)
+    }
+
+    fn turn_marker(&self, input: RawHookInput<'_>) -> Option<String> {
+        payload_turn_id(input, "UserPromptSubmit")
+    }
+
+    fn turn_reading(&self, input: RawHookInput<'_>, marker: Option<&str>) -> TurnReading {
+        let Some(rollout) = input.transcript else {
+            return TurnReading::default();
+        };
+        let Some(turn_id) = marker
+            .map(str::to_owned)
+            .or_else(|| payload_turn_id(input, "Stop"))
+        else {
+            return TurnReading::default();
+        };
+        tokens::rollout_turn_reading(rollout, &turn_id)
+    }
+}
+
+/// The `turn_id` of a payload of hook `event`.
+fn payload_turn_id(input: RawHookInput<'_>, event: &str) -> Option<String> {
+    let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES).ok()?;
+    if object.get("hook_event_name").and_then(Value::as_str) != Some(event) {
+        return None;
+    }
+    object
+        .get("turn_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input(payload: &str) -> RawHookInput<'_> {
+        RawHookInput {
+            bytes: payload.as_bytes(),
+            transcript: None,
+        }
+    }
+
+    #[test]
+    fn a_prompt_names_its_turn_and_a_stop_reads_its_own() {
+        assert_eq!(
+            CodexAdapter.turn_marker(input(
+                r#"{"hook_event_name":"UserPromptSubmit","turn_id":"t1"}"#
+            )),
+            Some("t1".into())
+        );
+        assert_eq!(
+            CodexAdapter.turn_marker(input(
+                r#"{"hook_event_name":"UserPromptSubmit","turn_id":""}"#
+            )),
+            None
+        );
+        assert_eq!(
+            CodexAdapter.turn_marker(input(r#"{"hook_event_name":"Stop","turn_id":"t1"}"#)),
+            None
+        );
+        assert_eq!(
+            payload_turn_id(
+                input(r#"{"hook_event_name":"Stop","turn_id":"t1"}"#),
+                "Stop"
+            ),
+            Some("t1".into())
+        );
+        // No rollout read, nothing to say.
+        assert_eq!(
+            CodexAdapter.turn_reading(input(r#"{"hook_event_name":"Stop","turn_id":"t1"}"#), None),
+            TurnReading::default()
+        );
     }
 }

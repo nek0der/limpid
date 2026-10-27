@@ -8,12 +8,14 @@ mod awaited;
 mod cache;
 mod descriptor;
 mod normalize;
+mod tokens;
+mod transcript;
 mod usage;
 
 use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, CommandRun, EventId, HookContext, InstallRecipe,
-    NormalizeError, ProviderAdapter, ProviderDescriptor, ProviderOutput, RawHookInput,
-    WorktreeIntent,
+    MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, ProviderDescriptor, ProviderOutput,
+    RawHookInput, TurnReading, TurnUsage, WorktreeIntent, parse_object,
 };
 use serde_json::Value;
 
@@ -84,5 +86,57 @@ impl ProviderAdapter for ClaudeAdapter {
 
     fn command_run(&self, input: RawHookInput<'_>) -> Result<Option<CommandRun>, NormalizeError> {
         normalize::command_run(input)
+    }
+
+    fn turn_marker(&self, input: RawHookInput<'_>) -> Option<String> {
+        let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES).ok()?;
+        if object.get("hook_event_name").and_then(Value::as_str) != Some("UserPromptSubmit") {
+            return None;
+        }
+        object
+            .get("prompt_id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .map(str::to_owned)
+    }
+
+    fn turn_reading(&self, input: RawHookInput<'_>, marker: Option<&str>) -> TurnReading {
+        let Some(transcript) = input.transcript else {
+            return TurnReading::default();
+        };
+        let path = normalize::transcript_path(input).ok().flatten();
+        tokens::transcript_turn_reading(transcript, marker, path.as_deref())
+    }
+
+    fn subagent_usage(&self, transcript: &[u8]) -> Option<TurnUsage> {
+        tokens::subagent_transcript_usage(transcript)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn marker(payload: &str) -> Option<String> {
+        ClaudeAdapter.turn_marker(RawHookInput {
+            bytes: payload.as_bytes(),
+            transcript: None,
+        })
+    }
+
+    #[test]
+    fn only_a_prompt_names_its_turn() {
+        assert_eq!(
+            marker(r#"{"hook_event_name":"UserPromptSubmit","prompt_id":"p1"}"#),
+            Some("p1".into())
+        );
+        assert_eq!(
+            marker(r#"{"hook_event_name":"UserPromptSubmit","prompt_id":""}"#),
+            None
+        );
+        assert_eq!(
+            marker(r#"{"hook_event_name":"Stop","prompt_id":"p1"}"#),
+            None
+        );
     }
 }

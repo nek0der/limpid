@@ -14,10 +14,14 @@ struct ChangesPanelModelTests {
     static let japanese = Locale(identifier: "ja")
     static let changed = TurnSummaryFixture.changedFiles
 
-    /// A row's second line and the head's totals as they read, run after
-    /// run.
+    /// A card's second line as it reads, its columns set apart by " | "
+    /// and the empty ones left out; and the head's totals, run after run.
     static func detail(_ row: ChangesPanelModel.Row, locale: Locale) -> String {
-        ChangesPanelText.detailRuns(row, locale: locale).map(\.text).joined()
+        let facts = ChangesPanelText.facts(row, locale: locale)
+        let changes = (facts.files.map { "\($0) " } ?? "") + facts.changes.map(\.text).joined()
+        return [changes, facts.checks.map(\.text).joined(), facts.tokens ?? "", facts.duration ?? ""]
+            .filter { !$0.isEmpty }
+            .joined(separator: " | ")
     }
 
     static func totals(_ list: ChangesPanelModel.TurnList, locale: Locale) -> String {
@@ -85,6 +89,10 @@ struct ChangesPanelModelTests {
         #expect(later.rows.last?.status == .running)
         #expect(later.rows.last?.action == nil, "nobody has seen it")
         #expect(later.rows.last?.isSelectable == false)
+        let runningRow = try #require(later.rows.last)
+        #expect(Self.detail(runningRow, locale: Self.english) == "Running")
+        #expect(ChangesPanelText.moves(runningRow, locale: Self.english).isEmpty, "nothing to move or restore yet")
+        #expect(later.rows.map(\.showsMovesAtRest) == [false, true, false], "the last card with moves only")
     }
 
     @Test func theLineMovedPastARecordNobodyPrompted_stillOffersUndo() throws {
@@ -136,7 +144,28 @@ struct ChangesPanelModelTests {
         let failedRow = try #require(list.rows.first { $0.status == .changesUnavailable })
         #expect(Self.detail(failedRow, locale: Self.english) == "Couldn’t get the changes", "never No file changes")
         let pendingRow = try #require(list.rows.last)
-        #expect(Self.detail(pendingRow, locale: Self.english) == "Unviewed · Getting the changes…")
+        #expect(Self.detail(pendingRow, locale: Self.english) == "Getting the changes…", "its state is in its rule and its sentence")
+        // A card with no counts says its state in words, which take the
+        // room of a column it leaves empty.
+        #expect(list.rows.prefix(2).map { Self.detail($0, locale: Self.english) } == ["No file changes", "Incomplete record"])
+        #expect(list.rows.allSatisfy { ChangesPanelText.facts($0, locale: Self.english).isStatus })
+    }
+
+    @Test func aCardsMoves_areTheSameValuesEverywhere_andAHeldBackRestoreSaysWhy() throws {
+        var extras = TurnSummaryFixture.Extras()
+        extras.beginTree = SnapshotTree(tree: TurnSummaryFixture.tree("b", 1), root: "/repo")
+        let turn = try Panel.turn(1, extras: extras)
+        var input = Panel.input([Panel.agent([turn])])
+        input.restoreBlocker = { _ in .turnRunning }
+        let row = try #require(Panel.list(ChangesPanelModel.make(input)).rows.first)
+
+        let moves = ChangesPanelText.moves(row, locale: Self.english)
+        #expect(moves.map(\.kind) == [.line(.markViewedThrough), .restore])
+        #expect(moves.map(\.isEnabled) == [true, false])
+        let reason = RestoreText.blocker(.turnRunning, locale: Self.english)
+        #expect(moves.last?.help == "\(RestoreText.entry(locale: Self.english))\n\(reason)")
+        #expect(moves.first?.help == "Mark as Viewed up to Here")
+        #expect(row.showsMovesAtRest && row.showsBlockerNote)
     }
 
     @Test func theEmptyStates_sayWhyThereAreNoTurns() throws {
@@ -168,16 +197,29 @@ struct ChangesPanelModelTests {
         let row = try #require(list.rows.first)
         let utc = try #require(TimeZone(identifier: "UTC"))
 
-        #expect(Self.detail(row, locale: Self.english) == "Unviewed · 2 files +3 −1 · ✓ Tests (filtered) · took 3m 05s")
-        // Only the state is set apart, and the counts in the diff colors.
-        #expect(ChangesPanelText.detailRuns(row, locale: Self.english).filter { $0.role != .plain && $0.role != .quiet } == [
-            ReceiptRun(text: "Unviewed", role: .unviewed),
+        // A record from before the runs were kept shows its last check alone.
+        #expect(Self.detail(row, locale: Self.english) == "2 +3 −1 | ✓ | 3m")
+        // The counts in the diff colors; the state is the card's rule.
+        let facts = ChangesPanelText.facts(row, locale: Self.english)
+        #expect(facts.changes.filter { $0.role != .plain && $0.role != .quiet } == [
             ReceiptRun(text: "+3", role: .added(isEmphasized: false)),
             ReceiptRun(text: "−1", role: .removed(isEmphasized: false))
         ])
+        // A pass of part of the suite is quieter than a whole one.
+        #expect(facts.checks == [ReceiptRun(text: "✓", role: .quietMark)])
+        // In the card's order, the changes whole, as the card may cut them.
         #expect(ChangesPanelText.help(row, locale: Self.japanese, timeZone: utc)
-            == "T7 をレビューで開く\nAdd tests for TurnTimelineStore\nswift test --filter Turn\n開始 0:00 · 終了 0:03")
-        #expect(ChangesPanelText.turnDetails(turn, locale: Self.english) == ["Add tests for TurnTimelineStore", "swift test --filter Turn"])
+            == [
+                "T7 をレビューで開く", "Add tests for TurnTimelineStore", "2 ファイル +3 −1", "✓ テスト（絞り込み）",
+                "swift test --filter Turn", "所要 3 分 05 秒", "開始 0:00 · 終了 0:03"
+            ].joined(separator: "\n"))
+        #expect(ChangesPanelText.turnDetails(turn, showsChanges: true, locale: Self.english) == [
+            "Add tests for TurnTimelineStore",
+            "2 files +3 −1",
+            "✓ Tests (filtered)",
+            "swift test --filter Turn",
+            "Took 3m 05s"
+        ])
         #expect(ChangesPanelText.time(turn, locale: Self.japanese, timeZone: utc) == "0:00", "the row's time is the start")
         // The clock's narrow space before AM reads as a plain one here.
         #expect(Panel.plainSpaces(ChangesPanelText.times(turn, locale: Self.english, timeZone: utc)) == "Started 12:00 AM · Ended 12:03 AM")
@@ -216,16 +258,124 @@ struct ChangesPanelModelTests {
         #expect(LimpidLayout.Supervision.turnLabelColumnWidth > LimpidLayout.Supervision.turnNumberColumnWidth)
     }
 
-    /// The moves under a card start where its prompt does, whether the row
-    /// carries its conversation's badge in a wider first column or not:
-    /// with the badge they stood 10pt left of the prompt.
+    /// The note under a card starts where its prompt does, whether the row
+    /// carries its conversation's badge in a wider first column or not.
     @Test(arguments: [false, true])
-    func theMovesUnderACard_startWhereItsPromptDoes(hasConversation: Bool) {
+    func theNoteUnderACard_startsWhereItsPromptDoes(hasConversation: Bool) {
         typealias Layout = LimpidLayout.Supervision
         let column = Layout.turnFirstColumnWidth(hasConversation: hasConversation)
         let prompt = Layout.turnCardInsets.leading + column + Layout.turnColumnSpacing
-        #expect(Layout.turnActionInsets(hasConversation: hasConversation).leading == prompt)
+        #expect(Layout.turnNoteInsets(hasConversation: hasConversation).leading == prompt)
         #expect(Layout.turnFirstColumnWidth(hasConversation: true) == Layout.turnLabelColumnWidth)
+    }
+
+    @Test(arguments: [
+        (40, "40s", "40秒"),
+        (185, "3m", "3分"),
+        (3725, "62m", "62分"),
+        (5999, "99m", "99分"),
+        (6000, "1h", "1時間"),
+        (9000, "2h", "2時間"),
+        (-5, "0s", "0秒")
+    ])
+    func aCardsDuration_keepsToOneUnit(_ seconds: Int, _ english: String, _ japanese: String) {
+        #expect(ChangesPanelText.compactDuration(seconds, locale: Self.english) == english)
+        #expect(ChangesPanelText.compactDuration(seconds, locale: Self.japanese) == japanese)
+    }
+
+    /// The card's checks run in order, the last ones shown, "…" for the
+    /// rest; the tokens leave the cache reads out; the tooltip has them all.
+    @Test func aCard_showsItsChecksInOrder_andTheTokensItUsed() throws {
+        var extras = TurnSummaryFixture.Extras()
+        extras.check = #"{"command":"cargo test","isFiltered":false,"exitCode":0}"#
+        extras.checks = """
+        [{"exitCode":101,"isFiltered":false},{"isFiltered":false},{"exitCode":101,"isFiltered":false},{"exitCode":0,"isFiltered":false}]
+        """
+        extras.checkCount = 7
+        extras.usage = #"{"inputTokens":3000,"cacheWriteTokens":75000,"cacheReadTokens":2100000,"outputTokens":6200}"#
+        extras.durationSeconds = 662
+        let turn = try Panel.turn(4, changes: Self.changed, extras: extras)
+        let list = try Panel.list(ChangesPanelModel.make(Panel.input([Panel.agent([turn])])))
+        let row = try #require(list.rows.first)
+
+        #expect(Self.detail(row, locale: Self.english) == "2 +3 −1 | …–✗✓ | 84K | 11m")
+        #expect(ChangesPanelText.facts(row, locale: Self.japanese).tokens == "84K", "K and M in every language")
+        #expect(ChangesPanelText.facts(row, locale: Self.english).checks.map(\.role) == [.quiet, .quiet, .failed, .plain])
+        #expect(turn.lastCheck?.earlierFailures == 2, "of the runs the record holds, without a count of failures")
+        #expect(try ReceiptText.check(#require(turn.lastCheck), locale: Self.english) == "✓ Tests (after 2 failures)")
+        #expect(try ReceiptText.check(#require(turn.lastCheck), locale: Self.japanese) == "✓ テスト（失敗 2 回）")
+        #expect(ChangesPanelText.turnDetails(turn, showsChanges: true, locale: Self.english) == [
+            "2 files +3 −1",
+            "Ran tests 7 times · 2 failed",
+            "Latest: ✓ Tests (after 2 failures)",
+            "cargo test",
+            "84,200 tokens",
+            "Input 3,000 · Cache writes 75,000 · Output 6,200",
+            "Not counted: 2,100,000 read from the cache",
+            "Took 11m 02s"
+        ])
+        #expect(try ChangesPanelText.usageDetails(#require(turn.usage), locale: Self.japanese).last == "キャッシュ読み込み 2,100,000（合計外）")
+        #expect(ChangesPanelText.turnDetails(turn, showsChanges: false, locale: Self.japanese).prefix(2) == [
+            "テスト実行 7 回 · 失敗 2 回",
+            "最新：✓ テスト（失敗 2 回）"
+        ])
+        #expect(
+            ChangesPanelText.rowSpoken(row, locale: Self.english).contains("✓ Tests (after 2 failures), 84K tokens, took 11m 02s"),
+            "the sentence says every fact the card shows"
+        )
+    }
+
+    @Test func aShortCount_saysSo_inWordsWhereItIsRead() {
+        let usage = TurnUsage(inputTokens: 900, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 100, isPartial: true)
+        #expect(ChangesPanelText.tokens(usage, locale: Self.english) == "≥1K")
+        #expect(ChangesPanelText.usageDetails(usage, locale: Self.japanese) == [
+            "1,000 トークン以上",
+            "入力 900 · キャッシュ書き込み 0 · 出力 100",
+            "ターンの一部を読めなかったため、実際より少ない可能性があります"
+        ])
+        // VoiceOver hears words, never the "≥" it reads as a symbol.
+        #expect(ChangesPanelText.tokenTotal(usage, isExact: false, locale: Self.english) == "At least 1K tokens")
+        #expect(ChangesPanelText.tokenUnit(locale: Self.japanese) == "tok")
+    }
+
+    /// A count the record says may be short reads so: "…" before the marks,
+    /// "at least" in the tooltip, whose count stands even when the last
+    /// check itself could not be read.
+    @Test func checksThatMayBeShort_saySo_andTheCountStandsWithoutTheLastCheck() throws {
+        var extras = TurnSummaryFixture.Extras()
+        extras.checks = #"[{"exitCode":1,"isFiltered":false},{"exitCode":0,"isFiltered":false}]"#
+        extras.check = #"{"command":"cargo test","isFiltered":false,"exitCode":0}"#
+        extras.areChecksPartial = true
+        let turn = try Panel.turn(4, extras: extras)
+        #expect(ChangesPanelText.checkMarkRuns(turn).map(\.text).joined() == "…✗✓")
+        #expect(ChangesPanelText.checkDetails(turn, locale: Self.english).first == "Ran tests at least 2 times · 1 failed")
+        #expect(ChangesPanelText.checkDetails(turn, locale: Self.japanese).first == "テスト実行 2 回以上 · 失敗 1 回")
+
+        // A partial reading of a turn that ran no checks says nothing of
+        // them: no "at least 0".
+        var none = TurnSummaryFixture.Extras()
+        none.areChecksPartial = true
+        #expect(try ChangesPanelText.checkDetails(Panel.turn(6, extras: none), locale: Self.english).isEmpty)
+
+        extras.check = #"{"command":"cargo test","exitCode":"zero"}"#
+        extras.areChecksPartial = nil
+        let unreadLast = try Panel.turn(5, extras: extras)
+        #expect(unreadLast.lastCheck == nil)
+        #expect(ChangesPanelText.checkDetails(unreadLast, locale: Self.english) == ["Ran tests 2 times · 1 failed"])
+    }
+
+    @Test(arguments: [
+        (999, "999"),
+        (1000, "1K"),
+        (1234, "1.2K"),
+        (84200, "84K"),
+        (99999, "100K"),
+        (125_000, "130K"),
+        (1_240_000, "1.2M")
+    ])
+    func aCardsCount_isShortWithKOrM_inEveryLanguage(_ count: Int, _ short: String) {
+        #expect(ChangesPanelText.compactCount(count, locale: Self.english) == short)
+        #expect(ChangesPanelText.compactCount(count, locale: Self.japanese) == short)
     }
 
     @Test func theTurnsTheReviewTabReads_areMarked_onlyWhileItIsInFront_whateverTheirConversation() throws {
@@ -762,16 +912,20 @@ extension ChangesPanelModelTests {
         let skipped = #"{"kind":"changed","files":2,"added":5,"removed":0,"largeFilesSkipped":1}"#
         let turn = try Panel.turn(7, changes: skipped, extras: extras)
 
-        #expect(ChangesPanelText.turnDetails(turn, locale: Self.japanese) == ["Add the fixtures", "大きなファイルを 1 件記録していません"])
-        #expect(ChangesPanelText.turnDetails(turn, locale: Self.english).last == "Skipped 1 large file")
+        #expect(ChangesPanelText.turnDetails(turn, showsChanges: false, locale: Self.japanese) == [
+            "Add the fixtures",
+            "大きなファイルを 1 件記録していません"
+        ])
+        #expect(ChangesPanelText.turnDetails(turn, showsChanges: false, locale: Self.english).last == "Skipped 1 large file")
         let three = try Panel.turn(8, changes: skipped.replacingOccurrences(of: ":1}", with: ":3}"), extras: extras)
-        #expect(ChangesPanelText.turnDetails(three, locale: Self.english).last == "Skipped 3 large files")
+        #expect(ChangesPanelText.turnDetails(three, showsChanges: false, locale: Self.english).last == "Skipped 3 large files")
         // The decision bar's receipt says it on the turn's line.
         let unread = UnreadTurn(turnID: turn.turnID, numbers: 7...7, changes: .unknown, conversation: turn.conversation)
         #expect(ChangesPanelText.receiptHelp(unread, history: [turn.conversation: [turn]], locale: Self.english)
             == "T7 · Add the fixtures · Skipped 1 large file")
         // Nothing to say for a turn that skipped none.
-        #expect(try ChangesPanelText.turnDetails(Panel.turn(9, extras: extras), locale: Self.english) == ["Add the fixtures"])
+        #expect(try ChangesPanelText
+            .turnDetails(Panel.turn(9, extras: extras), showsChanges: false, locale: Self.english) == ["Add the fixtures"])
     }
 
     @Test func theRailsCount_isTheTurnsWaitingToBeRead() throws {

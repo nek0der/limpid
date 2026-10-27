@@ -24,7 +24,10 @@
 //! Anchoring on the request before it would show the cache expiring early,
 //! so we report nothing rather than that.
 
-use limpid_agent_model::{CachePrecision, CacheWindow, format_utc_seconds, parse_utc_seconds};
+use crate::transcript::{contains, is_sidechain, parse, request_usage, string};
+use limpid_agent_model::{
+    CachePrecision, CacheWindow, TurnUsage, format_utc_seconds, parse_utc_seconds,
+};
 use serde_json::{Map, Value};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -37,10 +40,7 @@ const FIVE_MINUTES_SECONDS: u64 = 300;
 struct Observation {
     request: String,
     started_at: u64,
-    input: u64,
-    cache_read: u64,
-    cache_creation: u64,
-    output: u64,
+    usage: TurnUsage,
     ttl: Option<u64>,
 }
 
@@ -83,7 +83,7 @@ pub(crate) fn transcript_cache_window(transcript: &[u8]) -> Option<CacheWindow> 
         // line of a different request means every line of the last one has
         // been seen. Keep walking only while its bucket is still unknown
         // and an earlier write could still name it.
-        if last.ttl.is_some() || last.cache_read == 0 {
+        if last.ttl.is_some() || last.usage.cache_read_tokens == 0 {
             break;
         }
         if let Some(ttl) = observation.ttl {
@@ -92,22 +92,23 @@ pub(crate) fn transcript_cache_window(transcript: &[u8]) -> Option<CacheWindow> 
         }
     }
 
-    if last.cache_read == 0 && last.cache_creation == 0 {
+    let usage = last.usage;
+    if usage.cache_read_tokens == 0 && usage.cache_write_tokens == 0 {
         // Nothing was cached, so there is no window to lose.
         return None;
     }
     // A request that only read the cache refreshed it without naming a
     // bucket; it inherits the bucket of the request that wrote it.
-    let ttl = last.ttl.or(if last.cache_read > 0 {
+    let ttl = last.ttl.or(if usage.cache_read_tokens > 0 {
         earlier_ttl
     } else {
         None
     })?;
-    let rewrite = last
-        .input
-        .saturating_add(last.cache_read)
-        .saturating_add(last.cache_creation)
-        .saturating_add(last.output);
+    let rewrite = usage
+        .input_tokens
+        .saturating_add(usage.cache_read_tokens)
+        .saturating_add(usage.cache_write_tokens)
+        .saturating_add(usage.output_tokens);
     Some(CacheWindow {
         observed_at: format_utc_seconds(UNIX_EPOCH + Duration::from_secs(last.started_at)),
         ttl_seconds: ttl,
@@ -120,27 +121,25 @@ pub(crate) fn transcript_cache_window(transcript: &[u8]) -> Option<CacheWindow> 
 /// including a first line cut in half by the tail and anything malformed,
 /// are skipped rather than ending the scan.
 fn observe(line: &[u8]) -> Option<Observation> {
-    let Ok(Value::Object(record)) = serde_json::from_slice::<Value>(line) else {
-        return None;
-    };
+    let record = parse(line)?;
     if string(&record, "type") != Some("assistant") {
         return None;
     }
     // Subagent work shares the transcript in some versions; its requests
     // carry their own prefix and do not refresh the main conversation's.
-    if record.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+    if is_sidechain(&record) {
         return None;
     }
-    let message = record.get("message").and_then(Value::as_object)?;
-    let usage = message.get("usage").and_then(Value::as_object)?;
-    let request = string(&record, "requestId")
-        .or_else(|| string(message, "id"))?
-        .to_owned();
+    let (request, usage) = request_usage(&record)?;
     let started_at = string(&record, "timestamp").and_then(transcript_seconds)?;
+    let creation = record
+        .get("message")
+        .and_then(|message| message.get("usage"))
+        .and_then(|usage| usage.get("cache_creation"))
+        .and_then(Value::as_object);
     let count = |object: &Map<String, Value>, key: &str| {
         object.get(key).and_then(Value::as_u64).unwrap_or(0)
     };
-    let creation = usage.get("cache_creation").and_then(Value::as_object);
     let one_hour = creation.map_or(0, |it| count(it, "ephemeral_1h_input_tokens"));
     let five_minutes = creation.map_or(0, |it| count(it, "ephemeral_5m_input_tokens"));
     let ttl = if one_hour > 0 {
@@ -151,12 +150,9 @@ fn observe(line: &[u8]) -> Option<Observation> {
         None
     };
     Some(Observation {
-        request,
+        request: request.to_owned(),
         started_at,
-        input: count(usage, "input_tokens"),
-        cache_read: count(usage, "cache_read_input_tokens"),
-        cache_creation: count(usage, "cache_creation_input_tokens"),
-        output: count(usage, "output_tokens"),
+        usage,
         ttl,
     })
 }
@@ -167,24 +163,17 @@ fn observe(line: &[u8]) -> Option<Observation> {
 /// tool results and typed prompts, because an unknown estimate costs a
 /// missing clock while a wrong anchor shows an expiry that has not happened.
 fn is_main_user_line(line: &[u8]) -> bool {
-    let Ok(Value::Object(record)) = serde_json::from_slice::<Value>(line) else {
-        return false;
-    };
-    string(&record, "type") == Some("user")
-        && record.get("isSidechain").and_then(Value::as_bool) != Some(true)
+    parse(line)
+        .is_some_and(|record| string(&record, "type") == Some("user") && !is_sidechain(&record))
 }
 
-/// Folds two lines of one streamed request. The input-side counters repeat on
-/// every line, and the output count only grows, so the larger value of each
-/// is the request's; the earliest timestamp is when it started.
+/// Folds two lines of one streamed request (`TurnUsage::fuller`); the earliest
+/// timestamp is when it started.
 fn merge(later: Observation, earlier: &Observation) -> Observation {
     Observation {
         request: later.request,
         started_at: later.started_at.min(earlier.started_at),
-        input: later.input.max(earlier.input),
-        cache_read: later.cache_read.max(earlier.cache_read),
-        cache_creation: later.cache_creation.max(earlier.cache_creation),
-        output: later.output.max(earlier.output),
+        usage: later.usage.fuller(earlier.usage),
         ttl: later.ttl.or(earlier.ttl),
     }
 }
@@ -205,16 +194,6 @@ fn transcript_seconds(value: &str) -> Option<u64> {
         return None;
     }
     parse_utc_seconds(&format!("{whole}Z"))
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
-}
-
-fn string<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
-    object.get(key).and_then(Value::as_str)
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 // ReceiptRunsText.swift
-// Limpid — a line drawn run by run: its words, a receipt's additions and removals, a failed check, the unviewed state.
+// Limpid — a line drawn run by run: its words, a receipt's additions and removals, a check's marks.
 
 import SwiftUI
 
@@ -11,8 +11,8 @@ import SwiftUI
 ///
 /// The line's own words (`plain`, and `emphasized` in semibold while
 /// `showsEmphasis`) take `base`; quiet words are muted; additions and
-/// removals take the diff colors; a failed check's ✗ is red;
-/// the panel's "Unviewed" is the unread blue in semibold.
+/// removals take the diff colors; a failed check's ✗ is red; a quiet mark
+/// (a check run on part of the suite) is a step quieter than muted.
 struct ReceiptRunsText: View {
     let runs: [ReceiptRun]
     let size: LimpidFont.Supervision.Size
@@ -32,9 +32,9 @@ struct ReceiptRunsText: View {
 enum ReceiptRunRenderer {
     enum Style: Equatable {
         /// This is the receipt as the decision bar, the restore strip, and
-        /// the changes panel draw it: the line's own words in `base`,
+        /// the changes panel draw it: the line's own words in `base`, and
         /// `emphasized` and emphasized counts in semibold while
-        /// `showsEmphasis`, and "Unviewed" in the unread blue.
+        /// `showsEmphasis`.
         case receipt(base: Color, showsEmphasis: Bool)
         /// These are the facts after a notification's headline: every word is
         /// muted and regular, so the headline stays the one thing that reads first;
@@ -69,14 +69,14 @@ enum ReceiptRunRenderer {
             case let .added(isEmphasized): (SupervisionTokens.added.color, isEmphasized && showsEmphasis)
             case let .removed(isEmphasized): (SupervisionTokens.removed.color, isEmphasized && showsEmphasis)
             case .failed: (SupervisionTokens.stoppedText.color, false)
-            case .unviewed: (SupervisionTokens.unreadText.color, true)
+            case .quietMark: (SupervisionTokens.closedMark.color, false)
             }
         case .mutedFacts:
             switch role {
             case .added: (SupervisionTokens.added.color, false)
             case .removed: (SupervisionTokens.removed.color, false)
             case .failed: (SupervisionTokens.stoppedText.color, false)
-            case .emphasized, .plain, .quiet, .unviewed: (SupervisionTokens.muted.color, false)
+            case .emphasized, .plain, .quiet, .quietMark: (SupervisionTokens.muted.color, false)
             }
         }
     }

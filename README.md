@@ -7,7 +7,7 @@
 
 > A native macOS window for supervising Claude Code and Codex: run them in real terminals, see which one needs you, and review what each turn changed.
 
-<p align="center"><img src=".github/assets/hero.png" alt="A Limpid window. On the left, a sidebar of every project's worktrees, the current project's rows showing each agent's state: unread, waiting, running, stopped on an API error, and a pull request that is open. In the middle, Claude Code running in a terminal tab, with a decision bar under it that sums up two unviewed turns and offers Mark as Viewed and Review Unviewed. On the right, the Changes panel lists the worktree's turns with Mark as Viewed up to Here and Restore Code to Before This Turn buttons. The title bar shows Needs Attention with a count of 6." width="900" /></p>
+<p align="center"><img src=".github/assets/hero.png" alt="A Limpid window. On the left, a sidebar of every project's worktrees, the current project's rows showing each agent's state: unread, waiting, running, stopped on an API error, and a pull request that is open. In the middle, Claude Code running in a terminal tab, with a decision bar under it that sums up two unviewed turns and their last test run, and offers Mark as Viewed and Review Unviewed. On the right, the Changes panel lists the worktree's turns, each card showing the files and lines it changed, its test runs, its tokens, and how long it took; the last card shows buttons to mark the turns up to it viewed and to restore the code to before it. The title bar shows Needs Attention with a count of 6." width="900" /></p>
 
 ## Why Limpid
 

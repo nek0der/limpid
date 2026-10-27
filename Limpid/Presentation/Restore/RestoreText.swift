@@ -28,16 +28,6 @@ enum RestoreText {
         )
     }
 
-    /// "Restore Code…", for a turn's card where the panel is too narrow for
-    /// `entry`: the card says which turn, and the tooltip and VoiceOver
-    /// keep the whole entry.
-    static func shortEntry(locale: Locale) -> String {
-        LocalizedStringResource(
-            "Restore Code…",
-            comment: "Changes panel, a turn's card short of room: opens the confirmation to restore the code to before this turn"
-        ).resolved(in: locale)
-    }
-
     /// Why the restore cannot run now (`RestoreGate.Blocker`).
     static func blocker(_ blocker: RestoreGate.Blocker, locale: Locale) -> String {
         switch blocker {

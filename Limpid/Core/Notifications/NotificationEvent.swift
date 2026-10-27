@@ -139,7 +139,7 @@ extension NotificationEvent: Codable {
 /// ended long ago.
 extension NotificationEvent.Turn: Codable {
     private enum CodingKeys: String, CodingKey {
-        case number, changes, files, added, removed, reason, checkCommand, checkIsFiltered, checkExitCode
+        case number, changes, files, added, removed, reason, checkCommand, checkIsFiltered, checkExitCode, checkEarlierFailures
     }
 
     private enum Changes: String, Codable {
@@ -165,7 +165,9 @@ extension NotificationEvent.Turn: Codable {
             try CheckSummary(
                 command: command,
                 isFiltered: container.decodeIfPresent(Bool.self, forKey: .checkIsFiltered) ?? false,
-                exitCode: container.decodeIfPresent(Int.self, forKey: .checkExitCode)
+                exitCode: container.decodeIfPresent(Int.self, forKey: .checkExitCode),
+                // Absent in an entry from before it was kept.
+                earlierFailures: container.decodeIfPresent(Int.self, forKey: .checkEarlierFailures) ?? 0
             )
         }
     }
@@ -193,6 +195,9 @@ extension NotificationEvent.Turn: Codable {
             try container.encode(check.command, forKey: .checkCommand)
             try container.encode(check.isFiltered, forKey: .checkIsFiltered)
             try container.encodeIfPresent(check.exitCode, forKey: .checkExitCode)
+            if check.earlierFailures > 0 {
+                try container.encode(check.earlierFailures, forKey: .checkEarlierFailures)
+            }
         }
     }
 }

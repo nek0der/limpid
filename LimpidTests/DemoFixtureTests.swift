@@ -268,7 +268,7 @@ struct DemoFixtureTests {
         #expect(turns.allSatisfy { $0.paneID == DemoFixture.Slot.reminders.paneID.uuidString })
         #expect(turns.filter(\.changes.mayHaveChangedFiles).map(\.displayNumber) == [1, 2, 4, 5])
         #expect(turns[3].lastCheck?.exitCode == 1)
-        #expect(turns[4].lastCheck == CheckSummary(command: "pnpm test src/reminders", isFiltered: true, exitCode: 0))
+        #expect(turns[4].lastCheck == CheckSummary(command: "pnpm test src/reminders", isFiltered: true, exitCode: 0, earlierFailures: 2))
     }
 
     /// The other staged conversations: the review's two answers, and the

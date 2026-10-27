@@ -77,8 +77,28 @@ as they are fixed or confirmed.
 - **A turn record larger than 4 MiB is not read.** The turn keeps what
   Limpid read of it before, or is not listed if Limpid read nothing.
   Nothing on screen says so; Limpid logs it once (`agent.turn-records`).
-- Check counts and per-turn cost are not shown, and Codex turns show no
-  check results.
+- **A turn's tokens are read when it ends**, so a running turn shows none.
+  Claude Code's tokens are read from the last 4 MiB of its transcript; a
+  turn that began before that, or whose last response was still not
+  written a second after the turn ended, shows its count with "≥". A
+  subagent still running when the turn ended counts only what it had used
+  by then. A Claude turn ended by Esc before a question was answered, by
+  "No" at its own permission prompt, or by Esc followed straight by the
+  next prompt, shows no tokens: no hook brings its transcript.
+- **Codex turns count no subagent tokens.** Codex keeps a subagent's work in
+  a transcript of its own, which Limpid does not read. Codex's checks are
+  read from its transcript when the turn ends, so they appear then rather
+  than as each one finishes, and an interrupted Codex turn shows no tokens
+  or checks: no hook brings its transcript. A very long Codex turn may
+  count fewer test runs than it ran: its card says so with "…" and its
+  tooltip with "at least", while the decision bar's count of failures is
+  the one Limpid read.
+- **A Claude subagent named again in a later turn is counted again**:
+  Limpid reads the subagent's whole transcript at each turn that names it.
+- **A turn record written by an older Limpid and a newer one in turn** can
+  show a test count that leaves out the runs the older one recorded.
+- **A turn keeps its last 16 test runs** one by one; the card shows the last
+  three, and the tooltip counts all of them.
 - **"Create PR" needs `gh`**, so Limpid does not create a GitLab merge
   request.
 

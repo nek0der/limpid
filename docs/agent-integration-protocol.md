@@ -340,12 +340,12 @@ events, and those decide what is written (`turn_step` in
 
 | Provider hook | Event | Effect on the turn |
 |---|---|---|
-| `UserPromptSubmit` | `PromptSubmitted` | begins a turn: a begin snapshot, the counter's next number, a new record |
-| `Stop` | `TurnFinished` | ends the turn as `finished` with an end snapshot and the difference |
-| Claude `StopFailure`, a Codex `Stop` that carries an error (none does today), the usage limit Limpid's watcher reports for Codex | `Failed` | ends it as `failed` |
+| `UserPromptSubmit` | `PromptSubmitted` | begins a turn: a begin snapshot, the counter's next number, a new record with the provider's own id for the turn (`providerTurnId`: Claude's `prompt_id`, Codex's `turn_id`) |
+| `Stop` | `TurnFinished` | ends the turn as `finished` with an end snapshot and the difference, and the tokens it used read from the transcript (`usage`); for Codex, also every check it ran (`checks`, `checkCount`, `lastCheck`) |
+| Claude `StopFailure`, a Codex `Stop` that carries an error (none does today), the usage limit Limpid's watcher reports for Codex | `Failed` | ends it as `failed`; Claude's reads `usage` as `Stop` does |
 | Codex `Interrupt` | `Interrupted` | ends it as `interrupted` |
 | Claude `Notification` (`idle_prompt`) | `AwaitingPrompt` | for a run working after its turn's `Stop`, takes that turn's end snapshot and difference again and keeps how it ended; for a turn open at least 55 seconds, ends it as `interrupted`, a turn waiting on a question or permission only when the transcript shows the awaited call ended: every call of the latest assistant message has a result, or an interrupt line follows it (`awaited_call_ended`); otherwise nothing (docs/adr/0004-provider-adapter-contract.md, "Work outside a turn") |
-| Claude `PostToolUse` / `PostToolUseFailure` of a check command | — | sets the turn's `lastCheck` |
+| Claude `PostToolUse` / `PostToolUseFailure` of a check command | — | sets the turn's `lastCheck`, adds a mark to `checks`, and counts it in `checkCount` (and in `failureCount` when it failed) |
 
 Not every hook call comes from the pane's agent. Codex's memory feature runs a
 "Memory Writing Agent" thread in the same process after a session starts.
@@ -396,7 +396,13 @@ The files live in the provider's state directory, under `turns/`:
   `promptKind`, `startedAt`, `finishedAt`, `phase`, `gitContext`, the
   `begin` and `end` snapshot states, the untracked files each snapshot left
   out for their size (`skippedBegin`, `skippedEnd`), `changes`,
-  `durationSeconds`, `addedBytes`, `lastCheck`, and `appliedEvents`. Fields a version does not model are kept
+  `durationSeconds`, `addedBytes`, `lastCheck`, the turn's last 16 check
+  runs (`checks`, each an `exitCode` and `isFiltered`), how many it ran
+  in all (`checkCount`) and how many of those failed (`failureCount`),
+  `areChecksPartial` when the turn may have run checks those leave out,
+  `providerTurnId`, `usage` (`inputTokens`,
+  `cacheWriteTokens`, `cacheReadTokens`, `outputTokens`, and `isPartial`
+  when part of the turn could not be read), and `appliedEvents`. Fields a version does not model are kept
   and written back. A record a reader cannot write back exactly as it read
   it, including any newer schema, is left alone: never rewritten, never
   deleted.
@@ -426,6 +432,36 @@ The files live in the provider's state directory, under `turns/`:
   worded; a new kind needs no new schema. The projection's summary always
   carries `promptKind`, and an application that does not find it, or does
   not know it, reads it as `text`.
+
+  `usage` counts tokens, never a price, and is read at every end of the
+  turn that brings a transcript (`Stop`, a repeated `Stop`, and Claude's
+  `StopFailure` and `idle_prompt`). A later whole reading replaces an
+  earlier one; a later partial one keeps the larger of each count and
+  stays partial. Claude Code's comes from the last 4 MiB of the
+  transcript: every request after the user line tagged with the turn's
+  `promptId` (after the last prompt when no line carries it), each request
+  once however many lines it streamed over, and the subagent transcripts
+  the turn ran (`<session>/subagents/agent-<agentId>.jsonl`, named by the
+  tool result's `toolUseResult.agentId`), the last 4 MiB of each and 16 MiB
+  of them all. A subagent sent to the background, or one read short of its
+  whole, leaves the reading partial. An interactive Claude Code writes the
+  turn's last response a moment after `Stop` begins, so while the turn's
+  last main line is a prompt or a tool result, the hook reads the
+  transcript again every 50 ms for up to a second, and the reading stays
+  partial if the response has not come by then. The reading ends at the
+  next prompt's line (another `promptId`), and an interrupt's line ends the
+  turn with no response to wait for. Codex's is the turn's last
+  `token_usage_record` in its rollout, whose `input_tokens` counts the
+  cached and cache-written input, which Limpid takes out of `inputTokens`.
+  Codex's checks are the rollout's `CommandExecution` items of the turn, a
+  command the person declined left out, classified by the project's check
+  patterns as Claude's are. When the rollout's last 4 MiB no longer holds
+  the turn's `task_started` line, the checks are `areChecksPartial`, and a
+  partial reading with fewer runs does not replace the turn's. A `Stop`
+  that ends no open turn reads from the last prompt, and records nothing
+  when that prompt is the ended turn's own. Neither transcript shape is
+  documented by its provider; a line Limpid cannot read is left out rather
+  than guessed at.
 
 - `<hash>.counter`, one per conversation, from which turns are numbered. The
   number only grows, so a deleted turn's number is never given again.
