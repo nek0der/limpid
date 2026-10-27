@@ -29,12 +29,26 @@ extension AppState {
             }
         }
         connectWindowOverlays()
+        connectProgramStatus()
         startApprovalHandOff()
         startAttentionQueue()
         startNotificationRouting()
         // Before the first reading of the journals, so none goes unheard.
         connectRestoreMoves()
         recoverRestores()
+    }
+
+    /// Hands the agents' OSC 7501 reports to the projection: which program
+    /// names are agents', what each pane last reported, and a pass whenever
+    /// an agent's report changes.
+    func connectProgramStatus() {
+        programStatus.agentApps = Set(AgentProviderRegistry.descriptors.values.compactMap(\.programStatusApp))
+        programStatus.onChange = { [weak agentProjection] in
+            agentProjection?.requestPass()
+        }
+        agentProjection.programStatus = { [programStatus] in
+            programStatus.projectionInput
+        }
     }
 
     /// Tells the toast center which window a toast with no window of its

@@ -164,6 +164,8 @@ fn build_input(case: &Path) -> (ProjectionInput, Instants) {
         pid_status: hand.pid_status,
         focus: hand.focus,
         seen_panes: hand.seen_panes,
+        // No case reports a program's status.
+        program_status: BTreeMap::new(),
         acknowledged: Vec::new(),
         is_bootstrap: hand.is_bootstrap,
         // No case protects turns yet, so none sweeps them.

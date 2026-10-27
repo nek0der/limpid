@@ -30,6 +30,7 @@ every upstream bump.
 | Patch | Class | Why it is not upstream | Retirement condition |
 |---|---|---|---|
 | `Add scrollback save/restore C API` | temporary | Not proposed upstream yet. | The embedding API can save a surface's scrollback and replay it into a new surface. |
+| `Report OSC 7501 program status to the embedder` | temporary | Not proposed upstream yet. Upstream reports the protocol only through libghostty-vt's handler, which the app's terminal does not use. | The embedding API reports a surface's OSC 7501 program status to the embedder and answers the protocol's support query. |
 
 ### Classes
 

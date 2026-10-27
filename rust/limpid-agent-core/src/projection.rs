@@ -16,10 +16,10 @@ use crate::title::{TitleCandidates, resolve_title};
 use crate::turn_rules::conversation_of;
 use limpid_agent_model::{
     AcceptedRun, AttachmentResolution, AttentionMarks, Badge, Capability, Command, CommandOp,
-    ConversationKey, ConversationTurns, EpisodeStamp, Instants, Precondition, Projection,
-    ProjectionInput, ProjectionState, ProviderDescriptor, ProviderId, RecordFile, RunRecord,
-    RunState, RuntimePresentation, SessionInfo, SnapshotStatus, StopReason, Target, TurnRecord,
-    TurnSummary, VIEWED_FINISHED_RETENTION_SECS, seconds_between,
+    ConversationKey, ConversationTurns, EpisodeStamp, Instants, Precondition, ProgramState,
+    Projection, ProjectionInput, ProjectionState, ProviderDescriptor, ProviderId, RecordFile,
+    RunRecord, RunState, RuntimePresentation, SessionInfo, SnapshotStatus, StopReason, Target,
+    TurnRecord, TurnSummary, VIEWED_FINISHED_RETENTION_SECS, parse_utc_seconds, seconds_between,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -83,7 +83,7 @@ pub fn project_with(
         .filter(|id| crate::gc::died_at_work(&state.accepted[*id].record))
         .map(str::to_owned)
         .collect();
-    let mut declined_waits = Vec::new();
+    let mut declined_waits: Vec<(String, DeclinedBy)> = Vec::new();
     let runtimes = build_runtimes(&mut state, input, &exited, declined, &mut declined_waits);
     let pane_to_tab = pane_to_tab(input);
     let alive: BTreeSet<Uuid> = pane_to_tab.keys().copied().collect();
@@ -102,11 +102,9 @@ pub fn project_with(
         now,
     ));
     commands.extend(seen_where_the_user_is_looking(&runtimes, input));
-    commands.extend(
-        declined_waits
-            .iter()
-            .filter_map(|storage_id| end_declined_wait(storage_id, &state.accepted[storage_id])),
-    );
+    commands.extend(declined_waits.iter().filter_map(|(storage_id, evidence)| {
+        end_declined_wait(storage_id, &state.accepted[storage_id], *evidence)
+    }));
     let resume_candidates = resume_candidates(input, &sessions, &hints_retired(&commands, input));
 
     state.episodes = runtimes
@@ -230,7 +228,7 @@ fn build_runtimes(
     input: &ProjectionInput,
     exited: &BTreeSet<String>,
     declined: &mut DeclinedWait<'_>,
-    declined_waits: &mut Vec<String>,
+    declined_waits: &mut Vec<(String, DeclinedBy)>,
 ) -> Vec<RuntimePresentation> {
     let mut runtimes: Vec<RuntimePresentation> = state
         .accepted
@@ -252,8 +250,8 @@ fn build_runtimes(
             let badge = badge_from(&run.record, capabilities);
             let badge = if exited.contains(storage_id) {
                 exited_badge(badge)
-            } else if is_declined_wait(run, declined) {
-                declined_waits.push(storage_id.clone());
+            } else if let Some(evidence) = declined_wait(run, input, declined) {
+                declined_waits.push((storage_id.clone(), evidence));
                 declined_badge(badge)
             } else {
                 badge
@@ -568,19 +566,69 @@ fn exited_badge(badge: Badge) -> Badge {
     }
 }
 
-/// Whether the run waits inside a turn on a call its transcript shows the
-/// person declined. Only such a run is asked about, so a pass reads nothing
-/// for a run at work or at rest. A wait outside a turn (a late tool's
-/// permission) is left as the record says, as the idle prompt leaves it
-/// (`idle_outcome`): no turn holds it to stop.
-fn is_declined_wait(run: &AcceptedRun, declined: &mut DeclinedWait<'_>) -> bool {
+/// What says a wait was declined, which the writer weighs differently
+/// (`CommandOp::EndDeclinedWait::by_program_status`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DeclinedBy {
+    Transcript,
+    ProgramStatus,
+}
+
+/// Returns what shows that the person declined the wait of a run waiting
+/// inside a turn, if anything does. Only such a run is asked about, so a pass
+/// reads nothing for a run at work or at rest. A wait outside a turn (a late
+/// tool's permission) is left as the record says, as the idle prompt leaves
+/// it (`idle_outcome`): no turn holds it to stop. The agent's own status
+/// report comes first: one that says it is idle again, sent after the wait
+/// began, means the wait is over however the person answered, and it costs
+/// no read. The transcript the record names is asked otherwise.
+fn declined_wait(
+    run: &AcceptedRun,
+    input: &ProjectionInput,
+    declined: &mut DeclinedWait<'_>,
+) -> Option<DeclinedBy> {
     let record = &run.record;
-    record.state == RunState::NeedsInput
-        && record.run_started_at.is_some()
-        && record
-            .transcript_path
-            .as_deref()
-            .is_some_and(|path| declined(&run.provider, path))
+    if record.state != RunState::NeedsInput || record.run_started_at.is_none() {
+        return None;
+    }
+    if program_status_shows_idle(run, input) {
+        return Some(DeclinedBy::ProgramStatus);
+    }
+    record
+        .transcript_path
+        .as_deref()
+        .is_some_and(|path| declined(&run.provider, path))
+        .then_some(DeclinedBy::Transcript)
+}
+
+/// Returns whether the run's own pane last reported, under the name the
+/// provider gives its agent (`ProviderDescriptor::program_status_app`), that
+/// the agent is idle, and reported it no earlier than the second the record
+/// last changed. Only the pane's latest report counts, so an idle from
+/// before the turn is no evidence: the turn's work and the wait replace it
+/// before the record says the run waits. Reports carry no fraction of a
+/// second in the record's timestamp, so the same second counts.
+fn program_status_shows_idle(run: &AcceptedRun, input: &ProjectionInput) -> bool {
+    let Some(app) = input
+        .providers
+        .get(&run.provider)
+        .and_then(|descriptor| descriptor.program_status_app.as_deref())
+    else {
+        return false;
+    };
+    let Ok(pane) = Uuid::parse_str(&run.record.pane_id) else {
+        return false;
+    };
+    let Some(status) = input.program_status.get(&pane) else {
+        return false;
+    };
+    let (Some(reported), Some(changed)) = (
+        parse_utc_seconds(&status.observed_at),
+        parse_utc_seconds(&run.record.updated_at),
+    ) else {
+        return false;
+    };
+    status.app == app && status.state == ProgramState::Idle && reported >= changed
 }
 
 /// Returns the badge of a run whose wait the person declined: its turn
@@ -612,7 +660,7 @@ fn declined_badge(badge: Badge) -> Badge {
 /// record lock. It is `None` for a record without an episode token, which
 /// only a writer from before tokens leaves, and no such writer names a
 /// transcript.
-fn end_declined_wait(storage_id: &str, run: &AcceptedRun) -> Option<Command> {
+fn end_declined_wait(storage_id: &str, run: &AcceptedRun, evidence: DeclinedBy) -> Option<Command> {
     let record = &run.record;
     Some(Command::new(
         CommandOp::EndDeclinedWait {
@@ -622,6 +670,7 @@ fn end_declined_wait(storage_id: &str, run: &AcceptedRun) -> Option<Command> {
                 .filter(|token| !token.is_empty())?,
             turn_id: record.current_turn_id.clone(),
             transcript_path: record.transcript_path.clone()?,
+            by_program_status: evidence == DeclinedBy::ProgramStatus,
         },
         Target::Record {
             provider: run.provider.clone(),

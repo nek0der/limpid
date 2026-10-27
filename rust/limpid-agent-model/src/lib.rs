@@ -51,10 +51,10 @@ pub use projection::{
     AcceptedRun, AttachmentResolution, AttentionMarks, Badge, EpisodeStamp,
     FINISHED_NOTICE_HOLD_MS, Focus, Instants, LifecycleInput, MAX_TURN_DELETIONS_PER_PASS,
     NOTIFICATION_BODY_CHARS, NOTIFICATION_PENDING_LIFETIME_MS, ObservedRuntime, OutboxState,
-    PaneLocation, PanePresence, PendingNotification, PidStatus, Projection, ProjectionInput,
-    ProjectionState, RESUME_WINDOW_SECS, RecordFile, RuntimePresentation, SessionInfo, StopReason,
-    TURNS_KEPT_PER_SHOWN_CONVERSATION, TabPanes, TurnSweepInput, VIEWED_FINISHED_RETENTION_SECS,
-    WorktreeEventFile,
+    PaneLocation, PanePresence, PendingNotification, PidStatus, ProgramState, ProgramStatus,
+    Projection, ProjectionInput, ProjectionState, RESUME_WINDOW_SECS, RecordFile,
+    RuntimePresentation, SessionInfo, StopReason, TURNS_KEPT_PER_SHOWN_CONVERSATION, TabPanes,
+    TurnSweepInput, VIEWED_FINISHED_RETENTION_SECS, WorktreeEventFile,
 };
 pub use prompt::{PromptKind, RecordedPromptKind, classify_prompt};
 pub use provider::{

@@ -133,6 +133,10 @@ final class AppState {
     /// what has to happen to the files, for every provider the Rust registry
     /// declares.
     let agentProjection: AgentProjectionAdapter
+    /// What each pane's program last reported about itself over OSC 7501,
+    /// which the projection reads and which leaves an agent's own titles off
+    /// its tab.
+    let programStatus = PaneProgramStatusStore()
     /// Restores of a worktree to the start of a turn, and their journals.
     /// Demo mode runs none: its worktrees are a fixture's, and nothing of
     /// the person's is written (`writesUserFilesAtLaunch`).

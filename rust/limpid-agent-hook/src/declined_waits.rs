@@ -151,6 +151,12 @@ pub struct DeclinedWaitRequest {
     #[serde(default)]
     pub turn_id: Option<String>,
     pub transcript_path: String,
+    /// The agent reported itself idle over OSC 7501 after the wait began
+    /// (`CommandOp::EndDeclinedWait::by_program_status`), so the transcript
+    /// is not asked: it has no line that reads declined when the person
+    /// chose "No" at the agent's prompt.
+    #[serde(default)]
+    pub by_program_status: bool,
 }
 
 /// This says what became of one request to end a declined wait.
@@ -208,11 +214,12 @@ fn is_storage_id(value: &str) -> bool {
 /// The end snapshot runs git, so it is taken before the record lock from
 /// the record as it stood then, as the hook takes a turn's end
 /// (`write_events`). Under the lock the record is read again, and the write
-/// goes ahead only if it is still the same wait (`is_the_wait`) and its
-/// transcript still reads declined; anything else drops it whole, the
-/// snapshot with it. The prompt the person types next takes the same lock,
-/// so either its write comes first and this one finds a new episode, or
-/// this one comes first and the prompt begins its turn after it.
+/// goes ahead only if it is still the same wait (`is_the_wait`) and, unless
+/// the agent's own status report is what said so, its transcript still reads
+/// declined; anything else drops it whole, the snapshot with it. The prompt
+/// the person types next takes the same lock, so either its write comes first
+/// and this one finds a new episode, or this one comes first and the prompt
+/// begins its turn after it.
 #[must_use]
 pub fn end_declined_wait(
     request: &DeclinedWaitRequest,
@@ -240,7 +247,7 @@ pub fn end_declined_wait(
     else {
         return DeclinedWaitEnd::MovedOn;
     };
-    if !reads_declined(adapter, transcript) {
+    if !request.by_program_status && !reads_declined(adapter, transcript) {
         return DeclinedWaitEnd::NotDeclined;
     }
     let descriptor = adapter.descriptor();
@@ -276,8 +283,9 @@ pub fn end_declined_wait(
         }
         // We read the transcript again under the lock, as we did the record:
         // what the person did at the prompt is in the transcript, not in the
-        // record.
-        if !reads_declined(adapter, transcript) {
+        // record. The agent's own report was read once by the pass, and the
+        // record check above is what stops a late write.
+        if !request.by_program_status && !reads_declined(adapter, transcript) {
             return (DeclinedWaitEnd::NotDeclined, None);
         }
         let Some(mut next) = previous

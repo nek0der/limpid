@@ -174,6 +174,34 @@ pub struct Focus {
     pub pane: Uuid,
 }
 
+/// What a pane's program last reported about itself over OSC 7501. Only the
+/// report about the program as a whole is kept, not the records it keeps
+/// for parts of its work.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgramStatus {
+    /// The program's own name for itself (`claude-code`); empty when it
+    /// sent none.
+    pub app: String,
+    pub state: ProgramState,
+    /// ISO-8601 UTC, when the terminal forwarded the report.
+    pub observed_at: String,
+}
+
+/// The states a program reports, as the protocol names them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProgramState {
+    /// At rest, waiting for the person's next instruction.
+    Idle,
+    Working,
+    /// Finished a piece of work the person has not looked at yet.
+    Done,
+    /// Cannot go on until the person does something.
+    Blocked,
+    Error,
+}
+
 /// Everything one projection pass reads.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -234,6 +262,11 @@ pub struct ProjectionInput {
     /// finishes in one of these has been seen.
     #[serde(default)]
     pub seen_panes: Vec<Uuid>,
+    /// The latest status each pane's program reported about itself with the
+    /// Program Status Protocol (OSC 7501), as the terminal forwarded it. A
+    /// pane whose program cleared its record, or never sent one, is absent.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub program_status: BTreeMap<Uuid, ProgramStatus>,
     /// What became of the previous pass's commands.
     #[serde(default)]
     pub acknowledged: Vec<CommandOutcome>,

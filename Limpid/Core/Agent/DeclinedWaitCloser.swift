@@ -110,7 +110,7 @@ extension DeclinedWaitRequest {
         in directories: [String: AgentDirectories]
     ) -> [DeclinedWaitRequest] {
         commands.compactMap { command in
-            guard case let .endDeclinedWait(episodeToken, turnID, transcriptPath) = command.op,
+            guard case let .endDeclinedWait(episodeToken, turnID, transcriptPath, byProgramStatus) = command.op,
                   case let .record(provider, storageID) = command.target,
                   let state = directories[provider]?.state
             else { return nil }
@@ -120,7 +120,8 @@ extension DeclinedWaitRequest {
                 storageID: storageID,
                 episodeToken: episodeToken,
                 turnID: turnID,
-                transcriptPath: transcriptPath
+                transcriptPath: transcriptPath,
+                byProgramStatus: byProgramStatus
             )
         }
     }

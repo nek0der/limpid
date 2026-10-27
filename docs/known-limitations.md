@@ -34,10 +34,13 @@ as they are fixed or confirmed.
   choose "Answer in terminal".
 - **Codex questions are answered in the terminal.** Codex has no structured
   question that Limpid can show as a card.
-- **An approval refused in Claude Code's own dialog stays listed for a
-  while.** After you choose "No" in the terminal, the row keeps saying
+- **An approval refused in Claude Code's own dialog can stay listed for a
+  while inside tmux.** Claude Code sends no hook when you choose "No" in the
+  terminal. Limpid reads the answer from the status Claude Code reports to
+  the terminal (OSC 7501), which it does not report inside tmux or with
+  `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set. There the row keeps saying
   "Needs approval" until the next prompt in that pane or the end of the
-  turn, because Claude Code sends no hook for that answer.
+  turn.
 - **No time left is shown after an approval goes to the terminal.** Once a
   request is handed to the agent's own prompt, the agent decides how long it
   waits, and Limpid cannot read that time.

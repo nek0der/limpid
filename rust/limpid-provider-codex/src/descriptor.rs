@@ -60,6 +60,9 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
             // own, which runs the person's hooks with its own session id and
             // no marker (`normalize`).
             internal_agent_directories: vec!["memories".to_owned(), "memories_v2".to_owned()],
+            // Codex reports OSC 7501 too, but every wait of its own ends
+            // with a hook, so nothing reads its reports yet.
+            program_status_app: None,
             id,
         }
     })

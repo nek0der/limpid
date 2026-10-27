@@ -329,12 +329,11 @@ settings_json=$(sed \
 # for the agent rather than trusting it.
 export LIMPID_CLAUDE_PID="$$"
 
-# Claude Code writes its title + spinner to the terminal via OSC 2. Rust now
-# owns automatic title selection, so a second writer would race the formal
-# title projection and make precedence depend on arrival order. Keep Claude's
-# writer disabled for every invocation managed by this shim.
-CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
-export CLAUDE_CODE_DISABLE_TERMINAL_TITLE
+# We leave CLAUDE_CODE_DISABLE_TERMINAL_TITLE as the person set it. Set, it
+# also stops Claude Code from reporting its status over OSC 7501, which is how
+# a "No" at its own prompt reaches the projection. The titles Claude writes
+# while it reports are left off the tab by the app instead
+# (`PaneProgramStatusStore`), so Rust stays the one automatic title writer.
 
 # Merge our settings with a user-supplied `--settings`, echoing the result.
 # Echoes nothing when either side can't be read, which the caller treats as

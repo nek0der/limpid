@@ -130,9 +130,13 @@ struct DeclinedWaitRequest: Encodable, Hashable, Sendable {
     /// It is `nil` when the record names no turn.
     let turnID: String?
     let transcriptPath: String
+    /// The agent's own OSC 7501 report, not the transcript, showed the wait
+    /// over, so the writer does not ask the transcript.
+    let byProgramStatus: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case provider, stateDirectory, storageID = "storageId", episodeToken, turnID = "turnId", transcriptPath
+        case provider, stateDirectory, storageID = "storageId", episodeToken, turnID = "turnId", transcriptPath,
+             byProgramStatus
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -144,6 +148,7 @@ struct DeclinedWaitRequest: Encodable, Hashable, Sendable {
         try container.encode(episodeToken, forKey: .episodeToken)
         try container.encodeIfPresent(turnID, forKey: .turnID)
         try container.encode(transcriptPath, forKey: .transcriptPath)
+        try container.encode(byProgramStatus, forKey: .byProgramStatus)
     }
 }
 

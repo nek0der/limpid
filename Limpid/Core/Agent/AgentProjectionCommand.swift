@@ -51,14 +51,15 @@ enum AgentCommandOperation: Decodable, Sendable {
     /// hook reports, in the run record and its turn, through
     /// `DeclinedWaitCloser`, since the turn's end snapshot runs git. The
     /// fields name the wait as the pass read it; the writer checks them
-    /// again under the record lock.
-    case endDeclinedWait(episodeToken: String, turnID: String?, transcriptPath: String)
+    /// again under the record lock. `byProgramStatus` says the agent's own
+    /// OSC 7501 report, not the transcript, showed the wait over.
+    case endDeclinedWait(episodeToken: String, turnID: String?, transcriptPath: String, byProgramStatus: Bool)
     /// An operation this build does not know. Skipped, never guessed at.
     case unknown
 
     private enum CodingKeys: String, CodingKey {
         case op, max, lifetimeSecs, keep, runtimeId, token, pane, newCwd, oldCwd, repoRoot, turnId
-        case episodeToken, transcriptPath
+        case episodeToken, transcriptPath, byProgramStatus
     }
 
     init(from decoder: any Decoder) throws {
@@ -101,7 +102,8 @@ enum AgentCommandOperation: Decodable, Sendable {
             self = try .endDeclinedWait(
                 episodeToken: container.decode(String.self, forKey: .episodeToken),
                 turnID: container.decodeIfPresent(String.self, forKey: .turnId),
-                transcriptPath: container.decode(String.self, forKey: .transcriptPath)
+                transcriptPath: container.decode(String.self, forKey: .transcriptPath),
+                byProgramStatus: container.decodeIfPresent(Bool.self, forKey: .byProgramStatus) ?? false
             )
         default:
             self = .unknown

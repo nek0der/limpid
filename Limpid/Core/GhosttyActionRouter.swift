@@ -67,6 +67,8 @@ enum GhosttyEvent {
     case mouseShape(SurfaceView, shape: ghostty_action_mouse_shape_e)
     /// libghostty detected that the pty entered or left password input.
     case secureInput(SurfaceView, mode: SecureInputMode)
+    /// The program in the surface reported its status (OSC 7501).
+    case programStatus(SurfaceView, report: ProgramStatusReport)
     /// libghostty changed conditional state and needs the current config
     /// reapplied to either the whole app or one surface.
     case softReload(ReloadTarget)
@@ -155,6 +157,13 @@ enum GhosttyActionRouter {
             // the in-app notification panel still shows it.
             log.notice("DESKTOP_NOTIFICATION title=\(title, privacy: .private)")
             return .desktopNotification(view, title: title, body: body)
+
+        case GHOSTTY_ACTION_PROGRAM_STATUS:
+            guard let view = surfaceView(from: target),
+                  let report = programStatusReport(action.action.program_status)
+            else { return nil }
+            log.debug("PROGRAM_STATUS state=\(report.state.rawValue, privacy: .public)")
+            return .programStatus(view, report: report)
 
         case GHOSTTY_ACTION_RING_BELL:
             guard let view = surfaceView(from: target) else { return nil }
@@ -264,6 +273,26 @@ enum GhosttyActionRouter {
         default:
             return nil
         }
+    }
+
+    /// The report libghostty forwarded, or `nil` for a state this build does
+    /// not know.
+    private static func programStatusReport(_ payload: ghostty_action_program_status_s) -> ProgramStatusReport? {
+        let state: ProgramStatusReport.State
+        switch payload.state {
+        case GHOSTTY_PROGRAM_STATUS_IDLE: state = .idle
+        case GHOSTTY_PROGRAM_STATUS_WORKING: state = .working
+        case GHOSTTY_PROGRAM_STATUS_DONE: state = .done
+        case GHOSTTY_PROGRAM_STATUS_BLOCKED: state = .blocked
+        case GHOSTTY_PROGRAM_STATUS_ERROR: state = .error
+        case GHOSTTY_PROGRAM_STATUS_CLEAR: state = .clear
+        default: return nil
+        }
+        return ProgramStatusReport(
+            app: payload.app.map { String(cString: $0) } ?? "",
+            recordID: payload.id.map { String(cString: $0) } ?? "",
+            state: state
+        )
     }
 
     // MARK: - Target → SurfaceView
