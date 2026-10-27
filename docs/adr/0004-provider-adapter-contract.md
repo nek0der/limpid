@@ -304,6 +304,34 @@ its size or modification time changed since the last pass that asked
 `stat` per pass. The core names no file and no provider: the bridge answers
 for it through the adapter.
 
+"No" at Claude's permission prompt leaves no interrupt line, so the
+transcript cannot say that wait is over. Claude says it itself: it reports its
+status to the terminal over OSC 7501 (the Program Status Protocol) once the
+terminal answers the protocol's support query, and after either answer it
+reports `idle`. Our libghostty fork forwards each report about the program as
+a whole, and the app keeps each pane's latest (`PaneProgramStatusStore`) and
+hands it to every pass as `programStatus`, with the second the terminal
+forwarded it. A provider names the `app` its agent reports under
+(`ProviderDescriptor::program_status_app`, `claude-code`). A run that waits
+inside a turn and whose pane last reported idle under that name, in or after
+the second its record last changed, has had its wait declined, and the
+transcript is not asked. Only the latest report counts, so an idle from
+before the turn is no evidence: the turn's `working` and the wait's
+`blocked` replace it before the record says the run waits. A refusal with
+words lets the turn go on, so Claude reports `working`, not `idle`, and the
+wait ends with the next hook as before. The command then says so
+(`byProgramStatus`), and the writer checks the record under the lock as
+before but does not read the transcript. Inside tmux, Claude asks tmux
+rather than the terminal and reports nothing, and with
+`CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set it neither asks nor reports; the
+transcript is then the only evidence, as it was. The same switch would have
+kept Claude's own titles off the tab, which Rust names (`tab_titles`), so the
+shim no longer sets it; the app leaves off every title from a pane while
+an agent reports its status there, and the empty one Claude writes as it
+exits. A pane's status goes when its program clears it, when its command
+returns to the shell, or when the pane closes, so an agent that is killed
+and sends no clear does not keep the shell's titles off the tab.
+
 The end snapshot the idle prompt takes runs before the record lock, so the
 hook judges the idle prompt again from the record under the lock and drops it
 whole if the run has moved on in the meantime: if what it ends or the turn

@@ -37,14 +37,29 @@ struct AgentProjectionCommandTests {
          "expect":{"expect":"none"},"onMismatch":"abort"}
         """)
 
-        guard case let .endDeclinedWait(token, turnID, transcriptPath) = command.op else {
+        guard case let .endDeclinedWait(token, turnID, transcriptPath, byProgramStatus) = command.op else {
             Issue.record("decoded as \(command.op)")
             return
         }
         #expect(token == "5")
         #expect(turnID == "TURN")
         #expect(transcriptPath == "/t/session.jsonl")
+        #expect(!byProgramStatus, "Rust leaves the key out when the transcript said so")
         #expect(command.target == .record(provider: "claude", storageID: "RUN"))
+    }
+
+    @Test func endDeclinedWait_saysWhenTheAgentsOwnReportShowedItOver() throws {
+        let command = try Self.decode("""
+        {"op":{"op":"endDeclinedWait","episodeToken":"5","transcriptPath":"/t/session.jsonl","byProgramStatus":true},
+         "target":{"target":"record","provider":"claude","storageId":"RUN"},
+         "expect":{"expect":"none"},"onMismatch":"abort"}
+        """)
+
+        guard case let .endDeclinedWait(_, _, _, byProgramStatus) = command.op else {
+            Issue.record("decoded as \(command.op)")
+            return
+        }
+        #expect(byProgramStatus)
     }
 
     @Test func aTurnTarget_isReportedUnderItsOwnName() throws {

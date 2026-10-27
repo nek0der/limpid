@@ -53,6 +53,9 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
         // No agent of Claude's own is known to work in its configuration
         // directory.
         internal_agent_directories: Vec::new(),
+        // Claude Code reports OSC 7501 once the terminal answers its support
+        // query, which libghostty does.
+        program_status_app: Some("claude-code".to_owned()),
     })
 }
 

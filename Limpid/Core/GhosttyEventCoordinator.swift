@@ -46,6 +46,10 @@ final class GhosttyEventCoordinator {
     /// one mark a command's start leaves, Limpid's own typed commands
     /// included (`PaneAgentInFrontFollower`).
     private let onTitleChanged: @MainActor (_ paneID: UUID) -> Void
+    /// What each pane's program last reported over OSC 7501, which also
+    /// decides the titles an agent's tab leaves off. Optional so a
+    /// coordinator built for a test needs none.
+    private let programStatus: PaneProgramStatusStore?
 
     /// Pending SET_TITLE applies, keyed by pane id. We debounce title
     /// updates by a tiny delay so a shell that prints the command name
@@ -73,7 +77,8 @@ final class GhosttyEventCoordinator {
         commandWindow: @escaping @MainActor () -> WindowID,
         linkOpener: TerminalLinkOpener,
         onTitleChanged: @escaping @MainActor (_ paneID: UUID) -> Void = { _ in },
-        onCommandFinished: @escaping @MainActor (_ paneID: UUID, _ exitCode: Int, _ durationNs: UInt64) -> Void = { _, _, _ in }
+        onCommandFinished: @escaping @MainActor (_ paneID: UUID, _ exitCode: Int, _ durationNs: UInt64) -> Void = { _, _, _ in },
+        programStatus: PaneProgramStatusStore? = nil
     ) {
         self.ghosttyApp = ghosttyApp
         self.session = session
@@ -87,6 +92,7 @@ final class GhosttyEventCoordinator {
         self.linkOpener = linkOpener
         self.onTitleChanged = onTitleChanged
         self.onCommandFinished = onCommandFinished
+        self.programStatus = programStatus
     }
 
     // Single entry point invoked by `GhosttyActionRouter.sink`. Switch
@@ -132,6 +138,9 @@ final class GhosttyEventCoordinator {
             handleMouseShape(view: view, shape: shape)
         case let .secureInput(view, mode):
             secureInputManager.set(mode, for: view)
+        case let .programStatus(view, report):
+            guard let paneID = registry.id(for: view) else { return }
+            programStatus?.receive(report, in: paneID)
         case .softReload(.app):
             ghosttyApp?.softReload(surface: nil)
         case let .softReload(.surface(view)):
@@ -174,6 +183,14 @@ final class GhosttyEventCoordinator {
               let paneID = registry.id(for: view)
         else {
             log.debug("SET_TITLE dropped (missing session/paneID)")
+            return
+        }
+        // An agent that reports its status over OSC 7501 also writes
+        // titles of its own, which the projection's name for its tab would
+        // race (`PaneProgramStatusStore.silencesTitle`). Left off before
+        // anything reads it, as when the agent wrote none.
+        if programStatus?.silencesTitle(title, from: paneID) == true {
+            log.debug("SET_TITLE ignored: the agent in the pane reports its status")
             return
         }
         onTitleChanged(paneID)
@@ -290,6 +307,10 @@ final class GhosttyEventCoordinator {
         // an initial-command title must no longer be suppressed.
         view.clearInjectedCommandTitleGuard()
         guard let paneID = registry.id(for: view) else { return }
+        // The program that reported a status is gone once its command is
+        // back at the shell, cleared or not: one killed or crashed sends no
+        // clear, and its status would keep the shell's titles off the tab.
+        programStatus?.forget(paneID)
         onCommandFinished(paneID, exit, durationNs)
 
         let config = CommandFinishConfig.default
@@ -499,6 +520,7 @@ final class GhosttyEventCoordinator {
         pendingTitleApplies.removeValue(forKey: paneID)
         pendingBellFlashes[paneID]?.cancel()
         pendingBellFlashes.removeValue(forKey: paneID)
+        programStatus?.forget(paneID)
         session.paneSearchStates.removeValue(forKey: paneID)
         session.paneTransients.removeValue(forKey: paneID)
         guard let owningTab = session.tab(containing: paneID) else {

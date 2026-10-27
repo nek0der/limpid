@@ -137,7 +137,8 @@ extension AppState {
                 else { return }
                 refreshAttentionQueue()
                 refreshStopResumeOffers()
-            }
+            },
+            programStatus: programStatus
         )
     }
 

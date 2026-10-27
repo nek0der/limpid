@@ -174,19 +174,21 @@ struct ClaudeShimScriptTests {
         #expect(flags.first.map { argv[$0 + 1] } == "{bad")
     }
 
-    @Test("keeps Rust as the sole automatic title writer")
-    func terminalTitleOverride_isForcedOff() throws {
+    @Test("leaves Claude's status reports on: sets no title switch of its own")
+    func terminalTitleSwitch_isLeftUnset() throws {
         try withTempDir { dir in
             let stub = dir.appendingPathComponent("fake-claude")
+            // The switch also turns off Claude's OSC 7501 reports, which the
+            // projection reads (`PaneProgramStatusStore`).
             try ShimHarness.writeExecutable("""
             #!/bin/sh
-            [ "$CLAUDE_CODE_DISABLE_TERMINAL_TITLE" = "1" ]
+            [ -z "${CLAUDE_CODE_DISABLE_TERMINAL_TITLE+set}" ]
             """, at: stub)
 
             var environment = ShimHarness.environment(in: dir)
             environment["LIMPID_CLAUDE_SETTINGS_TEMPLATE"] = try ShimHarness.claudeSettingsTemplate()
             environment["LIMPID_REAL_CLAUDE"] = stub.path
-            environment["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] = "0"
+            environment.removeValue(forKey: "CLAUDE_CODE_DISABLE_TERMINAL_TITLE")
             let process = try ShimHarness.run(ShimHarness.shim("claude"), [], environment: environment)
 
             #expect(process.terminationStatus == 0)

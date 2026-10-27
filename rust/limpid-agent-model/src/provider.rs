@@ -148,6 +148,13 @@ pub struct ProviderDescriptor {
     /// the projection spells no provider's directory.
     #[serde(default)]
     pub internal_agent_directories: Vec<String>,
+    /// The `app` name the provider's agent gives itself in an OSC 7501
+    /// program status report (`claude-code`), when it reports one. A report
+    /// under this name in a run's pane speaks for that run
+    /// (`ProjectionInput::program_status`). The name is the agent's own
+    /// vocabulary, so it lives here with the provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program_status_app: Option<String>,
 }
 
 impl ProviderDescriptor {
@@ -227,6 +234,7 @@ impl ProviderDescriptor {
             process_names: Vec::new(),
             session_end_drop_reasons: Vec::new(),
             internal_agent_directories: Vec::new(),
+            program_status_app: None,
             id,
         }
     }

@@ -42,6 +42,9 @@ struct AgentProjectionInput: Encodable {
     /// The panes the person can see now. A run that finishes in one
     /// of them is read as it finishes.
     var seenPanes: [UUID] = []
+    /// What each pane's program last reported about itself over OSC 7501,
+    /// keyed by pane (`PaneProgramStatusStore`).
+    var programStatus: [String: AgentProjectionProgramStatus] = [:]
     var acknowledged: [AgentCommandOutcome] = []
     var isBootstrap = false
     /// What the turn retention sweep needs; absent until the host
@@ -281,6 +284,15 @@ struct AgentProjectionFocus: Encodable {
     var pane: UUID
 }
 
+/// A pane program's latest OSC 7501 report about itself, as the rules read it
+/// (`ProgramStatus` in `limpid-agent-model`).
+struct AgentProjectionProgramStatus: Encodable, Equatable {
+    var app: String
+    /// `idle`, `working`, `done`, `blocked`, or `error`.
+    var state: String
+    var observedAt: String
+}
+
 /// What a provider declares about itself, as the Rust registry reports it.
 /// The host reads only some of it, but every field is named here: the
 /// descriptors go back to the rules in each pass's input, and a field left
@@ -297,6 +309,9 @@ struct AgentProviderDescriptor: Codable {
     var processNames: [String]
     var sessionEndDropReasons: [String]
     var internalAgentDirectories: [String]
+    /// The `app` name the provider's agent gives itself in OSC 7501, when it
+    /// reports its status.
+    var programStatusApp: String?
 }
 
 /// What one pass answers with. The state it also returns travels as raw bytes

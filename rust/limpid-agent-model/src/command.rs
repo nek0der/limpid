@@ -114,9 +114,10 @@ pub enum CommandOp {
     /// it to the bridge's writer off the main thread, since the end
     /// snapshot runs git, rather than performing it under a record lock of
     /// its own. The writer takes the record lock itself and checks under it
-    /// that the record is still this wait (the fields below) and that the
-    /// transcript still reads declined, so a prompt that came meanwhile
-    /// makes it a no-op; the precondition is `None` for that reason.
+    /// that the record is still this wait (the fields below) and, unless
+    /// the agent itself said so, that the transcript still reads declined,
+    /// so a prompt that came meanwhile makes it a no-op; the precondition is
+    /// `None` for that reason.
     EndDeclinedWait {
         /// This is the wait's `stateEpisodeToken`.
         episode_token: String,
@@ -124,8 +125,14 @@ pub enum CommandOp {
         /// when the record names none.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         turn_id: Option<String>,
-        /// This is the transcript the record names, which read declined.
+        /// This is the transcript the record names.
         transcript_path: String,
+        /// The agent reported itself idle over OSC 7501 after the wait
+        /// began, which says the wait is over without the transcript:
+        /// "No" at Claude's permission prompt leaves no line there that
+        /// reads declined.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        by_program_status: bool,
     },
 }
 
@@ -463,6 +470,7 @@ mod tests {
                 episode_token: "5".to_owned(),
                 turn_id: Some("TURN".to_owned()),
                 transcript_path: "/t/session.jsonl".to_owned(),
+                by_program_status: false,
             },
             Target::Record {
                 provider: provider(),

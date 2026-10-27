@@ -370,9 +370,14 @@ the turns, and the commands for the app to perform.
   narrower limit would delete records, with the count the sweep itself
   makes without deleting (`limpid_projection_engine_turns_taken_v1`).
 - **A declined wait.** Claude sends no hook when the person declines its
-  question or permission prompt with Esc. The projection reads the decline
-  from the transcript the run record names, and its badge shows the turn
-  stopped at once (`waitDeclined`). The same pass returns an
+  question or permission prompt, with Esc or with "No". Claude does report
+  its status to the terminal over OSC 7501, which libghostty forwards
+  (`GHOSTTY_ACTION_PROGRAM_STATUS`) and `PaneProgramStatusStore` keeps per
+  pane; it also leaves the titles Claude writes meanwhile off the tab. The
+  projection reads the decline from an idle report in the run's pane made
+  after the wait began, and otherwise from the transcript the run record
+  names, and its badge shows the turn stopped at once (`waitDeclined`). The
+  same pass returns an
   `endDeclinedWait` command, and `DeclinedWaitCloser` hands it to Rust
   (`LimpidTurnBridge.endDeclinedWait`), off the main actor: once when the
   write settles, and up to three times for a write that does not. Under the record

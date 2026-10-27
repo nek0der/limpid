@@ -71,6 +71,7 @@ impl Waiting {
             episode_token: record.state_episode_token.expect("token"),
             turn_id: record.current_turn_id,
             transcript_path: record.transcript_path.expect("transcript"),
+            by_program_status: false,
         }
     }
 
@@ -219,4 +220,29 @@ fn a_request_that_names_no_record_is_refused() {
     };
     assert_eq!(end(&unknown), DeclinedWaitEnd::Failed);
     assert_eq!(waiting.record().state, RunState::NeedsInput);
+}
+
+#[test]
+fn a_wait_the_agent_reported_idle_after_ends_without_the_transcript() {
+    // "No" at Claude's permission prompt leaves no line in the transcript
+    // that reads declined; Claude's own OSC 7501 report says it is idle.
+    let waiting = Waiting::new("reported-idle");
+    let request = DeclinedWaitRequest {
+        by_program_status: true,
+        ..waiting.request()
+    };
+    assert_eq!(end(&request), DeclinedWaitEnd::Ended);
+    assert_eq!(waiting.record().state, RunState::Finished);
+    assert_eq!(only_turn(&waiting.states).phase, TurnPhase::Interrupted);
+
+    // The record check still stops a write the next prompt overtook.
+    let waiting = Waiting::new("reported-idle-moved-on");
+    let request = DeclinedWaitRequest {
+        by_program_status: true,
+        ..waiting.request()
+    };
+    call(&waiting.states, &prompt(&waiting.repo.path));
+    let moved = fs::read(waiting.record_path()).expect("record");
+    assert_eq!(end(&request), DeclinedWaitEnd::MovedOn);
+    assert_eq!(fs::read(waiting.record_path()).expect("record"), moved);
 }

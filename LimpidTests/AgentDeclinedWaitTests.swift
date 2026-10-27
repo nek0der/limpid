@@ -251,4 +251,44 @@ struct AgentDeclinedWaitTests {
             #expect(!pass.items.contains(where: Self.isPrompt))
         }
     }
+
+    /// Returns the report Claude Code makes over OSC 7501 once the person
+    /// answers "No" at its prompt: idle again, in the same second the record
+    /// last changed.
+    private static func reportedIdle(in scene: Scene) throws -> [String: AgentProjectionProgramStatus] {
+        let changed = try #require(scene.record()["updatedAt"] as? String)
+        return [scene.pane.uuidString: AgentProjectionProgramStatus(app: "claude-code", state: "idle", observedAt: changed)]
+    }
+
+    @Test(.disabled(if: !RepoFixture.hasLocalRepo))
+    func aWaitClaudeReportsIdleAfter_leavesTheRow_thoughTheTranscriptShowsItOpen() async throws {
+        let requests = Requests(answering: .ended)
+        let closer = requests.closer()
+        try await withScene(transcript: "claude-2.1.309-question-open.jsonl", declinedWaits: closer) { scene in
+            let report = try Self.reportedIdle(in: scene)
+            scene.adapter.programStatus = { report }
+            scene.adapter.refresh()
+            await closer.writesSettled()
+            let pass = scene.pass()
+            #expect(pass.runtime?.badge.state == .finished)
+            #expect(pass.runtime?.badge.isWaitDeclined == true)
+            #expect(!pass.items.contains(where: Self.isPrompt))
+            let request = try #require(requests.all.first)
+            #expect(request.byProgramStatus, "the writer is told not to ask the transcript")
+        }
+    }
+
+    @Test(.disabled(if: !RepoFixture.hasLocalRepo))
+    func aWaitClaudeReportsIdleAfter_isClosedOnDisk_byTheBridgesWriter() async throws {
+        let closer = DeclinedWaitCloser()
+        try await withScene(transcript: "claude-2.1.309-question-open.jsonl", declinedWaits: closer) { scene in
+            let report = try Self.reportedIdle(in: scene)
+            scene.adapter.programStatus = { report }
+            scene.adapter.refresh()
+            await closer.writesSettled()
+            let record = try scene.record()
+            #expect(record["state"] as? String == "finished")
+            #expect(record["waitKind"] == nil)
+        }
+    }
 }

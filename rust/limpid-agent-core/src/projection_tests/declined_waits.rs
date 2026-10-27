@@ -102,6 +102,7 @@ fn a_declined_wait_asks_the_host_to_write_its_end_until_the_record_says_it() {
             episode_token: "5".to_owned(),
             turn_id: Some(turn.to_owned()),
             transcript_path: TRANSCRIPT.to_owned(),
+            by_program_status: false,
         }
     );
     assert_eq!(
@@ -201,4 +202,107 @@ impl ReplaceRecords for ProjectionInput {
         }
         self
     }
+}
+
+/// Returns `input` with Claude's descriptor naming its OSC 7501 app and the
+/// run's pane last reporting `state` at `at`.
+fn reported(
+    mut input: ProjectionInput,
+    app: &str,
+    state: limpid_agent_model::ProgramState,
+    at: &str,
+) -> ProjectionInput {
+    let mut descriptor = input
+        .providers
+        .get(&claude())
+        .cloned()
+        .unwrap_or_else(|| limpid_agent_model::ProviderDescriptor::fixture("claude", []));
+    descriptor.program_status_app = Some("claude-code".to_owned());
+    input.providers.insert(claude(), descriptor);
+    input.program_status.insert(
+        PANE.parse().expect("pane"),
+        limpid_agent_model::ProgramStatus {
+            app: app.to_owned(),
+            state,
+            observed_at: at.to_owned(),
+        },
+    );
+    input
+}
+
+#[test]
+fn an_idle_report_after_the_wait_ends_it_without_the_transcript() {
+    use limpid_agent_model::ProgramState;
+    let base = waiting(r#","stateEpisodeToken":"5""#);
+
+    // The record changed at 12:03:00. Idle reported then or later ends the
+    // wait, and the transcript is not asked.
+    let input = reported(
+        base.clone(),
+        "claude-code",
+        ProgramState::Idle,
+        "2026-09-14T12:03:00Z",
+    );
+    let (_, projection, commands, asked) = pass(&ProjectionState::default(), &input, false);
+    assert!(asked.is_empty(), "the report answers first");
+    assert_eq!(
+        projection.runtimes[0].badge.stop_reason,
+        Some(limpid_agent_model::StopReason::WaitDeclined)
+    );
+    let ends = declined_wait_ends(&commands);
+    assert_eq!(ends.len(), 1);
+    assert!(matches!(
+        ends[0].op,
+        CommandOp::EndDeclinedWait {
+            by_program_status: true,
+            ..
+        }
+    ));
+
+    // Blocked is the wait itself, and an idle from before the wait, or under
+    // another program's name, says nothing about it.
+    for input in [
+        reported(
+            base.clone(),
+            "claude-code",
+            ProgramState::Blocked,
+            "2026-09-14T12:03:05Z",
+        ),
+        reported(
+            base.clone(),
+            "claude-code",
+            ProgramState::Idle,
+            "2026-09-14T12:02:59Z",
+        ),
+        reported(
+            base.clone(),
+            "other-agent",
+            ProgramState::Idle,
+            "2026-09-14T12:03:05Z",
+        ),
+    ] {
+        let (_, projection, commands, asked) = pass(&ProjectionState::default(), &input, false);
+        assert_eq!(
+            asked,
+            vec![TRANSCRIPT.to_owned()],
+            "the transcript is asked"
+        );
+        assert_eq!(projection.runtimes[0].badge.state, RunState::NeedsInput);
+        assert!(declined_wait_ends(&commands).is_empty());
+    }
+
+    // A provider that names no app reads no report.
+    let mut input = reported(
+        base,
+        "claude-code",
+        ProgramState::Idle,
+        "2026-09-14T12:03:05Z",
+    );
+    input
+        .providers
+        .get_mut(&claude())
+        .expect("claude")
+        .program_status_app = None;
+    let (_, projection, _, _) = pass(&ProjectionState::default(), &input, false);
+    assert_eq!(projection.runtimes[0].badge.state, RunState::NeedsInput);
 }
