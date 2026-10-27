@@ -140,7 +140,7 @@ jobs:
           xcodebuild -version
 
       - name: Install tooling
-        run: brew install xcodegen zig@0.16 create-dmg
+        run: brew install xcodegen zig@0.17 create-dmg
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install --no-self-update

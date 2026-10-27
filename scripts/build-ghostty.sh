@@ -2,10 +2,14 @@
 # Build libghostty xcframework for Limpid.
 #
 # Requirements:
-#   - zig 0.16.0 installed. The exact requirement is
-#     `minimum_zig_version` in vendor/ghostty/build.zig.zon.
-#     Recommended: `brew install zig@0.16` (keg-only formula), so the
-#     build does not drift with whatever `zig` is on PATH.
+#   - The Zig release named by `minimum_zig_version` in
+#     vendor/ghostty/build.zig.zon, installed from Homebrew:
+#     `brew install zig@<version>`, e.g. `brew install zig@0.17`.
+#     While that release is Homebrew's current one, `zig@<version>` is an
+#     alias of `zig` and installs under opt/zig; once a newer release
+#     ships it becomes its own keg-only formula under opt/zig@<version>.
+#     We look in both and take only a Zig whose version matches exactly,
+#     so the build does not drift with whatever `zig` is on PATH.
 #   - vendor/ghostty submodule initialized.
 #
 # Output:
@@ -19,17 +23,31 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GHOSTTY_DIR="${REPO_ROOT}/vendor/ghostty"
-ZIG_BIN="/opt/homebrew/opt/zig@0.16/bin/zig"
-
-if [[ ! -x "${ZIG_BIN}" ]]; then
-  echo "✗ zig 0.16.0 not found at ${ZIG_BIN}" >&2
-  echo "  Install with: brew install zig@0.16" >&2
-  exit 1
-fi
 
 if [[ ! -d "${GHOSTTY_DIR}" ]]; then
   echo "✗ vendor/ghostty submodule missing" >&2
   echo "  Initialize with: git submodule update --init --recursive" >&2
+  exit 1
+fi
+
+ZIG_VERSION="$(sed -n 's/^ *\.minimum_zig_version = "\(.*\)",$/\1/p' "${GHOSTTY_DIR}/build.zig.zon")"
+if [[ -z "${ZIG_VERSION}" ]]; then
+  echo "✗ minimum_zig_version not found in ${GHOSTTY_DIR}/build.zig.zon" >&2
+  exit 1
+fi
+# Homebrew formulas name the minor release (zig@0.17), not the patch.
+ZIG_FORMULA="zig@${ZIG_VERSION%.*}"
+
+ZIG_BIN=""
+for candidate in "/opt/homebrew/opt/${ZIG_FORMULA}/bin/zig" "/opt/homebrew/opt/zig/bin/zig"; do
+  if [[ -x "${candidate}" && "$("${candidate}" version)" == "${ZIG_VERSION}" ]]; then
+    ZIG_BIN="${candidate}"
+    break
+  fi
+done
+if [[ -z "${ZIG_BIN}" ]]; then
+  echo "✗ No zig ${ZIG_VERSION} at /opt/homebrew/opt/${ZIG_FORMULA} or /opt/homebrew/opt/zig" >&2
+  echo "  Install with: brew install ${ZIG_FORMULA}" >&2
   exit 1
 fi
 

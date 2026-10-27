@@ -59,7 +59,7 @@ jobs:
           xcodebuild -version
 
       - name: Install tooling
-        run: brew install xcodegen zig@0.16 tmux
+        run: brew install xcodegen zig@0.17 tmux
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install --no-self-update
@@ -170,7 +170,7 @@ jobs:
           xcodebuild -version
 
       - name: Install tooling
-        run: brew install xcodegen zig@0.16
+        run: brew install xcodegen zig@0.17
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install --no-self-update

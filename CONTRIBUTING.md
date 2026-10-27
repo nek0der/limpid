@@ -19,15 +19,17 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
   xcodebuild -downloadComponent MetalToolchain
   ```
 - [Homebrew](https://brew.sh)
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen), Zig 0.16.0, and Rustup
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen), Zig 0.17.0, and Rustup
   ```bash
-  brew install xcodegen zig@0.16 rustup
+  brew install xcodegen zig@0.17 rustup
   export PATH="$(brew --prefix rustup)/bin:$PATH"
   ```
-  `zig@0.16` is keg-only; the build script invokes it by its full path
-  (`/opt/homebrew/opt/zig@0.16/bin/zig`), so no `PATH` change is required.
   The version of record is `minimum_zig_version` in
-  `vendor/ghostty/build.zig.zon`.
+  `vendor/ghostty/build.zig.zon`. The build script reads it and runs the
+  Homebrew Zig of exactly that version by its full path, so no `PATH` change
+  is required. It looks in `/opt/homebrew/opt/zig@0.17/bin/zig` and in
+  `/opt/homebrew/opt/zig/bin/zig`, because `zig@0.17` is an alias of `zig`
+  while 0.17 is Homebrew's current release.
 - [Mint](https://github.com/yonaskolb/Mint), for the `swiftformat` version
   pinned in `Mintfile` (`make fmt` / `make lint`)
   ```bash
@@ -52,10 +54,10 @@ cd limpid
 # now — `make ghostty` fails on an empty vendor/ghostty/ checkout:
 #   git submodule update --init --recursive
 
-# 2. Confirm Zig is reachable (the build script hard-codes the
-# Homebrew keg path, so missing zig@0.16 yields a clear error
+# 2. Confirm Zig 0.17.0 is installed (the build script only looks in
+# Homebrew's opt paths, so a missing zig@0.17 yields a clear error
 # rather than silently picking up a system Zig):
-#   ls /opt/homebrew/opt/zig@0.16/bin/zig
+#   brew list --versions zig@0.17
 
 # 3. Build libghostty as an xcframework (10–20 min on first run; cached after)
 make ghostty
