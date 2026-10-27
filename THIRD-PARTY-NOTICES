@@ -4481,7 +4481,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 
 ----------------------------------------------------------------
-Component: Zig 0.16.0 runtime (MIT) https://ziglang.org
+Component: Zig 0.17.0 runtime (MIT) https://ziglang.org
 ----------------------------------------------------------------
 
 libghostty is written in Zig, and its object code includes Zig's
@@ -4658,7 +4658,7 @@ Component: uucode 0.2.0 (MIT AND Unicode-3.0) https://github.com/jacobsandlund/u
 LICENSE.md. uucode's tables are built from the Unicode Character
 Database, whose files carry this notice:
 
-# © 2025 Unicode®, Inc.
+# © 2026 Unicode®, Inc.
 # Unicode and the Unicode Logo are registered trademarks of Unicode, Inc. in the U.S. and other countries.
 # For terms of use and license, see https://www.unicode.org/terms_of_use.html
 
@@ -4667,7 +4667,7 @@ uucode also includes Bjoern Hoehrmann's UTF-8 decoder (MIT), as does
 ghostty's own src/terminal/UTF8Decoder.zig. The package ghostty pins leaves
 out uucode's licenses/ directory, so the decoder's notice below is
 licenses/LICENSE_Bjoern_Hoehrmann at that commit, fetched from
-https://raw.githubusercontent.com/jacobsandlund/uucode/2826a37a4562284fdacd8fa029d49509cc9bffcd/licenses/LICENSE_Bjoern_Hoehrmann
+https://raw.githubusercontent.com/jacobsandlund/uucode/ea62149739404a73c202b48a33bf6dd2af4bd9b0/licenses/LICENSE_Bjoern_Hoehrmann
 It matches the notice on http://bjoern.hoehrmann.de/utf-8/decoder/dfa/.
 
 # uucode license
@@ -4715,7 +4715,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ----------------------------------------------------------------
-Component: z2d 0.12.1 (MPL-2.0) https://github.com/vancluever/z2d
+Component: z2d 0.12.2-pre (MPL-2.0) https://github.com/vancluever/z2d
 ----------------------------------------------------------------
 
 The source files carry this header:

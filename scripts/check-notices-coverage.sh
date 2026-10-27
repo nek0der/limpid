@@ -120,9 +120,10 @@ texts=(
 # are defined in a linked Limpid binary (`nm`), and by searching the Release
 # binary for each library's strings and each font's bytes. A component that
 # is only in the xcframework (its objects never linked) does not belong here.
-# The list holds for the 24be2f1 pin: the range 23c1ffad0..24be2f1 changes
-# only Zig sources and include/ghostty.h, no build definition or dependency,
-# so the linked third-party set is the same across it.
+# The list holds for the 1fa2d91ee pin, rebased onto upstream 0fe113a35. Its
+# arm64 archive has the same members as the previous pin's (24be2f1), apart
+# from two Zig compilation units that were renamed. Among the Zig packages,
+# only z2d's version and uucode's Unicode data (now 18.0.0) changed the notices.
 ghostty_components=(
   "FreeType 2.13.2 |                    The FreeType Project LICENSE"
   "FreeType 2.13.2 |    Portions of this software are copyright © 2023 The FreeType"
@@ -155,7 +156,7 @@ ghostty_components=(
   "Nerd Fonts Symbols Only 3.4.0 |Copyright 2013 Kim Silkebækken and other contributors"
   "Nerd Fonts Symbols Only 3.4.0 |Copyright (c) 2014 Jesse Weed"
   "Nerd Fonts Symbols Only 3.4.0 |Copyright (c) <dates>, <Erik Flowers> (<URL|email>),"
-  "Zig 0.16.0 runtime |Copyright (c) Zig contributors"
+  "Zig 0.17.0 runtime |Copyright (c) Zig contributors"
   "libxev |Copyright (c) 2023 Mitchell Hashimoto"
   "libxev |Copyright (c) 2021 kprotty"
   "vaxis 0.6.0 |Copyright (c) 2023 Tim Culverhouse"
@@ -163,13 +164,13 @@ ghostty_components=(
   "zig-objc |Copyright (c) 2023 Mitchell Hashimoto"
   "uucode 0.2.0 |Copyright (c) 2026 Jacob Sandlund"
   "uucode 0.2.0 |Copyright (c) 2008-2009 Bjoern Hoehrmann <bjoern@hoehrmann.de>"
-  "z2d 0.12.1 |//   Copyright © 2024-2026 Chris Marchesi"
-  "z2d 0.12.1 |Mozilla Public License Version 2.0"
-  "z2d 0.12.1 |Copyright © 2000 Keith Packard, member of The XFree86 Project, Inc."
-  "z2d 0.12.1 |  Copyright 2020 Yevhenii Reizner"
-  "z2d 0.12.1 |Copyright (c) 2011 Google Inc. All rights reserved."
-  "z2d 0.12.1 |Copyright (c) 2020 Yevhenii Reizner All rights reserved."
-  "z2d 0.12.1 |  * Neither the name of the copyright holder nor the names of its"
+  "z2d 0.12.2-pre |//   Copyright © 2024-2026 Chris Marchesi"
+  "z2d 0.12.2-pre |Mozilla Public License Version 2.0"
+  "z2d 0.12.2-pre |Copyright © 2000 Keith Packard, member of The XFree86 Project, Inc."
+  "z2d 0.12.2-pre |  Copyright 2020 Yevhenii Reizner"
+  "z2d 0.12.2-pre |Copyright (c) 2011 Google Inc. All rights reserved."
+  "z2d 0.12.2-pre |Copyright (c) 2020 Yevhenii Reizner All rights reserved."
+  "z2d 0.12.2-pre |  * Neither the name of the copyright holder nor the names of its"
 )
 
 # The license grant every standard-library crate's reproduced text must
