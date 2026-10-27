@@ -192,9 +192,9 @@ struct SessionRowFactTests {
     }
 
     /// A pane header wears what the row of a session holding only that pane
-    /// wears, through the row's own function: an unread turn over a running
-    /// or resting agent, a wait over a running one, and two runs in one
-    /// pane weighed as the row weighs them.
+    /// wears, through the row's own function: a running agent over an
+    /// unread turn, an unread turn over a resting agent, a wait over a
+    /// running one, and two runs in one pane weighed as the row weighs them.
     struct PaneCase: Sendable {
         let items: [AttentionItemKind]
         let states: [AgentState]
@@ -202,7 +202,7 @@ struct SessionRowFactTests {
     }
 
     @Test(arguments: [
-        PaneCase(items: [Self.unread], states: [.running], kind: .unread),
+        PaneCase(items: [Self.unread], states: [.running], kind: .running),
         PaneCase(items: [Self.unread], states: [.idle], kind: .unread),
         PaneCase(items: [.approval(ApprovalFact.test())], states: [.running], kind: .needsApproval),
         PaneCase(items: [.question(ApprovalFact.test(isQuestion: true))], states: [.needsInput], kind: .needsAnswer),
@@ -216,7 +216,7 @@ struct SessionRowFactTests {
         // Two runs in one pane: a finished Claude beside a running Codex,
         // and a stop beside a running run.
         PaneCase(items: [], states: [.finished, .running], kind: .running),
-        PaneCase(items: [Self.unread], states: [.finished, .running], kind: .unread),
+        PaneCase(items: [Self.unread], states: [.finished, .running], kind: .running),
         PaneCase(items: [.stop(.processExited)], states: [.error, .running], kind: .stopped),
         PaneCase(items: [], states: [.unknown, .running], kind: .running)
     ])

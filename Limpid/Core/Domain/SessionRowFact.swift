@@ -7,8 +7,8 @@ import Foundation
 /// agent that fact is about, and the pull request attached to it. One row stands for one place to
 /// work (the project's folder or a worktree) and every pane in it, so the
 /// row shows the agent that most needs the person, in one order for the
-/// whole app: a question or an approval, then a stop, an unread turn, a
-/// running turn, and last the row at rest.
+/// whole app: a question or an approval, then a stop, a running turn, an
+/// unread turn, and last the row at rest.
 struct SessionRowFact: Equatable, Sendable {
     enum Glyph: Equatable, Sendable {
         case needsAnswer
@@ -139,7 +139,15 @@ struct SessionRowFact: Equatable, Sendable {
 
     /// The row's glyph, fact, and badge, without what is attached to it.
     private static func state(of input: Input) -> Self {
-        if let item = PanePriority.dominant(input.items) {
+        // A running turn goes before an unread one. An unread turn stays
+        // until its files are viewed, so ranked above the run it would hide
+        // every later turn for as long as its changes sit unreviewed. Its
+        // mark comes back when the running turn ends.
+        let isUnread: (AttentionItem) -> Bool = { item in
+            guard case .unread = item.kind else { return false }
+            return true
+        }
+        if let item = PanePriority.dominant(input.items.filter { !isUnread($0) }) {
             return fact(for: item, requestText: input.requestText)
         }
         if let index = leadAgentIndex(of: input.agents.map(\.state)),
@@ -151,6 +159,9 @@ struct SessionRowFact: Equatable, Sendable {
                 fact: agent.state == .compacting ? .compacting : .running(agent.detail.flatMap { $0.isEmpty ? nil : $0 }),
                 badge: .agent(agent.provider)
             )
+        }
+        if let item = PanePriority.dominant(input.items.filter(isUnread)) {
+            return fact(for: item, requestText: input.requestText)
         }
         // At rest, the second line states a Git fact when there is one,
         // whatever runs in the row: the pull request, else what is
