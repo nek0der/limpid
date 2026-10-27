@@ -40,13 +40,15 @@ use limpid_agent_core::{
     classify_check, event_id_for, idle_outcome, sanitize_text, turn_step,
 };
 use limpid_agent_model::{
-    Capability, EventId, HookContext, InstallRecipe, ProviderAdapter, ProviderDescriptor,
-    ProviderId, RawHookInput, RunRecord, SnapshotStatus, TmuxEndpoint, cwd_event_file_name,
-    parse_utc_seconds, run_record_file_name, session_hint_file_name,
+    Capability, CheckResult, EventId, HookContext, InstallRecipe, ProviderAdapter,
+    ProviderDescriptor, ProviderId, RawHookInput, RunRecord, SnapshotStatus, TmuxEndpoint,
+    TurnReading, TurnUsage, cwd_event_file_name, parse_utc_seconds, run_record_file_name,
+    session_hint_file_name,
 };
 use limpid_provider_claude::ClaudeAdapter;
 use limpid_provider_codex::CodexAdapter;
 use serde_json::json;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use worktree_lock::{Shared, WorktreeLockPaths};
@@ -262,21 +264,7 @@ fn write_check(
     if !descriptor.has(Capability::TurnSnapshot) {
         return;
     }
-    let cwd = run
-        .cwd
-        .as_deref()
-        .map_or_else(turn::current_directory, PathBuf::from);
-    let patterns = directories
-        .state
-        .parent()
-        .and_then(|support| worktree::check_patterns(support, &cwd))
-        .unwrap_or_else(|| {
-            DEFAULT_CHECK_PATTERNS
-                .iter()
-                .map(|&pattern| pattern.to_owned())
-                .collect()
-        });
-    let Some(check) = classify_check(&run.command, &patterns) else {
+    let Some(check) = check_of(run, directories) else {
         return;
     };
     let record_path = directories
@@ -289,25 +277,182 @@ fn write_check(
         pane_id: &apply_context.pane_id,
         now: &runtime.now,
         log,
+        transcript: None,
     };
     let written = with_record_lock(&record_path, || {
-        turns.record_check(
-            records::read_record(&record_path).as_ref(),
-            call_id,
-            limpid_agent_model::CheckResult {
-                // Kept to the record's text contract: a heredoc can make a
-                // command kilobytes long, and the record is shown as text.
-                command: sanitize_text(&check.command),
-                // The call's status is the check's only when nothing came
-                // after it (`cargo test | tail` reports `tail`'s).
-                exit_code: run.exit_code.filter(|_| check.is_exit_its_own),
-                is_filtered: check.is_filtered,
-            },
-        );
+        turns.record_check(records::read_record(&record_path).as_ref(), call_id, check);
     });
     if written.is_none() {
         log.line(&format!("record lock busy for {}", record_path.display()));
     }
+}
+
+/// The check `run` is, when the project counts it as one: by the patterns
+/// the project set for the directory it ran in, or the defaults.
+fn check_of(
+    run: &limpid_agent_model::CommandRun,
+    directories: &ResolvedDirectories,
+) -> Option<CheckResult> {
+    check_with(run, &check_patterns(&run_directory(run), directories))
+}
+
+/// The directory `run` ran in, the hook's own when the payload named none.
+fn run_directory(run: &limpid_agent_model::CommandRun) -> PathBuf {
+    run.cwd
+        .as_deref()
+        .map_or_else(turn::current_directory, PathBuf::from)
+}
+
+/// The check patterns the project set for `cwd`, or the defaults.
+fn check_patterns(cwd: &Path, directories: &ResolvedDirectories) -> Vec<String> {
+    directories
+        .state
+        .parent()
+        .and_then(|support| worktree::check_patterns(support, cwd))
+        .unwrap_or_else(|| {
+            DEFAULT_CHECK_PATTERNS
+                .iter()
+                .map(|&pattern| pattern.to_owned())
+                .collect()
+        })
+}
+
+/// The check `run` is under `patterns`.
+fn check_with(run: &limpid_agent_model::CommandRun, patterns: &[String]) -> Option<CheckResult> {
+    let check = classify_check(&run.command, patterns)?;
+    Some(CheckResult {
+        // Kept to the record's text contract: a heredoc can make a command
+        // kilobytes long, and the record is shown as text.
+        command: sanitize_text(&check.command),
+        // The call's status is the check's only when nothing came after it
+        // (`cargo test | tail` reports `tail`'s).
+        exit_code: run.exit_code.filter(|_| check.is_exit_its_own),
+        is_filtered: check.is_filtered,
+    })
+}
+
+/// One hook call's transcript, as the turns it begins or ends read it.
+struct CallTranscript<'a> {
+    call: &'a HookCall<'a>,
+    directories: &'a ResolvedDirectories,
+}
+
+impl turn::TurnTranscript for CallTranscript<'_> {
+    fn marker(&self) -> Option<String> {
+        self.call.adapter.turn_marker(self.call.input)
+    }
+
+    /// A turn whose last response is not yet in the transcript is read
+    /// again as the provider writes it, for at most `AWAIT_RESPONSE`; past
+    /// that the reading stays partial. The subagents' transcripts share one
+    /// budget of bytes (`MAX_SUBAGENT_BYTES`), so a turn that fanned out
+    /// widely does not hold the hook up; one read short of its whole, or
+    /// not at all, leaves the usage partial. The project's check patterns
+    /// are read once per directory the commands ran in.
+    fn read_end(&self, marker: Option<&str>) -> turn::EndReading {
+        let adapter = self.call.adapter;
+        let reading = self.awaited_reading(marker);
+        let usage = reading.usage.map(|usage| {
+            let mut budget = MAX_SUBAGENT_BYTES;
+            reading
+                .subagent_transcripts
+                .iter()
+                .fold(usage, |total, path| {
+                    total.plus(subagent_usage(adapter, path, &mut budget))
+                })
+        });
+        let checks = reading.commands.map(|runs| {
+            let mut patterns: HashMap<PathBuf, Vec<String>> = HashMap::new();
+            runs.iter()
+                .filter_map(|run| {
+                    let cwd = run_directory(run);
+                    let patterns = patterns
+                        .entry(cwd)
+                        .or_insert_with_key(|cwd| check_patterns(cwd, self.directories));
+                    check_with(run, patterns)
+                })
+                .collect()
+        });
+        turn::EndReading {
+            marker: reading.marker,
+            usage,
+            checks,
+            are_checks_partial: reading.are_commands_partial,
+        }
+    }
+}
+
+impl CallTranscript<'_> {
+    /// The turn's reading, read again while it awaits its last response.
+    fn awaited_reading(&self, marker: Option<&str>) -> TurnReading {
+        let adapter = self.call.adapter;
+        let mut reading = adapter.turn_reading(self.call.input, marker);
+        if !reading.is_awaiting_response {
+            return reading;
+        }
+        let Some(path) = adapter
+            .transcript_path(RawHookInput {
+                bytes: self.call.input.bytes,
+                transcript: None,
+            })
+            .ok()
+            .flatten()
+        else {
+            return reading;
+        };
+        let started = std::time::Instant::now();
+        while reading.is_awaiting_response && started.elapsed() < AWAIT_RESPONSE {
+            std::thread::sleep(AWAIT_RESPONSE_STEP);
+            let Some(transcript) =
+                records::read_bounded_tail(Path::new(&path), MAX_TRANSCRIPT_BYTES)
+            else {
+                break;
+            };
+            reading = adapter.turn_reading(
+                RawHookInput {
+                    bytes: self.call.input.bytes,
+                    transcript: Some(&transcript),
+                },
+                marker,
+            );
+        }
+        reading
+    }
+}
+
+/// How long a turn's end waits for its last response to reach the
+/// transcript, and how often it looks. Claude Code wrote it a tenth of a
+/// second after Stop began in the sessions we watched; a second keeps a slow
+/// disk from costing the count, and a hook that waits no longer.
+const AWAIT_RESPONSE: std::time::Duration = std::time::Duration::from_secs(1);
+const AWAIT_RESPONSE_STEP: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Most bytes one turn's end reads of its subagents' transcripts, all of
+/// them together.
+const MAX_SUBAGENT_BYTES: usize = 4 * MAX_TRANSCRIPT_BYTES;
+
+/// What one subagent's transcript at `path` used, read within what is left
+/// of `budget`; partial when the file is longer than that, or cannot be
+/// read.
+fn subagent_usage(adapter: &dyn ProviderAdapter, path: &Path, budget: &mut usize) -> TurnUsage {
+    let unread = TurnUsage {
+        is_partial: true,
+        ..TurnUsage::default()
+    };
+    let limit = MAX_TRANSCRIPT_BYTES.min(*budget);
+    if limit == 0 {
+        return unread;
+    }
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return unread;
+    };
+    let Some(bytes) = records::read_bounded_tail(path, limit) else {
+        return unread;
+    };
+    *budget -= bytes.len();
+    let mut usage = adapter.subagent_usage(&bytes).unwrap_or_default();
+    usage.is_partial |= usize::try_from(metadata.len()).map_or(true, |length| length > limit);
+    usage
 }
 
 /// The identity fields every record carries, resolved from the environment.
@@ -395,6 +540,7 @@ fn write_events(
     let run_id = &apply_context.run_id;
     let pane_id = &apply_context.pane_id;
     let record_path = directories.state.join(run_record_file_name(run_id));
+    let transcript = CallTranscript { call, directories };
     let turns = turn::Turns {
         directory: directories.state.join(TURNS_DIRECTORY),
         descriptor,
@@ -402,6 +548,7 @@ fn write_events(
         pane_id,
         now: &runtime.now,
         log,
+        transcript: Some(&transcript),
     };
     for (index, event) in call.events.iter().enumerate() {
         // Read before the lock, like the snapshot it decides: a step that
@@ -497,12 +644,7 @@ fn write_events(
             turns.pin(pin, runtime.snapshots);
         }
         if let Some(TurnSnapshotOp::Remove { cwd }) = &writes.snapshot {
-            let cwd = cwd
-                .clone()
-                .map_or_else(turn::current_directory, PathBuf::from);
-            if let Err(error) = runtime.snapshots.remove(&cwd, pane_id) {
-                log.line(&format!("remove turn snapshot: {error}"));
-            }
+            remove_snapshot(cwd.as_deref(), pane_id, runtime, log);
         }
         for side in &writes.side {
             perform_side_write(
@@ -515,6 +657,15 @@ fn write_events(
                 log,
             );
         }
+    }
+}
+
+/// Removes the pane's snapshot a session's end left in the repository at
+/// `cwd`, the hook's own directory when the run named none.
+fn remove_snapshot(cwd: Option<&str>, pane_id: &str, runtime: &HookRuntime<'_>, log: &HookLog) {
+    let cwd = cwd.map_or_else(turn::current_directory, PathBuf::from);
+    if let Err(error) = runtime.snapshots.remove(&cwd, pane_id) {
+        log.line(&format!("remove turn snapshot: {error}"));
     }
 }
 
@@ -805,5 +956,48 @@ mod stamp_tests {
             begin_time("2026-09-13T16:00:01Z", after),
             "2026-09-13T16:00:01Z"
         );
+    }
+}
+
+#[cfg(test)]
+mod subagent_tests {
+    use super::{MAX_TRANSCRIPT_BYTES, subagent_usage};
+    use limpid_provider_claude::ClaudeAdapter;
+
+    /// The subagents share one budget: a file read once the budget is spent
+    /// is not read, and the usage says it is short.
+    #[test]
+    fn subagents_past_the_budget_leave_the_usage_partial() {
+        let directory =
+            std::env::temp_dir().join(format!("limpid-subagent-budget-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("directory");
+        let path = directory.join("agent-a.jsonl");
+        std::fs::write(
+            &path,
+            "{\"type\":\"assistant\",\"requestId\":\"r\",\"message\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}}\n",
+        )
+        .expect("subagent");
+
+        let mut budget = MAX_TRANSCRIPT_BYTES;
+        let read = subagent_usage(&ClaudeAdapter, &path, &mut budget);
+        assert_eq!(
+            (read.input_tokens, read.output_tokens, read.is_partial),
+            (1, 2, false)
+        );
+        assert!(
+            budget < MAX_TRANSCRIPT_BYTES,
+            "the read is spent from the budget"
+        );
+
+        let mut spent = 0;
+        let unread = subagent_usage(&ClaudeAdapter, &path, &mut spent);
+        assert_eq!((unread.input_tokens, unread.is_partial), (0, true));
+
+        let mut short = 10;
+        assert!(
+            subagent_usage(&ClaudeAdapter, &path, &mut short).is_partial,
+            "read short of its whole"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
     }
 }

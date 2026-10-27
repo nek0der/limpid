@@ -37,8 +37,8 @@ struct TurnPromptTextTests {
 
     @Test func theChangesPanel_showsTheKind_inTheRowsTooltip() throws {
         let turn = try Self.turn(head: Self.notification, kind: .backgroundTask)
-        #expect(ChangesPanelText.turnDetails(turn, locale: Self.english) == ["Background work done"])
-        #expect(ChangesPanelText.turnDetails(turn, locale: Self.japanese) == ["バックグラウンド作業の完了"])
+        #expect(ChangesPanelText.turnDetails(turn, showsChanges: false, locale: Self.english) == ["Background work done"])
+        #expect(ChangesPanelText.turnDetails(turn, showsChanges: false, locale: Self.japanese) == ["バックグラウンド作業の完了"])
     }
 
     /// The person's words the hook kept as the head, after a reminder it
@@ -46,7 +46,7 @@ struct TurnPromptTextTests {
     @Test func thePersonsWordsAfterALongReminder_areTheInstruction() throws {
         let judged = try Self.turn(head: "add the tests", kind: .text)
         #expect(TurnPromptText.instruction(judged.prompt, locale: Self.japanese) == "add the tests")
-        #expect(ChangesPanelText.turnDetails(judged, locale: Self.english) == ["add the tests"])
+        #expect(ChangesPanelText.turnDetails(judged, showsChanges: false, locale: Self.english) == ["add the tests"])
     }
 
     @Test func theReviewScope_namesTheTurnByItsKind_withoutCuttingIt() throws {

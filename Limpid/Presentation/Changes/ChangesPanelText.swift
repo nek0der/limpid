@@ -95,35 +95,218 @@ enum ChangesPanelText {
         ]
     }
 
-    /// Parts in order, each set off from the one before as the receipt's
-    /// facts are.
-    private static func joined(_ parts: [[ReceiptRun]], locale: Locale) -> [ReceiptRun] {
-        let separator = ReceiptRun(text: AgentStatusText.separator(locale: locale), role: .quiet)
-        return parts.filter { !$0.isEmpty }.enumerated().flatMap { index, part in index == 0 ? part : [separator] + part }
+    /// The card's second line, fact by fact, each in a place of its own so
+    /// the facts stand in columns down the list. Whether the turn is viewed
+    /// is not among them: the blue rule and number say it, and the row's
+    /// sentence says it aloud.
+    struct Facts: Equatable {
+        /// How many files the turn changed, drawn beside a document glyph
+        /// rather than with the word, so the line keeps to one line at the
+        /// panel's narrowest; `nil` where it has no counts.
+        let files: Int?
+        /// "+94 −2", or the turn's state in words where it has no counts
+        /// ("Running", "No file changes").
+        let changes: [ReceiptRun]
+        /// The checks in the order they ran ("✗✗✓"), a failure's ✗ in red
+        /// and a pass of part of the suite quieter than a whole one, led by
+        /// "…" when the turn ran more than are shown. Empty for a turn that
+        /// ran none.
+        let checks: [ReceiptRun]
+        /// "84K", "≥84K" when part of the turn could not be read; the card
+        /// writes the unit after it.
+        let tokens: String?
+        /// "11m", the duration to its larger unit; the tooltip has it to
+        /// the second.
+        let duration: String?
+
+        /// Whether `changes` says the turn's state in words rather than its
+        /// counts, which then take the room an empty column leaves.
+        var isStatus: Bool {
+            files == nil
+        }
     }
 
-    /// The row's second line: "Unviewed · 2 files +94 −2 · ✓ Tests
-    /// (filtered) · 3m 05s". A turn that changed nothing, one still
-    /// running, and one whose changes are missing say so in place of the
-    /// counts; a turn whose changes are still being taken says that beside
-    /// its state. In runs: "Unviewed" as the one state the panel colors
-    /// (blue is for unviewed turns), the additions and removals in
-    /// the diff colors, and a failed check's ✗ in red.
-    static func detailRuns(_ row: ChangesPanelModel.Row, locale: Locale) -> [ReceiptRun] {
-        var parts: [[ReceiptRun]] = [[ReceiptRun(
-            text: status(row.status, locale: locale),
-            role: row.status == .unviewed ? .unviewed : .plain
-        )]]
-        if row.status == .viewed || row.status == .unviewed {
-            parts.append(ReceiptText.changeRuns(row.turn.changes, isEmphasized: false, locale: locale))
+    /// How many check runs the card shows; earlier ones are "…". Three tell
+    /// how the turn got to its last result and leave the changes their room;
+    /// the tooltip counts every run.
+    static let shownCheckMarks = 3
+
+    static func facts(_ row: ChangesPanelModel.Row, locale: Locale) -> Facts {
+        let hasCounts = row.status.hasCounts
+        let (files, changes): (Int?, [ReceiptRun]) = switch row.turn.changes {
+        case let .changed(files, added, removed) where hasCounts:
+            (files, diffRuns(files: nil, added: added, removed: removed, locale: locale))
+        case let summary where hasCounts:
+            (nil, ReceiptText.changeRuns(summary, isEmphasized: false, locale: locale))
+        default:
+            (nil, [ReceiptRun(text: status(row.status, locale: locale), role: .plain)])
         }
-        if let check = row.turn.lastCheck {
-            parts.append([ReceiptRun(text: ReceiptText.check(check, locale: locale), role: check.hasFailed ? .failed : .plain)])
+        return Facts(
+            files: files,
+            changes: changes,
+            checks: checkMarkRuns(row.turn),
+            tokens: row.turn.usage.map { tokens($0, locale: locale) },
+            duration: row.turn.durationSeconds.map { compactDuration($0, locale: locale) }
+        )
+    }
+
+    /// "✗✗✓": the turn's last checks, oldest first, led by "…" when it ran
+    /// more than are shown, or may have. A record from before the runs were
+    /// kept has only its last check, which stands alone. A pass of part of
+    /// the suite is a quiet ✓: it says less than a whole one, and the
+    /// tooltip names it.
+    static func checkMarkRuns(_ turn: TurnSummary) -> [ReceiptRun] {
+        let marks = turn.checks.isEmpty
+            ? turn.lastCheck.map { [CheckMark(exitCode: $0.exitCode, isFiltered: $0.isFiltered)] } ?? []
+            : Array(turn.checks.suffix(shownCheckMarks))
+        guard !marks.isEmpty else { return [] }
+        let hasEarlier = turn.checkCount > marks.count || turn.areChecksPartial
+        let earlier = hasEarlier ? [ReceiptRun(text: "…", role: .quiet)] : []
+        return earlier + marks.map { mark in
+            switch mark.exitCode {
+            case 0: ReceiptRun(text: "✓", role: mark.isFiltered ? .quietMark : .plain)
+            case .some: ReceiptRun(text: "✗", role: .failed)
+            // The status was not the check's own: it ran, with no result
+            // to show.
+            case nil: ReceiptRun(text: "–", role: .quiet)
+            }
         }
-        if let seconds = row.turn.durationSeconds {
-            parts.append([ReceiptRun(text: took(seconds, locale: locale), role: .plain)])
+    }
+
+    /// The count a card shows: everything but the cache reads. A turn
+    /// rereads the whole conversation from the cache on every request, so
+    /// with the reads counted every turn of a long conversation would read
+    /// in the millions, and the count would no longer tell a heavy turn
+    /// from a light one.
+    static func shownTokens(_ usage: TurnUsage) -> Int {
+        usage.inputTokens + usage.cacheWriteTokens + usage.outputTokens
+    }
+
+    /// "84K", the cache reads left out (`shownTokens`); "≥84K" when the
+    /// count is short.
+    static func tokens(_ usage: TurnUsage, locale: Locale) -> String {
+        let count = compactCount(shownTokens(usage), locale: locale)
+        return usage.isPartial ? "≥\(count)" : count
+    }
+
+    /// "tok", the unit the card writes after its count of tokens.
+    static func tokenUnit(locale: Locale) -> String {
+        LocalizedStringResource(
+            "tokens.unit",
+            defaultValue: "tok",
+            comment: "A turn card: the unit after its count of tokens, as in 84K tok; kept short, as the card's column is narrow"
+        ).resolved(in: locale)
+    }
+
+    /// A count to two figures with "K" or "M" ("84K", "1.2M") in every
+    /// language, as the agents' own tools and their status lines write a
+    /// count of tokens, so it reads the same here; one under a thousand
+    /// whole ("999"), which two figures would round up to "1K".
+    static func compactCount(_ count: Int, locale: Locale) -> String {
+        guard count >= 1000 else { return exactCount(count, locale: locale) }
+        // Halves round up, as people round: 125,000 is "130K", not the
+        // "120K" rounding to even gives.
+        return count.formatted(
+            .number.notation(.compactName).precision(.significantDigits(1...2)).rounded(rule: .toNearestOrAwayFromZero)
+                .locale(tokenUnitsLocale)
+        )
+    }
+
+    /// The locale whose short counts name a thousand "K" and a million "M".
+    private static let tokenUnitsLocale = Locale(identifier: "en")
+
+    private static func exactCount(_ count: Int, locale: Locale) -> String {
+        count.formatted(.number.locale(locale))
+    }
+
+    /// "84,123 tokens", or "At least 84,123 tokens" when part of the turn
+    /// could not be read: the tooltip's count, exact, and VoiceOver's,
+    /// short ("At least 84K tokens"), never the "≥" a voice reads as a
+    /// symbol.
+    static func tokenTotal(_ usage: TurnUsage, isExact: Bool, locale: Locale) -> String {
+        let shown = shownTokens(usage)
+        let count = isExact ? exactCount(shown, locale: locale) : compactCount(shown, locale: locale)
+        let resource = usage.isPartial
+            ? LocalizedStringResource(
+                "tokens.atLeast",
+                defaultValue: "At least \(count) tokens",
+                comment: "A turn's tokens, part of the turn unread so it used more; argument: the count, as in 84,123 or 84K"
+            )
+            : LocalizedStringResource(
+                "tokens.total",
+                defaultValue: "\(count) tokens",
+                comment: "A turn's tokens, the cache reads left out; argument: the count, as in 84,123 or 84K"
+            )
+        return resource.resolved(in: locale)
+    }
+
+    /// The tooltip's lines on what the turn used: its exact count, what it
+    /// is made of, the cache reads left out of it, and that the count is
+    /// short where it is.
+    static func usageDetails(_ usage: TurnUsage, locale: Locale) -> [String] {
+        let count = { exactCount($0, locale: locale) }
+        let input = count(usage.inputTokens)
+        let written = count(usage.cacheWriteTokens)
+        let output = count(usage.outputTokens)
+        var lines = [
+            tokenTotal(usage, isExact: true, locale: locale),
+            LocalizedStringResource(
+                "tokens.breakdown",
+                defaultValue: "Input \(input) · Cache writes \(written) · Output \(output)",
+                comment: "Tooltip of a turn: what its token count is made of; arguments: fresh input, cache writes, output, as counts"
+            ).resolved(in: locale)
+        ]
+        if usage.cacheReadTokens > 0 {
+            lines.append(LocalizedStringResource(
+                "tokens.cacheReads",
+                defaultValue: "Not counted: \(count(usage.cacheReadTokens)) read from the cache",
+                comment: "Tooltip of a turn: the input read from the prompt cache, left out of its token count; argument: a count"
+            ).resolved(in: locale))
         }
-        return joined(parts, locale: locale)
+        if usage.isPartial {
+            lines.append(LocalizedStringResource(
+                "tokens.partial",
+                defaultValue: "Part of the turn could not be read, so the count may be short",
+                comment: "Tooltip of a turn: its token count may be lower than what it used"
+            ).resolved(in: locale))
+        }
+        return lines
+    }
+
+    /// The tooltip's lines on the turn's checks: "Ran tests 3 times · 2
+    /// failed" for a turn that ran more than one ("at least" where the
+    /// count may be short), the last check as the receipt says it ("Latest:
+    /// ✓ Tests (filtered, after 2 failures)", the one check alone with no
+    /// "Latest:"), and its command in full.
+    static func checkDetails(_ turn: TurnSummary, locale: Locale) -> [String] {
+        let receipt = turn.lastCheck.map { ReceiptText.check($0, locale: locale) }
+        // A count of one says no more than the card's one mark; a count of
+        // none, partial or not, has nothing to say.
+        guard turn.checkCount > 1 || (turn.areChecksPartial && turn.checkCount > 0) else {
+            return [receipt, turn.lastCheck?.command].compactMap(\.self)
+        }
+        let runs = turn.areChecksPartial
+            ? LocalizedStringResource(
+                "Ran tests at least \(turn.checkCount) times",
+                comment: "Tooltip of a turn: how many checks it ran, of which some were not read; argument: how many were"
+            )
+            : LocalizedStringResource(
+                "Ran tests \(turn.checkCount) times",
+                comment: "Tooltip of a turn: how many checks it ran; argument: how many"
+            )
+        let count = turn.failureCount > 0
+            ? AgentStatusText.joined([runs.resolved(in: locale), LocalizedStringResource(
+                "\(turn.failureCount) failed",
+                comment: "Tooltip of a turn: how many of its checks failed, after how many it ran; argument: how many"
+            ).resolved(in: locale)], locale: locale)
+            : runs.resolved(in: locale)
+        let latest = receipt.map { receipt in
+            LocalizedStringResource(
+                "Latest: \(receipt)",
+                comment: "Tooltip of a turn: its last check, after how many it ran; argument: the check as a receipt says it"
+            ).resolved(in: locale)
+        }
+        return [count, latest, turn.lastCheck?.command].compactMap(\.self)
     }
 
     static func status(_ status: ChangesPanelModel.Status, locale: Locale) -> String {
@@ -179,6 +362,45 @@ enum ChangesPanelText {
         ).resolved(in: locale)
     }
 
+    /// "Took 3m 05s", 「所要 3 分 05 秒」: the duration as a tooltip's line
+    /// of its own starts it.
+    static func tookLine(_ seconds: Int, locale: Locale) -> String {
+        let duration = duration(seconds, locale: locale)
+        return LocalizedStringResource(
+            "Took \(duration)",
+            comment: "Tooltip of a turn: how long it ran, as a line of its own; the argument is the duration, as in 3m 05s"
+        ).resolved(in: locale)
+    }
+
+    /// How long the turn ran, in one unit, as the card's column says it:
+    /// "40s", "11m", "65m", "2h"; the tooltip has it to the second.
+    static func compactDuration(_ seconds: Int, locale: Locale) -> String {
+        let total = max(0, seconds)
+        // Minutes up to a hundred, so the column keeps to one short figure:
+        // "65m" where "1h 05m" took twice the room. Each unit is whole and
+        // cut down, as a clock counts, so no unit reads more than ran.
+        if total >= 100 * 60 {
+            let hours = total / 3600
+            return LocalizedStringResource(
+                "duration.compact.hours",
+                defaultValue: "\(hours)h",
+                comment: "A turn card's duration, of a hundred minutes or more; argument: the whole hours"
+            ).resolved(in: locale)
+        }
+        if total >= 60 {
+            return LocalizedStringResource(
+                "duration.compact.minutes",
+                defaultValue: "\(total / 60)m",
+                comment: "A turn card's duration, over a minute; argument: the whole minutes"
+            ).resolved(in: locale)
+        }
+        return LocalizedStringResource(
+            "duration.compact.seconds",
+            defaultValue: "\(total)s",
+            comment: "A turn card's duration, under a minute; argument: the seconds"
+        ).resolved(in: locale)
+    }
+
     private static func twoFigures(_ value: Int) -> String {
         value < 10 ? "0\(value)" : "\(value)"
     }
@@ -210,7 +432,7 @@ enum ChangesPanelText {
     }
 
     /// The row's tooltip: what it opens, whose turn it is, then the turn's
-    /// own lines (`turnDetails`) and its times.
+    /// own lines in the card's order (`turnDetails`) and its times.
     static func help(_ row: ChangesPanelModel.Row, locale: Locale, timeZone: TimeZone = .current) -> String {
         var lines: [String] = []
         if row.isSelectable {
@@ -222,7 +444,7 @@ enum ChangesPanelText {
         if let conversation = row.conversation {
             lines.append(turnOf(conversation, locale: locale))
         }
-        lines += turnDetails(row.turn, locale: locale)
+        lines += turnDetails(row.turn, showsChanges: row.status.hasCounts, locale: locale)
         if let times = times(row.turn, locale: locale, timeZone: timeZone) {
             lines.append(times)
         }
@@ -246,7 +468,8 @@ enum ChangesPanelText {
     }
 
     /// What VoiceOver reads for a turn's row, as one list: "Turn 4 of
-    /// Claude #4, Unviewed, 2 files +94 −2, took 3m 05s, 10:31". The
+    /// Claude #4, Unviewed, 2 files +94 −2, ✓ Tests (after 2 failures),
+    /// 84K tokens, took 3m 05s, 10:31". The
     /// badge itself says nothing aloud; the sentence names the
     /// conversation in full, and a turn is "Turn 4", never the "T4" read
     /// letter by letter.
@@ -257,11 +480,20 @@ enum ChangesPanelText {
                 comment: "VoiceOver, a turn's row: the turn and its conversation; arguments: the turn's number, the conversation's name"
             ).resolved(in: locale)
         } ?? ReceiptText.spokenTurn(row.turn.displayNumber, locale: locale)
+        let changes = row.status.hasCounts
+            ? ReceiptText.changeRuns(row.turn.changes, isEmphasized: false, locale: locale).map(\.text).joined()
+            : nil
         return AgentStatusText.spokenList(
             [
                 turn,
                 TurnPromptText.instruction(row.turn.prompt, locale: locale) ?? "",
-                AgentStatusText.spoken(detailRuns(row, locale: locale).map(\.text).joined(), locale: locale),
+                // The card shows the state only in its rule and number, so
+                // the sentence says it in words.
+                status(row.status, locale: locale),
+                changes ?? "",
+                row.turn.lastCheck.map { ReceiptText.check($0, locale: locale) } ?? "",
+                row.turn.usage.map { tokenTotal($0, isExact: false, locale: locale) } ?? "",
+                row.turn.durationSeconds.map { took($0, locale: locale) } ?? "",
                 time(row.turn, locale: locale, timeZone: timeZone) ?? ""
             ],
             locale: locale
@@ -365,16 +597,22 @@ enum ChangesPanelText {
         return ConversationText.help(shown, locale: locale)
     }
 
-    /// What a turn's row keeps in its tooltip: the prompt as recorded
-    /// and the check's command in full. The record keeps only the prompt's
-    /// first characters; a prompt the harness wrote reads as its kind, as on
-    /// the row.
-    static func turnDetails(_ turn: TurnSummary, locale: Locale) -> [String] {
-        [
+    /// What a turn's row keeps in its tooltip, in the card's order: the
+    /// prompt as recorded, what it changed in full (the card cuts it short
+    /// where the panel is narrow) when `showsChanges`, its checks
+    /// (`checkDetails`), what it used (`usageDetails`), and how long it ran.
+    /// The record keeps only the prompt's first characters; a prompt the
+    /// harness wrote reads as its kind, as on the row.
+    static func turnDetails(_ turn: TurnSummary, showsChanges: Bool, locale: Locale) -> [String] {
+        var lines: [String?] = [
             TurnPromptText.instruction(turn.prompt, locale: locale),
-            turn.lastCheck?.command,
+            showsChanges ? ReceiptText.changes(turn.changes, locale: locale) : nil,
             largeFilesSkipped(turn, locale: locale)
-        ].compactMap { text in
+        ]
+        lines += checkDetails(turn, locale: locale)
+        lines += turn.usage.map { usageDetails($0, locale: locale) } ?? []
+        lines.append(turn.durationSeconds.map { tookLine($0, locale: locale) })
+        return lines.compactMap { text in
             text.flatMap { $0.isEmpty ? nil : $0 }
         }
     }
@@ -393,6 +631,27 @@ enum ChangesPanelText {
     /// "Viewed up to here", the line between the viewed turns and the rest.
     static func line(locale: Locale) -> String {
         LocalizedStringResource("Viewed up to here", comment: "Changes panel: the viewed line").resolved(in: locale)
+    }
+
+    /// The card's moves, in the order its glyphs stand: the viewed line's,
+    /// then the restore.
+    static func moves(_ row: ChangesPanelModel.Row, locale: Locale) -> [TurnCardMove] {
+        var moves: [TurnCardMove] = []
+        if let action = row.action {
+            // On the timeline the move may reach the other conversations'
+            // lines too, which its title says, and its tooltip how far.
+            moves.append(TurnCardMove(
+                kind: .line(action),
+                title: Self.action(action, movesOtherLines: row.movesOtherLines, locale: locale),
+                detail: row.movesOtherLines ? moveAcrossHelp(action, locale: locale) : nil,
+                blocker: nil
+            ))
+        }
+        if row.offersRestore {
+            let blocker = row.restoreBlocker.map { RestoreText.blocker($0, locale: locale) }
+            moves.append(TurnCardMove(kind: .restore, title: RestoreText.entry(locale: locale), detail: nil, blocker: blocker))
+        }
+        return moves
     }
 
     /// "Unmark as Viewed", on the line below the latest turn.
@@ -421,27 +680,6 @@ enum ChangesPanelText {
             LocalizedStringResource(
                 "Mark All Conversations as Unviewed from Here",
                 comment: "Changes panel: moves every conversation's viewed line back above this row, hidden ones too"
-            )
-        }
-        return resource.resolved(in: locale)
-    }
-
-    /// The move's words where its whole label does not fit the card at the
-    /// panel's narrowest ("Mark All as Viewed up to Here"), still saying it
-    /// moves every conversation; `nil` for a move of one line, whose label
-    /// always fits.
-    static func shortAction(_ action: ChangesPanelModel.RowAction, movesOtherLines: Bool, locale: Locale) -> String? {
-        guard movesOtherLines else { return nil }
-        let resource = switch action {
-        case .markViewedThrough:
-            LocalizedStringResource(
-                "Mark All as Viewed up to Here",
-                comment: "Changes panel: Mark All Conversations as Viewed up to Here, short, where the whole label does not fit"
-            )
-        case .markUnviewedFrom:
-            LocalizedStringResource(
-                "Mark All as Unviewed from Here",
-                comment: "Changes panel: Mark All Conversations as Unviewed from Here, short, where the whole label does not fit"
             )
         }
         return resource.resolved(in: locale)
@@ -520,5 +758,43 @@ enum ChangesPanelText {
             lines.append(command)
         }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+}
+
+/// One of a turn card's moves (`ChangesPanelText.moves`), as its glyphs,
+/// its context menu, and its VoiceOver actions all offer it, so the three
+/// never disagree.
+struct TurnCardMove: Equatable, Identifiable {
+    enum Kind: Hashable {
+        /// The viewed line's move (`ChangesPanelModel.RowAction`).
+        case line(ChangesPanelModel.RowAction)
+        /// "Restore Code to Before This Turn…".
+        case restore
+    }
+
+    let kind: Kind
+    let title: String
+    /// How far a move of the line reaches beyond this row's conversation.
+    let detail: String?
+    /// Why the restore cannot run now, `nil` while it can.
+    let blocker: String?
+
+    var id: Kind {
+        kind
+    }
+
+    var isEnabled: Bool {
+        blocker == nil
+    }
+
+    /// What the tooltip and VoiceOver's hint add to the title: how far the
+    /// move reaches, or why it cannot run now.
+    var note: String? {
+        detail ?? blocker
+    }
+
+    /// The glyph's tooltip: the title, then what it adds.
+    var help: String {
+        note.map { "\(title)\n\($0)" } ?? title
     }
 }

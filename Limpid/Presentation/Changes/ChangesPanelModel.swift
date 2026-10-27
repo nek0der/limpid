@@ -152,17 +152,22 @@ enum ChangesPanelModel {
         /// runs, when it changed nothing, or when its changes could not be
         /// taken. A record that lost a snapshot opens, to say so.
         let isSelectable: Bool
-        /// The one move of the line the row offers under it.
+        /// The one move of the line the row's card offers.
         let action: RowAction?
-        /// Whether "Restore Code to Before This Turn…" is under it: an
+        /// Whether the card offers "Restore Code to Before This Turn…": an
         /// ended turn that may have changed files, whose start was
         /// recorded, and not one a restore already took back.
         var offersRestore = false
         /// Why that entry is off now, `nil` while the restore can run.
         var restoreBlocker: RestoreGate.Blocker?
-        /// Whether the reason is said in a line under the entry
+        /// Whether the reason is said in a line under the card
         /// (`ChangesPanelModel.placeBlockerNote`).
         var showsBlockerNote = false
+        /// Whether the card shows its moves at rest, not only under the
+        /// pointer: the list's last card with moves, the one most often
+        /// acted on, and the one whose note says why a restore waits
+        /// (`ChangesPanelModel.placeMovesAtRest`).
+        var showsMovesAtRest = false
         /// The conversation the turn is of, for the row's badge ("Cl #4");
         /// `nil` in a worktree of one conversation, where the badge would
         /// only repeat the kind every row.
@@ -190,9 +195,15 @@ enum ChangesPanelModel {
         case incompleteRecord
         /// A restore took the turn's changes back, and may still be undone.
         case restored
+
+        /// Whether the turn's own counts stand for it: an ended turn whose
+        /// changes were taken. Any other state is said in words instead.
+        var hasCounts: Bool {
+            self == .viewed || self == .unviewed
+        }
     }
 
-    enum RowAction: Equatable, Sendable {
+    enum RowAction: Hashable, Sendable {
         /// "Mark as Viewed up to Here", under an unviewed turn.
         case markViewedThrough
         /// "Mark as Unviewed from Here", under a viewed one.
@@ -261,6 +272,7 @@ enum ChangesPanelModel {
             return row
         }
         placeBlockerNote(rows: &rows)
+        placeMovesAtRest(rows: &rows)
         var fileCount: Int?
         var added = 0
         var removed = 0
@@ -496,7 +508,7 @@ enum ChangesPanelModel {
         let action: RowAction? = turn.phase == .started || status == .restored
             ? nil
             : (isViewed ? .markUnviewedFrom : .markViewedThrough)
-        let offersRestore = (status == .viewed || status == .unviewed) && turn.beginTree != nil
+        let offersRestore = status.hasCounts && turn.beginTree != nil
         let isReadable = ReviewScopeCatalog.isReadable(turn) || (turn.phase != .started && turn.changes.isLostSnapshot)
         return Row(
             turn: turn,
@@ -592,6 +604,21 @@ enum ChangesPanelModel {
     private static func scrollTarget(_ rows: [Row], focused: ConversationKey?) -> TurnID? {
         let unviewed = rows.filter { $0.status == .unviewed }
         return (unviewed.last { $0.turn.conversation == focused } ?? unviewed.last ?? rows.last)?.id
+    }
+
+    /// The list's last card with moves shows them at rest, and so does the
+    /// card whose note says why a restore waits, so the note never speaks
+    /// of a glyph out of sight. The others show them under the pointer or
+    /// the keyboard or while the review reads them, so the list does not
+    /// repeat the same glyphs down every card. A running turn, last while
+    /// it runs, has no moves to show. Placed after `placeBlockerNote`.
+    static func placeMovesAtRest(rows: inout [Row]) {
+        if let last = rows.lastIndex(where: { $0.action != nil || $0.offersRestore }) {
+            rows[last].showsMovesAtRest = true
+        }
+        for index in rows.indices where rows[index].showsBlockerNote {
+            rows[index].showsMovesAtRest = true
+        }
     }
 
     /// Why a restore is off is said in a line under one entry only: the

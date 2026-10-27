@@ -96,10 +96,7 @@ struct ChangesPanelMarkTests {
         #expect(viewed.rows.map(\.action) == Array(repeating: .markUnviewedFrom, count: 5))
         #expect(viewed.rows.map(\.movesOtherLines) == [true, true, true, true, false], "the last row has no other line after it")
         let japanese = Locale(identifier: "ja")
-        let english = Locale(identifier: "en")
         #expect(ChangesPanelText.action(.markUnviewedFrom, movesOtherLines: true, locale: japanese) == "すべての会話をここから未確認にする")
-        #expect(ChangesPanelText.shortAction(.markUnviewedFrom, movesOtherLines: true, locale: english) == "Mark All as Unviewed from Here")
-        #expect(ChangesPanelText.shortAction(.markViewedThrough, movesOtherLines: false, locale: english) == nil)
     }
 
     /// The fold hides what it holds until opened, and never a row the

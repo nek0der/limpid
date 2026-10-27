@@ -323,7 +323,7 @@ struct NotificationHistoryStoreTests {
         let turn = NotificationEvent.Turn(
             number: 4,
             changes: .changed(files: 2, added: 94, removed: 0),
-            check: CheckSummary(command: "swift test", isFiltered: true, exitCode: 1)
+            check: CheckSummary(command: "swift test", isFiltered: true, exitCode: 1, earlierFailures: 2)
         )
         let events: [NotificationEvent] = [
             .wait(agent: .claude, wait: .approval, fact: "notes.txt"),

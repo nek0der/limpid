@@ -19,6 +19,13 @@ enum TurnSummaryFixture {
         var finishedAt: String?
         /// The record's `lastCheck`, as JSON.
         var check: String?
+        /// The record's `checks`, as JSON.
+        var checks: String?
+        var checkCount: Int?
+        var failureCount: Int?
+        var areChecksPartial: Bool?
+        /// The record's `usage`, as JSON.
+        var usage: String?
         /// The prompt's first characters, as the record keeps them.
         var promptHead: String?
         /// Who wrote the prompt, as the projection says it; `nil` leaves
@@ -64,6 +71,21 @@ enum TurnSummaryFixture {
         }
         if let check = extras.check {
             fields += #","lastCheck":\#(check)"#
+        }
+        if let checks = extras.checks {
+            fields += #","checks":\#(checks)"#
+        }
+        if let checkCount = extras.checkCount {
+            fields += #","checkCount":\#(checkCount)"#
+        }
+        if let failureCount = extras.failureCount {
+            fields += #","failureCount":\#(failureCount)"#
+        }
+        if let areChecksPartial = extras.areChecksPartial {
+            fields += #","areChecksPartial":\#(areChecksPartial)"#
+        }
+        if let usage = extras.usage {
+            fields += #","usage":\#(usage)"#
         }
         if let seconds = extras.durationSeconds {
             fields += #","durationSeconds":\#(seconds)"#

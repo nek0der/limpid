@@ -73,6 +73,10 @@ enum LimpidMotion {
     /// The notification history opening or closing a source's older rows.
     static let disclosure: Animation = paced(.easeOut(duration: 0.15))
 
+    /// Controls a row shows while the pointer or the keyboard is on it,
+    /// such as a turn card's moves: quick, as they answer the pointer.
+    static let hoverReveal: Animation = paced(.easeOut(duration: 0.12))
+
     /// The Changes panel unfolding or folding its older turns. SwiftUI's
     /// default curve, which the fold has always moved with; a token of its
     /// own so the fold follows the pace as every other motion does.

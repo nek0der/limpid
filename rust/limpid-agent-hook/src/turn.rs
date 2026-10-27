@@ -20,7 +20,7 @@ use limpid_agent_core::{
 };
 use limpid_agent_model::{
     AgentEvent, CheckResult, ConversationKey, DiffStat, EventApplication, EventId,
-    ProviderDescriptor, RunRecord, SnapshotStatus, TurnCounter, TurnPhase, TurnRecord,
+    ProviderDescriptor, RunRecord, SnapshotStatus, TurnCounter, TurnPhase, TurnRecord, TurnUsage,
     turn_record_file_name,
 };
 use std::collections::BTreeMap;
@@ -35,6 +35,8 @@ pub(crate) enum Prepared {
         turn_id: String,
         event: Option<EventId>,
         taken: SnapshotTaken,
+        /// The provider's own id for the turn (`TurnTranscript::marker`).
+        provider_turn_id: Option<String>,
     },
     /// A turn ends. `turn_id` is the run's current turn, which an end may
     /// close again when the provider says the turn went on after another
@@ -53,11 +55,38 @@ pub(crate) enum Prepared {
         keeps_phase: bool,
         taken: SnapshotTaken,
         diff: Option<DiffStat>,
+        /// What the transcript says the turn used and ran.
+        reading: EndReading,
     },
     /// Nothing to write, for the reason given (an event already applied or
     /// without an id, a current turn unreadable or written by a newer build,
     /// a retake with no ended turn); the reason goes to the hook log.
     Skip(&'static str),
+}
+
+/// What a turn's end read from the provider's transcript. Each part is
+/// `None` when the transcript did not say, which keeps what the turn had.
+#[derive(Debug, Default)]
+pub(crate) struct EndReading {
+    /// The provider's own id for the turn the reading counted from
+    /// (`TurnReading::marker`).
+    pub marker: Option<String>,
+    pub usage: Option<TurnUsage>,
+    pub checks: Option<Vec<CheckResult>>,
+    /// Whether `checks` may leave out the turn's first runs.
+    pub are_checks_partial: bool,
+}
+
+/// What the provider's transcript says of the turn a hook call begins or
+/// ends: read with the snapshot, before the lock, since a turn's
+/// transcript and its subagents' are files of their own.
+pub(crate) trait TurnTranscript {
+    /// The provider's own id for the turn a prompt begins
+    /// (`TurnRecord::provider_turn_id`).
+    fn marker(&self) -> Option<String>;
+
+    /// What the turn that began with `marker` used and ran, as it ends.
+    fn read_end(&self, marker: Option<&str>) -> EndReading;
 }
 
 impl Prepared {
@@ -88,6 +117,9 @@ pub(crate) struct Turns<'a> {
     pub pane_id: &'a str,
     pub now: &'a str,
     pub log: &'a HookLog,
+    /// The call's transcript, for a call that may begin or end a turn;
+    /// `None` reads nothing.
+    pub transcript: Option<&'a dyn TurnTranscript>,
 }
 
 impl<'a> Turns<'a> {
@@ -104,6 +136,7 @@ impl<'a> Turns<'a> {
             pane_id: self.pane_id,
             now,
             log: self.log,
+            transcript: self.transcript,
         }
     }
 }
@@ -147,6 +180,12 @@ fn not_taken(reason: &str) -> SnapshotTaken {
 }
 
 impl Turns<'_> {
+    fn read_end(&self, marker: Option<&str>) -> EndReading {
+        self.transcript
+            .map(|transcript| transcript.read_end(marker))
+            .unwrap_or_default()
+    }
+
     fn record_path(&self, turn_id: &str) -> PathBuf {
         self.directory.join(turn_record_file_name(turn_id))
     }
@@ -220,6 +259,7 @@ impl Turns<'_> {
             TurnStep::Begin => Prepared::Begin {
                 turn_id: uuid::Uuid::new_v4().hyphenated().to_string().to_uppercase(),
                 event: event_id,
+                provider_turn_id: self.transcript.and_then(TurnTranscript::marker),
                 taken: match begin_skip {
                     Some(reason) => not_taken(reason),
                     None => snapshots.capture(
@@ -241,14 +281,25 @@ impl Turns<'_> {
                 let Some(event_id) = event_id else {
                     return Prepared::Skip("turn event without an id");
                 };
-                let end_only = |event| Prepared::End {
-                    turn_id: None,
-                    event,
-                    phase,
-                    continues_ended_turn,
-                    keeps_phase: false,
-                    taken: not_taken("beginMissing"),
-                    diff: None,
+                // An end nobody prompted reads from the last prompt; when
+                // that prompt is the ended turn's own, what it reads is that
+                // turn's, already recorded, and is not counted again.
+                let end_only = |event, ended: Option<&str>| {
+                    let reading = self.read_end(None);
+                    Prepared::End {
+                        turn_id: None,
+                        event,
+                        phase,
+                        continues_ended_turn,
+                        keeps_phase: false,
+                        taken: not_taken("beginMissing"),
+                        diff: None,
+                        reading: if ended.is_some() && reading.marker.as_deref() == ended {
+                            EndReading::default()
+                        } else {
+                            reading
+                        },
+                    }
                 };
                 let turn = match current {
                     Current::Unreadable => return Prepared::Skip("current turn unreadable"),
@@ -261,11 +312,11 @@ impl Turns<'_> {
                     Current::None if keeps_phase => {
                         return Prepared::Skip("no ended turn to take again");
                     }
-                    Current::None => return end_only(event_id),
+                    Current::None => return end_only(event_id, None),
                     Current::Turn(turn)
                         if turn.phase != TurnPhase::Started && !continues_ended_turn =>
                     {
-                        return end_only(event_id);
+                        return end_only(event_id, turn.provider_turn_id.as_deref());
                     }
                     Current::Turn(turn) => turn,
                 };
@@ -299,6 +350,14 @@ impl Turns<'_> {
                     keeps_phase,
                     taken,
                     diff,
+                    // An end-only record read its turn when it was written;
+                    // read again with no prompt of its own, the transcript's
+                    // last prompt could be the turn before it.
+                    reading: if turn.has_prompt() {
+                        self.read_end(turn.provider_turn_id.as_deref())
+                    } else {
+                        EndReading::default()
+                    },
                 }
             }
         }
@@ -322,7 +381,8 @@ impl Turns<'_> {
                 turn_id,
                 event,
                 taken,
-            } => self.begin(turn_id, event, taken, previous, run?),
+                provider_turn_id,
+            } => self.begin(turn_id, event, taken, provider_turn_id, previous, run?),
             Prepared::End {
                 turn_id: Some(turn_id),
                 event,
@@ -331,6 +391,8 @@ impl Turns<'_> {
                 keeps_phase,
                 taken,
                 diff,
+                reading,
+                ..
             } => self.end(
                 &turn_id,
                 &event,
@@ -339,6 +401,9 @@ impl Turns<'_> {
                     now: self.now,
                     end: taken,
                     diff,
+                    usage: reading.usage,
+                    checks: reading.checks,
+                    are_checks_partial: reading.are_checks_partial,
                 },
                 continues_ended_turn,
                 keeps_phase,
@@ -349,9 +414,10 @@ impl Turns<'_> {
                 event,
                 phase,
                 taken,
+                reading,
                 ..
             } => {
-                self.end_only(&event, phase, taken, previous, run?);
+                self.end_only(&event, phase, taken, reading, previous, run?);
                 None
             }
         }
@@ -362,6 +428,7 @@ impl Turns<'_> {
         turn_id: String,
         event: Option<EventId>,
         taken: SnapshotTaken,
+        provider_turn_id: Option<String>,
         previous: Option<&RunRecord>,
         run: &mut RunRecord,
     ) -> Option<Pin> {
@@ -396,6 +463,7 @@ impl Turns<'_> {
             now: self.now,
             begin: taken,
             event: &event,
+            provider_turn_id,
         });
         if !self.write(&record) {
             return None;
@@ -460,6 +528,7 @@ impl Turns<'_> {
         event: &EventId,
         phase: TurnPhase,
         taken: SnapshotTaken,
+        reading: EndReading,
         previous: Option<&RunRecord>,
         run: &mut RunRecord,
     ) {
@@ -501,12 +570,16 @@ impl Turns<'_> {
                     git_context: None,
                 },
                 event,
+                provider_turn_id: None,
             },
             TurnEnd {
                 phase,
                 now: self.now,
                 end: taken,
                 diff: None,
+                usage: reading.usage,
+                checks: reading.checks,
+                are_checks_partial: reading.are_checks_partial,
             },
         );
         if self.write(&record) {
@@ -537,7 +610,7 @@ impl Turns<'_> {
         if turn.apply_event(Some(event)) != EventApplication::Applied {
             return;
         }
-        turn.last_check = Some(check);
+        turn.push_check(check);
         self.write(&turn);
     }
 

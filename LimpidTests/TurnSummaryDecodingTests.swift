@@ -49,4 +49,55 @@ struct TurnSummaryDecodingTests {
         ].map { try TurnSummaryFixture.turn("b", endStatus: $0) }
         #expect(untaken.allSatisfy { $0.endTree == nil })
     }
+
+    @Test func checksAndUsage_decode_andOneOfAShapeThisBuildCannotRead_costsOnlyItself() throws {
+        var extras = TurnSummaryFixture.Extras()
+        extras.check = #"{"command":"cargo test","isFiltered":false,"exitCode":0}"#
+        extras.checks = #"[{"exitCode":1,"isFiltered":false},{"exitCode":0,"isFiltered":true}]"#
+        extras.usage = #"{"inputTokens":1,"cacheWriteTokens":2,"cacheReadTokens":3,"outputTokens":4,"isPartial":true}"#
+        let turn = try Fixture.turn("a", extras: extras)
+        #expect(turn.checks == [CheckMark(exitCode: 1, isFiltered: false), CheckMark(exitCode: 0, isFiltered: true)])
+        #expect(turn.checkCount == 2, "never fewer than the marks it holds")
+        #expect(turn.lastCheck?.earlierFailures == 1)
+        #expect(turn.usage == TurnUsage(inputTokens: 1, cacheWriteTokens: 2, cacheReadTokens: 3, outputTokens: 4, isPartial: true))
+        #expect(turn.usage.map(ChangesPanelText.shownTokens) == 7, "the cache reads left out")
+
+        extras.checks = #"{"exitCode":1}"#
+        extras.usage = #"{"tokens":12}"#
+        let odd = try Fixture.turn("b", number: 3, extras: extras)
+        #expect(odd.displayNumber == 3)
+        #expect(odd.checks.isEmpty)
+        #expect(odd.usage == nil)
+        #expect(odd.lastCheck?.earlierFailures == 0)
+
+        let older = try Fixture.turn("c")
+        #expect(older.checks.isEmpty && older.checkCount == 0 && older.usage == nil)
+
+        // A record from before the runs were kept still ran its last check.
+        var lastOnly = TurnSummaryFixture.Extras()
+        lastOnly.check = #"{"command":"cargo test","isFiltered":false,"exitCode":0}"#
+        #expect(try Fixture.turn("d", extras: lastOnly).checkCount == 1)
+    }
+
+    /// The count of failures holds those the record's marks no longer
+    /// keep; the check a failure is not among its earlier ones.
+    @Test func theFailureCount_holdsTheFailuresTheMarksNoLongerKeep() throws {
+        var extras = TurnSummaryFixture.Extras()
+        extras.check = #"{"command":"cargo test","isFiltered":false,"exitCode":0}"#
+        extras.checks = #"[{"exitCode":1,"isFiltered":false},{"exitCode":0,"isFiltered":false}]"#
+        extras.checkCount = 20
+        extras.failureCount = 9
+        let passed = try Fixture.turn("a", extras: extras)
+        #expect(passed.failureCount == 9)
+        #expect(passed.lastCheck?.earlierFailures == 9)
+
+        extras.check = #"{"command":"cargo test","isFiltered":false,"exitCode":1}"#
+        extras.checks = #"[{"exitCode":0,"isFiltered":false},{"exitCode":1,"isFiltered":false}]"#
+        let failed = try Fixture.turn("b", extras: extras)
+        #expect(failed.lastCheck?.earlierFailures == 8, "the last failure is the check's own")
+
+        // A record that kept the runs but not the count counts the runs.
+        extras.failureCount = nil
+        #expect(try Fixture.turn("c", extras: extras).failureCount == 1)
+    }
 }

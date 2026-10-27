@@ -66,18 +66,55 @@ enum ReceiptText {
     }
 
     /// "✓ Tests (filtered)", "✗ Tests", or "Tests" with no mark when the
-    /// exit code was not the check's own. A pass says it passed, never
-    /// that the work is right.
+    /// exit code was not the check's own. Failures earlier in the turn are
+    /// counted: "✓ Tests (after 2 failures)" for a pass that took them,
+    /// "✗ Tests (3 failures)" for a failure that is one of them. The count is
+    /// of the turn that ran the check, even on a receipt of several turns.
+    /// A pass says it passed, never that the work is right.
     static func check(_ check: CheckSummary, locale: Locale) -> String {
-        let label = check.isFiltered
-            ? LocalizedStringResource("Tests (filtered)", comment: "Receipt: the last check, run on part of the suite")
-            : LocalizedStringResource("Tests", comment: "Receipt: the last check")
         let mark = switch check.exitCode {
         case 0: "✓ "
         case .some: "✗ "
         case nil: ""
         }
-        return mark + label.resolved(in: locale)
+        return mark + label(check).resolved(in: locale)
+    }
+
+    private static func label(_ check: CheckSummary) -> LocalizedStringResource {
+        if check.hasFailed {
+            let failures = check.earlierFailures + 1
+            guard failures > 1 else {
+                return check.isFiltered
+                    ? LocalizedStringResource("Tests (filtered)", comment: "Receipt: the last check, run on part of the suite")
+                    : LocalizedStringResource("Tests", comment: "Receipt: the last check")
+            }
+            return check.isFiltered
+                ? LocalizedStringResource(
+                    "Tests (filtered, \(failures) failures)",
+                    comment: "Receipt: the last check failed, run on part of the suite, as did others; argument: how many failed"
+                )
+                : LocalizedStringResource(
+                    "Tests (\(failures) failures)",
+                    comment: "Receipt: the last check failed, as did others of the turn; argument: how many failed, it included"
+                )
+        }
+        let failures = check.earlierFailures
+        return switch (check.isFiltered, failures > 0) {
+        case (true, true):
+            LocalizedStringResource(
+                "Tests (filtered, after \(failures) failures)",
+                comment: "Receipt: the last check, run on part of the suite, after failed checks of the turn; argument: how many failed"
+            )
+        case (false, true):
+            LocalizedStringResource(
+                "Tests (after \(failures) failures)",
+                comment: "Receipt: the last check, after checks of the turn that failed; argument: how many failed"
+            )
+        case (true, false):
+            LocalizedStringResource("Tests (filtered)", comment: "Receipt: the last check, run on part of the suite")
+        case (false, false):
+            LocalizedStringResource("Tests", comment: "Receipt: the last check")
+        }
     }
 
     /// The whole receipt, as the decision bar, the notification, and the
@@ -182,8 +219,8 @@ enum ReceiptText {
 
 /// A piece of a line drawn in its own color or weight by
 /// `ReceiptRunsText`: the receipt's additions and removals, a failed
-/// check, the sentence the decision bar is about, the changes panel's
-/// "Unviewed".
+/// check, the sentence the decision bar is about, a turn card's check
+/// marks.
 struct ReceiptRun: Equatable {
     enum Role: Equatable {
         /// The line's own words, set apart from what follows them: the
@@ -197,19 +234,11 @@ struct ReceiptRun: Equatable {
         case removed(isEmphasized: Bool)
         /// A check that failed: its ✗ is red.
         case failed
-        /// The changes panel's "Unviewed", the one state it draws in the
-        /// unread blue.
-        case unviewed
+        /// A mark that says less than the marks beside it: a check run on
+        /// part of the suite, whose ✓ covers only that part.
+        case quietMark
     }
 
     let text: String
     let role: Role
-}
-
-extension CheckSummary {
-    /// The check's own exit code says it failed: the ✗ the receipt draws
-    /// in red. Not an exit code that was another command's.
-    var hasFailed: Bool {
-        exitCode.map { $0 != 0 } ?? false
-    }
 }

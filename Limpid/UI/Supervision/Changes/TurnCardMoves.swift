@@ -1,104 +1,119 @@
 // TurnCardMoves.swift
-// Limpid — the moves under a turn's card in the changes panel, kept inside the card at the panel's narrowest.
+// Limpid — the moves on a turn's card in the changes panel: the viewed line's and the restore, as glyphs.
 
 import SwiftUI
 
-/// A turn card's moves: the viewed line's move and the restore entry, both
-/// compact edged buttons, so the two side by side have one form and
-/// the move does not take the blue that marks unread and unviewed. Wrapped
-/// rather than cut when the panel is too narrow for both, and where it is
-/// too narrow for the whole restore entry on a line of its own (in English
-/// at the panel's narrowest, 300pt), the entry takes its short form,
-/// "Restore Code…": the button keeps its words at any width, so the whole
-/// entry would draw past the card's edge. A view of its own, apart from
+/// A turn card's moves (`ChangesPanelText.moves`) as glyph buttons where
+/// the card's time stands: the viewed line's move (a check in a circle,
+/// crossed to take the mark back) and the restore. Glyphs rather than worded
+/// buttons, so the moves cost the card no line of its own; each says its
+/// whole name in its tooltip. The card shows them at rest on the list's
+/// last card with moves, and on any other while the pointer or the keyboard
+/// is on it or the review reads it; its context menu and its VoiceOver
+/// actions offer the same moves at all times. A view of its own, apart from
 /// the card, which reads the window and the app: built from plain values,
-/// the moves can be measured against the panel in a test.
+/// the moves can be measured against the card in a test.
 struct TurnCardMoves: View {
-    /// "Mark as Viewed up to Here" or "Mark as Unviewed from Here".
-    struct LineMove {
-        let title: String
-        /// The title where the whole one does not fit the card ("Mark All
-        /// as Viewed up to Here"); `nil` where the move has no shorter form.
-        /// VoiceOver hears the whole title either way.
-        var shortTitle: String?
-        /// What the tooltip adds to the title, where the move reaches
-        /// beyond this row's conversation; `nil` for the title alone.
-        var help: String?
-        let perform: @MainActor () -> Void
-    }
-
-    /// The card's "Restore Code to Before This Turn…".
-    struct Restore {
-        /// Why the restore cannot run now (`ChangesPanelModel.Row`).
-        let blocker: RestoreGate.Blocker?
-        /// Whether that reason is said under the moves
-        /// (`ChangesPanelModel.placeBlockerNote`).
-        var showsBlockerNote = false
-        let ask: @MainActor () -> Void
-    }
-
-    let lineMove: LineMove?
-    let restore: Restore?
-    /// This is true when the turn is at or above its conversation's viewed line. An
-    /// unviewed card carries the blue rule, and a viewed one had nothing
-    /// but its "Mark as Unviewed from Here" to say so; the mark says it
-    /// before the move that takes it back.
-    var isViewed = false
-    @Environment(\.locale) private var locale
+    let moves: [TurnCardMove]
+    let perform: @MainActor (TurnCardMove.Kind) -> Void
+    /// Where the keyboard is among the card's controls, so the glyphs stay
+    /// while it moves from the card onto them.
+    var focus: FocusState<TurnCardFocus?>.Binding?
 
     private typealias Layout = LimpidLayout.Supervision
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Layout.turnActionLineSpacing) {
-            FlowLayout(spacing: Layout.turnActionSpacing, lineSpacing: Layout.turnActionLineSpacing) {
-                if isViewed {
-                    Label(ChangesPanelText.status(.viewed, locale: locale), systemImage: "checkmark.circle")
-                        .labelStyle(.titleAndIcon)
-                        .font(.supervision(.caption, weight: .medium))
-                        .foregroundStyle(SupervisionTokens.muted.color)
-                        .fixedSize()
-                }
-                if let lineMove {
-                    ViewThatFits(in: .horizontal) {
-                        lineMoveButton(lineMove.title, perform: lineMove.perform)
-                        if let shortTitle = lineMove.shortTitle {
-                            lineMoveButton(shortTitle, perform: lineMove.perform)
-                        }
-                    }
-                    .help(Text(verbatim: lineMove.help ?? lineMove.title))
-                    .accessibilityLabel(Text(verbatim: lineMove.title))
-                    .accessibilityHint(Text(verbatim: lineMove.help ?? ""))
-                }
-                if let restore {
-                    RestoreEntryButton(
-                        title: RestoreText.entry(locale: locale),
-                        shortTitle: RestoreText.shortEntry(locale: locale),
-                        blocker: restore.blocker,
-                        ask: restore.ask
-                    )
-                }
+        HStack(spacing: Layout.turnMoveSpacing) {
+            ForEach(moves) { move in
+                button(move)
             }
-            // Under the moves rather than inside the flow, so the reason
-            // wraps to the card's width instead of widening the entry's slot.
-            if let restore, restore.showsBlockerNote, let blocker = restore.blocker {
-                RestoreBlockerNote(blocker: blocker)
-            }
+        }
+        .fixedSize()
+    }
+
+    @ViewBuilder private func button(_ move: TurnCardMove) -> some View {
+        let button = Button {
+            perform(move.kind)
+        } label: {
+            Self.glyph(move.kind)
+        }
+        .buttonStyle(.supervisionIcon(horizontalPadding: Layout.turnMovePadding))
+        .disabled(!move.isEnabled)
+        .help(Text(verbatim: move.help))
+        // Named for a reader that reaches the glyphs alone, as a measured
+        // or previewed view does; the card hides them from VoiceOver, which
+        // hears the same moves as the row's actions.
+        .accessibilityLabel(Text(verbatim: move.title))
+        .accessibilityHint(Text(verbatim: move.note ?? ""))
+        if let focus {
+            button.focused(focus, equals: TurnCardFocus(move.kind))
+        } else {
+            button
         }
     }
 
-    private func lineMoveButton(_ title: String, perform: @escaping @MainActor () -> Void) -> some View {
-        Button(title) {
-            perform()
+    /// The glyph for `kind`. The viewed line's takes the button style's
+    /// colors, which light it under the pointer; the restore is red, as a
+    /// move that puts files back.
+    @ViewBuilder static func glyph(_ kind: TurnCardMove.Kind) -> some View {
+        switch kind {
+        case .line(.markViewedThrough): image("checkmark.circle")
+        case .line(.markUnviewedFrom): image("checkmark.circle.badge.xmark")
+        case .restore: image("arrow.uturn.backward").foregroundStyle(SupervisionTokens.stoppedText.color)
         }
-        .buttonStyle(.supervisionSecondary(size: .compact))
+    }
+
+    private static func image(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.supervision(.caption, weight: .medium))
+            .frame(height: Layout.turnMoveHeight)
     }
 }
 
-/// Why a restore entry is off, in a muted line under it: a held-back
-/// button says its reason, since a tooltip alone leaves the reader unsure
-/// whether the entry is broken or only waiting. Under the list's last entry
-/// only (`ChangesPanelModel.placeBlockerNote`). Hidden from VoiceOver, which
-/// already hears the reason as the entry's hint.
+/// The room `TurnCardMoves` takes, as glyphs alone in the buttons' padding:
+/// what the card's time slot holds while the moves show, inside the row's
+/// own button, whose label must not hold buttons.
+struct TurnCardMovesRoom: View {
+    let moves: [TurnCardMove]
+
+    private typealias Layout = LimpidLayout.Supervision
+
+    var body: some View {
+        HStack(spacing: Layout.turnMoveSpacing) {
+            ForEach(moves) { move in
+                // As the moves' button style pads it.
+                TurnCardMoves.glyph(move.kind)
+                    .padding(.horizontal, Layout.turnMovePadding)
+            }
+        }
+        .fixedSize()
+        .hidden()
+        .accessibilityHidden(true)
+    }
+}
+
+/// Where the keyboard is on a turn card: on the card itself, or on one of
+/// its two moves, by place rather than by move, so the focus stays when a
+/// move of the line turns into its opposite.
+enum TurnCardFocus: Hashable {
+    case card
+    case line
+    case restore
+
+    init(_ kind: TurnCardMove.Kind) {
+        switch kind {
+        case .line: self = .line
+        case .restore: self = .restore
+        }
+    }
+}
+
+/// Why a restore is off, in a muted line under the card: a held-back glyph
+/// says its reason only in its tooltip, which leaves the reader unsure
+/// whether the move is broken or only waiting. Under the list's last card
+/// that offers a restore only (`ChangesPanelModel.placeBlockerNote`), which
+/// shows its moves at rest. Hidden from VoiceOver, which hears the reason as
+/// the card's hint.
 struct RestoreBlockerNote: View {
     let blocker: RestoreGate.Blocker
     @Environment(\.locale) private var locale
@@ -109,41 +124,5 @@ struct RestoreBlockerNote: View {
             .foregroundStyle(SupervisionTokens.muted.color)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityHidden(true)
-    }
-}
-
-/// A restore entry of the panel: opens the strip in the bar of the
-/// turn's pane, and says why it is off while the gate holds it back. With
-/// a short form, it takes that one where the whole title does not fit the
-/// width it is offered; the tooltip and VoiceOver still say the whole.
-struct RestoreEntryButton: View {
-    let title: String
-    /// The title where the whole one does not fit; `nil` where the entry
-    /// has no shorter form.
-    var shortTitle: String?
-    /// Why the restore cannot run now (`ChangesPanelModel.Row`).
-    let blocker: RestoreGate.Blocker?
-    let ask: @MainActor () -> Void
-    @Environment(\.locale) private var locale
-
-    var body: some View {
-        let reason = blocker.map { RestoreText.blocker($0, locale: locale) }
-        ViewThatFits(in: .horizontal) {
-            button(title)
-            if let shortTitle {
-                button(shortTitle)
-            }
-        }
-        .disabled(reason != nil)
-        .help(Text(verbatim: reason ?? title))
-        .accessibilityLabel(Text(verbatim: title))
-        .accessibilityHint(Text(verbatim: reason ?? ""))
-    }
-
-    private func button(_ title: String) -> some View {
-        Button(title) {
-            ask()
-        }
-        .buttonStyle(SupervisionDestructiveButtonStyle(size: .compact))
     }
 }

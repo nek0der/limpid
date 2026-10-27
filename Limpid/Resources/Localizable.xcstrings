@@ -1,6 +1,384 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "duration.compact.hours": {
+      "comment": "A turn card's duration, of a hundred minutes or more; argument: the whole hours",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldh"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld時間"
+          }
+        }
+      }
+    },
+    "Latest: %@": {
+      "comment": "Tooltip of a turn: its last check, after how many it ran; argument: the check as a receipt says it",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latest: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最新：%@"
+          }
+        }
+      }
+    },
+    "Ran tests at least %lld times": {
+      "comment": "Tooltip of a turn: how many checks it ran, of which some were not read; argument: how many were",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran tests at least once"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran tests at least %lld times"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テスト実行 %lld 回以上"
+          }
+        }
+      }
+    },
+    "Tests (%lld failures)": {
+      "comment": "Receipt: the last check failed, as did others of the turn; argument: how many failed, it included",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Tests (%lld failure)"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Tests (%lld failures)"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テスト（失敗 %lld 回）"
+          }
+        }
+      }
+    },
+    "Tests (filtered, %lld failures)": {
+      "comment": "Receipt: the last check failed, run on part of the suite, as did others; argument: how many failed",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Tests (filtered, %lld failure)"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Tests (filtered, %lld failures)"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テスト（絞り込み、失敗 %lld 回）"
+          }
+        }
+      }
+    },
+    "Took %@": {
+      "comment": "Tooltip of a turn: how long it ran, as a line of its own; the argument is the duration, as in 3m 05s",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Took %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所要 %@"
+          }
+        }
+      }
+    },
+    "tokens.unit": {
+      "comment": "A turn card: the unit after its count of tokens, as in 84K tok; kept short, as the card's column is narrow",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tok"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tok"
+          }
+        }
+      }
+    },
+    "tokens.atLeast": {
+      "comment": "A turn's tokens, part of the turn unread so it used more; argument: the count, as in 84,123 or 84K",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "At least %@ tokens"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ トークン以上"
+          }
+        }
+      }
+    },
+    "Tests (after %lld failures)": {
+      "comment": "Receipt: the last check, after checks of the turn that failed; argument: how many failed",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Tests (after %lld failure)"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Tests (after %lld failures)"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テスト（失敗 %lld 回）"
+          }
+        }
+      }
+    },
+    "Tests (filtered, after %lld failures)": {
+      "comment": "Receipt: the last check, run on part of the suite, after failed checks of the turn; argument: how many failed",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Tests (filtered, after %lld failure)"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Tests (filtered, after %lld failures)"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テスト（絞り込み、失敗 %lld 回）"
+          }
+        }
+      }
+    },
+    "Ran tests %lld times": {
+      "comment": "Tooltip of a turn: how many checks it ran; argument: how many",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran tests once"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran tests %lld times"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テスト実行 %lld 回"
+          }
+        }
+      }
+    },
+    "%lld failed": {
+      "comment": "Tooltip of a turn: how many of its checks failed, after how many it ran; argument: how many",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld failed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失敗 %lld 回"
+          }
+        }
+      }
+    },
+    "tokens.total": {
+      "comment": "A turn's tokens, the cache reads left out; argument: the count, as in 84,123 or 84K",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ tokens"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ トークン"
+          }
+        }
+      }
+    },
+    "tokens.breakdown": {
+      "comment": "Tooltip of a turn: what its token count is made of; arguments: fresh input, cache writes, output, as counts",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input %1$@ · Cache writes %2$@ · Output %3$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力 %1$@ · キャッシュ書き込み %2$@ · 出力 %3$@"
+          }
+        }
+      }
+    },
+    "tokens.cacheReads": {
+      "comment": "Tooltip of a turn: the input read from the prompt cache, left out of its token count; argument: a count",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not counted: %@ read from the cache"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャッシュ読み込み %@（合計外）"
+          }
+        }
+      }
+    },
+    "tokens.partial": {
+      "comment": "Tooltip of a turn: its token count may be lower than what it used",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Part of the turn could not be read, so the count may be short"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターンの一部を読めなかったため、実際より少ない可能性があります"
+          }
+        }
+      }
+    },
+    "duration.compact.minutes": {
+      "comment": "A turn card's duration, over a minute; argument: the whole minutes",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldm"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld分"
+          }
+        }
+      }
+    },
+    "duration.compact.seconds": {
+      "comment": "A turn card's duration, under a minute; argument: the seconds",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%llds"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld秒"
+          }
+        }
+      }
+    },
     "Open Tabs": {
       "comment": "The pane strip's leading button, its tooltip and VoiceOver name, and the heading of the list of the session's tabs it opens",
       "localizations": {
@@ -3361,23 +3739,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "このターンの前にコードを復元…"
-          }
-        }
-      }
-    },
-    "Restore Code…": {
-      "comment": "Changes panel, a turn's card short of room: opens the confirmation to restore the code to before this turn",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Restore Code…"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "コードを復元…"
           }
         }
       }
@@ -18322,40 +18683,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ の間に変更されたファイルを読み込めなかったため、タグが欠けていることがあります"
-          }
-        }
-      }
-    },
-    "Mark All as Unviewed from Here": {
-      "comment": "Changes panel: Mark All Conversations as Unviewed from Here, short, where the whole label does not fit",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mark All as Unviewed from Here"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "すべてここから未確認にする"
-          }
-        }
-      }
-    },
-    "Mark All as Viewed up to Here": {
-      "comment": "Changes panel: Mark All Conversations as Viewed up to Here, short, where the whole label does not fit",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mark All as Viewed up to Here"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "すべてここまで確認済みにする"
           }
         }
       }

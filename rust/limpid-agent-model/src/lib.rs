@@ -30,7 +30,7 @@ pub mod conformance;
 
 pub use adapter::{
     CommandRun, HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, RawHookInput,
-    TmuxEndpoint, parse_object, transcript_path_for_events,
+    TmuxEndpoint, TurnReading, parse_object, transcript_path_for_events,
 };
 pub use approval::{
     ApprovalDecision, ApprovalQuestion, ApprovalQuestionOption, ApprovalRequest, ProviderOutput,
@@ -75,9 +75,10 @@ pub use timestamp::{
     days_from_civil, format_utc_seconds, parse_utc_seconds, seconds_between, unix_seconds,
 };
 pub use turn::{
-    ChangeSummary, CheckResult, ConversationKey, ConversationTurns, DiffStat, EventApplication,
-    GitContext, SkippedFile, SnapshotStatus, TURN_COUNTER_FILE_SUFFIX, TURN_RECORD_FILE_SUFFIX,
-    TurnCounter, TurnPhase, TurnRecord, TurnRecordError, TurnSummary, turn_record_file_name,
+    ChangeSummary, CheckMark, CheckResult, ConversationKey, ConversationTurns, DiffStat,
+    EventApplication, GitContext, MAX_CHECK_MARKS, SkippedFile, SnapshotStatus,
+    TURN_COUNTER_FILE_SUFFIX, TURN_RECORD_FILE_SUFFIX, TurnCounter, TurnPhase, TurnRecord,
+    TurnRecordError, TurnSummary, TurnUsage, turn_record_file_name,
 };
 pub use usage::UsageLimit;
 pub use worktree::WorktreeIntent;

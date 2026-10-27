@@ -165,7 +165,7 @@ struct ChangesPanelTextTests {
         #expect(ChangesPanelText.turnOf(Self.second, locale: Self.english) == "Turn of Claude #2")
         #expect(ChangesPanelText.turnOf(Self.second, locale: Self.japanese) == "Claude #2 のターン")
         #expect(ChangesPanelText.help(row, locale: Self.japanese, timeZone: utc)
-            == "T4 をレビューで開く\nClaude #2 のターン\nSave the order setting\n開始 0:00 · 終了 0:03")
+            == "T4 をレビューで開く\nClaude #2 のターン\nSave the order setting\n2 ファイル +3 −1\n開始 0:00 · 終了 0:03")
         #expect(ChangesPanelText.rowSpoken(row, locale: Self.japanese, timeZone: utc)
             == "Claude #2 のターン 4、Save the order setting、未確認、2 ファイル +3 −1、0:00")
         #expect(ChangesPanelFixture.plainSpaces(ChangesPanelText.rowSpoken(row, locale: Self.english, timeZone: utc))

@@ -51,6 +51,25 @@ struct ReceiptFormattingTests {
         #expect(ReceiptText.check(check(1, isFiltered: true), locale: Self.japanese) == "✗ テスト（絞り込み）")
     }
 
+    /// A check after failures of the turn says so, the decision bar and
+    /// notifications included, since the turn had trouble getting there.
+    @Test func aCheckAfterFailures_saysHowMany() {
+        func check(_ exitCode: Int?, isFiltered: Bool = false, failures: Int) -> CheckSummary {
+            CheckSummary(command: "cargo test", isFiltered: isFiltered, exitCode: exitCode, earlierFailures: failures)
+        }
+
+        #expect(ReceiptText.check(check(0, failures: 1), locale: Self.english) == "✓ Tests (after 1 failure)")
+        #expect(ReceiptText.check(check(0, failures: 2), locale: Self.english) == "✓ Tests (after 2 failures)")
+        #expect(ReceiptText.check(check(0, isFiltered: true, failures: 2), locale: Self.japanese) == "✓ テスト（絞り込み、失敗 2 回）")
+        #expect(ReceiptText.check(check(nil, failures: 2), locale: Self.english) == "Tests (after 2 failures)")
+        // A failure is one of the failures it counts.
+        #expect(ReceiptText.check(check(1, failures: 0), locale: Self.english) == "✗ Tests")
+        #expect(ReceiptText.check(check(1, failures: 1), locale: Self.english) == "✗ Tests (2 failures)")
+        #expect(ReceiptText.check(check(1, isFiltered: true, failures: 3), locale: Self.english) == "✗ Tests (filtered, 4 failures)")
+        #expect(ReceiptText.check(check(1, failures: 2), locale: Self.japanese) == "✗ テスト（失敗 3 回）")
+        #expect(ReceiptText.check(check(0, failures: 0), locale: Self.japanese) == "✓ テスト", "nothing to say without one")
+    }
+
     @Test func theBarsRuns_setTheCountsAndAFailedCheckApart_andReadAsTheReceipt() {
         let check = CheckSummary(command: "make test", isFiltered: false, exitCode: 1)
         let turn = Self.turn(7...7, .changed(files: 2, added: 94, removed: 2), check: check)

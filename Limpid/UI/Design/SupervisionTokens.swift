@@ -627,7 +627,9 @@ enum SupervisionTokens {
     /// meant darkening the orange to brown.
     static let badgeForeground = ThemedColor(light: 0xFFFFFF, dark: 0xFFFFFF)
     /// A closed source's mark in the notification history: the badge's
-    /// fill under its white letters, and the shell's or the place's glyph.
+    /// fill under its white letters, and the shell's or the place's glyph;
+    /// also a turn card's ✓ for a check run on part of the suite
+    /// (`ReceiptRun.Role.quietMark`).
     /// Quieter than `muted`, so the source reads as gone, yet held to
     /// 3:1 for marks, which `faint` is not: white on the light `faint` was
     /// 2.66:1. The same gray in both appearances: white on it is 3.71:1,

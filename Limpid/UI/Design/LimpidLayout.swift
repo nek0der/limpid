@@ -794,18 +794,34 @@ enum LimpidLayout {
         static let turnLabelColumnWidth: CGFloat = 44
         /// A row's first column: the badge's where the row carries its
         /// conversation, else the number's. The one source of where the
-        /// prompt starts, which the moves under it start at too
-        /// (`turnActionInsets(hasConversation:)`).
+        /// prompt starts, which the note under it starts at too
+        /// (`turnNoteInsets(hasConversation:)`).
         static func turnFirstColumnWidth(hasConversation: Bool) -> CGFloat {
             hasConversation ? turnLabelColumnWidth : turnNumberColumnWidth
         }
 
         static let turnColumnSpacing = spaceS
         static let turnLineSpacing = spaceHairline
-        /// Between the moves under a turn ("Mark as Viewed up to Here",
-        /// the restore), and between their lines when they wrap.
-        static let turnActionSpacing = spaceM
-        static let turnActionLineSpacing = spaceXS
+        /// Between a card's glyph moves (the viewed line's, the restore),
+        /// and their height, the time's line.
+        static let turnMoveSpacing = spaceHairline
+        static let turnMoveHeight: CGFloat = 16
+        /// Either side of a move's glyph: less than a heading button's, so
+        /// the two moves read as a pair over the time rather than spread
+        /// across the card's corner.
+        static let turnMovePadding = spaceXS
+        /// Between the facts of a card's second line.
+        static let turnFactSpacing = spaceSnug
+        /// The least each fact after the changes takes, so the checks,
+        /// the tokens, and the duration stand in columns down the list at
+        /// their common widths: three marks; "84K tok"; "11m" beside its
+        /// glyph. A wider one ("…✓✓✓", "≥1.2M tok", "99m") takes its
+        /// room from the changes rather than being cut, and kept this
+        /// narrow, the changes still show "2 +47 −9" at the panel's
+        /// narrowest.
+        static let turnChecksMinWidth: CGFloat = 28
+        static let turnTokensMinWidth: CGFloat = 44
+        static let turnDurationMinWidth: CGFloat = 30
         /// The blue rule on an unviewed turn's leading edge, and the
         /// ring on the turns the review tab shows.
         static let turnUnviewedRuleWidth: CGFloat = 3

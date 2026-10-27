@@ -86,8 +86,19 @@ Approvals and questions are answered in the agent's own prompt, not here.
 ⌥⌘I, off by default. Every conversation's turns in the worktree as one
 timeline, with the unviewed count and range and a **Conversation** filter.
 
-- Each turn offers **Mark as Viewed up to Here** and **Restore Code to Before
-  This Turn…**.
+- Each turn is a card of two lines: its prompt and when it started, then
+  what it changed, its test runs in order (✗✗✓ failed twice, then passed; a
+  fainter ✓ ran only part of the suite), the tokens it used, and how long it
+  ran. The token count leaves out what was read from the prompt cache; the
+  tooltip has the exact count and everything it is made of. No price is
+  shown.
+- A card's moves stand where its time is: **Mark as Viewed up to Here**
+  (**Mark as Unviewed from Here** on a viewed turn) and **Restore Code to
+  Before This Turn…**. They show on the last card that has them and on the
+  card that says why a restore has to wait, and on any other while you
+  point at it, move the keyboard onto it, or open it in the review; a
+  running turn has none. Both are also in the card's context menu
+  and its VoiceOver actions.
 - **Review All Unviewed** opens the review.
 - **Commit & PR** at the bottom shows what is not yet in the base branch or
   not yet pushed, and offers **Create PR** (with `gh`) and **Clean Up

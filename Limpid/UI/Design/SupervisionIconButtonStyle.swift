@@ -11,14 +11,20 @@ import SwiftUI
 /// click and for where the glyph stands, but a fill that wide reads as a
 /// bar under a lone ＋.
 struct SupervisionIconButtonStyle: ButtonStyle {
+    /// The room either side of the glyph: the heading's, unless the glyphs
+    /// stand in a row of their own where that room reads as gaps between
+    /// them (a turn card's moves).
+    var horizontalPadding = LimpidLayout.Supervision.iconButtonHorizontalPadding
+
     func makeBody(configuration: Configuration) -> some View {
-        Face(configuration: configuration)
+        Face(configuration: configuration, horizontalPadding: horizontalPadding)
     }
 
     /// A view of its own, so it can hold the hover and read whether the
     /// button is enabled.
     private struct Face: View {
         let configuration: Configuration
+        let horizontalPadding: CGFloat
         @Environment(\.isEnabled) private var isEnabled
         @State private var isHovering = false
 
@@ -27,7 +33,7 @@ struct SupervisionIconButtonStyle: ButtonStyle {
             let isLit = isHovering && isEnabled
             configuration.label
                 .foregroundStyle(isLit ? SupervisionTokens.text.color : SupervisionTokens.muted.color)
-                .padding(.horizontal, LimpidLayout.Supervision.iconButtonHorizontalPadding)
+                .padding(.horizontal, horizontalPadding)
                 // As see-through as the ground it is on (`SurfaceGround`),
                 // as the bordered buttons' fill is.
                 .background(SurfaceGround { shape.fill(fill(isLit: isLit)).aspectRatio(1, contentMode: .fit) })
@@ -48,5 +54,10 @@ struct SupervisionIconButtonStyle: ButtonStyle {
 extension ButtonStyle where Self == SupervisionIconButtonStyle {
     static var supervisionIcon: SupervisionIconButtonStyle {
         SupervisionIconButtonStyle()
+    }
+
+    /// `supervisionIcon` with `horizontalPadding` either side of the glyph.
+    static func supervisionIcon(horizontalPadding: CGFloat) -> SupervisionIconButtonStyle {
+        SupervisionIconButtonStyle(horizontalPadding: horizontalPadding)
     }
 }

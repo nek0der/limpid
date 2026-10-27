@@ -95,18 +95,18 @@ extension LimpidLayout.Supervision {
         bottom: spaceM,
         trailing: surfaceHeadingInset
     )
-    /// A turn's card: its two lines, then the moves under them, which start
-    /// where the prompt does.
-    static let turnCardInsets = EdgeInsets(top: spaceS, leading: spaceM, bottom: spaceS, trailing: spaceM)
-    /// The moves under a card, from where its prompt starts: past the
-    /// wider first column where the row carries its conversation's badge,
-    /// so the buttons never stand 10pt left of the words over them.
-    static func turnActionInsets(hasConversation: Bool) -> EdgeInsets {
+    /// A turn's card: its two lines, snug above and below, so a list of
+    /// cards reads as a list rather than a stack of boxes.
+    static let turnCardInsets = EdgeInsets(top: spaceSnug, leading: spaceM, bottom: spaceSnug, trailing: spaceM)
+    /// The note under a card's facts (`RestoreBlockerNote`), from where
+    /// its prompt starts: past the wider first column where the row
+    /// carries its conversation's badge.
+    static func turnNoteInsets(hasConversation: Bool) -> EdgeInsets {
         EdgeInsets(
             top: 0,
             leading: turnCardInsets.leading + turnFirstColumnWidth(hasConversation: hasConversation) + turnColumnSpacing,
-            bottom: spaceS,
-            trailing: spaceM
+            bottom: turnCardInsets.bottom,
+            trailing: turnCardInsets.trailing
         )
     }
 

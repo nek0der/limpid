@@ -2,7 +2,7 @@
 
 use crate::{
     AgentEvent, ApprovalDecision, ApprovalRequest, EventId, InstallRecipe, ProviderDescriptor,
-    WorktreeIntent,
+    TurnUsage, WorktreeIntent,
 };
 use serde_json::{Map, Value};
 use std::path::PathBuf;
@@ -235,6 +235,58 @@ pub trait ProviderAdapter: Send + Sync {
         let _ = (input, record);
         true
     }
+
+    /// The provider's own id for the turn a prompt payload begins, which its
+    /// transcript tags the turn's lines with. The runtime keeps it on the
+    /// turn record so the turn's end can find where the turn began.
+    /// Providers that name no turn keep the default.
+    fn turn_marker(&self, input: RawHookInput<'_>) -> Option<String> {
+        let _ = input;
+        None
+    }
+
+    /// What the turn a payload ends used and ran, read from
+    /// `input.transcript` back to where the turn `marker` names began (the
+    /// payload's own turn when `marker` is `None`). Providers that record
+    /// neither keep the default, which reads nothing.
+    fn turn_reading(&self, input: RawHookInput<'_>, marker: Option<&str>) -> TurnReading {
+        let _ = (input, marker);
+        TurnReading::default()
+    }
+
+    /// What one subagent's whole transcript used, for the transcripts a
+    /// `TurnReading` names.
+    fn subagent_usage(&self, transcript: &[u8]) -> Option<TurnUsage> {
+        let _ = transcript;
+        None
+    }
+}
+
+/// What a provider's transcript says of the turn a payload ends. Each part
+/// is empty when the transcript does not say, which keeps what the turn
+/// record held.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TurnReading {
+    /// The provider's own id for the turn the reading counted from, which
+    /// is `marker` where one was given, so the runtime can tell a reading
+    /// that started at a turn already recorded.
+    pub marker: Option<String>,
+    /// What the turn's own requests used, its subagents' left out.
+    pub usage: Option<TurnUsage>,
+    /// The transcripts of the subagents the turn ran, whose usage the
+    /// runtime adds through `subagent_usage`.
+    pub subagent_transcripts: Vec<PathBuf>,
+    /// The shell commands the turn ran, in a shape the provider reads, for
+    /// a provider whose tool hooks report no exit status (`command_run`),
+    /// so the runtime records the turn's checks at its end.
+    pub commands: Option<Vec<CommandRun>>,
+    /// Whether `commands` may leave out the turn's first ones: the part of
+    /// the transcript read no longer holds the turn's start.
+    pub are_commands_partial: bool,
+    /// Whether the turn's last response is not yet in the transcript: the
+    /// provider may still be writing it as the hook runs, and the runtime
+    /// may read the transcript again for it.
+    pub is_awaiting_response: bool,
 }
 
 /// A shell command the agent ran, as a tool payload reports it.

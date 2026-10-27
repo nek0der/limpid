@@ -189,8 +189,8 @@ pub enum ChangeSummary {
     Unknown,
 }
 
-/// The last check a turn ran: a test or build command the project counts
-/// as one, and how it exited.
+/// A check a turn ran: a test or build command the project counts as one,
+/// and how it exited.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckResult {
@@ -205,6 +205,88 @@ pub struct CheckResult {
     /// Whether the run was narrowed to part of the suite: a success then
     /// says nothing about the rest.
     pub is_filtered: bool,
+}
+
+impl CheckResult {
+    /// Whether the check's own exit status says it failed; a status that
+    /// was not its own says nothing.
+    #[must_use]
+    pub fn has_failed(&self) -> bool {
+        self.exit_code.is_some_and(|code| code != 0)
+    }
+}
+
+/// How many check runs a turn keeps one by one; the count goes on past it.
+pub const MAX_CHECK_MARKS: usize = 16;
+
+/// One check run of a turn, kept in order so the person sees how the turn
+/// got to its last result: failed twice, then passed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckMark {
+    /// As on `CheckResult`: `None` when the status is not the check's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    pub is_filtered: bool,
+}
+
+impl From<&CheckResult> for CheckMark {
+    fn from(check: &CheckResult) -> Self {
+        Self {
+            exit_code: check.exit_code,
+            is_filtered: check.is_filtered,
+        }
+    }
+}
+
+/// The tokens a turn's requests used, as the provider's transcript recorded
+/// them: its subagents' included where the transcript names their own
+/// (Claude's), left out where it does not (Codex's). Counted, never priced: most people
+/// run the agents on a plan, where a price per token is not what they pay.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnUsage {
+    /// Input sent fresh, neither read from nor written to the prompt cache.
+    pub input_tokens: u64,
+    pub cache_write_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub output_tokens: u64,
+    /// Whether part of the turn could not be read: its start lies before
+    /// the part of the transcript we read, its last response was not yet
+    /// written, or a subagent was still running. The counts are then short.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_partial: bool,
+}
+
+impl TurnUsage {
+    /// Each counter the larger of the two, short if either is: two lines
+    /// of one streamed request, or two readings of one turn.
+    #[must_use]
+    pub fn fuller(self, other: Self) -> Self {
+        Self {
+            input_tokens: self.input_tokens.max(other.input_tokens),
+            cache_write_tokens: self.cache_write_tokens.max(other.cache_write_tokens),
+            cache_read_tokens: self.cache_read_tokens.max(other.cache_read_tokens),
+            output_tokens: self.output_tokens.max(other.output_tokens),
+            is_partial: self.is_partial || other.is_partial,
+        }
+    }
+
+    /// The two readings together, short if either is.
+    #[must_use]
+    pub fn plus(self, other: Self) -> Self {
+        Self {
+            input_tokens: self.input_tokens.saturating_add(other.input_tokens),
+            cache_write_tokens: self
+                .cache_write_tokens
+                .saturating_add(other.cache_write_tokens),
+            cache_read_tokens: self
+                .cache_read_tokens
+                .saturating_add(other.cache_read_tokens),
+            output_tokens: self.output_tokens.saturating_add(other.output_tokens),
+            is_partial: self.is_partial || other.is_partial,
+        }
+    }
 }
 
 /// The difference between a turn's two snapshots, as the writer measured it.
@@ -301,6 +383,11 @@ fn is_zero(value: &u32) -> bool {
     *value == 0
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes the field by reference.
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 /// Whether two snapshots skipped the same files, in any order.
 fn same_files(first: &[SkippedFile], second: &[SkippedFile]) -> bool {
     let mut first = first.to_vec();
@@ -352,6 +439,22 @@ pub struct TurnSummary {
     pub repository: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_check: Option<CheckResult>,
+    /// The turn's last check runs in order (`TurnRecord::checks`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<CheckMark>,
+    /// How many checks the turn ran, those `checks` no longer holds
+    /// included.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub check_count: u32,
+    /// How many of them failed (`TurnRecord::failure_count`).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub failure_count: u32,
+    /// Whether the turn may have run checks its record does not count
+    /// (`TurnRecord::are_checks_partial`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub are_checks_partial: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TurnUsage>,
     /// False for an end-only record nobody prompted: the hook saw no prompt
     /// for it (the agent stopped on its own, answering a background task, or
     /// the prompt came before this build recorded turns). Such a turn is
@@ -406,7 +509,12 @@ impl TurnSummary {
                 .as_ref()
                 .and_then(|context| context.common_dir.clone()),
             last_check: record.last_check.clone(),
-            has_prompt: record.prompt_head.is_some() || record.begin != SnapshotStatus::Pending,
+            checks: record.checks.clone(),
+            check_count: record.check_count,
+            failure_count: record.failure_count,
+            are_checks_partial: record.are_checks_partial,
+            usage: record.usage,
+            has_prompt: record.has_prompt(),
             is_deletable: record.is_writable(),
         }
     }
@@ -496,6 +604,30 @@ pub struct TurnRecord {
         deserialize_with = "lenient"
     )]
     pub last_check: Option<CheckResult>,
+    /// The turn's last `MAX_CHECK_MARKS` check runs, oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<CheckMark>,
+    /// How many checks the turn ran in all.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub check_count: u32,
+    /// How many of the turn's checks failed in all, counted as they run so
+    /// the count holds the failures `checks` no longer keeps.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub failure_count: u32,
+    /// Whether the turn may have run checks the counts leave out: they were
+    /// read at its end from a transcript whose part we read no longer held
+    /// the turn's start.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub are_checks_partial: bool,
+    /// The provider's own id for the turn, which its transcript tags the
+    /// turn's lines with (Claude's `prompt_id`, Codex's `turn_id`), so its
+    /// end reads the turn's usage and checks from where the turn began.
+    /// `None` when the provider gave none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_turn_id: Option<String>,
+    /// What the turn's requests used, read when it ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TurnUsage>,
     /// The events already applied, so a retried hook is applied once.
     #[serde(default)]
     pub applied_events: Vec<String>,
@@ -602,6 +734,40 @@ impl TurnRecord {
         self.schema_version == Self::SCHEMA_VERSION && !self.was_decoded_lossily
     }
 
+    /// Whether a prompt began the turn: false for an end-only record
+    /// (`TurnSummary::has_prompt`).
+    #[must_use]
+    pub fn has_prompt(&self) -> bool {
+        self.prompt_head.is_some() || self.begin != SnapshotStatus::Pending
+    }
+
+    /// Adds `check` as the turn's latest run, dropping the oldest mark past
+    /// `MAX_CHECK_MARKS`.
+    pub fn push_check(&mut self, check: CheckResult) {
+        self.checks.push(CheckMark::from(&check));
+        if self.checks.len() > MAX_CHECK_MARKS {
+            let excess = self.checks.len() - MAX_CHECK_MARKS;
+            self.checks.drain(..excess);
+        }
+        self.check_count = self.check_count.saturating_add(1);
+        if check.has_failed() {
+            self.failure_count = self.failure_count.saturating_add(1);
+        }
+        self.last_check = Some(check);
+    }
+
+    /// Puts `checks`, every run of the turn in order, in place of what the
+    /// record held: for a provider that reports them all at the turn's end.
+    pub fn set_checks(&mut self, checks: Vec<CheckResult>) {
+        self.checks.clear();
+        self.check_count = 0;
+        self.failure_count = 0;
+        self.last_check = None;
+        for check in checks {
+            self.push_check(check);
+        }
+    }
+
     /// Notes `event` as applied, once. The caller applies the event's effect
     /// only for `Applied`.
     pub fn apply_event(&mut self, event: Option<&EventId>) -> EventApplication {
@@ -666,6 +832,12 @@ mod tests {
             added_bytes: None,
             applied_events: Vec::new(),
             last_check: None,
+            checks: Vec::new(),
+            check_count: 0,
+            failure_count: 0,
+            are_checks_partial: false,
+            provider_turn_id: None,
+            usage: None,
             extra: BTreeMap::new(),
             was_decoded_lossily: false,
         }
@@ -1073,5 +1245,88 @@ mod tests {
         value["promptKind"] = Value::from("fromTheFuture");
         let read: TurnSummary = serde_json::from_value(value).expect("unknown kind");
         assert_eq!(read.prompt_kind, PromptKind::Text);
+    }
+
+    fn check(exit_code: Option<i32>) -> CheckResult {
+        CheckResult {
+            command: "cargo test".into(),
+            exit_code,
+            is_filtered: false,
+        }
+    }
+
+    #[test]
+    fn a_turn_keeps_its_last_checks_and_counts_every_one() {
+        let mut turn = record();
+        for index in 0..20 {
+            turn.push_check(check(Some(index)));
+        }
+        assert_eq!(turn.check_count, 20);
+        // Every run but the one that exited 0 failed, the dropped ones too.
+        assert_eq!(turn.failure_count, 19);
+        assert_eq!(turn.checks.len(), MAX_CHECK_MARKS);
+        assert_eq!(turn.checks.first().and_then(|mark| mark.exit_code), Some(4));
+        assert_eq!(turn.last_check, Some(check(Some(19))));
+
+        turn.set_checks(vec![check(Some(1)), check(None)]);
+        assert_eq!((turn.check_count, turn.failure_count), (2, 1));
+        assert_eq!(
+            turn.checks,
+            vec![
+                CheckMark {
+                    exit_code: Some(1),
+                    is_filtered: false
+                },
+                CheckMark {
+                    exit_code: None,
+                    is_filtered: false
+                }
+            ]
+        );
+        turn.set_checks(Vec::new());
+        assert_eq!(
+            (turn.check_count, turn.failure_count, turn.last_check),
+            (0, 0, None)
+        );
+    }
+
+    #[test]
+    fn usage_and_checks_round_trip_and_an_older_record_reads_without_them() {
+        let mut turn = record();
+        turn.push_check(check(Some(0)));
+        turn.provider_turn_id = Some("p1".into());
+        turn.usage = Some(TurnUsage {
+            input_tokens: 1,
+            cache_write_tokens: 2,
+            cache_read_tokens: 3,
+            output_tokens: 4,
+            is_partial: true,
+        });
+        let bytes = turn.encode().expect("encode");
+        let value: Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(
+            value["usage"],
+            serde_json::json!({"inputTokens":1,"cacheWriteTokens":2,"cacheReadTokens":3,"outputTokens":4,"isPartial":true})
+        );
+        assert_eq!(
+            value["checks"],
+            serde_json::json!([{"exitCode":0,"isFiltered":false}])
+        );
+        let read = TurnRecord::decode(&bytes).expect("decode");
+        assert_eq!(read, turn);
+        assert!(read.is_writable());
+
+        let older = record().encode().expect("older");
+        let value: Value = serde_json::from_slice(&older).expect("json");
+        for key in [
+            "usage",
+            "checks",
+            "checkCount",
+            "failureCount",
+            "providerTurnId",
+        ] {
+            assert!(value.get(key).is_none(), "{key} is left out when empty");
+        }
+        assert!(TurnRecord::decode(&older).expect("decode").is_writable());
     }
 }

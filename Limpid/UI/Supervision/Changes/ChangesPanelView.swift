@@ -404,6 +404,7 @@ private struct ChangesTurnList: View {
                     }
                     // The turns are what the list reports its place by.
                     .scrollTargetLayout()
+                    .modifier(SharedTurnFactColumns())
                     .padding(Layout.changesListInset)
                 }
             }
@@ -580,12 +581,18 @@ struct ViewedLineHead: View {
     }
 }
 
-/// One turn, as a card: "T7" over its conversation's badge ("Cl #4"), its
-/// prompt, and when it started; its state, what it changed, its last
-/// check, and how long it ran; and under them the one move of the line it
-/// offers. An unviewed turn carries the blue rule at its leading edge;
-/// one the review tab reads is ringed; one a restore took back is struck
-/// out in a dashed edge.
+/// One turn, as a card of two lines: "T7" over its conversation's badge
+/// ("Cl #4") beside its prompt and when it started; then what it changed,
+/// its checks in the order they ran, the tokens it used, and how long it
+/// ran, each fact in a column of its own so the facts read down the list.
+/// The card's moves (the viewed line's, the restore) stand where its time
+/// is: at rest on the list's last card with moves and on the one that says
+/// why a restore waits, and on another while the pointer or the keyboard is
+/// on it or the review reads it. Its context menu and its VoiceOver actions
+/// offer them at all times: worded buttons under every card made each one
+/// twice as tall. An unviewed turn carries the
+/// blue rule at its leading edge; one the review tab reads is ringed; one
+/// a restore took back is struck out in a dashed edge.
 private struct ChangesTurnRow: View {
     let row: ChangesPanelModel.Row
     /// The worktree's conversations, named as the filter names them, for
@@ -596,7 +603,9 @@ private struct ChangesTurnRow: View {
     @Environment(ProjectWindowState.self) private var window
     @Environment(\.locale) private var locale
     @Environment(\.supervisionSurfaceOpacity) private var surfaceOpacity
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
+    @FocusState private var focus: TurnCardFocus?
 
     private typealias Layout = LimpidLayout.Supervision
 
@@ -610,26 +619,43 @@ private struct ChangesTurnRow: View {
         row.status == .restored
     }
 
+    private var moves: [TurnCardMove] {
+        ChangesPanelText.moves(row, locale: locale)
+    }
+
+    private var showsMoves: Bool {
+        (row.showsMovesAtRest || isHovering || isRinged || focus != nil) && !moves.isEmpty
+    }
+
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Layout.turnCardCornerRadius, style: .continuous)
         VStack(alignment: .leading, spacing: 0) {
             opener
-            if row.action != nil || row.offersRestore {
-                actions
-                    .padding(Layout.turnActionInsets(hasConversation: row.conversation != nil))
+            // Under the facts rather than beside the glyph, so the reason
+            // wraps to the card's width.
+            if row.offersRestore, row.showsBlockerNote, let blocker = row.restoreBlocker {
+                RestoreBlockerNote(blocker: blocker)
+                    .padding(Layout.turnNoteInsets(hasConversation: row.conversation != nil))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // No fill at rest: the card is the panel's own `window` surface,
-        // edged, so it is as see-through as the panel with transparency on.
-        .background(isHovering && row.isSelectable ? SupervisionTokens.hover.color.opacity(surfaceOpacity) : .clear)
-        .overlay(alignment: .leading) {
-            if row.status == .unviewed {
-                SupervisionTokens.unread.color
-                    .frame(width: Layout.turnUnviewedRuleWidth)
+        // Over the card rather than inside the row's button, whose label
+        // cannot hold buttons of its own. The time's slot widens to take
+        // them (`timeSlot`), so they cover nothing. Silent to VoiceOver,
+        // which offers the same moves as the row's actions.
+        .overlay(alignment: .topTrailing) {
+            if showsMoves {
+                TurnCardMoves(moves: moves, perform: perform, focus: $focus)
+                    .padding(.top, Layout.turnCardInsets.top)
+                    .padding(.trailing, Layout.turnCardInsets.trailing)
+                    .transition(.opacity)
                     .accessibilityHidden(true)
             }
         }
+        .animation(reduceMotion ? nil : LimpidMotion.hoverReveal, value: showsMoves)
+        // No fill at rest: the card is the panel's own `window` surface,
+        // edged, so it is as see-through as the panel with transparency on.
+        .background(isHovering && row.isSelectable ? SupervisionTokens.hover.color.opacity(surfaceOpacity) : .clear)
         .clipShape(shape)
         .overlay {
             shape
@@ -639,6 +665,15 @@ private struct ChangesTurnRow: View {
                 )
                 .accessibilityHidden(true)
         }
+        // The card's leading edge, thickened, so the rule follows the card's
+        // corners rather than standing as a bar the corners cut.
+        .overlay {
+            if row.status == .unviewed {
+                LeadingEdgeShape(cornerRadius: Layout.turnCardCornerRadius, width: Layout.turnUnviewedRuleWidth)
+                    .fill(SupervisionTokens.unread.color)
+                    .accessibilityHidden(true)
+            }
+        }
         .overlay {
             if isRinged {
                 shape.strokeBorder(SupervisionTokens.unread.color, lineWidth: Layout.turnOpenRingWidth)
@@ -646,6 +681,7 @@ private struct ChangesTurnRow: View {
             }
         }
         .onHover { isHovering = $0 }
+        .modifier(TurnCardMenu(isShown: !moves.isEmpty) { menu })
         .accessibilityElement(children: .contain)
     }
 
@@ -653,10 +689,14 @@ private struct ChangesTurnRow: View {
     /// answer, a running turn, one a restore took back) is not, so its
     /// words keep their contrast: a disabled plain button would fade them.
     /// Either reads as one sentence, with its conversation and its state
-    /// (`ChangesPanelText.rowSpoken`).
+    /// (`ChangesPanelText.rowSpoken`), and offers the card's moves as its
+    /// actions; a restore held back says why as the card's hint.
     @ViewBuilder private var opener: some View {
         let help = Text(verbatim: ChangesPanelText.help(row, locale: locale))
         let spoken = Text(verbatim: ChangesPanelText.rowSpoken(row, locale: locale))
+        let hint = Text(verbatim: moves.lazy.compactMap(\.blocker).first ?? "")
+        // A card that does not open still takes the keyboard, so its moves
+        // show for it as for one that does.
         if row.isSelectable {
             Button {
                 ChangesPanelActions.open(row.turn, window: window, stores: state.changesPanelStores)
@@ -664,49 +704,64 @@ private struct ChangesTurnRow: View {
                 summary
             }
             .buttonStyle(.plain)
+            .focused($focus, equals: .card)
             .help(help)
             .accessibilityLabel(spoken)
+            .accessibilityHint(hint)
             .accessibilityAddTraits(isRinged ? .isSelected : [])
+            .accessibilityActions { moveActions }
         } else {
             summary
+                // Only the keyboard moves focus here, as it does to a plain
+                // button: a click does not, so the moves do not stay out.
+                .focusable(interactions: .activate)
+                .focused($focus, equals: .card)
                 .help(help)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(spoken)
+                .accessibilityHint(hint)
+                .accessibilityActions { moveActions }
         }
     }
 
-    private var actions: some View {
-        TurnCardMoves(
-            lineMove: row.action.map { action in
-                TurnCardMoves.LineMove(
-                    // On the timeline the move may reach the other
-                    // conversations' lines too, which its label says, and
-                    // its tooltip how far.
-                    title: ChangesPanelText.action(action, movesOtherLines: row.movesOtherLines, locale: locale),
-                    shortTitle: ChangesPanelText.shortAction(action, movesOtherLines: row.movesOtherLines, locale: locale),
-                    help: row.movesOtherLines ? ChangesPanelText.moveAcrossHelp(action, locale: locale) : nil
-                ) {
-                    // The toast names whichever conversation's line moved
-                    // first, which need not be this row's.
-                    let named = conversations + (row.conversation.map { [$0] } ?? [])
-                    let name: (ConversationKey) -> String? = { key in
-                        named.first { $0.conversation == key }.map { ConversationText.name($0, locale: locale) }
-                    }
-                    switch action {
-                    case .markViewedThrough:
-                        ChangesPanelActions.markViewed(through: row.turn, named: name, window: window, stores: state.changesPanelStores)
-                    case .markUnviewedFrom:
-                        ChangesPanelActions.markNotViewed(from: row.turn, named: name, window: window, stores: state.changesPanelStores)
-                    }
-                }
-            },
-            restore: row.offersRestore
-                ? TurnCardMoves.Restore(blocker: row.restoreBlocker, showsBlockerNote: row.showsBlockerNote) {
-                    RestoreActions.ask(row.turn, window: window, state: state)
-                }
-                : nil,
-            isViewed: row.isViewed
-        )
+    /// The moves VoiceOver offers on the row, whether the glyphs show or
+    /// not. A held-back restore is left out, as an action that does
+    /// nothing; the row's hint says why it is held back.
+    private var moveActions: some View {
+        ForEach(moves.filter(\.isEnabled)) { move in
+            Button(move.title) {
+                perform(move.kind)
+            }
+        }
+    }
+
+    private var menu: some View {
+        ForEach(moves) { move in
+            Button(move.title) {
+                perform(move.kind)
+            }
+            .disabled(!move.isEnabled)
+        }
+    }
+
+    private func perform(_ kind: TurnCardMove.Kind) {
+        switch kind {
+        case let .line(action):
+            // The toast names whichever conversation's line moved first,
+            // which need not be this row's.
+            let named = conversations + (row.conversation.map { [$0] } ?? [])
+            let name: (ConversationKey) -> String? = { key in
+                named.first { $0.conversation == key }.map { ConversationText.name($0, locale: locale) }
+            }
+            switch action {
+            case .markViewedThrough:
+                ChangesPanelActions.markViewed(through: row.turn, named: name, window: window, stores: state.changesPanelStores)
+            case .markUnviewedFrom:
+                ChangesPanelActions.markNotViewed(from: row.turn, named: name, window: window, stores: state.changesPanelStores)
+            }
+        case .restore:
+            RestoreActions.ask(row.turn, window: window, state: state)
+        }
     }
 
     private var summary: some View {
@@ -723,20 +778,34 @@ private struct ChangesTurnRow: View {
                         .lineLimit(1)
                         .supervisionTruncation(.sentence)
                     Spacer(minLength: LimpidLayout.Supervision.spaceSnug)
-                    if let time = ChangesPanelText.time(row.turn, locale: locale) {
-                        Text(verbatim: time)
-                            .font(.supervision(.caption).monospacedDigit())
-                            .foregroundStyle(SupervisionTokens.muted.color)
-                    }
+                    timeSlot
                 }
-                ReceiptRunsText(runs: ChangesPanelText.detailRuns(row, locale: locale), size: .caption)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                TurnFactsLine(facts: ChangesPanelText.facts(row, locale: locale))
             }
         }
         .padding(Layout.turnCardInsets)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    /// The time, or while the moves show, room as wide as they are: the
+    /// slot keeps only the time's width at rest, so the prompt has the
+    /// rest of the line, and gives up its end only while the moves stand
+    /// over the time.
+    private var timeSlot: some View {
+        ZStack(alignment: .trailing) {
+            if showsMoves {
+                TurnCardMovesRoom(moves: moves)
+            }
+            if let time = ChangesPanelText.time(row.turn, locale: locale) {
+                Text(verbatim: time)
+                    .font(.supervision(.caption).monospacedDigit())
+                    .foregroundStyle(SupervisionTokens.muted.color)
+                    .opacity(showsMoves ? 0 : 1)
+            }
+        }
+        .fixedSize()
+        .accessibilityHidden(true)
     }
 
     /// The row's first column: "T7", and under it the conversation's badge
@@ -752,7 +821,9 @@ private struct ChangesTurnRow: View {
                 .foregroundStyle(row.status == .unviewed ? SupervisionTokens.unreadText.color : SupervisionTokens.muted.color)
             if let conversation = row.conversation {
                 let badge = SessionRowFact.Badge.agent(conversation.conversation.provider)
-                HStack(spacing: LimpidLayout.Supervision.spaceHairline) {
+                // Apart enough that "#2" reads as the badge's number, not
+                // as a letter of it.
+                HStack(spacing: LimpidLayout.Supervision.spaceXS) {
                     // Silent: the row's sentence names the conversation.
                     SessionAgentBadge(badge: badge, text: SessionRowFactText.badge(badge, locale: locale), size: .row)
                     if let ordinal = ChangesPanelText.ordinal(conversation) {
@@ -766,5 +837,20 @@ private struct ChangesTurnRow: View {
             }
         }
         .frame(width: Layout.turnFirstColumnWidth(hasConversation: row.conversation != nil), alignment: .leading)
+    }
+}
+
+/// The card's context menu, left off a card with no moves (a running turn),
+/// so a right-click there opens nothing rather than an empty menu.
+private struct TurnCardMenu<Items: View>: ViewModifier {
+    let isShown: Bool
+    @ViewBuilder let items: () -> Items
+
+    func body(content: Content) -> some View {
+        if isShown {
+            content.contextMenu { items() }
+        } else {
+            content
+        }
     }
 }
