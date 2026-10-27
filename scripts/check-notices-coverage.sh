@@ -120,7 +120,7 @@ texts=(
 # are defined in a linked Limpid binary (`nm`), and by searching the Release
 # binary for each library's strings and each font's bytes. A component that
 # is only in the xcframework (its objects never linked) does not belong here.
-# The list holds for the 1fa2d91ee pin, rebased onto upstream 0fe113a35. Its
+# The list holds for the e6ee5cd9e pin, rebased onto upstream 0fe113a35. Its
 # arm64 archive has the same members as the previous pin's (24be2f1), apart
 # from two Zig compilation units that were renamed. Among the Zig packages,
 # only z2d's version and uucode's Unicode data (now 18.0.0) changed the notices.
