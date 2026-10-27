@@ -22,7 +22,7 @@ struct TurnGarbageCollectorTests {
 
     @Test func aBatchTheBridgeRefuses_isOnlyLogged() async {
         struct Refused: Error {}
-        let collector = TurnGarbageCollector { _, _ in throw Refused() }
+        let collector = TurnGarbageCollector(priority: .userInitiated) { _, _ in throw Refused() }
 
         let deletions = await collector.delete(["A"], in: URL(fileURLWithPath: "/nonexistent"))
 
@@ -31,7 +31,7 @@ struct TurnGarbageCollectorTests {
 
     @Test func aBatch_reachesTheBridgeWithItsDirectory() async {
         let asked = Recorded<[(ids: [String], directory: URL)]>([])
-        let collector = TurnGarbageCollector { ids, directory in
+        let collector = TurnGarbageCollector(priority: .userInitiated) { ids, directory in
             asked.update { $0.append((ids, directory)) }
             return ids.map { TurnDeletion(outcome: .deleted, turnID: $0, reason: nil, roots: nil) }
         }
@@ -46,7 +46,7 @@ struct TurnGarbageCollectorTests {
 
     @Test func aQueuedBatch_reachesTheBridge_andAnEmptyOneToo() async {
         let asked = Recorded<[(ids: [String], directory: URL)]>([])
-        let collector = TurnGarbageCollector { ids, directory in
+        let collector = TurnGarbageCollector(priority: .userInitiated) { ids, directory in
             asked.update { $0.append((ids, directory)) }
             return []
         }
@@ -55,7 +55,7 @@ struct TurnGarbageCollectorTests {
         collector.enqueue([], in: URL(fileURLWithPath: "/states/claude/turns"))
         collector.enqueue(["A"], in: URL(fileURLWithPath: "/states/claude/turns"))
 
-        await pollUntil { asked.value.count == 2 }
+        await pollUntilTurnsDeleted { asked.value.count == 2 }
         #expect(Set(asked.value.map(\.ids)) == [[], ["A"]])
     }
 

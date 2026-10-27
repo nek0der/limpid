@@ -292,7 +292,7 @@ struct TurnRetentionTests {
             resumeIntents: AgentResumeIntentStore(directory: state.appendingPathComponent("intents")),
             turnDeletionsURL: turnDeletionsURL,
             processStatus: { _ in .dead },
-            turnCollector: TurnGarbageCollector { ids, _ in try collector.apply(ids) }
+            turnCollector: TurnGarbageCollector(priority: .userInitiated) { ids, _ in try collector.apply(ids) }
         )
     }
 
@@ -330,7 +330,7 @@ struct TurnRetentionTests {
             }
 
             scene.adapter.refresh()
-            await pollUntil { !forgotten.isEmpty && !deletedIn.isEmpty }
+            await pollUntilTurnsDeleted { !forgotten.isEmpty && !deletedIn.isEmpty }
 
             // The turn that went, from when it started.
             #expect(deletedIn.keys.sorted() == ["/r"], "the worktree its snapshots were taken in")
@@ -352,7 +352,7 @@ struct TurnRetentionTests {
             scene.adapter.onTurnsDeleted = { gone, _ in forgotten.merge(gone) { _, new in new } }
 
             scene.adapter.refresh()
-            await pollUntil { collector.batches.count == 1 }
+            await pollUntilTurnsDeleted { collector.batches.count == 1 }
             // The record is still there, so the rules choose the turn again:
             // only its being on its way keeps it from a second batch.
             scene.adapter.refresh()
@@ -364,7 +364,7 @@ struct TurnRetentionTests {
             try FileManager.default.removeItem(at: scene.recordURL(scene.old))
             scene.adapter.refresh()
             collector.release()
-            await pollUntil { !forgotten.isEmpty }
+            await pollUntilTurnsDeleted { !forgotten.isEmpty }
             // A second batch, asked for while the first was held, would be
             // sent as the first reports, which has happened by now.
             #expect(!scene.adapter.turnDeletions.isSending)
@@ -391,7 +391,7 @@ struct TurnRetentionTests {
 
             scene.adapter.refresh()
             // Reported back: the turn is waiting, no longer on its way.
-            await pollUntil { scene.adapter.turnDeletions.retryAfter[scene.old] != nil }
+            await pollUntilTurnsDeleted { scene.adapter.turnDeletions.retryAfter[scene.old] != nil }
             scene.adapter.refresh()
             // A batch is sent from the pass that asks for it.
             #expect(!scene.adapter.turnDeletions.isSending && scene.adapter.turnDeletions.waiting.isEmpty, "within the wait")
@@ -399,7 +399,7 @@ struct TurnRetentionTests {
 
             clock = clock.addingTimeInterval(11 * 60)
             scene.adapter.refresh()
-            await pollUntil { collector.batches.count == 2 }
+            await pollUntilTurnsDeleted { collector.batches.count == 2 }
             #expect(collector.batches.count == 2, "asked again once the wait is over")
         }
     }
@@ -421,7 +421,7 @@ struct TurnRetentionTests {
             // Asked for synchronously in a pass, so none was asked for here.
             #expect(scene.adapter.turnDeletions.inFlight.isEmpty, "the record not read yet could be the unread one")
             // The adapter runs the rest at once, and then sweeps.
-            await pollUntil { !collector.batches.isEmpty }
+            await pollUntilTurnsDeleted { !collector.batches.isEmpty }
             #expect(collector.batches.first?.contains(scene.old) == true)
         }
     }
@@ -434,7 +434,7 @@ struct TurnRetentionTests {
             scene.adapter.onTurnsDeleted = { gone, _ in forgotten.merge(gone) { _, new in new } }
 
             scene.adapter.refresh()
-            await pollUntil { collector.batches.count == 1 }
+            await pollUntilTurnsDeleted { collector.batches.count == 1 }
             // The second turn is no longer protected: a pass asks for it,
             // and its batch waits behind the first.
             scene.adapter.turnProtection = { TurnProtection(protectedTurnIDs: [], shownConversations: []) }
@@ -447,7 +447,7 @@ struct TurnRetentionTests {
             // As the bridge does: the record leaves before the batch reports.
             try FileManager.default.removeItem(at: scene.recordURL(scene.old))
             collector.release()
-            await pollUntil { !forgotten.isEmpty }
+            await pollUntilTurnsDeleted { !forgotten.isEmpty }
             // The sweep runs again with the review's range held.
             await scene.adapter.passesSettled()
             #expect(!scene.adapter.turnDeletions.isSending, "no batch was sent for the held turn")
@@ -460,7 +460,7 @@ struct TurnRetentionTests {
             scene.adapter.turnProtection = { TurnProtection(protectedTurnIDs: [], shownConversations: []) }
             scene.adapter.requestPass()
             await scene.adapter.passesSettled()
-            await pollUntil { collector.batches.count == 2 }
+            await pollUntilTurnsDeleted { collector.batches.count == 2 }
             #expect(collector.batches.last == [scene.unread])
         }
     }
@@ -479,12 +479,12 @@ struct TurnRetentionTests {
             let scene = try scene(in: root, collector: collector)
             var forgotten: [TurnID: ConversationKey?] = [:]
             scene.adapter.onTurnsDeleted = { gone, _ in forgotten.merge(gone) { _, new in new } }
-            await pollUntil { collector.recoveries == 1 }
+            await pollUntilTurnsDeleted { collector.recoveries == 1 }
             #expect(collector.recoveries == 1, "sent at launch")
             #expect(collector.batches.isEmpty)
 
             collector.release()
-            await pollUntil { !forgotten.isEmpty }
+            await pollUntilTurnsDeleted { !forgotten.isEmpty }
             #expect(forgotten.keys.contains(TurnID(recovered)))
         }
     }
@@ -500,7 +500,7 @@ struct TurnRetentionTests {
             let first = Collector(holds: true)
             let scene = try scene(in: root, collector: first, turnDeletionsURL: file)
             scene.adapter.refresh()
-            await pollUntil { first.batches.count == 1 }
+            await pollUntilTurnsDeleted { first.batches.count == 1 }
             #expect(TurnDeletionFile.read(file).map(\.turnID) == [scene.old], "kept before the batch goes")
             // As the bridge leaves it when the quit comes: moved aside.
             let record = try scene.recordURL(scene.old)
@@ -527,11 +527,11 @@ struct TurnRetentionTests {
                 return true
             }
             relaunched.bootstrap(into: scene.session, attention: AttentionState())
-            await pollUntil { !deletedIn.isEmpty }
+            await pollUntilTurnsDeleted { !deletedIn.isEmpty }
 
             #expect(deletedIn["/r"]?.map(\.start) == UnreadTurnRules.date("2026-08-30T00:00:00Z").map { [$0] })
             #expect(forgotten[TurnID(old)]??.conversationID == "s1")
-            await pollUntil { !FileManager.default.fileExists(atPath: file.path) }
+            await pollUntilTurnsDeleted { !FileManager.default.fileExists(atPath: file.path) }
             #expect(!FileManager.default.fileExists(atPath: file.path), "nothing is on its way, and the span is saved")
             first.release()
         }
