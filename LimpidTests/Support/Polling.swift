@@ -33,6 +33,19 @@ func pollUntil(
     }
 }
 
+/// `pollUntil` for a `TurnGarbageCollector` batch, which runs off the main
+/// actor on the collector's own queue and reports back through a task. A
+/// full parallel run can keep it waiting past the default two seconds, so
+/// the wait is longer, as for the other work tests wait on off the main
+/// actor. It sleeps between checks rather than yielding, so the check does
+/// not keep a core busy that the batch is waiting for.
+func pollUntilTurnsDeleted(
+    isolation: isolated (any Actor)? = #isolation,
+    _ condition: () -> Bool
+) async {
+    await pollUntil(timeout: .seconds(10), interval: .milliseconds(20), isolation: isolation, condition)
+}
+
 extension Process {
     /// Waits for the process to exit, at most `seconds`, and stops it when
     /// it has not: a script that hangs (a shim waiting on input) then fails

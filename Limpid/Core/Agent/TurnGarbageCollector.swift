@@ -21,14 +21,27 @@ actor TurnGarbageCollector {
     typealias Apply = @Sendable ([String], URL) throws -> [TurnDeletion]
 
     private let apply: Apply
-    private let queue = DispatchSerialQueue(label: "dev.limpid.turn-gc", qos: .background)
+    private let priority: TaskPriority
+    private let queue: DispatchSerialQueue
 
     nonisolated var unownedExecutor: UnownedSerialExecutor {
         queue.asUnownedSerialExecutor()
     }
 
-    init(apply: @escaping Apply = { try LimpidTurnBridge.deleteTurns($0, in: $1) }) {
+    /// `priority` is the batches' priority and their queue's QoS:
+    /// background in the app, where a batch only frees space. Tests raise
+    /// it, since they wait for a batch, and the system may defer background
+    /// work for as long as the rest of a parallel run keeps the Mac busy.
+    init(
+        priority: TaskPriority = .background,
+        apply: @escaping Apply = { try LimpidTurnBridge.deleteTurns($0, in: $1) }
+    ) {
         self.apply = apply
+        self.priority = priority
+        queue = DispatchSerialQueue(
+            label: "dev.limpid.turn-gc",
+            qos: priority >= .userInitiated ? .userInitiated : priority >= .utility ? .utility : .background
+        )
     }
 
     /// Deletes `turnIDs` from the turns directory `directory` and answers
@@ -73,7 +86,7 @@ actor TurnGarbageCollector {
         in directory: URL,
         finished: @escaping @MainActor @Sendable ([TurnDeletion]) -> Void = { _ in }
     ) {
-        Task(priority: .background) {
+        Task(priority: priority) {
             let deletions = await delete(turnIDs, in: directory)
             await finished(deletions)
         }
