@@ -32,8 +32,12 @@ as they are fixed or confirmed.
   While VoiceOver is running, a held request is not handed to the terminal
   on its own when its pane comes into sight. Answer it on the card, or
   choose "Answer in terminal".
-- **Codex questions are answered in the terminal.** Codex has no structured
-  question that Limpid can show as a card.
+- **Codex questions are answered in the terminal.** While Codex waits on a
+  question, Limpid shows "Needs answer" with the first question's words, but
+  no Codex hook can answer it, so there is no card. A question Codex asks
+  without stopping, as it does in its default mode, shows as work in
+  progress: the turn goes on, and the question is answered in Codex's own
+  prompt.
 - **An approval refused in Claude Code's own dialog can stay listed for a
   while inside tmux.** Claude Code sends no hook when you choose "No" in the
   terminal. Limpid reads the answer from the status Claude Code reports to

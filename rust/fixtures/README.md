@@ -168,6 +168,15 @@ Cases that could not be recorded as planned:
   - Of the memory agent's ten tool calls, only the first pair (0007, 0008)
     is kept. The other nine pairs (0009 to 0026) were dropped, and the
     remaining files keep the recorder's sequence numbers.
+- `codex/2026-10/request-user-input-*` record Codex CLI 0.164.0's two
+  question tools. `answered` and `interrupted` ran in Plan mode, where Codex
+  asks with `request_user_input` and waits; `async` ran in the default mode,
+  where it asked with `request_user_input_async`, whose `PostToolUse`
+  (`{"accepted":true}`) came at once and the turn went on to `Stop`. The
+  prompts told Codex to ask in English. `answered` ends at its `Stop`: Plan
+  mode then asked whether to implement the plan, and the `/exit` typed to
+  end the session answered that instead, so the payloads after it were
+  dropped.
 - `transcripts/claude-2.1.309-question-declined.jsonl` is the tail of a real
   Claude Code 2.1.309 transcript: an `AskUserQuestion` call, then the Esc
   that declined it (the rejected `tool_result`, a `prompt_snapshot`

@@ -355,6 +355,16 @@ def codex_event(obj, _transcript_path):
     if name == "PreToolUse":
         tool = string(obj, "tool_name") or ""
         tool_input = obj.get("tool_input") if isinstance(obj.get("tool_input"), dict) else {}
+        # Only the question tool Codex waits on; `request_user_input_async`
+        # returns at once and is an ordinary tool call.
+        if tool == "request_user_input":
+            questions = tool_input.get("questions")
+            question = None
+            if isinstance(questions, list) and questions and isinstance(questions[0], dict):
+                question = string(questions[0], "question")
+            event = {"type": "waiting_for_input"}
+            optional(event, "detail", question if question and question.strip() else None)
+            return event
         argument = tool_argument(tool_input, codex_argument)
         detail = f"{tool}: {argument}" if argument else tool
         return {"type": "tool_started", "tool": tool, "detail": detail}
