@@ -309,8 +309,9 @@ extension PaneHeaderRules {
     /// items do.
     ///
     /// The detail is the reporting agent's: the run the pane's leading
-    /// item (`PanePriority.dominant`) is about, else the agent the row
-    /// speaks for (`leadAgentIndex`).
+    /// item (`PanePriority.dominant`) is about. With no item, or when a
+    /// run outranks the pane's unread turn, it is the agent the row speaks
+    /// for (`leadAgentIndex`).
     ///
     /// `nil` at rest, before the agent is matched, and for a shell, so a
     /// quiet pane's header stays quiet.
@@ -342,7 +343,9 @@ extension PaneHeaderRules {
         case .needsAnswer, .needsApproval, .needsResponse, .stopped, .unread, .running:
             break
         }
-        let speaker: AgentRuntimePresentation? = if case let .runtime(id, _, _, _, _) = PanePriority.dominant(paneItems)?.subject {
+        let speaker: AgentRuntimePresentation? = if fact.glyph != .running,
+                                                    case let .runtime(id, _, _, _, _) = PanePriority.dominant(paneItems)?.subject
+        {
             shown.first { $0.id == id }
         } else {
             SessionRowFact.leadAgentIndex(of: shown.map(\.badge.state)).map { shown[$0] }

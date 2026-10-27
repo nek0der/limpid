@@ -309,22 +309,30 @@ struct PaneHeaderTests {
         #expect(PaneHeaderRules.mark(paneID: leaves[1], items: [], runtimes: [claude, codex], session: session) == nil)
     }
 
-    /// An item outranks a running run, and the hover text is the words of
-    /// the run the item is about.
-    @Test func mark_anItem_outranksARun_inItsRunsWords() throws {
+    /// A wait or a stop outranks a running run, in the words of the run
+    /// it is about; a running run outranks an unread turn, in its own.
+    @Test func mark_aStopOutranksARun_andARunOutranksAnUnreadTurn() throws {
         let (session, tab) = try Self.splitTab()
         let pane = tab.splitTree.allLeafIDs()[0]
         let claude = Self.run(.claude, "c", .finished, detail: "done", panes: [pane])
         let codex = Self.run(.codex, "x", .running, detail: "Bash: swift test", panes: [pane])
         let unread = AttentionItemKind.unread(UnreadTurn(turnID: TurnID("t"), changes: .unknown))
 
-        let mark = PaneHeaderRules.mark(
+        let stopped = PaneHeaderRules.mark(
+            paneID: pane,
+            items: [Self.item(.stop(.processExited), about: claude, in: pane)],
+            runtimes: [claude, codex],
+            session: session
+        )
+        #expect(stopped == PaneHeaderMark(glyph: .stopped, detail: "done"))
+
+        let running = PaneHeaderRules.mark(
             paneID: pane,
             items: [Self.item(unread, about: claude, in: pane)],
             runtimes: [claude, codex],
             session: session
         )
-        #expect(mark == PaneHeaderMark(glyph: .unread, detail: "done"))
+        #expect(running == PaneHeaderMark(glyph: .running, detail: "Bash: swift test"))
     }
 
     /// A run shown in two panes marks the one the list places it in, as its
