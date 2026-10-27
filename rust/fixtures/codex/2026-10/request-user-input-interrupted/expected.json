@@ -1,0 +1,36 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "source": "startup",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for request-user-input-interrupted>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "Which license should the LICENSE file use?",
+      "type": "waiting_for_input"
+    }
+  ],
+  [
+    {
+      "type": "interrupted"
+    }
+  ],
+  [
+    {
+      "reason": "other",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ]
+]

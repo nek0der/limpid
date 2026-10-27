@@ -1,0 +1,31 @@
+{
+  "cwd": "/tmp/example",
+  "hook_event_name": "PostToolUse",
+  "model": "gpt-6.1-sol",
+  "permission_mode": "bypassPermissions",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "tool_input": {
+    "questions": [
+      {
+        "header": "License",
+        "id": "license_choice",
+        "options": [
+          {
+            "description": "Use the MIT License.",
+            "label": "MIT"
+          },
+          {
+            "description": "Use the Apache License 2.0.",
+            "label": "Apache-2.0"
+          }
+        ],
+        "question": "Which license should the LICENSE file use?"
+      }
+    ]
+  },
+  "tool_name": "request_user_input",
+  "tool_response": "{\"answers\":{\"license_choice\":{\"answers\":[\"MIT\"]}}}",
+  "tool_use_id": "toolu_00000000000000000000000",
+  "transcript_path": "/Users/example/.codex/sessions/2026/10/27/rollout-2026-10-27T21-59-38-00000000-0000-4000-8000-0000000000ff.jsonl",
+  "turn_id": "00000000-0000-4000-8000-000000000003"
+}

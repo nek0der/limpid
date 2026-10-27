@@ -34,6 +34,15 @@ use std::time::{Duration, UNIX_EPOCH};
 /// The variable that moves Codex's configuration directory from `~/.codex`.
 pub(crate) const HOME_DIRECTORY_VARIABLE: &str = "CODEX_HOME";
 
+/// The tool Codex asks the person a question with and waits on until it is
+/// answered, interrupted, or (outside Plan mode) resolved by the TUI's own
+/// countdown; its `PostToolUse` or `Interrupt` ends the wait. Codex's other
+/// question tool, `request_user_input_async`, returns at once and the turn
+/// goes on, so it is an ordinary tool call (recorded in `fixtures/codex/
+/// 2026-10/request-user-input-async`). No hook can answer either: a
+/// `PreToolUse` hook may only block the call or rewrite its input.
+const QUESTION_TOOL: &str = "request_user_input";
+
 pub(crate) fn normalize(
     input: RawHookInput<'_>,
     context: &HookContext,
@@ -65,28 +74,7 @@ pub(crate) fn normalize(
             titles: None,
             cwd,
         },
-        "PreToolUse" => {
-            let tool = string(&object, "tool_name").unwrap_or_default().to_owned();
-            // The concrete argument over the bare tool name, as the Claude
-            // adapter words it: a permission request that follows takes its
-            // words from this event, and every summary of the wait (the
-            // session row, the Needs Attention row) names what the tool
-            // runs rather than the tool.
-            let argument = object
-                .get("tool_input")
-                .and_then(Value::as_object)
-                .and_then(|input| input.get("command").or_else(|| input.get("file_path")))
-                .and_then(argument_text)
-                .filter(|argument| !argument.is_empty());
-            let detail = match argument {
-                Some(argument) => format!("{tool}: {argument}"),
-                None => tool.clone(),
-            };
-            AgentEvent::ToolStarted {
-                detail: Some(detail),
-                tool,
-            }
-        }
+        "PreToolUse" => pre_tool_use(&object),
         "PostToolUse" => AgentEvent::ToolFinished {
             tool: string(&object, "tool_name").map(str::to_owned),
         },
@@ -265,6 +253,48 @@ fn resolved(path: &Path) -> Cow<'_, Path> {
         return Cow::Borrowed(path);
     }
     std::fs::canonicalize(path).map_or(Cow::Borrowed(path), Cow::Owned)
+}
+
+fn pre_tool_use(object: &Map<String, Value>) -> AgentEvent {
+    let tool = string(object, "tool_name").unwrap_or_default().to_owned();
+    if tool == QUESTION_TOOL {
+        return AgentEvent::WaitingForInput {
+            detail: question_text(object),
+        };
+    }
+    // The concrete argument over the bare tool name, as the Claude adapter
+    // words it: a permission request that follows takes its words from this
+    // event, and every summary of the wait (the session row, the Needs
+    // Attention row) names what the tool runs rather than the tool.
+    let argument = object
+        .get("tool_input")
+        .and_then(Value::as_object)
+        .and_then(|input| input.get("command").or_else(|| input.get("file_path")))
+        .and_then(argument_text)
+        .filter(|argument| !argument.is_empty());
+    let detail = match argument {
+        Some(argument) => format!("{tool}: {argument}"),
+        None => tool.clone(),
+    };
+    AgentEvent::ToolStarted {
+        detail: Some(detail),
+        tool,
+    }
+}
+
+/// The first question's text, which the attention card shows. Any further
+/// questions of the call stay in the terminal, as do the options. A payload
+/// not of the recorded shape has none, and the wait's kind already says it
+/// is a question.
+fn question_text(object: &Map<String, Value>) -> Option<String> {
+    object
+        .get("tool_input")
+        .and_then(|input| input.get("questions"))
+        .and_then(|questions| questions.get(0))
+        .and_then(|question| question.get("question"))
+        .and_then(Value::as_str)
+        .filter(|question| !question.trim().is_empty())
+        .map(str::to_owned)
 }
 
 /// A tool's argument as one line: the string it is, or an argv array
@@ -687,6 +717,41 @@ mod tests {
                 continues_after_stop_hook: false,
                 titles: None,
                 cache: None
+            }]
+        );
+    }
+
+    #[test]
+    fn a_question_waits_with_its_first_question_and_nothing_without_one() {
+        assert_eq!(
+            events(
+                r#"{"hook_event_name":"PreToolUse","tool_name":"request_user_input","tool_input":{"questions":[{"id":"a","header":"A","question":"Which license?","options":[]},{"id":"b","header":"B","question":"Who holds it?","options":[]}]}}"#
+            ),
+            vec![AgentEvent::WaitingForInput {
+                detail: Some("Which license?".into())
+            }]
+        );
+        for input in [r"{}", r#"{"questions":[{"question":"  "}]}"#] {
+            let payload = format!(
+                r#"{{"hook_event_name":"PreToolUse","tool_name":"request_user_input","tool_input":{input}}}"#
+            );
+            assert_eq!(
+                events(&payload),
+                vec![AgentEvent::WaitingForInput { detail: None }],
+                "{input}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_question_codex_does_not_wait_on_is_an_ordinary_tool_call() {
+        assert_eq!(
+            events(
+                r#"{"hook_event_name":"PreToolUse","tool_name":"request_user_input_async","tool_input":{"questions":[{"title":"Which license?","options":["MIT"]}]}}"#
+            ),
+            vec![AgentEvent::ToolStarted {
+                tool: "request_user_input_async".into(),
+                detail: Some("request_user_input_async".into())
             }]
         );
     }
