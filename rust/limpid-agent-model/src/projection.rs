@@ -16,6 +16,7 @@
 //! carry wall timestamps; a pending notification's lifetime is monotonic
 //! uptime, because a clock adjustment must not expire or revive one.
 
+use crate::background::BackgroundWork;
 use crate::cache::CacheWindow;
 use crate::command::{CommandOutcome, ResumeIntent};
 use crate::provider::{ProviderDescriptor, ProviderId};
@@ -524,6 +525,10 @@ pub struct Badge {
     /// error.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage_limit: Option<UsageLimit>,
+    /// What the agent left running when its turn ended, present only while
+    /// the run rests finished after that turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_work: Option<BackgroundWork>,
     /// Why the run stopped when no hook said so, present only on the badge
     /// of a run in error the projection put there itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]

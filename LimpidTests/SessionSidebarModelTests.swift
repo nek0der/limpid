@@ -567,10 +567,13 @@ struct SessionSidebarModelTests {
     // MARK: - A row's lead
 
     @Test func aRowsLeadAgent_isTheFirstRunning_elseTheFirst() {
-        #expect(SessionRowFact.leadAgentIndex(of: [.idle, .running]) == 1)
-        #expect(SessionRowFact.leadAgentIndex(of: [.idle, .compacting, .running]) == 1)
-        #expect(SessionRowFact.leadAgentIndex(of: [.idle, .unknown]) == 0)
-        #expect(SessionRowFact.leadAgentIndex(of: []) == nil)
+        func lead(_ states: [AgentState]) -> Int? {
+            SessionRowFact.leadAgentIndex(of: states.map { SessionRowFact.Agent(provider: .claude, state: $0, detail: nil) })
+        }
+        #expect(lead([.idle, .running]) == 1)
+        #expect(lead([.idle, .compacting, .running]) == 1)
+        #expect(lead([.idle, .unknown]) == 0)
+        #expect(lead([]) == nil)
     }
 
     @Test func aFolderWithNothingOpen_isARowWithoutTabs_andItsTabsPaneLeads() {

@@ -251,6 +251,34 @@ struct LimpidProjectionBridgeTests {
         #expect(plain.tmuxEndpoint == nil)
     }
 
+    /// The record comes from replaying a recorded Claude stop that left a
+    /// shell running, so the count's spelling is checked from the payload
+    /// through the rules to the badge the decision bar reads.
+    @Test("the background work a recorded stop left reaches the badge", .disabled(if: !RepoFixture.hasLocalRepo))
+    func backgroundWork_crossesFromACorpusRecord() throws {
+        let root = try #require(RepoFixture.limpidRoot)
+        let name = "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1"
+        let pane = try #require(UUID(uuidString: "11111111-1111-4111-8111-111111111111"))
+        let url = root.appendingPathComponent("rust/fixtures/projection/background-task/agent-states/\(name).state.json")
+        var input = AgentProjectionInput()
+        input.providers = try JSONDecoder().decode(
+            [String: AgentProviderDescriptor].self,
+            from: LimpidProjectionBridge.providers()
+        )
+        input.records = try [AgentProjectionFile(provider: "claude", name: name, content: String(contentsOf: url, encoding: .utf8))]
+        input.pidStatus = ["4242": "alive"]
+        input.tabs = [AgentProjectionTabPanes(id: UUID(), panes: [pane])]
+
+        let pass = try LimpidProjectionBridge.Engine().pass(
+            input: JSONEncoder().encode(input),
+            now: Data(#"{"wall":"2026-10-28T12:10:00Z","monotonicMs":600000}"#.utf8)
+        )
+        let response = try JSONDecoder().decode(AgentProjectionResponse.self, from: pass.body)
+
+        let badge = try #require(response.projection.badgesByPane[pane]?["claude"])
+        #expect(badge.asAgentBadge.backgroundWork == BackgroundWork(shells: 1))
+    }
+
     @Test("a field of an unexpected type reads as absent without hiding the others")
     func runRecordFacts_unexpectedTypeIsAbsent() throws {
         let facts = try #require(AgentRunRecordFacts(content: #"{"pid": 42, "sessionId": "S"}"#))

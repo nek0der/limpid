@@ -1,5 +1,5 @@
-//! These are the serde rules the run and turn records share for reading a
-//! field a newer writer may have shaped differently.
+//! Serde rules the model's types share: reading a record field a newer writer
+//! may have shaped differently, and leaving out a count of zero.
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
@@ -22,6 +22,12 @@ where
 {
     let value = Value::deserialize(deserializer)?;
     Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+/// For `skip_serializing_if`: a count of zero is left out.
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes the field by reference.
+pub(crate) fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 #[cfg(test)]

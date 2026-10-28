@@ -179,9 +179,10 @@ struct PaneStripModel: Equatable {
     /// app's one order puts first (`PanePriority`), as the sidebar's row
     /// and each pane's header rank them, so a split tab and its row never
     /// disagree. Among equals, an approval and a wait for a response, the
-    /// one that arrived first. With none, a run in any pane. A turn's
-    /// unread is not shown on a tab, and a tab at rest or with only
-    /// shells shows nothing.
+    /// one that arrived first. With none, a run in any pane, else work an
+    /// agent left running after its turn in any pane. A turn's unread is
+    /// not shown on a tab, so the work after an unread turn shows as the
+    /// work alone, and a tab at rest or with only shells shows nothing.
     static func tabGlyph(_ paneGlyphs: [SessionRowFact.Glyph], items: [AttentionItem]) -> SessionRowFact.Glyph? {
         let shown = items.filter { item in
             guard case .unread = item.kind else { return true }
@@ -190,7 +191,10 @@ struct PaneStripModel: Equatable {
         if let item = PanePriority.dominant(shown) {
             return SessionRowFact.glyph(of: item.kind)
         }
-        return paneGlyphs.contains(.running) ? .running : nil
+        if paneGlyphs.contains(.running) {
+            return .running
+        }
+        return paneGlyphs.contains { $0 == .workingAfterTurn || $0 == .unreadWorkingAfterTurn } ? .workingAfterTurn : nil
     }
 }
 

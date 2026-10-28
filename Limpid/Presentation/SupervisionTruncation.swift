@@ -119,7 +119,7 @@ enum SupervisionTruncation: Equatable, Sendable {
         case let .prompt(wait):
             self.wait(wait)
         case .question, .approval(nil), .running(nil), .stopped, .unread, .compacting,
-             .pullRequest, .uncommitted, .commits, .idle, .unknown:
+             .pullRequest, .uncommitted, .commits, .workingAfterTurn, .idle, .unknown:
             .sentence
         }
     }

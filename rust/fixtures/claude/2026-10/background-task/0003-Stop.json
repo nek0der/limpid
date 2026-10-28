@@ -1,0 +1,23 @@
+{
+  "background_tasks": [
+    {
+      "command": "sleep 15",
+      "description": "Run sleep 15 in background",
+      "id": "bcc44teg4",
+      "status": "running",
+      "type": "shell"
+    }
+  ],
+  "cwd": "/tmp/example",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "Stop",
+  "last_assistant_message": "<last_assistant_message for background-task>",
+  "permission_mode": "auto",
+  "prompt_id": "00000000-0000-4000-8000-000000000002",
+  "session_crons": [],
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "stop_hook_active": false,
+  "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+}

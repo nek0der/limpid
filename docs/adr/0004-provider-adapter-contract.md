@@ -197,6 +197,34 @@ sent it with the stop (Claude's and Codex's `last_assistant_message`), whole.
 The adapter only reads it; the core decides what a turn keeps of it
 (`reply_head`), so the two providers' replies are cut by one rule.
 
+### Work left running after a turn
+
+`TurnFinished` also carries `background_work`, what the agent left running as
+the turn ended, counted as `shells`, `subagents`, and `others`. Claude's `Stop`
+lists its background tasks (`background_tasks`), and when one ends on its own
+Claude begins a turn of its own from a `<task-notification>` prompt, whose
+stop lists what is left. The latest stop therefore stands with no end event of
+its own. A task the person stops from Claude's task list is the exception:
+Claude only queues its end for the next prompt and starts no turn, so no stop
+updates the count until then. `apply` stores the count on the run record
+(`backgroundWork`) and clears it on `PromptSubmitted`, every
+`SessionStarted`, `SessionEnded`, `Failed`, and `Interrupted`. Work outside a
+turn keeps it, because the idle prompt returns the run to the rest the stop
+described.
+
+A background subagent's tools reach the hook as the run's own `PreToolUse`,
+after the stop that launched it. Claude names the subagent in them
+(`agent_id`), and the adapter carries that as `by_subagent` on `ToolStarted`.
+`apply` takes no such tool out of `finished` outside a turn: the stop already
+counted the subagent, and its tools are not the agent at work. The agent's
+own tools after a stop carry no `agent_id`, so a stop hook's continuation
+still reopens the run as "Work outside a turn" below describes. `project` passes it to
+the badge only while the run rests `finished`. Codex keeps its background
+terminals running after a turn too, but its `Stop` does not list them and no
+hook reports their end, so its adapter reports none rather than a count that
+would stay until the next stop. The field is omitted when nothing was left
+running.
+
 ### Work outside a turn
 
 One rule: an event outside a turn reopens the run and records that it is

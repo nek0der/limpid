@@ -13,8 +13,9 @@
 //! `awaited`).
 
 use limpid_agent_model::{
-    AgentEvent, CommandRun, EventId, HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderId,
-    RawHookInput, SessionSource, Titles, UsageLimit, parse_object, transcript_path_for_events,
+    AgentEvent, BackgroundWork, CommandRun, EventId, HookContext, MAX_HOOK_INPUT_BYTES,
+    NormalizeError, ProviderId, RawHookInput, SessionSource, Titles, UsageLimit, parse_object,
+    transcript_path_for_events,
 };
 use serde_json::{Map, Value};
 
@@ -75,6 +76,7 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
             reply: string(&object, "last_assistant_message")
                 .filter(|reply| !reply.is_empty())
                 .map(str::to_owned),
+            background_work: background_work(&object),
         },
         "StopFailure" => {
             // Recorded payloads carry the reason under `error`; the shell
@@ -108,6 +110,31 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
         _ => extension(&event_name, object),
     };
     Ok(vec![event])
+}
+
+/// The background tasks `Stop` lists as still running
+/// (`background_tasks`), counted by kind, or `None` when it lists none. A
+/// task with no status is counted, since the list holds only tasks Claude
+/// still tracks; one in any status but `running` is not. Recorded in
+/// `fixtures/claude/2026-10/background-task` (2.1.312), which also carries
+/// the `<task-notification>` turn whose stop lists the task no more.
+fn background_work(object: &Map<String, Value>) -> Option<BackgroundWork> {
+    let mut work = BackgroundWork::default();
+    for task in object.get("background_tasks")?.as_array()? {
+        let Some(task) = task.as_object() else {
+            continue;
+        };
+        if string(task, "status").is_some_and(|status| status != "running") {
+            continue;
+        }
+        let count = match string(task, "type") {
+            Some("shell") => &mut work.shells,
+            Some("subagent") => &mut work.subagents,
+            _ => &mut work.others,
+        };
+        *count = count.saturating_add(1);
+    }
+    (!work.is_empty()).then_some(work)
 }
 
 /// The plan's usage limit a `rate_limit` failure is, if it is one. The
@@ -202,6 +229,10 @@ fn pre_tool_use(object: &Map<String, Value>) -> AgentEvent {
     AgentEvent::ToolStarted {
         tool: tool.to_owned(),
         detail: Some(detail),
+        // Recorded in 2.1.312: a subagent's tool call carries `agent_id` and
+        // `agent_type`; the agent's own, a stop hook's continuation included,
+        // carries neither.
+        by_subagent: string(object, "agent_id").is_some_and(|id| !id.is_empty()),
     }
 }
 
@@ -449,6 +480,7 @@ mod tests {
                 titles: None,
                 cache: None,
                 reply: None,
+                background_work: None,
             }]
         );
     }
@@ -473,6 +505,7 @@ mod tests {
                 }),
                 cache: None,
                 reply: None,
+                background_work: None,
             }]
         );
         assert_eq!(
@@ -488,6 +521,7 @@ mod tests {
                 }),
                 cache: None,
                 reply: None,
+                background_work: None,
             }]
         );
         assert_eq!(
@@ -500,6 +534,7 @@ mod tests {
                 titles: None,
                 cache: None,
                 reply: None,
+                background_work: None,
             }]
         );
     }
@@ -537,6 +572,51 @@ mod tests {
         ));
     }
 
+    /// Every background task `Stop` lists as running counts, by kind; one
+    /// that is no longer running, or an entry that is not a task, does not.
+    #[test]
+    fn stop_counts_the_background_tasks_still_running() {
+        let payload = r#"{"hook_event_name":"Stop","background_tasks":[
+            {"id":"b1","type":"shell","status":"running","command":"sleep 40"},
+            {"id":"b2","type":"shell","status":"completed","command":"ls"},
+            {"id":"a1","type":"subagent","status":"running","agent_type":"general-purpose"},
+            {"id":"m1","type":"monitor"},
+            "not a task"
+        ]}"#;
+        let [
+            AgentEvent::TurnFinished {
+                background_work, ..
+            },
+        ] = &events(payload, None)[..]
+        else {
+            panic!("one turn_finished");
+        };
+        assert_eq!(
+            *background_work,
+            Some(BackgroundWork {
+                shells: 1,
+                subagents: 1,
+                others: 1,
+            })
+        );
+        for payload in [
+            r#"{"hook_event_name":"Stop","background_tasks":[]}"#,
+            r#"{"hook_event_name":"Stop","background_tasks":[{"type":"shell","status":"killed"}]}"#,
+            r#"{"hook_event_name":"Stop","background_tasks":"shell"}"#,
+            r#"{"hook_event_name":"Stop"}"#,
+        ] {
+            let [
+                AgentEvent::TurnFinished {
+                    background_work, ..
+                },
+            ] = &events(payload, None)[..]
+            else {
+                panic!("one turn_finished");
+            };
+            assert_eq!(*background_work, None, "{payload}");
+        }
+    }
+
     #[test]
     fn stop_reads_the_cache_window_beside_the_title() {
         let transcript = concat!(
@@ -563,6 +643,7 @@ mod tests {
                     precision: limpid_agent_model::CachePrecision::Estimated,
                 }),
                 reply: None,
+                background_work: None,
             }]
         );
         // Prompt submit reads the transcript for titles only: the window it
@@ -623,7 +704,8 @@ mod tests {
             events(payload, None),
             vec![AgentEvent::ToolStarted {
                 tool: "Edit".into(),
-                detail: Some("Edit: /a.txt".into())
+                detail: Some("Edit: /a.txt".into()),
+                by_subagent: false,
             }]
         );
         let payload = r#"{"hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{}}"#;
@@ -631,7 +713,8 @@ mod tests {
             events(payload, None),
             vec![AgentEvent::ToolStarted {
                 tool: "Read".into(),
-                detail: Some("Read".into())
+                detail: Some("Read".into()),
+                by_subagent: false,
             }]
         );
         // A `command` that is there but empty says what the tool runs is
@@ -644,7 +727,8 @@ mod tests {
             events(payload, None),
             vec![AgentEvent::ToolStarted {
                 tool: "Edit".into(),
-                detail: Some("Edit".into())
+                detail: Some("Edit".into()),
+                by_subagent: false,
             }]
         );
     }

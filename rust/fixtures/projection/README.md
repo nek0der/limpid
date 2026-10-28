@@ -53,8 +53,9 @@ writes depends on the record before it.
 }
 ```
 
-- `case` names a directory under `rust/fixtures/<provider>/2026-09/`. Prefix it
+- `case` names a directory under `rust/fixtures/<provider>/<schema>/`. Prefix it
   with `<provider>/` to borrow another provider's payload.
+- `schema` is the case's schema date directory, `2026-09` when left out.
 - `pid` is what the shim exports. Leave it out for a tmux-hosted run, which is
   how a pane inside tmux actually reaches the hook.
 - `tmux` sets a fixed endpoint so the generated record carries the tmux fields

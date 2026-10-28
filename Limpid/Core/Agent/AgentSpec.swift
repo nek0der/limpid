@@ -143,6 +143,17 @@ struct AgentBadge: Codable, Equatable {
     /// not say.
     var hasPrompt: Bool?
 
+    /// The work the run left running in the background when its turn
+    /// ended, present only while the run rests finished: the projection
+    /// drops it once a turn starts, and reports it for Claude alone, as
+    /// Codex's hooks do not list what it leaves running. The run stays
+    /// finished either way, so the attention list, its counts, and the
+    /// notifications do not change with it; the state marks draw the work
+    /// on that rest (`SessionRowFact.Agent.isWorkingAfterTurn`), and the
+    /// decision bar and the session row say what it is. Optional so a badge
+    /// persisted before this field existed keeps decoding.
+    var backgroundWork: BackgroundWork?
+
     var promptWaitKind: PromptWaitKind? {
         waitKind.flatMap(PromptWaitKind.init(rawValue:))
     }

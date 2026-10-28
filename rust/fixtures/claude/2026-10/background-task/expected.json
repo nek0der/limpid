@@ -1,0 +1,47 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "source": "startup",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for background-task>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "background_work": {
+        "shells": 1
+      },
+      "reply": "<last_assistant_message for background-task>",
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<task-notification>\n<task-id>bcc44teg4</task-id>\n<tool-use-id>toolu_00000000000000000000000000</tool-use-id>\n<output-file>/tmp/example/00000000-0000-4000-8000-000000000001/tasks/bcc44teg4.output</output-file>\n<status>completed</status>\n<summary>Background command \"Run sleep 15 in background\" completed (exit code 0)</summary>\n</task-notification>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "reply": "<last_assistant_message for background-task>",
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "reason": "other",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ]
+]

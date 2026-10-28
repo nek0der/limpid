@@ -3,6 +3,7 @@
 use super::*;
 use limpid_agent_model::ProviderAdapter;
 
+mod background_work;
 mod outside_a_turn;
 mod prompts_and_waits;
 

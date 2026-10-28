@@ -1,0 +1,9 @@
+{
+  "cwd": "/tmp/example",
+  "hook_event_name": "UserPromptSubmit",
+  "permission_mode": "auto",
+  "prompt": "<task-notification>\n<task-id>bcc44teg4</task-id>\n<tool-use-id>toolu_00000000000000000000000000</tool-use-id>\n<output-file>/tmp/example/00000000-0000-4000-8000-000000000001/tasks/bcc44teg4.output</output-file>\n<status>completed</status>\n<summary>Background command \"Run sleep 15 in background\" completed (exit code 0)</summary>\n</task-notification>",
+  "prompt_id": "00000000-0000-4000-8000-000000000002",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+}

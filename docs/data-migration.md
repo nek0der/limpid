@@ -582,7 +582,7 @@ file and ignores them.
 ### Run records
 
 The hook's run records (`agent-states/<id>.state.json` for Claude,
-`codex-agent-states/<id>.state.json` for Codex) stay at schema 3 and gain eight
+`codex-agent-states/<id>.state.json` for Codex) stay at schema 3 and gain nine
 optional fields. The first five are `worktreeRoot`, `currentTurnId`,
 `usageLimit`, and, while a run waits at its prompt, `waitKind` (`approval` or
 `question`) and `tool` (the tool it waits to use). A record without the last
@@ -632,6 +632,16 @@ later ends work the person stopped. The previous release carries the field
 through its unknown fields past the turn, but this release reads the path
 only for a run in a turn or one that waits, and the transcript is the same
 session's, so a carried path names the right file.
+
+The ninth, `backgroundWork`, counts what the agent left running when its last
+turn ended (`shells`, `subagents`, `others`), as Claude's `Stop` lists it.
+Codex records never have the field. It is read leniently: a shape this
+release cannot read costs the count, never the record. A record without it
+shows nothing running. The previous release carries the field through its
+unknown fields but never clears it, so a record it rewrites after a later
+prompt keeps a count the next turn no longer describes. After a stop the
+previous release wrote, this release can show that stale count until it
+writes the record again at its next write.
 
 ### Turn records
 

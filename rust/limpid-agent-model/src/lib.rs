@@ -10,6 +10,7 @@
 
 mod adapter;
 mod approval;
+mod background;
 mod cache;
 mod command;
 mod event;
@@ -35,6 +36,7 @@ pub use adapter::{
 pub use approval::{
     ApprovalDecision, ApprovalQuestion, ApprovalQuestionOption, ApprovalRequest, ProviderOutput,
 };
+pub use background::BackgroundWork;
 pub use cache::{CachePrecision, CacheWindow};
 pub use command::{
     Command, CommandOp, CommandOutcome, MAX_PANE_RECORDS, MAX_RETIRED_RECORDS, NotificationKind,

@@ -34,6 +34,26 @@ def text(value):
     return value if isinstance(value, str) else None
 
 
+def background_work(obj):
+    """Claude's `background_tasks` still running, counted by kind as the
+    adapter counts them: a task with no status counts, one in any status but
+    `running` does not, and a type other than `shell` or `subagent` is one of
+    the `others`. `None` when nothing counts."""
+    tasks = obj.get("background_tasks")
+    if not isinstance(tasks, list):
+        return None
+    counts = {}
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        status = string(task, "status")
+        if status is not None and status != "running":
+            continue
+        key = {"shell": "shells", "subagent": "subagents"}.get(string(task, "type"), "others")
+        counts[key] = counts.get(key, 0) + 1
+    return counts or None
+
+
 def transcript_titles(path):
     if not os.path.exists(path):
         return None
@@ -269,7 +289,11 @@ def claude_event(obj, transcript_path):
             return {"type": "waiting_for_input", "detail": question or "AskUserQuestion"}
         argument = tool_argument(tool_input, text)
         detail = f"{tool}: {argument}" if argument else tool
-        return {"type": "tool_started", "tool": tool, "detail": detail}
+        event = {"type": "tool_started", "tool": tool, "detail": detail}
+        # A subagent's tool call names the subagent; the agent's own does not.
+        if string(obj, "agent_id"):
+            event["by_subagent"] = True
+        return event
     if name == "Notification":
         if string(obj, "notification_type") == "permission_prompt":
             event = {"type": "approval_requested"}
@@ -294,6 +318,7 @@ def claude_event(obj, transcript_path):
         if obj.get("stop_hook_active") is True:
             event["continues_after_stop_hook"] = True
         optional(event, "reply", string(obj, "last_assistant_message") or None)
+        optional(event, "background_work", background_work(obj))
         return event
     if name == "StopFailure":
         return {"type": "failed", "error": string(obj, "error") or string(obj, "error_type") or "error"}

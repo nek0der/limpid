@@ -38,8 +38,9 @@ updates (when one is available), keyboard shortcuts, and **Settings**.
 - Every project sits under its own header, in the order you give them (drag
   a header, or ⌥⌘↑ ⌥⌘↓ while the sidebar has focus). Under a header are its
   worktrees, one per row, with the project's own folder after them and the folded lists below.
-- A row shows the state (running, waiting for approval, stopped, unread), the
-  name, the time, one fact such as "Unread · 4 files changed" or "PR #324 · Open", and
+- A row shows the state (running, waiting for approval, stopped, unread, or
+  working in the background after a turn: the finished or unread ring with a
+  dot circling it), the name, the time, one fact such as "Unread · 4 files changed" or "PR #324 · Open", and
   a badge for each agent.
 - A row you renamed starts its second line with the worktree's folder, as in
   "login-redesign · 3 Uncommitted", so it still says which worktree it is. A
@@ -80,6 +81,14 @@ actions the CLI does not have:
   **Show Partial Changes** and **Start New Conversation**)
 
 Approvals and questions are answered in the agent's own prompt, not here.
+
+When a Claude Code turn ends with shells, subagents, or other tasks still
+running in the background, the line adds how many, until a later turn ends
+with none left. Claude starts that turn itself when a task ends. The row,
+the tab, and the pane header show the circling dot meanwhile, and the agent
+still counts as finished for **Needs Attention** and notifications. A turn
+that fails or is interrupted says nothing about them. Codex does not report
+its background terminals, so its line never says this.
 
 ### Changes panel
 

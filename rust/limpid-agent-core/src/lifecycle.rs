@@ -9,13 +9,16 @@
 //! in open. A finished turn records the
 //! prompt cache window it left behind, and every event that starts or ends
 //! work clears it again, because that window no longer describes the cache.
-//! The function owns no file,
+//! A stop also records what it left running in the background, which stays
+//! through work outside the turn and goes with the next turn, failure,
+//! interrupt, or session start or end. The function owns no file,
 //! clock, or provider branch. Directory names and the git operations behind
 //! `SideWrite` and `TurnSnapshotOp` belong to the runtime.
 
 use limpid_agent_model::{
-    AgentEvent, Capability, MAX_RECORD_TEXT_BYTES, PromptKind, ProviderDescriptor, RunRecord,
-    RunState, SessionSource, Titles, TmuxEndpoint, WaitKind, classify_prompt, seconds_between,
+    AgentEvent, BackgroundWork, CacheWindow, Capability, MAX_RECORD_TEXT_BYTES, PromptKind,
+    ProviderDescriptor, RunRecord, RunState, SessionSource, Titles, TmuxEndpoint, WaitKind,
+    classify_prompt, seconds_between,
 };
 use serde::{Deserialize, Serialize};
 
@@ -170,6 +173,18 @@ pub fn apply(
         {
             return writes;
         }
+        // A background subagent's tool after the turn ended is work the
+        // stop already counted (`background_work`); the run stays at its
+        // rest rather than reading as a turn at work. Only the finished rest:
+        // a wait the subagent's permission prompt opened is ended by its next
+        // tool as any wait is.
+        AgentEvent::ToolStarted {
+            by_subagent: true, ..
+        } if prev
+            .is_some_and(|record| record.state == RunState::Finished && !is_in_a_turn(record)) =>
+        {
+            return writes;
+        }
         _ => {}
     }
 
@@ -260,6 +275,11 @@ fn session_transition(
             // begin a different prefix, so the previous window describes a
             // cache the next message will not read.
             next.cache_window = None;
+            // A compaction leaves the background tasks running, but the run
+            // rests idle or in a turn after any start, and the badge shows
+            // the count only while it rests finished; a later stop says
+            // again what is still running.
+            next.background_work = None;
             next.session_started_at = Some(now.to_owned());
             if *compact {
                 if let Some(title) = session_title {
@@ -285,6 +305,7 @@ fn session_transition(
             next.state = RunState::Unknown;
             next.run_started_at = None;
             next.cache_window = None;
+            next.background_work = None;
             // Only a provider that takes snapshots has one to remove; the
             // removal runs git, so it is not issued for the others.
             if descriptor.has(Capability::TurnSnapshot) {
@@ -330,6 +351,8 @@ fn turn_transition(
             // The request this prompt starts refreshes the cache, so the
             // window is warm by definition until the turn reports a new one.
             next.cache_window = None;
+            // The turn's own stop says again what is still running.
+            next.background_work = None;
             let prompt = text_field(prompt);
             // The first prompt names the tab, so it is the first one with
             // the person's words: a prompt the harness wrote (a background
@@ -355,7 +378,7 @@ fn turn_transition(
         // A tool outside a turn runs too: the run is shown working, and its
         // `runStartedAt` stays empty, which is what records that no turn
         // holds the work (`idle_outcome`).
-        AgentEvent::ToolStarted { tool, detail } => {
+        AgentEvent::ToolStarted { tool, detail, .. } => {
             next.state = RunState::Running;
             next.detail = detail.as_deref().and_then(text_field);
             next.tool = text_field(tool);
@@ -397,15 +420,12 @@ fn turn_transition(
             // Compaction replaces the prefix the window was measured on.
             next.cache_window = None;
         }
-        AgentEvent::TurnFinished { titles, cache, .. } => {
-            next.state = RunState::Finished;
-            next.run_started_at = None;
-            observe_titles(next, titles.as_ref());
-            // Stored as observed, including `None`: a turn whose window could
-            // not be read leaves the cache unknown rather than describing it
-            // with the previous turn's numbers.
-            next.cache_window.clone_from(cache);
-        }
+        AgentEvent::TurnFinished {
+            titles,
+            cache,
+            background_work,
+            ..
+        } => finish_turn(next, titles.as_ref(), cache.as_ref(), *background_work),
         AgentEvent::Failed { error, usage_limit } => {
             next.state = RunState::Error;
             next.run_started_at = None;
@@ -416,11 +436,15 @@ fn turn_transition(
             // A failed request may or may not have refreshed the cache; an
             // unknown window is shown as nothing rather than as a guess.
             next.cache_window = None;
+            // No stop listed what the failed turn left running, and a count
+            // an earlier stop left would describe a different turn.
+            next.background_work = None;
         }
         AgentEvent::Interrupted => {
             next.state = RunState::Finished;
             next.run_started_at = None;
             next.cache_window = None;
+            next.background_work = None;
         }
         // Reached only when it ends something (`apply`). Work outside a turn
         // is over and returns to the rest it left, in the episode it left
@@ -450,6 +474,25 @@ fn turn_transition(
         }
         _ => {}
     }
+}
+
+/// The record a stop leaves: the turn ended, with what the stop observed.
+fn finish_turn(
+    next: &mut RunRecord,
+    titles: Option<&Titles>,
+    cache: Option<&CacheWindow>,
+    background_work: Option<BackgroundWork>,
+) {
+    next.state = RunState::Finished;
+    next.run_started_at = None;
+    observe_titles(next, titles);
+    // Stored as observed, including `None`: a turn whose window could not be
+    // read leaves the cache unknown rather than describing it with the
+    // previous turn's numbers.
+    next.cache_window = cache.cloned();
+    // Each stop lists everything still running, so it replaces what an
+    // earlier stop listed, and a stop that lists nothing clears it.
+    next.background_work = background_work.filter(|work| !work.is_empty());
 }
 
 /// Whether a prompt opened a turn that has not ended. `runStartedAt` is the
@@ -559,6 +602,9 @@ pub fn end_stopped_turn(prev: &RunRecord, now: &str) -> Option<RunRecord> {
     next.transcript_path = None;
     next.cache_window = None;
     next.outside_turn_rest = None;
+    // As `Interrupted` does: no stop listed what the stopped turn left
+    // running. The turn's prompt already cleared it.
+    next.background_work = None;
     now.clone_into(&mut next.updated_at);
     next.last_hook_event = Some(last_hook_event.to_owned());
     Some(next)
@@ -744,6 +790,11 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
         // Kept while the work outside a turn lasts; `apply` drops it once the
         // run is in a turn or at rest.
         outside_turn_rest: prev.and_then(|record| record.outside_turn_rest),
+        // Unlike the cache window, which the idle prompt that ends work
+        // outside a turn clears, kept through that prompt: it returns the run
+        // to the rest the stop described. What the stop left running stays
+        // until the next prompt, failure, interrupt, or session start or end.
+        background_work: prev.and_then(|record| record.background_work),
         extra: prev.map(|record| record.extra.clone()).unwrap_or_default(),
     }
 }

@@ -153,6 +153,23 @@ as they are fixed or confirmed.
   worktree's index, Git stops on the `index.lock` left behind until it is
   removed.
 
+## Background work
+
+- **A task you stop from Claude Code's task list stays counted until your
+  next prompt.** The decision bar takes the count from the last stop, and a
+  task that ends on its own starts a turn of Claude's whose stop updates it.
+  For a task stopped from `/tasks`, Claude only queues its end for the next
+  prompt and starts no turn, so the bar and the circling dot on the row, the
+  tab, and the pane header keep saying it is running until then.
+- **A turn that fails or that you interrupt says nothing about what is
+  still running,** because no stop listed it.
+- **`/compact` after a turn hides the count and the circling dot,** although
+  the tasks keep running. The compaction restarts Claude's session, and
+  nothing says so again until a later turn ends.
+- **Codex's background terminals are not shown.** Codex keeps them running
+  after a turn, but its `Stop` does not list them and no hook reports their
+  end.
+
 ## Codex
 
 - **A failed Codex turn shows as failed up to ten seconds late.** Codex runs

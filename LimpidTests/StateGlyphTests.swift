@@ -20,8 +20,10 @@ struct StateGlyphTests {
         (.needsResponse, "Needs response"),
         (.stopped, "Stopped"),
         (.unread, "Unread"),
+        (.unreadWorkingAfterTurn, "Unread, working in the background"),
         (.running, "Running"),
         (.idle, "Idle"),
+        (.workingAfterTurn, "Working in the background"),
         (.unknown, "Unknown")
     ])
     func eachState_keepsItsName(kind: StateGlyph.Kind, name: String) {
@@ -34,6 +36,15 @@ struct StateGlyphTests {
     @Test func theRunningArc_turnsOnlyWithoutReduceMotion() {
         #expect(RunningArc.turn(isTurning: true) != nil)
         #expect(RunningArc.turn(isTurning: false) == nil)
+    }
+
+    /// The dot of work after a turn goes round, and under Reduce Motion it
+    /// rests at the ring's upper right.
+    @Test func theOrbitingDot_turnsOnlyWithoutReduceMotion() {
+        #expect(StateGlyphOrbit.turn(isTurning: true) != nil)
+        #expect(StateGlyphOrbit.turn(isTurning: false) == nil)
+        #expect(StateGlyphOrbit.restingAngle == .degrees(45))
+        #expect(StateGlyphOrbit.turnDuration == 2.4)
     }
 
     // MARK: - What the environment says
@@ -143,6 +154,67 @@ struct StateGlyphTests {
 
         let unknown = try Self.render(.unknown, isDark: isDark)
         #expect(Self.alpha(unknown, at: (8, 8)) < 0.05, "inside the unknown ring")
+    }
+
+    /// Work left running after a turn keeps the rest it rides on, the idle
+    /// ring or the unread ring and its dot, and adds a dot centered on the
+    /// ring's line. Drawn still, as under Reduce Motion, the dot sits at
+    /// `restingAngle`, and shows at the compact size a tab draws as well as
+    /// at a row's, with and without Increase Contrast.
+    @Test(arguments: [false, true], [LimpidLayout.Supervision.stateGlyphSize, LimpidLayout.Supervision.stateGlyphCompactSize])
+    func workAfterATurn_addsADotOnTheRing(isDark: Bool, size: CGFloat) throws {
+        for isContrastIncreased in [false, true] {
+            let geometry = Geometry(size: size, isContrastIncreased: isContrastIncreased)
+            let dot = geometry.orbitInk.value(isDark: isDark)
+            func dotCenter(on ring: Geometry.Ring) -> (Double, Double) {
+                let radius = Double(geometry.orbitRadius(on: ring) / geometry.unit)
+                let angle = StateGlyphOrbit.restingAngle.radians
+                return (8 + radius * sin(angle), 8 - radius * cos(angle))
+            }
+            let what = "at \(size)pt, contrast \(isContrastIncreased)"
+
+            let working = try Self.render(.workingAfterTurn, isDark: isDark, size: size, isContrastIncreased: isContrastIncreased)
+            Self.expect(working, at: dotCenter(on: .idle), is: dot, "the dot on the idle ring \(what)")
+            #expect(Self.alpha(working, at: (8, 8)) < 0.05, "inside the ring \(what)")
+
+            let ink = SRGB(0x2C6EE0)
+            let unread = try Self.render(
+                .unreadWorkingAfterTurn, isDark: isDark, size: size, isContrastIncreased: isContrastIncreased, unreadInk: ink
+            )
+            Self.expect(unread, at: dotCenter(on: .unread), is: dot, "the dot on the unread ring \(what)")
+            Self.expect(unread, at: (8, 8), is: ink, "the unread dot \(what)")
+        }
+    }
+
+    /// The dot sits on the middle of the ring's line, stands out of the
+    /// ring it rides on, follows the ring's width so Increase Contrast
+    /// enlarges it, and keeps a size a tab's 11pt mark still shows on the
+    /// idle hairline.
+    @Test func theOrbitingDot_isCenteredOnItsRing_andWiderThanIt() {
+        let compact = Geometry(size: LimpidLayout.Supervision.stateGlyphCompactSize, isContrastIncreased: false)
+        let increased = Geometry(size: LimpidLayout.Supervision.stateGlyphCompactSize, isContrastIncreased: true)
+        for ring in [Geometry.Ring.idle, .unread] {
+            #expect(compact.orbitRadius(on: ring) == (compact.size - compact.ringWidth(ring)) / 2)
+            #expect(compact.orbitDotDiameter(on: ring) >= 1.6 * compact.ringWidth(ring))
+            #expect(increased.orbitDotDiameter(on: ring) >= compact.orbitDotDiameter(on: ring))
+        }
+        #expect(compact.orbitDotDiameter(on: .idle) >= 2)
+    }
+
+    /// The dot's ink, the body text's, stands at least 2:1 from the ring it
+    /// rides on in both appearances, the faint idle ring and the `muted` one
+    /// Increase Contrast draws alike.
+    @Test(arguments: [false, true])
+    func theOrbitingDot_standsApartFromTheIdleRing(isDark: Bool) {
+        for isContrastIncreased in [false, true] {
+            let least = 2.0
+            let geometry = Geometry(size: 15, isContrastIncreased: isContrastIncreased)
+            let dot = geometry.orbitInk.value(isDark: isDark)
+            let ring = geometry.idleInk.value(isDark: isDark)
+            #expect(ContrastRatio.between(dot, ring) >= least, "contrast \(isContrastIncreased): \(dot.hexBytes) on \(ring.hexBytes)")
+        }
+        #expect(Geometry(size: 15, isContrastIncreased: false).orbitInk == Tokens.text)
+        #expect(Geometry(size: 15, isContrastIncreased: true).orbitInk == Tokens.text)
     }
 
     /// Unknown draws a dashed ring in `muted` at every size the glyph is

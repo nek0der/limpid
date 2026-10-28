@@ -8,7 +8,9 @@ import Foundation
 /// work (the project's folder or a worktree) and every pane in it, so the
 /// row shows the agent that most needs the person, in one order for the
 /// whole app: a question or an approval, then a stop, a running turn, an
-/// unread turn, and last the row at rest.
+/// unread turn, and last the row at rest. Work an agent left running when
+/// its turn ended is not a running turn: it marks the rest it sits on, or
+/// the unread turn of the run that left it (`Agent.isWorkingAfterTurn`).
 struct SessionRowFact: Equatable, Sendable {
     enum Glyph: Equatable, Sendable {
         case needsAnswer
@@ -19,8 +21,15 @@ struct SessionRowFact: Equatable, Sendable {
         case needsResponse
         case stopped
         case unread
+        /// An unread turn whose run still has work running after it
+        /// (`Agent.isWorkingAfterTurn`).
+        case unreadWorkingAfterTurn
         case running
         case idle
+        /// A row at rest whose agent still has work running after its turn
+        /// (`Agent.isWorkingAfterTurn`): nothing the person asked for is
+        /// under way, but something still runs.
+        case workingAfterTurn
         case unknown
         /// A row with no agent, only shells: it has no state to show.
         case shell
@@ -45,6 +54,10 @@ struct SessionRowFact: Equatable, Sendable {
         case uncommitted(files: Int)
         /// Commits the default branch does not have.
         case commits(Int)
+        /// What a resting agent left running when its turn ended, with no
+        /// Git fact to state: the line says what still runs rather than
+        /// "Idle" beside the mark of work.
+        case workingAfterTurn(BackgroundWork)
         case idle
         /// An agent not matched to its hook yet, with no Git fact to state:
         /// the line names the state the glyph shows, never "Idle" beside
@@ -73,7 +86,7 @@ struct SessionRowFact: Equatable, Sendable {
         case .unread(.unknown), .unread(.pending), .unread(.unavailable):
             true
         case .running(.some), .question(.some), .approval(.some), .stopped, .unread, .compacting,
-             .pullRequest, .uncommitted, .commits:
+             .pullRequest, .uncommitted, .commits, .workingAfterTurn:
             false
         }
     }
@@ -101,6 +114,41 @@ struct SessionRowFact: Equatable, Sendable {
         let state: AgentState
         /// What it reported last: the tool it runs, or its message.
         let detail: String?
+        /// What its run left running when its turn ended
+        /// (`AgentBadge.backgroundWork`); `nil` when nothing was.
+        let backgroundWork: BackgroundWork?
+        /// The run it is (`AgentRuntimePresentation.id`), so an unread turn
+        /// is marked with the work of its own run only; `nil` for an agent
+        /// known only by its pane's badge, which no item names.
+        let runtimeID: String?
+
+        init(
+            provider: AgentKind,
+            state: AgentState,
+            detail: String?,
+            backgroundWork: BackgroundWork? = nil,
+            runtimeID: String? = nil
+        ) {
+            self.provider = provider
+            self.state = state
+            self.detail = detail
+            self.backgroundWork = backgroundWork
+            self.runtimeID = runtimeID
+        }
+
+        /// Whether it runs a turn: running, or compacting.
+        var isRunningATurn: Bool {
+            state == .running || state == .compacting
+        }
+
+        /// Whether it rests finished with work still running that its turn
+        /// left (`backgroundWork`). Only a finished run counts: the rules
+        /// pass the count to the badge only then, and a run back at work is
+        /// a turn, which its own mark shows. Work outside a turn (a stop
+        /// hook's continuation) runs as a turn does, so it is not this.
+        var isWorkingAfterTurn: Bool {
+            state == .finished && !(backgroundWork?.isEmpty ?? true)
+        }
     }
 
     /// A pull request on the row's branch.
@@ -126,9 +174,15 @@ struct SessionRowFact: Equatable, Sendable {
     }
 
     /// The agent a row with no attention item speaks for: the first one
-    /// running a turn, else the first. `nil` for a row with none.
-    static func leadAgentIndex(of states: [AgentState]) -> Int? {
-        states.firstIndex { $0 == .running || $0 == .compacting } ?? (states.isEmpty ? nil : 0)
+    /// running a turn, else the first one resting with work its turn left
+    /// running (`Agent.isWorkingAfterTurn`), else the first. `nil` for a row
+    /// with none. That work ranks below a turn, which is what the person
+    /// asked for, and above a plain rest, so the row's mark of it and the
+    /// line beside it are the same agent's.
+    static func leadAgentIndex(of agents: [Agent]) -> Int? {
+        agents.firstIndex(where: \.isRunningATurn)
+            ?? agents.firstIndex(where: \.isWorkingAfterTurn)
+            ?? (agents.isEmpty ? nil : 0)
     }
 
     static func make(_ input: Input) -> Self {
@@ -150,18 +204,26 @@ struct SessionRowFact: Equatable, Sendable {
         if let item = PanePriority.dominant(input.items.filter { !isUnread($0) }) {
             return fact(for: item, requestText: input.requestText)
         }
-        if let index = leadAgentIndex(of: input.agents.map(\.state)),
-           input.agents[index].state == .running || input.agents[index].state == .compacting
-        {
-            let agent = input.agents[index]
+        let lead = leadAgentIndex(of: input.agents).map { input.agents[$0] }
+        if let agent = lead, agent.isRunningATurn {
             return Self(
                 glyph: .running,
-                fact: agent.state == .compacting ? .compacting : .running(agent.detail.flatMap { $0.isEmpty ? nil : $0 }),
+                fact: agent.state == .compacting ? .compacting : .running(nonEmpty(agent.detail)),
                 badge: .agent(agent.provider)
             )
         }
+        // No turn runs, so the lead is the first agent with work left
+        // running, if any.
+        let workingAfterTurn = lead.flatMap { $0.isWorkingAfterTurn ? $0 : nil }
         if let item = PanePriority.dominant(input.items.filter(isUnread)) {
-            return fact(for: item, requestText: input.requestText)
+            let row = fact(for: item, requestText: input.requestText)
+            // Only the work of the run whose turn is unread: another run's
+            // work beside it would read as this turn's.
+            let isItsRunWorking = input.agents.contains { agent in
+                agent.isWorkingAfterTurn && agent.runtimeID != nil && agent.runtimeID == item.subject.runtimeID
+            }
+            guard isItsRunWorking else { return row }
+            return Self(glyph: .unreadWorkingAfterTurn, fact: row.fact, badge: row.badge)
         }
         // At rest, the second line states a Git fact when there is one,
         // whatever runs in the row: the pull request, else what is
@@ -185,7 +247,16 @@ struct SessionRowFact: Equatable, Sendable {
         if input.agents.allSatisfy({ $0.state == .unknown }) {
             return Self(glyph: .unknown, fact: repositoryFact ?? .unknown, badge: .agent(first.provider))
         }
+        // A Git fact still goes first, as at any rest; without one, the
+        // line says what still runs, never "Idle" beside the mark of work.
+        if let agent = workingAfterTurn, let work = agent.backgroundWork {
+            return Self(glyph: .workingAfterTurn, fact: repositoryFact ?? .workingAfterTurn(work), badge: .agent(agent.provider))
+        }
         return Self(glyph: .idle, fact: repositoryFact ?? .idle, badge: .agent(first.provider))
+    }
+
+    private static func nonEmpty(_ text: String?) -> String? {
+        text.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     private static func fact(for item: AttentionItem, requestText: [ApprovalKey: String]) -> Self {
