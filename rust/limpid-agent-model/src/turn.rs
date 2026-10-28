@@ -240,9 +240,9 @@ impl From<&CheckResult> for CheckMark {
 }
 
 /// The tokens a turn's requests used, as the provider's transcript recorded
-/// them: its subagents' included where the transcript names their own
-/// (Claude's), left out where it does not (Codex's). Counted, never priced: most people
-/// run the agents on a plan, where a price per token is not what they pay.
+/// them, its subagents' included: Claude's transcript names theirs, and
+/// Codex's names their threads. Counted, never priced: most people run the
+/// agents on a plan, where a price per token is not what they pay.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnUsage {

@@ -361,13 +361,13 @@ impl turn::TurnTranscript for CallTranscript<'_> {
 
     /// A turn whose last response is not yet in the transcript is read
     /// again as the provider writes it (`awaited`), and the rest is read as
-    /// `end_reading` reads it. The payload is read for the transcript's path
-    /// only then.
+    /// `end_reading` reads it, which finds the subagents' transcripts from
+    /// where the turn's lies. The payload is read for the transcript's path
+    /// only for those.
     fn read_end(&self, marker: Option<&str>) -> turn::EndReading {
         let adapter = self.call.adapter;
         let reading = adapter.turn_reading(self.call.input, marker);
-        let path = reading
-            .is_awaiting_response
+        let path = (reading.is_awaiting_response || !reading.subagents.is_empty())
             .then(|| {
                 adapter
                     .transcript_path(RawHookInput {
@@ -378,8 +378,8 @@ impl turn::TurnTranscript for CallTranscript<'_> {
                     .flatten()
             })
             .flatten();
-        let reading = match path {
-            Some(path) => awaited(reading, Path::new(&path), |transcript| {
+        let reading = match path.as_deref().filter(|_| reading.is_awaiting_response) {
+            Some(path) => awaited(reading, Path::new(path), |transcript| {
                 adapter.turn_reading(
                     RawHookInput {
                         bytes: self.call.input.bytes,
@@ -390,7 +390,12 @@ impl turn::TurnTranscript for CallTranscript<'_> {
             }),
             None => reading,
         };
-        end_reading(adapter, reading, &self.directories.state)
+        end_reading(
+            adapter,
+            reading,
+            path.as_deref().map(Path::new),
+            &self.directories.state,
+        )
     }
 }
 
@@ -418,18 +423,12 @@ impl turn::TurnTranscript for TranscriptFile<'_> {
     /// for them as a `Stop` waits for its last response. A file that cannot
     /// be read says nothing, which keeps what the turn had.
     fn read_end(&self, marker: Option<&str>) -> turn::EndReading {
-        let Some(path) = self.path.to_str() else {
-            return turn::EndReading::default();
-        };
         let Some(transcript) = records::read_bounded_tail(self.path, MAX_TRANSCRIPT_BYTES) else {
             return turn::EndReading::default();
         };
-        let read = |transcript: &[u8]| {
-            self.adapter
-                .transcript_turn_reading(transcript, path, marker)
-        };
+        let read = |transcript: &[u8]| self.adapter.transcript_turn_reading(transcript, marker);
         let reading = awaited(read(&transcript), self.path, read);
-        end_reading(self.adapter, reading, self.state)
+        end_reading(self.adapter, reading, Some(self.path), self.state)
     }
 }
 
@@ -452,26 +451,21 @@ fn awaited(
     reading
 }
 
-/// What a turn's end records of `reading`. The subagents' transcripts share
-/// one budget of bytes (`MAX_SUBAGENT_BYTES`), so a turn that fanned out
-/// widely does not hold the end up; one read short of its whole, or not at
-/// all, leaves the usage partial. The project's check patterns are read
-/// once per directory the commands ran in, from the data folder that holds
-/// the provider's state directory `state`.
+/// What a turn's end records of `reading`, read from the transcript at
+/// `transcript`: its usage with its subagents' added (`with_subagents`).
+/// The project's check patterns are read once per directory the commands
+/// ran in, from the data folder that holds the provider's state directory
+/// `state`.
 fn end_reading(
     adapter: &dyn ProviderAdapter,
     reading: TurnReading,
+    transcript: Option<&Path>,
     state: &Path,
 ) -> turn::EndReading {
-    let usage = reading.usage.map(|usage| {
-        let mut budget = MAX_SUBAGENT_BYTES;
-        reading
-            .subagent_transcripts
-            .iter()
-            .fold(usage, |total, path| {
-                total.plus(subagent_usage(adapter, path, &mut budget))
-            })
-    });
+    let marker = reading.marker.as_deref();
+    let usage = reading
+        .usage
+        .map(|usage| with_subagents(adapter, usage, &reading.subagents, transcript, marker));
     let checks = reading.commands.map(|runs| {
         let mut patterns: HashMap<PathBuf, Vec<String>> = HashMap::new();
         runs.iter()
@@ -503,10 +497,53 @@ const AWAIT_RESPONSE_STEP: std::time::Duration = std::time::Duration::from_milli
 /// them together.
 const MAX_SUBAGENT_BYTES: usize = 4 * MAX_TRANSCRIPT_BYTES;
 
-/// What one subagent's transcript at `path` used, read within what is left
-/// of `budget`; partial when the file is longer than that, or cannot be
-/// read.
-fn subagent_usage(adapter: &dyn ProviderAdapter, path: &Path, budget: &mut usize) -> TurnUsage {
+/// `usage` with what the turn's `subagents` used for it added, their
+/// transcripts found from where the turn's own `transcript` lies
+/// (`ProviderAdapter::subagent_transcripts`). They share one budget of bytes
+/// (`MAX_SUBAGENT_BYTES`), so a turn that fanned out widely does not hold
+/// the end up. A subagent whose transcript is not found, or is read short
+/// of its whole or not at all, leaves the usage partial.
+fn with_subagents(
+    adapter: &dyn ProviderAdapter,
+    usage: TurnUsage,
+    subagents: &[String],
+    transcript: Option<&Path>,
+    marker: Option<&str>,
+) -> TurnUsage {
+    let transcripts = match transcript {
+        Some(path) if !subagents.is_empty() => {
+            adapter.subagent_transcripts(path, subagents, &list_directory)
+        }
+        _ => Vec::new(),
+    };
+    let mut budget = MAX_SUBAGENT_BYTES;
+    let total = transcripts.iter().fold(usage, |total, path| {
+        total.plus(subagent_usage(adapter, path, marker, &mut budget))
+    });
+    TurnUsage {
+        is_partial: total.is_partial || transcripts.len() < subagents.len(),
+        ..total
+    }
+}
+
+/// The entries of `directory`, for an adapter that finds a subagent's
+/// transcript by its name (`ProviderAdapter::subagent_transcripts`); none
+/// when the directory cannot be read.
+fn list_directory(directory: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(directory)
+        .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
+        .unwrap_or_default()
+}
+
+/// What one subagent's transcript at `path` used for the turn `marker`
+/// names, read within what is left of `budget`; partial when it cannot be
+/// read, or when the adapter finds the part read short of the turn's work.
+fn subagent_usage(
+    adapter: &dyn ProviderAdapter,
+    path: &Path,
+    marker: Option<&str>,
+    budget: &mut usize,
+) -> TurnUsage {
     let unread = TurnUsage {
         is_partial: true,
         ..TurnUsage::default()
@@ -522,9 +559,10 @@ fn subagent_usage(adapter: &dyn ProviderAdapter, path: &Path, budget: &mut usize
         return unread;
     };
     *budget -= bytes.len();
-    let mut usage = adapter.subagent_usage(&bytes).unwrap_or_default();
-    usage.is_partial |= usize::try_from(metadata.len()).map_or(true, |length| length > limit);
-    usage
+    let is_whole = usize::try_from(metadata.len()).is_ok_and(|length| length <= limit);
+    adapter
+        .subagent_usage(&bytes, is_whole, marker)
+        .unwrap_or_default()
 }
 
 /// The titles a provider keeps apart from its transcript give this call's
@@ -1046,7 +1084,8 @@ mod stamp_tests {
 
 #[cfg(test)]
 mod subagent_tests {
-    use super::{MAX_TRANSCRIPT_BYTES, subagent_usage};
+    use super::{MAX_TRANSCRIPT_BYTES, subagent_usage, with_subagents};
+    use limpid_agent_model::TurnUsage;
     use limpid_provider_claude::ClaudeAdapter;
 
     /// The subagents share one budget: a file read once the budget is spent
@@ -1064,7 +1103,7 @@ mod subagent_tests {
         .expect("subagent");
 
         let mut budget = MAX_TRANSCRIPT_BYTES;
-        let read = subagent_usage(&ClaudeAdapter, &path, &mut budget);
+        let read = subagent_usage(&ClaudeAdapter, &path, None, &mut budget);
         assert_eq!(
             (read.input_tokens, read.output_tokens, read.is_partial),
             (1, 2, false)
@@ -1075,14 +1114,36 @@ mod subagent_tests {
         );
 
         let mut spent = 0;
-        let unread = subagent_usage(&ClaudeAdapter, &path, &mut spent);
+        let unread = subagent_usage(&ClaudeAdapter, &path, None, &mut spent);
         assert_eq!((unread.input_tokens, unread.is_partial), (0, true));
 
         let mut short = 10;
         assert!(
-            subagent_usage(&ClaudeAdapter, &path, &mut short).is_partial,
+            subagent_usage(&ClaudeAdapter, &path, None, &mut short).is_partial,
             "read short of its whole"
         );
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A subagent whose transcript cannot be found, here for want of the
+    /// turn's own path, leaves the usage short rather than unread.
+    #[test]
+    fn a_subagent_without_its_transcript_leaves_the_usage_partial() {
+        let usage = TurnUsage {
+            input_tokens: 1,
+            ..TurnUsage::default()
+        };
+        let read = with_subagents(&ClaudeAdapter, usage, &["abc".to_owned()], None, None);
+        assert_eq!(
+            read,
+            TurnUsage {
+                is_partial: true,
+                ..usage
+            }
+        );
+        assert_eq!(
+            with_subagents(&ClaudeAdapter, usage, &[], None, None),
+            usage
+        );
     }
 }

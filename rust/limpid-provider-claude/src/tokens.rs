@@ -17,11 +17,11 @@
 //! A subagent's requests are in its own file,
 //! `<session>/subagents/agent-<agentId>.jsonl`. The tool result that hands
 //! its answer back names it (`toolUseResult.agentId`); the usage beside that
-//! id is the subagent's last request only, so the runtime reads the file and
-//! adds it through `subagent_transcript_usage`. A subagent sent to the
-//! background (`toolUseResult.status` of `async_launched`) is still at work
-//! when the turn ends, so its file is not yet whole and the reading is
-//! partial.
+//! id is the subagent's last request only, so the reading names the id, and
+//! the runtime finds the file (`subagent_transcripts`) and adds it through
+//! `subagent_transcript_usage`. A subagent sent to the background
+//! (`toolUseResult.status` of `async_launched`) is still at work when the
+//! turn ends, so its file is not yet whole and the reading is partial.
 
 use crate::awaited::INTERRUPT_PREFIX;
 use crate::transcript::{contains, is_sidechain, parse, request_usage, string, user_text};
@@ -35,8 +35,8 @@ use std::path::{Path, PathBuf};
 const MAX_SUBAGENTS: usize = 32;
 
 /// What the turn `prompt_id` names used, from `transcript`, the tail of the
-/// file at `transcript_path`. Empty when the tail holds no request of the
-/// turn and it ran no subagent.
+/// session's file. Empty when the tail holds no request of the turn and it
+/// ran no subagent.
 ///
 /// Without a `prompt_id` (a Claude Code that does not report one), the turn
 /// is taken to begin at the last prompt: the last main user line that is not
@@ -45,11 +45,7 @@ const MAX_SUBAGENTS: usize = 32;
 /// is then read from the last prompt too, or from the tail's start when it
 /// holds none, and the reading is partial either way. Reading the whole tail
 /// would count earlier turns.
-pub(crate) fn transcript_turn_reading(
-    transcript: &[u8],
-    prompt_id: Option<&str>,
-    transcript_path: Option<&str>,
-) -> TurnReading {
+pub(crate) fn transcript_turn_reading(transcript: &[u8], prompt_id: Option<&str>) -> TurnReading {
     let lines: Vec<&[u8]> = transcript.split(|byte| *byte == b'\n').collect();
     let tagged = prompt_id.map(|prompt_id| prompt_start(&lines, prompt_id));
     let (start, mut is_partial) = match tagged {
@@ -132,23 +128,12 @@ pub(crate) fn transcript_turn_reading(
         agents.truncate(MAX_SUBAGENTS);
         is_partial = true;
     }
-    let directory = transcript_path.and_then(subagent_directory);
-    if directory.is_none() && !agents.is_empty() {
-        is_partial = true;
-    }
     let mut usage = requests.total();
     usage.is_partial = is_partial;
     TurnReading {
         marker,
         usage: Some(usage),
-        subagent_transcripts: directory
-            .map(|directory| {
-                agents
-                    .iter()
-                    .map(|agent| directory.join(format!("agent-{agent}.jsonl")))
-                    .collect()
-            })
-            .unwrap_or_default(),
+        subagents: agents,
         commands: None,
         are_commands_partial: false,
         is_awaiting_response,
@@ -251,12 +236,19 @@ impl Requests {
     }
 }
 
-/// The folder Claude Code keeps a session's subagent transcripts in, beside
-/// the session's own file.
-fn subagent_directory(transcript_path: &str) -> Option<PathBuf> {
-    let path = Path::new(transcript_path);
-    let stem = path.file_stem()?;
-    Some(path.parent()?.join(stem).join("subagents"))
+/// The transcripts of the `agents` a turn ran, in the folder Claude Code
+/// keeps a session's subagent transcripts in, beside the session's own
+/// `transcript`: `<session>/subagents/agent-<agentId>.jsonl`. Each id was
+/// checked to name a file in that folder as it was read (`is_agent_id`).
+pub(crate) fn subagent_transcripts(transcript: &Path, agents: &[String]) -> Vec<PathBuf> {
+    let (Some(parent), Some(stem)) = (transcript.parent(), transcript.file_stem()) else {
+        return Vec::new();
+    };
+    let folder = parent.join(stem).join("subagents");
+    agents
+        .iter()
+        .map(|agent| folder.join(format!("agent-{agent}.jsonl")))
+        .collect()
 }
 
 /// Whether `agent` can name a file in the subagents folder. Claude Code's
@@ -333,9 +325,9 @@ mod tests {
             reply("req_2", 2, 284, 26_404, 72),
             r#"{"type":"system","subtype":"stop_hook_summary"}"#.to_owned(),
         ]);
-        let reading = transcript_turn_reading(&bytes, Some("p2"), None);
+        let reading = transcript_turn_reading(&bytes, Some("p2"));
         assert_eq!(reading.usage, Some(usage(4, 15_130, 37_962, 326)));
-        assert!(reading.subagent_transcripts.is_empty());
+        assert!(reading.subagents.is_empty());
         assert_eq!(reading.marker.as_deref(), Some("p2"));
     }
 
@@ -349,7 +341,7 @@ mod tests {
             tool_result("p2", ""),
             reply("req_2", 1, 2, 3, 4),
         ]);
-        let reading = transcript_turn_reading(&bytes, None, None);
+        let reading = transcript_turn_reading(&bytes, None);
         assert_eq!(reading.usage, Some(usage(2, 4, 6, 8)));
         assert_eq!(
             reading.marker.as_deref(),
@@ -364,7 +356,7 @@ mod tests {
             r#"t":"cut in half"}"#.to_owned(),
             reply("req_1", 1, 2, 3, 4),
         ]);
-        let reading = transcript_turn_reading(&bytes, Some("p9"), None);
+        let reading = transcript_turn_reading(&bytes, Some("p9"));
         assert_eq!(
             reading.usage,
             Some(TurnUsage {
@@ -382,7 +374,7 @@ mod tests {
             prompt("p2", "tagged otherwise"),
             reply("req_1", 1, 2, 3, 4),
         ]);
-        let reading = transcript_turn_reading(&bytes, Some("p9"), None);
+        let reading = transcript_turn_reading(&bytes, Some("p9"));
         assert_eq!(
             reading.usage,
             Some(TurnUsage {
@@ -399,7 +391,7 @@ mod tests {
             reply("req_1", 1, 2, 3, 4),
             tool_result("p1", ""),
         ]);
-        let reading = transcript_turn_reading(&bytes, Some("p1"), None);
+        let reading = transcript_turn_reading(&bytes, Some("p1"));
         assert!(reading.usage.expect("usage").is_partial);
     }
 
@@ -410,7 +402,7 @@ mod tests {
             r#"{"type":"assistant","isSidechain":true,"requestId":"s","message":{"usage":{"output_tokens":50}}}"#.to_owned(),
         ]);
         assert_eq!(
-            transcript_turn_reading(&bytes, Some("p1"), None),
+            transcript_turn_reading(&bytes, Some("p1")),
             TurnReading {
                 marker: Some("p1".into()),
                 ..TurnReading::default()
@@ -421,7 +413,7 @@ mod tests {
     #[test]
     fn a_prompt_with_no_response_yet_awaits_its_only_one() {
         let bytes = transcript(&[prompt("p1", "what is 2 + 2?")]);
-        let reading = transcript_turn_reading(&bytes, Some("p1"), None);
+        let reading = transcript_turn_reading(&bytes, Some("p1"));
         assert_eq!(reading.usage, None);
         assert!(reading.is_awaiting_response);
     }
@@ -434,7 +426,7 @@ mod tests {
             tool_result("p1", ""),
             r#"{"type":"user","isSidechain":false,"message":{"content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#.to_owned(),
         ]);
-        let reading = transcript_turn_reading(&bytes, Some("p1"), None);
+        let reading = transcript_turn_reading(&bytes, Some("p1"));
         assert!(!reading.is_awaiting_response);
         assert_eq!(
             reading.usage,
@@ -446,7 +438,7 @@ mod tests {
             reply("req_1", 1, 2, 3, 4),
             r#"{"type":"user","isSidechain":false,"message":{"content":"[Request interrupted by user]"}}"#.to_owned(),
         ]);
-        let reading = transcript_turn_reading(&interrupted, None, None);
+        let reading = transcript_turn_reading(&interrupted, None);
         assert_eq!(
             reading.marker.as_deref(),
             Some("p1"),
@@ -464,7 +456,7 @@ mod tests {
             prompt("p2", "and then"),
             reply("req_2", 9, 9, 9, 9),
         ]);
-        let reading = transcript_turn_reading(&bytes, Some("p1"), None);
+        let reading = transcript_turn_reading(&bytes, Some("p1"));
         assert_eq!(reading.usage, Some(usage(1, 2, 3, 4)));
         assert!(!reading.is_awaiting_response);
     }
@@ -481,18 +473,18 @@ mod tests {
             tool_result("p1", r#","toolUseResult":{"agentId":"../../etc"}"#),
             reply("req_2", 1, 2, 3, 4),
         ]);
-        let reading = transcript_turn_reading(
-            &bytes,
-            Some("p1"),
-            Some("/home/me/.claude/projects/-repo/7526eefe.jsonl"),
-        );
+        let reading = transcript_turn_reading(&bytes, Some("p1"));
+        assert_eq!(reading.subagents, vec!["a00264d9d662df6cd".to_owned()]);
+        assert!(!reading.usage.expect("usage").is_partial);
         assert_eq!(
-            reading.subagent_transcripts,
+            subagent_transcripts(
+                Path::new("/home/me/.claude/projects/-repo/7526eefe.jsonl"),
+                &reading.subagents
+            ),
             vec![PathBuf::from(
                 "/home/me/.claude/projects/-repo/7526eefe/subagents/agent-a00264d9d662df6cd.jsonl"
             )]
         );
-        assert!(!reading.usage.expect("usage").is_partial);
     }
 
     #[test]
@@ -505,12 +497,9 @@ mod tests {
             ),
             reply("req_1", 1, 2, 3, 4),
         ]);
-        let reading = transcript_turn_reading(&bytes, Some("p1"), Some("/p/s.jsonl"));
+        let reading = transcript_turn_reading(&bytes, Some("p1"));
         assert!(reading.usage.expect("usage").is_partial);
-        assert_eq!(
-            reading.subagent_transcripts,
-            vec![PathBuf::from("/p/s/subagents/agent-abc.jsonl")]
-        );
+        assert_eq!(reading.subagents, vec!["abc".to_owned()]);
     }
 
     #[test]
@@ -523,21 +512,9 @@ mod tests {
             ));
         }
         lines.push(reply("req_2", 1, 2, 3, 4));
-        let reading = transcript_turn_reading(&transcript(&lines), Some("p1"), Some("/p/s.jsonl"));
-        assert_eq!(reading.subagent_transcripts.len(), MAX_SUBAGENTS);
+        let reading = transcript_turn_reading(&transcript(&lines), Some("p1"));
+        assert_eq!(reading.subagents.len(), MAX_SUBAGENTS);
         assert!(reading.usage.expect("usage").is_partial);
-    }
-
-    #[test]
-    fn a_subagent_without_a_transcript_path_leaves_the_reading_partial() {
-        let bytes = transcript(&[
-            prompt("p1", "explore"),
-            tool_result("p1", r#","toolUseResult":{"agentId":"abc"}"#),
-            reply("req_1", 1, 2, 3, 4),
-        ]);
-        let reading = transcript_turn_reading(&bytes, Some("p1"), None);
-        assert!(reading.usage.expect("usage").is_partial);
-        assert!(reading.subagent_transcripts.is_empty());
     }
 
     #[test]

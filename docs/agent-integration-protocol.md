@@ -454,6 +454,13 @@ The files live in the provider's state directory, under `turns/`:
   `token_usage_record` in its rollout, read at the turn's `Stop` or
   `Interrupt`, whose `input_tokens` counts the cached and cache-written
   input, which Limpid takes out of `inputTokens`.
+  Its subagents keep rollouts of their own: the turn's `SubAgentActivity`
+  items name each one's thread, Limpid finds the rollout by that name
+  (`rollout-…-<thread>.jsonl`) in the day folders under Codex's
+  `sessions`, newest first, and adds each of its requests whose record
+  names the turn as `root_turn_id`. A subagent whose rollout is not found,
+  that is still at work, or whose work for the turn began before the part
+  of its rollout read, leaves the reading partial.
   Codex's checks are the rollout's `CommandExecution` items of the turn, a
   command the person declined left out, classified by the project's check
   patterns as Claude's are. When the rollout's last 4 MiB no longer holds

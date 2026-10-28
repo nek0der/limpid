@@ -223,6 +223,21 @@ Cases that could not be recorded as planned:
   ids `resp_0001` and `resp_0002`. Codex had written the first turn's usage
   before its `Interrupt` ran, and never wrote any for the second. The hook
   runtime's replay test reads both.
+- `codex/2026-10/subagent` records Codex CLI 0.165.0 asked to start one
+  subagent (`spawn_agent`) that ran `ls`, wait for it, and report. The
+  subagent's own tool calls carry its `agent_id` and its own rollout as
+  `transcript_path`. The scrubber left its `agent_id` as recorded and gave
+  its `turn_id` and its rollout's name the parent's placeholders, so they
+  were replaced by hand: the thread with `…0021`, the turn with `…0023`,
+  and the end of the rollout's name with `…0021`.
+  `transcripts/codex-0.165.0-subagent-parent.jsonl` and
+  `codex-0.165.0-subagent-child.jsonl` are the two rollouts reduced by
+  hand to the lines the turn reading uses: each turn's `task_started` and
+  `task_complete`, the usage records, and the parent's two
+  `SubAgentActivity` items. The ids became the fixture placeholders, the
+  response ids `resp_0001` to `resp_0005`, the subagent's call id
+  `call_0001`, and its last message a placeholder. The hook runtime's
+  replay test lays both out under a sessions folder and reads them.
 
 ## Scrubbing
 

@@ -1357,6 +1357,82 @@ fn an_interrupted_codex_turn_reads_what_it_used_from_the_rollout() {
     assert_eq!(turns[1].usage, None);
 }
 
+/// Codex records a subagent's work in a rollout of its own and names only
+/// its thread in the parent's (`fixtures/codex/2026-10/subagent`, with
+/// both rollouts reduced in `fixtures/transcripts/codex-0.165.0-subagent-
+/// *.jsonl`). The parent's `Stop` finds the subagent's rollout under the
+/// sessions folder by its thread and adds what it used for this turn.
+#[test]
+fn a_codex_turn_counts_its_subagents_from_their_own_rollouts() {
+    // Replays the case with the subagent's rollout in place or gone, and
+    // returns what the turn used.
+    let replay_with_child = |has_child: bool| {
+        let scratch = Scratch::new("codex-subagent");
+        let day = scratch.root.join("codex-home/sessions/2026/10/28");
+        fs::create_dir_all(&day).expect("day");
+        let parent =
+            day.join("rollout-2026-10-28T14-55-55-00000000-0000-4000-8000-000000000001.jsonl");
+        let child =
+            day.join("rollout-2026-10-28T14-56-11-00000000-0000-4000-8000-000000000021.jsonl");
+        fs::write(
+            &parent,
+            include_bytes!("../../fixtures/transcripts/codex-0.165.0-subagent-parent.jsonl"),
+        )
+        .expect("parent");
+        if has_child {
+            fs::write(
+                &child,
+                include_bytes!("../../fixtures/transcripts/codex-0.165.0-subagent-child.jsonl"),
+            )
+            .expect("child");
+        }
+        for payload in dated_fixture_case("codex", "2026-10", "subagent") {
+            let mut payload: Value = serde_json::from_slice(&payload).expect("payload");
+            // The subagent's own tool calls name its rollout, the rest the
+            // parent's.
+            let rollout = if payload.get("agent_id").is_some() {
+                &child
+            } else {
+                &parent
+            };
+            payload["transcript_path"] = Value::from(rollout.display().to_string());
+            let payload = serde_json::to_vec(&payload).expect("payload");
+            assert_eq!(
+                scratch.call_as("codex", RUN, Some(&new_call()), &payload),
+                HookOutcome::Applied
+            );
+        }
+        let turns = scratch.turns();
+        assert_eq!(turns.len(), 1);
+        turns[0].usage.expect("usage")
+    };
+
+    // The parent's three requests, then the subagent's two.
+    let parent = TurnUsage {
+        input_tokens: 76_369 - 57_472,
+        cache_write_tokens: 0,
+        cache_read_tokens: 57_472,
+        output_tokens: 429,
+        is_partial: false,
+    };
+    let child = TurnUsage {
+        input_tokens: 24_878 + (24_972 - 24_704),
+        cache_write_tokens: 0,
+        cache_read_tokens: 24_704,
+        output_tokens: 68 + 18,
+        is_partial: false,
+    };
+    assert_eq!(replay_with_child(true), parent.plus(child));
+    // A subagent whose rollout is not found leaves the count short.
+    assert_eq!(
+        replay_with_child(false),
+        TurnUsage {
+            is_partial: true,
+            ..parent
+        }
+    );
+}
+
 #[test]
 fn a_codex_turn_reads_its_usage_and_checks_from_the_rollout_at_its_stop() {
     let scratch = Scratch::new("turn-usage-codex");

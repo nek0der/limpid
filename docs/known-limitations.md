@@ -95,14 +95,20 @@ as they are fixed or confirmed.
   until your next prompt in that pane, or until Claude's idle notification
   if one comes a minute later, and a turn your next prompt ends shows no
   tokens.
-- **Codex turns count no subagent tokens.** Codex keeps a subagent's work in
-  a transcript of its own, which Limpid does not read. Codex's checks are
-  read from its transcript when the turn ends, so they appear then rather
-  than as each one finishes. A Codex turn interrupted before its first
-  response arrives shows no tokens, since Codex records none for it. A
-  very long Codex turn may count fewer test runs than it ran: its card says
-  so with "…" and its tooltip with "at least", while the decision bar's
-  count of failures is the one Limpid read.
+- **A Codex turn is read when it ends.** Its checks are read from its
+  rollout at that moment, so they appear together rather than as each one
+  finishes. A Codex turn interrupted before its first response arrives
+  shows no tokens, since Codex records none for it. A very long Codex turn
+  may count fewer test runs than it ran: its card says so with "…" and its
+  tooltip with "at least", while the decision bar's count of failures is
+  the one Limpid read.
+- **A Codex turn can leave some subagents' tokens out.** Codex keeps each
+  subagent's work in a rollout of its own, which Limpid finds by the
+  thread the turn's rollout names it by. A subagent's own subagents are
+  named only in its rollout, which Limpid does not search, so their tokens
+  are not counted. Nor are those of a subagent that only the start of a
+  very long turn named, when Limpid reads only the end of that turn's
+  rollout.
 - **A Claude subagent named again in a later turn is counted again**:
   Limpid reads the subagent's whole transcript at each turn that names it.
 - **A turn record written by an older Limpid and a newer one in turn** can

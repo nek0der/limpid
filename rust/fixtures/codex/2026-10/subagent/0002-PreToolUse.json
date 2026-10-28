@@ -1,0 +1,17 @@
+{
+  "cwd": "/tmp/example",
+  "hook_event_name": "PreToolUse",
+  "model": "gpt-6.1-sol",
+  "permission_mode": "bypassPermissions",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "tool_input": {
+    "agent_type": "lookup",
+    "fork_turns": "none",
+    "message": "gAAAAABq4Y57aXefGaNC1-VYRdclNaBh-5F9ECt6Tz-uZMfuklEPn3KPHjAjhoheO_6VAOFYtrIotGNSoBZYrzTwDtzjZAnc99N0hDUYrGaYRe0bSAll6_Rrn9EU_P_DTK5WDGpfq2IxOh7qKchQCe7WETvNOcCFIDmEX_irgjoEA2K5MrV8NT5T4H5W09GTh_WtL2_sKE2j2Zrubv-gZBRnZXChXBHZQTrJUFRDGKzYeC4QarK1EMUmpNGWVhLA_pJ4GLqX64s-oue0lbXJ08qgjkIzSOmu29K2rkbe8nRLgwVdAz2ZmCB6r93qhaiB84sO-RnEAHVWWR8fdfrlS15YwwSoWDHJuvl6ZCzM8_SpJplOqeqnlLs=",
+    "task_name": "list_files"
+  },
+  "tool_name": "collaborationspawn_agent",
+  "tool_use_id": "toolu_00000000000000000000000",
+  "transcript_path": "/Users/example/.codex/sessions/2026/10/28/rollout-2026-10-28T14-55-55-00000000-0000-4000-8000-0000000000ff.jsonl",
+  "turn_id": "00000000-0000-4000-8000-000000000003"
+}

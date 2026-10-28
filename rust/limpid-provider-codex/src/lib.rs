@@ -7,17 +7,18 @@ mod approval;
 mod descriptor;
 mod json;
 mod normalize;
+mod rollouts;
 mod titles;
 mod tokens;
 mod usage;
 
 use limpid_agent_model::{
-    AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe,
+    AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe, ListDirectory,
     MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, ProviderDescriptor, ProviderOutput,
-    RawHookInput, RunRecord, Titles, TurnReading, WorktreeIntent, parse_object,
+    RawHookInput, RunRecord, Titles, TurnReading, TurnUsage, WorktreeIntent, parse_object,
 };
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The Codex CLI provider.
 #[derive(Debug, Default, Clone, Copy)]
@@ -100,6 +101,24 @@ impl ProviderAdapter for CodexAdapter {
             return TurnReading::default();
         };
         tokens::rollout_turn_reading(rollout, &turn_id)
+    }
+
+    fn subagent_transcripts(
+        &self,
+        transcript: &Path,
+        subagents: &[String],
+        list: &ListDirectory<'_>,
+    ) -> Vec<PathBuf> {
+        rollouts::subagent_rollouts(transcript, subagents, list)
+    }
+
+    fn subagent_usage(
+        &self,
+        transcript: &[u8],
+        is_whole: bool,
+        marker: Option<&str>,
+    ) -> Option<TurnUsage> {
+        tokens::subagent_rollout_usage(transcript, is_whole, marker)
     }
 }
 

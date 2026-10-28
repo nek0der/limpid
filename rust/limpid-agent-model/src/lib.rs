@@ -29,8 +29,8 @@ mod worktree;
 pub mod conformance;
 
 pub use adapter::{
-    CommandRun, HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, RawHookInput,
-    TmuxEndpoint, TurnReading, parse_object, transcript_path_for_events,
+    CommandRun, HookContext, ListDirectory, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter,
+    RawHookInput, TmuxEndpoint, TurnReading, parse_object, transcript_path_for_events,
 };
 pub use approval::{
     ApprovalDecision, ApprovalQuestion, ApprovalQuestionOption, ApprovalRequest, ProviderOutput,

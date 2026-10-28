@@ -1,0 +1,62 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "source": "startup",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for subagent>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "collaborationspawn_agent",
+      "tool": "collaborationspawn_agent",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "tool": "collaborationspawn_agent",
+      "type": "tool_finished"
+    }
+  ],
+  [
+    {
+      "detail": "collaborationwait_agent",
+      "tool": "collaborationwait_agent",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: ls",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "tool": "Bash",
+      "type": "tool_finished"
+    }
+  ],
+  [
+    {
+      "tool": "collaborationwait_agent",
+      "type": "tool_finished"
+    }
+  ],
+  [
+    {
+      "type": "turn_finished"
+    }
+  ]
+]
