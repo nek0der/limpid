@@ -1,0 +1,49 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "source": "startup",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for interrupted-turn>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: sleep 60",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "type": "interrupted"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for interrupted-turn>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "type": "interrupted"
+    }
+  ],
+  [
+    {
+      "reason": "other",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ]
+]

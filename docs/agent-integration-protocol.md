@@ -343,7 +343,7 @@ events, and those decide what is written (`turn_step` in
 | `UserPromptSubmit` | `PromptSubmitted` | begins a turn: a begin snapshot, the counter's next number, a new record with the provider's own id for the turn (`providerTurnId`: Claude's `prompt_id`, Codex's `turn_id`) |
 | `Stop` | `TurnFinished` | ends the turn as `finished` with an end snapshot and the difference, and the tokens it used read from the transcript (`usage`); for Codex, also every check it ran (`checks`, `checkCount`, `lastCheck`) |
 | Claude `StopFailure`, a Codex `Stop` that carries an error (none does today), the usage limit Limpid's watcher reports for Codex | `Failed` | ends it as `failed`; Claude's reads `usage` as `Stop` does |
-| Codex `Interrupt` | `Interrupted` | ends it as `interrupted` |
+| Codex `Interrupt` | `Interrupted` | ends it as `interrupted`, with `usage` and the checks read from the rollout as `Stop` reads them; a command still running when the turn stopped is not counted |
 | Claude `Notification` (`idle_prompt`) | `AwaitingPrompt` | for a run working after its turn's `Stop`, takes that turn's end snapshot and difference again and keeps how it ended; for a turn open at least 55 seconds, ends it as `interrupted`, a turn waiting on a question or permission only when the transcript shows the awaited call ended: every call of the latest assistant message has a result, or an interrupt line follows it (`awaited_call_ended`); otherwise nothing (docs/adr/0004-provider-adapter-contract.md, "Work outside a turn") |
 | Claude `PostToolUse` / `PostToolUseFailure` of a check command | — | sets the turn's `lastCheck`, adds a mark to `checks`, and counts it in `checkCount` (and in `failureCount` when it failed) |
 
@@ -451,8 +451,9 @@ The files live in the provider's state directory, under `turns/`:
   partial if the response has not come by then. The reading ends at the
   next prompt's line (another `promptId`), and an interrupt's line ends the
   turn with no response to wait for. Codex's is the turn's last
-  `token_usage_record` in its rollout, whose `input_tokens` counts the
-  cached and cache-written input, which Limpid takes out of `inputTokens`.
+  `token_usage_record` in its rollout, read at the turn's `Stop` or
+  `Interrupt`, whose `input_tokens` counts the cached and cache-written
+  input, which Limpid takes out of `inputTokens`.
   Codex's checks are the rollout's `CommandExecution` items of the turn, a
   command the person declined left out, classified by the project's check
   patterns as Claude's are. When the rollout's last 4 MiB no longer holds

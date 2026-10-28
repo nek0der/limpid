@@ -86,7 +86,7 @@ impl ProviderAdapter for CodexAdapter {
     }
 
     fn turn_marker(&self, input: RawHookInput<'_>) -> Option<String> {
-        payload_turn_id(input, "UserPromptSubmit")
+        payload_turn_id(input, &["UserPromptSubmit"])
     }
 
     fn turn_reading(&self, input: RawHookInput<'_>, marker: Option<&str>) -> TurnReading {
@@ -95,7 +95,7 @@ impl ProviderAdapter for CodexAdapter {
         };
         let Some(turn_id) = marker
             .map(str::to_owned)
-            .or_else(|| payload_turn_id(input, "Stop"))
+            .or_else(|| payload_turn_id(input, &normalize::TURN_END_EVENTS))
         else {
             return TurnReading::default();
         };
@@ -103,10 +103,11 @@ impl ProviderAdapter for CodexAdapter {
     }
 }
 
-/// The `turn_id` of a payload of hook `event`.
-fn payload_turn_id(input: RawHookInput<'_>, event: &str) -> Option<String> {
+/// The `turn_id` of a payload of one of the hook `events`.
+fn payload_turn_id(input: RawHookInput<'_>, events: &[&str]) -> Option<String> {
     let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES).ok()?;
-    if object.get("hook_event_name").and_then(Value::as_str) != Some(event) {
+    let event = object.get("hook_event_name").and_then(Value::as_str)?;
+    if !events.contains(&event) {
         return None;
     }
     object
@@ -148,7 +149,7 @@ mod tests {
         assert_eq!(
             payload_turn_id(
                 input(r#"{"hook_event_name":"Stop","turn_id":"t1"}"#),
-                "Stop"
+                &["Stop"]
             ),
             Some("t1".into())
         );
@@ -156,6 +157,46 @@ mod tests {
         assert_eq!(
             CodexAdapter.turn_reading(input(r#"{"hook_event_name":"Stop","turn_id":"t1"}"#), None),
             TurnReading::default()
+        );
+    }
+
+    #[test]
+    fn an_interrupt_reads_the_turn_it_ends_as_a_stop_does() {
+        let rollout = concat!(
+            r#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"t1"}}"#,
+            "\n",
+            r#"{"type":"token_usage_record","payload":{"turn_id":"t1","turn_token_usage":{"input_tokens":120,"cached_input_tokens":20,"output_tokens":7,"total_tokens":127}}}"#,
+            "\n",
+        );
+        for event in normalize::TURN_END_EVENTS {
+            let payload = format!(r#"{{"hook_event_name":"{event}","turn_id":"t1"}}"#);
+            let reading = CodexAdapter.turn_reading(
+                RawHookInput {
+                    bytes: payload.as_bytes(),
+                    transcript: Some(rollout.as_bytes()),
+                },
+                None,
+            );
+            assert_eq!(reading.marker.as_deref(), Some("t1"), "{event}");
+            assert!(reading.usage.is_some(), "{event}");
+            assert!(
+                CodexAdapter
+                    .transcript_path(input(&format!(
+                        r#"{{"hook_event_name":"{event}","transcript_path":"/tmp/example/rollout.jsonl"}}"#
+                    )))
+                    .expect("an object")
+                    .is_some(),
+                "{event}"
+            );
+        }
+        // A prompt's turn begins without a reading of its own.
+        assert_eq!(
+            CodexAdapter
+                .transcript_path(input(
+                    r#"{"hook_event_name":"UserPromptSubmit","transcript_path":"/tmp/example/rollout.jsonl"}"#
+                ))
+                .expect("an object"),
+            None
         );
     }
 }

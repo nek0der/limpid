@@ -44,6 +44,11 @@ pub(crate) const HOME_DIRECTORY_VARIABLE: &str = "CODEX_HOME";
 /// `PreToolUse` hook may only block the call or rewrite its input.
 const QUESTION_TOOL: &str = "request_user_input";
 
+/// The hooks that end a turn. Each names the turn (`turn_id`) and the rollout
+/// that holds what it used, which Codex has written by the time either runs
+/// (`Interrupt`'s recorded in `fixtures/codex/2026-10/interrupted-turn`).
+pub(crate) const TURN_END_EVENTS: [&str; 2] = ["Stop", "Interrupt"];
+
 pub(crate) fn normalize(
     input: RawHookInput<'_>,
     context: &HookContext,
@@ -200,10 +205,14 @@ pub(crate) fn applies_to(input: RawHookInput<'_>, record: Option<&RunRecord>) ->
         .is_none_or(|reached| started <= reached)
 }
 
-/// The watcher's event reads the rollout for the limit, and `Stop` for what
-/// the turn used and the commands it ran (`tokens`).
+/// The watcher's event reads the rollout for the limit, and the events that
+/// end a turn for what the turn used and the commands it ran (`tokens`).
 pub(crate) fn transcript_path(input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {
-    transcript_path_for_events(input, &[LIMPID_USAGE_LIMIT_EVENT, "Stop"])
+    let path = transcript_path_for_events(input, &TURN_END_EVENTS)?;
+    if path.is_some() {
+        return Ok(path);
+    }
+    transcript_path_for_events(input, &[LIMPID_USAGE_LIMIT_EVENT])
 }
 
 /// Whether the payload comes from Codex's own memory agent rather than the

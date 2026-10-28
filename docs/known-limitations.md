@@ -98,11 +98,11 @@ as they are fixed or confirmed.
 - **Codex turns count no subagent tokens.** Codex keeps a subagent's work in
   a transcript of its own, which Limpid does not read. Codex's checks are
   read from its transcript when the turn ends, so they appear then rather
-  than as each one finishes, and an interrupted Codex turn shows no tokens
-  or checks: no hook brings its transcript. A very long Codex turn may
-  count fewer test runs than it ran: its card says so with "…" and its
-  tooltip with "at least", while the decision bar's count of failures is
-  the one Limpid read.
+  than as each one finishes. A Codex turn interrupted before its first
+  response arrives shows no tokens, since Codex records none for it. A
+  very long Codex turn may count fewer test runs than it ran: its card says
+  so with "…" and its tooltip with "at least", while the decision bar's
+  count of failures is the one Limpid read.
 - **A Claude subagent named again in a later turn is counted again**:
   Limpid reads the subagent's whole transcript at each turn that names it.
 - **A turn record written by an older Limpid and a newer one in turn** can
