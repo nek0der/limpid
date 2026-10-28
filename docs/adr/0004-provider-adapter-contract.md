@@ -213,17 +213,25 @@ turn keeps it, because the idle prompt returns the run to the rest the stop
 described.
 
 A background subagent's tools reach the hook as the run's own `PreToolUse`,
-after the stop that launched it. Claude names the subagent in them
-(`agent_id`), and the adapter carries that as `by_subagent` on `ToolStarted`.
-`apply` takes no such tool out of `finished` outside a turn: the stop already
-counted the subagent, and its tools are not the agent at work. The agent's
-own tools after a stop carry no `agent_id`, so a stop hook's continuation
-still reopens the run as "Work outside a turn" below describes. `project` passes it to
-the badge only while the run rests `finished`. Codex keeps its background
-terminals running after a turn too, but its `Stop` does not list them and no
-hook reports their end, so its adapter reports none rather than a count that
-would stay until the next stop. The field is omitted when nothing was left
-running.
+`PostToolUse`, and `PostToolUseFailure`, after the stop that launched it.
+Claude names the subagent in them (`agent_id`), and the adapter carries that
+as `by_subagent` on `ToolStarted` and `ToolFinished`. `apply` takes no such
+tool event out of `finished` outside a turn and writes nothing for it: the
+stop already counted the subagent, and its tools are not the agent at work.
+The guard covers only `finished`. At `idle` and `error` no stop counted the
+subagent, because a session start and a failure clear the count, so its tool
+events are the one sign that work goes on; they reopen the run as any tool
+does, and the idle prompt returns it to that rest. A wait that the
+subagent's permission prompt opened is not a rest either, and its next tool
+event ends it. The agent's own tools after a stop carry no `agent_id`, so a
+stop hook's continuation still reopens the run as "Work outside a turn"
+below describes.
+
+`project` passes the count to the badge only while the run rests `finished`.
+Codex keeps its background terminals running after a turn too, but its
+`Stop` does not list them and no hook reports their end, so its adapter
+reports none rather than a count that would stay until the next stop. The
+field is omitted when nothing was left running.
 
 ### Work outside a turn
 

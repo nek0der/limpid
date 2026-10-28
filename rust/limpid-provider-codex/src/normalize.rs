@@ -84,6 +84,7 @@ pub(crate) fn normalize(
         "PreToolUse" => pre_tool_use(&object),
         "PostToolUse" => AgentEvent::ToolFinished {
             tool: string(&object, "tool_name").map(str::to_owned),
+            by_subagent: false,
         },
         "PermissionRequest" => AgentEvent::ApprovalRequested {
             detail: string(&object, "message").map(str::to_owned),
@@ -902,7 +903,8 @@ mod tests {
         assert_eq!(
             events(r#"{"hook_event_name":"PostToolUse","tool_name":"Bash"}"#),
             vec![AgentEvent::ToolFinished {
-                tool: Some("Bash".into())
+                tool: Some("Bash".into()),
+                by_subagent: false,
             }]
         );
     }

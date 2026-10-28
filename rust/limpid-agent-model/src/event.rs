@@ -170,6 +170,10 @@ pub enum AgentEvent {
     ToolFinished {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool: Option<String>,
+        /// As on `ToolStarted`: the tool that ended is a subagent's. Omitted
+        /// when false.
+        #[serde(default, skip_serializing_if = "is_false")]
+        by_subagent: bool,
     },
     WaitingForInput {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -420,14 +424,27 @@ mod tests {
                 if session_title.as_deref() == Some("Indexed")
         ));
 
-        let mut tool = AgentEvent::ToolFinished { tool: None };
+        let mut tool = AgentEvent::ToolFinished {
+            tool: None,
+            by_subagent: false,
+        };
         tool.add_titles(&added);
-        assert_eq!(tool, AgentEvent::ToolFinished { tool: None });
+        assert_eq!(
+            tool,
+            AgentEvent::ToolFinished {
+                tool: None,
+                by_subagent: false,
+            }
+        );
     }
 
     #[test]
     fn absent_optionals_are_omitted() {
-        let json = serde_json::to_string(&AgentEvent::ToolFinished { tool: None }).expect("ok");
+        let json = serde_json::to_string(&AgentEvent::ToolFinished {
+            tool: None,
+            by_subagent: false,
+        })
+        .expect("ok");
         assert_eq!(json, "{\"type\":\"tool_finished\"}");
         let json = serde_json::to_string(&AgentEvent::TurnFinished {
             continues_after_stop_hook: false,

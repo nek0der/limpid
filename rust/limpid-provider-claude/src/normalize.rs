@@ -48,6 +48,7 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
         {
             AgentEvent::ToolFinished {
                 tool: Some(crate::approval::QUESTION_TOOL.to_owned()),
+                by_subagent: is_by_subagent(&object),
             }
         }
         "Notification" => match string(&object, "notification_type") {
@@ -229,11 +230,15 @@ fn pre_tool_use(object: &Map<String, Value>) -> AgentEvent {
     AgentEvent::ToolStarted {
         tool: tool.to_owned(),
         detail: Some(detail),
-        // Recorded in 2.1.312: a subagent's tool call carries `agent_id` and
-        // `agent_type`; the agent's own, a stop hook's continuation included,
-        // carries neither.
-        by_subagent: string(object, "agent_id").is_some_and(|id| !id.is_empty()),
+        by_subagent: is_by_subagent(object),
     }
+}
+
+/// Whether a tool hook is a subagent's. Recorded in 2.1.312: a subagent's
+/// tool call carries `agent_id` and `agent_type`; the agent's own, a stop
+/// hook's continuation included, carries neither.
+fn is_by_subagent(object: &Map<String, Value>) -> bool {
+    string(object, "agent_id").is_some_and(|id| !id.is_empty())
 }
 
 /// The titles a transcript holds: the latest `custom-title` line, which
@@ -686,7 +691,18 @@ mod tests {
             assert_eq!(
                 events(&payload, None),
                 vec![AgentEvent::ToolFinished {
-                    tool: Some("AskUserQuestion".into())
+                    tool: Some("AskUserQuestion".into()),
+                    by_subagent: false,
+                }]
+            );
+            let payload = format!(
+                r#"{{"hook_event_name":"{name}","tool_name":"AskUserQuestion","agent_id":"a1","agent_type":"Explore"}}"#
+            );
+            assert_eq!(
+                events(&payload, None),
+                vec![AgentEvent::ToolFinished {
+                    tool: Some("AskUserQuestion".into()),
+                    by_subagent: true,
                 }]
             );
             let payload = format!(r#"{{"hook_event_name":"{name}","tool_name":"Bash"}}"#);

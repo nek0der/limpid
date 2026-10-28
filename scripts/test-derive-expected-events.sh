@@ -85,5 +85,17 @@ expect(
     {"type": "tool_started", "tool": "Bash", "detail": "Bash: ls"},
 )
 
+for name in ["PostToolUse", "PostToolUseFailure"]:
+    expect(
+        f"claude: a subagent's {name} of its question is marked",
+        derive.claude_event({"hook_event_name": name, "tool_name": "AskUserQuestion", **subagent}, None),
+        {"type": "tool_finished", "tool": "AskUserQuestion", "by_subagent": True},
+    )
+    expect(
+        f"claude: the agent's own {name} of its question is not",
+        derive.claude_event({"hook_event_name": name, "tool_name": "AskUserQuestion"}, None),
+        {"type": "tool_finished", "tool": "AskUserQuestion"},
+    )
+
 sys.exit(1 if failures else 0)
 PYTHON

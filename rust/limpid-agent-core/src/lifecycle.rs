@@ -173,12 +173,19 @@ pub fn apply(
         {
             return writes;
         }
-        // A background subagent's tool after the turn ended is work the
-        // stop already counted (`background_work`); the run stays at its
-        // rest rather than reading as a turn at work. Only the finished rest:
-        // a wait the subagent's permission prompt opened is ended by its next
-        // tool as any wait is.
+        // A background subagent's tool after the turn ended, its start or its
+        // end, is work the stop already counted (`background_work`); the run
+        // stays at its rest rather than reading as a turn at work. Only the
+        // finished rest. At `idle` and `error` no stop counted the subagent
+        // (a session start and a failure clear the count), so its tools are
+        // the one sign that work goes on, and they still show the run
+        // working until the idle prompt returns it to that rest. A wait the
+        // subagent's permission prompt opened is ended by its next tool as
+        // any wait is.
         AgentEvent::ToolStarted {
+            by_subagent: true, ..
+        }
+        | AgentEvent::ToolFinished {
             by_subagent: true, ..
         } if prev
             .is_some_and(|record| record.state == RunState::Finished && !is_in_a_turn(record)) =>
