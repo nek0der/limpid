@@ -26,6 +26,9 @@ struct PaneStripView: View {
     @Environment(AttentionState.self) private var attention
     @Environment(TmuxPanePresence.self) private var tmuxPresence
     @Environment(ProjectWindowState.self) private var window
+    /// The identity colors the tabs carry, which the changes panel's cards
+    /// read from the same store.
+    @Environment(\.conversationIdentities) private var conversationIdentities
 
     /// The strip's own space, which its selected tab reports its frame in.
     nonisolated static let coordinateSpace = "paneStrip"
@@ -33,6 +36,11 @@ struct PaneStripView: View {
     /// Only the model is made here. The runs it reads change with every
     /// word an agent reports (its detail), which the tabs never show; the
     /// strip below is drawn again only when the model it is handed differs.
+    /// The identity colors are read here too, not in the session area
+    /// around it: they follow the turns and the viewed lines, and read
+    /// there they would draw the terminal again on every turn recorded.
+    /// The store hands back its last read while none of that changed, so
+    /// the read costs little on every word an agent reports.
     var body: some View {
         let model = PaneStripModel(
             container: container,
@@ -40,6 +48,7 @@ struct PaneStripView: View {
             window: window.id,
             queue: attentionQueue.queue,
             runtimes: attention.allRuntimes,
+            identities: conversationIdentities?.identities(in: container) ?? [:],
             mountedTmuxPaneIDs: tmuxPresence.paneIDs,
             reviewTab: window.reviewStripTab(in: container, session: session)
         )
@@ -381,7 +390,7 @@ private struct PaneStripTabCell: View {
                 )
             },
             onRename: { name in
-                session.update(item.id) { $0.rename(name) }
+                session.renameTab(item.id, to: name, runtimes: attention.allRuntimes)
             },
             onEditingChanged: { isEditing in
                 editingTabID = isEditing ? item.id : (editingTabID == item.id ? nil : editingTabID)

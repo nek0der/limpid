@@ -14,7 +14,7 @@ extension SupervisionFootBarTests {
     /// inset on both sides, the card's own, and its first column.
     private static func turnWordsWidth(panel width: CGFloat, hasConversation: Bool) -> CGFloat {
         width - 2 * Layout.changesListInset - Layout.turnCardInsets.leading - Layout.turnCardInsets.trailing
-            - Layout.turnFirstColumnWidth(hasConversation: hasConversation) - Layout.turnColumnSpacing
+            - Layout.turnFirstColumnWidth(hasConversation: hasConversation, digits: 4) - Layout.turnColumnSpacing
     }
 
     /// The widest facts a card shows: a large diff, three marks after more,
@@ -115,6 +115,114 @@ extension SupervisionFootBarTests {
             let slot = Self.size(of: TurnCardMovesRoom(moves: moves.moves), proposing: nil, language: language, settings: settings)
             #expect(abs(slot.width - size.width) < 0.5, "\(language): \(slot.width) for \(size.width)")
         }
+    }
+
+    /// A card's first line is as tall while its moves show as at rest: the
+    /// time's slot widens to take them but never grows the line, so a card
+    /// the pointer or the keyboard comes onto keeps its height and the cards
+    /// under it stay where they are.
+    @Test(arguments: ["en", "ja"])
+    func cardFit_movesShown_keepTheFirstLinesHeight(language: String) {
+        let locale = Locale(identifier: language)
+        let moves = [
+            TurnCardMove(
+                kind: .line(.markViewedThrough),
+                title: ChangesPanelText.action(.markViewedThrough, locale: locale),
+                detail: nil,
+                blocker: nil
+            ),
+            TurnCardMove(kind: .restore, title: RestoreText.entry(locale: locale), detail: nil, blocker: nil)
+        ]
+        func line(showsMoves: Bool) -> CGSize {
+            let view = HStack(alignment: .firstTextBaseline, spacing: Layout.spaceSnug) {
+                Text(verbatim: "Add a function count(items) to cart.py")
+                    .font(.supervision(.label, weight: .medium))
+                TurnCardTimeSlot(moves: moves, time: "11:44", showsMoves: showsMoves)
+            }
+            return NSHostingController(rootView: view.fixedSize().environment(\.locale, locale))
+                .sizeThatFits(in: CGSize(width: 4000, height: 4000))
+        }
+        let rest = line(showsMoves: false)
+        let shown = line(showsMoves: true)
+        let room = NSHostingController(rootView: TurnCardMovesRoom(moves: moves)).sizeThatFits(in: CGSize(width: 4000, height: 4000))
+
+        let slot = { (showsMoves: Bool) in
+            NSHostingController(rootView: TurnCardTimeSlot(moves: moves, time: "11:44", showsMoves: showsMoves).environment(
+                \.locale,
+                locale
+            ))
+            .sizeThatFits(in: CGSize(width: 4000, height: 4000))
+        }
+
+        #expect(
+            abs(slot(true).height - slot(false).height) < 0.5,
+            "\(language): the slot \(slot(true).height) against \(slot(false).height)"
+        )
+        #expect(abs(shown.height - rest.height) < 0.5, "\(language): \(shown.height) against \(rest.height)")
+        #expect(shown.width >= rest.width - 0.5 + max(0, room.width - Self.timeWidth), "\(language): the slot still takes the moves' width")
+    }
+
+    /// "11:44" in the time's face, for the slot's width at rest.
+    private static var timeWidth: CGFloat {
+        NSHostingController(rootView: Text(verbatim: "11:44").font(.supervision(.caption).monospacedDigit()).fixedSize())
+            .sizeThatFits(in: CGSize(width: 4000, height: 4000)).width
+    }
+
+    /// How big a card's first column lays out, offered all the room it asks.
+    private static func labelSize(_ label: TurnCardLabel) -> CGSize {
+        NSHostingController(rootView: label.environment(\.locale, Locale(identifier: "en")))
+            .sizeThatFits(in: CGSize(width: 4000, height: 4000))
+    }
+
+    /// The tight size of the label's contents, without the column's fixed
+    /// width, so a change in what it draws shows.
+    private static func contentSize(_ label: TurnCardLabel) -> CGSize {
+        NSHostingController(rootView: label.content.fixedSize().environment(\.locale, Locale(identifier: "en")))
+            .sizeThatFits(in: CGSize(width: 4000, height: 4000))
+    }
+
+    /// An unviewed turn's number is a filled pill whose padding is drawn
+    /// around the number rather than laid out in the column, so the card is
+    /// as tall as a viewed one's and its number stands where a viewed one's
+    /// does. Even "T1000" keeps its pill short of the prompt and within the
+    /// card's inset.
+    @Test(arguments: [false, true])
+    func cardFit_unviewedPill_keepsRowHeight(hasConversation: Bool) {
+        var choice = ConversationChoice(conversation: TurnSummaryFixture.conversation, ordinal: 2, unviewedCount: 1)
+        choice.identity = 1
+        let conversation = hasConversation ? choice : nil
+        for number in [7, 1000] {
+            let viewed = Self.contentSize(TurnCardLabel(number: number, isUnviewed: false, conversation: conversation))
+            let unviewed = Self.contentSize(TurnCardLabel(number: number, isUnviewed: true, conversation: conversation))
+            #expect(abs(unviewed.height - viewed.height) < 0.5, "T\(number): \(unviewed.height) against \(viewed.height)")
+            #expect(abs(unviewed.width - viewed.width) < 0.5, "T\(number): \(unviewed.width) against \(viewed.width)")
+            let column = Self.labelSize(TurnCardLabel(number: number, isUnviewed: true, conversation: conversation))
+            #expect(abs(column.height - viewed.height) < 0.5, "T\(number): the column is as tall as its contents")
+        }
+        let padding = Layout.turnUnviewedPillPadding.width
+        for label in ["T7", "T1000"] {
+            let number = ceil((label as NSString).size(withAttributes: [.font: Layout.turnNumberFont]).width)
+            let column = Layout.turnFirstColumnWidth(hasConversation: hasConversation, digits: label.count - 1)
+            #expect(number + padding <= column, "\(label): \(number) + \(padding) in \(column)")
+        }
+        #expect(padding <= Layout.turnCardInsets.leading)
+    }
+
+    /// The conversation's bar before its badge leaves the first column as tall
+    /// as a single-conversation row's and within its width; a conversation
+    /// with no color draws its badge alone.
+    @Test func cardFit_identityBar_keepsRowHeight() {
+        var colored = ConversationChoice(conversation: TurnSummaryFixture.conversation, ordinal: 2, unviewedCount: 1)
+        colored.identity = 3
+        var plain = colored
+        plain.identity = nil
+        let withBar = Self.contentSize(TurnCardLabel(number: 7, isUnviewed: true, conversation: colored))
+        let alone = Self.contentSize(TurnCardLabel(number: 7, isUnviewed: true, conversation: plain))
+        #expect(abs(withBar.height - alone.height) < 0.5, "\(withBar.height) against \(alone.height)")
+        #expect(withBar.width > alone.width, "the bar is drawn")
+        // Drawn out to the pill's start, so the column holds it less that.
+        let column = Layout.turnFirstColumnWidth(hasConversation: true, digits: 1)
+        #expect(withBar.width - Layout.turnUnviewedPillPadding.width <= column + 0.5, "\(withBar.width)")
     }
 
     /// The duration is the first fact to go: the list drops it from every

@@ -606,8 +606,9 @@ enum DemoFixture {
     /// the folder the shell reports first. A slot missing from
     /// `conversationTitle(of:)` falls back to the provider's name, which
     /// `DemoFixtureTests` catches.
-    private static func agentTab(_ slot: Slot, _ agent: AgentKind, in container: ContainerID, badge: AgentBadge) -> Tab {
+    private static func agentTab(_ slot: Slot, _ agent: AgentKind, in container: ContainerID, badge staged: AgentBadge) -> Tab {
         let name = conversationTitle(of: slot) ?? agent.rawValue
+        let badge = titled(staged, slot: slot, agent: agent)
         var tab = Tab(
             id: slot.tabID,
             title: name,
@@ -624,6 +625,23 @@ enum DemoFixture {
         )
         tab.initialCommands[slot.paneID] = transcript(for: slot)
         return tab
+    }
+
+    /// `badge` as a run that has reported its conversation holds it, for a
+    /// slot whose conversation the fixture stages turns for
+    /// (`conversation(forPane:)`): the conversation's ID and its title
+    /// where the provider keeps it, Claude's generated title and Codex's
+    /// thread name. The tab's name, the pane header, the turns' recorded
+    /// title, and the changes panel then call the conversation the same.
+    private static func titled(_ badge: AgentBadge, slot: Slot, agent: AgentKind) -> AgentBadge {
+        guard let conversation = conversation(forPane: slot.paneID) else { return badge }
+        var badge = badge
+        badge.conversationID = conversation.conversationID
+        switch agent {
+        case .claude: badge.providerGeneratedTitle = conversationTitle(of: slot)
+        case .codex: badge.providerSessionTitle = conversationTitle(of: slot)
+        }
+        return badge
     }
 
     /// A shell tab with no name of its own, so its row reads as its branch.

@@ -36,6 +36,123 @@ extension ChangesPanelModelTests {
         #expect(alone.map(\.ordinal) == [nil], "one conversation: its kind names it")
     }
 
+    /// One turn of conversation `id`, recorded with `title`.
+    private static func titled(_ id: String, _ title: String?, number: Int = 1) throws -> TurnSummary {
+        var extras = TurnSummaryFixture.Extras()
+        extras.conversationID = id
+        extras.conversationTitle = title
+        return try Panel.turn(number, extras: extras)
+    }
+
+    private static func names(_ choices: [ConversationChoice]) -> [String] {
+        choices.map { ConversationText.name($0, locale: english) }
+    }
+
+    @Test func choices_titledConversation_namesByTitle() throws {
+        let agents = try [Self.titled("a", "Review the fork"), Self.titled("b", "Fix tests")].map { Panel.agent([$0]) }
+
+        let named = ChangesPanelModel.conversations(Panel.input(agents))
+
+        #expect(named.first?.title == "Review the fork")
+        #expect(named.first?.ordinal == nil, "a title of its own needs no number")
+        #expect(Self.names(named) == ["Review the fork", "Fix tests"])
+    }
+
+    /// A conversation's name carries its number only where its title, or
+    /// its kind, does not tell it apart; the cards and file tags tell the
+    /// rest apart by their identity colors.
+    @Test func choices_ordinal_numbersOnlyWhereTheNameNeedsIt() throws {
+        let agents = try [Self.titled("a", "Review the fork"), Self.titled("b", "Fix tests"), Self.titled("c", nil)]
+            .map { Panel.agent([$0]) }
+        let codex = ChangesPanelModel.Agent(
+            conversation: ConversationKey(provider: .codex, conversationID: "x", isFallback: false),
+            turns: []
+        )
+
+        let named = ChangesPanelModel.conversations(Panel.input(agents + [codex]))
+
+        #expect(named.map(\.ordinal) == [nil, nil, 3, nil], "a title of its own needs no number in its name")
+    }
+
+    /// A conversation whose tab the person named is still called by that
+    /// name once the tab is gone, over the title its agent gave it.
+    @Test func choices_rememberedTabName_namesAnEndedConversation() throws {
+        let agents = try [Self.titled("a", "Review the fork"), Self.titled("b", "Fix tests")].map { Panel.agent([$0]) }
+        var input = Panel.input(agents)
+        let named = agents[0].conversation
+        input.tabName = { $0 == named ? "Payments" : nil }
+
+        #expect(Self.names(ChangesPanelModel.conversations(input)) == ["Payments", "Fix tests"])
+    }
+
+    @Test func choices_sameTitle_appendsOrdinal() throws {
+        let agents = try [Self.titled("a", "Fix tests"), Self.titled("b", "Fix tests")].map { Panel.agent([$0]) }
+
+        let named = ChangesPanelModel.conversations(Panel.input(agents))
+
+        #expect(named.map(\.ordinal) == [1, 2])
+        #expect(Self.names(named) == ["Fix tests #1", "Fix tests #2"])
+        #expect(named.map { ConversationText.name($0, locale: Self.japanese) } == ["Fix tests #1", "Fix tests #2"])
+    }
+
+    @Test func choices_untitledConversation_keepsOrdinal() throws {
+        let agents = try [Self.titled("a", "Review the fork"), Self.titled("b", nil)].map { Panel.agent([$0]) }
+
+        let named = ChangesPanelModel.conversations(Panel.input(agents))
+
+        #expect(named.map(\.title) == ["Review the fork", nil])
+        #expect(Self.names(named) == ["Review the fork", "Claude #2"])
+    }
+
+    /// The newest turn's title names the conversation: a rename after its
+    /// first turns renames every one of them.
+    @Test func choices_latestTurnTitle_namesWholeConversation() throws {
+        let turns = try [Self.titled("a", "old", number: 1), Self.titled("a", "new", number: 2)]
+        let other = try Self.titled("b", "Fix tests")
+
+        let named = ChangesPanelModel.conversations(Panel.input([Panel.agent(turns), Panel.agent([other])]))
+
+        #expect(named.first?.title == "new")
+    }
+
+    /// What the pane's agent calls its conversation now wins over what a
+    /// turn recorded, which may be a title from before a rename.
+    @Test func choices_liveTitle_winsOverRecordedTitle() throws {
+        let agents = try [Self.titled("a", "Recorded"), Self.titled("b", nil)].map { Panel.agent([$0]) }
+        var input = Panel.input(agents)
+        let live = ConversationChoice.LiveTab(title: "claude", isInSession: true, providerTitle: "Renamed")
+        input.liveTab = { $0 == agents[0].conversation ? live : nil }
+
+        #expect(ChangesPanelModel.conversations(input).first?.title == "Renamed")
+    }
+
+    /// A conversation recorded with no title is named after the first
+    /// thing it was asked.
+    @Test func choices_noTitle_namesByFirstPrompt() throws {
+        var extras = TurnSummaryFixture.Extras()
+        extras.conversationID = "a"
+        extras.promptHead = "Add the store tests"
+        let first = try Panel.turn(1, extras: extras)
+        extras.promptHead = "Now the docs"
+        let second = try Panel.turn(2, extras: extras)
+        let other = try Self.titled("b", nil)
+
+        let named = ChangesPanelModel.conversations(Panel.input([Panel.agent([first, second]), Panel.agent([other])]))
+
+        #expect(Self.names(named) == ["Add the store tests", "Claude #2"])
+    }
+
+    /// VoiceOver says the kind before a title, which alone does not say
+    /// which agent it is.
+    @Test func spokenName_saysTheKindBeforeTheTitle() throws {
+        let agents = try [Self.titled("a", "Review the fork"), Self.titled("b", nil)].map { Panel.agent([$0]) }
+
+        let named = ChangesPanelModel.conversations(Panel.input(agents))
+
+        #expect(named.map { ConversationText.spokenName($0, locale: Self.english) } == ["Claude, Review the fork", "Claude #2"])
+        #expect(named.map { ConversationText.spokenName($0, locale: Self.japanese) } == ["Claude、Review the fork", "Claude #2"])
+    }
+
     // MARK: - Restore
 
     private static func recorded(_ number: Int, phase: String = "finished", changes: String = changed) throws -> TurnSummary {

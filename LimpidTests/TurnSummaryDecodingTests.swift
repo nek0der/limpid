@@ -1,5 +1,5 @@
 // TurnSummaryDecodingTests.swift
-// Limpid — reading a turn as the projection sends it: who wrote its prompt, the tree it ended at, and its reply.
+// Limpid — reading a turn as the projection sends it: who wrote its prompt, the tree it ended at, its reply, and its conversation's title.
 
 import Foundation
 import Testing
@@ -112,5 +112,15 @@ struct TurnSummaryDecodingTests {
         extras.replyHead = ""
         #expect(try Fixture.turn("d", extras: extras).reply == nil)
         #expect(try Fixture.turn("e").reply == nil, "a record from before the reply was kept")
+    }
+
+    @Test func decode_conversationTitle_isRead() throws {
+        var extras = Fixture.Extras()
+        extras.conversationTitle = "Review the fork"
+        #expect(try Fixture.turn("a", extras: extras).conversationTitle == "Review the fork")
+    }
+
+    @Test func decode_missingConversationTitle_isNil() throws {
+        #expect(try Fixture.turn("a").conversationTitle == nil, "a record from before the title was kept")
     }
 }

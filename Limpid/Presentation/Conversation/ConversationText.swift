@@ -1,12 +1,13 @@
 // ConversationText.swift
-// Limpid — a conversation in words, wherever one is named: its name, where it runs, its menu line, and its counts.
+// Limpid — a conversation in words, wherever one is named: its name, where it runs, when it last worked, and its counts.
 
 import Foundation
 
 /// The words for a conversation (`ConversationChoice`), apart from any one
 /// surface: the changes panel's filter and row badges, the review tab's
 /// scope menu and destination menu, and the tooltips name a conversation
-/// the same way, and none of them reads another surface's words to do it.
+/// the same way from here, and every list of conversations describes one
+/// under its name with the same line (`detail`).
 enum ConversationText {
     /// "1 unviewed", as the panel's head, the filter's menu, and the rail's
     /// tooltip count the turns waiting to be read. "Unviewed" is the
@@ -41,41 +42,8 @@ enum ConversationText {
         return resource.resolved(in: locale)
     }
 
-    /// A conversation's second line in the filter's menu and under its
-    /// heading in the review's scope menu: "Save the order setti… ·
-    /// 10:31 · 4 unviewed", what its latest turn was asked, when it last
-    /// did something, and its count with its unit, so fourteen conversations
-    /// named "Claude #1" to "Claude #14" read apart by what each was for.
-    /// Where it runs follows only while a pane elsewhere runs it ("Running
-    /// in the “claude” tab in beta"). One this session runs is under
-    /// "Running", whose heading says so, and its tab, named after its
-    /// first prompt, is left out too: said on the line, it widened the
-    /// whole menu. An ended one says nothing more either,
-    /// as its section already says it is not running. The tooltip keeps
-    /// the whole. A count of 0 is left out, as the heading or the absence
-    /// of a count says it.
-    static func menuLine(
-        _ choice: ConversationChoice,
-        now: Date = Date(),
-        locale: Locale,
-        timeZone: TimeZone = .current
-    ) -> String {
-        AgentStatusText.joined(
-            [
-                choice.latestPrompt.flatMap { TurnPromptText.shortInstruction($0, characters: promptCharacters, locale: locale) },
-                choice.lastActivity.map { activityTime($0, now: now, locale: locale, timeZone: timeZone) },
-                choice.section == .viewed || choice.unviewedCount == 0 ? nil : unviewed(choice.unviewedCount, locale: locale),
-                choice.liveTab == nil || choice.isRunningHere ? nil : state(choice, locale: locale)
-            ].compactMap(\.self),
-            locale: locale
-        )
-    }
-
-    /// How much of a conversation's latest prompt its menu line shows, as
-    /// much as the review's scope choices show of a turn's.
-    static let promptCharacters = ReviewTabText.promptCharacters
-
-    /// When a conversation last did something, as its menu line says it:
+    /// When a conversation last did something, as its detail line
+    /// (`detail`) says it:
     /// the clock time on the day of `now`, else the date before it, as a
     /// list of conversations over several days needs.
     static func activityTime(_ date: Date, now: Date, locale: Locale, timeZone: TimeZone) -> String {
@@ -85,18 +53,66 @@ enum ConversationText {
         return date.formatted(Date.FormatStyle(locale: locale, timeZone: timeZone).month(.abbreviated).day().hour().minute())
     }
 
-    /// A conversation's name, wherever one is named: "Claude", or
-    /// "Claude #2" beside another Claude conversation. The one source of
-    /// the name, for the filter, the review's scope menu, destination menu and band,
+    /// A conversation's name, wherever one is named: its title ("Review the
+    /// fork"), with its number where another conversation of its kind has
+    /// the title too ("Fix tests #2"); else its kind, "Claude", or "Claude
+    /// #2" beside another Claude conversation. The one source of the name,
+    /// for the filter, the review's scope menu, destination menu and band,
     /// and the tooltips. The mark sets the place apart from the unviewed
     /// count beside it: "Claude 2 [2]" read as one number twice.
     static func name(_ choice: ConversationChoice, locale: Locale) -> String {
-        name(choice.conversation.provider, ordinal: choice.ordinal, locale: locale)
+        name(choice.conversation.provider, title: choice.title, ordinal: choice.ordinal, locale: locale)
     }
 
-    /// The same name from its kind and place: a review file tag's
+    /// The same name from its kind, title and place: a review file tag's
     /// (`ReviewFileTag`), which keeps no more of its conversation.
-    static func name(_ provider: AgentKind, ordinal: Int?, locale: Locale) -> String {
+    static func name(_ provider: AgentKind, title: String?, ordinal: Int?, locale: Locale) -> String {
+        guard let title else { return kindName(provider, ordinal: ordinal, locale: locale) }
+        guard let ordinal else { return title }
+        return LocalizedStringResource(
+            "changes.titleOrdinal",
+            defaultValue: "\(title) #\(ordinal)",
+            comment: "Changes panel: one of several conversations with the same title, as in Fix tests #2; arguments: the title, its place"
+        ).resolved(in: locale)
+    }
+
+    /// The name as a menu shows it: the title cut to
+    /// `SupervisionTruncation.menuNameLimit` characters, before its number,
+    /// so two conversations of one long title still read apart by their
+    /// number ("Fix the flaky snapshot tests in… #2"). The item's tooltip
+    /// and VoiceOver say the whole name.
+    static func menuName(_ choice: ConversationChoice, locale: Locale) -> String {
+        name(
+            choice.conversation.provider,
+            title: choice.title.map(SupervisionTruncation.menuName),
+            ordinal: choice.ordinal,
+            locale: locale
+        )
+    }
+
+    /// The name as VoiceOver says it: a title alone does not say which
+    /// agent it is, which the badge beside it shows, so the kind goes
+    /// first ("Claude, Review the fork"). A name of the kind already says
+    /// it.
+    static func spokenName(_ choice: ConversationChoice, locale: Locale) -> String {
+        spokenName(choice.conversation.provider, title: choice.title, ordinal: choice.ordinal, locale: locale)
+    }
+
+    /// The same spoken name from its kind, title and place: a review file
+    /// tag's (`ReviewFileTag`).
+    static func spokenName(_ provider: AgentKind, title: String?, ordinal: Int?, locale: Locale) -> String {
+        let name = name(provider, title: title, ordinal: ordinal, locale: locale)
+        guard title != nil else { return name }
+        let kind = SessionRowFactText.agentName(.agent(provider), locale: locale)
+        return LocalizedStringResource(
+            "changes.spokenName",
+            defaultValue: "\(kind), \(name)",
+            comment: "VoiceOver: a titled conversation after its agent, as in Claude, Review the fork; arguments: the agent, its name"
+        ).resolved(in: locale)
+    }
+
+    /// "Claude", or "Claude #2" beside another conversation of the kind.
+    private static func kindName(_ provider: AgentKind, ordinal: Int?, locale: Locale) -> String {
         let name = SessionRowFactText.agentName(.agent(provider), locale: locale)
         guard let ordinal else { return name }
         return LocalizedStringResource(
@@ -149,6 +165,59 @@ enum ConversationText {
         }
     }
 
+    /// A conversation's second line in the filter's menu, under its
+    /// heading in the review's scope menu, and under its section's name in
+    /// the changes panel's list grouped by conversation, the one source for
+    /// every list of conversations: "Tab 3 · 9:06 PM · 3 unviewed", the
+    /// tab that runs it as the pane strip counts the tabs, when it last did
+    /// something, and its count with its unit. The name above it tells the
+    /// conversation apart (`name`), so the line says where to find it. A tab
+    /// outside the session is named with its workspace
+    /// ("Running in the “claude” tab in beta"), as a place in the strip
+    /// would point at another strip; an ended conversation leads with "No
+    /// tab". A part with nothing to say is left out: no time before its
+    /// first turn, and no count of 0: a missing count already says none
+    /// waits. The tooltip keeps the whole.
+    static func detail(
+        _ choice: ConversationChoice,
+        now: Date = Date(),
+        locale: Locale,
+        timeZone: TimeZone = .current
+    ) -> String {
+        AgentStatusText.joined(
+            [
+                detailTab(choice, locale: locale),
+                choice.lastActivity.map { activityTime($0, now: now, locale: locale, timeZone: timeZone) },
+                choice.unviewedCount == 0 ? nil : unviewed(choice.unviewedCount, locale: locale)
+            ].compactMap(\.self),
+            locale: locale
+        )
+    }
+
+    /// The detail line's first part: the tab's place in the strip ("Tab 3");
+    /// for a tab outside the session, where it runs (`state`); for an ended
+    /// conversation, "No tab". `nil` for a tab of the session not yet given
+    /// a place, which has none to say.
+    private static func detailTab(_ choice: ConversationChoice, locale: Locale) -> String? {
+        guard let tab = choice.liveTab else {
+            return LocalizedStringResource(
+                "changes.menuNoTab",
+                defaultValue: "No tab",
+                // swiftlint:disable:next line_length
+                comment: "Changes panel and review: a conversation's detail line, in a menu or under a section heading, for one no tab runs any more, before its time and count"
+            ).resolved(in: locale)
+        }
+        guard tab.isInSession else { return state(choice, locale: locale) }
+        return tab.position.map { position in
+            LocalizedStringResource(
+                "changes.menuTab",
+                defaultValue: "Tab \(position)",
+                // swiftlint:disable:next line_length
+                comment: "Changes panel and review: a conversation's detail line, in a menu or under a section heading: the tab that runs it, as the pane strip counts the tabs"
+            ).resolved(in: locale)
+        }
+    }
+
     /// A conversation's tooltip: "Claude #2 · 2 unviewed · Running in
     /// the “claude” tab", counted as the rail's tooltip counts.
     static func help(_ choice: ConversationChoice, locale: Locale) -> String {
@@ -158,9 +227,20 @@ enum ConversationText {
         )
     }
 
+    /// The tooltip's facts as VoiceOver reads them where they are its
+    /// label (the review's scope menu heading), led by the spoken name, so
+    /// a titled conversation says its agent.
+    static func spokenHelp(_ choice: ConversationChoice, locale: Locale) -> String {
+        AgentStatusText.joined(
+            [spokenName(choice, locale: locale), unviewed(choice.unviewedCount, locale: locale), state(choice, locale: locale)],
+            locale: locale
+        )
+    }
+
     /// What VoiceOver reads after an agent's name: its latest prompt in
     /// full, when it last did something, its unviewed turns, and where it
-    /// runs or that it ended, the menu line's facts with nothing cut.
+    /// runs or that it ended. The detail line's facts, with nothing cut,
+    /// and the latest prompt.
     static func value(
         _ choice: ConversationChoice,
         now: Date = Date(),
@@ -178,12 +258,34 @@ enum ConversationText {
         )
     }
 
+    /// What VoiceOver reads after a section heading's name in the list
+    /// grouped by conversation: whether the section is collapsed, then the
+    /// facts a menu item of the conversation reads (`value`). In the value
+    /// rather than the hint, which VoiceOver can be set not to read and
+    /// heading navigation skips, so the unviewed count and where the
+    /// conversation runs are always said, as each of its cards says its own.
+    static func sectionValue(
+        _ choice: ConversationChoice,
+        isCollapsed: Bool,
+        now: Date = Date(),
+        locale: Locale,
+        timeZone: TimeZone = .current
+    ) -> String {
+        AgentStatusText.spokenList(
+            [
+                (isCollapsed ? LocalizedStringResource("Collapsed") : LocalizedStringResource("Expanded")).resolved(in: locale),
+                value(choice, now: now, locale: locale, timeZone: timeZone)
+            ],
+            locale: locale
+        )
+    }
+
     /// A count of unviewed turns, as VoiceOver reads a badge of one.
     static func unviewedTurns(_ count: Int, locale: Locale) -> String {
         LocalizedStringResource("\(count) unviewed turns", comment: "VoiceOver: a count of turns not marked viewed").resolved(in: locale)
     }
 
-    /// A clock time, "10:31", as a conversation's menu line and a turn's
+    /// A clock time, "10:31", as a conversation's detail line and a turn's
     /// row say it.
     static func clock(_ date: Date, locale: Locale, timeZone: TimeZone) -> String {
         var style = Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)

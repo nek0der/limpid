@@ -144,7 +144,7 @@ struct ChangesPanelModelTests {
         let failedRow = try #require(list.rows.first { $0.status == .changesUnavailable })
         #expect(Self.detail(failedRow, locale: Self.english) == "Couldn’t get the changes", "never No file changes")
         let pendingRow = try #require(list.rows.last)
-        #expect(Self.detail(pendingRow, locale: Self.english) == "Getting the changes…", "its state is in its rule and its sentence")
+        #expect(Self.detail(pendingRow, locale: Self.english) == "Getting the changes…", "its state is in its pill and its sentence")
         // A card with no counts says its state in words, which take the
         // room of a column it leaves empty.
         #expect(list.rows.prefix(2).map { Self.detail($0, locale: Self.english) } == ["No file changes", "Incomplete record"])
@@ -252,21 +252,29 @@ struct ChangesPanelModelTests {
         #expect(ChangesPanelText.took(seconds, locale: Self.japanese) == "所要 \(japanese)")
     }
 
-    @Test func theTurnNumberColumn_fitsFourDigits() {
-        let width = ("T1000" as NSString).size(withAttributes: [.font: LimpidLayout.Supervision.turnNumberFont]).width
-        #expect(ceil(width) <= LimpidLayout.Supervision.turnNumberColumnWidth, "a long conversation's numbers still line up")
-        #expect(LimpidLayout.Supervision.turnLabelColumnWidth > LimpidLayout.Supervision.turnNumberColumnWidth)
+    /// The first column is as wide as the list's longest number needs, so
+    /// a short conversation's prompts stand close to their numbers, and
+    /// grows with the digits so a long one's numbers still line up.
+    @Test(arguments: [false, true])
+    @MainActor
+    func theTurnNumberColumn_fitsTheListsDigits(hasConversation: Bool) {
+        typealias Layout = LimpidLayout.Supervision
+        let one = Layout.turnFirstColumnWidth(hasConversation: hasConversation, digits: 1)
+        let four = Layout.turnFirstColumnWidth(hasConversation: hasConversation, digits: 4)
+        let width = ("T1000" as NSString).size(withAttributes: [.font: Layout.turnNumberFont]).width
+        #expect(ceil(width) + Layout.turnUnviewedPillPadding.width <= four, "a long conversation's numbers still line up")
+        #expect(one < four)
     }
 
     /// The note under a card starts where its prompt does, whether the row
     /// carries its conversation's badge in a wider first column or not.
     @Test(arguments: [false, true])
+    @MainActor
     func theNoteUnderACard_startsWhereItsPromptDoes(hasConversation: Bool) {
         typealias Layout = LimpidLayout.Supervision
-        let column = Layout.turnFirstColumnWidth(hasConversation: hasConversation)
+        let column = Layout.turnFirstColumnWidth(hasConversation: hasConversation, digits: 2)
         let prompt = Layout.turnCardInsets.leading + column + Layout.turnColumnSpacing
-        #expect(Layout.turnNoteInsets(hasConversation: hasConversation).leading == prompt)
-        #expect(Layout.turnFirstColumnWidth(hasConversation: true) == Layout.turnLabelColumnWidth)
+        #expect(Layout.turnNoteInsets(hasConversation: hasConversation, digits: 2).leading == prompt)
     }
 
     @Test(arguments: [

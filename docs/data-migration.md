@@ -300,6 +300,35 @@ key skips it:
   - The build before skips the key and drops it when it saves, so a round
     trip through that build returns every window's sidebar to the default
     order and folds.
+- A window record's `changesPanelGrouping` (`windows[].changesPanelGrouping`)
+  is how that window's changes panel lists the turns: `"timeline"`, every
+  conversation's turns in one list, or `"byConversation"`, a section per
+  conversation (`ChangesPanelGrouping` in `WindowSelection.swift`,
+  `WindowRecord.swift`). The version stays 6.
+  - A record without the key, with a value this build does not know, or with
+    a value of another type, reads as `"timeline"`. The rest of the record
+    still reads.
+  - A project's saved view (`projectViews[]`) does not carry it. The grouping
+    is the window's chrome and stays as the window switches projects.
+  - The build before skips the key and drops it when it saves, so a round
+    trip through that build returns every window to the timeline.
+- `conversationTabNames` at the root is the names the person gave tabs, each
+  with the conversation the tab's title stood for then (`conversation`, the
+  same `provider`, `conversationId`, and `isFallback` as a turn record's,
+  and `name`), so the changes panel and the review still call a
+  conversation by it after its tab closes (`ConversationTabName` in
+  `SessionSnapshot.swift`, `WorkspaceSession.conversationTabNames`). The
+  version stays 6.
+  - A file without the key reads as no names. An element that does not read
+    is passed over, and the rest still read.
+  - An entry is made only when the person names a tab, for the
+    conversation the tab's title stands for then; a conversation that later
+    takes the tab's title is not given it. Clearing the tab's name, on the
+    tab or through its row, removes the entry of the conversation the tab
+    stands for then. Nothing else removes one.
+  - The build before carries the key through as an unknown root field, as
+    it does every root key it does not know, so a round trip through that
+    build keeps the names.
 
 Some keys of version 6 are still read but no longer written new:
 
@@ -670,6 +699,13 @@ A record keeps the agent's last reply's first paragraph in `replyHead`,
 another optional field of schema 1. A record written before the field
 existed has none, and its turn shows no reply; nothing is read again to fill
 it. A build that does not know the field keeps it the same way.
+
+A record keeps the conversation's title in `conversationTitle`, another
+optional field of schema 1, so a conversation whose run record is gone can
+still be named. A record written before the field existed has none, and its
+conversation is named after its first prompt, or by its kind and number;
+nothing is read again to fill it. A build that does not know the field keeps
+it the same way.
 
 Retention (`TurnRetentionLimits`, Settings → Advanced):
 

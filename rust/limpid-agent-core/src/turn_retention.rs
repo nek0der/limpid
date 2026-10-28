@@ -295,6 +295,7 @@ mod tests {
             prompt_head: Some("p".to_owned()),
             prompt_kind: limpid_agent_model::PromptKind::Text,
             reply_head: None,
+            conversation_title: None,
             started_at: limpid_agent_model::format_utc_seconds(
                 std::time::UNIX_EPOCH
                     + std::time::Duration::from_secs(1_791_763_200 - days_ago * DAY),

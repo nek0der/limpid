@@ -1,5 +1,5 @@
 // TurnFactsLine.swift
-// Limpid — a turn card's second line: its facts in columns the list keeps in line, and the unviewed edge.
+// Limpid — a turn card's second line: its facts in columns the list keeps in line.
 
 import SwiftUI
 
@@ -214,41 +214,5 @@ private extension View {
     ) -> some View {
         frame(minWidth: max(least, columns[keyPath: column]), alignment: alignment)
             .layoutPriority(1)
-    }
-}
-
-/// A rounded rectangle's leading edge, `width` thick along its straight side
-/// and thinning to the card's hairline around its corners: the shape a thick
-/// leading border takes on a rounded box. As on the web, the inner edge's
-/// corners are the outer ones less each side's border, so the thickness
-/// stays within the corners rather than running along the top and bottom.
-struct LeadingEdgeShape: Shape {
-    let cornerRadius: CGFloat
-    let width: CGFloat
-    /// The card's own edge on the other sides.
-    var hairline: CGFloat = 1
-
-    func path(in rect: CGRect) -> Path {
-        let outer = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).path(in: rect)
-        let inside = CGRect(
-            x: rect.minX + width,
-            y: rect.minY + hairline,
-            width: max(0, rect.width - width - hairline),
-            height: max(0, rect.height - 2 * hairline)
-        )
-        let corner = CGSize(width: max(0, cornerRadius - width), height: max(0, cornerRadius - hairline))
-        let inner = RoundedRectangle(cornerSize: corner, style: .continuous).path(in: inside)
-        // Where a corner turns from the leading side to the top or bottom,
-        // the color changes on the diagonal from the outer corner through the
-        // inner one, as a browser draws two borders of different widths; past
-        // it the edge is the card's own hairline, in its own color.
-        let slope = hairline / max(width, 1)
-        var leading = Path()
-        leading.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        leading.addLine(to: CGPoint(x: rect.minX + cornerRadius, y: rect.minY + cornerRadius * slope))
-        leading.addLine(to: CGPoint(x: rect.minX + cornerRadius, y: rect.maxY - cornerRadius * slope))
-        leading.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        leading.closeSubpath()
-        return outer.subtracting(inner).intersection(leading)
     }
 }

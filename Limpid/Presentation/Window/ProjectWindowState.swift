@@ -235,6 +235,9 @@ final class ProjectWindowState: Identifiable {
     /// never drawn in another, and one window's open panel holds back no
     /// other window's.
     let prHover = PRHoverPresentation()
+    /// The conversation whose tab or turn card is under the pointer here,
+    /// which the pane strip and the changes panel mark together.
+    let conversationHover = ConversationHoverPresentation()
     /// The commands the menus, the palette, and the rails ask of this
     /// window, which its views carry out (`WindowCommand`).
     @ObservationIgnored let commands = WindowCommandChannel()

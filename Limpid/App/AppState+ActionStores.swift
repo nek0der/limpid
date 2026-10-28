@@ -18,6 +18,7 @@ extension AppState {
             attention: attention,
             attentionQueue: attentionQueue,
             toasts: toastCenter,
+            conversationIdentities: conversationIdentities,
             isAppActive: { [windowRegistry] in windowRegistry.attention.isAppActive },
             restoredTurnIDs: { self.restoredTurnIDs() },
             restoreGateLookup: { self.restoreGateLookup() },
@@ -30,6 +31,10 @@ extension AppState {
                     window: window,
                     stores: self.reviewTabStores
                 )
+            },
+            registry: registry,
+            paneVisibility: { [windowRegistry] window in
+                PaneVisibilityReporter(windowID: window.id, registry: windowRegistry)
             }
         )
     }

@@ -74,6 +74,29 @@ pub fn resolve_title(candidates: TitleCandidates<'_>) -> Result<Option<String>, 
     Ok(None)
 }
 
+/// The title a conversation goes by while it runs: the provider's session
+/// title, else the one it generated, normalized as `resolve_title` does,
+/// without the opening prompt. The one order the hook records with each
+/// turn (`TurnStart::title`) and the projection names a tab by
+/// (`badge_title`), so a turn's recorded title is the one its tab showed.
+/// The app reads a running conversation's title the same way, through
+/// `resolve_title` with no opening prompt (`LimpidRustTitleResolver`).
+///
+/// # Errors
+///
+/// Returns `TitleError::TooLong` when a candidate it reaches exceeds
+/// `MAX_TITLE_BYTES`, as `resolve_title` does.
+pub fn conversation_title(
+    provider_session: Option<&str>,
+    provider_generated: Option<&str>,
+) -> Result<Option<String>, TitleError> {
+    resolve_title(TitleCandidates {
+        provider_session,
+        provider_generated,
+        first_prompt: None,
+    })
+}
+
 fn truncate_utf8(value: &mut String, maximum_bytes: usize) {
     if value.len() <= maximum_bytes {
         return;
@@ -114,6 +137,24 @@ fn sanitize_title(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conversation_title_takes_the_session_title_then_the_generated_one() {
+        assert_eq!(
+            conversation_title(Some(" Session "), Some("Generated")),
+            Ok(Some("Session".to_owned()))
+        );
+        assert_eq!(
+            conversation_title(Some(" \n "), Some("Generated")),
+            Ok(Some("Generated".to_owned())),
+            "a blank session title falls through"
+        );
+        assert_eq!(
+            conversation_title(None, Some("Generated")),
+            Ok(Some("Generated".to_owned()))
+        );
+        assert_eq!(conversation_title(None, None), Ok(None));
+    }
 
     #[test]
     fn provider_session_title_has_highest_precedence() {

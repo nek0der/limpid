@@ -115,7 +115,8 @@ enum ChangesPanelActions {
     }
 
     /// What the panel shows: the worktree's timeline, narrowed to the
-    /// conversation the filter chose (`ChangesPanelModel.make`).
+    /// conversation the filter chose, or grouped a section per conversation
+    /// as the window lists it (`ChangesPanelModel.make`).
     static func content(window: ProjectWindowState, stores: ChangesPanelStores) -> ChangesPanelModel.Content {
         let folder = folder(window: window, stores: stores)
         let answer = folder.flatMap { stores.repositoryRoots.answer(for: $0) }
@@ -131,9 +132,13 @@ enum ChangesPanelActions {
             nil
         }
         var input = panelInput(answer: answer, window: window, stores: stores)
-        // The panel alone says where each conversation runs; the rail,
-        // drawn far more often, never reads every pane of the app for it.
+        // Where each conversation runs, and what names it there; the
+        // rail reads the same only for its tooltip's breakdown (`railFacts`).
         input.liveTab = liveTab(in: window.selection.activeContainerID, stores: stores)
+        // Only the panel's list is grouped; the rail and the review read
+        // the conversations, never the sections.
+        input.grouping = window.selection.changesPanelGrouping
+        input.identities = stores.conversationIdentities.identities(in: window.selection.activeContainerID)
         // The turns are the worktree's, read from its folder, so a worktree
         // with no tab open still lists them; only a selection with no
         // folder (a scratch tab, or a row that is gone) has none to list.
@@ -157,9 +162,8 @@ enum ChangesPanelActions {
         window: ProjectWindowState,
         stores: ChangesPanelStores
     ) -> ChangesPanelModel.Input {
-        let container = window.selection.activeContainerID
         let focused = stores.session.activeTab(in: window.id)?.splitTree.effectiveFocusedLeafID
-        let running = running(in: container, stores: stores)
+        let running = tabs(in: window.selection.activeContainerID, stores: stores).running
         let restored = stores.restoredTurnIDs()
         return ChangesPanelModel.Input(
             agents: agents(answer: answer, running: running, stores: stores),
@@ -167,8 +171,16 @@ enum ChangesPanelActions {
             chosen: window.selection.changesPanelFilter,
             focused: focused.flatMap { stores.attention.headerRuntime(inPane: $0)?.conversation },
             line: { stores.viewedLines.line(of: $0) },
-            isRestored: { restored.contains($0.turnID) }
+            isRestored: { restored.contains($0.turnID) },
+            tabName: tabName(stores: stores)
         )
+    }
+
+    /// The name the person gave a tab each conversation ran in, which still
+    /// names a conversation whose tab is gone.
+    private static func tabName(stores: ChangesPanelStores) -> (ConversationKey) -> String? {
+        let session = stores.session
+        return { session.conversationTabNames[$0] }
     }
 
     /// The restore the panel's record shows: the latest of the session's
@@ -180,11 +192,24 @@ enum ChangesPanelActions {
     /// What the rail's button says: the session's turns waiting to be
     /// read, every agent's together, for its badge; and the conversations
     /// with turns to read, named and counted as the panel names and counts
-    /// them, for its tooltip's breakdown (`ChangesPanelModel.rail`). Read
-    /// on every draw of the rail, so it reads the agents once, never the
-    /// panel's rows nor the app's other panes.
+    /// them, for its tooltip's breakdown (`ChangesPanelModel.rail`). Named
+    /// from the same tabs as the panel (`liveTab`), with the tab's rename
+    /// and the provider's live titles, so the rail, the panel, and the
+    /// menus give a conversation one name and one number among its
+    /// namesakes. Read on every draw of the rail, so it reads the agents
+    /// once and never the panel's rows; the app's panes are read only when
+    /// the breakdown has two or more conversations to name, and then once.
     static func railFacts(window: ProjectWindowState, stores: ChangesPanelStores) -> (unviewed: Int, agents: [ConversationChoice]) {
-        ChangesPanelModel.rail(railInput(window: window, stores: stores))
+        var input = railInput(window: window, stores: stores)
+        let container = window.selection.activeContainerID
+        input.identities = stores.conversationIdentities.identities(in: container)
+        var found: ((ConversationKey) -> ConversationChoice.LiveTab?)?
+        input.liveTab = { conversation in
+            let tabs = found ?? liveTab(in: container, stores: stores)
+            found = tabs
+            return tabs(conversation)
+        }
+        return ChangesPanelModel.rail(input)
     }
 
     /// The session's turns waiting to be read, every agent's together, as
@@ -208,21 +233,24 @@ enum ChangesPanelActions {
     /// after. `container` is the session the tab belongs to
     /// (`ReviewTabActions.container(of:window:stores:)`), whose panes the
     /// destination menu lists, so a pane and its section are named from
-    /// the same panes.
+    /// the same panes, and whose colors the panel and the strip read, so a
+    /// file tag is in its conversation's color there.
     static func reviewConversations(
         root: String,
         container: ContainerID,
         stores: ChangesPanelStores
     ) -> (agents: [ChangesPanelModel.Agent], named: [ConversationChoice]) {
-        let running = running(in: container, stores: stores)
+        let running = tabs(in: container, stores: stores).running
         let restored = stores.restoredTurnIDs()
-        let input = ChangesPanelModel.Input(
+        var input = ChangesPanelModel.Input(
             agents: agents(answer: .repository(path: root), running: running, stores: stores),
             running: running,
             liveTab: liveTab(in: container, stores: stores),
             line: { stores.viewedLines.line(of: $0) },
-            isRestored: { restored.contains($0.turnID) }
+            isRestored: { restored.contains($0.turnID) },
+            tabName: tabName(stores: stores)
         )
+        input.identities = stores.conversationIdentities.identities(in: container)
         return (input.agents, ChangesPanelModel.conversations(input))
     }
 
@@ -234,12 +262,56 @@ enum ChangesPanelActions {
         session.selections[window.id]?.changesPanelFilter = conversation
     }
 
+    /// The head's "Timeline / By Conversation": how the window lists the
+    /// turns, kept with the window's layout (`WindowSelection.changesPanelGrouping`).
+    static func setGrouping(_ grouping: ChangesPanelGrouping, window: ProjectWindowState, session: WorkspaceSession) {
+        session.selections[window.id]?.changesPanelGrouping = grouping
+    }
+
     /// A row: its turn in the review, from the pane its agent runs in.
     static func open(_ turn: TurnSummary, window: ProjectWindowState, stores: ChangesPanelStores) {
         let pane = pane(of: turn.conversation, window: window, stores: stores)
         Task {
             await stores.openReview(.turn(turn.turnID), pane, turn.conversation, window)
         }
+    }
+
+    /// A card's "Show Tab": brings forward the session's tab that runs the
+    /// card's conversation and focuses the pane it runs in, as a click on
+    /// the tab in the strip would, and puts the review behind it when the
+    /// review is in front. Nothing happens for a conversation no pane of
+    /// the session runs (`offersShowTab`).
+    static func showTab(of conversation: ConversationKey, window: ProjectWindowState, stores: ChangesPanelStores) {
+        guard let place = tabs(in: window.selection.activeContainerID, stores: stores).place(of: conversation) else { return }
+        PaneActions.activateAndFocus(
+            stores.session,
+            registry: stores.registry,
+            tabID: place.tabID,
+            paneID: place.paneID,
+            in: window.id,
+            intent: .person
+        )
+        ReviewTabActions.putBehind(
+            window: window,
+            session: stores.session,
+            registry: stores.registry,
+            paneVisibility: stores.paneVisibility(window)
+        )
+    }
+
+    /// Whether a card of `conversation` offers "Show Tab": while any pane
+    /// of any tab of the window's session runs it, a split tab's second
+    /// pane too (`ConversationTabs.place(of:)`). A tab in another session
+    /// is not this window's strip's to bring forward, and an ended
+    /// conversation has no tab.
+    static func offersShowTab(of conversation: ConversationKey, window: ProjectWindowState, stores: ChangesPanelStores) -> Bool {
+        conversationsWithTab(window: window, stores: stores).contains(conversation)
+    }
+
+    /// Every conversation a card offers "Show Tab" for (`offersShowTab`),
+    /// read once for the whole list rather than once per card.
+    static func conversationsWithTab(window: ProjectWindowState, stores: ChangesPanelStores) -> Set<ConversationKey> {
+        Set(tabs(in: window.selection.activeContainerID, stores: stores).running)
     }
 
     /// "Review Unviewed" in the head: the worktree's unviewed turns, every
@@ -265,29 +337,50 @@ enum ChangesPanelActions {
     }
 
     /// "Mark as Viewed up to Here" on a row: every conversation's line
-    /// comes up to the row's turn's end (`WorktreeTimeline.marksThrough`).
+    /// comes up to the row's turn's end (`WorktreeTimeline.marksThrough`),
+    /// or, in a section of the list grouped by conversation
+    /// (`Row.movesOnlyItsOwnLine`), the row's own line alone.
     /// `name` names a conversation as the toast does.
     static func markViewed(
         through turn: TurnSummary,
+        movesOnlyItsOwnLine: Bool,
         named name: (ConversationKey) -> String?,
         window: ProjectWindowState,
         stores: ChangesPanelStores
     ) {
-        let turns = root(window: window, stores: stores).map { Self.timeline(root: $0, stores: stores) } ?? []
-        viewedLineActions(window: window, stores: stores).markViewed(through: WorktreeTimeline.marksThrough(turn, in: turns), named: name)
+        let moved = turnsMoved(by: .markViewedThrough, at: turn, movesOnlyItsOwnLine: movesOnlyItsOwnLine, window: window, stores: stores)
+        viewedLineActions(window: window, stores: stores).markViewed(through: moved, named: name)
     }
 
     /// "Mark as Unviewed from Here" on a row: every conversation's line
     /// goes back above the row's place on the timeline
-    /// (`WorktreeTimeline.unmarksFrom`), as one mark.
+    /// (`WorktreeTimeline.unmarksFrom`), as one mark, or, in a section, the
+    /// row's own line alone.
     static func markNotViewed(
         from turn: TurnSummary,
+        movesOnlyItsOwnLine: Bool,
         named name: (ConversationKey) -> String?,
         window: ProjectWindowState,
         stores: ChangesPanelStores
     ) {
-        let turns = root(window: window, stores: stores).map { Self.timeline(root: $0, stores: stores) } ?? []
-        viewedLineActions(window: window, stores: stores).markNotViewed(from: WorktreeTimeline.unmarksFrom(turn, in: turns), named: name)
+        let moved = turnsMoved(by: .markUnviewedFrom, at: turn, movesOnlyItsOwnLine: movesOnlyItsOwnLine, window: window, stores: stores)
+        viewedLineActions(window: window, stores: stores).markNotViewed(from: moved, named: name)
+    }
+
+    /// The turns a row's move moves each line to
+    /// (`ChangesPanelModel.turnsMoved(by:at:in:movesOnlyItsOwnLine:)`). The
+    /// worktree's timeline is read only when the move reaches other lines.
+    private static func turnsMoved(
+        by action: ChangesPanelModel.RowAction,
+        at turn: TurnSummary,
+        movesOnlyItsOwnLine: Bool,
+        window: ProjectWindowState,
+        stores: ChangesPanelStores
+    ) -> [TurnSummary] {
+        let turns = movesOnlyItsOwnLine
+            ? []
+            : root(window: window, stores: stores).map { Self.timeline(root: $0, stores: stores) } ?? []
+        return ChangesPanelModel.turnsMoved(by: action, at: turn, in: turns, movesOnlyItsOwnLine: movesOnlyItsOwnLine)
     }
 
     /// "Unmark as Viewed" on the line: the last mark's moves, every
@@ -313,41 +406,61 @@ enum ChangesPanelActions {
         )
     }
 
-    private static func running(in container: ContainerID, stores: ChangesPanelStores) -> [ConversationKey] {
-        panes(in: container, stores: stores).compactMap { stores.attention.headerRuntime(inPane: $0)?.conversation }
+    /// Which conversations `container`'s tabs run, and where each runs
+    /// (`ConversationTabs`): the one mapping the strip reads too.
+    static func tabs(in container: ContainerID, stores: ChangesPanelStores) -> ConversationTabs {
+        ConversationTabs(tabs: stores.session.tabs(in: container), runtimes: stores.attention.allRuntimes)
     }
 
-    /// The tab that runs each conversation, read from every pane of the app
-    /// with `container`'s first (`ChangesPanelModel.liveTabs`).
-    private static func liveTab(in container: ContainerID, stores: ChangesPanelStores) -> (ConversationKey) -> ConversationChoice.LiveTab? {
+    /// The tab that runs each conversation, read from every tab of the app
+    /// with `container`'s first (`ChangesPanelModel.liveTabs`), each
+    /// conversation at the pane `ConversationTabs` places it in, with what
+    /// names the conversation there: the tab's own name for the
+    /// conversation its title stands for, and the provider's titles the
+    /// pane's agent holds.
+    static func liveTab(in container: ContainerID, stores: ChangesPanelStores) -> (ConversationKey) -> ConversationChoice.LiveTab? {
         let session = stores.session
-        let panes = session.tabs.flatMap { tab in
-            let isInSession = tab.container == container
-            let live = ConversationChoice.LiveTab(
-                title: tab.displayTitle,
-                isInSession: isInSession,
-                checkoutPlace: isInSession ? nil : CheckoutName.place(of: tab.container, in: session)
-            )
-            return tab.splitTree.allLeafIDs().map { pane in
-                ChangesPanelModel.LivePane(conversation: stores.attention.headerRuntime(inPane: pane)?.conversation, tab: live)
+        let runtimes = stores.attention.allRuntimes
+        let here = session.tabs(in: container)
+        let elsewhere = session.tabs.filter { $0.container != container }
+        let tabsByID = Dictionary((here + elsewhere).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func panes(of tabs: [Tab], isInSession: Bool) -> [ChangesPanelModel.LivePane] {
+            let mapping = ConversationTabs(tabs: tabs, runtimes: runtimes)
+            return mapping.running.compactMap { conversation in
+                guard let place = mapping.place(of: conversation), let tab = tabsByID[place.tabID] else { return nil }
+                let runtime = AttentionState.headerRuntime(inPane: place.paneID, among: runtimes)
+                let isTitled = mapping.conversations(of: tab.id)?.titled == conversation
+                let live = ConversationChoice.LiveTab(
+                    title: tab.displayTitle,
+                    isInSession: isInSession,
+                    checkoutPlace: isInSession ? nil : CheckoutName.place(of: tab.container, in: session),
+                    titleOverride: isTitled ? tab.titleOverride : nil,
+                    position: isInSession ? place.position : nil,
+                    providerTitle: runtime.flatMap(Self.providerTitle)
+                )
+                return ChangesPanelModel.LivePane(conversation: conversation, tab: live)
             }
         }
-        let tabs = ChangesPanelModel.liveTabs(panes)
+        let tabs = ChangesPanelModel.liveTabs(panes(of: here, isInSession: true) + panes(of: elsewhere, isInSession: false))
         return { tabs[$0] }
     }
 
-    /// The session's panes, in its tabs' order.
-    private static func panes(window: ProjectWindowState, stores: ChangesPanelStores) -> [UUID] {
-        panes(in: window.selection.activeContainerID, stores: stores)
+    /// The title `runtime`'s provider gives its conversation, as the tab's
+    /// title and each turn's recorded title take it (`conversation_title` on
+    /// the Rust side): the session's name, else the generated title, cleaned
+    /// of line breaks and control characters, without the opening prompt.
+    private static func providerTitle(_ runtime: AgentRuntimePresentation) -> String? {
+        LimpidRustTitleResolver.resolve(
+            providerSessionTitle: runtime.badge.providerSessionTitle,
+            providerGeneratedTitle: runtime.badge.providerGeneratedTitle,
+            firstPrompt: nil
+        )
     }
 
-    private static func panes(in container: ContainerID, stores: ChangesPanelStores) -> [UUID] {
-        stores.session.tabs(in: container).flatMap { $0.splitTree.allLeafIDs() }
-    }
-
-    /// The pane `conversation`'s agent runs in, if it still runs here.
+    /// The pane `conversation`'s agent runs in, if it still runs here
+    /// (`ConversationTabs.place(of:)`).
     static func pane(of conversation: ConversationKey, window: ProjectWindowState, stores: ChangesPanelStores) -> UUID? {
-        panes(window: window, stores: stores).first { stores.attention.headerRuntime(inPane: $0)?.conversation == conversation }
+        tabs(in: window.selection.activeContainerID, stores: stores).place(of: conversation)?.paneID
     }
 
     private static func viewedLineActions(window: ProjectWindowState, stores: ChangesPanelStores) -> ViewedLineActions {

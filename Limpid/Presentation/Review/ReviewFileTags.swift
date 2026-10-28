@@ -13,7 +13,7 @@ enum ReviewFileTags {
     /// (`ReviewScopeCatalog.turnsThrough`); `paths` gives a turn's files,
     /// `nil` while they have not been read or cannot be, and that turn
     /// tags nothing until they are. `conversations` names them, as the
-    /// changes panel numbers them. Nothing in a worktree of one
+    /// changes panel names them. Nothing in a worktree of one
     /// conversation, where every tag would name the same one.
     static func tags(
         turns: [TurnSummary],
@@ -41,8 +41,10 @@ enum ReviewFileTags {
             entries.map { entry in
                 ReviewFileTag(
                     provider: entry.conversation.provider,
+                    title: names[entry.conversation]?.title,
                     ordinal: names[entry.conversation]?.ordinal,
-                    turns: entry.turns
+                    turns: entry.turns,
+                    identity: names[entry.conversation]?.identity
                 )
             }
         }
@@ -70,7 +72,13 @@ enum ReviewFileTags {
             }
         }
         return entries.map { entry in
-            ReviewFileTag(provider: entry.conversation.provider, ordinal: names[entry.conversation]?.ordinal, turns: entry.turns)
+            ReviewFileTag(
+                provider: entry.conversation.provider,
+                title: names[entry.conversation]?.title,
+                ordinal: names[entry.conversation]?.ordinal,
+                turns: entry.turns,
+                identity: names[entry.conversation]?.identity
+            )
         }
     }
 

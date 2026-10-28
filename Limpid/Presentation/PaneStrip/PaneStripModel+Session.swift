@@ -3,19 +3,22 @@
 
 import Foundation
 
+@MainActor
 extension PaneStripModel {
     /// The strip for `container`'s tabs as the app's state describes them,
     /// with `window`'s tab marked active. Each tab's glyph is read from its
     /// panes' header marks (`PaneHeaderRules.mark`) and the items behind
     /// them, so a tab and its panes never disagree on what state they are
-    /// in, a turn's unread aside.
-    @MainActor
+    /// in, a turn's unread aside. Each tab carries the conversations its
+    /// panes run (`ConversationTabs`), the one its title stands for first,
+    /// with the colors `identities` gives them (`ConversationIdentityStore`).
     init(
         container: ContainerID,
         session: WorkspaceSession,
         window: WindowID,
         queue: AttentionQueue,
         runtimes: [AgentRuntimePresentation] = [],
+        identities: [ConversationKey: Int] = [:],
         mountedTmuxPaneIDs: Set<UUID>,
         reviewTab: ReviewTab
     ) {
@@ -38,8 +41,20 @@ extension PaneStripModel {
             guard let pane = AttentionState.shownPane(of: runtime, in: session) else { continue }
             runsByPane[pane, default: []].append(runtime)
         }
-        let inputs = session.tabs(in: container).map { tab in
+        let tabs = session.tabs(in: container)
+        // None for a scratch tab: it has no worktree whose cards the tab
+        // could be matched with.
+        let conversations = ConversationTabs(tabs: container == .loose ? [] : tabs, runtimes: runtimes)
+        let inputs = tabs.map { tab in
             let panes = tab.splitTree.allLeafIDs()
+            let runs = conversations.conversations(of: tab.id)
+            // The one the tab's title stands for, as the changes panel names
+            // the conversation by the tab's rename only there.
+            let conversation = runs?.titled
+            var runningIdentities: [ConversationKey: Int] = [:]
+            for key in runs?.all ?? [] {
+                runningIdentities[key] = identities[key]
+            }
             return ItemInput(
                 id: tab.id,
                 title: tab.displayTitle,
@@ -52,7 +67,10 @@ extension PaneStripModel {
                 hasUnread: session.hasUnread(in: tab),
                 isInTmux: tab.isHostedInTmux(mountedTmuxPaneIDs: mountedTmuxPaneIDs),
                 exitCodes: panes.compactMap { session.childExitCode(paneID: $0) },
-                paneCount: panes.count
+                paneCount: panes.count,
+                conversation: conversation,
+                identity: conversation.flatMap { identities[$0] },
+                runningIdentities: runningIdentities
             )
         }
         self.init(items: inputs, activeTabID: session.selection(window)?.activeTabID, reviewTab: reviewTab)

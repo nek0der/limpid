@@ -97,8 +97,8 @@ enum ChangesPanelText {
 
     /// The card's second line, fact by fact, each in a place of its own so
     /// the facts stand in columns down the list. Whether the turn is viewed
-    /// is not among them: the blue rule and number say it, and the row's
-    /// sentence says it aloud.
+    /// is not among them: the number's pill says it, and the row's sentence
+    /// says it aloud.
     struct Facts: Equatable {
         /// How many files the turn changed, drawn beside a document glyph
         /// rather than with the word, so the line keeps to one line at the
@@ -462,26 +462,22 @@ enum ChangesPanelText {
     static func turnOf(_ conversation: ConversationChoice, locale: Locale) -> String {
         LocalizedStringResource(
             "Turn of \(ConversationText.name(conversation, locale: locale))",
-            comment: "Tooltip of a turn's row: which conversation the turn is of; argument: the conversation's name, as in Claude #4"
+            // swiftlint:disable:next line_length
+            comment: "Tooltip of a turn's row: which conversation the turn is of; argument: the conversation's name, as in Claude #4 or Fix tests"
         ).resolved(in: locale)
-    }
-
-    /// The row's badge's words: "#4" beside the "Cl" badge for one of
-    /// several Claude conversations, nothing when the kind alone names it.
-    static func ordinal(_ conversation: ConversationChoice) -> String? {
-        conversation.ordinal.map { "#\($0)" }
     }
 
     /// What VoiceOver reads for a turn's row, as one list: "Turn 4 of
     /// Claude #4, Unviewed, 2 files +94 −2, ✓ Tests (after 2 failures),
     /// 84K tokens, took 3m 05s, 10:31". The
     /// badge itself says nothing aloud; the sentence names the
-    /// conversation in full, and a turn is "Turn 4", never the "T4" read
-    /// letter by letter.
+    /// conversation in full, with its kind before a title
+    /// (`ConversationText.spokenName`), and a turn is "Turn 4", never the
+    /// "T4" read letter by letter.
     static func rowSpoken(_ row: ChangesPanelModel.Row, locale: Locale, timeZone: TimeZone = .current) -> String {
         let turn = row.conversation.map { conversation in
             LocalizedStringResource(
-                "Turn \(row.turn.displayNumber) of \(ConversationText.name(conversation, locale: locale))",
+                "Turn \(row.turn.displayNumber) of \(ConversationText.spokenName(conversation, locale: locale))",
                 comment: "VoiceOver, a turn's row: the turn and its conversation; arguments: the turn's number, the conversation's name"
             ).resolved(in: locale)
         } ?? ReceiptText.spokenTurn(row.turn.displayNumber, locale: locale)
@@ -492,7 +488,7 @@ enum ChangesPanelText {
             [
                 turn,
                 TurnPromptText.instruction(row.turn.prompt, locale: locale) ?? "",
-                // The card shows the state only in its rule and number, so
+                // The card shows the state only in its number's pill, so
                 // the sentence says it in words.
                 status(row.status, locale: locale),
                 changes ?? "",
@@ -589,6 +585,14 @@ enum ChangesPanelText {
     /// The filter's label: the conversation shown, or "All".
     static func filterLabel(_ filter: ConversationKey?, among conversations: [ConversationChoice], locale: Locale) -> String {
         conversations.first { $0.conversation == filter }.map { ConversationText.name($0, locale: locale) } ?? filterAll(locale: locale)
+    }
+
+    /// The filter's label as VoiceOver says it: a titled conversation with
+    /// its agent (`ConversationText.spokenName`), as its menu item says it,
+    /// so the trigger reads as the item it came from.
+    static func filterSpokenLabel(_ filter: ConversationKey?, among conversations: [ConversationChoice], locale: Locale) -> String {
+        conversations.first { $0.conversation == filter }
+            .map { ConversationText.spokenName($0, locale: locale) } ?? filterAll(locale: locale)
     }
 
     /// The filter's tooltip: what the conversation shown is doing, or what
@@ -802,5 +806,38 @@ struct TurnCardMove: Equatable, Identifiable {
     /// The glyph's tooltip: the title, then what it adds.
     var help: String {
         note.map { "\(title)\n\($0)" } ?? title
+    }
+}
+
+// MARK: - The grouping
+
+extension ChangesPanelText {
+    /// A segment of the head's choice of how the turns are listed.
+    static func grouping(_ grouping: ChangesPanelGrouping, locale: Locale) -> String {
+        let resource = switch grouping {
+        case .timeline:
+            LocalizedStringResource(
+                "changes.groupingTimeline",
+                defaultValue: "Timeline",
+                comment: "Changes panel: the segment that lists every conversation's turns as one timeline"
+            )
+        case .byConversation:
+            LocalizedStringResource(
+                "changes.groupingByConversation",
+                defaultValue: "By Conversation",
+                comment: "Changes panel: the segment that lists the turns in a section per conversation"
+            )
+        }
+        return resource.resolved(in: locale)
+    }
+
+    /// What VoiceOver calls the choice between the two groupings.
+    static func groupingLabel(locale: Locale) -> String {
+        LocalizedStringResource(
+            "changes.groupingLabel",
+            defaultValue: "Arrange Turns",
+            comment: "Changes panel: VoiceOver's name for the choice between a timeline and a section per conversation"
+        )
+        .resolved(in: locale)
     }
 }

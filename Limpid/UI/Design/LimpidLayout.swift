@@ -650,6 +650,26 @@ enum LimpidLayout {
         static let agentBadgeWidth: CGFloat = 18
         static let agentBadgeHeight: CGFloat = 16
         static let agentBadgeLargeHeight: CGFloat = 18
+        /// A conversation's identity bar (`ConversationIdentityBar`): thin
+        /// beside its badge, a little shorter than the badge so it reads as
+        /// a mark on the badge's line rather than a rule of the row, and
+        /// taller in a section heading, whose line is taller.
+        static let conversationIdentityBarWidth: CGFloat = 3
+        static let conversationIdentityBarHeight: CGFloat = 14
+        static let conversationIdentityBarHeadingHeight: CGFloat = 16
+        static let conversationIdentityBarCornerRadius: CGFloat = 1.5
+        /// Between the bar and the badge after it, the same wherever the
+        /// two stand.
+        static let conversationIdentityBarSpacing = spaceXS
+        /// The outline a conversation's tab and turn cards take in its
+        /// identity color while the other surface (a card, or the tab) is
+        /// under the pointer
+        /// (`ConversationHoverRule`): as wide as the review's ring, so the
+        /// two read as the same kind of mark.
+        static let conversationHoverOutlineWidth: CGFloat = 1.5
+        /// The other conversations' cards while a tab is under the pointer:
+        /// faded enough to step back, still read at a glance.
+        static let conversationHoverDimmedOpacity: Double = 0.6
         static let agentBadgeCornerRadius: CGFloat = 5
         /// The edge inside an agent's badge (`SupervisionTokens.claudeEdge`,
         /// `codexEdge`): drawn on the side where a brand fill stands under
@@ -781,27 +801,60 @@ enum LimpidLayout {
         static let changesTotalsLineSpacing = spaceHairline
         /// Around the turns, and between their cards.
         static let changesListInset = spaceM
+        /// Above the first turn, less than at the sides: the head's own
+        /// bottom inset already parts the list from the totals over it.
+        static let changesListTopInset = spaceXS
         static let turnCardSpacing = spaceS
+        /// In the list grouped by conversation, the extra room above every
+        /// heading but the first, so a section ends before the next begins.
+        /// Its cards stay at the list's full width, as on the timeline.
+        static let changesSectionGap = spaceXS
+        /// A section heading's unviewed count: the rail badge's pill, which
+        /// is the app's mark of a count waiting to be read.
+        static let changesSectionCountSize = railBadgeSize
         static let turnCardCornerRadius: CGFloat = 9
-        /// The column "T7" takes, so every prompt starts at the same x: wide
-        /// enough for "T1000" in the number's face (`turnNumberFont`), so a
-        /// long conversation's numbers still line up. And the gap after it.
-        static let turnNumberColumnWidth: CGFloat = 34
-        /// The same column in a worktree of several conversations, where
-        /// the conversation's badge and number ("Cl #12") stand under the
-        /// turn's number: the 18pt badge, a hairline, and three caption
-        /// figures.
-        static let turnLabelColumnWidth: CGFloat = 44
-        /// A row's first column: the badge's where the row carries its
-        /// conversation, else the number's. The one source of where the
-        /// prompt starts, which the note under it starts at too
-        /// (`turnNoteInsets(hasConversation:)`).
-        static func turnFirstColumnWidth(hasConversation: Bool) -> CGFloat {
-            hasConversation ? turnLabelColumnWidth : turnNumberColumnWidth
+        /// A row's first column: "T7", and under it the conversation's
+        /// identity bar and badge where the row carries its conversation.
+        /// As wide as the list's longest number, `digits` long, with an
+        /// unviewed pill past its end (`turnUnviewedPillPadding`), so a
+        /// short conversation's prompts stand close to their numbers and
+        /// every prompt of the list starts at one x. With the conversation,
+        /// never narrower than the bar and badge, drawn out to the pill's
+        /// start. The one source of where the prompt starts, which the
+        /// note under it starts at too (`turnNoteInsets(hasConversation:digits:)`).
+        ///
+        /// On the main actor: AppKit measures text safely only there, and a
+        /// measure taken from another thread aborted in CoreText.
+        @MainActor
+        static func turnFirstColumnWidth(hasConversation: Bool, digits: Int) -> CGFloat {
+            let numberColumn = turnNumberWidth(digits: max(digits, 1)) + turnUnviewedPillPadding.width
+            guard hasConversation else { return numberColumn }
+            let lead = conversationIdentityBarWidth + conversationIdentityBarSpacing + agentBadgeWidth
+            return max(numberColumn, lead - turnUnviewedPillPadding.width)
         }
+
+        /// "T" and `digits` zeros in the number's face, measured once per
+        /// count: every card asks on every draw, and the answer never
+        /// changes while the app runs.
+        @MainActor
+        private static func turnNumberWidth(digits: Int) -> CGFloat {
+            if let width = turnNumberWidths[digits] {
+                return width
+            }
+            let label = "T" + String(repeating: "0", count: digits)
+            let width = ceil((label as NSString).size(withAttributes: [.font: turnNumberFont]).width)
+            turnNumberWidths[digits] = width
+            return width
+        }
+
+        @MainActor private static var turnNumberWidths: [Int: CGFloat] = [:]
 
         static let turnColumnSpacing = spaceS
         static let turnLineSpacing = spaceHairline
+        /// Between a card's "T7" and its conversation's badge under it:
+        /// room for the unviewed pill, drawn past the number's frame, to
+        /// stand clear of the badge.
+        static let turnLabelSpacing = spaceSnug
         /// Between a card's glyph moves (the viewed line's, the restore),
         /// and their height, the time's line.
         static let turnMoveSpacing = spaceHairline
@@ -822,10 +875,15 @@ enum LimpidLayout {
         static let turnChecksMinWidth: CGFloat = 28
         static let turnTokensMinWidth: CGFloat = 44
         static let turnDurationMinWidth: CGFloat = 30
-        /// The blue rule on an unviewed turn's leading edge, and the
-        /// ring on the turns the review tab shows.
-        static let turnUnviewedRuleWidth: CGFloat = 3
+        /// The ring on the turns the review tab shows.
         static let turnOpenRingWidth: CGFloat = 1.5
+        /// The pill an unviewed turn's number stands in: drawn around the
+        /// number rather than laid out with it, so the number keeps its
+        /// place in the column and the card keeps its height. Its sides
+        /// reach into the card's inset and the gap before the prompt,
+        /// which have room for them (`turnCardInsets`, `turnColumnSpacing`).
+        static let turnUnviewedPillPadding = CGSize(width: 5, height: 1)
+        static let turnUnviewedPillCornerRadius: CGFloat = 5
         /// A turn a restore took back has a dashed edge: the card steps back
         /// while its words keep text's contrast.
         static let restoredTurnBorderDash: [CGFloat] = [3, 3]

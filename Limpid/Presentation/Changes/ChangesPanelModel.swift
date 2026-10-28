@@ -30,15 +30,18 @@ enum ChangesPanelModel {
         var running: [ConversationKey] = []
         /// The tab whose pane runs the conversation, and where that tab is
         /// (`liveTabs`); `nil` when no pane of the app runs it. What tells
-        /// the filter's "Claude #2" apart as the one in the "claude" tab.
-        /// Left at none where only the counts are read (the rail),
-        /// as finding it reads every pane of the app.
+        /// the filter's "Claude #2" apart as the one in the "claude" tab,
+        /// and what names a conversation live (`ConversationTitleRule`).
+        /// Left at none where only the counts are read (the rail's badge,
+        /// the totals), as finding it reads every pane of the app.
         var liveTab: (ConversationKey) -> ConversationChoice.LiveTab? = { _ in nil }
         /// The conversation the panel's filter narrows the timeline to;
         /// `nil` for every conversation ("All"), the default.
         var chosen: ConversationKey?
         /// The focused pane's agent, if it runs one: where the panel opens.
         var focused: ConversationKey?
+        /// How the window lists the turns (`WindowSelection.changesPanelGrouping`).
+        var grouping = ChangesPanelGrouping.timeline
         /// Each conversation's viewed line, the one source of which turns
         /// are viewed and of the Undo the end line offers.
         var line: (ConversationKey) -> ViewedLine?
@@ -63,9 +66,18 @@ enum ChangesPanelModel {
         /// Whether a restore that may still be undone took the turn's
         /// changes back (`RestoredTurns`).
         var isRestored: (TurnSummary) -> Bool = { _ in false }
+        /// The name the person gave a tab the conversation ran in
+        /// (`WorkspaceSession.conversationTabNames`), which names it once
+        /// that tab is gone; `nil` for none, and where only the counts are
+        /// read.
+        var tabName: (ConversationKey) -> String? = { _ in nil }
         /// Why a restore to the start of the turn cannot run now
         /// (`RestoreGate`), `nil` while it can.
         var restoreBlocker: (TurnSummary) -> RestoreGate.Blocker? = { _ in nil }
+        /// Each conversation's identity color (`ConversationIdentityStore`),
+        /// handed out over `activeConversations`; empty where only the
+        /// counts are read.
+        var identities: [ConversationKey: Int] = [:]
     }
 
     /// What Git said of the session's folder (`RepositoryRoots`).
@@ -126,16 +138,48 @@ enum ChangesPanelModel {
         let isOutsideTurnsIncomplete: Bool
         /// Whether the totals line says anything.
         let showsTotals: Bool
+        /// Every row in the order drawn: the timeline's, or the sections'
+        /// one after another.
         let rows: [Row]
         /// The viewed rows folded at the top of the list, `nil` when none
-        /// are.
+        /// are, and in sections, where each folds its own.
         let fold: Fold?
-        /// The line below the latest turn, `nil` while a row is unviewed.
+        /// The line below the latest turn, `nil` while a row is unviewed,
+        /// and in sections, where each draws its own.
         let line: Line?
-        /// Where the panel scrolls when it opens: the focused pane's
-        /// conversation's latest unviewed turn, else the latest unviewed,
-        /// else the latest.
+        /// Where the panel scrolls when it opens: among the rows as drawn,
+        /// the focused pane's conversation's last unviewed turn, else the
+        /// last unviewed, else the last.
         let scrollTarget: TurnID?
+        /// A section per conversation, when the window groups the list by
+        /// conversation; `nil` for the timeline. Also `nil` while the
+        /// filter narrows the list to one conversation, or only one has
+        /// turns here, where a section would only repeat the list.
+        let sections: [Section]?
+        /// Whether the list can be grouped by conversation, whichever way
+        /// the window lists it: the panel offers "Timeline | By
+        /// Conversation" only then (`groupable`).
+        let canGroup: Bool
+
+        /// How many digits the list's highest turn number has: every card's
+        /// first column is that wide, so the prompts start at one x.
+        var turnNumberDigits: Int {
+            String(rows.map(\.turn.displayNumber).max() ?? 1).count
+        }
+    }
+
+    /// One conversation's turns, when the list is grouped by
+    /// conversation: a list of its own, with its own fold and line.
+    struct Section: Equatable, Sendable, Identifiable {
+        var id: ConversationKey {
+            choice.conversation
+        }
+
+        let choice: ConversationChoice
+        /// Its turns, oldest first.
+        let rows: [Row]
+        let fold: Fold?
+        let line: Line?
     }
 
     struct Row: Equatable, Sendable, Identifiable {
@@ -168,7 +212,7 @@ enum ChangesPanelModel {
         /// acted on, and the one whose note says why a restore waits
         /// (`ChangesPanelModel.placeMovesAtRest`).
         var showsMovesAtRest = false
-        /// The conversation the turn is of, for the row's badge ("Cl #4");
+        /// The conversation the turn is of, for the row's bar and badge;
         /// `nil` in a worktree of one conversation, where the badge would
         /// only repeat the kind every row.
         var conversation: ConversationChoice?
@@ -180,6 +224,11 @@ enum ChangesPanelModel {
         /// ("Mark All Conversations as Viewed up to Here"), not the tooltip
         /// alone.
         var movesOtherLines = false
+        /// Whether the row's move of the line reaches its own
+        /// conversation's line alone: in a section, which reads as that
+        /// conversation's list, so a move there must not reach the lines of
+        /// sections above or below it (`turnsMoved(by:at:in:movesOnlyItsOwnLine:)`).
+        var movesOnlyItsOwnLine = false
     }
 
     enum Status: Equatable, Sendable {
@@ -271,8 +320,18 @@ enum ChangesPanelModel {
             }
             return row
         }
-        placeBlockerNote(rows: &rows)
-        placeMovesAtRest(rows: &rows)
+        // Each section reads as a list of its own, so each places its own
+        // moves at rest and its own note, as the timeline does once.
+        let groupable = Self.groupable(timeline, conversations: conversations, filter: filter)
+        let sections = input.grouping == .byConversation
+            ? groupable.map { Self.placed(Self.sections(rows, conversations: $0, line: input.line)) }
+            : nil
+        if let sections {
+            rows = sections.flatMap(\.rows)
+        } else {
+            placeBlockerNote(rows: &rows)
+            placeMovesAtRest(rows: &rows)
+        }
         var fileCount: Int?
         var added = 0
         var removed = 0
@@ -324,9 +383,11 @@ enum ChangesPanelModel {
             showsTotals: showsTurnCounts || isTotalsIncomplete || hasShellChanges || (input.pathsOutsideTurns ?? 0) > 0
                 || isOutsideTurnsIncomplete,
             rows: rows,
-            fold: fold(rows),
-            line: line(rows, conversations: agents.map(\.conversation), line: input.line),
-            scrollTarget: scrollTarget(rows, focused: input.focused)
+            fold: sections == nil ? fold(rows) : nil,
+            line: sections == nil ? line(rows, conversations: agents.map(\.conversation), line: input.line) : nil,
+            scrollTarget: scrollTarget(rows, focused: input.focused),
+            sections: sections,
+            canGroup: groupable != nil
         ))
     }
 
@@ -338,34 +399,12 @@ enum ChangesPanelModel {
 
     /// Each agent's unviewed turns, counted once for everything a reading
     /// of the panel asks of them.
-    private static func unviewedCounts(_ input: Input) -> [ConversationKey: Int] {
+    static func unviewedCounts(_ input: Input) -> [ConversationKey: Int] {
         var counts: [ConversationKey: Int] = [:]
         for agent in input.agents where counts[agent.conversation] == nil {
             counts[agent.conversation] = unviewedCount(agent.turns, line: input.line(agent.conversation), isRestored: input.isRestored)
         }
         return counts
-    }
-
-    /// A pane of the app, as `liveTabs` reads it: the conversation its
-    /// agent runs, if any, and the tab it is in.
-    struct LivePane: Equatable, Sendable {
-        let conversation: ConversationKey?
-        let tab: ConversationChoice.LiveTab
-    }
-
-    /// The tab that runs each conversation, from every pane of the
-    /// app in its tabs' order: the session's own panes first, so a
-    /// conversation run both here and in another workspace (a scratch tab)
-    /// is named by the tab beside the panel; within those, the first pane
-    /// in the tabs' order, for a conversation run in two. A conversation no
-    /// pane of the app runs has none, and only that one reads as ended.
-    static func liveTabs(_ panes: [LivePane]) -> [ConversationKey: ConversationChoice.LiveTab] {
-        var tabs: [ConversationKey: ConversationChoice.LiveTab] = [:]
-        for pane in panes.filter(\.tab.isInSession) + panes.filter({ !$0.tab.isInSession }) {
-            guard let conversation = pane.conversation, tabs[conversation] == nil else { continue }
-            tabs[conversation] = pane.tab
-        }
-        return tabs
     }
 
     /// The turns that need reading and are not viewed: what the rail's
@@ -385,7 +424,7 @@ enum ChangesPanelModel {
     }
 
     /// A record nobody prompted is no turn.
-    private static func listed(_ turns: [TurnSummary]) -> [TurnSummary] {
+    static func listed(_ turns: [TurnSummary]) -> [TurnSummary] {
         turns.filter(\.hasPrompt)
     }
 
@@ -446,44 +485,6 @@ enum ChangesPanelModel {
     }
 
     // MARK: - The rows
-
-    /// The filter's entries. Numbered among every conversation of the kind
-    /// in the worktree, so a conversation keeps its name ("Claude #2") as
-    /// others come and go. Only where the kind alone does not tell two
-    /// offered apart.
-    private static func choices(
-        _ offered: [Agent],
-        among agents: [Agent],
-        input: Input,
-        unviewed: [ConversationKey: Int]
-    ) -> [ConversationChoice] {
-        var ordinals: [ConversationKey: Int] = [:]
-        var counts: [AgentKind: Int] = [:]
-        for agent in agents {
-            counts[agent.conversation.provider, default: 0] += 1
-            ordinals[agent.conversation] = counts[agent.conversation.provider]
-        }
-        var offeredCounts: [AgentKind: Int] = [:]
-        for agent in offered {
-            offeredCounts[agent.conversation.provider, default: 0] += 1
-        }
-        return offered.map { agent in
-            let latest = listed(agent.turns).max { (lastActivity(of: $0) ?? .distantPast) < (lastActivity(of: $1) ?? .distantPast) }
-            return ConversationChoice(
-                conversation: agent.conversation,
-                ordinal: offeredCounts[agent.conversation.provider, default: 0] > 1 ? ordinals[agent.conversation] : nil,
-                unviewedCount: unviewed[agent.conversation, default: 0],
-                liveTab: input.liveTab(agent.conversation),
-                latestPrompt: latest?.prompt,
-                lastActivity: latest.flatMap(lastActivity)
-            )
-        }
-    }
-
-    /// When a turn last did something: its end, or its start while it runs.
-    private static func lastActivity(of turn: TurnSummary) -> Date? {
-        UnreadTurnRules.date(turn.finishedAt) ?? WorktreeTimeline.startDate(turn)
-    }
 
     private static func row(_ turn: TurnSummary, line: ViewedLine?, input: Input) -> Row {
         let isViewed = line?.isViewed(turn) ?? false
@@ -599,14 +600,15 @@ enum ChangesPanelModel {
         return Line(undo: undo)
     }
 
-    /// Where the panel opens: the focused pane's conversation's
-    /// latest unviewed turn, else the latest unviewed, else the latest.
+    /// Where the panel opens, among the rows as drawn: the focused pane's
+    /// conversation's last unviewed turn, else the last unviewed, else the last.
     private static func scrollTarget(_ rows: [Row], focused: ConversationKey?) -> TurnID? {
         let unviewed = rows.filter { $0.status == .unviewed }
         return (unviewed.last { $0.turn.conversation == focused } ?? unviewed.last ?? rows.last)?.id
     }
 
-    /// The list's last card with moves shows them at rest, and so does the
+    /// The list's last card with moves shows them at rest (each section's,
+    /// in the list grouped by conversation), and so does the
     /// card whose note says why a restore waits, so the note never speaks
     /// of a glyph out of sight. The others show them under the pointer or
     /// the keyboard or while the review reads them, so the list does not
@@ -622,7 +624,8 @@ enum ChangesPanelModel {
     }
 
     /// Why a restore is off is said in a line under one entry only: the
-    /// list's last one, the latest turn's, which is where the reader looks.
+    /// list's last one (each section's, in the list grouped by
+    /// conversation), the latest turn's, which is where the reader looks.
     /// Said under every entry, the line would come and go on every card
     /// as an agent starts and stops, and the list would jump. The others
     /// keep the reason in their tooltip and VoiceOver hint.
@@ -661,12 +664,13 @@ extension ChangesPanelModel {
         root: String,
         isRoot: @escaping (String) -> Bool
     ) -> [Agent] {
+        let isRunning = Set(running)
         let recorded = history.compactMap { conversation, turns -> Agent? in
             let here = ReviewTabModel.turns(turns, root: root, conversation: conversation, isRoot: isRoot)
             let hasTreeHere = here.contains { turn in
                 [turn.beginTree, turn.endTree].contains { $0.map { isRoot($0.root) } ?? false }
             }
-            guard !here.isEmpty, hasTreeHere || running.contains(conversation) else { return nil }
+            guard !here.isEmpty, hasTreeHere || isRunning.contains(conversation) else { return nil }
             return Agent(conversation: conversation, turns: here)
         }
         /// By the first turn's start, and by ID where two started at once.
@@ -676,37 +680,11 @@ extension ChangesPanelModel {
         let ordered = recorded.sorted { lhs, rhs in
             start(lhs) == start(rhs) ? lhs.conversation.conversationID < rhs.conversation.conversationID : start(lhs) < start(rhs)
         }
+        var seen = Set(ordered.map(\.conversation))
         var waiting: [ConversationKey] = []
-        for conversation in running where !ordered.contains(where: { $0.conversation == conversation }) && !waiting.contains(conversation) {
+        for conversation in running where seen.insert(conversation).inserted {
             waiting.append(conversation)
         }
         return ordered + waiting.map { Agent(conversation: $0, turns: []) }
-    }
-}
-
-// MARK: - Every conversation, named
-
-extension ChangesPanelModel {
-    /// Every conversation of the worktree, named as the panel's filter and
-    /// rows name them ("Claude #2"), with its unviewed turns and the tab
-    /// that runs it: the review tab's scope menu heads a section with each,
-    /// and its destination menu names a pane after the conversation it
-    /// runs. Numbered among every conversation of the kind, so a
-    /// conversation keeps its name as others come and go.
-    static func conversations(_ input: Input) -> [ConversationChoice] {
-        choices(input.agents, among: input.agents, input: input, unviewed: unviewedCounts(input))
-    }
-
-    /// What the rail's button says: the session's turns waiting to be
-    /// read, every agent's together, for its badge, and for its tooltip's
-    /// breakdown the conversations with some to read, named as the panel
-    /// names them, while there are two or more to tell apart. Each agent's
-    /// turns are counted once, for both.
-    static func rail(_ input: Input) -> (unviewed: Int, agents: [ConversationChoice]) {
-        let counts = unviewedCounts(input)
-        let unviewed = counts.values.reduce(0, +)
-        let waiting = input.agents.filter { counts[$0.conversation, default: 0] > 0 }
-        guard unviewed > 0, waiting.count > 1 else { return (unviewed, []) }
-        return (unviewed, choices(waiting, among: input.agents, input: input, unviewed: counts))
     }
 }

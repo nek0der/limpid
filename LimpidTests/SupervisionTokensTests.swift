@@ -382,6 +382,53 @@ struct SupervisionTokensTests {
         #expect(ratio >= ContrastRatio.text, "\(ratio)")
     }
 
+    // MARK: Conversation identity
+
+    @Test func conversationIdentity_hasSixColors() {
+        #expect(Tokens.conversationIdentity.count == 6)
+    }
+
+    /// The identity bar is a decoration beside a badge whose conversation is
+    /// named in words, and is hidden from VoiceOver, so it is held to 2:1
+    /// rather than the 3:1 a mark that carries meaning alone needs. Light: a card (`0xF7F7F8`),
+    /// and the selected tab and the pane (the terminal's white). Dark: a
+    /// card on the window and the selected tab on the terminal's ground.
+    @Test(arguments: [false, true])
+    func conversationIdentity_staysVisible_onCardAndTab(isDark: Bool) {
+        let grounds: [(String, SRGB)] = isDark
+            ? [("card", Tokens.window.dark), ("tab", Tokens.terminal.dark)]
+            : [("card", SRGB(0xF7F7F8)), ("tab and pane", Tokens.terminal.light)]
+        for (index, color) in Tokens.conversationIdentity.enumerated() {
+            for (name, ground) in grounds {
+                let ratio = ContrastRatio.between(color.value(isDark: isDark), ground)
+                #expect(ratio >= 2, "color \(index) on \(name): \(ratio)")
+            }
+        }
+    }
+
+    /// Colors are told apart by their OKLab distance, which follows how far
+    /// apart they look, rather than by the angle between their hues.
+    @Test(arguments: [false, true])
+    func conversationIdentity_colorsStayApart(isDark: Bool) {
+        let colors = Tokens.conversationIdentity.map { $0.value(isDark: isDark) }
+        for first in colors.indices {
+            for second in colors.indices where second > first {
+                let distance = OKLab.distance(colors[first], colors[second]) * 100
+                #expect(distance >= 12, "colors \(first) and \(second): \(distance)")
+            }
+        }
+    }
+
+    /// No identity color may be taken for the unread blue.
+    @Test(arguments: [false, true])
+    func conversationIdentity_staysClearOfUnread(isDark: Bool) {
+        let unread = Tokens.unread.value(isDark: isDark)
+        for (index, color) in Tokens.conversationIdentity.enumerated() {
+            let distance = OKLab.distance(color.value(isDark: isDark), unread) * 100
+            #expect(distance >= 10, "color \(index): \(distance)")
+        }
+    }
+
     /// A token's color is one value, the same each time it is asked for: a
     /// new dynamic color each time compared unequal to the last, so every
     /// view handed one read as changed on every pass, and SwiftUI drew it
@@ -391,5 +438,31 @@ struct SupervisionTokensTests {
         #expect(SupervisionTokens.waitingGlyph.color == SupervisionTokens.waitingGlyph.color)
         #expect(SupervisionTokens.reviewCard.color == SupervisionTokens.reviewCard.color)
         #expect(SupervisionTokens.text.nsColor === SupervisionTokens.text.nsColor)
+    }
+}
+
+/// sRGB to OKLab (Björn Ottosson's matrices), only to measure how far apart
+/// two colors look.
+private enum OKLab {
+    static func distance(_ first: SRGB, _ second: SRGB) -> Double {
+        let difference = components(first) - components(second)
+        return (difference * difference).sum().squareRoot()
+    }
+
+    private static func components(_ color: SRGB) -> SIMD3<Double> {
+        func linear(_ value: Double) -> Double {
+            value <= 0.040_45 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        let red = linear(color.red)
+        let green = linear(color.green)
+        let blue = linear(color.blue)
+        let long = cbrt(0.412_221_470_8 * red + 0.536_332_536_3 * green + 0.051_445_992_9 * blue)
+        let medium = cbrt(0.211_903_498_2 * red + 0.680_699_545_1 * green + 0.107_396_956_6 * blue)
+        let short = cbrt(0.088_302_461_9 * red + 0.281_718_837_6 * green + 0.629_978_700_5 * blue)
+        return SIMD3(
+            0.210_454_255_3 * long + 0.793_617_785_0 * medium - 0.004_072_046_8 * short,
+            1.977_998_495_1 * long - 2.428_592_205_0 * medium + 0.450_593_709_9 * short,
+            0.025_904_037_1 * long + 0.782_771_766_2 * medium - 0.808_675_766_0 * short
+        )
     }
 }

@@ -95,6 +95,10 @@ final class WindowSelection {
     /// The changes panel's width as the person last dragged it, `nil` for
     /// the default.
     var changesPanelWidth: CGFloat?
+    /// How the changes panel lists the turns: one timeline, the default,
+    /// or a section per conversation. The window's chrome, like the panel's
+    /// width, and saved with the window.
+    var changesPanelGrouping = ChangesPanelGrouping.timeline
     /// The conversation the changes panel's filter narrows the timeline
     /// to, `nil` for all, the default. The project's, unlike the panel
     /// itself: it names one of its conversations, and comes back with the
@@ -136,4 +140,13 @@ final class WindowSelection {
         self.activeContainerID = activeContainerID
         self.sidebarWidth = sidebarWidth
     }
+}
+
+/// How the changes panel lists a worktree's turns. Saved by its raw value
+/// (`WindowRecord`), so a case is never renamed.
+enum ChangesPanelGrouping: String, Codable, Sendable {
+    /// Every conversation's turns in one list, oldest first.
+    case timeline
+    /// A section per conversation, each with its own viewed line.
+    case byConversation
 }

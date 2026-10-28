@@ -80,7 +80,13 @@ extension AttentionState {
     /// state does not count, matching the tab row's agent glyph, so a pane
     /// reads as a shell again once its agent is gone.
     func headerRuntime(inPane paneID: UUID) -> AgentRuntimePresentation? {
-        allRuntimes
+        Self.headerRuntime(inPane: paneID, among: allRuntimes)
+    }
+
+    /// `headerRuntime(inPane:)` over `runtimes`, for a reader handed the
+    /// runs rather than the store (the pane strip).
+    nonisolated static func headerRuntime(inPane paneID: UUID, among runtimes: [AgentRuntimePresentation]) -> AgentRuntimePresentation? {
+        runtimes
             .filter { $0.paneIDs.contains(paneID) && $0.badge.state != .unknown }
             .max { $0.badge.updatedAt < $1.badge.updatedAt }
     }

@@ -30,6 +30,13 @@ struct TurnSummary: Equatable, Sendable, Decodable {
     /// because a turn no stop ended has none, nor does a reply of code
     /// alone or a record from before it was kept; read it through `reply`.
     let replyHead: String?
+    /// The conversation's title when the turn began or last ended: the
+    /// provider's session title, else the one it generated. Kept on the
+    /// turn so a closed conversation whose run is gone still has a name;
+    /// the newest turn's title is the one that names the conversation.
+    /// Optional because the provider had not named the conversation yet, or
+    /// the record is from before the title was kept.
+    let conversationTitle: String?
     let startedAt: String
     let finishedAt: String?
     /// `unknown` also for a turn whose end never came (a later turn
@@ -78,8 +85,8 @@ struct TurnSummary: Equatable, Sendable, Decodable {
         case conversation
         case runID = "runId"
         case paneID = "paneId"
-        case displayNumber, promptHead, promptKind, replyHead, startedAt, finishedAt, phase, changes, durationSeconds, lastCheck, checks,
-             checkCount, failureCount, areChecksPartial, usage, hasPrompt, begin, end
+        case displayNumber, promptHead, promptKind, replyHead, conversationTitle, startedAt, finishedAt, phase, changes, durationSeconds,
+             lastCheck, checks, checkCount, failureCount, areChecksPartial, usage, hasPrompt, begin, end
     }
 
     private enum ChangeKeys: String, CodingKey {
@@ -99,6 +106,7 @@ struct TurnSummary: Equatable, Sendable, Decodable {
         // turn.
         promptKind = (try? container.decodeIfPresent(TurnPromptKind.self, forKey: .promptKind)) ?? .text
         replyHead = try container.decodeIfPresent(String.self, forKey: .replyHead)
+        conversationTitle = try container.decodeIfPresent(String.self, forKey: .conversationTitle)
         startedAt = try container.decode(String.self, forKey: .startedAt)
         finishedAt = try container.decodeIfPresent(String.self, forKey: .finishedAt)
         phase = try container.decode(TurnPhase.self, forKey: .phase)

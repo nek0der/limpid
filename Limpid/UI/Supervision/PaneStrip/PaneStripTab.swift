@@ -49,8 +49,11 @@ struct PaneStripTab: View {
             // place of its own: the tab's width and its title stay put as
             // the agent starts, waits, and stops, and a tab at rest leaves
             // no gap where a glyph would be. The tab's label says the state
-            // in words, so VoiceOver skips it.
-            PaneStripTabBadge(agent: item.agent, state: item.stateGlyph)
+            // in words, so VoiceOver skips it. The conversation's color
+            // bar leads the badge where the worktree has several.
+            ConversationIdentityLead(identity: item.identity) {
+                PaneStripTabBadge(agent: item.agent, state: item.stateGlyph)
+            }
             InlineRenameField(
                 name: item.title,
                 isEditing: $isEditing,
@@ -90,7 +93,15 @@ struct PaneStripTab: View {
         .frame(height: layout.paneStripHeight)
         .folderTabFace(isSelected: item.isActive, isHovering: isHovering, scrolls: true)
         .contentShape(Rectangle())
-        .onHover { isHovering = $0 }
+        // The tab marks the cards of the conversation its title stands for
+        // while the pointer rests on it, and is outlined while a card of any
+        // conversation it runs is under the pointer.
+        .conversationHover(
+            item.conversation,
+            surface: .tab(item.id),
+            identity: item.identity,
+            mark: .tab(running: item.runningIdentities)
+        ) { isHovering = $0 }
         .onChange(of: isEditing) { _, isEditing in
             onEditingChanged(isEditing)
         }

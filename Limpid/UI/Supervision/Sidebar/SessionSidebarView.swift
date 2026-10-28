@@ -334,7 +334,7 @@ struct SessionSidebarView: View {
             // The scratch row is named by its own word and takes no name.
             onRename: project == nil || isInOtherWindow(project, others: others)
                 ? nil
-                : { session.renameRow(row.id, to: $0) },
+                : { session.renameRow(row.id, to: $0, runtimes: attention.allRuntimes) },
             isRenaming: Binding(
                 get: { renamingRow == row.id },
                 set: { renamingRow = $0 ? row.id : nil }
@@ -879,11 +879,11 @@ private struct ApprovalRowAnchor: ViewModifier {
     }
 }
 
+@MainActor
 extension SidebarKeyRoute {
     /// The route for a key-down AppKit sees at the window, read as the
     /// Keyboard pane records keys (`StoredShortcut.capture(from:)`), so the
     /// keys a person bound there are the keys that match here.
-    @MainActor
     static func route(for event: NSEvent, keyboard: KeyboardSettings, hasKeyboard: Bool, isComposing: Bool) -> Route {
         route(pressed: StoredShortcut.capture(from: event), keyboard: keyboard, hasKeyboard: hasKeyboard, isComposing: isComposing)
     }

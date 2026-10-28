@@ -46,6 +46,12 @@ extension EnvironmentValues {
     /// on the close helpers just skips the step.
     @Entry var agentProjection: AgentProjectionAdapter?
 
+    /// The identity colors of each session container's conversations
+    /// (`ConversationIdentityStore`), which the pane strip and Open Tabs
+    /// read for their tabs, as the changes panel reads them for its cards.
+    /// `nil` in Previews and tests, where no tab shows a color.
+    @Entry var conversationIdentities: ConversationIdentityStore?
+
     /// Command palette frecency scoring store. `nil` in Previews /
     /// tests; LimpidApp installs the real instance at the scene root.
     @Entry var frecencyStore: FrecencyStore?

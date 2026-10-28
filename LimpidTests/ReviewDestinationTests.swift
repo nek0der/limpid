@@ -108,6 +108,36 @@ struct ReviewDestinationTests {
         #expect(ReviewTabText.destinationChoice(named, foreground: "claude", locale: Self.japanese) == "Claude #4 · claude")
     }
 
+    /// A conversation alone of its kind has no number, but a title of its
+    /// own names its pane (`ConversationChoice.hasOwnName`), as its chip
+    /// does; the menu cuts a long one, and its tooltip keeps it whole.
+    @Test func aTitledConversationsPane_isNamedByItsTitle() throws {
+        let titled = ReviewDestination(paneID: UUID(), title: "Claude Code")
+        let untitled = ReviewDestination(paneID: UUID(), title: "Codex")
+        let long = "Review every libghostty patch on the fork and list the ones upstream took"
+        let conversation = ConversationChoice(conversation: TurnSummaryFixture.conversation, title: long, ordinal: nil, unviewedCount: 0)
+        let lone = ConversationChoice(
+            conversation: TurnSummaryFixture.conversation("x", provider: .codex),
+            ordinal: nil,
+            unviewedCount: 0
+        )
+
+        let choices = ReviewTabModel.destinationChoices([titled, untitled]) { $0 == titled.paneID ? conversation : lone }
+
+        #expect(choices.map(\.agent?.conversation) == [conversation.conversation, nil], "a kind alone keeps the pane's name")
+        #expect(choices.map { ReviewTabText.destinationLabel($0, locale: Self.english) } == [long, "Codex"])
+        let named = try #require(choices.first)
+        #expect(ReviewTabText
+            .destinationChoice(named, foreground: "claude", form: .menu, locale: Self.english) == String(long.prefix(32)) + "… · claude")
+        #expect(ReviewTabText.destinationChoice(named, foreground: "claude", locale: Self.english) == "\(long) · claude")
+        #expect(
+            ReviewTabText.destinationChoice(named, foreground: "claude", form: .spoken, locale: Self.english)
+                == "Claude, \(long) · claude",
+            "VoiceOver names a titled conversation with its agent"
+        )
+        #expect(ReviewTabText.destinationLabel(choices[1], form: .spoken, locale: Self.english) == "Codex", "an untitled pane as drawn")
+    }
+
     @Test func twoPanesOfOneConversation_areToldApartByTheirTabs() {
         let first = ReviewDestination(paneID: UUID(), title: "Claude Code")
         let shell = ReviewDestination(paneID: UUID(), title: "review-demo")

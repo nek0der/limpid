@@ -639,6 +639,29 @@ enum SupervisionTokens {
     /// meets the bar without it.
     static let closedMark = ThemedColor(light: 0x80858E, dark: 0x80858E)
 
+    // MARK: Conversation identity
+
+    /// The colors that tell a worktree's active conversations apart, so a
+    /// pane strip tab and the Changes panel's cards of one conversation can
+    /// be matched: green, purple, teal, pink, yellow, and white (dark) or
+    /// ink (light). A conversation holds its index while it stays active
+    /// (`ConversationIdentityRule`), so the order is fixed and a color is only
+    /// ever added at the end. The bar they are drawn as
+    /// (`ConversationIdentityBar`) stands before a badge whose
+    /// conversation every place also names in words, and is hidden from
+    /// VoiceOver, so they are held to 2:1 off a card and a tab rather than
+    /// the 3:1 a mark that carries meaning alone needs. They stand apart by
+    /// their OKLab distance, which follows how far apart colors look, and
+    /// none is near the unread blue.
+    static let conversationIdentity: [ThemedColor] = [
+        ThemedColor(light: 0x44C462, dark: 0x4FC46B),
+        ThemedColor(light: 0xA678F3, dark: 0xA77BF0),
+        ThemedColor(light: 0x2ABEC6, dark: 0x2FC0C8),
+        ThemedColor(light: 0xEF6CB9, dark: 0xEC6FB8),
+        ThemedColor(light: 0xCDA911, dark: 0xEBCB45),
+        ThemedColor(light: 0x3A3D44, dark: 0xD9DCE2)
+    ]
+
     // MARK: Terminal
 
     /// What a terminal's lines sit on outside the terminal itself (the last

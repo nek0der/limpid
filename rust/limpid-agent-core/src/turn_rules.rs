@@ -333,6 +333,9 @@ pub struct TurnStart<'a> {
     pub event: &'a EventId,
     /// The provider's own id for the turn (`TurnRecord::provider_turn_id`).
     pub provider_turn_id: Option<String>,
+    /// The conversation's title as the run knows it (the session title, else
+    /// the generated one); `None` when the provider has not named it.
+    pub title: Option<&'a str>,
 }
 
 /// The record a submitted prompt writes.
@@ -350,6 +353,7 @@ pub fn begin_record(start: TurnStart<'_>) -> TurnRecord {
         prompt_head,
         prompt_kind: prompt_kind.map(RecordedPromptKind::Known),
         reply_head: None,
+        conversation_title: start.title.map(str::to_owned),
         started_at: start.now.to_owned(),
         finished_at: None,
         phase: TurnPhase::Started,
@@ -409,6 +413,10 @@ pub struct TurnEnd<'a> {
     /// stop (a failure, an interrupt, a retake), which has nothing to say
     /// over what the record held.
     pub reply: Option<&'a str>,
+    /// The conversation's title as the run knows it by now; `None` keeps the
+    /// title the record held, since a title the provider has given is not
+    /// taken back.
+    pub title: Option<&'a str>,
 }
 
 /// The record with its ending filled in, judged from both snapshots.
@@ -427,6 +435,9 @@ pub fn end_record(previous: &TurnRecord, end: TurnEnd<'_>) -> TurnRecord {
         seconds_between(&record.started_at, end.now)
     };
     record.added_bytes = end.diff.and_then(|diff| diff.added_bytes);
+    if let Some(title) = end.title {
+        record.conversation_title = Some(title.to_owned());
+    }
     if let Some(reply) = end.reply {
         record.reply_head = reply_head(reply);
     }
@@ -504,6 +515,7 @@ mod tests {
             begin,
             event,
             provider_turn_id: None,
+            title: None,
         })
     }
 
@@ -683,6 +695,7 @@ mod tests {
                 checks: None,
                 are_checks_partial: false,
                 reply: None,
+                title: None,
             },
         );
         assert_eq!(ended.phase, TurnPhase::Interrupted);
@@ -821,6 +834,7 @@ mod tests {
                     checks: None,
                     are_checks_partial: false,
                     reply: None,
+                    title: None,
                 },
             );
             assert_eq!(ended.phase, TurnPhase::Finished, "{reason}");
@@ -852,6 +866,7 @@ mod tests {
             checks: None,
             are_checks_partial: false,
             reply,
+            title: None,
         };
         let stopped = end_record(
             &start(captured("a"), &event),
@@ -888,6 +903,7 @@ mod tests {
             checks,
             are_checks_partial,
             reply: None,
+            title: None,
         };
         let begun = start(captured("a"), &event);
         let first = end_record(
@@ -936,5 +952,66 @@ mod tests {
         let unread = end_record(&whole, end(None, None, false));
         assert_eq!(unread.usage, whole.usage);
         assert_eq!(unread.checks, whole.checks);
+    }
+
+    fn titled_start(title: Option<&'static str>, event: &EventId) -> TurnRecord {
+        begin_record(TurnStart {
+            turn_id: "T".to_owned(),
+            conversation: ConversationKey {
+                provider: ProviderId::new("claude").expect("id"),
+                conversation_id: "s".to_owned(),
+                is_fallback: false,
+            },
+            run_id: "R",
+            pane_id: "P",
+            display_number: 1,
+            prompt: "go",
+            now: "2026-10-12T00:00:00Z",
+            begin: captured("a"),
+            event,
+            provider_turn_id: None,
+            title,
+        })
+    }
+
+    fn titled_end(title: Option<&str>) -> TurnEnd<'_> {
+        TurnEnd {
+            phase: TurnPhase::Finished,
+            now: "2026-10-12T00:00:10Z",
+            end: captured("b"),
+            diff: None,
+            usage: None,
+            checks: None,
+            are_checks_partial: false,
+            reply: None,
+            title,
+        }
+    }
+
+    fn title_event() -> EventId {
+        EventId::invocation(&ProviderId::new("claude").expect("id"), Uuid::from_u128(7))
+    }
+
+    #[test]
+    fn begin_record_keeps_the_conversation_title() {
+        let record = titled_start(Some("Review the fork"), &title_event());
+        assert_eq!(
+            record.conversation_title,
+            Some("Review the fork".to_owned())
+        );
+    }
+
+    #[test]
+    fn end_record_takes_the_latest_title() {
+        let previous = titled_start(Some("old"), &title_event());
+        let ended = end_record(&previous, titled_end(Some("new")));
+        assert_eq!(ended.conversation_title, Some("new".to_owned()));
+    }
+
+    #[test]
+    fn end_record_keeps_the_title_when_none_is_known() {
+        let previous = titled_start(Some("old"), &title_event());
+        let ended = end_record(&previous, titled_end(None));
+        assert_eq!(ended.conversation_title, Some("old".to_owned()));
     }
 }

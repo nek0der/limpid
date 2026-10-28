@@ -26,7 +26,7 @@ struct RowRenameTests {
         let (session, row) = (fixture.session, fixture.row)
         #expect(session.tabs(in: row).isEmpty)
 
-        session.renameRow(row, to: "Release prep")
+        session.renameRow(row, to: "Release prep", runtimes: [])
 
         #expect(session.rowName(of: row) == RowName(text: "Release prep", source: .manual))
     }
@@ -38,7 +38,7 @@ struct RowRenameTests {
         let (session, project) = (fixture.session, fixture.project)
         let folder = ContainerID.project(project.id)
 
-        session.renameRow(folder, to: "Main checkout")
+        session.renameRow(folder, to: "Main checkout", runtimes: [])
 
         #expect(session.rowName(of: folder)?.text == "Main checkout")
         #expect(session.project(project.id)?.name == project.name)
@@ -53,7 +53,7 @@ struct RowRenameTests {
         let first = session.openTab(container: row)
         session.openTab(container: row)
 
-        session.renameRow(row, to: "Release prep")
+        session.renameRow(row, to: "Release prep", runtimes: [])
         session.closeTab(first.id)
 
         #expect(session.rowName(of: row)?.text == "Release prep")
@@ -71,10 +71,10 @@ struct RowRenameTests {
         session.update(tab.id) { $0.rename("Tab name") }
         #expect(session.rowName(of: row) == RowName(text: "Tab name", source: .manual))
 
-        session.renameRow(row, to: "Row name")
+        session.renameRow(row, to: "Row name", runtimes: [])
         #expect(session.rowName(of: row) == RowName(text: "Row name", source: .manual))
 
-        session.renameRow(row, to: "")
+        session.renameRow(row, to: "", runtimes: [])
         #expect(session.rowName(of: row) == RowName(text: "Tab name", source: .manual))
 
         session.update(tab.id) { $0.rename("") }
@@ -88,8 +88,8 @@ struct RowRenameTests {
         let (session, project, row) = (fixture.session, fixture.project, fixture.row)
         let before = try #require(session.rowName(of: row))
 
-        session.renameRow(row, to: "Release prep")
-        session.renameRow(row, to: "")
+        session.renameRow(row, to: "Release prep", runtimes: [])
+        session.renameRow(row, to: "", runtimes: [])
 
         #expect(session.rowName(of: row) == before)
         let worktreeID = try #require(row.worktreeID)
@@ -107,7 +107,7 @@ struct RowRenameTests {
         let checkout = try #require(session.rowName(of: row))
         session.update(named.id) { $0.rename("Earlier name") }
 
-        session.renameRow(row, to: "")
+        session.renameRow(row, to: "", runtimes: [])
 
         #expect(session.rowName(of: row) == checkout)
         #expect(session.tab(named.id)?.titleOverride == nil)
@@ -121,7 +121,7 @@ struct RowRenameTests {
         let (session, project, row) = (fixture.session, fixture.project, fixture.row)
         let worktreeID = try #require(row.worktreeID)
         let folder = try #require(session.worktree(projectID: project.id, worktreeID: worktreeID)?.workingDirectory)
-        session.renameRow(row, to: "Old work")
+        session.renameRow(row, to: "Old work", runtimes: [])
 
         let attached = session.attachGitWorktree(projectID: project.id, label: "feat/new", workingDirectory: folder, branchName: "feat/new")
 
@@ -138,7 +138,7 @@ struct RowRenameTests {
         let tab = session.openTab(container: row)
         session.update(tab.id) { $0.rename("Earlier name") }
 
-        session.renameRow(row, to: "New name")
+        session.renameRow(row, to: "New name", runtimes: [])
 
         #expect(session.tab(tab.id)?.titleOverride == "Earlier name")
         #expect(session.rowName(of: row)?.text == "New name")
@@ -147,7 +147,7 @@ struct RowRenameTests {
     /// The scratch row is named by its own word and takes no name.
     @Test func renameRow_scratch_changesNothing() {
         let (session, _) = WorkspaceSessionFixture.withProject()
-        session.renameRow(.loose, to: "Anything")
+        session.renameRow(.loose, to: "Anything", runtimes: [])
         #expect(session.rowName(of: .loose) == nil)
     }
 
@@ -155,8 +155,8 @@ struct RowRenameTests {
     @Test func rowNames_surviveASaveAndALoad() throws {
         let fixture = try Self.fixture()
         let (session, project, row) = (fixture.session, fixture.project, fixture.row)
-        session.renameRow(row, to: "Release prep")
-        session.renameRow(.project(project.id), to: "Main checkout")
+        session.renameRow(row, to: "Release prep", runtimes: [])
+        session.renameRow(.project(project.id), to: "Main checkout", runtimes: [])
 
         try withTempDir { dir in
             SessionStore(directory: dir).saveSynchronously(session.makeSnapshot())

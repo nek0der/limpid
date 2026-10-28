@@ -25,6 +25,8 @@ struct OpenTabsMenu: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.agentProjection) private var agentProjection
+    /// The identity colors the rows carry, as the strip's tabs do.
+    @Environment(\.conversationIdentities) private var conversationIdentities
     @Environment(\.paneVisibilityReporter) private var paneVisibility
     @Environment(\.reviewTabHandler) private var reviewTabHandler
     @Environment(\.popoverSurface.ground) private var ground
@@ -162,6 +164,7 @@ struct OpenTabsMenu: View {
             window: window.id,
             queue: attentionQueue.queue,
             runtimes: attention.allRuntimes,
+            identities: conversationIdentities?.identities(in: container) ?? [:],
             mountedTmuxPaneIDs: tmuxPresence.paneIDs,
             reviewTab: window.reviewStripTab(in: container, session: session)
         )
@@ -279,7 +282,10 @@ private struct OpenTabsRow: View {
 
     @ViewBuilder private var badge: some View {
         if let item = row.item {
-            PaneStripTabBadge(agent: item.agent, state: item.stateGlyph)
+            // The bar before the badge, as the tab in the strip draws it.
+            ConversationIdentityLead(identity: item.identity) {
+                PaneStripTabBadge(agent: item.agent, state: item.stateGlyph)
+            }
         } else {
             // The review's own symbol, as its tab in the strip draws it, in
             // a badge's box so the titles line up.

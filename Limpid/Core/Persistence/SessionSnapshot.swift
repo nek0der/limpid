@@ -39,6 +39,10 @@ struct SessionSnapshot: Codable, @unchecked Sendable {
     /// (`WorkspaceSession.projectViews`). A project a window shows is saved
     /// by that window's record alone.
     var projectViews: [ProjectView]
+    /// The names the person gave tabs, by the conversation each stood for
+    /// (`WorkspaceSession.conversationTabNames`). An optional field, so it
+    /// came without a version change.
+    var conversationTabNames: [ConversationTabName] = []
 
     /// See `LimpidSettings.unknownFields`. Preserves unknown root-level
     /// keys across decode → encode so a newer Limpid's `state.json`
@@ -122,6 +126,10 @@ struct SessionSnapshot: Codable, @unchecked Sendable {
         // opens on its last session, as one no window has left does.
         self.projectViews = ((try? c.decodeIfPresent([LossyProjectView].self, forKey: .projectViews)) ?? [])
             .compactMap(\.view)
+        // A name that does not read costs only itself: its conversation is
+        // then called by its agent's title again.
+        self.conversationTabNames = ((try? c.decodeIfPresent([LossyConversationTabName].self, forKey: .conversationTabNames)) ?? [])
+            .compactMap(\.name)
         self.unknownFields = try CodableSidecar.decodeUnknownFields(
             from: decoder,
             knownKeys: Self.knownKeyStrings
@@ -150,6 +158,7 @@ struct SessionSnapshot: Codable, @unchecked Sendable {
         try c.encode(windows, forKey: .windows)
         try c.encode(recentProjectPaths, forKey: .recentProjectPaths)
         try c.encode(projectViews, forKey: .projectViews)
+        try c.encode(conversationTabNames, forKey: .conversationTabNames)
         // A known key is written from its field alone: one set in
         // `unknownFields` by hand would otherwise be written after it and
         // win.
@@ -163,7 +172,7 @@ struct SessionSnapshot: Codable, @unchecked Sendable {
     /// then on, so a key dropped without a version change is removed in a
     /// migration step instead (as `SessionSnapshotV5.movedRootKeys` does).
     private enum CodingKeys: String, CodingKey, CaseIterable {
-        case version, containers, tabs, tabOrder, windows, recentProjectPaths, projectViews
+        case version, containers, tabs, tabOrder, windows, recentProjectPaths, projectViews, conversationTabNames
     }
 
     /// Cached known-key set so `decodeUnknownFields` doesn't allocate
@@ -257,6 +266,31 @@ private struct LossyWindowRecord: Decodable {
     }
 }
 
+/// One element of `conversationTabNames`: a conversation, and the name the
+/// person gave the tab that stood for it.
+struct ConversationTabName: Codable, Equatable, Sendable {
+    let conversation: ConversationKey
+    let name: String
+}
+
+/// One element of `conversationTabNames`, read on its own, as
+/// `LossyProjectView` reads a view: one that does not read is passed over.
+private struct LossyConversationTabName: Decodable {
+    let name: ConversationTabName?
+
+    init(from decoder: any Decoder) throws {
+        do {
+            name = try ConversationTabName(from: decoder)
+        } catch {
+            let index = decoder.codingPath.last?.intValue ?? -1
+            snapshotLog.error(
+                "conversation tab name \(index, privacy: .public) not read: \(decodingFailure(error), privacy: .public)"
+            )
+            name = nil
+        }
+    }
+}
+
 /// One element of `projectViews`, read on its own as `LossyWindowRecord`
 /// reads a window, and logged the same way.
 private struct LossyProjectView: Decodable {
@@ -319,6 +353,15 @@ extension WorkspaceSession {
             recentProjectPaths: recentProjectPaths,
             projectViews: savedProjectViews()
         )
+        // In a fixed order, so a save that changes nothing writes the
+        // same file.
+        snapshot.conversationTabNames = conversationTabNames
+            .map { ConversationTabName(conversation: $0.key, name: $0.value) }
+            .sorted { lhs, rhs in
+                let left = lhs.conversation
+                let right = rhs.conversation
+                return (left.provider.rawValue, left.conversationID) < (right.provider.rawValue, right.conversationID)
+            }
         snapshot.unknownFields = carriedRootFields
         return snapshot
     }
@@ -348,6 +391,7 @@ extension WorkspaceSession {
         // so can what a hidden window not written shows of its project.
         _ = projectViews
         _ = savedProjectViews()
+        _ = conversationTabNames
     }
 
     /// A record can name a project that is gone since: its place in each
@@ -385,6 +429,10 @@ extension WorkspaceSession {
         guard snapshot.version == SessionSnapshot.currentVersion else { return nil }
         carriedRootFields = snapshot.unknownFields
         projects = snapshot.projects
+        conversationTabNames = Dictionary(
+            snapshot.conversationTabNames.map { ($0.conversation, $0.name) },
+            uniquingKeysWith: { _, last in last }
+        )
         recentProjectPaths = snapshot.recentProjectPaths
         // Transient pane bits (bell ring / child exit) live on
         // `paneTransients` now, not on `Tab.paneStates`, so the

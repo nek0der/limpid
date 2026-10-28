@@ -214,12 +214,29 @@ enum ReviewTabText {
         ).resolved(in: locale)
     }
 
+    /// How a conversation is named in a pane's destination label.
+    enum NameForm {
+        /// As the changes panel names it, a title in full.
+        case whole
+        /// As a menu shows it, a title cut (`ConversationText.menuName`).
+        case menu
+        /// As VoiceOver says it, a titled conversation with its agent
+        /// (`ConversationText.spokenName`).
+        case spoken
+    }
+
     /// A pane in the destination menu, with what runs in front there as
     /// the band shows it for the chosen one ("review-demo · zsh"): the
     /// pane's name alone where that is its agent, or before the first probe
-    /// answers.
-    static func destinationChoice(_ choice: ReviewTabModel.DestinationChoice, foreground: String?, locale: Locale) -> String {
-        let label = destinationLabel(choice, locale: locale)
+    /// answers. `form` is how the conversation is named: the item itself
+    /// is `.menu`, its tooltip `.whole`, and VoiceOver `.spoken`.
+    static func destinationChoice(
+        _ choice: ReviewTabModel.DestinationChoice,
+        foreground: String?,
+        form: NameForm = .whole,
+        locale: Locale
+    ) -> String {
+        let label = destinationLabel(choice, form: form, locale: locale)
         guard let foreground, foreground != choice.destination.title else { return label }
         return "\(label) · \(foreground)"
     }
@@ -228,12 +245,21 @@ enum ReviewTabText {
     /// changes panel names it ("Claude #2"), told apart from another pane of
     /// the conversation by its tab ("Claude #2 · “first”") or its place
     /// ("Claude #2 (2)"), else the pane's own, with its place where
-    /// another pane has the name too ("zsh (2)").
-    static func destinationLabel(_ choice: ReviewTabModel.DestinationChoice, locale: Locale) -> String {
+    /// another pane has the name too ("zsh (2)"). `form` is how the
+    /// conversation's name is given.
+    static func destinationLabel(
+        _ choice: ReviewTabModel.DestinationChoice,
+        form: NameForm = .whole,
+        locale: Locale
+    ) -> String {
         guard let agent = choice.agent else {
             return choice.place.map { place(of: choice.label, $0, locale: locale) } ?? choice.label
         }
-        let name = ConversationText.name(agent, locale: locale)
+        let name = switch form {
+        case .whole: ConversationText.name(agent, locale: locale)
+        case .menu: ConversationText.menuName(agent, locale: locale)
+        case .spoken: ConversationText.spokenName(agent, locale: locale)
+        }
         switch choice.agentDistinction {
         case nil:
             return name
@@ -352,9 +378,12 @@ enum ReviewTabText {
     }
 
     /// `text` read with its conversation ("Claude #4: Turns"), as VoiceOver
-    /// hears an entry under a heading it does not read with each item.
+    /// hears an entry under a heading it does not read with each item. Only
+    /// ever spoken, so a titled conversation is named with its agent
+    /// (`ConversationText.spokenName`), as every other VoiceOver path names
+    /// it: two conversations of one title, of different agents, read apart.
     static func conversationsChoice(_ text: String, conversation: ConversationChoice, locale: Locale) -> String {
-        let name = ConversationText.name(conversation, locale: locale)
+        let name = ConversationText.spokenName(conversation, locale: locale)
         return LocalizedStringResource(
             "review.scopeOfConversation",
             defaultValue: "\(name): \(text)",
@@ -399,9 +428,11 @@ enum ReviewTabText {
 
     /// A file tag's words for its tooltip and VoiceOver: "Changed
     /// during Claude #4’s T4, T6". During, not by: a turn's diff holds
-    /// whatever changed in the worktree while it ran.
-    static func fileTag(_ tag: ReviewFileTag, locale: Locale) -> String {
-        let name = ConversationText.name(tag.provider, ordinal: tag.ordinal, locale: locale)
+    /// whatever changed in the worktree while it ran. `isSpoken` names a
+    /// titled conversation with its kind before the title, which the
+    /// tooltip leaves to the badge it hovers over.
+    static func fileTag(_ tag: ReviewFileTag, isSpoken: Bool = false, locale: Locale) -> String {
+        let name = tagName(tag, isSpoken: isSpoken, locale: locale)
         let turns = turnList(tag.turns, locale: locale)
         return LocalizedStringResource(
             "Changed during \(name)’s \(turns)",
@@ -424,7 +455,18 @@ enum ReviewTabText {
     /// a tag may be missing when some turn's files could not be read. `nil`
     /// when there is nothing to say.
     static func fileTagsHelp(_ tags: [ReviewFileTag], unreadable: [ReviewFileTag], locale: Locale) -> String? {
-        let lines = tags.map { fileTag($0, locale: locale) } + [unreadableNote(unreadable, locale: locale)].compactMap(\.self)
+        fileTagLines(tags, unreadable: unreadable, isSpoken: false, locale: locale)
+    }
+
+    /// The same as VoiceOver reads it, each titled conversation with its
+    /// kind (`ConversationText.spokenName`).
+    static func fileTagsSpoken(_ tags: [ReviewFileTag], unreadable: [ReviewFileTag], locale: Locale) -> String? {
+        fileTagLines(tags, unreadable: unreadable, isSpoken: true, locale: locale)
+    }
+
+    private static func fileTagLines(_ tags: [ReviewFileTag], unreadable: [ReviewFileTag], isSpoken: Bool, locale: Locale) -> String? {
+        let note = unreadableNote(unreadable, isSpoken: isSpoken, locale: locale)
+        let lines = tags.map { fileTag($0, isSpoken: isSpoken, locale: locale) } + [note].compactMap(\.self)
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
@@ -432,9 +474,9 @@ enum ReviewTabText {
     /// may be missing": a turn whose files Git could not read tags no file,
     /// so any file's tags may lack it; said rather than tagging less
     /// without a word. `nil` when every turn's files were read.
-    static func unreadableNote(_ unreadable: [ReviewFileTag], locale: Locale) -> String? {
+    static func unreadableNote(_ unreadable: [ReviewFileTag], isSpoken: Bool = false, locale: Locale) -> String? {
         guard !unreadable.isEmpty else { return nil }
-        let turns = AgentStatusText.joined(unreadable.map { turnsOf($0, locale: locale) }, locale: locale)
+        let turns = AgentStatusText.joined(unreadable.map { turnsOf($0, isSpoken: isSpoken, locale: locale) }, locale: locale)
         return LocalizedStringResource(
             "Couldn’t read the files changed during \(turns), so a tag may be missing",
             comment: "Review file header, tooltip: some turns' files could not be read; argument: those turns with their conversations"
@@ -442,14 +484,22 @@ enum ReviewTabText {
     }
 
     /// "Claude #4’s T4, T6": a conversation's turns, as a tag counts them.
-    private static func turnsOf(_ tag: ReviewFileTag, locale: Locale) -> String {
-        let name = ConversationText.name(tag.provider, ordinal: tag.ordinal, locale: locale)
+    private static func turnsOf(_ tag: ReviewFileTag, isSpoken: Bool, locale: Locale) -> String {
+        let name = tagName(tag, isSpoken: isSpoken, locale: locale)
         let turns = turnList(tag.turns, locale: locale)
         return LocalizedStringResource(
             "review.fileTagTurnsOf",
             defaultValue: "\(name)’s \(turns)",
             comment: "Review file header: a conversation's turns; arguments: the conversation, its turns as T4, T6"
         ).resolved(in: locale)
+    }
+
+    /// The tag's conversation as the tooltip names it, or as VoiceOver
+    /// says it.
+    private static func tagName(_ tag: ReviewFileTag, isSpoken: Bool, locale: Locale) -> String {
+        isSpoken
+            ? ConversationText.spokenName(tag.provider, title: tag.title, ordinal: tag.ordinal, locale: locale)
+            : ConversationText.name(tag.provider, title: tag.title, ordinal: tag.ordinal, locale: locale)
     }
 
     /// "T4, T6".
@@ -462,9 +512,13 @@ enum ReviewTabText {
         return numbers.map { "T\($0)" }.joined(separator: separator)
     }
 
-    /// A file tag's face beside its badge: the conversation's place,
-    /// "#4", where the kind alone does not name it; nothing otherwise.
-    static func fileTagOrdinal(_ tag: ReviewFileTag) -> String? {
+    /// A file tag's number after its badge, "#4", only where the
+    /// conversation's name carries one: untitled beside another of its
+    /// kind, or titled as another is (`ReviewFileTag.ordinal`). Elsewhere
+    /// the conversation's identity bar before the badge tells the tags
+    /// apart, and the title is left to the tooltip, as a header has no
+    /// room for it beside the path.
+    static func fileTagNumber(_ tag: ReviewFileTag) -> String? {
         tag.ordinal.map { "#\($0)" }
     }
 

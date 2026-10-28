@@ -192,6 +192,7 @@ extension WorkspaceSession {
             selection.sidebarHidden = template.sidebarHidden
             selection.isChangesPanelPresented = template.isChangesPanelPresented
             selection.changesPanelWidth = template.changesPanelWidth
+            selection.changesPanelGrouping = template.changesPanelGrouping
             // The projects in the order, and folded as, the window the
             // person opened it from lists them; that window's own project
             // is another window's from here, which a header lists folded

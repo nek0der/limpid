@@ -30,6 +30,8 @@ enum TurnSummaryFixture {
         var promptHead: String?
         /// The reply's first paragraph, as the record keeps it.
         var replyHead: String?
+        /// The conversation's title, as the record keeps it.
+        var conversationTitle: String?
         /// Who wrote the prompt, as the projection says it; `nil` leaves
         /// the key out, as a projection from before it was kept does.
         var promptKind: TurnPromptKind?
@@ -94,6 +96,7 @@ enum TurnSummaryFixture {
         }
         fields += try stringField("promptHead", extras.promptHead)
         fields += try stringField("replyHead", extras.replyHead)
+        fields += try stringField("conversationTitle", extras.conversationTitle)
         if let promptKind = extras.promptKindJSON ?? extras.promptKind.map({ #""\#($0.rawValue)""# }) {
             fields += #","promptKind":\#(promptKind)"#
         }

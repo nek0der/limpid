@@ -180,6 +180,23 @@ final class AppState {
     /// This keeps what turns say after each range a review tab reads, per
     /// history revision, for every window's hunk headers (`ReviewLaterTurns`).
     let reviewLaterTurns = ReviewLaterTurns()
+    /// The identity colors of each session container's active conversations.
+    /// Here, one for the app, rather than on a window: the changes panel,
+    /// the right rail, and the review read it through `changesPanelStores`,
+    /// the pane strip and Open Tabs through the environment, and two windows
+    /// on the same session must show a conversation in the same color. Made
+    /// on first use, as it reads the restores through the app state.
+    @ObservationIgnored lazy var conversationIdentities = ConversationIdentityStore(
+        paletteCount: SupervisionTokens.conversationIdentity.count,
+        sources: ConversationIdentityStore.Sources(
+            session: session,
+            repositoryRoots: repositoryRoots,
+            turnHistory: agentProjection.turnHistory,
+            viewedLines: viewedLines,
+            attention: attention,
+            restoredTurnIDs: { [unowned self] in restoredTurnIDs() }
+        )
+    )
     /// What each worktree's turns do not account for, and what they
     /// changed, which the changes panel and the review tab share. Demo
     /// mode hands it the fixture's counts, and it asks Git nothing.

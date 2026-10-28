@@ -59,6 +59,14 @@ final class RepositoryRoots {
         return recorded == path || paths.resolved(recorded) == path
     }
 
+    /// How many times the path spellings were let go of
+    /// (`WorktreePathResolver.generation`), after which `isRoot` may answer
+    /// differently: an answer kept from it is worked out again when this
+    /// moves.
+    var pathGeneration: Int {
+        paths.generation
+    }
+
     /// The answer for `folder`, `nil` until Git has given one.
     func answer(for folder: URL) -> Answer? {
         answers[folder.path]

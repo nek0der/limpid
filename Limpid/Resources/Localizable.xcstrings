@@ -6005,7 +6005,7 @@
       }
     },
     "Turn of %@": {
-      "comment": "Tooltip of a turn's row on the worktree's timeline: which conversation the turn is of; argument: the conversation's name, as in Claude #4",
+      "comment": "Tooltip of a turn's row: which conversation the turn is of; argument: the conversation's name, as in Claude #4 or Fix tests",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -22165,6 +22165,142 @@
           "stringUnit": {
             "state": "translated",
             "value": "未読、バックグラウンドで作業中"
+          }
+        }
+      }
+    },
+    "changes.titleOrdinal": {
+      "comment": "Changes panel: one of several conversations with the same title, as in Fix tests #2; arguments: the title, its place",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ #%2$lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ #%2$lld"
+          }
+        }
+      }
+    },
+    "changes.spokenName": {
+      "comment": "VoiceOver: a titled conversation after its agent, as in Claude, Review the fork; arguments: the agent, its name",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@、%2$@"
+          }
+        }
+      }
+    },
+    "changes.menuTab": {
+      "comment": "Changes panel and review: a conversation's detail line, in a menu or under a section heading: the tab that runs it, as the pane strip counts the tabs",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ %lld"
+          }
+        }
+      }
+    },
+    "changes.menuNoTab": {
+      "comment": "Changes panel and review: a conversation's detail line, in a menu or under a section heading, for one no tab runs any more, before its time and count",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No tab"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブなし"
+          }
+        }
+      }
+    },
+    "Show Tab": {
+      "comment": "Changes panel: a turn card's context menu item and a section heading's button; brings forward the tab whose pane runs the conversation",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Tab"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを表示"
+          }
+        }
+      }
+    },
+    "changes.groupingTimeline": {
+      "comment": "Changes panel: the segment that lists every conversation's turns as one timeline",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timeline"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時系列"
+          }
+        }
+      }
+    },
+    "changes.groupingByConversation": {
+      "comment": "Changes panel: the segment that lists the turns in a section per conversation",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By Conversation"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話別"
+          }
+        }
+      }
+    },
+    "changes.groupingLabel": {
+      "comment": "Changes panel: VoiceOver's name for the choice between a timeline and a section per conversation",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrange Turns"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターンの並べ方"
           }
         }
       }
