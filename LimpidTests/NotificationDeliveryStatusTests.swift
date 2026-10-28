@@ -39,12 +39,12 @@ struct NotificationDeliveryStatusTests {
     }
 
     @Test(arguments: [
-        (NotificationDeliveryStatus(permission: .denied, focus: .unknown), "Limpid の macOS の通知はオフです。"),
-        (NotificationDeliveryStatus(permission: .notAsked, focus: .off), "macOS は Limpid に通知を許可するかどうかをまだ確認していません。"),
-        (NotificationDeliveryStatus(permission: .allowedWithoutBanners, focus: .unknown), "macOS は Limpid のバナーを表示しない設定です。"),
+        (NotificationDeliveryStatus(permission: .denied, focus: .unknown), "macOS の通知はオフです。"),
+        (NotificationDeliveryStatus(permission: .notAsked, focus: .off), "macOS で通知の許可がまだ確認されていません。"),
+        (NotificationDeliveryStatus(permission: .allowedWithoutBanners, focus: .unknown), "macOS のバナー表示がオフです。"),
         (NotificationDeliveryStatus(permission: .allowed, focus: .on), "集中モードがオンのため、バナーが表示されないことがあります。"),
         // A permission that keeps every banner away is said before a Focus.
-        (NotificationDeliveryStatus(permission: .denied, focus: .on), "Limpid の macOS の通知はオフです。")
+        (NotificationDeliveryStatus(permission: .denied, focus: .on), "macOS の通知はオフです。")
     ])
     func aBannerThatMayNotShow_saysWhy(_ status: NotificationDeliveryStatus, _ text: String) {
         #expect(NotificationDeliveryStatusText.notice(status, locale: Self.japanese) == text)
@@ -52,7 +52,7 @@ struct NotificationDeliveryStatusTests {
 
     @Test func theNotice_readsInEnglish() {
         #expect(NotificationDeliveryStatusText.notice(NotificationDeliveryStatus(permission: .denied), locale: Self.english)
-            == "macOS notifications are off for Limpid.")
+            == "macOS notifications are off.")
         #expect(NotificationDeliveryStatusText.notice(NotificationDeliveryStatus(permission: .allowed, focus: .on), locale: Self.english)
             == "A Focus is on, so banners may not show.")
     }
