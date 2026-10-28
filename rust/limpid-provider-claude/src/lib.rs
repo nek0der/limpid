@@ -14,10 +14,11 @@ mod usage;
 
 use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, CommandRun, EventId, HookContext, InstallRecipe,
-    MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, ProviderDescriptor, ProviderOutput,
-    RawHookInput, TurnReading, TurnUsage, WorktreeIntent, parse_object,
+    ListDirectory, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, ProviderDescriptor,
+    ProviderOutput, RawHookInput, TurnReading, TurnUsage, WorktreeIntent, parse_object,
 };
 use serde_json::Value;
+use std::path::{Path, PathBuf};
 
 /// The Claude Code provider.
 #[derive(Debug, Default, Clone, Copy)]
@@ -104,21 +105,41 @@ impl ProviderAdapter for ClaudeAdapter {
         let Some(transcript) = input.transcript else {
             return TurnReading::default();
         };
-        let path = normalize::transcript_path(input).ok().flatten();
-        tokens::transcript_turn_reading(transcript, marker, path.as_deref())
+        tokens::transcript_turn_reading(transcript, marker)
     }
 
-    fn transcript_turn_reading(
+    fn transcript_turn_reading(&self, transcript: &[u8], marker: Option<&str>) -> TurnReading {
+        tokens::transcript_turn_reading(transcript, marker)
+    }
+
+    /// Claude names the file from the session's own; nothing is listed.
+    fn subagent_transcripts(
+        &self,
+        transcript: &Path,
+        subagents: &[String],
+        list: &ListDirectory<'_>,
+    ) -> Vec<PathBuf> {
+        let _ = list;
+        tokens::subagent_transcripts(transcript, subagents)
+    }
+
+    /// A Claude subagent's transcript holds its work alone, so the whole of
+    /// it counts, whichever turn ran it, and a tail of it is short.
+    fn subagent_usage(
         &self,
         transcript: &[u8],
-        path: &str,
+        is_whole: bool,
         marker: Option<&str>,
-    ) -> TurnReading {
-        tokens::transcript_turn_reading(transcript, marker, Some(path))
-    }
-
-    fn subagent_usage(&self, transcript: &[u8]) -> Option<TurnUsage> {
-        tokens::subagent_transcript_usage(transcript)
+    ) -> Option<TurnUsage> {
+        let _ = marker;
+        let usage = tokens::subagent_transcript_usage(transcript);
+        if is_whole {
+            return usage;
+        }
+        Some(TurnUsage {
+            is_partial: true,
+            ..usage.unwrap_or_default()
+        })
     }
 }
 

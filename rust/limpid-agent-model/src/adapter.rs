@@ -5,7 +5,7 @@ use crate::{
     Titles, TurnUsage, WorktreeIntent,
 };
 use serde_json::{Map, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 /// Longest hook payload an adapter accepts, matching the protocol's client
@@ -63,6 +63,11 @@ pub enum NormalizeError {
     #[error("input is not a JSON object")]
     NotAnObject,
 }
+
+/// Lists a directory's entries, for an adapter that finds a file by its
+/// name (`ProviderAdapter::subagent_transcripts`). The runtime's, since an
+/// adapter reads no file itself.
+pub type ListDirectory<'a> = dyn Fn(&Path) -> Vec<PathBuf> + 'a;
 
 /// A provider is one implementation of this trait plus recorded fixtures.
 pub trait ProviderAdapter: Send + Sync {
@@ -283,25 +288,44 @@ pub trait ProviderAdapter: Send + Sync {
     }
 
     /// What the turn that began at `marker` used and ran, read from the
-    /// tail of the transcript at `path` (`turn_transcript_path`), for a turn
-    /// the person stopped, which no hook ends: the app's writer ends it and
-    /// has no payload to read (`turn_reading`). Providers that record
-    /// neither, or whose every turn ends with a hook, keep the default,
-    /// which reads nothing.
-    fn transcript_turn_reading(
-        &self,
-        transcript: &[u8],
-        path: &str,
-        marker: Option<&str>,
-    ) -> TurnReading {
-        let _ = (transcript, path, marker);
+    /// tail of the transcript `turn_transcript_path` named, for a turn the
+    /// person stopped, which no hook ends: the app's writer ends it and has
+    /// no payload to read (`turn_reading`). Providers that record neither,
+    /// or whose every turn ends with a hook, keep the default, which reads
+    /// nothing.
+    fn transcript_turn_reading(&self, transcript: &[u8], marker: Option<&str>) -> TurnReading {
+        let _ = (transcript, marker);
         TurnReading::default()
     }
 
-    /// What one subagent's whole transcript used, for the transcripts a
-    /// `TurnReading` names.
-    fn subagent_usage(&self, transcript: &[u8]) -> Option<TurnUsage> {
-        let _ = transcript;
+    /// The transcripts of the `subagents` a reading names
+    /// (`TurnReading::subagents`), from where the turn's own `transcript`
+    /// lies. The adapter knows how the provider lays its transcripts out,
+    /// and lists a directory through `list` where it must search. A
+    /// subagent whose transcript is not found is left out.
+    fn subagent_transcripts(
+        &self,
+        transcript: &Path,
+        subagents: &[String],
+        list: &ListDirectory<'_>,
+    ) -> Vec<PathBuf> {
+        let _ = (transcript, subagents, list);
+        Vec::new()
+    }
+
+    /// What one subagent's transcript, which `subagent_transcripts` found,
+    /// used for the turn `marker` names. `is_whole` says whether
+    /// `transcript` is the whole file or only its tail; the adapter judges
+    /// whether the part it was given holds all the turn's work. A provider
+    /// whose subagent transcript holds that one subagent's work alone
+    /// (Claude's) counts the whole of it.
+    fn subagent_usage(
+        &self,
+        transcript: &[u8],
+        is_whole: bool,
+        marker: Option<&str>,
+    ) -> Option<TurnUsage> {
+        let _ = (transcript, is_whole, marker);
         None
     }
 }
@@ -317,9 +341,11 @@ pub struct TurnReading {
     pub marker: Option<String>,
     /// What the turn's own requests used, its subagents' left out.
     pub usage: Option<TurnUsage>,
-    /// The transcripts of the subagents the turn ran, whose usage the
-    /// runtime adds through `subagent_usage`.
-    pub subagent_transcripts: Vec<PathBuf>,
+    /// The subagents the turn ran, by the id the provider gives each
+    /// (Claude's agent id, Codex's thread). The runtime finds their
+    /// transcripts through `subagent_transcripts` and adds what they used
+    /// through `subagent_usage`.
+    pub subagents: Vec<String>,
     /// The shell commands the turn ran, in a shape the provider reads, for
     /// a provider whose tool hooks report no exit status (`command_run`),
     /// so the runtime records the turn's checks at its end.
