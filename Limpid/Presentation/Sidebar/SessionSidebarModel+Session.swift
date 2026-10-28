@@ -188,6 +188,7 @@ extension SessionSidebarModel {
         // A runtime counts where it shows (`Sources.placed`).
         let rowPlaced = sources.placed.filter { $0.pane.map(panes.contains) ?? false }
         let rowRuntimes = rowPlaced.map(\.runtime)
+        let rowAgents = rowRuntimes.map(SessionRowFact.Agent.init(runtime:))
         // An agent in front of a pane with no run placed yet (Codex before
         // its first prompt) is the row's as it is the tab's: one not
         // matched to its hook, which the row says as it does for a run
@@ -231,9 +232,7 @@ extension SessionSidebarModel {
             fact: SessionRowFact.Input(
                 items: items,
                 requestText: requestText,
-                agents: rowRuntimes.map {
-                    SessionRowFact.Agent(provider: $0.kind, state: $0.badge.state, detail: $0.badge.detail)
-                } + agentsInFront,
+                agents: rowAgents + agentsInFront,
                 pullRequest: pullRequest.map {
                     SessionRowFact.PullRequest(number: $0.number, state: $0.state, isDraft: $0.isDraft)
                 },
@@ -254,13 +253,13 @@ extension SessionSidebarModel {
                         }
                     },
                     requestText: requestText,
-                    agents: [SessionRowFact.Agent(provider: runtime.kind, state: runtime.badge.state, detail: runtime.badge.detail)]
+                    agents: [SessionRowFact.Agent(runtime: runtime)]
                 )
             },
             isInTmux: rowRuntimes.contains { !$0.tmuxLocations.isEmpty },
             pullRequestChecks: pullRequest.flatMap { info in info.checks.map { ($0, info.forge) } },
             leadPaneID: PanePriority.dominant(items)?.subject.paneID
-                ?? SessionRowFact.leadAgentIndex(of: rowRuntimes.map(\.badge.state))
+                ?? SessionRowFact.leadAgentIndex(of: rowAgents)
                 .flatMap { rowPlaced[$0].pane }
                 ?? tabs.first?.splitTree.effectiveFocusedLeafID,
             hasTabs: !tabs.isEmpty,

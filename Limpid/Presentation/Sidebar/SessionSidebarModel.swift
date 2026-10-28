@@ -295,7 +295,7 @@ struct SessionSidebarModel: Equatable {
         switch fact {
         case .question, .approval, .prompt: .waiting
         case .stopped: .stopped
-        case .unread, .running, .compacting, .pullRequest, .uncommitted, .commits, .idle, .unknown: .muted
+        case .unread, .running, .compacting, .pullRequest, .uncommitted, .commits, .workingAfterTurn, .idle, .unknown: .muted
         }
     }
 

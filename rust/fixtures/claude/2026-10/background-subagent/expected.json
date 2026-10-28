@@ -1,0 +1,100 @@
+[
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for background-subagent>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "Agent",
+      "tool": "Agent",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "name": "SubagentStart",
+      "payload": {
+        "agent_id": "a0000000000000001",
+        "agent_type": "general-purpose",
+        "cwd": "/tmp/example",
+        "hook_event_name": "SubagentStart",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+      },
+      "type": "extension"
+    }
+  ],
+  [
+    {
+      "background_work": {
+        "subagents": 1
+      },
+      "reply": "<last_assistant_message for background-subagent>",
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "by_subagent": true,
+      "detail": "Read: /tmp/example/README.md",
+      "tool": "Read",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "by_subagent": true,
+      "detail": "SubagentHandback",
+      "tool": "SubagentHandback",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "name": "SubagentStop",
+      "payload": {
+        "agent_id": "a0000000000000001",
+        "agent_transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-000000000001/subagents/agent-a0000000000000001.jsonl",
+        "agent_type": "general-purpose",
+        "background_tasks": [
+          {
+            "agent_type": "general-purpose",
+            "description": "Read README first heading",
+            "id": "a0000000000000001",
+            "status": "running",
+            "type": "subagent"
+          }
+        ],
+        "cwd": "/tmp/example",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "SubagentStop",
+        "permission_mode": "auto",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "session_crons": [],
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "stop_hook_active": false,
+        "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+      },
+      "type": "extension"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for background-subagent>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "reply": "<last_assistant_message for background-subagent>",
+      "type": "turn_finished"
+    }
+  ]
+]

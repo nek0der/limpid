@@ -14,7 +14,8 @@ struct AttentionStateTests {
         AgentBadge(
             state: state,
             detail: nil,
-            runStartedAt: nil,
+            // A run at work is in a turn here, as one that took a prompt is.
+            runStartedAt: state.isMidTurn ? Date(timeIntervalSince1970: epoch) : nil,
             contextTokens: nil,
             updatedAt: Date(timeIntervalSince1970: epoch),
             lastPrompt: nil
@@ -322,8 +323,16 @@ struct AttentionStateTests {
         _ = paneWithBadge(session, attention, .compacting, at: 110, in: .project(project.id))
         _ = paneWithBadge(session, attention, .needsInput, at: 120, in: .project(project.id))
         _ = paneWithBadge(session, attention, .running, at: 130)
+        // Work outside a turn (a stop hook's continuation) is the agent's
+        // own work in the foreground, counted as a turn is.
+        let outside = session.openTab(container: .project(project.id)).splitTree.allLeafIDs()[0]
+        attention.replaceRuntimes((attention.runtimesByKind[.claude] ?? []) + [AgentRuntimePresentation.test(
+            runID: outside.uuidString,
+            badge: AgentBadge(state: .running, updatedAt: Date(timeIntervalSince1970: 140)),
+            paneIDs: [outside]
+        )], kind: .claude)
 
-        #expect(attention.runningAgentCount(inProject: project.id, session: session) == 2)
+        #expect(attention.runningAgentCount(inProject: project.id, session: session) == 3)
         #expect(attention.runningAgentCount(inProject: UUID(), session: session) == 0)
     }
 
@@ -343,7 +352,11 @@ struct AttentionStateTests {
         )], kind: .codex)
         #expect(attention.queueItems(in: session).count == 1)
 
-        let running = AgentBadge(state: .running, updatedAt: Date(timeIntervalSince1970: 200))
+        let running = AgentBadge(
+            state: .running,
+            runStartedAt: Date(timeIntervalSince1970: 200),
+            updatedAt: Date(timeIntervalSince1970: 200)
+        )
         attention.replaceRuntimes([AgentRuntimePresentation.test(
             kind: .codex,
             runID: UUID().uuidString,

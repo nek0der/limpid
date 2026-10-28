@@ -340,18 +340,17 @@ struct DecisionBarModel: Equatable {
         case let .approval(_, _, .card(deadline)), let .question(_, .card(deadline)): deadline
         default: nil
         }
-        let words = Self.words(for: content.body, resetNotice: resetNotice, now: now, locale: locale, nextName: nextName)
+        let words = Self.adding(
+            content.backgroundWork,
+            to: Self.words(for: content.body, resetNotice: resetNotice, now: now, locale: locale, nextName: nextName),
+            locale: locale
+        )
         tag = words.tag
         spokenTag = words.spokenTag ?? words.tag
         tone = words.tone
         text = words.text
         spokenText = words.spokenText ?? AgentStatusText.spoken(words.text, locale: locale)
-        // Waits and stops lead with what they are about; a line at rest,
-        // a resume under way, and a "Done" read evenly.
-        runs = words.runs ?? [ReceiptRun(
-            text: words.text,
-            role: words.tone == .waiting || words.tone == .stopped ? .emphasized : .plain
-        )]
+        runs = words.runs ?? [ReceiptRun(text: words.text, role: Self.wholeRole(words.tone))]
         instruction = words.instruction
         shortInstruction = Self.shortInstruction(words.instruction, for: content.body, locale: locale)
     }
@@ -372,6 +371,35 @@ struct DecisionBarModel: Equatable {
         /// a turn; `nil` reads `tag`, and `text` as a list.
         var spokenTag: String?
         var spokenText: String?
+    }
+
+    /// The role of a sentence drawn whole. Waits and stops lead with what
+    /// they are about; a line at rest, a resume under way, and a "Done"
+    /// read evenly.
+    private static func wholeRole(_ tone: Tone) -> ReceiptRun.Role {
+        tone == .waiting || tone == .stopped ? .emphasized : .plain
+    }
+
+    /// `words` with the background work after them, set off as one more
+    /// fact of the receipt. Last, so the row's cut at the sentence's end
+    /// (`SupervisionTruncation.sentence`) takes it before any of the
+    /// turn's own facts, which are what the bar is about: in a narrow
+    /// pane it gives way first without a fit of its own. Plain rather
+    /// than in a color of its own: the run is finished, and nothing here
+    /// waits on the person.
+    private static func adding(_ work: BackgroundWork?, to words: Words, locale: Locale) -> Words {
+        guard let work, let sentence = BackgroundWorkText.sentence(work, locale: locale) else { return words }
+        var result = words
+        result.text = AgentStatusText.joined([words.text, sentence], locale: locale)
+        result.runs = (words.runs ?? [ReceiptRun(text: words.text, role: wholeRole(words.tone))]) + [
+            ReceiptRun(text: AgentStatusText.separator(locale: locale), role: .quiet),
+            ReceiptRun(text: sentence, role: .plain)
+        ]
+        result.spokenText = AgentStatusText.spokenList(
+            [words.spokenText ?? AgentStatusText.spoken(words.text, locale: locale), sentence],
+            locale: locale
+        )
+        return result
     }
 
     private static func words(

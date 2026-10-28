@@ -31,6 +31,7 @@ struct PaneHeaderTests {
     ) -> AgentBadge {
         AgentBadge(
             state: state,
+            runStartedAt: state == .running ? updatedAt : nil,
             updatedAt: updatedAt,
             firstPrompt: firstPrompt,
             conversationID: conversationID,

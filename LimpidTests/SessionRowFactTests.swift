@@ -182,8 +182,10 @@ struct SessionRowFactTests {
         (.needsResponse, .needsResponse),
         (.stopped, .stopped),
         (.unread, .unread),
+        (.unreadWorkingAfterTurn, .unreadWorkingAfterTurn),
         (.running, .running),
         (.idle, .idle),
+        (.workingAfterTurn, .workingAfterTurn),
         (.unknown, .unknown),
         (.shell, .unknown)
     ])

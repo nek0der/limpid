@@ -15,12 +15,14 @@ struct AllProjectsModel: Equatable {
 
         /// Where a session with `glyph` goes: anything blocked or unread
         /// needs the person, a turn in progress runs, and the rest is at
-        /// rest.
+        /// rest. Work an agent left running after its turn is at rest: its
+        /// run is finished, as the attention list and the notifications
+        /// hold it, and the card's glyph and line say what still runs.
         static func of(_ glyph: SessionRowFact.Glyph) -> Self {
             switch glyph {
-            case .needsAnswer, .needsApproval, .needsResponse, .stopped, .unread: .needsAttention
+            case .needsAnswer, .needsApproval, .needsResponse, .stopped, .unread, .unreadWorkingAfterTurn: .needsAttention
             case .running: .running
-            case .idle, .unknown, .shell: .idle
+            case .idle, .workingAfterTurn, .unknown, .shell: .idle
             }
         }
 

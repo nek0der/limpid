@@ -7,6 +7,7 @@
 //! `AwaitingPrompt` is the other, because it is the one sign that work the
 //! agent did outside a turn is over (see the variant).
 
+use crate::background::BackgroundWork;
 use crate::cache::CacheWindow;
 use crate::provider::ProviderId;
 use serde::{Deserialize, Serialize};
@@ -158,6 +159,13 @@ pub enum AgentEvent {
         tool: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
+        /// The tool is a subagent's rather than the agent's own (Claude
+        /// names the subagent with `agent_id`). A background subagent works
+        /// on after the turn that launched it has stopped, and the stop
+        /// already counted it (`background_work`), so its tools do not put
+        /// the run back to work. Omitted when false.
+        #[serde(default, skip_serializing_if = "is_false")]
+        by_subagent: bool,
     },
     ToolFinished {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -216,6 +224,12 @@ pub enum AgentEvent {
         /// provider sent none or it was empty.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reply: Option<String>,
+        /// What the agent left running as the turn ended (Claude's
+        /// `background_tasks`). An observation about the stop like `cache`,
+        /// attached here for the same reason. `None` when nothing was left
+        /// running or the provider does not say.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        background_work: Option<BackgroundWork>,
     },
     Failed {
         error: String,
@@ -327,6 +341,7 @@ mod tests {
                     precision: crate::cache::CachePrecision::Estimated,
                 }),
                 reply: Some("Done.".into()),
+                background_work: None,
             },
             AgentEvent::AwaitingPrompt {
                 awaited_call_ended: false,
@@ -360,6 +375,7 @@ mod tests {
             }),
             cache: None,
             reply: None,
+            background_work: None,
         };
         finished.add_titles(&added);
         assert!(matches!(
@@ -418,6 +434,7 @@ mod tests {
             titles: None,
             cache: None,
             reply: None,
+            background_work: None,
         })
         .expect("ok");
         assert_eq!(json, "{\"type\":\"turn_finished\"}");

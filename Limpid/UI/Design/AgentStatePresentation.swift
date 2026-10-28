@@ -16,8 +16,10 @@ extension StateGlyph.Kind {
         case .needsResponse: .needsResponse
         case .stopped: .stopped
         case .unread: .unread
+        case .unreadWorkingAfterTurn: .unreadWorkingAfterTurn
         case .running: .running
         case .idle: .idle
+        case .workingAfterTurn: .workingAfterTurn
         case .unknown, .shell: .unknown
         }
     }

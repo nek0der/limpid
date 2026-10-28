@@ -149,6 +149,11 @@ pub(crate) fn normalize(
                 reply: string(&object, "last_assistant_message")
                     .filter(|reply| !reply.is_empty())
                     .map(str::to_owned),
+                // Codex keeps background terminals running after a turn, but
+                // its `Stop` does not list them and no hook reports their
+                // end, so a count read elsewhere would stay until the next
+                // stop. It reports none rather than one that may be stale.
+                background_work: None,
             },
         },
         _ => AgentEvent::Extension {
@@ -310,6 +315,7 @@ fn pre_tool_use(object: &Map<String, Value>) -> AgentEvent {
     AgentEvent::ToolStarted {
         detail: Some(detail),
         tool,
+        by_subagent: false,
     }
 }
 
@@ -534,7 +540,8 @@ mod tests {
             )),
             vec![AgentEvent::ToolStarted {
                 tool: "Bash".into(),
-                detail: Some("Bash: ls".into())
+                detail: Some("Bash: ls".into()),
+                by_subagent: false,
             }]
         );
         assert!(matches!(
@@ -773,6 +780,7 @@ mod tests {
                 titles: None,
                 cache: None,
                 reply: None,
+                background_work: None,
             }]
         );
     }
@@ -793,6 +801,7 @@ mod tests {
                 titles: None,
                 cache: None,
                 reply: None,
+                background_work: None,
             }]
         );
     }
@@ -827,7 +836,8 @@ mod tests {
             ),
             vec![AgentEvent::ToolStarted {
                 tool: "request_user_input_async".into(),
-                detail: Some("request_user_input_async".into())
+                detail: Some("request_user_input_async".into()),
+                by_subagent: false,
             }]
         );
     }
@@ -840,7 +850,8 @@ mod tests {
             ),
             vec![AgentEvent::ToolStarted {
                 tool: "Bash".into(),
-                detail: Some("Bash: echo out > out-long.txt".into())
+                detail: Some("Bash: echo out > out-long.txt".into()),
+                by_subagent: false,
             }]
         );
         assert_eq!(
@@ -849,7 +860,8 @@ mod tests {
             ),
             vec![AgentEvent::ToolStarted {
                 tool: "apply_patch".into(),
-                detail: Some("apply_patch: /a.txt".into())
+                detail: Some("apply_patch: /a.txt".into()),
+                by_subagent: false,
             }]
         );
         assert_eq!(
@@ -858,7 +870,8 @@ mod tests {
             ),
             vec![AgentEvent::ToolStarted {
                 tool: "Read".into(),
-                detail: Some("Read".into())
+                detail: Some("Read".into()),
+                by_subagent: false,
             }]
         );
         // A `command` that is there but empty says what the tool runs is
@@ -872,7 +885,8 @@ mod tests {
             ),
             vec![AgentEvent::ToolStarted {
                 tool: "apply_patch".into(),
-                detail: Some("apply_patch".into())
+                detail: Some("apply_patch".into()),
+                by_subagent: false,
             }]
         );
         assert_eq!(
@@ -881,7 +895,8 @@ mod tests {
             ),
             vec![AgentEvent::ToolStarted {
                 tool: "Bash".into(),
-                detail: Some("Bash: bash -lc ls -la".into())
+                detail: Some("Bash: bash -lc ls -la".into()),
+                by_subagent: false,
             }]
         );
         assert_eq!(

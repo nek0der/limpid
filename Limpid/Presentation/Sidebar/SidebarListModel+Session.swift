@@ -12,7 +12,7 @@ extension SidebarListModel {
         let approvals: ApprovalLedger
         let pullRequest: (ContainerID) -> PRInfo?
         let gitFacts: (ContainerID) -> GitFacts?
-        /// The agents running in a project, as the project dropdown counts
+        /// The agents running a turn in a project, as the project dropdown counts
         /// them (`AttentionState.runningAgentCount`).
         let running: (UUID) -> Int
         let locale: Locale

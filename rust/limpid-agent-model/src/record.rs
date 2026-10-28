@@ -7,6 +7,7 @@
 //! than dropped, because an older reader must not erase what a newer writer
 //! recorded.
 
+use crate::background::BackgroundWork;
 use crate::cache::CacheWindow;
 use crate::serde_helpers::lenient;
 use crate::usage::UsageLimit;
@@ -262,6 +263,19 @@ pub struct RunRecord {
         deserialize_with = "lenient"
     )]
     pub outside_turn_rest: Option<RunState>,
+    /// What the agent left running when its last turn ended, as that turn's
+    /// stop reported it. Set by the stop and cleared by the next prompt,
+    /// failure, interrupt, or session start or end, so a value here describes
+    /// the turn the run last came to rest after, kept through work outside
+    /// that turn; the badge reads it only while the run rests finished.
+    /// Absent in records written before the field existed, and read
+    /// leniently like the cache window.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    pub background_work: Option<BackgroundWork>,
     /// Fields this version does not model, preserved verbatim.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
@@ -413,6 +427,7 @@ impl From<RunRecordV2> for RunRecord {
             cache_window: None,
             usage_limit: None,
             outside_turn_rest: None,
+            background_work: None,
             extra: record.extra,
         }
     }
@@ -597,6 +612,43 @@ mod tests {
             .replace("\"revision\":1", r#""revision":1,"cacheWindow":"soon""#);
         let record = RunRecord::decode(json.as_bytes()).expect("the record still decodes");
         assert_eq!(record.cache_window, None);
+    }
+
+    #[test]
+    fn background_work_round_trips_and_a_shape_this_build_cannot_read_costs_only_it() {
+        let json = V2.replace("\"schemaVersion\":2", "\"schemaVersion\":3");
+        let record = RunRecord::decode(json.as_bytes()).expect("decodes without the field");
+        assert_eq!(record.background_work, None);
+        let text = String::from_utf8(record.encode().expect("encodes")).expect("utf8");
+        assert!(!text.contains("backgroundWork"), "absent stays absent");
+
+        let work = BackgroundWork {
+            shells: 2,
+            subagents: 0,
+            others: 1,
+        };
+        let with_work = RunRecord {
+            background_work: Some(work),
+            ..record
+        };
+        let encoded = with_work.encode().expect("encodes");
+        let text = String::from_utf8(encoded.clone()).expect("utf8");
+        assert!(text.contains(r#""backgroundWork":{"shells":2,"others":1}"#));
+        let again = RunRecord::decode(&encoded).expect("decodes again");
+        assert_eq!(again.background_work, Some(work));
+        assert!(!again.extra.contains_key("backgroundWork"));
+
+        for shape in [r#""two shells""#, r#"{"shells":"2"}"#, r#"{"shells":-1}"#] {
+            let json = V2
+                .replace("\"schemaVersion\":2", "\"schemaVersion\":3")
+                .replace(
+                    "\"revision\":1",
+                    &format!(r#""revision":1,"backgroundWork":{shape}"#),
+                );
+            let record = RunRecord::decode(json.as_bytes()).expect("the record still decodes");
+            assert_eq!(record.background_work, None, "{shape}");
+            assert_eq!(record.revision, Some(1));
+        }
     }
 
     #[test]

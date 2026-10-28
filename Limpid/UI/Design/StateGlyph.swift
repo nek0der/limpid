@@ -13,6 +13,13 @@ import SwiftUI
 /// whose row would otherwise show an empty slot beside a line that names
 /// a state. Where a place shows no mark for unknown (a pane's
 /// header, its tab), that place leaves it out; the glyph always draws.
+/// Work an agent left running when its turn ended is the idle ring, or the
+/// unread ring and its dot, with a small dot going round on the ring
+/// (`StateGlyphOrbit`): the turn is over, so the rest's shape stays, and
+/// the moving dot says something still runs. It is a dot rather than an
+/// arc, so it never reads as a turn in progress; under Reduce Motion it
+/// stays still on the ring, where the shape alone still tells it apart
+/// from the rest.
 struct StateGlyph: View {
     enum Kind: Equatable {
         case needsApproval
@@ -22,8 +29,12 @@ struct StateGlyph: View {
         case needsResponse
         case stopped
         case unread
+        /// An unread turn whose run still has work running after it.
+        case unreadWorkingAfterTurn
         case running
         case idle
+        /// A rest whose agent still has work running after its turn.
+        case workingAfterTurn
         case unknown
 
         /// The state's name, which VoiceOver reads.
@@ -37,8 +48,16 @@ struct StateGlyph: View {
                 )
             case .stopped: LocalizedStringResource("Stopped", comment: "State: the agent stopped (an error, an exit, a limit)")
             case .unread: LocalizedStringResource("Unread", comment: "State: a finished turn not read yet")
+            case .unreadWorkingAfterTurn: LocalizedStringResource(
+                    "Unread, working in the background",
+                    comment: "State: a finished turn not read yet, whose agent still works in the background after it"
+                )
             case .running: LocalizedStringResource("Running", comment: "State: a turn is in progress")
             case .idle: LocalizedStringResource("Idle", comment: "State: nothing in progress or waiting")
+            case .workingAfterTurn: LocalizedStringResource(
+                    "Working in the background",
+                    comment: "State: the agent's turn is over, and it still works in the background"
+                )
             case .unknown: LocalizedStringResource("Unknown", comment: "State: not known yet")
             }
         }
@@ -114,18 +133,21 @@ struct StateGlyphFace: View {
                     .fill(SupervisionTokens.onStopped.color)
             }
         case .unread:
+            unreadRing
+        case .unreadWorkingAfterTurn:
             ZStack {
-                Circle()
-                    .strokeBorder(unreadInk, lineWidth: geometry.ringWidth(.unread))
-                Circle()
-                    .fill(unreadInk)
-                    .frame(width: geometry.unreadDotDiameter, height: geometry.unreadDotDiameter)
+                unreadRing
+                StateGlyphOrbit(geometry: geometry, ring: .unread, isTurning: isTurning)
             }
         case .running:
             RunningArc(size: size, isTurning: isTurning)
         case .idle:
-            Circle()
-                .strokeBorder(geometry.idleInk.color, lineWidth: geometry.ringWidth(.idle))
+            idleRing
+        case .workingAfterTurn:
+            ZStack {
+                idleRing
+                StateGlyphOrbit(geometry: geometry, ring: .idle, isTurning: isTurning)
+            }
         case .unknown:
             Circle()
                 .inset(by: geometry.ringWidth(.unknown) / 2)
@@ -134,6 +156,21 @@ struct StateGlyphFace: View {
                     style: StrokeStyle(lineWidth: geometry.ringWidth(.unknown), lineCap: .round, dash: geometry.unknownDash)
                 )
         }
+    }
+
+    private var unreadRing: some View {
+        ZStack {
+            Circle()
+                .strokeBorder(unreadInk, lineWidth: geometry.ringWidth(.unread))
+            Circle()
+                .fill(unreadInk)
+                .frame(width: geometry.unreadDotDiameter, height: geometry.unreadDotDiameter)
+        }
+    }
+
+    private var idleRing: some View {
+        Circle()
+            .strokeBorder(geometry.idleInk.color, lineWidth: geometry.ringWidth(.idle))
     }
 
     /// A disc with its mark. `edge` rings it inside, for a fill that
@@ -199,6 +236,14 @@ struct StateGlyphGeometry: Equatable {
     /// What Increase Contrast adds to each ring: the idle ring reaches the
     /// 1.5pt we ask for, and the unread ring keeps its lead on it.
     static let increasedContrastRingGain: CGFloat = 0.5
+    /// The going-round dot's diameter for the ring it goes round on, in
+    /// that ring's widths: wide enough to stand out of the line it rides
+    /// on as a dot of its own.
+    static let orbitDotRingWidths: CGFloat = 1.8
+    /// The least the going-round dot is across, in points. On the idle
+    /// hairline the widths alone give under 2pt, which the 11pt of a tab's
+    /// mark loses into the ring.
+    static let orbitDotMinimumDiameter: CGFloat = 2.4
 
     /// One of the square's units, in points.
     var unit: CGFloat {
@@ -249,6 +294,27 @@ struct StateGlyphGeometry: Equatable {
 
     var unreadDotDiameter: CGFloat {
         Self.unreadDotUnits * unit
+    }
+
+    /// The going-round dot's diameter on `ring`. It follows the ring's
+    /// width, so Increase Contrast enlarges it with the ring.
+    func orbitDotDiameter(on ring: Ring) -> CGFloat {
+        max(Self.orbitDotRingWidths * ringWidth(ring), Self.orbitDotMinimumDiameter)
+    }
+
+    /// How far the going-round dot's center is from the glyph's: on the
+    /// middle of `ring`'s line, so the dot stands out of the ring by the
+    /// same on each side.
+    func orbitRadius(on ring: Ring) -> CGFloat {
+        (size - ringWidth(ring)) / 2
+    }
+
+    /// The going-round dot's color: the body text's ink, in every contrast.
+    /// The running arc's gray barely stands apart from the faint idle ring
+    /// in dark, too little for a dot a few points across at a tab's 11pt,
+    /// and is one value with the `muted` ring Increase Contrast draws.
+    var orbitInk: ThemedColor {
+        SupervisionTokens.text
     }
 
     var questionStrokeWidth: CGFloat {
@@ -354,5 +420,53 @@ struct RunningArc: View {
                 .rotationEffect(angle)
         }
         .padding(width / 2)
+    }
+}
+
+/// The dot that goes round the ring of work left running after a turn,
+/// once every `turnDuration` at an even pace, centered on the ring's line
+/// (`StateGlyphGeometry.orbitRadius`) and drawn in `orbitInk`.
+///
+/// The turn is one repeating animation the render server runs, as the
+/// running arc's is (`RunningArc`), rather than a body drawn again every
+/// frame. Under Reduce Motion the dot stays at `restingAngle`, the ring's
+/// upper right, where it still marks the glyph apart from the rest it
+/// rides on.
+struct StateGlyphOrbit: View {
+    let geometry: StateGlyphGeometry
+    let ring: StateGlyphGeometry.Ring
+    let isTurning: Bool
+    @State private var isAtFullTurn = false
+
+    /// Where the dot rests, and where each turn starts: clockwise from the
+    /// top.
+    static let restingAngle = Angle.degrees(45)
+    /// How long one turn takes.
+    static let turnDuration: TimeInterval = 2.4
+
+    /// The turn while the dot goes round; none under Reduce Motion, so the
+    /// dot is drawn still.
+    static func turn(isTurning: Bool) -> Animation? {
+        isTurning ? .linear(duration: turnDuration).repeatForever(autoreverses: false) : nil
+    }
+
+    var body: some View {
+        dot(angle: Self.restingAngle + .degrees(isTurning && isAtFullTurn ? 360 : 0))
+            .animation(Self.turn(isTurning: isTurning), value: isAtFullTurn)
+            .onAppear { isAtFullTurn = isTurning }
+            .onChange(of: isTurning) { _, isTurning in
+                isAtFullTurn = isTurning
+            }
+    }
+
+    /// The dot at the top of the ring, turned about the glyph's center.
+    private func dot(angle: Angle) -> some View {
+        let diameter = geometry.orbitDotDiameter(on: ring)
+        return Circle()
+            .fill(geometry.orbitInk.color)
+            .frame(width: diameter, height: diameter)
+            .offset(y: -geometry.orbitRadius(on: ring))
+            .frame(width: geometry.size, height: geometry.size)
+            .rotationEffect(angle)
     }
 }

@@ -21889,6 +21889,144 @@
           }
         }
       }
+    },
+    "%lld shells": {
+      "comment": "Decision bar and session row: shells an agent left running in the background; argument: how many",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld shell"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld shells"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェル %lld 件"
+          }
+        }
+      }
+    },
+    "%lld subagents": {
+      "comment": "Decision bar and session row: subagents an agent left running in the background; argument: how many",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld subagent"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld subagents"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サブエージェント %lld 件"
+          }
+        }
+      }
+    },
+    "%@ still running in the background": {
+      "comment": "Decision bar, after a turn's receipt, and session row: what an agent left running; argument: the kinds and counts",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ still running in the background"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドで%@が実行中"
+          }
+        }
+      }
+    },
+    "%lld other items": {
+      "comment": "Decision bar and session row: background work of a kind not named (a monitor, a remote agent); argument: how many",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld other item"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld other items"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作業 %lld 件"
+          }
+        }
+      }
+    },
+    "Working in the background": {
+      "comment": "State: the agent's turn is over, and it still works in the background",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working in the background"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドで作業中"
+          }
+        }
+      }
+    },
+    "Unread, working in the background": {
+      "comment": "State: a finished turn not read yet, whose agent still works in the background after it",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unread, working in the background"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未読、バックグラウンドで作業中"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

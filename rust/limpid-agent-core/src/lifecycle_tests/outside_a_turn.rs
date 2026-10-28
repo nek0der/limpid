@@ -9,6 +9,7 @@ fn stop() -> AgentEvent {
         titles: None,
         cache: None,
         reply: None,
+        background_work: None,
     }
 }
 
@@ -16,6 +17,7 @@ fn bash(command: &str) -> AgentEvent {
     AgentEvent::ToolStarted {
         tool: "Bash".into(),
         detail: Some(format!("Bash: {command}")),
+        by_subagent: false,
     }
 }
 
@@ -101,6 +103,7 @@ fn a_tool_outside_a_turn_runs_in_the_rests_episode_until_the_agent_is_idle() {
             tool: AgentEvent::ToolStarted {
                 tool: "shell".into(),
                 detail: Some("shell".into()),
+                by_subagent: false,
             },
             returns_to: RunState::Finished,
             end: AgentEvent::ToolFinished {
@@ -228,6 +231,7 @@ fn a_stop_a_stop_hook_held_back_begins_an_episode_after_the_late_work() {
                 titles: None,
                 cache: None,
                 reply: None,
+                background_work: None,
             },
             &claude(),
         );
