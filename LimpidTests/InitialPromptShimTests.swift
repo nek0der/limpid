@@ -131,17 +131,21 @@ struct InitialPromptShimTests {
         }
     }
 
+    /// Written inline in `@Test(arguments:)`, this list does not type-check
+    /// in reasonable time on Xcode 27, so we state its type here.
+    static let launchesThatStartNoNewSession: [(Agent, [String])] = [
+        (.claude, ["--version"]), (.claude, ["-r", "abc"]), (.claude, ["doctor"]),
+        (.claude, ["--resume=abc"]), (.claude, ["-rabc"]), (.claude, ["--from-pr", "12"]),
+        (.claude, ["my prompt"]), (.claude, ["rc"]), (.claude, ["--", "x"]),
+        (.codex, ["--version"]), (.codex, ["resume", "abc"]), (.codex, ["exec", "x"]),
+        (.codex, ["newcmd"]), (.codex, ["-m", "gpt-5", "newcmd"]), (.codex, ["--model=gpt-5", "newcmd"]),
+        (.codex, ["-m=gpt-5", "newcmd"])
+    ]
+
     /// A launch that starts no new session, or whose shape is no alias's
     /// (an unknown subcommand, the user's own prompt), leaves the
     /// instruction for the launch that does.
-    @Test(arguments: [
-        (Agent.claude, ["--version"]), (Agent.claude, ["-r", "abc"]), (Agent.claude, ["doctor"]),
-        (Agent.claude, ["--resume=abc"]), (Agent.claude, ["-rabc"]), (Agent.claude, ["--from-pr", "12"]),
-        (Agent.claude, ["my prompt"]), (Agent.claude, ["rc"]), (Agent.claude, ["--", "x"]),
-        (Agent.codex, ["--version"]), (Agent.codex, ["resume", "abc"]), (Agent.codex, ["exec", "x"]),
-        (Agent.codex, ["newcmd"]), (Agent.codex, ["-m", "gpt-5", "newcmd"]), (Agent.codex, ["--model=gpt-5", "newcmd"]),
-        (Agent.codex, ["-m=gpt-5", "newcmd"])
-    ])
+    @Test(arguments: launchesThatStartNoNewSession)
     func aLaunchThatStartsNoNewSession_leavesTheInstruction_forTheOneThatDoes(_ agent: Agent, _ args: [String]) throws {
         try withTempDir { dir in
             let file = try InitialPromptFile.stagedByEarlierBuild("do it", in: Self.prompts(in: dir))
