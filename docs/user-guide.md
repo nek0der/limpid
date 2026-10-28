@@ -49,9 +49,16 @@ updates (when one is available), keyboard shortcuts, and **Settings**.
   project's folder name in front, shows no folder. The worktree menu,
   **Needs Attention**, and **All Projects** show the same folder beside the
   name.
-- Worktrees whose PR is merged or closed, with nothing open and nothing uncommitted, fold into **Ready to Clean Up**, and
+- Worktrees whose folder is gone from disk, with no tab open in them, fold
+  into **Missing Worktrees**. Worktrees whose PR is merged or closed, with
+  nothing open and nothing uncommitted, fold into **Ready to Clean Up**, and
   the ones Git reports that you never opened (an agent's own, for one) into
   **Other Worktrees**.
+- Under the pointer, the **Missing Worktrees** line shows **×**, which removes
+  its rows from the sidebar, and the **Ready to Clean Up** line shows **×**,
+  which deletes its worktrees with `git worktree remove` after a
+  confirmation. Their branches stay. A worktree Git would remove only with
+  Force gets the same Force confirmation as **Delete Worktree…**.
 - Fold a header and it shows what waits inside.
 - A header's **+** opens **New Worktree** for that project (⌘N for the
   window's). The **+** beside the sidebar's **Projects** heading opens a

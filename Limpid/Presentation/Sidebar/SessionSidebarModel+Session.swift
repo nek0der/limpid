@@ -84,7 +84,7 @@ extension SessionSidebarModel {
             }
         } ?? []
         let folds = project.map { project in
-            [SidebarSection.cleanable, .other].map { section in
+            SidebarSection.folded.map { section in
                 Fold(projectID: project.id, section: section, count: listed.count { $0.section == section }, isOpen: isOpen(section))
             }
         } ?? []

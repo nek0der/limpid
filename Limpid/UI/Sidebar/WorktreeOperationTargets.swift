@@ -14,6 +14,20 @@ struct DeleteWorktreeTarget: Identifiable, Equatable {
     let path: URL
 }
 
+/// Target of "Delete Worktrees…" on the line the worktrees ready to clean
+/// up fold into: every one of them, named for the confirmation and for
+/// the error that lists those Git refused.
+struct DeleteWorktreesTarget: Identifiable, Equatable {
+    struct Entry: Equatable {
+        let worktreeID: UUID
+        let label: String
+    }
+
+    let id = UUID()
+    let projectID: UUID
+    let worktrees: [Entry]
+}
+
 enum ForceDeleteWorktreeReason: Equatable {
     case uncommittedChanges
     case initializedSubmodules

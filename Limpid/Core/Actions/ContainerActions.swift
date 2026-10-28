@@ -65,4 +65,37 @@ enum ContainerActions {
             registry.unregister(id)
         }
     }
+
+    /// Delete Worktrees, on the line the worktrees ready to clean up fold
+    /// into: `git worktree remove` on each in turn, forced only when
+    /// `force` is set. A worktree Git refuses (changes it holds after all,
+    /// a lock, a submodule) keeps its row and is returned with why, so the
+    /// caller can ask for Force for those alone. Branches stay: a closed
+    /// request's branch may hold the only copy of its commits.
+    static func deleteGitWorktrees(
+        _ session: WorkspaceSession,
+        registry: any SurfaceViewProviding,
+        projectID: UUID,
+        worktreeIDs: [UUID],
+        force: Bool,
+        git: any GitRunning = LiveGit()
+    ) async -> [(worktreeID: UUID, error: any Error)] {
+        var refused: [(worktreeID: UUID, error: any Error)] = []
+        for worktreeID in worktreeIDs {
+            do {
+                let leafIDs = try await session.deleteGitWorktree(
+                    projectID: projectID,
+                    worktreeID: worktreeID,
+                    force: force,
+                    git: git
+                )
+                for id in leafIDs {
+                    registry.unregister(id)
+                }
+            } catch {
+                refused.append((worktreeID, error))
+            }
+        }
+        return refused
+    }
 }

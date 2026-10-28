@@ -87,13 +87,16 @@ struct SidebarProjectHeaderView: View {
                 .layoutPriority(2)
             // The sidebar heading's ＋ in its header's size: muted at rest,
             // and filled under the pointer, so it reads as a click of its
-            // own rather than part of the header's fold.
+            // own rather than part of the header's fold. It keeps less room
+            // beside it than the heading's: the heading's room set it apart
+            // from the count and the fold by more than they are from each
+            // other.
             Button(action: actions.newWorktree) {
                 Image(systemName: "plus")
                     .font(.supervision(.row, weight: .medium))
                     .frame(height: Layout.sidebarHeadingButtonHeight)
             }
-            .buttonStyle(.supervisionIcon)
+            .buttonStyle(.supervisionIcon(horizontalPadding: Layout.spaceXS))
             // The pointer's alone: the keyboard and VoiceOver reach it
             // through the header's actions and its menu.
             .focusable(false)

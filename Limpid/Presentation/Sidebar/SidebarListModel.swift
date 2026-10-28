@@ -17,7 +17,7 @@ struct SidebarProjectHeader: Identifiable, Equatable {
     let isInOtherWindow: Bool
     /// The working rows, which the header counts.
     let workingCount: Int
-    /// The rows of the two folded sections: a folded header's count adds
+    /// The rows of the folded sections: a folded header's count adds
     /// them to `workingCount`, and VoiceOver reads them apart
     /// (`SidebarHeaderText`).
     let moreCount: Int

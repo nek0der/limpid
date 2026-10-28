@@ -7866,6 +7866,113 @@
         }
       }
     },
+    "Delete %lld worktrees?": {
+      "comment": "Delete Worktrees confirmation on the worktrees ready to clean up: its title; the argument is how many",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Delete %lld worktree?"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Delete %lld worktrees?"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件のワークツリーを削除しますか？"
+          }
+        }
+      }
+    },
+    "Runs `git worktree remove` on all of them. Their folders are removed from disk; their branches stay.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runs `git worktree remove` on all of them. Their folders are removed from disk; their branches stay."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてに `git worktree remove` を実行します。フォルダはディスクから削除され、ブランチは残ります。"
+          }
+        }
+      }
+    },
+    "Force delete %lld worktrees?": {
+      "comment": "Force delete confirmation after Delete Worktrees: its title; the argument is how many Git would remove only with Force",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Force delete %lld worktree?"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Force delete %lld worktrees?"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件のワークツリーを強制削除してもよろしいですか？"
+          }
+        }
+      }
+    },
+    "These worktrees have uncommitted changes or initialized submodules, which will be lost.\n\n%@": {
+      "comment": "Force delete confirmation after Delete Worktrees: its message; the argument is the worktrees' names, one to a line",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These worktrees have uncommitted changes or initialized submodules, which will be lost.\n\n%@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のワークツリーには未コミットの変更か初期化済みのサブモジュールがあり、強制削除すると失われます。\n\n%@"
+          }
+        }
+      }
+    },
+    "Delete Worktrees…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete Worktrees…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーを削除…"
+          }
+        }
+      }
+    },
     "Deny": {
       "localizations": {
         "ja": {
@@ -19049,6 +19156,23 @@
         }
       }
     },
+    "Missing Worktrees": {
+      "comment": "Sidebar fold line: the worktrees whose folder is gone from disk, with nothing open in them",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Missing Worktrees"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見つからないワークツリー"
+          }
+        }
+      }
+    },
     "%@, %lld worktrees": {
       "comment": "Sidebar fold line, VoiceOver: the list's name, then how many worktrees it holds",
       "localizations": {
@@ -19078,18 +19202,18 @@
         }
       }
     },
-    "Hide All": {
+    "Remove All from Sidebar": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hide All"
+            "value": "Remove All from Sidebar"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "すべて非表示にする"
+            "value": "すべてサイドバーから外す"
           }
         }
       }
@@ -19865,6 +19989,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "ワークツリーを削除できませんでした"
+          }
+        }
+      }
+    },
+    "Couldn’t Delete %lld Worktrees": {
+      "comment": "Error after Delete Worktrees: its title; the argument is how many worktrees Git left in place",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Couldn’t Delete %lld Worktree"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Couldn’t Delete %lld Worktrees"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件のワークツリーを削除できませんでした"
+          }
+        }
+      }
+    },
+    "Git didn’t delete these worktrees. Delete each from its row to see why.\n\n%@": {
+      "comment": "Error after Delete Worktrees: its message; the argument is the worktrees' names, one to a line",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git didn’t delete these worktrees. Delete each from its row to see why.\n\n%@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git は次のワークツリーを削除しませんでした。理由は、各行の「ワークツリーを削除…」から確認できます。\n\n%@"
           }
         }
       }
@@ -20728,35 +20898,6 @@
           "stringUnit": {
             "state": "translated",
             "value": ".env など Git が無視するファイルを、Limpid がワークツリーを作成するたびにプロジェクトのフォルダからコピーします。1 行に 1 つのパスまたはパターンを入力します。"
-          }
-        }
-      }
-    },
-    "Hid %lld worktrees.": {
-      "comment": "Toast after Hide All: how many worktrees ready to clean up were hidden",
-      "localizations": {
-        "en": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "Hid %lld worktree."
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "Hid %lld worktrees."
-                }
-              }
-            }
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ワークツリー %lld 個を非表示にしました。"
           }
         }
       }

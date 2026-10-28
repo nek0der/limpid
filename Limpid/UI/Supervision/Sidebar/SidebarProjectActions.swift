@@ -154,7 +154,7 @@ struct SidebarProjectActionsMenu: View {
         // rows go with their tabs, and no Undo brings them back.
         if let removeMissingWorktrees = actions.removeMissingWorktrees {
             Button(role: .destructive, action: removeMissingWorktrees) {
-                Label { Text(SidebarProjectActionText.removeMissingWorktrees) } icon: { Image(systemName: "exclamationmark.triangle") }
+                Label { Text(SidebarProjectActionText.removeMissingWorktrees) } icon: { Image(systemName: "xmark") }
             }
             .tint(Color.primary)
         }

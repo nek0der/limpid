@@ -91,7 +91,7 @@ extension SidebarListModel {
                 gitFacts: sources.gitFacts,
                 layout: SessionSidebarModel.Layout(
                     sections: sections,
-                    openSections: Set([SidebarSection.cleanable, .other].filter { arrangement.isOpen($0, of: id) })
+                    openSections: Set(SidebarSection.folded.filter { arrangement.isOpen($0, of: id) })
                 )
             )
             return Group(header: header, rows: rows)

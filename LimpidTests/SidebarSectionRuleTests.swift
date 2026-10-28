@@ -1,5 +1,5 @@
 // SidebarSectionRuleTests.swift
-// Limpid — which of the working rows, the rows ready to clean up, and the other worktrees a row is listed in.
+// Limpid — which of the working rows, the missing rows, the rows ready to clean up, and the other worktrees a row is listed in.
 
 import Foundation
 import Testing
@@ -56,7 +56,22 @@ struct SidebarSectionRuleTests {
             facts: Facts(isMainFolder: true, admission: .discovered, prState: .merged),
             section: .working
         ),
-        Case(name: "a missing worktree is always working", facts: Facts(admission: .discovered, isMissing: true), section: .working),
+        Case(name: "a missing worktree is missing", facts: Facts(admission: .created, isMissing: true), section: .missing),
+        Case(
+            name: "a missing worktree with its stop is missing",
+            facts: Facts(admission: .discovered, hasItems: true, prState: .merged, isMissing: true),
+            section: .missing
+        ),
+        Case(
+            name: "a missing worktree with a tab is working",
+            facts: Facts(admission: .created, hasTabs: true, isMissing: true),
+            section: .working
+        ),
+        Case(
+            name: "a selected missing worktree is working",
+            facts: Facts(admission: .created, isSelected: true, isMissing: true),
+            section: .working
+        ),
         Case(name: "the selected row is always working", facts: Facts(admission: .discovered, isSelected: true), section: .working),
         Case(
             name: "the selected row is working even when merged",

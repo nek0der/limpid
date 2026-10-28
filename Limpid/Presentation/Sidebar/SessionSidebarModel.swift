@@ -5,11 +5,12 @@ import Foundation
 
 /// One project's rows in the sidebar, under its header
 /// (`SidebarListModel`): a row for each place to work in the project, each
-/// in the same two-line form. The working rows come first (the worktrees in the order they were
-/// made, then the folder), then a line for the worktrees ready to clean up
-/// and one for the other worktrees, each with its rows under it while it is
-/// open (`SidebarPresentedSections`). Rows are never sorted by state; the
-/// state is what the row shows.
+/// in the same two-line form. The working rows come first (the worktrees in
+/// the order they were made, then the folder), then a line for the missing
+/// worktrees, one for the worktrees ready to clean up, and one for the other
+/// worktrees, each with its rows under it while it is open
+/// (`SidebarPresentedSections`). Rows are never sorted by state; the state
+/// is what the row shows.
 struct SessionSidebarModel: Equatable {
     /// How a row's second line is colored. Color is never the only sign:
     /// the glyph and the words carry the same meaning.
@@ -111,12 +112,12 @@ struct SessionSidebarModel: Equatable {
         }
     }
 
-    /// One of the two lists that fold into a line: how many rows it
-    /// holds, and whether the window has it open. A folded one's rows are not
+    /// One of the lists that fold into a line: how many rows it holds, and
+    /// whether the window has it open. A folded one's rows are not
     /// built: a project with dozens of agent worktrees costs a count.
     struct Fold: Identifiable, Equatable {
         /// The project whose rows it holds: every project of the sidebar
-        /// has its own two.
+        /// has its own.
         let projectID: UUID
         let section: SidebarSection
         let count: Int
