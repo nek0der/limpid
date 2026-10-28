@@ -54,8 +54,16 @@ struct Step {
     /// A hook fixture case, as `<provider>/<case>`; the provider defaults to
     /// the run's when the case carries no slash.
     case: String,
+    /// The schema date directory the case was recorded under. Absent for the
+    /// cases recorded first, which all lie under `2026-09`.
+    #[serde(default = "first_schema_date")]
+    schema: String,
     payload: String,
     now: String,
+}
+
+fn first_schema_date() -> String {
+    "2026-09".to_owned()
 }
 
 /// The directories a generated case owns. Everything else in the case
@@ -237,7 +245,7 @@ fn payload_bytes(fixtures: &Path, provider: &str, step: &Step) -> Result<Vec<u8>
     };
     let path = fixtures
         .join(provider)
-        .join("2026-09")
+        .join(&step.schema)
         .join(case)
         .join(&step.payload);
     fs::read(&path).map_err(|error| format!("{}: {error}", path.display()))

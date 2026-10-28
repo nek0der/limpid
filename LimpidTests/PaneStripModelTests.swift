@@ -219,7 +219,7 @@ struct PaneStripModelTests {
         PaneActions.split(session, direction: .horizontal)
         let split = try #require(session.tab(tab.id))
         let leaves = split.splitTree.allLeafIDs()
-        let badge = AgentBadge(state: .running, updatedAt: Date())
+        let badge = AgentBadge(state: .running, runStartedAt: Date(), updatedAt: Date())
         func run(_ kind: AgentKind, _ id: String, in pane: UUID) -> AgentRuntimePresentation {
             AgentRuntimePresentation.test(kind: kind, runID: id, badge: badge, paneIDs: [pane])
         }
@@ -253,7 +253,7 @@ struct PaneStripModelTests {
     /// runs: the unread, which a tab never shows, does not hide the run.
     @Test func aRunningAgentWithAnUnreadTurn_showsItRuns() {
         let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
-        let badge = AgentBadge(state: .running, updatedAt: Date())
+        let badge = AgentBadge(state: .running, runStartedAt: Date(), updatedAt: Date())
         let claude = AgentRuntimePresentation.test(runID: "c", badge: badge, paneIDs: [pane])
         var queue = AttentionQueue()
         queue.insert(

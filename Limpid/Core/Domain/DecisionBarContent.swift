@@ -140,6 +140,21 @@ struct DecisionBarContent: Equatable, Sendable {
     let position: Position?
     /// The item shown, so a press acts on it and nothing else.
     let itemID: AttentionItemID?
+    /// The work the run of the turns shown still has running, as its latest
+    /// stop left it, said after their receipt: only beside `unread` and
+    /// `lastTurn`, the bodies that say how a turn ended. An unread turn
+    /// before that run's latest gets the latest stop's count too, since it
+    /// is what the run is doing now. Here rather than in the bar's words so
+    /// the rule of where it shows is decided with the body it goes with, and
+    /// `DecisionBarModel` only words what it is given.
+    let backgroundWork: BackgroundWork?
+
+    init(body: Body, position: Position?, itemID: AttentionItemID?, backgroundWork: BackgroundWork? = nil) {
+        self.body = body
+        self.position = position
+        self.itemID = itemID
+        self.backgroundWork = backgroundWork
+    }
 
     /// What decides the bar of one pane.
     struct Input: Sendable {
@@ -161,6 +176,18 @@ struct DecisionBarContent: Equatable, Sendable {
         /// How each of the pane's stops can be resumed; one not here
         /// cannot.
         var stopResumes: [AttentionItemID: StopResume] = [:]
+        /// What the pane's agent left running in the background
+        /// (`AgentBadge.backgroundWork`), with the run it belongs to.
+        var backgroundWork: RuntimeBackgroundWork?
+    }
+
+    /// The work one runtime left running, named by its id
+    /// (`AgentRuntimePresentation.id`) so it is said only beside that run's
+    /// turns: a pane can hold more than one run, and its unread items need
+    /// not be the run the bar reads the work from.
+    struct RuntimeBackgroundWork: Equatable, Sendable {
+        let runtimeID: String
+        let work: BackgroundWork
     }
 
     struct Done: Equatable, Sendable {
@@ -180,14 +207,25 @@ struct DecisionBarContent: Equatable, Sendable {
                 return DecisionBarContent(body: .done(done.result, next: done.next), position: nil, itemID: nil)
             }
             if let lastTurn = input.lastTurn, isAtRest(input.agent) {
-                return DecisionBarContent(body: .lastTurn(lastTurn), position: nil, itemID: nil)
+                // The last turn is the same run's (`DecisionBarModel.runtime(in:runtimes:)`).
+                return DecisionBarContent(body: .lastTurn(lastTurn), position: nil, itemID: nil, backgroundWork: input.backgroundWork?.work)
             }
             return DecisionBarContent(body: .summary(summary(of: input.agent)), position: nil, itemID: nil)
         }
+        let body = body(of: shown, approvalActions: input.approvalActions, resume: input.stopResumes[shown.id] ?? .unavailable)
+        // A request, a prompt, or a stop is what the person has to act on;
+        // what still runs behind a finished turn would only crowd it. An
+        // unread turn of another run in the pane did not leave this work.
+        let isReceiptOfTheRun = if case .unread = body, let work = input.backgroundWork {
+            shown.subject.runtimeID == work.runtimeID
+        } else {
+            false
+        }
         return DecisionBarContent(
-            body: body(of: shown, approvalActions: input.approvalActions, resume: input.stopResumes[shown.id] ?? .unavailable),
+            body: body,
             position: position(of: shown, in: arrived),
-            itemID: shown.id
+            itemID: shown.id,
+            backgroundWork: isReceiptOfTheRun ? input.backgroundWork?.work : nil
         )
     }
 

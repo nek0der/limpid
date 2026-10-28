@@ -5,8 +5,11 @@ import Foundation
 @testable import Limpid
 
 extension AgentRuntimePresentation {
-    /// A running Claude run named "run" at revision 1, attached to no pane,
-    /// changed only where a test says.
+    /// A Claude run named "run" at revision 1, running a turn, attached to
+    /// no pane, changed only where a test says. The turn has a start
+    /// (`runStartedAt`), as a turn taken from a prompt does; the start is
+    /// the distant past, so it never reads as a prompt taken after a
+    /// request a test raises (`ApprovalPresentationStore.isOvertaken`).
     ///
     /// The initializer takes every field; a test names here only the one it
     /// is about.
@@ -14,7 +17,7 @@ extension AgentRuntimePresentation {
         kind: AgentKind = .claude,
         runID: String = "run",
         revision: Int? = 1,
-        badge: AgentBadge = AgentBadge(state: .running, updatedAt: Date()),
+        badge: AgentBadge = AgentBadge(state: .running, runStartedAt: .distantPast, updatedAt: Date()),
         paneIDs: Set<UUID> = [],
         tmuxLocations: [UUID: TmuxPaneLocation] = [:],
         stateEpisodeToken: String? = nil,

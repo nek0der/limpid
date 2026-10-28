@@ -309,7 +309,8 @@ extension PaneHeaderRules {
     /// for (`leadAgentIndex`).
     ///
     /// `nil` at rest, before the agent is matched, and for a shell, so a
-    /// quiet pane's header stays quiet.
+    /// quiet pane's header stays quiet. A rest with work still running
+    /// after the turn is not quiet: it has a mark.
     @MainActor
     static func mark(
         paneID: UUID,
@@ -328,14 +329,13 @@ extension PaneHeaderRules {
     /// once and places each run once (`PaneStripModel`), rather than once
     /// per pane.
     static func mark(paneItems: [AttentionItem], shown: [AgentRuntimePresentation]) -> PaneHeaderMark? {
-        let fact = SessionRowFact.make(.init(
-            items: paneItems,
-            agents: shown.map { SessionRowFact.Agent(provider: $0.kind, state: $0.badge.state, detail: $0.badge.detail) }
-        ))
+        let agents = shown.map(SessionRowFact.Agent.init(runtime:))
+        let fact = SessionRowFact.make(.init(items: paneItems, agents: agents))
         switch fact.glyph {
         case .idle, .unknown, .shell:
             return nil
-        case .needsAnswer, .needsApproval, .needsResponse, .stopped, .unread, .running:
+        case .needsAnswer, .needsApproval, .needsResponse, .stopped, .unread, .unreadWorkingAfterTurn, .running,
+             .workingAfterTurn:
             break
         }
         let speaker: AgentRuntimePresentation? = if fact.glyph != .running,
@@ -343,7 +343,7 @@ extension PaneHeaderRules {
         {
             shown.first { $0.id == id }
         } else {
-            SessionRowFact.leadAgentIndex(of: shown.map(\.badge.state)).map { shown[$0] }
+            SessionRowFact.leadAgentIndex(of: agents).map { shown[$0] }
         }
         return PaneHeaderMark(glyph: fact.glyph, detail: speaker?.badge.detail.flatMap { $0.isEmpty ? nil : $0 })
     }

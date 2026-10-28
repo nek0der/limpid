@@ -453,6 +453,7 @@ mod tests {
                 session_started_at: None,
                 cache_window: None,
                 usage_limit: None,
+                background_work: None,
                 stop_reason: None,
                 has_prompt: None,
             },

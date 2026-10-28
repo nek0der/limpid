@@ -55,7 +55,10 @@ struct LiveLocaleTests {
     }
 
     @Test func stateGlyphNames_switchWithTheLanguage() {
-        let kinds: [StateGlyph.Kind] = [.needsApproval, .needsAnswer, .needsResponse, .stopped, .unread, .running, .idle, .unknown]
+        let kinds: [StateGlyph.Kind] = [
+            .needsApproval, .needsAnswer, .needsResponse, .stopped, .unread, .unreadWorkingAfterTurn, .running, .idle,
+            .workingAfterTurn, .unknown
+        ]
         for kind in kinds {
             expectTranslated(kind.name)
         }

@@ -62,7 +62,12 @@ extension DecisionBarModel {
                     }
                 }.map { ($0.id, sources.stopResume($0)) },
                 uniquingKeysWith: { first, _ in first }
-            )
+            ),
+            // The run the receipt at rest is read from (`runtime(in:runtimes:)`);
+            // `make` says it beside an unread turn only when it is that run's.
+            backgroundWork: Self.runtime(in: paneID, runtimes: sources.runtimes).flatMap { runtime in
+                runtime.badge.backgroundWork.map { .init(runtimeID: runtime.id, work: $0) }
+            }
         ))
         let shown = items.first { $0.id == content.itemID }
         self.init(content: content, resetNotice: shown.flatMap(sources.resetNotice), now: sources.now, locale: locale) { _ in
@@ -82,26 +87,27 @@ extension DecisionBarModel {
         session: WorkspaceSession
     ) -> SessionRowFact.Agent? {
         if let runtime = runtime(in: paneID, runtimes: runtimes) {
-            return .init(provider: runtime.kind, state: runtime.badge.state, detail: runtime.badge.detail)
+            return .init(runtime: runtime)
         }
         guard let tab = session.tab(containing: paneID) else { return nil }
         for kind in AgentKind.allCases {
             if let badge = tab.agentBadges[kind]?[paneID], badge.state != .unknown {
-                return .init(provider: kind, state: badge.state, detail: badge.detail)
+                return .init(provider: kind, state: badge.state, detail: badge.detail, backgroundWork: badge.backgroundWork)
             }
         }
         return nil
     }
 
     /// Returns the run the pane's bar speaks for, of the runs in the pane:
-    /// the first running a turn, else the first (`SessionRowFact.leadAgentIndex`),
-    /// as the pane's header picks it. We pick it once, so the bar's state and
+    /// the first running a turn, else the first resting with work its turn
+    /// left running, else the first (`SessionRowFact.leadAgentIndex`), as
+    /// the pane's header picks it. We pick it once, so the bar's state and
     /// its last turn's receipt are the same run's: a finished run beside
     /// a running one in the pane does not put an old turn under the
     /// header's Running.
     static func runtime(in paneID: UUID, runtimes: [AgentRuntimePresentation]) -> AgentRuntimePresentation? {
         let inPane = runtimes.filter { $0.paneIDs.contains(paneID) }
-        return SessionRowFact.leadAgentIndex(of: inPane.map(\.badge.state)).map { inPane[$0] }
+        return SessionRowFact.leadAgentIndex(of: inPane.map(SessionRowFact.Agent.init(runtime:))).map { inPane[$0] }
     }
 
     /// The stop of a workspace whose worktree is gone, which its row lists

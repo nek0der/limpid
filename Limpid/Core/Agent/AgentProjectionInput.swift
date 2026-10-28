@@ -475,6 +475,7 @@ struct AgentProjectedBadge: Decodable, Sendable {
     var tool: String?
     var stopReason: String?
     var hasPrompt: Bool?
+    var backgroundWork: AgentProjectedBackgroundWork?
 
     private enum CodingKeys: String, CodingKey {
         case state, detail, runStartedAt, contextTokens, isTmuxHosted, updatedAt
@@ -482,6 +483,7 @@ struct AgentProjectedBadge: Decodable, Sendable {
         case conversationID = "conversationId"
         case providerSessionTitle, providerGeneratedTitle, sessionStartedAt
         case cacheWindow, usageLimit, waitKind, tool, stopReason, hasPrompt
+        case backgroundWork
     }
 
     /// The badge as the interface holds it. An unreadable state shows as
@@ -509,8 +511,40 @@ struct AgentProjectedBadge: Decodable, Sendable {
             waitKind: waitKind,
             tool: tool,
             stopReason: stopReason,
-            hasPrompt: hasPrompt
+            hasPrompt: hasPrompt,
+            backgroundWork: backgroundWork?.work
         )
+    }
+}
+
+/// The badge's background work as the projection spells it: a count per
+/// kind, each left out at zero. Decoding never fails: the counts only mark
+/// a resting run and add a sentence to its decision bar and session row, and
+/// a shape this build cannot read must cost those and not the whole
+/// projection pass.
+struct AgentProjectedBackgroundWork: Decodable, Sendable {
+    /// `nil` when the value is not an object or counts nothing.
+    var work: BackgroundWork?
+
+    private enum CodingKeys: String, CodingKey {
+        case shells, subagents, others
+    }
+
+    init(from decoder: any Decoder) throws {
+        guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
+            work = nil
+            return
+        }
+        // Each count on its own, as the run record's fields are read
+        // (`AgentRunRecordFacts`): one of another type, or below zero, counts
+        // nothing without taking the others with it.
+        func count(_ key: CodingKeys) -> Int {
+            max(0, (try? container.decodeIfPresent(Int.self, forKey: key)) ?? 0)
+        }
+        let work = BackgroundWork(shells: count(.shells), subagents: count(.subagents), others: count(.others))
+        // The rules leave the field out when nothing runs; an object that
+        // counts nothing says the same.
+        self.work = work.isEmpty ? nil : work
     }
 }
 

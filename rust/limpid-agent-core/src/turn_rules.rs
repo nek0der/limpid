@@ -533,6 +533,7 @@ mod tests {
                     titles: None,
                     cache: None,
                     reply: None,
+                    background_work: None,
                 },
                 &records,
                 None,

@@ -540,6 +540,11 @@ fn badge_from(record: &RunRecord, descriptor: Option<&ProviderDescriptor>) -> Ba
         usage_limit: (record.state == RunState::Error)
             .then(|| record.usage_limit.clone())
             .flatten(),
+        // Kept through work outside a turn, which returns to the same rest;
+        // it is the run's only while the run rests there.
+        background_work: (record.state == RunState::Finished)
+            .then_some(record.background_work)
+            .flatten(),
         stop_reason: None,
         has_prompt: record.has_prompt,
     }

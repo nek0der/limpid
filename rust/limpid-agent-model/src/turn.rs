@@ -11,7 +11,7 @@
 use crate::event::EventId;
 use crate::prompt::{PromptKind, RecordedPromptKind, classify_prompt};
 use crate::provider::ProviderId;
-use crate::serde_helpers::lenient;
+use crate::serde_helpers::{is_zero, lenient};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -376,11 +376,6 @@ impl ChangeSummary {
             (S::Unknown, _) | (_, S::Unknown) => unavailable("unknown"),
         }
     }
-}
-
-#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes the field by reference.
-fn is_zero(value: &u32) -> bool {
-    *value == 0
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // serde passes the field by reference.

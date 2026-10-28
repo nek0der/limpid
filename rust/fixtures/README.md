@@ -240,6 +240,20 @@ Cases that could not be recorded as planned:
   response ids `resp_0001` to `resp_0005`, the subagent's call id
   `call_0001`, and its last message a placeholder. The hook runtime's
   replay test lays both out under a sessions folder and reads them.
+- `claude/2026-10/background-task` was recorded with Claude Code 2.1.312 in
+  print mode (`claude -p`), with a user `--settings` value whose hooks saved
+  each payload and the transcript beside it, rather than under the Debug
+  shim. The scrubber replaces every prompt, so the second `UserPromptSubmit`
+  had its `<task-notification>` prompt restored, with its ids and output path
+  replaced by placeholders, because the adapter and the core read the
+  prompt's kind from that shape. The interactive TUI was checked to send the
+  same `background_tasks` shape and to start that turn when a task ends on
+  its own.
+- `claude/2026-10/background-subagent` was recorded the same way, with a
+  subagent launched in the background instead of a shell. Its tool calls
+  after the first `Stop` carry the subagent's `agent_id` and `agent_type`. The
+  subagent's id, its transcript's session folder, and the project folder in
+  the transcript paths became placeholders.
 
 ## Scrubbing
 

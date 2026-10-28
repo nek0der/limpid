@@ -43,6 +43,11 @@ enum SessionRowFactText {
             GitFactsText.uncommittedChip(files, locale: locale)
         case let .commits(count):
             GitFactsText.commitsChip(count, locale: locale)
+        case let .workingAfterTurn(work):
+            // The rules give this fact only for work they count, so the
+            // state's name stands in only for a count that names no kind.
+            BackgroundWorkText.sentence(work, locale: locale)
+                ?? LocalizedStringResource("Working in the background").resolved(in: locale)
         case .idle:
             LocalizedStringResource("Idle").resolved(in: locale)
         case .unknown:
@@ -239,8 +244,10 @@ enum SessionRowFactText {
         case .needsResponse: "Needs response"
         case .stopped: "Stopped"
         case .unread: "Unread"
+        case .unreadWorkingAfterTurn: "Unread, working in the background"
         case .running: "Running"
         case .idle: "Idle"
+        case .workingAfterTurn: "Working in the background"
         case .unknown: "Unknown"
         case .shell: "Shell"
         }

@@ -355,6 +355,46 @@ fn the_usage_limit_reaches_the_badge_only_while_the_run_rests_in_error() {
 }
 
 #[test]
+fn background_work_reaches_the_badge_only_while_the_run_rests_finished() {
+    let pane: Uuid = PANE.parse().expect("pane");
+    let now = Instants {
+        wall: "2026-09-14T12:04:00Z".to_owned(),
+        monotonic_ms: 0,
+    };
+    let work = r#","backgroundWork":{"shells":2,"subagents":1}"#;
+    let mut input = finished_input(Vec::new());
+    let finished = record(Some(4), "2026-09-14T12:03:00Z", "finished").replace(
+        r#""state":"finished""#,
+        &format!(r#""state":"finished"{work}"#),
+    );
+    input.records = vec![file(Some(finished))];
+    let (_, projection, _) = project(&ProjectionState::default(), &input, &now);
+    assert_eq!(
+        projection.badges[&pane][&claude()].background_work,
+        Some(limpid_agent_model::BackgroundWork {
+            shells: 2,
+            subagents: 1,
+            others: 0,
+        })
+    );
+    let json = serde_json::to_value(&projection).expect("encode");
+    assert_eq!(
+        json["runtimes"][0]["badge"]["backgroundWork"],
+        serde_json::json!({"shells": 2, "subagents": 1})
+    );
+
+    // A tool outside the turn keeps the count on the record for the rest
+    // the run returns to, and the badge leaves it out meanwhile.
+    let working = record(Some(5), "2026-09-14T12:03:30Z", "finished").replace(
+        r#""state":"finished""#,
+        &format!(r#""state":"running"{work}"#),
+    );
+    input.records = vec![file(Some(working))];
+    let (_, projection, _) = project(&ProjectionState::default(), &input, &now);
+    assert_eq!(projection.badges[&pane][&claude()].background_work, None);
+}
+
+#[test]
 fn a_tmux_run_names_its_session_and_the_panes_it_is_attached_to_now() {
     // A tmux run writes no session hint for its launch pane, so the host
     // places its approval requests by this session id and these panes.
