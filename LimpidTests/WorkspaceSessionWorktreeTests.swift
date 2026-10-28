@@ -541,4 +541,76 @@ struct WorkspaceSessionWorktreeTests {
         #expect(worktreeIDs(of: project.id, in: session) == ids)
         #expect(worktreeIDs(of: other.id, in: session) == [foreign.id])
     }
+
+    // MARK: - Delete Worktrees
+
+    @Test("deleteGitWorktrees: each is removed cleanly, its row dropped and its panes freed")
+    func deleteGitWorktrees_whenGitSucceeds_dropsEveryRow() async throws {
+        let (session, project) = try makeSessionWithThreeWorktrees()
+        let ids = worktreeIDs(of: project.id, in: session)
+        let tab = session.openTab(container: .worktree(projectID: project.id, worktreeID: ids[0]))
+        let git = FakeGit()
+        let registry = RecordingSurfaceRegistry()
+
+        let refused = await ContainerActions.deleteGitWorktrees(
+            session,
+            registry: registry,
+            projectID: project.id,
+            worktreeIDs: [ids[0], ids[1]],
+            force: false,
+            git: git
+        )
+
+        #expect(refused.isEmpty)
+        #expect(worktreeIDs(of: project.id, in: session) == [ids[2]])
+        #expect(git.removeCalls.map(\.force) == [false, false])
+        #expect(Set(registry.unregisteredIDs) == Set(tab.splitTree.allLeafIDs()))
+    }
+
+    @Test("deleteGitWorktrees: one Git would remove only with Force keeps its row and comes back")
+    func deleteGitWorktrees_whenGitAsksForForce_keepsTheRowsAndReturnsThem() async throws {
+        let (session, project) = try makeSessionWithThreeWorktrees()
+        let ids = worktreeIDs(of: project.id, in: session)
+        let git = FakeGit()
+        git.nextRemoveResult = .failure("fatal: '/p' contains modified or untracked files, use --force to delete it")
+
+        let refused = await ContainerActions.deleteGitWorktrees(
+            session,
+            registry: RecordingSurfaceRegistry(),
+            projectID: project.id,
+            worktreeIDs: [ids[0], ids[1]],
+            force: false,
+            git: git
+        )
+
+        #expect(refused.map(\.worktreeID) == [ids[0], ids[1]])
+        #expect(refused.allSatisfy { refusal in
+            if case .dirtyNeedsForce? = refusal.error as? DeleteWorktreeError {
+                true
+            } else {
+                false
+            }
+        })
+        #expect(worktreeIDs(of: project.id, in: session) == ids)
+
+        git.nextRemoveResult = .success()
+        let forced = await ContainerActions.deleteGitWorktrees(
+            session,
+            registry: RecordingSurfaceRegistry(),
+            projectID: project.id,
+            worktreeIDs: refused.map(\.worktreeID),
+            force: true,
+            git: git
+        )
+
+        #expect(forced.isEmpty)
+        #expect(git.removeCalls.map(\.force) == [false, false, true, true])
+        #expect(worktreeIDs(of: project.id, in: session) == [ids[2]])
+    }
+
+    @Test("The names Git refused are quoted as each language quotes them")
+    func refusedNames_areQuotedInTheLanguage() {
+        #expect(WorktreeOperationText.lines(["a", "b"], locale: Locale(identifier: "en")) == "\u{201C}a\u{201D}\n\u{201C}b\u{201D}")
+        #expect(WorktreeOperationText.lines(["a", "b"], locale: Locale(identifier: "ja")) == "「a」\n「b」")
+    }
 }

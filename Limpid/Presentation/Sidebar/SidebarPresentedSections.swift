@@ -17,13 +17,14 @@ struct SidebarPresentedSections: Equatable {
     /// `project`'s rows the sidebar lists, in the order it lists them: the
     /// working worktrees in the project's order, then the folder, which
     /// closes the working rows rather than repeat the project's name under
-    /// its heading; then the rows ready to clean up, then the others.
+    /// its heading; then the missing rows, the rows ready to clean up, and
+    /// the others.
     func ordered(_ project: Project) -> [(row: ContainerID, section: SidebarSection)] {
         let rows = SessionSidebarModel.containers(of: project)
         let worktrees = rows.filter { $0.worktreeID != nil }
         let folder = rows.filter { $0.worktreeID == nil }
         let working = (worktrees + folder).filter { section(of: $0) == .working }
-        let rest = [SidebarSection.cleanable, .other].flatMap { kind in
+        let rest = SidebarSection.folded.flatMap { kind in
             worktrees.filter { section(of: $0) == kind }.map { ($0, kind) }
         }
         return working.map { ($0, SidebarSection.working) } + rest

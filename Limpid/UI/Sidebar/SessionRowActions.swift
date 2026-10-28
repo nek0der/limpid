@@ -45,9 +45,6 @@ struct SessionRowActions {
     /// left to hide, so the row goes with its tabs and no Undo brings it
     /// back. That is why it does not share the hide's words.
     var removeMissing: (() -> Void)?
-    /// Hide All, on the line the worktrees ready to clean up fold into:
-    /// hides every one of them, as Hide Worktree hides one.
-    var hideAll: (() -> Void)?
     /// Runs `git worktree remove`, after its own confirmation.
     var deleteWorktree: (() -> Void)?
     /// Close All Tabs: closes every tab in the row, agents and shells, after
@@ -76,7 +73,7 @@ struct SessionRowActionsMenu: View {
     }
 
     private var hasPutAway: Bool {
-        actions.removeFromWorking != nil || actions.hide != nil || actions.hideAll != nil
+        actions.removeFromWorking != nil || actions.hide != nil
             || actions.removeMissing != nil || actions.closeAllTabs != nil || actions.deleteWorktree != nil
     }
 
@@ -150,15 +147,9 @@ struct SessionRowActionsMenu: View {
             }
             .tint(Color.primary)
         }
-        if let hideAll = actions.hideAll {
-            Button(action: hideAll) {
-                Label("Hide All", systemImage: "eye.slash")
-            }
-            .tint(Color.primary)
-        }
         if let removeMissing = actions.removeMissing {
             Button(role: .destructive, action: removeMissing) {
-                Label("Remove from Sidebar", systemImage: "trash")
+                Label("Remove from Sidebar", systemImage: "xmark")
             }
             .tint(Color.primary)
         }

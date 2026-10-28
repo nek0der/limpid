@@ -3,7 +3,7 @@
 
 import Foundation
 
-/// The names of the two lists that fold into a line, read by the sidebar
+/// The names of the lists that fold into a line, read by the sidebar
 /// and by the tests, so a test pins the words on screen.
 enum SidebarSectionText {
     /// The fold line's name; `nil` for the working rows, which have none.
@@ -11,6 +11,11 @@ enum SidebarSectionText {
         switch section {
         case .working:
             nil
+        case .missing:
+            LocalizedStringResource(
+                "Missing Worktrees",
+                comment: "Sidebar fold line: the worktrees whose folder is gone from disk, with nothing open in them"
+            )
         case .cleanable:
             LocalizedStringResource(
                 "Ready to Clean Up",

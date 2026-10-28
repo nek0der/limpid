@@ -107,12 +107,16 @@ struct SidebarArrangementTests {
         let arrangement = SidebarArrangement(
             projectOrder: [Self.a, Self.b],
             collapsedProjects: [Self.b],
-            openSections: [.init(project: Self.a, section: .cleanable), .init(project: Self.b, section: .other)]
+            openSections: [
+                .init(project: Self.a, section: .cleanable),
+                .init(project: Self.b, section: .other),
+                .init(project: Self.b, section: .missing)
+            ]
         )
         let data = try JSONEncoder().encode(arrangement)
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let sections = try #require(object["openSections"] as? [[String: String]])
-        #expect(Set(sections.compactMap { $0["section"] }) == ["cleanable", "other"])
+        #expect(Set(sections.compactMap { $0["section"] }) == ["cleanable", "other", "missing"])
 
         #expect(try JSONDecoder().decode(SidebarArrangement.self, from: data) == arrangement)
     }

@@ -30,37 +30,6 @@ enum WorktreeHiding {
         ))
     }
 
-    /// Hide All, on the worktrees ready to clean up: each row is hidden
-    /// as Hide Worktree hides one, its folder and branch left as they are,
-    /// and one toast's Undo shows them all again. One row is hidden as Hide
-    /// Worktree hides it, so its toast names it.
-    static func hideAll(session: WorkspaceSession, toastCenter: ToastCenter, projectID: UUID, worktrees: [Worktree]) {
-        if worktrees.count == 1, let worktree = worktrees.first {
-            hide(session: session, toastCenter: toastCenter, projectID: projectID, worktree: worktree)
-            return
-        }
-        guard !worktrees.isEmpty else { return }
-        let worktreeIDs = worktrees.map(\.id)
-        withAnimation(LimpidMotion.reorderUnlessReduced) {
-            for id in worktreeIDs {
-                session.hideWorktree(projectID: projectID, worktreeID: id)
-            }
-        }
-        toastCenter.showInFrontWindow(ToastItem(
-            message: .localized(LocalizedStringResource(
-                "Hid \(worktreeIDs.count) worktrees.",
-                comment: "Toast after Hide All: how many worktrees ready to clean up were hidden"
-            )),
-            undo: { [session] in
-                withAnimation(LimpidMotion.reorderUnlessReduced) {
-                    for id in worktreeIDs {
-                        session.unhideWorktree(projectID: projectID, worktreeID: id)
-                    }
-                }
-            }
-        ))
-    }
-
     /// Move to Other Worktrees: the row moves among the other worktrees at
     /// once, under the pointer too (`ProjectWindowState.releaseHold`), since
     /// the person moved it; the toast's Undo puts it back. `windows` are

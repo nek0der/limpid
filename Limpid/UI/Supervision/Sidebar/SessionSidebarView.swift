@@ -30,6 +30,7 @@ struct SessionSidebarView: View {
     @Environment(UsageLimitResetSync.self) private var resetSync: UsageLimitResetSync?
     @State private var renamingRow: ContainerID?
     @State private var deletingWorktree: DeleteWorktreeTarget?
+    @State private var deletingWorktrees: DeleteWorktreesTarget?
     @State private var forceDeleteWorktree: ForceDeleteWorktreeTarget?
     @State private var worktreeOperationError: DisplayText?
     /// Whether the sidebar has the keyboard (⌥⌘0).
@@ -209,6 +210,7 @@ struct SessionSidebarView: View {
         }
         .worktreeOperationAlerts(
             deletingWorktree: $deletingWorktree,
+            deletingWorktrees: $deletingWorktrees,
             forceDeleteWorktree: $forceDeleteWorktree,
             // A header's Close Project… is confirmed by the title bar's
             // host, as the project ▾'s is.
@@ -229,7 +231,7 @@ struct SessionSidebarView: View {
             SidebarSectionFoldRow(
                 fold: fold,
                 isKeyboardSelected: isFocused && keyboardLine == item.id,
-                menu: foldMenu(fold)
+                clear: foldClear(fold)
             ) { setFold(fold.section, of: fold.projectID, isOpen: !fold.isOpen) }
         case let .row(row):
             sessionRow(row, in: row.id.projectID.flatMap { session.project($0) }, others: others, now: now)
@@ -517,18 +519,50 @@ struct SessionSidebarView: View {
         }
     }
 
-    /// The fold line's right-click menu: Hide All on the worktrees ready to
-    /// clean up, which hides them without deleting a folder or a branch.
-    /// The other worktrees offer none: they are Git's, not done with.
-    private func foldMenu(_ fold: SessionSidebarModel.Fold) -> SessionRowActions {
-        guard fold.section == .cleanable, let project = session.project(fold.projectID) else { return SessionRowActions() }
-        let sections = window.presentedSections
-        let worktrees = project.worktrees.filter { worktree in
-            !worktree.isHidden && sections.section(of: .worktree(projectID: project.id, worktreeID: worktree.id)) == .cleanable
+    /// The fold line's button: Delete Worktrees on the worktrees ready to
+    /// clean up, after its confirmation, and Remove All from Sidebar on the
+    /// missing ones. Only the rows under the line go, read when it is
+    /// pressed: one with a tab, or that the window is on, is a working row.
+    /// The other worktrees have none: they are Git's, not done with.
+    private func foldClear(_ fold: SessionSidebarModel.Fold) -> SidebarFoldClear? {
+        guard let project = session.project(fold.projectID) else { return nil }
+        switch fold.section {
+        case .cleanable:
+            return SidebarFoldClear(kind: .deleteAll) {
+                let worktrees = worktrees(under: fold, of: project)
+                // One is confirmed as its row's Delete Worktree is, by name
+                // and folder, with the Force retry when Git asks for it.
+                if worktrees.count == 1, let worktree = worktrees.first {
+                    deletingWorktree = DeleteWorktreeTarget(
+                        projectID: project.id,
+                        worktreeID: worktree.id,
+                        label: worktree.label,
+                        path: worktree.workingDirectory
+                    )
+                } else if !worktrees.isEmpty {
+                    deletingWorktrees = DeleteWorktreesTarget(
+                        projectID: project.id,
+                        worktrees: worktrees.map { .init(worktreeID: $0.id, label: $0.label) }
+                    )
+                }
+            }
+        case .missing:
+            return SidebarFoldClear(kind: .removeAll) {
+                for worktree in worktrees(under: fold, of: project) {
+                    WorktreeHiding.removeMissing(session: session, registry: registry, projectID: project.id, worktreeID: worktree.id)
+                }
+            }
+        case .working, .other:
+            return nil
         }
-        return SessionRowActions(hideAll: {
-            WorktreeHiding.hideAll(session: session, toastCenter: toastCenter, projectID: project.id, worktrees: worktrees)
-        })
+    }
+
+    /// The worktrees of `project` listed under `fold`.
+    private func worktrees(under fold: SessionSidebarModel.Fold, of project: Project) -> [Worktree] {
+        let sections = window.presentedSections
+        return project.worktrees.filter { worktree in
+            !worktree.isHidden && sections.section(of: .worktree(projectID: project.id, worktreeID: worktree.id)) == fold.section
+        }
     }
 
     /// The scratch row has no worktree to hide or delete: it closes its

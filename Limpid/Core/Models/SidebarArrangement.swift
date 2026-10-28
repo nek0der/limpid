@@ -4,7 +4,7 @@
 import Foundation
 
 /// How one window lists its projects: in what order, which headers
-/// are folded, and which of each project's two folded sections the person
+/// are folded, and which of each project's folded sections the person
 /// opened. The window's own, kept with it through every project it shows
 /// (`WindowSelection.sidebarArrangement`), saved with its record, and taken
 /// on by a window opened from it.
@@ -18,7 +18,7 @@ struct SidebarArrangement: Codable, Equatable, Sendable {
     /// One project's folded section the person opened.
     struct SectionKey: Codable, Hashable, Sendable {
         let project: UUID
-        /// `.cleanable` or `.other`; the working rows have no fold.
+        /// `.missing`, `.cleanable`, or `.other`; the working rows have no fold.
         let section: SidebarSection
 
         init(project: UUID, section: SidebarSection) {
@@ -30,6 +30,7 @@ struct SidebarArrangement: Codable, Equatable, Sendable {
             let c = try decoder.container(keyedBy: SectionKeyCodingKeys.self)
             project = try c.decode(UUID.self, forKey: .project)
             switch try c.decode(String.self, forKey: .section) {
+            case "missing": section = .missing
             case "cleanable": section = .cleanable
             case "other": section = .other
             default:
@@ -49,6 +50,7 @@ struct SidebarArrangement: Codable, Equatable, Sendable {
         private var name: String {
             get throws {
                 switch section {
+                case .missing: return "missing"
                 case .cleanable: return "cleanable"
                 case .other: return "other"
                 case .working:
@@ -60,7 +62,13 @@ struct SidebarArrangement: Codable, Equatable, Sendable {
         /// The order a save writes the keys in, so the same arrangement is
         /// written the same way each time.
         fileprivate var sortKey: String {
-            project.uuidString + (section == .cleanable ? "0" : "1")
+            // The missing rows' fold came last, so it sorts last and an
+            // arrangement saved before it is written as it was.
+            switch section {
+            case .working, .cleanable: project.uuidString + "0"
+            case .other: project.uuidString + "1"
+            case .missing: project.uuidString + "2"
+            }
         }
     }
 

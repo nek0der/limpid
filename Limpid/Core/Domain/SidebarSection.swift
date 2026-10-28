@@ -1,21 +1,30 @@
 // SidebarSection.swift
-// Limpid — which of a project's three lists a sidebar row belongs in.
+// Limpid — which of a project's lists a sidebar row belongs in.
 
 import Foundation
 
-/// The three lists a project's rows fall into. The working rows are
-/// listed in full; the other two fold into one line each, since what they
-/// hold is not where the person works.
+/// The lists a project's rows fall into. The working rows are listed in
+/// full; the others fold into one line each, since what they hold is not
+/// where the person works.
 enum SidebarSection: Hashable, Sendable, CaseIterable {
     /// The folder, any other worktree Limpid made or the person opened, and
     /// any row with something open or waiting in it.
     case working
+    /// A worktree whose folder is gone from disk, with nothing open in it:
+    /// nothing can be done in it but remove it, so it waits under its own
+    /// line rather than among the rows the person works in.
+    case missing
     /// A worktree whose pull request is merged or closed, with nothing open
-    /// in it and nothing left uncommitted: done with, and safe to hide.
+    /// in it and nothing left uncommitted: done with, and safe to delete,
+    /// as its branch is kept.
     case cleanable
     /// A worktree Git reports that nobody has opened, an agent's own as a
     /// rule.
     case other
+
+    /// The sections that fold into a line, in the order the sidebar lists
+    /// them under the working rows.
+    static let folded: [SidebarSection] = [.missing, .cleanable, .other]
 }
 
 /// Decides a row's section from values alone.
@@ -44,12 +53,16 @@ enum SidebarSectionRule {
     }
 
     static func section(_ facts: Facts) -> SidebarSection {
-        // The folder, a row whose folder went missing (which shows as
-        // stopped until the person removes it), and the selected row are
-        // always in sight: hiding them would hide what the person is on or
-        // has to deal with.
-        if facts.isMainFolder || facts.isMissing || facts.isSelected {
+        // The folder and the selected row are always in sight: hiding them
+        // would hide what the person is on.
+        if facts.isMainFolder || facts.isSelected {
             return .working
+        }
+        // A missing folder's own stop is an item for it, so it is read
+        // before the items. One with a tab stays a working row: the tab is
+        // still where the person was.
+        if facts.isMissing, !facts.hasTabs {
+            return .missing
         }
         // Something open or waiting keeps a row a working one, wherever it
         // came from.

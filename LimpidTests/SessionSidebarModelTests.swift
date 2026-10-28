@@ -56,9 +56,10 @@ struct SessionSidebarModelTests {
         let (session, project) = Self.project()
         let rows = Self.model(session, project).rows
 
-        #expect(rows.map(\.name) == ["feat/spike", "gone", "main"])
-        #expect(rows.map(\.isMainFolder) == [false, false, true])
-        #expect(rows.map(\.isMissing) == [false, true, false])
+        // The missing worktree is listed under its own line, after the folder.
+        #expect(rows.map(\.name) == ["feat/spike", "main", "gone"])
+        #expect(rows.map(\.isMainFolder) == [false, true, false])
+        #expect(rows.map(\.isMissing) == [false, false, true])
     }
 
     @Test func aRowsName_isTheNameAPersonGave_beforeTheBranch() {
@@ -68,8 +69,8 @@ struct SessionSidebarModelTests {
 
         let rows = Self.model(session, project).rows
 
-        #expect(rows.last?.name == "Release prep")
-        #expect(rows.last?.isActive == true)
+        #expect(rows.first { $0.isMainFolder }?.name == "Release prep")
+        #expect(rows.first { $0.isMainFolder }?.isActive == true)
     }
 
     // MARK: - Names
@@ -95,14 +96,14 @@ struct SessionSidebarModelTests {
             $0.conversationName = Self.conversation("Append a line to notes.txt", startedAt: 0)
             $0.title = "claude --continue"
         }
-        #expect(Self.model(session, project).rows.last?.name == "Append a line to notes.txt")
+        #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == "Append a line to notes.txt")
 
         // The agent, then the shell it leaves, set the title again (OSC 2).
         for title in ["✳ Appending", "…/demo-repos/alpha", "zsh"] {
             session.update(tab.id) { $0.title = title }
-            #expect(Self.model(session, project).rows.last?.name == "Append a line to notes.txt")
+            #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == "Append a line to notes.txt")
         }
-        #expect(Self.model(session, project).rows.last?.nameTruncation == .name)
+        #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.nameTruncation == .name)
     }
 
     @Test func aRowWithoutAConversation_isNamedByItsBranch_whateverItsTabsAreCalled() {
@@ -124,14 +125,14 @@ struct SessionSidebarModelTests {
         session.projects[index].mainBranchName = nil
         let unbranched = session.projects[index]
 
-        let row = try #require(Self.model(session, unbranched).rows.last)
+        let row = try #require(Self.model(session, unbranched).rows.first { $0.isMainFolder })
 
         #expect(row.name == unbranched.rootURL.lastPathComponent)
         #expect(row.nameTruncation == .name)
         // A worktree whose branch is not known yet is named by its label,
         // as a name; one with a known branch by the branch.
         let rows = Self.model(session, unbranched).rows
-        #expect(rows.map(\.name) == ["feat/spike", "gone", unbranched.rootURL.lastPathComponent])
+        #expect(rows.map(\.name) == ["feat/spike", unbranched.rootURL.lastPathComponent, "gone"])
         #expect(rows.map(\.nameTruncation) == [.branch, .name, .name])
     }
 
@@ -142,21 +143,22 @@ struct SessionSidebarModelTests {
         session.update(cleared.id) { $0.titleOverride = "" }
         session.update(named.id) { $0.conversationName = Self.conversation("Add tests", startedAt: 0) }
 
-        #expect(Self.model(session, project).rows.last?.name == "Add tests")
+        #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == "Add tests")
 
         session.update(named.id) { $0.conversationName = nil }
-        #expect(Self.model(session, project).rows.last?.name == "main")
+        #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == "main")
     }
 
-    @Test func theHeaderAndTheCard_cutTheNameAsTheRowDoes() {
+    @Test func theHeaderAndTheCard_cutTheNameAsTheRowDoes() throws {
         let (session, project) = Self.project()
         let spike = ContainerID.worktree(projectID: project.id, worktreeID: project.worktrees[0].id)
         _ = session.openTab(container: spike)
         let named = session.openTab(container: .project(project.id))
         session.update(named.id) { $0.conversationName = Self.conversation("Add tests", startedAt: 0) }
         let rows = Self.model(session, project).rows
+        let folder = try #require(rows.first { $0.isMainFolder })
 
-        #expect(SessionHeaderModel(row: rows[2], pullRequestNumber: nil, locale: Self.english).nameTruncation == .name)
+        #expect(SessionHeaderModel(row: folder, pullRequestNumber: nil, locale: Self.english).nameTruncation == .name)
         #expect(SessionHeaderModel(row: rows[0], pullRequestNumber: nil, locale: Self.english).nameTruncation == .branch)
 
         let registry = WindowRegistry(primary: session.primarySelection)
@@ -185,7 +187,7 @@ struct SessionSidebarModelTests {
             $0.agentBadges[.codex] = [pane: running]
             $0.rememberConversationName()
         }
-        #expect(Self.model(session, project).rows.last?.name == "Run sleep 15 with a timer")
+        #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == "Run sleep 15 with a timer")
 
         // The run is gone, and the shell names the tab by its folder.
         session.update(tab.id) {
@@ -193,7 +195,7 @@ struct SessionSidebarModelTests {
             $0.title = "~/projects/sample-reviews/demo-repos/alpha"
             $0.rememberConversationName()
         }
-        #expect(Self.model(session, project).rows.last?.name == "Run sleep 15 with a timer")
+        #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == "Run sleep 15 with a timer")
     }
 
     @Test func aRowWithSeveralConversations_isNamedByTheFirstToStart() {
@@ -207,11 +209,11 @@ struct SessionSidebarModelTests {
             $0.conversationName = Self.conversation("Review the store", startedAt: 100, provider: .codex)
         }
 
-        #expect(Self.model(session, project).rows.last?.name == "Review the store")
+        #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == "Review the store")
 
         // A name the person gave still comes first.
         session.update(later.id) { $0.titleOverride = "Release prep" }
-        #expect(Self.model(session, project).rows.last?.name == "Release prep")
+        #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == "Release prep")
     }
 
     @Test func aRowAtRest_readsIdle_asAShell_inTheWindowsLanguage() {
@@ -225,12 +227,13 @@ struct SessionSidebarModelTests {
         #expect(Self.model(session, project, locale: Self.japanese).rows[0].factText == "待機中")
     }
 
-    @Test func aRowAtRest_statesItsFoldersGitFacts_eachRowItsOwn() {
+    @Test func aRowAtRest_statesItsFoldersGitFacts_eachRowItsOwn() throws {
         let (session, project) = Self.project()
         let facts = GitFactsFixture.make(branch: "main", commits: nil, unpushed: nil, uncommitted: 2, base: nil)
         let rows = Self.model(session, project) { $0 == .project(project.id) ? facts : nil }.rows
+        let folder = try #require(rows.first { $0.isMainFolder })
 
-        #expect(rows[2].factText == "2 Uncommitted")
+        #expect(folder.factText == "2 Uncommitted")
         #expect(rows[0].factText == "Idle")
     }
 
@@ -736,6 +739,28 @@ extension SessionSidebarModelTests {
         #expect(cleanable.section == .cleanable)
         #expect(cleanable.factText == "PR #127 · Merged")
         #expect(model.rows.first { $0.id == ids.agentA }?.section == .other)
+    }
+
+    /// A worktree whose folder is gone folds under its own line, before the
+    /// rows ready to clean up, and comes out of it once a tab opens there.
+    @Test func aMissingWorktree_foldsUnderItsOwnLine_untilATabOpensThere() throws {
+        let (session, project) = Self.project()
+        let spikeID = try #require(project.worktrees.first?.id)
+        let goneID = try #require(project.worktrees.last?.id)
+        let spike = ContainerID.worktree(projectID: project.id, worktreeID: spikeID)
+        let gone = ContainerID.worktree(projectID: project.id, worktreeID: goneID)
+        let folded = Self.sectionedModel(session, project, merged: .loose, open: [])
+        let expected: [SidebarItemID] = [.row(spike), .row(.project(project.id)), .fold(project.id, .missing)]
+        #expect(folded.items.map(\.id) == expected)
+
+        let opened = Self.sectionedModel(session, project, merged: .loose, open: [.missing])
+        #expect(opened.items.last?.id == .row(gone))
+        #expect(opened.rows.first { $0.id == gone }?.section == .missing)
+
+        _ = session.openTab(container: gone)
+        session.setActiveContainer(.project(project.id))
+        let withTab = Self.sectionedModel(session, project, merged: .loose, open: [])
+        #expect(withTab.rows.first { $0.id == gone }?.section == .working)
     }
 
     /// A list with no row has no line.

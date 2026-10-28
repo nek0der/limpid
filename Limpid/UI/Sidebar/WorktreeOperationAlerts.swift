@@ -13,14 +13,25 @@ struct WorktreeOperationAlerts: ViewModifier {
     @Environment(WorkspaceSession.self) private var session
     @Environment(\.surfaceRegistry) private var registry
     @Environment(SessionLaunchStore.self) private var launches
+    @Environment(\.locale) private var locale
 
     @Binding var deletingWorktree: DeleteWorktreeTarget?
+    @Binding var deletingWorktrees: DeleteWorktreesTarget?
+    /// The worktrees of a Delete Worktrees that Git would remove only with
+    /// Force, while the Force confirmation for them shows.
+    @State private var forceDeletingWorktrees: DeleteWorktreesTarget?
+    /// The names of the worktrees a Delete Worktrees left in place for a
+    /// reason Force does not answer, while the error naming them shows.
+    @State private var undeletedWorktrees: [String]?
+    /// Those names while the Force confirmation shows: one alert at a
+    /// time, so the error waits until the Force confirmation is answered.
+    @State private var undeletedBehindForce: [String] = []
     @Binding var forceDeleteWorktree: ForceDeleteWorktreeTarget?
     @Binding var removingProject: RemoveProjectTarget?
     @Binding var worktreeOperationError: DisplayText?
 
     func body(content: Content) -> some View {
-        content
+        deleteAllAlerts(content)
             .alert(
                 // Named, as the Human Interface Guidelines ask of a confirmation's title.
                 Text("Delete the worktree “\(deletingWorktree?.label ?? "")”?"),
@@ -148,15 +159,154 @@ struct WorktreeOperationAlerts: ViewModifier {
     }
 }
 
+extension WorktreeOperationAlerts {
+    /// Delete Worktrees' own alerts: its confirmation, its Force
+    /// confirmation, and its error.
+    private func deleteAllAlerts(_ content: Content) -> some View {
+        content
+            .alert(
+                Text("Delete \(deletingWorktrees?.worktrees.count ?? 0) worktrees?"),
+                isPresented: Binding(
+                    get: { deletingWorktrees != nil },
+                    set: {
+                        if !$0 {
+                            deletingWorktrees = nil
+                        }
+                    }
+                ),
+                presenting: deletingWorktrees
+            ) { target in
+                Button("Delete", role: .destructive) {
+                    Task { await performDeleteAll(target, force: false) }
+                }
+                Button("Cancel", role: .cancel) { deletingWorktrees = nil }
+            } message: { _ in
+                Text("Runs `git worktree remove` on all of them. Their folders are removed from disk; their branches stay.")
+            }
+            .alert(
+                Text("Force delete \(forceDeletingWorktrees?.worktrees.count ?? 0) worktrees?"),
+                isPresented: Binding(
+                    get: { forceDeletingWorktrees != nil },
+                    set: {
+                        if !$0 {
+                            forceDeletingWorktrees = nil
+                        }
+                    }
+                ),
+                presenting: forceDeletingWorktrees
+            ) { target in
+                Button("Force Delete", role: .destructive) {
+                    Task { await performDeleteAll(target, force: true) }
+                }
+                Button("Cancel", role: .cancel) {
+                    forceDeletingWorktrees = nil
+                    showUndeleted([])
+                }
+            } message: { target in
+                // The names one to a line, as the single worktree's
+                // confirmation sets its path apart from the sentence.
+                Text(
+                    """
+                    These worktrees have uncommitted changes or initialized submodules, which will be lost.
+
+                    \(WorktreeOperationText.lines(target.worktrees.map(\.label), locale: locale))
+                    """
+                )
+            }
+            .alert(
+                Text("Couldn’t Delete \(undeletedWorktrees?.count ?? 0) Worktrees"),
+                isPresented: Binding(
+                    get: { undeletedWorktrees != nil },
+                    set: {
+                        if !$0 {
+                            undeletedWorktrees = nil
+                        }
+                    }
+                ),
+                presenting: undeletedWorktrees
+            ) { _ in
+                Button("OK", role: .cancel) { undeletedWorktrees = nil }
+            } message: { names in
+                // Laid out as the Force confirmation is: the sentence, then
+                // the names one to a line.
+                Text(
+                    """
+                    Git didn’t delete these worktrees. Delete each from its row to see why.
+
+                    \(WorktreeOperationText.lines(names, locale: locale))
+                    """
+                )
+            }
+    }
+
+    /// Delete Worktrees, in two stages as one row's Delete Worktree is:
+    /// each removed cleanly first (`ContainerActions.deleteGitWorktrees`);
+    /// those Git would remove only with Force go to one Force confirmation
+    /// that names them, and those it refused for another reason keep their
+    /// rows and are named in an error of their own, which counts them.
+    private func performDeleteAll(_ target: DeleteWorktreesTarget, force: Bool) async {
+        // A setup still running would keep writing into a folder.
+        for entry in target.worktrees {
+            await launches.cancelSetup(worktreeID: entry.worktreeID)
+        }
+        let refused = await ContainerActions.deleteGitWorktrees(
+            session,
+            registry: registry,
+            projectID: target.projectID,
+            worktreeIDs: target.worktrees.map(\.worktreeID),
+            force: force
+        )
+        let needsForce = refused.filter { refusal in
+            switch refusal.error as? DeleteWorktreeError {
+            case .dirtyNeedsForce?, .submodulesNeedForce?: !force
+            default: false
+            }
+        }
+        let failed = refused.filter { refusal in !needsForce.contains { $0.worktreeID == refusal.worktreeID } }
+        let entries = { (refusals: [(worktreeID: UUID, error: any Error)]) in
+            refusals.compactMap { refusal in target.worktrees.first { $0.worktreeID == refusal.worktreeID } }
+        }
+        let failedNames = entries(failed).map(\.label)
+        if needsForce.isEmpty {
+            showUndeleted(failedNames)
+        } else {
+            undeletedBehindForce += failedNames
+            forceDeletingWorktrees = DeleteWorktreesTarget(projectID: target.projectID, worktrees: entries(needsForce))
+        }
+    }
+
+    /// Shows the error for `names` with those kept behind the Force
+    /// confirmation, if any.
+    private func showUndeleted(_ names: [String]) {
+        let all = undeletedBehindForce + names
+        undeletedBehindForce = []
+        undeletedWorktrees = all.isEmpty ? nil : all
+    }
+}
+
+/// The worktree names a Delete Worktrees confirmation or error lists.
+enum WorktreeOperationText {
+    /// The worktrees' names in the language's quotes, one to a line.
+    static func lines(_ names: [String], locale: Locale) -> String {
+        names.map { quoted($0, locale: locale) }.joined(separator: "\n")
+    }
+
+    private static func quoted(_ name: String, locale: Locale) -> String {
+        locale.language.languageCode == .japanese ? "\u{300C}\(name)\u{300D}" : "\u{201C}\(name)\u{201D}"
+    }
+}
+
 extension View {
     func worktreeOperationAlerts(
         deletingWorktree: Binding<DeleteWorktreeTarget?>,
+        deletingWorktrees: Binding<DeleteWorktreesTarget?> = .constant(nil),
         forceDeleteWorktree: Binding<ForceDeleteWorktreeTarget?>,
         removingProject: Binding<RemoveProjectTarget?>,
         worktreeOperationError: Binding<DisplayText?>
     ) -> some View {
         modifier(WorktreeOperationAlerts(
             deletingWorktree: deletingWorktree,
+            deletingWorktrees: deletingWorktrees,
             forceDeleteWorktree: forceDeleteWorktree,
             removingProject: removingProject,
             worktreeOperationError: worktreeOperationError
