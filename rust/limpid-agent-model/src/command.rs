@@ -107,30 +107,31 @@ pub enum CommandOp {
     /// host hands it to the turn collector rather than performing it under a
     /// record lock, since it runs git.
     DeleteTurn { turn_id: String },
-    /// Close a run's wait that its transcript shows the person declined,
-    /// which no hook reports (Claude's question or permission prompt
-    /// dismissed with Esc): the run record ends as an interrupt ends it,
-    /// and its turn ends `interrupted` with its end snapshot. The host hands
-    /// it to the bridge's writer off the main thread, since the end
-    /// snapshot runs git, rather than performing it under a record lock of
-    /// its own. The writer takes the record lock itself and checks under it
-    /// that the record is still this wait (the fields below) and, unless
-    /// the agent itself said so, that the transcript still reads declined,
-    /// so a prompt that came meanwhile makes it a no-op; the precondition is
-    /// `None` for that reason.
-    EndDeclinedWait {
-        /// This is the wait's `stateEpisodeToken`.
+    /// End a run's turn that the person stopped, which no hook reports:
+    /// Claude's question or permission prompt declined with Esc or "No", or
+    /// its work stopped with Esc or Ctrl+C. The run record ends as an
+    /// interrupt ends it, and its turn ends `interrupted` with its end
+    /// snapshot and what the transcript says it used. The host hands it to
+    /// the bridge's writer off the main thread, since the end snapshot runs
+    /// git, rather than performing it under a record lock of its own. The
+    /// writer takes the record lock itself and checks under it that the
+    /// record is still this turn as the pass read it (the fields below)
+    /// and, unless the agent itself said so, that the transcript still
+    /// reads the wait declined, so a prompt that came meanwhile makes it a
+    /// no-op; the precondition is `None` for that reason.
+    EndStoppedTurn {
+        /// This is the record's `stateEpisodeToken` as the pass read it.
         episode_token: String,
-        /// This is the turn the wait is in (`currentTurnId`); it is absent
+        /// This is the turn the run is in (`currentTurnId`); it is absent
         /// when the record names none.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         turn_id: Option<String>,
         /// This is the transcript the record names.
         transcript_path: String,
-        /// The agent reported itself idle over OSC 7501 after the wait
-        /// began, which says the wait is over without the transcript:
-        /// "No" at Claude's permission prompt leaves no line there that
-        /// reads declined.
+        /// The agent reported itself idle over OSC 7501 after the record
+        /// last changed, which says the turn stopped without the
+        /// transcript: "No" at Claude's permission prompt, or an Esc before
+        /// the first response, leaves no line there that says so.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         by_program_status: bool,
     },
@@ -464,9 +465,9 @@ mod tests {
     }
 
     #[test]
-    fn end_declined_wait_names_the_wait_and_its_record() {
+    fn end_stopped_turn_names_the_turn_and_its_record() {
         let command = Command::new(
-            CommandOp::EndDeclinedWait {
+            CommandOp::EndStoppedTurn {
                 episode_token: "5".to_owned(),
                 turn_id: Some("TURN".to_owned()),
                 transcript_path: "/t/session.jsonl".to_owned(),
@@ -483,7 +484,7 @@ mod tests {
         assert_eq!(
             value["op"],
             serde_json::json!({
-                "op": "endDeclinedWait",
+                "op": "endStoppedTurn",
                 "episodeToken": "5",
                 "turnId": "TURN",
                 "transcriptPath": "/t/session.jsonl",

@@ -28,16 +28,16 @@ struct AgentProjectionCommandTests {
         #expect(command.target == .turn(provider: "claude", turnID: "TURN"))
     }
 
-    @Test func endDeclinedWait_namesTheWaitAndItsRecord() throws {
+    @Test func endStoppedTurn_namesTheTurnAndItsRecord() throws {
         // This is the shape `limpid-agent-model` pins in
-        // `end_declined_wait_names_the_wait_and_its_record`.
+        // `end_stopped_turn_names_the_turn_and_its_record`.
         let command = try Self.decode("""
-        {"op":{"op":"endDeclinedWait","episodeToken":"5","turnId":"TURN","transcriptPath":"/t/session.jsonl"},
+        {"op":{"op":"endStoppedTurn","episodeToken":"5","turnId":"TURN","transcriptPath":"/t/session.jsonl"},
          "target":{"target":"record","provider":"claude","storageId":"RUN"},
          "expect":{"expect":"none"},"onMismatch":"abort"}
         """)
 
-        guard case let .endDeclinedWait(token, turnID, transcriptPath, byProgramStatus) = command.op else {
+        guard case let .endStoppedTurn(token, turnID, transcriptPath, byProgramStatus) = command.op else {
             Issue.record("decoded as \(command.op)")
             return
         }
@@ -48,14 +48,14 @@ struct AgentProjectionCommandTests {
         #expect(command.target == .record(provider: "claude", storageID: "RUN"))
     }
 
-    @Test func endDeclinedWait_saysWhenTheAgentsOwnReportShowedItOver() throws {
+    @Test func endStoppedTurn_saysWhenTheAgentsOwnReportShowedItStopped() throws {
         let command = try Self.decode("""
-        {"op":{"op":"endDeclinedWait","episodeToken":"5","transcriptPath":"/t/session.jsonl","byProgramStatus":true},
+        {"op":{"op":"endStoppedTurn","episodeToken":"5","transcriptPath":"/t/session.jsonl","byProgramStatus":true},
          "target":{"target":"record","provider":"claude","storageId":"RUN"},
          "expect":{"expect":"none"},"onMismatch":"abort"}
         """)
 
-        guard case let .endDeclinedWait(_, _, _, byProgramStatus) = command.op else {
+        guard case let .endStoppedTurn(_, _, _, byProgramStatus) = command.op else {
             Issue.record("decoded as \(command.op)")
             return
         }

@@ -47,13 +47,14 @@ enum AgentCommandOperation: Decodable, Sendable {
     /// Delete a turn's record and the refs that pin its snapshots together,
     /// through `TurnGarbageCollector`, since it runs git.
     case deleteTurn(turnID: String)
-    /// End a wait the person declined at the agent's own prompt, which no
-    /// hook reports, in the run record and its turn, through
-    /// `DeclinedWaitCloser`, since the turn's end snapshot runs git. The
-    /// fields name the wait as the pass read it; the writer checks them
-    /// again under the record lock. `byProgramStatus` says the agent's own
-    /// OSC 7501 report, not the transcript, showed the wait over.
-    case endDeclinedWait(episodeToken: String, turnID: String?, transcriptPath: String, byProgramStatus: Bool)
+    /// End a turn the person stopped, which no hook reports (a wait declined
+    /// at the agent's own prompt, or work stopped with Esc or Ctrl+C), in
+    /// the run record and its turn, through `StoppedTurnCloser`, since the
+    /// turn's end snapshot runs git. The fields name the turn as the pass
+    /// read it; the writer checks them again under the record lock.
+    /// `byProgramStatus` says the agent's own OSC 7501 report, not the
+    /// transcript, showed the turn stopped.
+    case endStoppedTurn(episodeToken: String, turnID: String?, transcriptPath: String, byProgramStatus: Bool)
     /// An operation this build does not know. Skipped, never guessed at.
     case unknown
 
@@ -98,8 +99,8 @@ enum AgentCommandOperation: Decodable, Sendable {
             self = try .gitSyncRefetch(repoRoot: container.decode(String.self, forKey: .repoRoot))
         case "deleteTurn":
             self = try .deleteTurn(turnID: container.decode(String.self, forKey: .turnId))
-        case "endDeclinedWait":
-            self = try .endDeclinedWait(
+        case "endStoppedTurn":
+            self = try .endStoppedTurn(
                 episodeToken: container.decode(String.self, forKey: .episodeToken),
                 turnID: container.decodeIfPresent(String.self, forKey: .turnId),
                 transcriptPath: container.decode(String.self, forKey: .transcriptPath),

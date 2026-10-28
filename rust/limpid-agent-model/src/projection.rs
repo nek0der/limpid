@@ -552,6 +552,12 @@ pub enum StopReason {
     /// turn stopped until the record is written to say so. The interface
     /// says the wait was declined rather than answered.
     WaitDeclined,
+    /// The person stopped the run's work (Esc or Ctrl+C at Claude's
+    /// prompt), which no hook reports. The agent's own status report said
+    /// it is idle again, and the badge shows the turn stopped until the
+    /// record is written to say so. The person stopped it where they were
+    /// looking, so the finish is not announced.
+    Interrupted,
     /// A reason a newer writer added, read as no reason at all.
     #[serde(other)]
     Unknown,

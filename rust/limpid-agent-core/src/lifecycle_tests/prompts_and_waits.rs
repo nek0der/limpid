@@ -167,12 +167,19 @@ fn a_permission_prompt_after_a_question_leaves_the_question_waiting() {
 }
 
 #[test]
-fn a_wait_keeps_the_transcript_its_call_named_and_only_while_it_waits() {
+fn a_turn_keeps_the_transcript_its_prompt_named_until_it_ends() {
     let named = ApplyContext {
         transcript_path: Some("/t/session.jsonl".into()),
         ..context()
     };
-    let (asked, _, _) = run(&claude(), &[started(None), prompt("go")]);
+    let (session, _, _) = run(&claude(), &[started(None)]);
+    let asked = apply(Some(&session), &prompt("go"), &named, &claude(), NOW)
+        .run
+        .expect("record");
+    // Esc or Ctrl+C at work sends no hook, so the record names the turn's
+    // transcript from its prompt on.
+    assert_eq!(asked.state, RunState::Running);
+    assert_eq!(asked.transcript_path.as_deref(), Some("/t/session.jsonl"));
     let waiting = apply(
         Some(&asked),
         &AgentEvent::WaitingForInput {
@@ -217,20 +224,39 @@ fn a_wait_keeps_the_transcript_its_call_named_and_only_while_it_waits() {
     .expect("record");
     assert_eq!(titled.transcript_path.as_deref(), Some("/t/session.jsonl"));
 
-    // The answer moves the run on, and the path goes with the wait.
+    // The answer moves the run on in the same turn, which keeps the path,
+    // and the turn's end lets it go.
     let answered = apply(
         Some(&titled),
         &AgentEvent::ToolFinished {
             tool: Some("AskUserQuestion".into()),
         },
-        &named,
+        &context(),
         &claude(),
         NOW,
     )
     .run
     .expect("record");
     assert_eq!(answered.state, RunState::Running);
-    assert_eq!(answered.transcript_path, None);
+    assert_eq!(
+        answered.transcript_path.as_deref(),
+        Some("/t/session.jsonl")
+    );
+    let ended = apply(
+        Some(&answered),
+        &AgentEvent::TurnFinished {
+            continues_after_stop_hook: false,
+            titles: None,
+            cache: None,
+        },
+        &context(),
+        &claude(),
+        NOW,
+    )
+    .run
+    .expect("record");
+    assert_eq!(ended.state, RunState::Finished);
+    assert_eq!(ended.transcript_path, None);
 
     // A path no record text could hold is not cut down to another file's.
     let long = ApplyContext {
@@ -966,7 +992,7 @@ fn a_first_prompt_the_harness_wrote_gives_way_to_the_persons() {
 }
 
 #[test]
-fn a_declined_wait_ends_its_turn_in_the_wait_s_episode_and_keeps_the_rest() {
+fn a_stopped_turn_ends_in_the_episode_the_person_stopped_and_keeps_the_rest() {
     let named = ApplyContext {
         transcript_path: Some("/t/session.jsonl".into()),
         ..context()
@@ -983,7 +1009,7 @@ fn a_declined_wait_ends_its_turn_in_the_wait_s_episode_and_keeps_the_rest() {
     )
     .run
     .expect("record");
-    let ended = end_declined_wait(&waiting, LATER).expect("a wait inside a turn ends");
+    let ended = end_stopped_turn(&waiting, LATER).expect("a wait inside a turn ends");
     assert_eq!(ended.state, RunState::Finished);
     assert_eq!(ended.run_started_at, None);
     assert_eq!(ended.wait_kind, None);
@@ -1002,12 +1028,24 @@ fn a_declined_wait_ends_its_turn_in_the_wait_s_episode_and_keeps_the_rest() {
     assert_eq!(ended.session_id, waiting.session_id);
     assert_eq!(ended.last_prompt, waiting.last_prompt);
 
-    // Only a wait inside a turn ends this way, since the projection reads no
-    // other as declined.
-    assert_eq!(end_declined_wait(&asked, LATER), None);
+    assert_eq!(ended.last_hook_event.as_deref(), Some("wait_declined"));
+
+    // Work in a turn ends the same way, when the person stopped it with Esc
+    // or Ctrl+C.
+    assert_eq!(asked.state, RunState::Running);
+    let interrupted = end_stopped_turn(&asked, LATER).expect("work inside a turn ends");
+    assert_eq!(interrupted.state, RunState::Finished);
+    assert_eq!(interrupted.run_started_at, None);
+    assert_eq!(interrupted.tool, None);
+    assert_eq!(interrupted.state_episode_token, asked.state_episode_token);
+    assert_eq!(interrupted.last_hook_event.as_deref(), Some("interrupted"));
+
+    // Only work or a wait inside a turn ends this way, since the projection
+    // reads no other as stopped.
+    assert_eq!(end_stopped_turn(&ended, LATER), None);
     let outside = RunRecord {
         run_started_at: None,
         ..waiting
     };
-    assert_eq!(end_declined_wait(&outside, LATER), None);
+    assert_eq!(end_stopped_turn(&outside, LATER), None);
 }

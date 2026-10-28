@@ -1,51 +1,53 @@
-// DeclinedWaitCloser.swift
-// Limpid — writes the end of a wait declined at the agent's own prompt, off the main actor and once per wait.
+// StoppedTurnCloser.swift
+// Limpid — writes the end of a turn the person stopped where no hook says so, off the main actor and once per turn.
 
 import Foundation
 import OSLog
 
-private let log = Logger.limpid("agent.declined-wait")
+private let log = Logger.limpid("agent.stopped-turn")
 
-/// Runs the projection's `endDeclinedWait` commands: Claude sends no hook
-/// when the person declines its question or permission prompt with Esc, so
-/// the pass that reads the decline from the transcript asks for the run
-/// record and its turn to be ended, which the bridge's writer does as the
-/// hook would (`LimpidTurnBridge.endDeclinedWait`).
+/// Runs the projection's `endStoppedTurn` commands: Claude sends no hook
+/// when the person declines its question or permission prompt with Esc or
+/// "No", nor when they stop its work with Esc or Ctrl+C, so the pass that
+/// reads the stop from Claude's own status report or from the transcript
+/// asks for the run record and its turn to be ended, which the bridge's
+/// writer does as the hook would (`LimpidTurnBridge.endStoppedTurn`).
 ///
 /// The projection asks again on every pass until the record says the turn
-/// stopped, so this keeps which waits it has asked for: each is written
+/// stopped, so this keeps which turns it has asked for: each is written
 /// once, and one whose write did not land (a hook held the lock, the
 /// transcript could not be read) is tried again on a later pass, at most
 /// `maximumAttempts` times. Until then the badge alone shows the turn
-/// stopped. The writer runs git for the turn's end snapshot, so it runs on
-/// a queue of its own rather than the shared pool or the main actor.
+/// stopped. The writer runs git for the turn's end snapshot and may wait a
+/// second for the transcript, so it runs on a queue of its own rather than
+/// the shared pool or the main actor.
 @MainActor
-final class DeclinedWaitCloser {
-    typealias Apply = @Sendable (DeclinedWaitRequest) throws -> DeclinedWaitEnd
+final class StoppedTurnCloser {
+    typealias Apply = @Sendable (StoppedTurnRequest) throws -> StoppedTurnEnd
 
-    /// This is how many times one wait is tried. A wait whose write keeps failing
-    /// stays shown stopped by the badge, and its next prompt writes the
-    /// record anyway; trying on every pass would run git each time.
+    /// This is how many times one turn is tried. A turn whose write keeps
+    /// failing stays shown stopped by the badge, and its next prompt writes
+    /// the record anyway; trying on every pass would run git each time.
     static let maximumAttempts = 3
 
     private let apply: Apply
-    private let queue = DispatchQueue(label: "dev.limpid.declined-wait", qos: .userInitiated)
-    /// This counts the tries made for each wait a pass still asks about.
-    private var attempts: [DeclinedWaitRequest: Int] = [:]
-    /// These are the waits nothing is left to try for (`DeclinedWaitEnd.isSettled`).
-    private var settled: Set<DeclinedWaitRequest> = []
-    /// These are the writes on their way, by wait.
-    private var inFlight: [DeclinedWaitRequest: Task<Void, Never>] = [:]
+    private let queue = DispatchQueue(label: "dev.limpid.stopped-turn", qos: .userInitiated)
+    /// This counts the tries made for each turn a pass still asks about.
+    private var attempts: [StoppedTurnRequest: Int] = [:]
+    /// These are the turns nothing is left to try for (`StoppedTurnEnd.isSettled`).
+    private var settled: Set<StoppedTurnRequest> = []
+    /// These are the writes on their way, by turn.
+    private var inFlight: [StoppedTurnRequest: Task<Void, Never>] = [:]
 
-    init(apply: @escaping Apply = { try LimpidTurnBridge.endDeclinedWait($0) }) {
+    init(apply: @escaping Apply = { try LimpidTurnBridge.endStoppedTurn($0) }) {
         self.apply = apply
     }
 
-    /// Takes the waits one pass asked to end. A wait no longer asked about is
+    /// Takes the turns one pass asked to end. A turn no longer asked about is
     /// forgotten: its record moved on, so what was tried for it says
     /// nothing about the next one. `ended` runs on the main actor once a
     /// write lands, so the host can read the records again at once.
-    func close(_ requests: [DeclinedWaitRequest], ended: @escaping @MainActor () -> Void) {
+    func close(_ requests: [StoppedTurnRequest], ended: @escaping @MainActor () -> Void) {
         let asked = Set(requests)
         attempts = attempts.filter { asked.contains($0.key) || inFlight[$0.key] != nil }
         settled.formIntersection(asked)
@@ -80,20 +82,20 @@ final class DeclinedWaitCloser {
 
     private nonisolated static func run(
         _ apply: @escaping Apply,
-        _ request: DeclinedWaitRequest,
+        _ request: StoppedTurnRequest,
         on queue: DispatchQueue
-    ) async -> DeclinedWaitEnd {
+    ) async -> StoppedTurnEnd {
         await withCheckedContinuation { continuation in
             queue.async {
-                let outcome: DeclinedWaitEnd
+                let outcome: StoppedTurnEnd
                 do {
                     outcome = try apply(request)
                 } catch {
-                    log.error("declined wait not ended: \(String(describing: error), privacy: .private)")
+                    log.error("stopped turn not ended: \(String(describing: error), privacy: .private)")
                     outcome = .failed
                 }
                 if outcome != .ended {
-                    log.info("declined wait of \(request.storageID, privacy: .public) not ended: \(outcome.rawValue, privacy: .public)")
+                    log.info("stopped turn of \(request.storageID, privacy: .public) not ended: \(outcome.rawValue, privacy: .public)")
                 }
                 continuation.resume(returning: outcome)
             }
@@ -101,20 +103,20 @@ final class DeclinedWaitCloser {
     }
 }
 
-extension DeclinedWaitRequest {
-    /// Returns the waits `commands` ask to end (`endDeclinedWait`), each
-    /// with the state directory of its record's provider. A wait for a
+extension StoppedTurnRequest {
+    /// Returns the turns `commands` ask to end (`endStoppedTurn`), each
+    /// with the state directory of its record's provider. A turn for a
     /// provider this build has no directories for is left out.
     static func asked(
         by commands: [AgentProjectionCommand],
         in directories: [String: AgentDirectories]
-    ) -> [DeclinedWaitRequest] {
+    ) -> [StoppedTurnRequest] {
         commands.compactMap { command in
-            guard case let .endDeclinedWait(episodeToken, turnID, transcriptPath, byProgramStatus) = command.op,
+            guard case let .endStoppedTurn(episodeToken, turnID, transcriptPath, byProgramStatus) = command.op,
                   case let .record(provider, storageID) = command.target,
                   let state = directories[provider]?.state
             else { return nil }
-            return DeclinedWaitRequest(
+            return StoppedTurnRequest(
                 provider: provider,
                 stateDirectory: state,
                 storageID: storageID,

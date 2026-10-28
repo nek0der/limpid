@@ -27,9 +27,9 @@ final class AgentProjectionAdapter {
     private let executor: AgentCommandExecutor
     /// Deletes the turns a pass asks to, off the main actor.
     private let turnCollector: TurnGarbageCollector
-    /// This ends the waits a pass read as declined at the agent's own
-    /// prompt, off the main actor and once each.
-    private let declinedWaits: DeclinedWaitCloser
+    /// This ends the turns a pass read as stopped by the person, off the
+    /// main actor and once each.
+    private let stoppedTurns: StoppedTurnCloser
     private let processStatus: (String?) -> AgentProcessStatus
     /// Read here as well as written through the executor: an intent is the
     /// evidence that a run was killed at quit rather than lost, and the rules
@@ -151,13 +151,13 @@ final class AgentProjectionAdapter {
         turnDeletionsURL: URL? = nil,
         processStatus: @escaping (String?) -> AgentProcessStatus = AgentProcessStatus.inspect,
         turnCollector: TurnGarbageCollector = TurnGarbageCollector(),
-        declinedWaits: DeclinedWaitCloser = DeclinedWaitCloser(),
+        stoppedTurns: StoppedTurnCloser = StoppedTurnCloser(),
         engine: any ProjectionPassing = LimpidProjectionBridge.Engine()
     ) {
         self.engine = engine
         self.directories = directories
         self.turnCollector = turnCollector
-        self.declinedWaits = declinedWaits
+        self.stoppedTurns = stoppedTurns
         self.descriptors = descriptors
         self.processStatus = processStatus
         self.resumeIntents = resumeIntents
@@ -778,11 +778,11 @@ final class AgentProjectionAdapter {
                 continue
             }
         }
-        // We hand the waits over on every pass, so a wait no pass asks about
+        // We hand the turns over on every pass, so a turn no pass asks about
         // any more is forgotten. The badge already shows the turn stopped;
         // the write makes the record say so, and the turn where its commit
         // lands, which the next pass reads at once.
-        declinedWaits.close(DeclinedWaitRequest.asked(by: commands, in: directories)) { [weak self] in
+        stoppedTurns.close(StoppedTurnRequest.asked(by: commands, in: directories)) { [weak self] in
             self?.noteTurnsChanged()
             self?.requestPass()
         }

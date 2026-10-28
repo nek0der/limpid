@@ -25,7 +25,7 @@ pub use restore::{
     limpid_discard_hunks_v1, limpid_restore_recover_v1, limpid_restore_turn_v1,
     limpid_restore_undo_v1,
 };
-pub use turns::{limpid_declined_wait_end_v1, limpid_turn_gc_apply_v1, limpid_turn_result};
+pub use turns::{limpid_stopped_turn_end_v1, limpid_turn_gc_apply_v1, limpid_turn_result};
 
 use limpid_agent_core::{
     MAX_FIRST_PROMPT_BYTES, MAX_TITLE_BYTES, Principal, RunId, TitleCandidates, TitleError,

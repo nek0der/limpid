@@ -165,9 +165,9 @@ struct AgentCommandExecutor {
 
     private func apply(_ command: AgentProjectionCommand, into outcomes: inout [AgentCommandOutcome]) {
         // This command addresses a record, but the writer that ends it takes the record's
-        // lock itself, off the main actor (`DeclinedWaitCloser`); taking it
+        // lock itself, off the main actor (`StoppedTurnCloser`); taking it
         // here as well would only hold up a hook.
-        if case .endDeclinedWait = command.op {
+        if case .endStoppedTurn = command.op {
             return
         }
         guard let url = fileURL(for: command.target) else {
@@ -228,7 +228,7 @@ struct AgentCommandExecutor {
             pruneRetired(command.target, max: max, lifetimeSeconds: lifetime)
         case let .cleanupPaneStore(keep, max):
             cleanupPaneStore(command.target, keep: keep, max: max)
-        case .notify, .markViewed, .cwdChanged, .gitSyncRefetch, .deleteTurn, .endDeclinedWait, .unknown:
+        case .notify, .markViewed, .cwdChanged, .gitSyncRefetch, .deleteTurn, .endStoppedTurn, .unknown:
             .applied
         }
     }

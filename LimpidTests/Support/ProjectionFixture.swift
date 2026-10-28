@@ -15,7 +15,7 @@ enum ProjectionFixture {
     /// hints out of `sessions`, and its cwd moves out of `cwdEvents`, with
     /// liveness answered by `processStatus`. `writesFiles: false` reads as
     /// demo mode does, writing nothing. `turnCollector`, `turnDeletionsURL`,
-    /// `declinedWaits`, and `engine` default to what the adapter itself
+    /// `stoppedTurns`, and `engine` default to what the adapter itself
     /// defaults to, so a suite names only the one it observes or makes fail.
     static func adapter(
         provider: String = "codex",
@@ -28,7 +28,7 @@ enum ProjectionFixture {
         turnDeletionsURL: URL? = nil,
         processStatus: @escaping (String?) -> AgentProcessStatus = AgentProcessStatus.inspect,
         turnCollector: TurnGarbageCollector = TurnGarbageCollector(),
-        declinedWaits: DeclinedWaitCloser = DeclinedWaitCloser(),
+        stoppedTurns: StoppedTurnCloser = StoppedTurnCloser(),
         engine: any ProjectionPassing = LimpidProjectionBridge.Engine()
     ) -> AgentProjectionAdapter {
         AgentProjectionAdapter(
@@ -43,7 +43,7 @@ enum ProjectionFixture {
             turnDeletionsURL: turnDeletionsURL,
             processStatus: processStatus,
             turnCollector: turnCollector,
-            declinedWaits: declinedWaits,
+            stoppedTurns: stoppedTurns,
             engine: engine
         )
     }

@@ -66,11 +66,11 @@ impl ProviderAdapter for ClaudeAdapter {
         normalize::transcript_path(input)
     }
 
-    fn wait_transcript_path(
+    fn turn_transcript_path(
         &self,
         input: RawHookInput<'_>,
     ) -> Result<Option<String>, NormalizeError> {
-        normalize::wait_transcript_path(input)
+        normalize::turn_transcript_path(input)
     }
 
     fn transcript_shows_wait_declined(&self, transcript: &[u8]) -> bool {
@@ -106,6 +106,15 @@ impl ProviderAdapter for ClaudeAdapter {
         };
         let path = normalize::transcript_path(input).ok().flatten();
         tokens::transcript_turn_reading(transcript, marker, path.as_deref())
+    }
+
+    fn transcript_turn_reading(
+        &self,
+        transcript: &[u8],
+        path: &str,
+        marker: Option<&str>,
+    ) -> TurnReading {
+        tokens::transcript_turn_reading(transcript, marker, Some(path))
     }
 
     fn subagent_usage(&self, transcript: &[u8]) -> Option<TurnUsage> {

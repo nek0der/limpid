@@ -139,24 +139,26 @@ pub(crate) fn transcript_path(input: RawHookInput<'_>) -> Result<Option<String>,
     transcript_path_for_events(input, &["Notification"])
 }
 
-/// Returns the transcript of a call that puts the run in a wait: the question
-/// tool's `PreToolUse` and the permission prompt's `Notification`. Esc at
-/// either sends no hook, so the app reads this transcript for the interrupt
-/// line while the run waits (`awaited`). Only the path is named; nothing is
-/// read.
-pub(crate) fn wait_transcript_path(
+/// Returns the transcript of a call that begins a turn (`UserPromptSubmit`)
+/// or puts the run in a wait (the question tool's `PreToolUse` and the
+/// permission prompt's `Notification`). Esc at a wait, and Esc or Ctrl+C at
+/// work, send no hook, so the app reads this transcript for the interrupt
+/// line while the run waits (`awaited`) and for what a turn the person
+/// stopped used. Only the path is named; nothing is read.
+pub(crate) fn turn_transcript_path(
     input: RawHookInput<'_>,
 ) -> Result<Option<String>, NormalizeError> {
     let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)?;
-    let is_wait = match string(&object, "hook_event_name") {
+    let names_it = match string(&object, "hook_event_name") {
+        Some("UserPromptSubmit") => true,
         Some("PreToolUse") => string(&object, "tool_name") == Some(crate::approval::QUESTION_TOOL),
         Some("Notification") => string(&object, "notification_type") == Some("permission_prompt"),
         _ => false,
     };
-    if !is_wait {
+    if !names_it {
         return Ok(None);
     }
-    transcript_path_for_events(input, &["PreToolUse", "Notification"])
+    transcript_path_for_events(input, &["UserPromptSubmit", "PreToolUse", "Notification"])
 }
 
 fn pre_tool_use(object: &Map<String, Value>) -> AgentEvent {
@@ -641,9 +643,9 @@ mod tests {
     }
 
     #[test]
-    fn only_a_call_that_waits_names_its_transcript_for_the_wait() {
+    fn only_a_prompt_or_a_call_that_waits_names_its_transcript() {
         let path = |payload: &str| {
-            wait_transcript_path(RawHookInput {
+            turn_transcript_path(RawHookInput {
                 bytes: payload.as_bytes(),
                 transcript: None,
             })
@@ -659,6 +661,14 @@ mod tests {
         assert_eq!(
             path(
                 r#"{"hook_event_name":"Notification","notification_type":"permission_prompt","transcript_path":"/t/x.jsonl"}"#
+            ),
+            named
+        );
+        // A prompt names it for the turn it begins, which Esc or Ctrl+C
+        // can end with no hook.
+        assert_eq!(
+            path(
+                r#"{"hook_event_name":"UserPromptSubmit","prompt":"go","transcript_path":"/t/x.jsonl"}"#
             ),
             named
         );

@@ -45,14 +45,14 @@ impl EventId {
         ))
     }
 
-    /// Identifies the end of a wait the person declined, which no hook
+    /// Identifies the end of a turn the person stopped, which no hook
     /// reports, as the app's writer applies it
-    /// (`limpid_agent_hook::end_declined_wait`):
-    /// `"<provider>:declined:<episode_token>"`. A wait is one episode, so a
-    /// retried write is one event.
+    /// (`limpid_agent_hook::end_stopped_turn`):
+    /// `"<provider>:stopped:<episode_token>"`. The writer ends a turn only in
+    /// the episode the pass read, so a retried write is one event.
     #[must_use]
-    pub fn declined_wait(provider: &ProviderId, episode_token: &str) -> Self {
-        Self(format!("{}:declined:{episode_token}", provider.as_str()))
+    pub fn stopped_turn(provider: &ProviderId, episode_token: &str) -> Self {
+        Self(format!("{}:stopped:{episode_token}", provider.as_str()))
     }
 
     /// Event `index` of the call `call` identifies, for a call that yields
