@@ -19,7 +19,7 @@ pub use approval::{
 pub use checks::{CheckRun, DEFAULT_CHECK_PATTERNS, classify as classify_check};
 pub use lifecycle::{
     ApplyContext, IdleOutcome, RecordWrites, STOPPED_TURN_IDLE_SECS, SideWrite, TurnSnapshotOp,
-    apply, end_declined_wait, idle_outcome, sanitize_text, sanitize_title, turn_snapshot_cwd,
+    apply, end_stopped_turn, idle_outcome, sanitize_text, sanitize_title, turn_snapshot_cwd,
 };
 /// Re-exported so the protocol crate can name a provider and a question
 /// without depending on the model crate directly.

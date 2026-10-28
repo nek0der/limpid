@@ -268,27 +268,32 @@ On a real Claude Code 2.1.309 run, the idle prompt did not come at all after
 an Esc that declined a question: twice, nothing followed for 85 and 110
 seconds. So the record cannot be the only place that ends the wait. The
 call that opens a wait (the question tool's `PreToolUse`, the permission
-prompt's `Notification`) names its transcript, which the record keeps in
-`transcriptPath` while the run waits (`ProviderAdapter::wait_transcript_path`;
-nothing is read then). The app's projection pass asks, for each run that
+prompt's `Notification`) names its transcript, and so does the prompt that
+begins the turn (`UserPromptSubmit`); the record keeps it in
+`transcriptPath` while the run is in the turn or waits
+(`ProviderAdapter::turn_transcript_path`; nothing is read then). The app's projection pass asks, for each run that
 waits inside a turn and names one, whether the transcript shows the wait
 declined (`ProviderAdapter::transcript_shows_wait_declined`), and shows such
 a run as its turn stopped: `finished`, with neither the wait's words nor its
 kind, in the wait's episode, which announces nothing, and with the stop
 reason `waitDeclined`, so the decision bar says the wait was declined rather
 than answered. That badge is the instant answer. The same pass also returns
-an `endDeclinedWait` command naming the wait as it read it: its episode
-token, its turn, and its transcript. The app runs the command once per wait,
-off its main thread (`DeclinedWaitCloser`, at most three tries for a write
-that does not land), through `limpid_declined_wait_end_v1`. That writer is
-the hook runtime's own (`limpid_agent_hook::end_declined_wait`), and it ends
+an `endStoppedTurn` command naming the turn as it read it: its episode
+token, its turn, and its transcript. The app runs the command once per turn,
+off its main thread (`StoppedTurnCloser`, at most three tries for a write
+that does not land), through `limpid_stopped_turn_end_v1`. That writer is
+the hook runtime's own (`limpid_agent_hook::end_stopped_turn`), and it ends
 the wait as the idle prompt's `EndsStoppedTurn` does. The turn's end snapshot
 and difference are taken before the record lock, as a hook takes them. Under
 the lock the record is read again, and the write goes ahead only if it is
 still that wait in the same episode and turn, naming the same transcript,
 and the transcript still reads declined. The run record then ends
 `finished`, outside the turn, without `waitKind` or `transcriptPath`, and its
-turn ends `interrupted` with its end snapshot. The prompt the person types
+turn ends `interrupted` with its end snapshot and what the transcript says
+it used (`ProviderAdapter::transcript_turn_reading`, read as a hook's turn
+end reads it: Claude reports itself idle a few milliseconds before the
+stopped turn's last lines reach the file, so the reading waits up to a
+second for a last response). The prompt the person types
 next takes the same lock, so a write that comes after it finds a new episode
 and writes nothing. Unlike the idle prompt, the write keeps the wait's
 episode: the badge already showed the finish in it, and a new episode would
@@ -331,6 +336,29 @@ an agent reports its status there, and the empty one Claude writes as it
 exits. A pane's status goes when its program clears it, when its command
 returns to the shell, or when the pane closes, so an agent that is killed
 and sends no clear does not keep the shell's titles off the tab.
+
+Esc or Ctrl+C while Claude works sends no hook either, and the transcript
+says nothing of an Esc before the turn's first response. The record kept
+saying the run worked until the next prompt, or the idle prompt a minute
+later. The report is the evidence here too. On Claude Code 2.1.312, Esc
+before the first response, Esc while it wrote one, Esc while a tool ran, and
+Ctrl+C each brought `idle` within 50 ms; a turn that ends on its own reports
+`done`, an answer at the permission prompt goes straight from `blocked` to
+`working`, and an Esc at a subagent's permission prompt that lets the turn go
+on reports `working`. So a run at work inside a turn (`running` or
+`compacting`) whose pane last reported idle under the provider's name, in or
+after the second its record last changed, was stopped by the person. Claude
+reports `working` as the prompt is sent, before its hook writes the record,
+so the idle before a turn is never the latest report once the record says
+the turn runs. The badge shows the turn stopped with the stop reason
+`interrupted`, and the pass returns the same `endStoppedTurn` command with
+`byProgramStatus`; the writer ends the run record (`lastHookEvent`
+`interrupted`) and the turn as it ends a declined wait. Its finish is not
+announced, since the person stopped it with their own key, and the record
+keeps the episode, so it is not announced once written either. Work is never
+read from the transcript: inside tmux, or with
+`CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set, it ends with the idle prompt as
+before.
 
 The end snapshot the idle prompt takes runs before the record lock, so the
 hook judges the idle prompt again from the record under the lock and drops it

@@ -19,6 +19,7 @@ mod hunks;
 mod process;
 mod records;
 pub mod restore;
+mod stopped_turns;
 mod swap;
 mod tmux;
 mod turn;
@@ -26,12 +27,13 @@ mod turn_gc;
 mod worktree;
 pub mod worktree_lock;
 
-pub use declined_waits::{DeclinedWaitEnd, DeclinedWaitRequest, DeclinedWaits, end_declined_wait};
+pub use declined_waits::DeclinedWaits;
 pub use env::{HookEnv, PANE_ID_VARIABLE, ResolvedDirectories};
 pub use git::{GitSnapshots, LARGE_FILE_BYTES, NoSnapshots, SnapshotRunner, TurnSide};
 pub use limpid_agent_model::TURNS_DIRECTORY;
 pub use limpid_agent_model::format_utc_seconds;
 pub use records::{HookLog, atomic_write, ensure_user_only_directory, with_record_lock};
+pub use stopped_turns::{StoppedTurnEnd, StoppedTurnRequest, end_stopped_turn};
 pub use turn_gc::{TurnDeletion, delete_turns, delete_turns_waiting};
 pub use worktree::{InterceptResult, WORKTREE_ROUTING_FILE};
 
@@ -206,10 +208,11 @@ pub fn run_hook(provider: &str, stdin: &[u8], runtime: &HookRuntime<'_>) -> Hook
     };
 
     let (context, mut apply_context) = identity(runtime.env, adapter, &pane_id);
-    // We take only the path, for a call that opens a wait: the app reads the
-    // file while the run waits (`declined_waits`), so this call costs no
-    // read.
-    apply_context.transcript_path = adapter.wait_transcript_path(input).ok().flatten();
+    // We take only the path, for a call that begins a turn or opens a wait:
+    // the app reads the file while the run waits (`declined_waits`) and when
+    // it ends a turn the person stopped (`stopped_turns`), so this call
+    // costs no read.
+    apply_context.transcript_path = adapter.turn_transcript_path(input).ok().flatten();
 
     let events = match adapter.normalize(input, &context) {
         Ok(events) => events,
@@ -293,7 +296,10 @@ fn check_of(
     run: &limpid_agent_model::CommandRun,
     directories: &ResolvedDirectories,
 ) -> Option<CheckResult> {
-    check_with(run, &check_patterns(&run_directory(run), directories))
+    check_with(
+        run,
+        &check_patterns(&run_directory(run), &directories.state),
+    )
 }
 
 /// The directory `run` ran in, the hook's own when the payload named none.
@@ -303,10 +309,11 @@ fn run_directory(run: &limpid_agent_model::CommandRun) -> PathBuf {
         .map_or_else(turn::current_directory, PathBuf::from)
 }
 
-/// The check patterns the project set for `cwd`, or the defaults.
-fn check_patterns(cwd: &Path, directories: &ResolvedDirectories) -> Vec<String> {
-    directories
-        .state
+/// The check patterns the project set for `cwd`, or the defaults, as the
+/// application data folder that holds the provider's state directory `state`
+/// keeps them.
+fn check_patterns(cwd: &Path, state: &Path) -> Vec<String> {
+    state
         .parent()
         .and_then(|support| worktree::check_patterns(support, cwd))
         .unwrap_or_else(|| {
@@ -343,80 +350,135 @@ impl turn::TurnTranscript for CallTranscript<'_> {
     }
 
     /// A turn whose last response is not yet in the transcript is read
-    /// again as the provider writes it, for at most `AWAIT_RESPONSE`; past
-    /// that the reading stays partial. The subagents' transcripts share one
-    /// budget of bytes (`MAX_SUBAGENT_BYTES`), so a turn that fanned out
-    /// widely does not hold the hook up; one read short of its whole, or
-    /// not at all, leaves the usage partial. The project's check patterns
-    /// are read once per directory the commands ran in.
+    /// again as the provider writes it (`awaited`), and the rest is read as
+    /// `end_reading` reads it. The payload is read for the transcript's path
+    /// only then.
     fn read_end(&self, marker: Option<&str>) -> turn::EndReading {
         let adapter = self.call.adapter;
-        let reading = self.awaited_reading(marker);
-        let usage = reading.usage.map(|usage| {
-            let mut budget = MAX_SUBAGENT_BYTES;
-            reading
-                .subagent_transcripts
-                .iter()
-                .fold(usage, |total, path| {
-                    total.plus(subagent_usage(adapter, path, &mut budget))
-                })
-        });
-        let checks = reading.commands.map(|runs| {
-            let mut patterns: HashMap<PathBuf, Vec<String>> = HashMap::new();
-            runs.iter()
-                .filter_map(|run| {
-                    let cwd = run_directory(run);
-                    let patterns = patterns
-                        .entry(cwd)
-                        .or_insert_with_key(|cwd| check_patterns(cwd, self.directories));
-                    check_with(run, patterns)
-                })
-                .collect()
-        });
-        turn::EndReading {
-            marker: reading.marker,
-            usage,
-            checks,
-            are_checks_partial: reading.are_commands_partial,
-        }
+        let reading = adapter.turn_reading(self.call.input, marker);
+        let path = reading
+            .is_awaiting_response
+            .then(|| {
+                adapter
+                    .transcript_path(RawHookInput {
+                        bytes: self.call.input.bytes,
+                        transcript: None,
+                    })
+                    .ok()
+                    .flatten()
+            })
+            .flatten();
+        let reading = match path {
+            Some(path) => awaited(reading, Path::new(&path), |transcript| {
+                adapter.turn_reading(
+                    RawHookInput {
+                        bytes: self.call.input.bytes,
+                        transcript: Some(transcript),
+                    },
+                    marker,
+                )
+            }),
+            None => reading,
+        };
+        end_reading(adapter, reading, &self.directories.state)
     }
 }
 
-impl CallTranscript<'_> {
-    /// The turn's reading, read again while it awaits its last response.
-    fn awaited_reading(&self, marker: Option<&str>) -> TurnReading {
-        let adapter = self.call.adapter;
-        let mut reading = adapter.turn_reading(self.call.input, marker);
-        if !reading.is_awaiting_response {
-            return reading;
-        }
-        let Some(path) = adapter
-            .transcript_path(RawHookInput {
-                bytes: self.call.input.bytes,
-                transcript: None,
-            })
-            .ok()
-            .flatten()
-        else {
-            return reading;
+/// The transcript of a turn the app ends because the person stopped it,
+/// which no hook does (`stopped_turns`): the file the run record names, read
+/// with no payload, as the provider's adapter reads a transcript on its own
+/// (`ProviderAdapter::transcript_turn_reading`).
+pub(crate) struct TranscriptFile<'a> {
+    pub adapter: &'a dyn ProviderAdapter,
+    pub path: &'a Path,
+    /// This is the provider's state directory, under the data folder whose
+    /// project settings name the check patterns.
+    pub state: &'a Path,
+}
+
+impl turn::TurnTranscript for TranscriptFile<'_> {
+    /// No prompt begins a turn here.
+    fn marker(&self) -> Option<String> {
+        None
+    }
+
+    /// Read as a hook's turn end reads its transcript (`awaited` and
+    /// `end_reading`). Claude reports itself idle a few milliseconds before
+    /// the stopped turn's last lines reach the file, so the reading waits
+    /// for them as a `Stop` waits for its last response. A file that cannot
+    /// be read says nothing, which keeps what the turn had.
+    fn read_end(&self, marker: Option<&str>) -> turn::EndReading {
+        let Some(path) = self.path.to_str() else {
+            return turn::EndReading::default();
         };
-        let started = std::time::Instant::now();
-        while reading.is_awaiting_response && started.elapsed() < AWAIT_RESPONSE {
-            std::thread::sleep(AWAIT_RESPONSE_STEP);
-            let Some(transcript) =
-                records::read_bounded_tail(Path::new(&path), MAX_TRANSCRIPT_BYTES)
-            else {
-                break;
-            };
-            reading = adapter.turn_reading(
-                RawHookInput {
-                    bytes: self.call.input.bytes,
-                    transcript: Some(&transcript),
-                },
-                marker,
-            );
-        }
+        let Some(transcript) = records::read_bounded_tail(self.path, MAX_TRANSCRIPT_BYTES) else {
+            return turn::EndReading::default();
+        };
+        let read = |transcript: &[u8]| {
+            self.adapter
+                .transcript_turn_reading(transcript, path, marker)
+        };
+        let reading = awaited(read(&transcript), self.path, read);
+        end_reading(self.adapter, reading, self.state)
+    }
+}
+
+/// Returns `reading`, read again from the transcript at `path` with `read`
+/// while it awaits the turn's last response, for at most `AWAIT_RESPONSE`;
+/// past that the reading stays partial.
+fn awaited(
+    mut reading: TurnReading,
+    path: &Path,
+    read: impl Fn(&[u8]) -> TurnReading,
+) -> TurnReading {
+    let started = std::time::Instant::now();
+    while reading.is_awaiting_response && started.elapsed() < AWAIT_RESPONSE {
+        std::thread::sleep(AWAIT_RESPONSE_STEP);
+        let Some(transcript) = records::read_bounded_tail(path, MAX_TRANSCRIPT_BYTES) else {
+            break;
+        };
+        reading = read(&transcript);
+    }
+    reading
+}
+
+/// What a turn's end records of `reading`. The subagents' transcripts share
+/// one budget of bytes (`MAX_SUBAGENT_BYTES`), so a turn that fanned out
+/// widely does not hold the end up; one read short of its whole, or not at
+/// all, leaves the usage partial. The project's check patterns are read
+/// once per directory the commands ran in, from the data folder that holds
+/// the provider's state directory `state`.
+fn end_reading(
+    adapter: &dyn ProviderAdapter,
+    reading: TurnReading,
+    state: &Path,
+) -> turn::EndReading {
+    let usage = reading.usage.map(|usage| {
+        let mut budget = MAX_SUBAGENT_BYTES;
         reading
+            .subagent_transcripts
+            .iter()
+            .fold(usage, |total, path| {
+                total.plus(subagent_usage(adapter, path, &mut budget))
+            })
+    });
+    let checks = reading.commands.map(|runs| {
+        let mut patterns: HashMap<PathBuf, Vec<String>> = HashMap::new();
+        runs.iter()
+            .filter_map(|run| {
+                let cwd = run_directory(run);
+                let patterns = patterns
+                    .entry(cwd)
+                    .or_insert_with_key(|cwd| check_patterns(cwd, state));
+                check_with(run, patterns)
+            })
+            .collect()
+    });
+    turn::EndReading {
+        marker: reading.marker,
+        usage,
+        checks,
+        are_checks_partial: reading.are_commands_partial,
     }
 }
 

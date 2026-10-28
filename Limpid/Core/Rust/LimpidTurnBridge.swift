@@ -1,5 +1,5 @@
 // LimpidTurnBridge.swift
-// Limpid — Swift entry point for deleting turns and ending declined waits through the Rust bridge.
+// Limpid — Swift entry point for deleting turns and ending stopped turns through the Rust bridge.
 
 import Foundation
 import LimpidRustBridge
@@ -88,19 +88,20 @@ enum LimpidTurnBridge {
         return try JSONDecoder().decode([TurnDeletion].self, from: Data(bytes: out, count: outCount))
     }
 
-    /// Ends the wait `request` names, which the person declined at the
-    /// agent's own prompt and no hook reported: the run record is written
-    /// as an interrupt ends it, and its turn too where that commit
-    /// succeeds, if under the record's lock
-    /// the record is still that wait and its transcript still reads
-    /// declined. Runs git for the turn's end snapshot, so it is called off
-    /// the main actor (`DeclinedWaitCloser`).
-    static func endDeclinedWait(_ request: DeclinedWaitRequest) throws -> DeclinedWaitEnd {
+    /// Ends the turn `request` names, which the person stopped and no hook
+    /// reported: the run record is written as an interrupt ends it, and its
+    /// turn too, with what its transcript says it used, where that commit
+    /// succeeds, if under the record's lock the record is still that turn
+    /// and, unless the agent's own status report said so, its transcript
+    /// still reads the wait declined. Runs git for the turn's end snapshot
+    /// and may wait a second for the transcript, so it is called off the
+    /// main actor (`StoppedTurnCloser`).
+    static func endStoppedTurn(_ request: StoppedTurnRequest) throws -> StoppedTurnEnd {
         let body = try JSONEncoder().encode(request)
         var out: UnsafeMutablePointer<UInt8>?
         var outCount = 0
         let status = body.withUnsafeBytes { buffer in
-            limpid_declined_wait_end_v1(
+            limpid_stopped_turn_end_v1(
                 buffer.bindMemory(to: UInt8.self).baseAddress,
                 buffer.count,
                 &out,
@@ -111,17 +112,18 @@ enum LimpidTurnBridge {
         // The bytes are ours whatever the status turned out to be.
         defer { limpid_approval_bytes_free_v1(out, outCount) }
         guard status == Int32(LIMPID_TURN_OK.rawValue) else { throw LimpidTurnBridgeError.rust(status) }
-        return try JSONDecoder().decode(DeclinedWaitAnswer.self, from: Data(bytes: out, count: outCount)).outcome
+        return try JSONDecoder().decode(StoppedTurnAnswer.self, from: Data(bytes: out, count: outCount)).outcome
     }
 
-    private struct DeclinedWaitAnswer: Decodable {
-        let outcome: DeclinedWaitEnd
+    private struct StoppedTurnAnswer: Decodable {
+        let outcome: StoppedTurnEnd
     }
 }
 
-/// This is a wait a projection pass read as declined, as the bridge's writer
-/// takes it (`endDeclinedWait` and the command's record target).
-struct DeclinedWaitRequest: Encodable, Hashable, Sendable {
+/// This is a turn a projection pass read as stopped by the person, as the
+/// bridge's writer takes it (`endStoppedTurn` and the command's record
+/// target).
+struct StoppedTurnRequest: Encodable, Hashable, Sendable {
     let provider: String
     /// This is the provider's state directory, where its run records are.
     let stateDirectory: URL
@@ -130,8 +132,9 @@ struct DeclinedWaitRequest: Encodable, Hashable, Sendable {
     /// It is `nil` when the record names no turn.
     let turnID: String?
     let transcriptPath: String
-    /// The agent's own OSC 7501 report, not the transcript, showed the wait
-    /// over, so the writer does not ask the transcript.
+    /// The agent's own OSC 7501 report, not the transcript, showed the turn
+    /// stopped, so the writer does not ask the transcript whether a wait was
+    /// declined.
     let byProgramStatus: Bool
 
     private enum CodingKeys: String, CodingKey {
@@ -152,16 +155,18 @@ struct DeclinedWaitRequest: Encodable, Hashable, Sendable {
     }
 }
 
-/// This says what became of one request to end a declined wait.
-enum DeclinedWaitEnd: String, Decodable, Sendable {
+/// This says what became of one request to end a stopped turn.
+enum StoppedTurnEnd: String, Decodable, Sendable {
     /// The run record now says the turn stopped. Its turn was committed
     /// too when it could be; a turn commit that failed, or a provider that
     /// records no turns, still ends here.
     case ended
-    /// The record is not that wait any more (a prompt came, or it is
-    /// gone). Nothing was written, and nothing will be for this wait.
+    /// The record is not that turn as the pass read it any more (a prompt
+    /// came, or it is gone). Nothing was written, and nothing will be for
+    /// this request.
     case movedOn
-    /// The transcript no longer reads declined, or cannot be read.
+    /// The record still waits, but its transcript no longer reads the wait
+    /// declined, or cannot be read.
     case notDeclined
     /// The record's lock could not be taken: a hook held it, or its lock
     /// file could not be opened or locked.
@@ -176,7 +181,7 @@ enum DeclinedWaitEnd: String, Decodable, Sendable {
         self = try Self(rawValue: decoder.singleValueContainer().decode(String.self)) ?? .unknown
     }
 
-    /// Whether nothing is left to try for the wait.
+    /// Whether nothing is left to try for the turn.
     var isSettled: Bool {
         switch self {
         case .ended, .movedOn: true

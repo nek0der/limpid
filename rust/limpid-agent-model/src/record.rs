@@ -139,13 +139,16 @@ pub struct RunRecord {
         deserialize_with = "lenient"
     )]
     pub wait_kind: Option<WaitKind>,
-    /// This is the provider's transcript of the conversation, as the event
-    /// that put the run in `NeedsInput` named it. It is absent in any other
-    /// state, for a provider that keeps no transcript, and in records written
-    /// before the field existed. Claude sends no hook when the person
-    /// declines its question or permission prompt with Esc, so the transcript
-    /// is the only place that says the wait is over, and the app reads it
-    /// from here while the run waits (the projection's declined wait).
+    /// This is the provider's transcript of the conversation, as the prompt
+    /// that began the run's turn or the event that put it in `NeedsInput`
+    /// named it. It is absent outside a turn unless the run waits, for a
+    /// provider that keeps no transcript, and in records written before the
+    /// field existed. Claude sends no hook when the person declines its
+    /// question or permission prompt with Esc, so the transcript is the only
+    /// place that says the wait is over, and the app reads it from here
+    /// while the run waits (the projection's declined wait). Nor does it
+    /// send one when the person stops its work, so the app reads what a
+    /// turn it ends that way used from here too (`end_stopped_turn`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcript_path: Option<String>,
     /// Set on prompt submit, cleared when the turn ends. Version 2 wrote an

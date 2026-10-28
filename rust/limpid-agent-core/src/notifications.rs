@@ -197,6 +197,12 @@ fn queue(
     if runtime.badge.stop_reason == Some(StopReason::ProcessExited) {
         return;
     }
+    // Work the person stopped with Esc or Ctrl+C ended where they were
+    // looking, at their own key: its finish is no news. The record written
+    // after it keeps the episode, so it is not announced later either.
+    if runtime.badge.stop_reason == Some(StopReason::Interrupted) {
+        return;
+    }
 
     let is_new_episode =
         prior.and_then(|it| it.episode_token.as_deref()) != Some(runtime.episode_token.as_str());

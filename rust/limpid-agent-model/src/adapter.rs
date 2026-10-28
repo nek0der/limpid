@@ -159,18 +159,20 @@ pub trait ProviderAdapter: Send + Sync {
         Ok(None)
     }
 
-    /// Names the transcript that will show whether the wait this call opens
-    /// is over, for a call that puts the run in `NeedsInput`. Only the path
-    /// is taken, not the file: the runtime keeps it on the run record, and
-    /// the app reads the transcript while the run waits
-    /// (`transcript_shows_wait_declined`). A provider whose every wait ends
-    /// with a hook of its own keeps the default.
+    /// Names the transcript of the turn this call begins, or the one that
+    /// will show whether the wait this call opens is over, for a call that
+    /// puts the run in `NeedsInput`. Only the path is taken, not the file:
+    /// the runtime keeps it on the run record through the turn, and the app
+    /// reads the transcript while the run waits
+    /// (`transcript_shows_wait_declined`) and when it ends a turn the person
+    /// stopped (`transcript_turn_reading`). A provider whose every wait and
+    /// every turn end with a hook of its own keeps the default.
     ///
     /// # Errors
     ///
     /// Returns `NormalizeError` only for input that is too large or is not a
     /// JSON object.
-    fn wait_transcript_path(
+    fn turn_transcript_path(
         &self,
         input: RawHookInput<'_>,
     ) -> Result<Option<String>, NormalizeError> {
@@ -181,7 +183,7 @@ pub trait ProviderAdapter: Send + Sync {
     /// Returns whether the transcript tail shows that the person declined
     /// the call the run waits on and the turn stopped there, which no hook
     /// reports. The app reads it on its own schedule rather than in a hook,
-    /// from the path `wait_transcript_path` named. `false` means "not seen",
+    /// from the path `turn_transcript_path` named. `false` means "not seen",
     /// which keeps the wait: ending a live question would hide it from the
     /// person.
     fn transcript_shows_wait_declined(&self, transcript: &[u8]) -> bool {
@@ -254,6 +256,22 @@ pub trait ProviderAdapter: Send + Sync {
         TurnReading::default()
     }
 
+    /// What the turn that began at `marker` used and ran, read from the
+    /// tail of the transcript at `path` (`turn_transcript_path`), for a turn
+    /// the person stopped, which no hook ends: the app's writer ends it and
+    /// has no payload to read (`turn_reading`). Providers that record
+    /// neither, or whose every turn ends with a hook, keep the default,
+    /// which reads nothing.
+    fn transcript_turn_reading(
+        &self,
+        transcript: &[u8],
+        path: &str,
+        marker: Option<&str>,
+    ) -> TurnReading {
+        let _ = (transcript, path, marker);
+        TurnReading::default()
+    }
+
     /// What one subagent's whole transcript used, for the transcripts a
     /// `TurnReading` names.
     fn subagent_usage(&self, transcript: &[u8]) -> Option<TurnUsage> {
@@ -317,10 +335,10 @@ pub fn parse_object(bytes: &[u8], limit: usize) -> Result<Map<String, Value>, No
 
 /// Returns the payload's `transcript_path` when its `hook_event_name` is one
 /// of `events` and the path names a `.jsonl` file (in any case), for an
-/// adapter's `transcript_path` or `wait_transcript_path`. For
+/// adapter's `transcript_path` or `turn_transcript_path`. For
 /// `transcript_path`, each provider passes only the events whose
 /// normalization reads the transcript, since every one named there costs a
-/// file read per hook; `wait_transcript_path` only keeps the path.
+/// file read per hook; `turn_transcript_path` only keeps the path.
 ///
 /// # Errors
 ///

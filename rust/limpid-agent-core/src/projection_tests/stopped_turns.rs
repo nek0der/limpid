@@ -1,6 +1,7 @@
-//! These tests cover a wait the person declined at the agent's own prompt,
-//! which no hook reports: the projection asks about the transcript the
-//! record names.
+//! These tests cover a turn the person stopped, which no hook reports: a
+//! wait declined at the agent's own prompt, which the projection reads from
+//! the transcript the record names or from the agent's own status report,
+//! and work stopped with Esc or Ctrl+C, which it reads from that report.
 
 use super::*;
 
@@ -77,10 +78,10 @@ fn a_declined_wait_shows_as_its_turn_stopped_and_announces_nothing() {
     );
 }
 
-fn declined_wait_ends(commands: &[Command]) -> Vec<&Command> {
+fn stopped_turn_ends(commands: &[Command]) -> Vec<&Command> {
     commands
         .iter()
-        .filter(|command| matches!(command.op, CommandOp::EndDeclinedWait { .. }))
+        .filter(|command| matches!(command.op, CommandOp::EndStoppedTurn { .. }))
         .collect()
 }
 
@@ -91,14 +92,14 @@ fn a_declined_wait_asks_the_host_to_write_its_end_until_the_record_says_it() {
         r#","stateEpisodeToken":"5","currentTurnId":"{turn}""#
     ));
     let (state, _, commands, _) = pass(&ProjectionState::default(), &input, false);
-    assert!(declined_wait_ends(&commands).is_empty(), "a wait still up");
+    assert!(stopped_turn_ends(&commands).is_empty(), "a wait still up");
 
     let (state, _, commands, _) = pass(&state, &input, true);
-    let ends = declined_wait_ends(&commands);
+    let ends = stopped_turn_ends(&commands);
     assert_eq!(ends.len(), 1);
     assert_eq!(
         ends[0].op,
-        CommandOp::EndDeclinedWait {
+        CommandOp::EndStoppedTurn {
             episode_token: "5".to_owned(),
             turn_id: Some(turn.to_owned()),
             transcript_path: TRANSCRIPT.to_owned(),
@@ -115,7 +116,7 @@ fn a_declined_wait_asks_the_host_to_write_its_end_until_the_record_says_it() {
     assert_eq!(ends[0].expect, Precondition::None);
     // The next pass asks again, since the host settles it, not the rules.
     let (state, _, commands, _) = pass(&state, &input, true);
-    assert_eq!(declined_wait_ends(&commands).len(), 1);
+    assert_eq!(stopped_turn_ends(&commands).len(), 1);
 
     // The writer's record is finished in the wait's episode, so nothing is
     // asked, and the finish the badge already showed is not announced.
@@ -127,7 +128,7 @@ fn a_declined_wait_asks_the_host_to_write_its_end_until_the_record_says_it() {
     });
     let (_, projection, commands, asked) = pass(&state, &written, true);
     assert!(asked.is_empty());
-    assert!(declined_wait_ends(&commands).is_empty());
+    assert!(stopped_turn_ends(&commands).is_empty());
     let runtime = &projection.runtimes[0];
     assert_eq!(runtime.badge.state, RunState::Finished);
     assert_eq!(runtime.badge.stop_reason, None);
@@ -249,11 +250,11 @@ fn an_idle_report_after_the_wait_ends_it_without_the_transcript() {
         projection.runtimes[0].badge.stop_reason,
         Some(limpid_agent_model::StopReason::WaitDeclined)
     );
-    let ends = declined_wait_ends(&commands);
+    let ends = stopped_turn_ends(&commands);
     assert_eq!(ends.len(), 1);
     assert!(matches!(
         ends[0].op,
-        CommandOp::EndDeclinedWait {
+        CommandOp::EndStoppedTurn {
             by_program_status: true,
             ..
         }
@@ -288,7 +289,7 @@ fn an_idle_report_after_the_wait_ends_it_without_the_transcript() {
             "the transcript is asked"
         );
         assert_eq!(projection.runtimes[0].badge.state, RunState::NeedsInput);
-        assert!(declined_wait_ends(&commands).is_empty());
+        assert!(stopped_turn_ends(&commands).is_empty());
     }
 
     // A provider that names no app reads no report.
@@ -305,4 +306,151 @@ fn an_idle_report_after_the_wait_ends_it_without_the_transcript() {
         .program_status_app = None;
     let (_, projection, _, _) = pass(&ProjectionState::default(), &input, false);
     assert_eq!(projection.runtimes[0].badge.state, RunState::NeedsInput);
+}
+
+/// Builds a run at work on a tool inside a turn, whose record last changed
+/// at 12:03:00, with `extra` record fields (each starting with a comma).
+fn working(extra: &str) -> ProjectionInput {
+    let mut input = finished_input(Vec::new());
+    let content = record(Some(5), "2026-09-14T12:03:00Z", "running").replace(
+        r#""state":"running""#,
+        &format!(
+            r#""state":"running","tool":"Bash","detail":"Bash: sleep 60","runStartedAt":"2026-09-14T12:02:00Z","transcriptPath":"{TRANSCRIPT}"{extra}"#
+        ),
+    );
+    input.records = vec![file(Some(content))];
+    input
+}
+
+#[test]
+fn work_the_person_stopped_shows_as_its_turn_stopped_and_announces_nothing() {
+    use limpid_agent_model::ProgramState;
+    let turn = "BBBBBBBB-2222-4222-8222-BBBBBBBBBBB2";
+    let base = working(&format!(
+        r#","stateEpisodeToken":"5","currentTurnId":"{turn}""#
+    ));
+
+    // While Claude works it reports so, and the run is at work.
+    let input = reported(
+        base.clone(),
+        "claude-code",
+        ProgramState::Working,
+        "2026-09-14T12:03:00Z",
+    );
+    let (state, projection, commands, asked) = pass(&ProjectionState::default(), &input, true);
+    assert!(asked.is_empty(), "work is never read from the transcript");
+    assert_eq!(projection.runtimes[0].badge.state, RunState::Running);
+    assert!(stopped_turn_ends(&commands).is_empty());
+
+    // Esc or Ctrl+C: Claude reports idle, and no hook comes.
+    let input = reported(
+        base.clone(),
+        "claude-code",
+        ProgramState::Idle,
+        "2026-09-14T12:03:05Z",
+    );
+    let (state, projection, commands, asked) = pass(&state, &input, false);
+    assert!(asked.is_empty());
+    let runtime = &projection.runtimes[0];
+    assert_eq!(runtime.badge.state, RunState::Finished);
+    assert_eq!(runtime.badge.tool, None);
+    assert_eq!(runtime.badge.detail, None);
+    assert_eq!(runtime.badge.run_started_at, None);
+    assert_eq!(
+        runtime.badge.stop_reason,
+        Some(limpid_agent_model::StopReason::Interrupted)
+    );
+    let pane: Uuid = PANE.parse().expect("pane");
+    assert_eq!(
+        projection.badges[&pane][&claude()].state,
+        RunState::Finished
+    );
+    assert!(
+        !commands
+            .iter()
+            .any(|command| matches!(command.op, CommandOp::Notify(_))),
+        "the person who stopped it needs no notice"
+    );
+    let ends = stopped_turn_ends(&commands);
+    assert_eq!(ends.len(), 1);
+    assert_eq!(
+        ends[0].op,
+        CommandOp::EndStoppedTurn {
+            episode_token: "5".to_owned(),
+            turn_id: Some(turn.to_owned()),
+            transcript_path: TRANSCRIPT.to_owned(),
+            by_program_status: true,
+        }
+    );
+
+    // The writer's record is finished in the same episode: nothing is asked,
+    // and the finish is not announced then either.
+    let written = input.clone().replace_records(|_| {
+        record(Some(6), "2026-09-14T12:03:06Z", "finished").replace(
+            r#""state":"finished""#,
+            &format!(r#""state":"finished","stateEpisodeToken":"5","currentTurnId":"{turn}""#),
+        )
+    });
+    let (_, projection, commands, _) = pass(&state, &written, false);
+    assert!(stopped_turn_ends(&commands).is_empty());
+    assert_eq!(projection.runtimes[0].badge.stop_reason, None);
+    assert!(
+        !commands
+            .iter()
+            .any(|command| matches!(command.op, CommandOp::Notify(_))),
+        "the record saying what the badge said is no news"
+    );
+}
+
+#[test]
+fn only_an_idle_report_since_the_record_changed_stops_work_inside_a_turn() {
+    use limpid_agent_model::ProgramState;
+    let base = working(r#","stateEpisodeToken":"5""#);
+    // An idle from before the turn's latest write is the one before its
+    // prompt, which the turn's own report replaces; `done` is the turn's own
+    // end, which its `Stop` reports.
+    for input in [
+        reported(
+            base.clone(),
+            "claude-code",
+            ProgramState::Idle,
+            "2026-09-14T12:02:59Z",
+        ),
+        reported(
+            base.clone(),
+            "claude-code",
+            ProgramState::Done,
+            "2026-09-14T12:03:05Z",
+        ),
+    ] {
+        let (_, projection, commands, _) = pass(&ProjectionState::default(), &input, false);
+        assert_eq!(projection.runtimes[0].badge.state, RunState::Running);
+        assert!(stopped_turn_ends(&commands).is_empty());
+    }
+
+    // Work outside a turn (a late tool) is the idle prompt's to settle.
+    let outside = reported(
+        base.clone().replace_records(|content| {
+            content.replace(r#","runStartedAt":"2026-09-14T12:02:00Z""#, "")
+        }),
+        "claude-code",
+        ProgramState::Idle,
+        "2026-09-14T12:03:05Z",
+    );
+    let (_, projection, commands, _) = pass(&ProjectionState::default(), &outside, false);
+    assert_eq!(projection.runtimes[0].badge.state, RunState::Running);
+    assert!(stopped_turn_ends(&commands).is_empty());
+
+    // Compaction inside a turn stops the same way.
+    let compacting = reported(
+        base.replace_records(|content| {
+            content.replace(r#""state":"running""#, r#""state":"compacting""#)
+        }),
+        "claude-code",
+        ProgramState::Idle,
+        "2026-09-14T12:03:05Z",
+    );
+    let (_, projection, commands, _) = pass(&ProjectionState::default(), &compacting, false);
+    assert_eq!(projection.runtimes[0].badge.state, RunState::Finished);
+    assert_eq!(stopped_turn_ends(&commands).len(), 1);
 }

@@ -610,20 +610,23 @@ prompt the previous release took. A relaunch in this release then retires
 that run rather than resuming it, unless this release has written the record
 since.
 
-The eighth, `transcriptPath`, is set only while a Claude run waits on its
-question or permission prompt. It names the transcript that the question's
-`PreToolUse` or the permission prompt's `Notification` named. Esc at either
-prompt sends no hook, so the app reads that transcript while the run waits
-and shows a declined wait as a stopped turn (ADR 0004, "Work outside a
-turn"). The app then writes that end into the record itself, under the
-record lock: `finished`, with `runStartedAt`, `waitKind`, and
-`transcriptPath` cleared, `lastHookEvent` `wait_declined`, and the episode
-token kept, and it ends the turn record `interrupted`. Codex records never
-have the field. A record without it keeps its wait until the next hook moves
-it, as before. The previous release carries the field through its unknown
-fields past the wait, but this release reads the path only for a run that
-waits, and the transcript is the same session's, so a carried path names the
-right file.
+The eighth, `transcriptPath`, is set only while a Claude run is in a turn
+or waits on its question or permission prompt. It names the transcript that
+the turn's `UserPromptSubmit`, the question's `PreToolUse`, or the
+permission prompt's `Notification` named. Esc at either prompt, and Esc or
+Ctrl+C at work, send no hook, so the app reads the stop from Claude's own
+status report, or a declined wait from that transcript, and shows the turn
+stopped (ADR 0004, "Work outside a turn"). The app then writes that end into
+the record itself, under the record lock: `finished`, with `runStartedAt`,
+`waitKind`, `tool`, and `transcriptPath` cleared, `lastHookEvent`
+`wait_declined` or `interrupted`, and the episode token kept, and it ends the
+turn record `interrupted` with what the transcript says the turn used. Codex
+records never have the field. A record without it keeps its wait or its
+work until the next hook moves it, as before, and the idle prompt a minute
+later ends work the person stopped. The previous release carries the field
+through its unknown fields past the turn, but this release reads the path
+only for a run in a turn or one that waits, and the transcript is the same
+session's, so a carried path names the right file.
 
 ### Turn records
 

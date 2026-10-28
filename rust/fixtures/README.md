@@ -188,8 +188,8 @@ Cases that could not be recorded as planned:
   classifier's context with the repository's state was dropped.
   `claude-2.1.309-question-open.jsonl` is its first two lines, the
   transcript while the question is still up. The adapter's `awaited` tests,
-  the hook runtime's `declined_waits` and `declined_wait` tests, the
-  bridge's projection engine tests, and the app's `AgentDeclinedWaitTests`
+  the hook runtime's `declined_waits` and `stopped_turn` tests, the
+  bridge's projection engine tests, and the app's `AgentStoppedTurnTests`
   read both.
 
 ## Scrubbing

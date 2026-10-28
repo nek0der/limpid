@@ -61,10 +61,11 @@ pub type DeclinedWait<'a> = dyn FnMut(&ProviderId, &str) -> bool + 'a;
 
 /// This is `project`, with `declined` to ask about each run that waits inside
 /// a turn and whose record names its transcript. Such a run whose wait the
-/// person declined shows as its turn stopped (`declined_badge`): Claude sends
-/// no hook for an Esc at its question or permission prompt, so the record
-/// still says it waits until the host writes the end the pass asks for
-/// (`CommandOp::EndDeclinedWait`).
+/// person declined, and a run whose work in a turn the person stopped, shows
+/// as its turn stopped (`stopped_badge`): Claude sends no hook for an Esc at
+/// its question or permission prompt, nor for an Esc or Ctrl+C while it
+/// works, so the record still says it waits or works until the host writes
+/// the end the pass asks for (`CommandOp::EndStoppedTurn`).
 #[must_use]
 pub fn project_with(
     previous: &ProjectionState,
@@ -83,8 +84,8 @@ pub fn project_with(
         .filter(|id| crate::gc::died_at_work(&state.accepted[*id].record))
         .map(str::to_owned)
         .collect();
-    let mut declined_waits: Vec<(String, DeclinedBy)> = Vec::new();
-    let runtimes = build_runtimes(&mut state, input, &exited, declined, &mut declined_waits);
+    let mut stopped_turns: Vec<(String, StoppedBy)> = Vec::new();
+    let runtimes = build_runtimes(&mut state, input, &exited, declined, &mut stopped_turns);
     let pane_to_tab = pane_to_tab(input);
     let alive: BTreeSet<Uuid> = pane_to_tab.keys().copied().collect();
     let badges = dominant_badges(&runtimes, input, &pane_to_tab, now);
@@ -102,8 +103,8 @@ pub fn project_with(
         now,
     ));
     commands.extend(seen_where_the_user_is_looking(&runtimes, input));
-    commands.extend(declined_waits.iter().filter_map(|(storage_id, evidence)| {
-        end_declined_wait(storage_id, &state.accepted[storage_id], *evidence)
+    commands.extend(stopped_turns.iter().filter_map(|(storage_id, evidence)| {
+        end_stopped_turn(storage_id, &state.accepted[storage_id], *evidence)
     }));
     let resume_candidates = resume_candidates(input, &sessions, &hints_retired(&commands, input));
 
@@ -220,15 +221,15 @@ fn is_newer(candidate: &RunRecord, current: &RunRecord) -> bool {
 
 /// Builds one presentation per accepted record and settles its attention
 /// episode. A run in `exited` (storage ids) died at work and is retired this
-/// pass; it shows as stopped (`exited_badge`). A run whose wait the person
-/// declined shows as its turn stopped (`declined_badge`), and its storage id
-/// goes into `declined_waits`, for the command that writes the end.
+/// pass; it shows as stopped (`exited_badge`). A run whose turn the person
+/// stopped shows as its turn stopped (`stopped_badge`), and its storage id
+/// goes into `stopped_turns`, for the command that writes the end.
 fn build_runtimes(
     state: &mut ProjectionState,
     input: &ProjectionInput,
     exited: &BTreeSet<String>,
     declined: &mut DeclinedWait<'_>,
-    declined_waits: &mut Vec<(String, DeclinedBy)>,
+    stopped_turns: &mut Vec<(String, StoppedBy)>,
 ) -> Vec<RuntimePresentation> {
     let mut runtimes: Vec<RuntimePresentation> = state
         .accepted
@@ -250,9 +251,9 @@ fn build_runtimes(
             let badge = badge_from(&run.record, capabilities);
             let badge = if exited.contains(storage_id) {
                 exited_badge(badge)
-            } else if let Some(evidence) = declined_wait(run, input, declined) {
-                declined_waits.push((storage_id.clone(), evidence));
-                declined_badge(badge)
+            } else if let Some(evidence) = stopped_turn(run, input, declined) {
+                stopped_turns.push((storage_id.clone(), evidence));
+                stopped_badge(badge, run.record.state)
             } else {
                 badge
             };
@@ -566,48 +567,60 @@ fn exited_badge(badge: Badge) -> Badge {
     }
 }
 
-/// What says a wait was declined, which the writer weighs differently
-/// (`CommandOp::EndDeclinedWait::by_program_status`).
+/// What says the person stopped a turn, which the writer weighs differently
+/// (`CommandOp::EndStoppedTurn::by_program_status`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DeclinedBy {
+enum StoppedBy {
     Transcript,
     ProgramStatus,
 }
 
-/// Returns what shows that the person declined the wait of a run waiting
-/// inside a turn, if anything does. Only such a run is asked about, so a pass
-/// reads nothing for a run at work or at rest. A wait outside a turn (a late
-/// tool's permission) is left as the record says, as the idle prompt leaves
-/// it (`idle_outcome`): no turn holds it to stop. The agent's own status
-/// report comes first: one that says it is idle again, sent after the wait
-/// began, means the wait is over however the person answered, and it costs
-/// no read. The transcript the record names is asked otherwise.
-fn declined_wait(
+/// Returns what shows that the person stopped the turn a run is in, if
+/// anything does. Only a run at work or waiting inside a turn is asked
+/// about, so a pass reads nothing for a run at rest. Work or a wait outside a
+/// turn (a late tool, or its permission) is left as the record says, as the
+/// idle prompt leaves a wait (`idle_outcome`): no turn holds it to stop.
+///
+/// The agent's own status report comes first: one that says it is idle
+/// again, sent no earlier than the record last changed, means the turn
+/// stopped however the person stopped it, and it costs no read. Claude
+/// reports `done`, not `idle`, at a turn's own end, and `working` straight
+/// after an answer at its prompt, so `idle` in a turn is the person's Esc,
+/// Ctrl+C, or "No". Otherwise the transcript the record names is asked, for
+/// a wait only: a declined wait leaves its interrupt line there. Work the
+/// person stopped where no report comes (inside tmux) ends with the idle
+/// prompt a minute later (`idle_outcome`), as before.
+fn stopped_turn(
     run: &AcceptedRun,
     input: &ProjectionInput,
     declined: &mut DeclinedWait<'_>,
-) -> Option<DeclinedBy> {
+) -> Option<StoppedBy> {
     let record = &run.record;
-    if record.state != RunState::NeedsInput || record.run_started_at.is_none() {
-        return None;
-    }
+    let is_in_a_turn = record.run_started_at.is_some();
+    let is_waiting = match record.state {
+        RunState::NeedsInput if is_in_a_turn => true,
+        RunState::Running | RunState::Compacting if is_in_a_turn => false,
+        _ => return None,
+    };
     if program_status_shows_idle(run, input) {
-        return Some(DeclinedBy::ProgramStatus);
+        return Some(StoppedBy::ProgramStatus);
     }
-    record
-        .transcript_path
-        .as_deref()
-        .is_some_and(|path| declined(&run.provider, path))
-        .then_some(DeclinedBy::Transcript)
+    (is_waiting
+        && record
+            .transcript_path
+            .as_deref()
+            .is_some_and(|path| declined(&run.provider, path)))
+    .then_some(StoppedBy::Transcript)
 }
 
 /// Returns whether the run's own pane last reported, under the name the
 /// provider gives its agent (`ProviderDescriptor::program_status_app`), that
 /// the agent is idle, and reported it no earlier than the second the record
 /// last changed. Only the pane's latest report counts, so an idle from
-/// before the turn is no evidence: the turn's work and the wait replace it
-/// before the record says the run waits. Reports carry no fraction of a
-/// second in the record's timestamp, so the same second counts.
+/// before the turn is no evidence: Claude reports the turn's work as the
+/// prompt is sent, before its hook writes the record, and the wait before
+/// the record says the run waits. Reports carry no fraction of a second in
+/// the record's timestamp, so the same second counts.
 fn program_status_shows_idle(run: &AcceptedRun, input: &ProjectionInput) -> bool {
     let Some(app) = input
         .providers
@@ -631,46 +644,54 @@ fn program_status_shows_idle(run: &AcceptedRun, input: &ProjectionInput) -> bool
     status.app == app && status.state == ProgramState::Idle && reported >= changed
 }
 
-/// Returns the badge of a run whose wait the person declined: its turn
+/// Returns the badge of a run whose turn the person stopped: the turn
 /// stopped, as an interrupt ends it (`lifecycle`), which is what the person
-/// did, and why (`StopReason::WaitDeclined`), so the interface says the wait
-/// was declined rather than answered. The wait's words go with the wait. The
-/// badge is the answer until the record says the same: the pass also asks the
-/// host to write that end (`end_declined_wait`), and until the write lands
-/// every pass asks again; the engine answers from what it read while the file
-/// is unchanged. The episode stays the wait's, since the person who pressed
-/// Esc saw it, and a finish straight after a wait announces nothing
-/// (`notifications`). The write keeps it too
-/// (`lifecycle::end_declined_wait`).
-fn declined_badge(badge: Badge) -> Badge {
+/// did, and why. A wait (`state` is `NeedsInput`) was declined
+/// (`StopReason::WaitDeclined`), so the interface says so rather than that
+/// it was answered; the wait's words go with the wait. Work was interrupted
+/// (`StopReason::Interrupted`). The badge is the answer until the record
+/// says the same: the pass also asks the host to write that end
+/// (`end_stopped_turn`), and until the write lands every pass asks again;
+/// the engine answers from what it read while the file is unchanged. The
+/// episode stays the one the person stopped, since they saw it, so a finish
+/// straight after a wait announces nothing, and a finish of interrupted
+/// work is not announced (`notifications`). The write keeps the episode too
+/// (`lifecycle::end_stopped_turn`).
+fn stopped_badge(badge: Badge, state: RunState) -> Badge {
+    let stop_reason = if state == RunState::NeedsInput {
+        StopReason::WaitDeclined
+    } else {
+        StopReason::Interrupted
+    };
     Badge {
         state: RunState::Finished,
         detail: None,
         wait_kind: None,
         tool: None,
         run_started_at: None,
-        stop_reason: Some(StopReason::WaitDeclined),
+        stop_reason: Some(stop_reason),
         ..badge
     }
 }
 
-/// Returns the command that writes a declined wait's end into the run record
-/// and its turn, which no hook will (`CommandOp::EndDeclinedWait`). It names
-/// the wait as this pass read it, which the writer checks again under the
-/// record lock. It is `None` for a record without an episode token, which
-/// only a writer from before tokens leaves, and no such writer names a
-/// transcript.
-fn end_declined_wait(storage_id: &str, run: &AcceptedRun, evidence: DeclinedBy) -> Option<Command> {
+/// Returns the command that writes the end of a turn the person stopped into
+/// the run record and its turn, which no hook will
+/// (`CommandOp::EndStoppedTurn`). It names the turn as this pass read it,
+/// which the writer checks again under the record lock. It is `None` for a
+/// record without an episode token, which only a writer from before tokens
+/// leaves, and for one that names no transcript: a record from before the
+/// prompt kept it, whose turn the idle prompt ends instead.
+fn end_stopped_turn(storage_id: &str, run: &AcceptedRun, evidence: StoppedBy) -> Option<Command> {
     let record = &run.record;
     Some(Command::new(
-        CommandOp::EndDeclinedWait {
+        CommandOp::EndStoppedTurn {
             episode_token: record
                 .state_episode_token
                 .clone()
                 .filter(|token| !token.is_empty())?,
             turn_id: record.current_turn_id.clone(),
             transcript_path: record.transcript_path.clone()?,
-            by_program_status: evidence == DeclinedBy::ProgramStatus,
+            by_program_status: evidence == StoppedBy::ProgramStatus,
         },
         Target::Record {
             provider: run.provider.clone(),

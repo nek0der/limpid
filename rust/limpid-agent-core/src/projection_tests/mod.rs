@@ -3,9 +3,9 @@
 use super::*;
 use limpid_agent_model::{Focus, PaneLocation, ProjectionState, ProviderAdapter, TabPanes};
 
-mod declined_waits;
 mod run_records;
 mod sight;
+mod stopped_turns;
 mod turn_records;
 
 const PANE: &str = "11111111-1111-4111-8111-111111111111";

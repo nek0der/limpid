@@ -127,7 +127,9 @@ struct AgentBadge: Codable, Equatable {
     /// it ("processExited"), present only on the one pass that shows a run
     /// whose process died at work in error before its record is retired,
     /// or ("waitDeclined") while a run whose wait the person declined at
-    /// the agent's prompt shows its turn stopped before its record says so.
+    /// the agent's prompt shows its turn stopped before its record says so,
+    /// or ("interrupted") while a run whose work the person stopped with
+    /// Esc or Ctrl+C does.
     /// Kept as the word, as `waitKind` is, so a reason a newer build writes
     /// still decodes.
     var stopReason: String?

@@ -369,21 +369,23 @@ the turns, and the commands for the app to perform.
   `TurnRetentionLimits` and Settings → Advanced, which asks first when a
   narrower limit would delete records, with the count the sweep itself
   makes without deleting (`limpid_projection_engine_turns_taken_v1`).
-- **A declined wait.** Claude sends no hook when the person declines its
-  question or permission prompt, with Esc or with "No". Claude does report
-  its status to the terminal over OSC 7501, which libghostty forwards
+- **A turn the person stopped.** Claude sends no hook when the person
+  declines its question or permission prompt, with Esc or with "No", nor
+  when they stop its work with Esc or Ctrl+C. Claude does report its status
+  to the terminal over OSC 7501, which libghostty forwards
   (`GHOSTTY_ACTION_PROGRAM_STATUS`) and `PaneProgramStatusStore` keeps per
   pane; it also leaves the titles Claude writes meanwhile off the tab. The
-  projection reads the decline from an idle report in the run's pane made
-  after the wait began, and otherwise from the transcript the run record
-  names, and its badge shows the turn stopped at once (`waitDeclined`). The
-  same pass returns an
-  `endDeclinedWait` command, and `DeclinedWaitCloser` hands it to Rust
-  (`LimpidTurnBridge.endDeclinedWait`), off the main actor: once when the
-  write settles, and up to three times for a write that does not. Under the record
-  lock, Rust ends the run record and its turn as the hook's idle prompt
-  would, so the Changes panel and a restore read the turn as stopped too.
-  The decision bar then says the wait was declined, not answered.
+  projection reads the stop from an idle report in the run's pane made
+  after the record last changed, and a declined wait otherwise from the
+  transcript the run record names, and its badge shows the turn stopped at
+  once (`waitDeclined` or `interrupted`). The same pass returns an
+  `endStoppedTurn` command, and `StoppedTurnCloser` hands it to Rust
+  (`LimpidTurnBridge.endStoppedTurn`), off the main actor: once when the
+  write settles, and up to three times for a write that does not. Under the
+  record lock, Rust ends the run record and its turn as the hook's idle
+  prompt would, with what the transcript says the turn used, so the Changes
+  panel and a restore read the turn as stopped too. The decision bar then
+  says a wait was declined, not answered.
 - **Restore Code** ("Restore Code to Before This Turn…" on a changes panel
   row and in the decision bar's ⋯ menu) runs through `RestoreCoordinator` into
   Rust (`LimpidRestoreBridge`). Rust journals each operation under the

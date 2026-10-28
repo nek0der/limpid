@@ -1,5 +1,5 @@
-// AgentDeclinedWaitTests.swift
-// Limpid — a question declined at Claude's own prompt leaves the row, the bar, and the list, and its record is closed.
+// AgentStoppedTurnTests.swift
+// Limpid — a Claude turn the person stopped at its own prompt leaves the row, the bar, and the list, and its record is closed.
 
 import Foundation
 import Synchronization
@@ -7,17 +7,38 @@ import Testing
 @testable import Limpid
 
 /// Esc at Claude's question sends no hook, so the run record keeps saying the
-/// run waits. The projection reads the transcript the record names, and what
-/// the window shows follows from the runtime it returns; the pass also asks
-/// for the record and its turn to be ended, which the adapter hands to the
-/// bridge's writer: once when the write settles, and up to
-/// `DeclinedWaitCloser.maximumAttempts` times when it does not. These cases
-/// go from the record the hook runtime writes to what the pane's tab, the
-/// attention list, and the decision bar make of it, through the real rules.
+/// run waits, and Esc or Ctrl+C while it works sends none either, so the
+/// record keeps saying it works. The projection reads the transcript the
+/// record names, or Claude's own status report, and what the window shows
+/// follows from the runtime it returns; the pass also asks for the record
+/// and its turn to be ended, which the adapter hands to the bridge's writer:
+/// once when the write settles, and up to `StoppedTurnCloser.maximumAttempts`
+/// times when it does not. These cases go from the record the hook runtime
+/// writes to what the pane's tab, the attention list, and the decision bar
+/// make of it, through the real rules.
 @MainActor
-@Suite("A declined Claude wait")
-struct AgentDeclinedWaitTests {
-    private static let run = "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1"
+@Suite("A Claude turn the person stopped")
+struct AgentStoppedTurnTests {
+    /// This is a run of the corpus, as the hook runtime wrote it from
+    /// recorded payloads (`rust/fixtures/projection`).
+    private struct Corpus {
+        let scenario: String
+        let run: String
+        let pane: String
+
+        /// This waits on a question inside a turn.
+        static let waiting = Self(
+            scenario: "needs-input",
+            run: "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+            pane: "11111111-1111-4111-8111-111111111111"
+        )
+        /// This works on a tool inside a turn.
+        static let working = Self(
+            scenario: "sweep-dead-pid-open-pane",
+            run: "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3",
+            pane: "33333333-3333-4333-8333-333333333333"
+        )
+    }
 
     /// This is what one projection pass made of the waiting record.
     private struct Pass {
@@ -67,26 +88,27 @@ struct AgentDeclinedWaitTests {
         }
     }
 
-    /// Runs `body` on the corpus's waiting question (`rust/fixtures/
-    /// projection/needs-input`, written by the hook runtime from recorded
-    /// payloads), moved to the session's pane, with its transcript at
+    /// Runs `body` on the corpus's run `corpus`, the waiting question unless
+    /// told otherwise, moved to the session's pane, with its transcript at
     /// `transcript` (a file under `rust/fixtures/transcripts`), and with the
     /// adapter bootstrapped once.
     private func withScene<T>(
+        _ corpus: Corpus = .waiting,
         transcript: String,
-        declinedWaits: DeclinedWaitCloser,
+        stoppedTurns: StoppedTurnCloser,
         _ body: (Scene) async throws -> T
     ) async throws -> T {
         let root = try #require(RepoFixture.limpidRoot)
         let fixtures = root.appendingPathComponent("rust/fixtures", isDirectory: true)
         var record = try String(
-            contentsOf: fixtures.appendingPathComponent("projection/needs-input/agent-states/\(Self.run).state.json"),
+            contentsOf: fixtures.appendingPathComponent(
+                "projection/\(corpus.scenario)/agent-states/\(corpus.run).state.json"
+            ),
             encoding: .utf8
         )
-        let corpusPane = "11111111-1111-4111-8111-111111111111"
         let corpusTranscript = "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
-        #expect(record.contains(corpusPane))
-        #expect(record.contains(corpusTranscript), "the hook keeps the question's transcript")
+        #expect(record.contains(corpus.pane))
+        #expect(record.contains(corpusTranscript), "the hook keeps the turn's transcript")
         let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
         return try await withTempDir { directory in
             let state = directory.appendingPathComponent("agent-states", isDirectory: true)
@@ -97,16 +119,16 @@ struct AgentDeclinedWaitTests {
             let transcriptURL = directory.appendingPathComponent("session.jsonl")
             try Data(contentsOf: fixtures.appendingPathComponent("transcripts/\(transcript)")).write(to: transcriptURL)
             record = record
-                .replacingOccurrences(of: corpusPane, with: pane.uuidString)
+                .replacingOccurrences(of: corpus.pane, with: pane.uuidString)
                 .replacingOccurrences(of: corpusTranscript, with: transcriptURL.path)
-            let recordURL = try state.appendingPathComponent(AgentRecordFixtures.recordFileName(Self.run))
+            let recordURL = try state.appendingPathComponent(AgentRecordFixtures.recordFileName(corpus.run))
             try Data(record.utf8).write(to: recordURL)
             let adapter = ProjectionFixture.adapter(
                 provider: "claude",
                 state: state,
                 sessions: sessions,
                 processStatus: { _ in .alive },
-                declinedWaits: declinedWaits
+                stoppedTurns: stoppedTurns
             )
             let attention = AttentionState()
             adapter.bootstrap(into: session, attention: attention)
@@ -123,7 +145,7 @@ struct AgentDeclinedWaitTests {
             let result = try await body(scene)
             // We let the writes and passes settle, so nothing is left to
             // write into the directory once it goes.
-            await declinedWaits.writesSettled()
+            await stoppedTurns.writesSettled()
             await adapter.passesSettled()
             return result
         }
@@ -132,20 +154,20 @@ struct AgentDeclinedWaitTests {
     /// This records the writes a closer was asked for, answers each with
     /// `outcome`, and never performs one.
     private final class Requests: Sendable {
-        private let asked = Mutex<[DeclinedWaitRequest]>([])
-        let outcome: DeclinedWaitEnd
+        private let asked = Mutex<[StoppedTurnRequest]>([])
+        let outcome: StoppedTurnEnd
 
-        init(answering outcome: DeclinedWaitEnd) {
+        init(answering outcome: StoppedTurnEnd) {
             self.outcome = outcome
         }
 
-        var all: [DeclinedWaitRequest] {
+        var all: [StoppedTurnRequest] {
             asked.withLock { $0 }
         }
 
         @MainActor
-        func closer() -> DeclinedWaitCloser {
-            DeclinedWaitCloser { [self] request in
+        func closer() -> StoppedTurnCloser {
+            StoppedTurnCloser { [self] request in
                 asked.withLock { $0.append(request) }
                 return outcome
             }
@@ -163,7 +185,7 @@ struct AgentDeclinedWaitTests {
     @Test(.disabled(if: !RepoFixture.hasLocalRepo))
     func aQuestionStillUp_isListedAndShownInTheBarAsAQuestion() async throws {
         let requests = Requests(answering: .ended)
-        try await withScene(transcript: "claude-2.1.309-question-open.jsonl", declinedWaits: requests.closer()) { scene in
+        try await withScene(transcript: "claude-2.1.309-question-open.jsonl", stoppedTurns: requests.closer()) { scene in
             let pass = scene.pass()
             #expect(pass.runtime?.badge.state == .needsInput)
             #expect(pass.runtime?.badge.promptWaitKind == .question)
@@ -177,7 +199,7 @@ struct AgentDeclinedWaitTests {
     @Test(.disabled(if: !RepoFixture.hasLocalRepo))
     func aQuestionDeclinedWithEsc_leavesTheRowTheListAndTheBar() async throws {
         let requests = Requests(answering: .ended)
-        try await withScene(transcript: "claude-2.1.309-question-declined.jsonl", declinedWaits: requests.closer()) { scene in
+        try await withScene(transcript: "claude-2.1.309-question-declined.jsonl", stoppedTurns: requests.closer()) { scene in
             let pass = scene.pass()
             #expect(pass.runtime?.badge.state == .finished)
             #expect(pass.runtime?.badge.promptWaitKind == nil)
@@ -194,7 +216,7 @@ struct AgentDeclinedWaitTests {
     func aQuestionDeclinedWithEsc_isHandedToTheWriterOnce_notOnEveryPass() async throws {
         let requests = Requests(answering: .ended)
         let closer = requests.closer()
-        try await withScene(transcript: "claude-2.1.309-question-declined.jsonl", declinedWaits: closer) { scene in
+        try await withScene(transcript: "claude-2.1.309-question-declined.jsonl", stoppedTurns: closer) { scene in
             await closer.writesSettled()
             // The writer here writes nothing, so every pass reads the wait
             // declined and asks again.
@@ -205,7 +227,7 @@ struct AgentDeclinedWaitTests {
             let request = try #require(requests.all.first)
             #expect(requests.all.count == 1)
             #expect(request.provider == "claude")
-            #expect(request.storageID == Self.run)
+            #expect(request.storageID == Corpus.waiting.run)
             #expect(request.transcriptPath == scene.transcriptURL.path)
             #expect(request.stateDirectory == scene.recordURL.deletingLastPathComponent())
             let record = try scene.record()
@@ -218,13 +240,13 @@ struct AgentDeclinedWaitTests {
     func aWriteThatDoesNotLand_isTriedABoundedNumberOfTimes() async throws {
         let requests = Requests(answering: .busy)
         let closer = requests.closer()
-        try await withScene(transcript: "claude-2.1.309-question-declined.jsonl", declinedWaits: closer) { scene in
-            for _ in 0..<(DeclinedWaitCloser.maximumAttempts + 3) {
+        try await withScene(transcript: "claude-2.1.309-question-declined.jsonl", stoppedTurns: closer) { scene in
+            for _ in 0..<(StoppedTurnCloser.maximumAttempts + 3) {
                 await closer.writesSettled()
                 scene.adapter.refresh()
             }
             await closer.writesSettled()
-            #expect(requests.all.count == DeclinedWaitCloser.maximumAttempts)
+            #expect(requests.all.count == StoppedTurnCloser.maximumAttempts)
             // The badge alone still shows the turn stopped.
             #expect(scene.pass().runtime?.badge.state == .finished)
         }
@@ -232,8 +254,8 @@ struct AgentDeclinedWaitTests {
 
     @Test(.disabled(if: !RepoFixture.hasLocalRepo))
     func aQuestionDeclinedWithEsc_isClosedOnDisk_byTheBridgesWriter() async throws {
-        let closer = DeclinedWaitCloser()
-        try await withScene(transcript: "claude-2.1.309-question-declined.jsonl", declinedWaits: closer) { scene in
+        let closer = StoppedTurnCloser()
+        try await withScene(transcript: "claude-2.1.309-question-declined.jsonl", stoppedTurns: closer) { scene in
             let token = try scene.record()["stateEpisodeToken"] as? String
             await closer.writesSettled()
             let record = try scene.record()
@@ -253,8 +275,8 @@ struct AgentDeclinedWaitTests {
     }
 
     /// Returns the report Claude Code makes over OSC 7501 once the person
-    /// answers "No" at its prompt: idle again, in the same second the record
-    /// last changed.
+    /// answers "No" at its prompt, or stops its work with Esc or Ctrl+C:
+    /// idle again, in the same second the record last changed.
     private static func reportedIdle(in scene: Scene) throws -> [String: AgentProjectionProgramStatus] {
         let changed = try #require(scene.record()["updatedAt"] as? String)
         return [scene.pane.uuidString: AgentProjectionProgramStatus(app: "claude-code", state: "idle", observedAt: changed)]
@@ -264,7 +286,7 @@ struct AgentDeclinedWaitTests {
     func aWaitClaudeReportsIdleAfter_leavesTheRow_thoughTheTranscriptShowsItOpen() async throws {
         let requests = Requests(answering: .ended)
         let closer = requests.closer()
-        try await withScene(transcript: "claude-2.1.309-question-open.jsonl", declinedWaits: closer) { scene in
+        try await withScene(transcript: "claude-2.1.309-question-open.jsonl", stoppedTurns: closer) { scene in
             let report = try Self.reportedIdle(in: scene)
             scene.adapter.programStatus = { report }
             scene.adapter.refresh()
@@ -280,8 +302,8 @@ struct AgentDeclinedWaitTests {
 
     @Test(.disabled(if: !RepoFixture.hasLocalRepo))
     func aWaitClaudeReportsIdleAfter_isClosedOnDisk_byTheBridgesWriter() async throws {
-        let closer = DeclinedWaitCloser()
-        try await withScene(transcript: "claude-2.1.309-question-open.jsonl", declinedWaits: closer) { scene in
+        let closer = StoppedTurnCloser()
+        try await withScene(transcript: "claude-2.1.309-question-open.jsonl", stoppedTurns: closer) { scene in
             let report = try Self.reportedIdle(in: scene)
             scene.adapter.programStatus = { report }
             scene.adapter.refresh()
@@ -289,6 +311,50 @@ struct AgentDeclinedWaitTests {
             let record = try scene.record()
             #expect(record["state"] as? String == "finished")
             #expect(record["waitKind"] == nil)
+        }
+    }
+
+    @Test(.disabled(if: !RepoFixture.hasLocalRepo))
+    func workClaudeReportsIdleIn_leavesTheRowAndAnnouncesNothing() async throws {
+        let requests = Requests(answering: .ended)
+        let closer = requests.closer()
+        try await withScene(.working, transcript: "claude-2.1.309-question-open.jsonl", stoppedTurns: closer) { scene in
+            #expect(scene.pass().runtime?.badge.state == .running)
+            #expect(scene.pass().tabState == .running)
+
+            let report = try Self.reportedIdle(in: scene)
+            scene.adapter.programStatus = { report }
+            scene.adapter.refresh()
+            await closer.writesSettled()
+            let pass = scene.pass()
+            #expect(pass.runtime?.badge.state == .finished)
+            #expect(pass.runtime?.badge.tool == nil)
+            #expect(pass.runtime?.badge.stopReason == "interrupted")
+            #expect(pass.runtime?.badge.isWaitDeclined == false, "work was stopped, not a wait declined")
+            #expect(pass.tabState == .finished)
+            let request = try #require(requests.all.first)
+            #expect(requests.all.count == 1)
+            #expect(request.storageID == Corpus.working.run)
+            #expect(request.byProgramStatus)
+            #expect(request.transcriptPath == scene.transcriptURL.path)
+        }
+    }
+
+    @Test(.disabled(if: !RepoFixture.hasLocalRepo))
+    func workClaudeReportsIdleIn_isClosedOnDisk_byTheBridgesWriter() async throws {
+        let closer = StoppedTurnCloser()
+        try await withScene(.working, transcript: "claude-2.1.309-question-open.jsonl", stoppedTurns: closer) { scene in
+            let token = try scene.record()["stateEpisodeToken"] as? String
+            let report = try Self.reportedIdle(in: scene)
+            scene.adapter.programStatus = { report }
+            scene.adapter.refresh()
+            await closer.writesSettled()
+            let record = try scene.record()
+            #expect(record["state"] as? String == "finished")
+            #expect(record["tool"] == nil)
+            #expect(record["transcriptPath"] == nil)
+            #expect(record["lastHookEvent"] as? String == "interrupted")
+            #expect(record["stateEpisodeToken"] as? String == token, "the finish the badge showed is no new episode")
         }
     }
 }

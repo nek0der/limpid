@@ -86,9 +86,15 @@ as they are fixed or confirmed.
   turn that began before that, or whose last response was still not
   written a second after the turn ended, shows its count with "≥". A
   subagent still running when the turn ended counts only what it had used
-  by then. A Claude turn ended by Esc before a question was answered, by
-  "No" at its own permission prompt, or by Esc followed straight by the
-  next prompt, shows no tokens: no hook brings its transcript.
+  by then.
+- **A Claude turn stopped inside tmux can keep showing as running.**
+  Claude sends no hook when you stop its work with Esc or Ctrl+C. Limpid
+  reads the stop from the status Claude Code reports to the terminal (OSC
+  7501), which it does not report inside tmux or with
+  `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set. There the turn shows as running
+  until your next prompt in that pane, or until Claude's idle notification
+  if one comes a minute later, and a turn your next prompt ends shows no
+  tokens.
 - **Codex turns count no subagent tokens.** Codex keeps a subagent's work in
   a transcript of its own, which Limpid does not read. Codex's checks are
   read from its transcript when the turn ends, so they appear then rather

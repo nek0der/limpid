@@ -103,7 +103,7 @@ typedef enum limpid_projection_result {
 typedef enum limpid_turn_result {
   // The call ran and the output buffer holds its body: what became of
   // each turn, a restore's, undo's, or discard's outcome (a refusal
-  // among them), a recovery, or what became of a declined wait.
+  // among them), a recovery, or what became of a stopped turn.
   LIMPID_TURN_OK = 0,
   // A required pointer was null.
   LIMPID_TURN_NULL_POINTER = 1,
@@ -574,29 +574,32 @@ int32_t limpid_turn_gc_apply_v1(const uint8_t *directory,
                                 uint8_t **out,
                                 size_t *out_len);
 
-// Ends a wait a projection pass read as declined (`endDeclinedWait`):
-// under the run record's lock, if the record is still that wait and its
-// transcript still reads declined, we end its turn `interrupted` with its
-// end snapshot and then end the record as an interrupt ends it
-// (`limpid_agent_hook::end_declined_wait`). `request` is a JSON object:
-// `provider`, `stateDirectory`, `storageId`, `episodeToken`, `transcriptPath`,
-// and `turnId` when the record names one. The body is
+// Ends a turn a projection pass read as stopped by the person
+// (`endStoppedTurn`): under the run record's lock, if the record is still
+// that turn and, unless the agent's own status report said so, its
+// transcript still reads the wait declined, we end its turn `interrupted`
+// with its end snapshot and what its transcript says it used, and then end
+// the record as an interrupt ends it (`limpid_agent_hook::end_stopped_turn`).
+// `request` is a JSON object: `provider`, `stateDirectory`, `storageId`,
+// `episodeToken`, `transcriptPath`, `byProgramStatus`, and `turnId` when the
+// record names one. The body is
 // `{"outcome":"ended"}` once the record is written, even if the turn's write
 // was skipped or failed. It is `movedOn`, `notDeclined`, or `busy` when
 // nothing was written, and `failed` when the request is invalid or the record
 // could not be written, which can follow a turn that was.
 //
-// Runs git, so the caller keeps it off the main thread.
+// Runs git, and may wait up to a second for the turn's last response to
+// reach the transcript, so the caller keeps it off the main thread.
 //
 // # Safety
 //
 // The input pointer must be readable for its length (or null with length
 // zero), and the output pointers must be writable. On `LIMPID_TURN_OK` the
 // caller owns the body and frees it with `limpid_approval_bytes_free_v1`.
-int32_t limpid_declined_wait_end_v1(const uint8_t *request,
-                                    size_t request_len,
-                                    uint8_t **out,
-                                    size_t *out_len);
+int32_t limpid_stopped_turn_end_v1(const uint8_t *request,
+                                   size_t request_len,
+                                   uint8_t **out,
+                                   size_t *out_len);
 
 #ifdef __cplusplus
 }  // extern "C"

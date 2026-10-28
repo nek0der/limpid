@@ -35,11 +35,12 @@ pub struct ApplyContext {
     /// Whether the agent runs inside any tmux, hosted or manual. Set even
     /// when the endpoint could not be parsed.
     pub is_tmux_hosted: bool,
-    /// This is the provider's transcript, when this call opens a wait the
-    /// provider may end without a hook
-    /// (`ProviderAdapter::wait_transcript_path`). It is kept on the record
-    /// while the run waits, so the app can read whether the person declined
-    /// the call.
+    /// This is the provider's transcript, when this call begins a turn or
+    /// opens a wait the provider may end without a hook
+    /// (`ProviderAdapter::turn_transcript_path`). It is kept on the record
+    /// while the run is in that turn or waits, so the app can read whether
+    /// the person declined the call, and what a turn the person stopped
+    /// used.
     pub transcript_path: Option<String>,
 }
 
@@ -203,7 +204,7 @@ pub fn apply(
         }
         _ => next.revision.map(|revision| revision.to_string()),
     };
-    next.transcript_path = wait_transcript(prev, context, &next);
+    next.transcript_path = turn_transcript(prev, context, &next);
     let works_outside_a_turn = !is_in_a_turn(&next) && next.state.is_at_work();
     if !works_outside_a_turn {
         next.outside_turn_rest = None;
@@ -528,23 +529,29 @@ pub fn idle_outcome(
     }
 }
 
-/// Returns the record after the person declined the wait `prev` is in, which
-/// no hook reports (Esc at Claude's question or permission prompt), as the
-/// app's writer applies it once the transcript shows it. It is `None` unless
-/// `prev` waits inside a turn, the only wait the projection reads as declined.
+/// Returns the record after the person stopped the turn `prev` is in, which
+/// no hook reports, as the app's writer applies it once the projection read
+/// it: Esc or "No" at Claude's question or permission prompt, or Esc or
+/// Ctrl+C while it works. It is `None` unless `prev` is at work or waits
+/// inside a turn, the only runs the projection reads as stopped.
 ///
-/// It ends the turn as the idle prompt ends a declined wait
+/// It ends the turn as the idle prompt ends a stopped turn
 /// (`IdleOutcome::EndsStoppedTurn`): finished, out of the turn, with the
-/// wait's words, its kind, its transcript, and the cache window gone. Two
-/// things differ, both because the projection has already shown this end
-/// from the transcript before the record says it (`declined_badge`). The
-/// episode stays the wait's: the badge showed the finish in it, and a new
+/// wait's words, its kind, its tool, its transcript, and the cache window
+/// gone. Two things differ, both because the projection has already shown
+/// this end before the record says it (`stopped_badge`). The episode stays
+/// the one the person stopped: the badge showed the finish in it, and a new
 /// one would read as a second finish and be announced. And the record is
 /// otherwise carried as it is, identity and unknown fields included, since
 /// no hook call supplies them: the writer is the app, not the agent.
 #[must_use]
-pub fn end_declined_wait(prev: &RunRecord, now: &str) -> Option<RunRecord> {
-    if prev.state != RunState::NeedsInput || !is_in_a_turn(prev) {
+pub fn end_stopped_turn(prev: &RunRecord, now: &str) -> Option<RunRecord> {
+    let last_hook_event = match prev.state {
+        RunState::NeedsInput => "wait_declined",
+        RunState::Running | RunState::Compacting => "interrupted",
+        _ => return None,
+    };
+    if !is_in_a_turn(prev) {
         return None;
     }
     let mut next = prev.clone();
@@ -559,7 +566,7 @@ pub fn end_declined_wait(prev: &RunRecord, now: &str) -> Option<RunRecord> {
     next.cache_window = None;
     next.outside_turn_rest = None;
     now.clone_into(&mut next.updated_at);
-    next.last_hook_event = Some("wait_declined".to_owned());
+    next.last_hook_event = Some(last_hook_event.to_owned());
     Some(next)
 }
 
@@ -638,27 +645,26 @@ fn approval_wait(prev: Option<&RunRecord>, detail: Option<&str>, next: &mut RunR
         .or_else(|| Some("permission".to_owned()));
 }
 
-/// Returns the transcript a waiting run's record names: the one the call that
-/// opened or renewed the wait named, else the one the wait already had (a
-/// title change, or Claude's permission prompt after its question tool,
-/// whose path the question already gave). Only a run in `NeedsInput` keeps
-/// one, since only a wait is read from it. A path longer than any record
-/// text is dropped rather than cut, because a cut path names another file.
-fn wait_transcript(
+/// Returns the transcript the record names: the one the call that began the
+/// turn or opened or renewed the wait named, else the one the record already
+/// had (a tool's hook, a title change, or Claude's permission prompt after
+/// its question tool, whose path the question already gave). Only a run in a
+/// turn or in `NeedsInput` keeps one: a wait is read from it, and so is what
+/// a turn the person stopped used, which no hook brings. A path longer than
+/// any record text is dropped rather than cut, because a cut path names
+/// another file.
+fn turn_transcript(
     prev: Option<&RunRecord>,
     context: &ApplyContext,
     next: &RunRecord,
 ) -> Option<String> {
-    if next.state != RunState::NeedsInput {
+    if next.state != RunState::NeedsInput && !is_in_a_turn(next) {
         return None;
     }
     context
         .transcript_path
         .clone()
-        .or_else(|| {
-            prev.filter(|record| record.state == RunState::NeedsInput)
-                .and_then(|record| record.transcript_path.clone())
-        })
+        .or_else(|| prev.and_then(|record| record.transcript_path.clone()))
         .filter(|path| !path.is_empty() && path.len() <= MAX_RECORD_TEXT_BYTES)
 }
 
@@ -691,7 +697,8 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
         detail: None,
         tool: None,
         wait_kind: None,
-        // `apply` sets it again while the run waits (`wait_transcript`).
+        // `apply` sets it again while the run is in a turn or waits
+        // (`turn_transcript`).
         transcript_path: None,
         run_started_at: prev.and_then(|record| record.run_started_at.clone()),
         updated_at: now.to_owned(),
