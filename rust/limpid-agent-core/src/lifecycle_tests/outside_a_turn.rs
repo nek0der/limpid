@@ -108,6 +108,7 @@ fn a_tool_outside_a_turn_runs_in_the_rests_episode_until_the_agent_is_idle() {
             returns_to: RunState::Finished,
             end: AgentEvent::ToolFinished {
                 tool: Some("shell".into()),
+                by_subagent: false,
             },
             ends_as: RunState::Running,
         },

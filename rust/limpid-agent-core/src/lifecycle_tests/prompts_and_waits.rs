@@ -102,6 +102,7 @@ fn a_wait_records_its_kind_and_the_tool_it_waits_to_use() {
             approval.clone(),
             AgentEvent::ToolFinished {
                 tool: Some("Write".into()),
+                by_subagent: false,
             },
         ],
     );
@@ -216,6 +217,7 @@ fn a_turn_keeps_the_transcript_its_prompt_named_until_it_ends() {
         Some(&prompt_shown),
         &AgentEvent::ToolFinished {
             tool: Some("AskUserQuestion".into()),
+            by_subagent: false,
         },
         &context(),
         &claude(),

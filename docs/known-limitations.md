@@ -166,6 +166,11 @@ as they are fixed or confirmed.
 - **`/compact` after a turn hides the count and the circling dot,** although
   the tasks keep running. The compaction restarts Claude's session, and
   nothing says so again until a later turn ends.
+- **After a failed turn or `/compact`, a Claude subagent still running shows
+  the pane working while it uses tools,** until Claude's idle notification
+  about a minute later. No stop counted the subagent then, so its tools are
+  the only sign that it is still at work. After a turn that ended normally,
+  the stop counts it and its tools leave the pane finished.
 - **Codex's background terminals are not shown.** Codex keeps them running
   after a turn, but its `Stop` does not list them and no hook reports their
   end.

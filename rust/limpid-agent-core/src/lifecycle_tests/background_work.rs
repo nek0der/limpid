@@ -128,6 +128,90 @@ fn the_agents_own_tool_after_the_stop_is_still_work() {
     assert_eq!(record.background_work, Some(SHELL));
 }
 
+const SUBAGENT: BackgroundWork = BackgroundWork {
+    shells: 0,
+    subagents: 1,
+    others: 0,
+};
+
+fn question_end(by_subagent: bool) -> AgentEvent {
+    AgentEvent::ToolFinished {
+        tool: Some("AskUserQuestion".into()),
+        by_subagent,
+    }
+}
+
+/// A background subagent's tool ending after the stop (its `PostToolUse`)
+/// writes nothing, as its start does: the run stays finished with the
+/// subagent counted.
+#[test]
+fn a_subagents_tool_end_after_the_stop_writes_nothing() {
+    let (record, ..) = run(
+        &claude(),
+        &[started(None), prompt("go"), stop(Some(SUBAGENT))],
+    );
+    let writes = apply(
+        Some(&record),
+        &question_end(true),
+        &context(),
+        &claude(),
+        NOW,
+    );
+    assert_eq!(writes.run, None);
+    assert_eq!(record.state, RunState::Finished);
+    assert_eq!(record.background_work, Some(SUBAGENT));
+}
+
+/// The agent's own tool ending after a stop still puts the run back to
+/// work outside the turn, keeping the stop's count for the rest it returns
+/// to.
+#[test]
+fn the_agents_own_tool_end_after_the_stop_is_still_work() {
+    let (record, ..) = run(
+        &claude(),
+        &[
+            started(None),
+            prompt("go"),
+            stop(Some(SUBAGENT)),
+            question_end(false),
+        ],
+    );
+    assert_eq!(record.state, RunState::Running);
+    assert_eq!(record.run_started_at, None);
+    assert_eq!(record.outside_turn_rest, Some(RunState::Finished));
+    assert_eq!(record.background_work, Some(SUBAGENT));
+}
+
+/// A wait a subagent's permission prompt opened after the stop is ended by
+/// the subagent's next tool event, as any wait is.
+#[test]
+fn a_subagents_tool_end_still_ends_its_wait() {
+    let approval = AgentEvent::ApprovalRequested {
+        detail: Some("Claude needs your permission".into()),
+    };
+    let (record, ..) = run(
+        &claude(),
+        &[
+            started(None),
+            prompt("go"),
+            stop(Some(SUBAGENT)),
+            approval,
+            question_end(true),
+        ],
+    );
+    assert_eq!(record.state, RunState::Running);
+    assert_eq!(record.wait_kind, None);
+}
+
+/// At `idle` no stop counted the subagent, so its tools are the one sign of
+/// work going on and still show the run working.
+#[test]
+fn a_subagents_tool_at_idle_still_shows_work() {
+    let (record, ..) = run(&claude(), &[started(None), question_end(true)]);
+    assert_eq!(record.state, RunState::Running);
+    assert_eq!(record.outside_turn_rest, Some(RunState::Idle));
+}
+
 /// Work outside the turn (a tool, then the idle prompt) returns the run to
 /// the same rest, so what the stop listed still stands; a stop that lists
 /// nothing, an empty count included, clears it.

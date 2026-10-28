@@ -294,6 +294,11 @@ def claude_event(obj, transcript_path):
         if string(obj, "agent_id"):
             event["by_subagent"] = True
         return event
+    if name in ("PostToolUse", "PostToolUseFailure") and string(obj, "tool_name") == "AskUserQuestion":
+        event = {"type": "tool_finished", "tool": "AskUserQuestion"}
+        if string(obj, "agent_id"):
+            event["by_subagent"] = True
+        return event
     if name == "Notification":
         if string(obj, "notification_type") == "permission_prompt":
             event = {"type": "approval_requested"}
