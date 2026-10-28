@@ -709,10 +709,10 @@ fn a_codex_usage_limit_applies_only_to_the_session_it_watched() {
         scratch.call_as("codex", RUN, Some(&new_call()), payload.as_bytes());
     };
     let report = serde_json::json!({
-        "hook_event_name": "LimpidUsageLimitReached",
+        "hook_event_name": "LimpidTurnFailed",
         "transcript_path": rollout,
         "session_id": "a",
-        "limpid_limit_reached_at": u64::MAX / 2,
+        "limpid_failed_at": u64::MAX / 2,
     })
     .to_string();
     codex(r#"{"hook_event_name":"SessionStart","session_id":"a","source":"startup"}"#);
@@ -738,6 +738,48 @@ fn a_codex_usage_limit_applies_only_to_the_session_it_watched() {
     let record = scratch.record().expect("record");
     assert_eq!(record.state, RunState::Error);
     assert!(record.usage_limit.is_some());
+}
+
+/// Codex runs no hook when a turn fails for any reason, not only at its
+/// usage limit. The watcher reports the failure, and the turn ends failed
+/// with the kind its rollout names, as a hook would end it. The rollout is
+/// taken from what Codex CLI 0.165.0 wrote for a model it does not have.
+#[test]
+fn a_failed_codex_turn_ends_with_the_kind_its_rollout_names() {
+    let scratch = Scratch::new("codex-failed-turn");
+    let rollout = scratch.root.join("rollout.jsonl");
+    fs::write(
+        &rollout,
+        r#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"t1"}}
+{"type":"event_msg","payload":{"type":"task_complete","turn_id":"t1","last_agent_message":null,"error":{"message":"The 'no-such-model' model is not supported when using Codex with a ChatGPT account.","codex_error_info":"model_not_found"}}}
+"#,
+    )
+    .expect("rollout");
+    let codex = |payload: &str| {
+        scratch.call_as("codex", RUN, Some(&new_call()), payload.as_bytes());
+    };
+    codex(r#"{"hook_event_name":"SessionStart","session_id":"a","source":"startup"}"#);
+    codex(
+        r#"{"hook_event_name":"UserPromptSubmit","session_id":"a","turn_id":"t1","prompt":"Say hello."}"#,
+    );
+    codex(
+        &serde_json::json!({
+            "hook_event_name": "LimpidTurnFailed",
+            "transcript_path": rollout,
+            "session_id": "a",
+            "limpid_error_kind": "model_not_found",
+            "limpid_failed_at": u64::MAX / 2,
+        })
+        .to_string(),
+    );
+    let record = scratch.record().expect("record");
+    assert_eq!(record.state, RunState::Error);
+    assert_eq!(record.detail.as_deref(), Some("model_not_found"));
+    assert_eq!(record.usage_limit, None);
+    assert_eq!(record.run_started_at, None);
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].phase, TurnPhase::Failed);
 }
 
 #[test]

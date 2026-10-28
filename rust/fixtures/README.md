@@ -122,8 +122,10 @@ Cases that could not be recorded as planned:
 - `codex/stop-error` does not exist. Codex's `stop.command.input` schema
   (2026-09) has no error field and forbids additional properties, so a turn
   that fails never reaches `Stop` with an error; the transport retries or the
-  session reports the failure without a hook. The `Failed` event therefore has
-  no Codex source today.
+  session reports the failure without a hook. Codex's `Failed` therefore
+  comes from the rollout instead: the helper's watcher reports the turn's
+  `task_complete` with an `error` (`LimpidTurnFailed`), which the adapter's
+  tests and the hook runtime's replay tests cover.
 - `claude/stop-failure` carries the error under `error`, not under
   `error_type` as the shell receiver of earlier builds expected. The fixture
   keeps the real key.

@@ -587,9 +587,9 @@ fn an_idle_prompt_overtaken_by_a_prompt_while_its_end_was_prepared_writes_nothin
 
 /// Builds the Codex helper's report of a turn that ended at the usage limit,
 /// for the rollout at `rollout`, watched from session `s1`.
-fn usage_limit_report(rollout: &Path, reached_at: u64) -> Vec<u8> {
+fn usage_limit_report(rollout: &Path, failed_at: u64) -> Vec<u8> {
     format!(
-        r#"{{"hook_event_name":"LimpidUsageLimitReached","transcript_path":"{}","session_id":"s1","limpid_limit_reached_at":{reached_at}}}"#,
+        r#"{{"hook_event_name":"LimpidTurnFailed","transcript_path":"{}","session_id":"s1","limpid_failed_at":{failed_at}}}"#,
         rollout.display()
     )
     .into_bytes()

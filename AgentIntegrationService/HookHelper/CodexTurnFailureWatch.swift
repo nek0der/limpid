@@ -1,27 +1,28 @@
-// CodexUsageLimitWatch.swift
-// Limpid — watches a Codex session's rollout for a turn that ends at the plan's usage limit.
+// CodexTurnFailureWatch.swift
+// Limpid — watches a Codex session's rollout for a turn that fails, which Codex runs no hook for.
 
 import Darwin
 import Foundation
 
-/// Codex runs no hook when its usage limit ends a turn (its `Stop` runs only
-/// after a turn that sampled), so the pane would show the agent running for
-/// hours. The rollout records it, as a `task_complete` whose error is
-/// `usage_limit_exceeded`. After Codex's `SessionStart`, the helper leaves
-/// one watcher per session that reads the rollout as it grows and, on that
-/// line, reports `LimpidUsageLimitReached` through the same hook runtime in
-/// the same environment as Codex's own hooks, so the run's record, its turn,
-/// and the notification follow as for any failure. The report names the
-/// session and the time it observed (`CodexUsageLimitReport`), since the run
-/// may have moved on by the time it lands.
+/// Codex runs no hook when a turn fails (its `Stop` runs only after a turn
+/// that sampled): at the plan's usage limit, on a model it does not have, or
+/// when the server is overloaded. The pane would show the agent running until
+/// the next prompt. The rollout records the failure, as a `task_complete`
+/// with an `error`. After Codex's `SessionStart`, the helper leaves one
+/// watcher per session that reads the rollout as it grows and, on that line,
+/// reports `LimpidTurnFailed` through the same hook runtime in the same
+/// environment as Codex's own hooks, so the run's record, its turn, and the
+/// notification follow as for a failure a hook reports. The report names the
+/// session and the time it observed (`CodexTurnFailureReport`), since the
+/// run may have moved on by the time it lands.
 ///
 /// The watcher holds no pipe of Codex's (its standard streams are the null
 /// device), runs in a process group of its own (`Process` starts each child
 /// in one), so a signal to Codex's job does not reach it, and ends with
 /// Codex.
-enum CodexUsageLimitWatch {
-    static let subcommand = "watch-codex-usage"
-    /// How often the rollout is read: a limit shown some seconds late is
+enum CodexTurnFailureWatch {
+    static let subcommand = "watch-codex-failures"
+    /// How often the rollout is read: a failure shown some seconds late is
     /// fine, a busy loop beside every Codex session is not.
     static let interval: TimeInterval = 10
     /// Returns the names Codex's process has, read from the provider descriptor so a
@@ -59,7 +60,7 @@ enum CodexUsageLimitWatch {
         do {
             try process.run()
         } catch {
-            logHookDiagnostic("Limpid hook helper: the usage limit watcher did not start: \(error)")
+            logHookDiagnostic("Limpid hook helper: the Codex failure watcher did not start: \(error)")
         }
     }
 
@@ -78,16 +79,17 @@ enum CodexUsageLimitWatch {
         var reader = RolloutReader(path: rollout, offset: offset)
         while isAlive(codex) {
             Thread.sleep(forTimeInterval: interval)
-            let lines = reader.readNewLines(keeping: RolloutReader.mayBeUsageLimitLine)
-            if let line = lines.compactMap(RolloutReader.usageLimitLine(in:)).last {
-                // The time zone Codex printed its reset in is the one this
-                // process runs in, its environment being Codex's. A line
-                // with no time of its own was written within one interval.
+            let lines = reader.readNewLines(keeping: RolloutReader.mayBeFailureLine)
+            if let line = lines.compactMap(RolloutReader.failureLine(in:)).last {
+                // The time zone Codex printed a usage limit's reset in is the
+                // one this process runs in, its environment being Codex's. A
+                // line with no time of its own was written within one
+                // interval.
                 let writtenAt = line.writtenAt ?? Date().addingTimeInterval(-interval)
-                let resetAt = line.message.flatMap {
+                let resetAt = line.isUsageLimit ? line.message.flatMap {
                     CodexUsageLimitMessage.resetAt(in: $0, writtenAt: writtenAt, timeZone: .current)
-                }
-                let payload = CodexUsageLimitReport.payload(
+                } : nil
+                let payload = CodexTurnFailureReport.payload(
                     rollout: rollout,
                     sessionID: session,
                     line: line,
@@ -103,7 +105,7 @@ enum CodexUsageLimitWatch {
     /// in the same run) finds the lock taken. Kept in the temporary
     /// directory, outside the record directories the projection reads.
     private static func claim(runID: String, rollout: String) -> Int32? {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("limpid-usage-watch", isDirectory: true)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("limpid-codex-failure-watch", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let name = "\(runID)-\(URL(fileURLWithPath: rollout).deletingPathExtension().lastPathComponent).lock"
         let descriptor = open(directory.appendingPathComponent(name).path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
@@ -132,7 +134,7 @@ enum CodexUsageLimitWatch {
                 environment: environment
             )
         } catch {
-            logHookDiagnostic("Limpid hook helper: the usage limit was not reported: \(error)")
+            logHookDiagnostic("Limpid hook helper: the Codex failure was not reported: \(error)")
         }
     }
 }
