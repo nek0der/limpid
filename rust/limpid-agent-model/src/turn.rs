@@ -419,6 +419,9 @@ pub struct TurnSummary {
     /// know, it reads as the person's words.
     #[serde(default, deserialize_with = "lenient")]
     pub prompt_kind: PromptKind,
+    /// What the agent said as the turn ended (`TurnRecord::reply_head`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_head: Option<String>,
     pub started_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<String>,
@@ -496,6 +499,7 @@ impl TurnSummary {
             display_number: record.display_number,
             prompt_head,
             prompt_kind,
+            reply_head: record.reply_head.clone(),
             started_at: record.started_at.clone(),
             finished_at: record.finished_at.clone(),
             phase: record.phase,
@@ -572,6 +576,12 @@ pub struct TurnRecord {
     /// does not know is kept and written back (`RecordedPromptKind`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_kind: Option<RecordedPromptKind>,
+    /// The agent's last reply's first paragraph on one line (`reply_head`
+    /// in `limpid-agent-core`), from the stop that ended the turn. `None`
+    /// for a turn no stop ended, a reply with no words, or a record from
+    /// before it was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_head: Option<String>,
     pub started_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<String>,
@@ -810,6 +820,7 @@ mod tests {
             display_number: 7,
             prompt_head: Some("add tests".into()),
             prompt_kind: Some(RecordedPromptKind::Known(PromptKind::Text)),
+            reply_head: None,
             started_at: "2026-10-12T00:00:00Z".into(),
             finished_at: None,
             phase: TurnPhase::Started,

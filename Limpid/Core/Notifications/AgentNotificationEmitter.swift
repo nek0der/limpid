@@ -37,11 +37,14 @@ struct AgentNotificationEmitter {
     ///
     /// `finished` is what a finished turn reported (`AppState.finishedTurn`),
     /// which the history keeps as values; without it, the turn is filed with
-    /// the payload's words alone.
+    /// the payload's words alone. `answered` is the prompt a finished turn's
+    /// reply answers, when the body says the reply in its place
+    /// (`AppState.finishedText`); the subtitle names it beside the place.
     func deliver(
         _ payload: AgentNotifyPayload,
         wait: PromptWait? = nil,
         finished: NotificationEvent? = nil,
+        answered: String? = nil,
         tab: Tab,
         session: WorkspaceSession
     ) {
@@ -82,7 +85,7 @@ struct AgentNotificationEmitter {
         send(
             Delivery(
                 title: title,
-                subtitle: Self.subtitle(forContainerLabel: containerLabel),
+                subtitle: Self.subtitle(forContainerLabel: containerLabel, answered: answered, locale: locale),
                 body: body,
                 kind: entryKind,
                 event: event,
@@ -99,6 +102,14 @@ struct AgentNotificationEmitter {
     /// with nothing in it.
     nonisolated static func subtitle(forContainerLabel label: String) -> String? {
         label.isEmpty ? nil : label
+    }
+
+    /// The subtitle of a banner whose body says a reply: the place, then
+    /// the prompt the reply answers, which the body no longer quotes. Any
+    /// other banner's is the place alone.
+    nonisolated static func subtitle(forContainerLabel label: String, answered: String?, locale: Locale) -> String? {
+        guard let answered else { return subtitle(forContainerLabel: label) }
+        return AgentStatusText.joined([label, answered], locale: locale)
     }
 
     /// What one transition hands to the notification manager. Bundled

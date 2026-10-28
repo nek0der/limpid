@@ -72,6 +72,9 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
             cache: input
                 .transcript
                 .and_then(crate::cache::transcript_cache_window),
+            reply: string(&object, "last_assistant_message")
+                .filter(|reply| !reply.is_empty())
+                .map(str::to_owned),
         },
         "StopFailure" => {
             // Recorded payloads carry the reason under `error`; the shell
@@ -445,6 +448,7 @@ mod tests {
                 continues_after_stop_hook: true,
                 titles: None,
                 cache: None,
+                reply: None,
             }]
         );
     }
@@ -468,6 +472,7 @@ mod tests {
                     generated_title: Some("second".into()),
                 }),
                 cache: None,
+                reply: None,
             }]
         );
         assert_eq!(
@@ -481,7 +486,8 @@ mod tests {
                     session_title: Some("mine".into()),
                     generated_title: None,
                 }),
-                cache: None
+                cache: None,
+                reply: None,
             }]
         );
         assert_eq!(
@@ -492,7 +498,8 @@ mod tests {
             vec![AgentEvent::TurnFinished {
                 continues_after_stop_hook: false,
                 titles: None,
-                cache: None
+                cache: None,
+                reply: None,
             }]
         );
     }
@@ -555,6 +562,7 @@ mod tests {
                     rewrite_tokens: Some(20),
                     precision: limpid_agent_model::CachePrecision::Estimated,
                 }),
+                reply: None,
             }]
         );
         // Prompt submit reads the transcript for titles only: the window it

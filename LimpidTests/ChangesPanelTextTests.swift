@@ -172,6 +172,20 @@ struct ChangesPanelTextTests {
             == "Turn 4 of Claude #2, Save the order setting, Unviewed, 2 files +3 −1, 12:00 AM")
     }
 
+    @Test func aRowsReply_endsItsTooltipAndItsSentence() throws {
+        var extras = TurnSummaryFixture.Extras()
+        extras.promptHead = "Add the tests"
+        extras.replyHead = "Added two tests."
+        extras.finishedAt = "2026-10-12T00:03:05Z"
+        let turn = try TurnSummaryFixture.turn("T4", number: 4, extras: extras)
+        let row = ChangesPanelModel.Row(turn: turn, status: .viewed, isViewed: true, isSelectable: true, action: .markUnviewedFrom)
+        let utc = try #require(TimeZone(identifier: "UTC"))
+
+        #expect(ChangesPanelText.help(row, locale: Self.japanese, timeZone: utc).hasSuffix("終了 0:03\n\n返答：Added two tests."))
+        #expect(ChangesPanelFixture.plainSpaces(ChangesPanelText.rowSpoken(row, locale: Self.english, timeZone: utc))?
+            .hasSuffix("12:00 AM, Reply: Added two tests.") == true)
+    }
+
     @Test func theFoldAndTheMoves_sayWhatTheyDo() {
         let fold = ChangesPanelModel.Fold(count: 12)
 

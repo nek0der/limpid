@@ -29,6 +29,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for ask-user-question>",
       "type": "turn_finished"
     }
   ],

@@ -782,6 +782,46 @@ fn a_failed_codex_turn_ends_with_the_kind_its_rollout_names() {
     assert_eq!(turns[0].phase, TurnPhase::Failed);
 }
 
+/// The stop's reply names what came of the turn, kept as the first
+/// paragraph on one line; a later end with no reply of its own leaves it.
+/// The reply is taken from what Claude Code 2.1.312 sent for a turn that
+/// left a shell running.
+#[test]
+fn a_turn_keeps_the_first_paragraph_of_its_reply() {
+    let scratch = Scratch::new("turn-reply");
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        br#"{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Lighthouses have guided sailors safely\nthrough dark and stormy nights.\n\n- one\n- two"}"#,
+    );
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 1);
+    assert_eq!(
+        turns[0].reply_head.as_deref(),
+        Some("Lighthouses have guided sailors safely through dark and stormy nights.")
+    );
+
+    // The idle prompt after the stop takes the end again, with no reply.
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        br#"{"hook_event_name":"Notification","session_id":"s1","notification_type":"idle_prompt"}"#,
+    );
+    assert_eq!(
+        scratch.turns()[0].reply_head.as_deref(),
+        Some("Lighthouses have guided sailors safely through dark and stormy nights.")
+    );
+
+    // A stop that sends no reply records none.
+    scratch.call(RUN, Some(&new_call()), PROMPT);
+    scratch.call(RUN, Some(&new_call()), STOP);
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 2);
+    assert_eq!(turns[1].reply_head, None);
+}
+
 #[test]
 fn the_same_prompt_sent_twice_is_two_turns() {
     let scratch = Scratch::new("turn-twice");

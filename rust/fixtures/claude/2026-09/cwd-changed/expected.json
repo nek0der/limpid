@@ -31,6 +31,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for cwd-changed>",
       "type": "turn_finished"
     }
   ],

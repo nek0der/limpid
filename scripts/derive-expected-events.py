@@ -293,6 +293,7 @@ def claude_event(obj, transcript_path):
         optional(event, "cache", transcript_cache(transcript_path))
         if obj.get("stop_hook_active") is True:
             event["continues_after_stop_hook"] = True
+        optional(event, "reply", string(obj, "last_assistant_message") or None)
         return event
     if name == "StopFailure":
         return {"type": "failed", "error": string(obj, "error") or string(obj, "error_type") or "error"}
@@ -398,6 +399,7 @@ def codex_event(obj, _transcript_path):
         event = {"type": "turn_finished"}
         if obj.get("stop_hook_active") is True:
             event["continues_after_stop_hook"] = True
+        optional(event, "reply", string(obj, "last_assistant_message") or None)
         return event
     return {"type": "extension", "name": name, "payload": obj}
 

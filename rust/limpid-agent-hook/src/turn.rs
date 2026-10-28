@@ -55,7 +55,8 @@ pub(crate) enum Prepared {
         keeps_phase: bool,
         taken: SnapshotTaken,
         diff: Option<DiffStat>,
-        /// What the transcript says the turn used and ran.
+        /// What the transcript says the turn used and ran, and what the
+        /// agent said as it ended.
         reading: EndReading,
     },
     /// Nothing to write, for the reason given (an event already applied or
@@ -75,6 +76,23 @@ pub(crate) struct EndReading {
     pub checks: Option<Vec<CheckResult>>,
     /// Whether `checks` may leave out the turn's first runs.
     pub are_checks_partial: bool,
+    /// What the agent said as the turn ended, read from the stop's own
+    /// payload rather than the transcript (`with_reply`), as `TurnEnd::reply`
+    /// takes it.
+    pub reply: Option<String>,
+}
+
+impl EndReading {
+    /// The reading with the reply the event ended the turn with: a stop's,
+    /// whole, or empty for a stop that sent none. Any other end has none,
+    /// which keeps what the record held.
+    fn with_reply(self, event: &AgentEvent) -> Self {
+        let reply = match event {
+            AgentEvent::TurnFinished { reply, .. } => Some(reply.clone().unwrap_or_default()),
+            _ => None,
+        };
+        Self { reply, ..self }
+    }
 }
 
 /// What the provider's transcript says of the turn a hook call begins or
@@ -284,11 +302,11 @@ impl Turns<'_> {
                 // An end nobody prompted reads from the last prompt; when
                 // that prompt is the ended turn's own, what it reads is that
                 // turn's, already recorded, and is not counted again.
-                let end_only = |event, ended: Option<&str>| {
+                let end_only = |id, ended: Option<&str>| {
                     let reading = self.read_end(None);
                     Prepared::End {
                         turn_id: None,
-                        event,
+                        event: id,
                         phase,
                         continues_ended_turn,
                         keeps_phase: false,
@@ -298,7 +316,8 @@ impl Turns<'_> {
                             EndReading::default()
                         } else {
                             reading
-                        },
+                        }
+                        .with_reply(event),
                     }
                 };
                 let turn = match current {
@@ -320,28 +339,7 @@ impl Turns<'_> {
                     }
                     Current::Turn(turn) => turn,
                 };
-                // The end is taken where the turn began, so the two trees
-                // are of one repository even if the agent changed directory.
-                // A turn whose begin was not captured has nothing to compare
-                // an end with, and the directory the hook runs in may be
-                // another repository entirely, so none is taken; the begin's
-                // reason is the one the turn reports.
-                let taken = match &turn.begin {
-                    SnapshotStatus::Captured { root, .. } => {
-                        snapshots.capture(Path::new(root), self.pane_id, TurnSide::End)
-                    }
-                    _ => not_taken("beginNotCaptured"),
-                };
-                let diff = match (&turn.begin, &taken.status) {
-                    (
-                        SnapshotStatus::Captured { tree: begin, root },
-                        SnapshotStatus::Captured {
-                            tree: end,
-                            root: end_root,
-                        },
-                    ) if root == end_root => snapshots.diff(Path::new(root), begin, end),
-                    _ => None,
-                };
+                let (taken, diff) = self.take_end(&turn, snapshots);
                 Prepared::End {
                     turn_id: Some(turn.turn_id.clone()),
                     event: event_id,
@@ -357,10 +355,41 @@ impl Turns<'_> {
                         self.read_end(turn.provider_turn_id.as_deref())
                     } else {
                         EndReading::default()
-                    },
+                    }
+                    .with_reply(event),
                 }
             }
         }
+    }
+
+    /// The end snapshot of `turn`, and its difference from the begin. The
+    /// end is taken where the turn began, so the two trees are of one
+    /// repository even if the agent changed directory. A turn whose begin
+    /// was not captured has nothing to compare an end with, and the
+    /// directory the hook runs in may be another repository entirely, so
+    /// none is taken; the begin's reason is the one the turn reports.
+    fn take_end(
+        &self,
+        turn: &TurnRecord,
+        snapshots: &dyn SnapshotRunner,
+    ) -> (SnapshotTaken, Option<DiffStat>) {
+        let taken = match &turn.begin {
+            SnapshotStatus::Captured { root, .. } => {
+                snapshots.capture(Path::new(root), self.pane_id, TurnSide::End)
+            }
+            _ => not_taken("beginNotCaptured"),
+        };
+        let diff = match (&turn.begin, &taken.status) {
+            (
+                SnapshotStatus::Captured { tree: begin, root },
+                SnapshotStatus::Captured {
+                    tree: end,
+                    root: end_root,
+                },
+            ) if root == end_root => snapshots.diff(Path::new(root), begin, end),
+            _ => None,
+        };
+        (taken, diff)
     }
 
     /// Writes the turn record under the run record's lock, and names it on
@@ -404,6 +433,7 @@ impl Turns<'_> {
                     usage: reading.usage,
                     checks: reading.checks,
                     are_checks_partial: reading.are_checks_partial,
+                    reply: reading.reply.as_deref(),
                 },
                 continues_ended_turn,
                 keeps_phase,
@@ -580,6 +610,7 @@ impl Turns<'_> {
                 usage: reading.usage,
                 checks: reading.checks,
                 are_checks_partial: reading.are_checks_partial,
+                reply: reading.reply.as_deref(),
             },
         );
         if self.write(&record) {

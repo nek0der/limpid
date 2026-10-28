@@ -163,7 +163,7 @@ custom_rules:
   # once; the wording now sits beside its value in Domain).
   core_names_presentation_type:
     name: "Core names a Presentation type"
-    regex: '\b(?:ProjectWindowState|WindowRegistry|SessionRowFactText|SessionSidebarModel|NeedsAttentionListModel|DecisionBarModel)\b'
+    regex: '\b(?:ProjectWindowState|WindowRegistry|SessionRowFactText|SessionSidebarModel|NeedsAttentionListModel|DecisionBarModel|TurnPromptText|TurnReplyText)\b'
     included: 'Limpid/Core/'
     # Code only: a doc comment may explain how a Core value relates to the
     # display state built on top of it.

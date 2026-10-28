@@ -17,6 +17,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for tmux-hosted>",
       "type": "turn_finished"
     }
   ],

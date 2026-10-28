@@ -86,12 +86,15 @@ Approvals and questions are answered in the agent's own prompt, not here.
 ⌥⌘I, off by default. Every conversation's turns in the worktree as one
 timeline, with the unviewed count and range and a **Conversation** filter.
 
-- Each turn is a card of two lines: its prompt and when it started, then
-  what it changed, its test runs in order (✗✗✓ failed twice, then passed; a
+- Each turn is a card: its prompt and when it started, then what it
+  changed, its test runs in order (✗✗✓ failed twice, then passed; a
   fainter ✓ ran only part of the suite), the tokens it used, and how long it
   ran. The token count leaves out what was read from the prompt cache; the
   tooltip has the exact count and everything it is made of. No price is
-  shown.
+  shown. Under them, a turn that finished shows the first paragraph of the
+  agent's reply, on two lines at most; the tooltip has more of it. A
+  finished turn's notification says the reply too, with the prompt beside
+  the project.
 - A card's moves stand where its time is: **Mark as Viewed up to Here**
   (**Mark as Unviewed from Here** on a viewed turn) and **Restore Code to
   Before This Turn…**. They show on the last card that has them and on the

@@ -233,6 +233,7 @@ fn a_turn_keeps_the_transcript_its_prompt_named_until_it_ends() {
             continues_after_stop_hook: false,
             titles: None,
             cache: None,
+            reply: None,
         },
         &context(),
         &claude(),
@@ -321,6 +322,7 @@ fn a_turn_carries_prompts_and_ends_without_erasing_them() {
             continues_after_stop_hook: false,
             titles: None,
             cache: None,
+            reply: None,
         },
         &context(),
         &claude(),
@@ -380,6 +382,7 @@ fn finished_with(observed_at: &str) -> AgentEvent {
         continues_after_stop_hook: false,
         titles: None,
         cache: Some(window(observed_at)),
+        reply: None,
     }
 }
 
@@ -423,6 +426,7 @@ fn a_finished_turn_records_its_cache_window_and_quiet_events_keep_it() {
                 continues_after_stop_hook: false,
                 titles: None,
                 cache: None,
+                reply: None,
             },
         ],
     );
@@ -684,6 +688,7 @@ fn episode_token_survives_repeated_states_and_changes_with_the_state() {
             continues_after_stop_hook: false,
             titles: None,
             cache: None,
+            reply: None,
         },
         &context(),
         &claude(),
@@ -760,6 +765,7 @@ fn titles_are_sanitized_and_absent_observations_keep_the_previous_value() {
                 continues_after_stop_hook: false,
                 titles: None,
                 cache: None,
+                reply: None,
             },
             AgentEvent::TurnFinished {
                 continues_after_stop_hook: false,
@@ -768,6 +774,7 @@ fn titles_are_sanitized_and_absent_observations_keep_the_previous_value() {
                     generated_title: Some("Gen\u{7}erated".into()),
                 }),
                 cache: None,
+                reply: None,
             },
         ],
     );
@@ -853,6 +860,7 @@ fn version_two_records_are_continued_with_a_higher_revision() {
             continues_after_stop_hook: false,
             titles: None,
             cache: None,
+            reply: None,
         },
         &context(),
         &claude(),

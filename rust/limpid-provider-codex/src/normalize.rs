@@ -146,6 +146,9 @@ pub(crate) fn normalize(
                     .unwrap_or(false),
                 titles: None,
                 cache: None,
+                reply: string(&object, "last_assistant_message")
+                    .filter(|reply| !reply.is_empty())
+                    .map(str::to_owned),
             },
         },
         _ => AgentEvent::Extension {
@@ -768,7 +771,8 @@ mod tests {
             vec![AgentEvent::TurnFinished {
                 continues_after_stop_hook: true,
                 titles: None,
-                cache: None
+                cache: None,
+                reply: None,
             }]
         );
     }
@@ -787,7 +791,8 @@ mod tests {
             vec![AgentEvent::TurnFinished {
                 continues_after_stop_hook: false,
                 titles: None,
-                cache: None
+                cache: None,
+                reply: None,
             }]
         );
     }

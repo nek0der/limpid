@@ -14,22 +14,28 @@ struct AgentTrackingHandlers {
 
 extension AppState {
     /// A finished turn's notification leads with its receipt ("T7 · 2 files
-    /// +94 −2 · ✓ Tests"), with the prompt that produced it under it.
-    /// Only the run's current turn, once it has ended: an earlier turn's
-    /// receipt would report the wrong one. The prompt is the payload's,
-    /// longer than the turn keeps, unless the harness wrote it: the
-    /// projection then quotes none, and the turn's kind words it
+    /// +94 −2 · ✓ Tests"). Only the run's current turn, once it has ended:
+    /// an earlier turn's receipt would report the wrong one. Under the
+    /// receipt, what the agent said as the turn ended, which tells whether
+    /// to look; the prompt it answered is then `answered`, which the
+    /// subtitle names beside the place. A turn with no reply has the prompt
+    /// under its receipt instead, and `answered` is `nil`. The prompt is the
+    /// payload's, longer than the turn keeps, unless the harness wrote it:
+    /// the projection then quotes none, and the turn's kind words it
     /// (`TurnPromptText`).
-    static func finishedBody(
+    static func finishedText(
         _ payload: AgentNotifyPayload,
         runtimes: [AgentRuntimePresentation],
         history: [ConversationKey: [TurnSummary]],
         locale: Locale
-    ) -> String? {
-        guard let turn = finishedTurn(payload, runtimes: runtimes, history: history) else { return payload.body }
+    ) -> (body: String?, answered: String?) {
+        guard let turn = finishedTurn(payload, runtimes: runtimes, history: history) else { return (payload.body, nil) }
         let receipt = ReceiptText.receipt(UnreadTurnRules.receipt(of: turn), locale: locale)
         let prompt = TurnPromptText.instruction(TurnPrompt(kind: turn.promptKind, head: payload.body), locale: locale)
-        return [receipt, prompt].compactMap(\.self).joined(separator: "\n")
+        guard let reply = turn.reply else {
+            return ([receipt, prompt].compactMap(\.self).joined(separator: "\n"), nil)
+        }
+        return ([receipt, reply].compactMap(\.self).joined(separator: "\n"), prompt)
     }
 
     /// The turn a finished notification reports: the run's current turn,
@@ -86,10 +92,16 @@ extension AppState {
             // The history keeps the turn as values, with the prompt the
             // projection quoted, before the banner's body replaces it.
             var finished: NotificationEvent?
+            var answered: String?
             if payload.kind == .finished, let history = projection?.turnHistory.conversations {
                 let turn = finishedTurn(payload, runtimes: attention.allRuntimes, history: history)
                 finished = .finished(agent: kind, turn: turn, head: payload.body)
-                payload.body = finishedBody(payload, runtimes: attention.allRuntimes, history: history, locale: notifications.appLocale())
+                (payload.body, answered) = finishedText(
+                    payload,
+                    runtimes: attention.allRuntimes,
+                    history: history,
+                    locale: notifications.appLocale()
+                )
             }
             // A request in that pane posts its own banner as it arrives
             // (`AttentionEffect.notify`); the hook's wait would announce the
@@ -109,6 +121,7 @@ extension AppState {
                 payload,
                 wait: payload.kind == .needsInput ? waitOf(payload, runtimes: attention.allRuntimes) : nil,
                 finished: finished,
+                answered: answered,
                 tab: tab,
                 session: session
             )

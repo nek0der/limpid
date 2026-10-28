@@ -21872,6 +21872,23 @@
           }
         }
       }
+    },
+    "Reply: %@": {
+      "comment": "What the agent said as a turn ended, in a turn's tooltip and VoiceOver; argument: the reply's first paragraph",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reply: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返答：%@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -192,6 +192,11 @@ already ended is a stop with no prompt of its own, such as an agent answering
 a background task; such a stop gets an end-only record rather than changing
 the earlier turn. The field is omitted when false.
 
+`TurnFinished` also carries `reply`, the agent's last reply as the provider
+sent it with the stop (Claude's and Codex's `last_assistant_message`), whole.
+The adapter only reads it; the core decides what a turn keeps of it
+(`reply_head`), so the two providers' replies are cut by one rule.
+
 ### Work outside a turn
 
 One rule: an event outside a turn reopens the run and records that it is

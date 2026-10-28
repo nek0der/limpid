@@ -210,6 +210,12 @@ pub enum AgentEvent {
         /// prompt of its own.
         #[serde(default, skip_serializing_if = "is_false")]
         continues_after_stop_hook: bool,
+        /// The agent's last reply as the provider sent it with the stop
+        /// (Claude's and Codex's `last_assistant_message`), whole: the core
+        /// cuts what the turn keeps of it (`reply_head`). `None` when the
+        /// provider sent none or it was empty.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reply: Option<String>,
     },
     Failed {
         error: String,
@@ -320,6 +326,7 @@ mod tests {
                     rewrite_tokens: Some(1_000),
                     precision: crate::cache::CachePrecision::Estimated,
                 }),
+                reply: Some("Done.".into()),
             },
             AgentEvent::AwaitingPrompt {
                 awaited_call_ended: false,
@@ -352,6 +359,7 @@ mod tests {
                 generated_title: None,
             }),
             cache: None,
+            reply: None,
         };
         finished.add_titles(&added);
         assert!(matches!(
@@ -409,6 +417,7 @@ mod tests {
             continues_after_stop_hook: false,
             titles: None,
             cache: None,
+            reply: None,
         })
         .expect("ok");
         assert_eq!(json, "{\"type\":\"turn_finished\"}");

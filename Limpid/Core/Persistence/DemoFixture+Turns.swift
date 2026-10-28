@@ -94,6 +94,8 @@ extension DemoFixture {
                 endedSecondsAgo: 2760,
                 seconds: 360,
                 prompt: "Sketch the reminder schedule model",
+                reply: "Added a ReminderSchedule model with the invoice, the send date, and how many reminders went out, and a factory "
+                    + "for its tests.",
                 changes: Changes(files: 3, added: 88, removed: 0),
                 usage: TurnUsage(inputTokens: 1800, cacheWriteTokens: 21000, cacheReadTokens: 140_000, outputTokens: 4100)
             ),
@@ -102,6 +104,8 @@ extension DemoFixture {
                 endedSecondsAgo: 1920,
                 seconds: 540,
                 prompt: "Add a job that finds overdue invoices",
+                reply: "The job runs every hour and queues one reminder per overdue invoice. The first test run failed on a time zone; "
+                    + "it passes now.",
                 changes: Changes(files: 3, added: 121, removed: 8),
                 check: CheckSummary(command: "pnpm test src/jobs", isFiltered: true, exitCode: 0),
                 earlierChecks: [1],
@@ -112,6 +116,8 @@ extension DemoFixture {
                 endedSecondsAgo: 1500,
                 seconds: 120,
                 prompt: "How does the mailer handle bounced emails?",
+                reply: "The mail provider reports a bounce through a webhook, and the mailer then marks the contact unreachable and "
+                    + "sends it no more reminders.",
                 changes: nil,
                 usage: TurnUsage(inputTokens: 900, cacheWriteTokens: 6000, cacheReadTokens: 90000, outputTokens: 1200)
             ),
@@ -120,6 +126,7 @@ extension DemoFixture {
                 endedSecondsAgo: 478,
                 seconds: 662,
                 prompt: "Show the reminder settings on the billing page",
+                reply: "The settings save, but a paid invoice still gets a reminder, so two tests fail. I'll fix that in the next turn.",
                 changes: Changes(files: 2, added: 47, removed: 9),
                 check: check(1),
                 earlierChecks: [1],
@@ -130,6 +137,10 @@ extension DemoFixture {
                 endedSecondsAgo: remindersFinishedSecondsAgo,
                 seconds: 330,
                 prompt: remindersLastPrompt,
+                reply: "Reminders now go only to invoices that are still open past their due date. Paid, voided, and disputed invoices "
+                    + "are skipped, and a payment that arrives after the job starts cancels the reminder before it is sent. INV-1042 "
+                    + "($1,240.00, 14 days overdue) gets one; INV-1043, paid this morning, does not. The two tests that failed last "
+                    + "turn pass, and three new ones cover partial payments.",
                 changes: Changes(files: 2, added: 89, removed: 4),
                 check: check(0),
                 earlierChecks: [1, 1],
@@ -149,6 +160,8 @@ extension DemoFixture {
                 endedSecondsAgo: remindersCodexFinishedSecondsAgo,
                 seconds: 95,
                 prompt: remindersCodexLastPrompt,
+                reply: "The migration creates reminder_schedules with the invoice, the send date, and a unique key on both, so a "
+                    + "schedule is written once per invoice. Run pnpm migrate to apply it.",
                 changes: Changes(files: 1, added: 24, removed: 0),
                 usage: TurnUsage(inputTokens: 1649, cacheWriteTokens: 0, cacheReadTokens: 94464, outputTokens: 807)
             )
@@ -169,6 +182,7 @@ extension DemoFixture {
                 endedSecondsAgo: 1770,
                 seconds: 90,
                 prompt: "Summarize what PR #318 changes",
+                reply: "It moves credit notes onto invoices and formats money per account.",
                 changes: nil
             ),
             StagedTurn(
@@ -176,6 +190,9 @@ extension DemoFixture {
                 endedSecondsAgo: prReviewFinishedSecondsAgo,
                 seconds: 250,
                 prompt: prReviewLastPrompt,
+                reply: "Three problems, most serious first: Major: reopening an invoice applies its credit note twice. applyCredits "
+                    + "runs again on reopen and does not check whether the credit was already applied. · Minor: formatMoney ignores "
+                    + "the account's currency setting. · Nit: two tests in invoices.test.ts share a name.",
                 changes: nil
             )
         ]
@@ -203,14 +220,18 @@ extension DemoFixture {
         let removed: Int
     }
 
-    /// One staged turn: what it was asked, when it ended and how long it ran,
-    /// what it changed (nothing for an answer), the check it ran last and
-    /// how the ones before it exited, and the tokens it used.
+    /// One staged turn: what it was asked and what the agent replied, when
+    /// it ended and how long it ran, what it changed (nothing for an
+    /// answer), the check it ran last and how the ones before it exited, and
+    /// the tokens it used. The reply is its first paragraph, as the record
+    /// keeps it (`reply_head`), in the words the pane's output ends on;
+    /// `nil` for a turn no stop ended.
     private struct StagedTurn {
         let number: Int
         let endedSecondsAgo: Int
         let seconds: Int
         let prompt: String
+        var reply: String?
         let changes: Changes?
         var check: CheckSummary?
         var earlierChecks: [Int] = []
@@ -262,6 +283,9 @@ extension DemoFixture {
                     return mark
                 }
                 fields["checkCount"] = exits.count
+            }
+            if let reply {
+                fields["replyHead"] = reply
             }
             if let usage {
                 fields["usage"] = [

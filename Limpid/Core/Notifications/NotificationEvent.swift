@@ -35,14 +35,16 @@ enum NotificationEvent: Equatable, Sendable {
     case wait(agent: AgentKind, wait: Wait, fact: String?)
     /// A turn ended. `turn` is `nil` when no turn record stood for it;
     /// `prompt` is the person's words, which a prompt the harness wrote
-    /// has none of (`promptKind` words it then, `TurnPromptText`).
-    case turnFinished(agent: AgentKind, turn: Turn?, prompt: String?, promptKind: TurnPromptKind)
+    /// has none of (`promptKind` words it then, `TurnPromptText`). `reply`
+    /// is what the agent said as it ended (`TurnSummary.reply`), `nil` when
+    /// the turn kept none or the entry is from before it was kept.
+    case turnFinished(agent: AgentKind, turn: Turn?, prompt: String?, promptKind: TurnPromptKind, reply: String?)
     /// The agent stopped, and why, as the provider said it.
     case stopped(agent: AgentKind, reason: String?)
 
     var agent: AgentKind {
         switch self {
-        case let .wait(agent, _, _), let .turnFinished(agent, _, _, _), let .stopped(agent, _): agent
+        case let .wait(agent, _, _), let .turnFinished(agent, _, _, _, _), let .stopped(agent, _): agent
         }
     }
 
@@ -63,7 +65,8 @@ enum NotificationEvent: Equatable, Sendable {
             agent: agent,
             turn: turn.map { Turn(number: $0.displayNumber, changes: $0.changes, check: $0.lastCheck) },
             prompt: head,
-            promptKind: turn?.promptKind ?? .text
+            promptKind: turn?.promptKind ?? .text,
+            reply: turn?.reply
         )
     }
 }
@@ -77,7 +80,7 @@ enum NotificationEvent: Equatable, Sendable {
 /// would word the row wrongly, where none words it from the banner's text.
 extension NotificationEvent: Codable {
     private enum CodingKeys: String, CodingKey {
-        case type, agent, wait, fact, turn, prompt, promptKind, reason
+        case type, agent, wait, fact, turn, prompt, promptKind, reply, reason
     }
 
     private enum Kind: String, Codable {
@@ -105,7 +108,8 @@ extension NotificationEvent: Codable {
                 agent: agent,
                 turn: container.decodeIfPresent(Turn.self, forKey: .turn),
                 prompt: container.decodeIfPresent(String.self, forKey: .prompt),
-                promptKind: promptKind
+                promptKind: promptKind,
+                reply: container.decodeIfPresent(String.self, forKey: .reply)
             )
         case .stopped:
             self = try .stopped(agent: agent, reason: container.decodeIfPresent(String.self, forKey: .reason))
@@ -120,11 +124,12 @@ extension NotificationEvent: Codable {
             try container.encode(Kind.wait, forKey: .type)
             try container.encode(wait.rawValue, forKey: .wait)
             try container.encodeIfPresent(fact, forKey: .fact)
-        case let .turnFinished(_, turn, prompt, promptKind):
+        case let .turnFinished(_, turn, prompt, promptKind, reply):
             try container.encode(Kind.turnFinished, forKey: .type)
             try container.encodeIfPresent(turn, forKey: .turn)
             try container.encodeIfPresent(prompt, forKey: .prompt)
             try container.encode(promptKind.rawValue, forKey: .promptKind)
+            try container.encodeIfPresent(reply, forKey: .reply)
         case let .stopped(_, reason):
             try container.encode(Kind.stopped, forKey: .type)
             try container.encodeIfPresent(reason, forKey: .reason)

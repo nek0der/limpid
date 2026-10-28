@@ -393,11 +393,11 @@ The files live in the provider's state directory, under `turns/`:
 - `<turn-id>.turn.json`, schema 1: `turnId`, `provider`, `conversation` (the
   provider's session ID, or the run ID marked `isFallback` when the provider
   reported none), `runId`, `paneId`, `displayNumber`, `promptHead`,
-  `promptKind`, `startedAt`, `finishedAt`, `phase`, `gitContext`, the
-  `begin` and `end` snapshot states, the untracked files each snapshot left
-  out for their size (`skippedBegin`, `skippedEnd`), `changes`,
-  `durationSeconds`, `addedBytes`, `lastCheck`, the turn's last 16 check
-  runs (`checks`, each an `exitCode` and `isFiltered`), how many it ran
+  `promptKind`, `replyHead`, `startedAt`, `finishedAt`, `phase`,
+  `gitContext`, the `begin` and `end` snapshot states, the untracked files
+  each snapshot left out for their size (`skippedBegin`, `skippedEnd`),
+  `changes`, `durationSeconds`, `addedBytes`, `lastCheck`, the turn's last
+  16 check runs (`checks`, each an `exitCode` and `isFiltered`), how many it ran
   in all (`checkCount`) and how many of those failed (`failureCount`),
   `areChecksPartial` when the turn may have run checks those leave out,
   `providerTurnId`, `usage` (`inputTokens`,
@@ -422,6 +422,17 @@ The files live in the provider's state directory, under `turns/`:
   one line. For `text`, it holds the person's words, with the leading
   reminders left out however long they were. For any other kind, it holds
   the prompt as it came, which the application never shows.
+
+  `replyHead` is what the agent said as the turn ended: the first paragraph
+  with words of the stop's `last_assistant_message`, which both providers
+  send, on one line and cut to 400 characters (`reply_head`). Headings, code
+  blocks, and rules are passed over, a list reads as its items joined with
+  " · ", and strong emphasis, code spans, and link addresses are taken out.
+  A paragraph that ends in a colon is followed by the next, which it only
+  leads into. Only a stop sets it. The stop that ends a turn after a stop hook replaces
+  it, and clears it when its own reply has no words. Any other end (a
+  failure, an interrupt, an idle prompt's retake) keeps it, and a turn no
+  stop ended has none.
 
   A record without `promptKind` (from before the field was kept) is judged
   again from its head when it is summarized. A reminder that closes within
