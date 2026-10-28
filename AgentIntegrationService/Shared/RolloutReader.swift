@@ -1,10 +1,10 @@
 // RolloutReader.swift
-// Limpid — reads the lines a Codex rollout gains and Codex's usage limit message, and builds the report the helper's watcher makes of them.
+// Limpid — reads the lines a Codex rollout gains and the failure a turn ends in, and builds the report the helper's watcher makes of them.
 
 import Foundation
 
 /// Reads the lines a rollout gains after `offset`, the size it had when its
-/// session started: a limit hit before is not this watcher's to report.
+/// session started: a failure before is not this watcher's to report.
 struct RolloutReader {
     let path: String
     private var offset: UInt64
@@ -18,8 +18,8 @@ struct RolloutReader {
     /// The most bytes read at once; a pass reads on to the end in chunks of
     /// this size.
     static let chunkBytes = 4 * 1024 * 1024
-    /// The longest unended line kept. A usage limit line is short; a longer
-    /// one (a tool's whole output on one line) is dropped rather than held.
+    /// The longest unended line kept. A failure line is short; a longer one
+    /// (a tool's whole output on one line) is dropped rather than held.
     static let maximumPartialBytes = 1024 * 1024
 
     init(path: String, offset: UInt64) {
@@ -37,37 +37,53 @@ struct RolloutReader {
         (try? FileManager.default.attributesOfItem(atPath: path)[.systemFileNumber] as? UInt64) ?? nil
     }
 
-    /// A turn that ended at the usage limit, as its rollout line says it.
-    struct UsageLimitLine: Equatable {
+    /// A turn that failed, as its rollout line says it.
+    struct FailureLine: Equatable {
+        /// The kind Codex gave the failure (`codex_error_info`): a name such
+        /// as `model_not_found`, or the one key of an object that carries
+        /// details; `nil` when the line names none.
+        let kind: String?
         /// Codex's message; `nil` when the line has none.
         let message: String?
         /// When Codex wrote the line (its `timestamp`); `nil` when it is not
         /// there or not readable.
         let writtenAt: Date?
+
+        /// Whether the plan's usage limit ended the turn, whose message
+        /// names when it resets (`CodexUsageLimitMessage`).
+        var isUsageLimit: Bool {
+            kind == "usage_limit_exceeded"
+        }
     }
 
     /// Whether a line can be one at all, checked as text before it is read
-    /// as JSON, so a pass keeps only the few lines that can.
-    static func mayBeUsageLimitLine(_ line: Substring) -> Bool {
-        line.contains("usage_limit_exceeded")
+    /// as JSON, so a pass keeps only the few lines that can: a turn's end.
+    static func mayBeFailureLine(_ line: Substring) -> Bool {
+        line.contains("task_complete")
     }
 
-    /// The line, when it is a turn that ended at the usage limit: an
-    /// `event_msg` whose `task_complete` carries that error. Read as JSON,
-    /// so the words in an agent's own answer are not taken for it.
-    static func usageLimitLine(in line: Substring) -> UsageLimitLine? {
-        guard mayBeUsageLimitLine(line), line.contains("task_complete"),
+    /// The line, when it is a turn that failed: an `event_msg` whose
+    /// `task_complete` carries an `error`. Codex runs no hook then, whatever
+    /// the failure. Read as JSON, so the words in an agent's own answer are
+    /// not taken for it.
+    static func failureLine(in line: Substring) -> FailureLine? {
+        guard mayBeFailureLine(line),
               let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
               object["type"] as? String == "event_msg",
               let payload = object["payload"] as? [String: Any],
               payload["type"] as? String == "task_complete",
-              let error = payload["error"] as? [String: Any],
-              error["codex_error_info"] as? String == "usage_limit_exceeded"
+              let error = payload["error"] as? [String: Any]
         else { return nil }
+        let kind: String? = switch error["codex_error_info"] {
+        case let name as String: name
+        case let details as [String: Any] where details.count == 1: details.keys.first
+        default: nil
+        }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let timestamp = object["timestamp"] as? String
-        return UsageLimitLine(
+        return FailureLine(
+            kind: kind.flatMap { $0.isEmpty ? nil : $0 },
             message: error["message"] as? String,
             writtenAt: timestamp.flatMap { formatter.date(from: $0) ?? ISO8601DateFormatter().date(from: $0) }
         )
@@ -156,20 +172,23 @@ enum CodexUsageLimitMessage {
 }
 
 /// This is the report the watcher makes through the hook runtime for a turn
-/// that ended at the usage limit. It names what the watcher observed, so the
-/// runtime applies it only while the run is still there: the session whose
-/// rollout it read (`/new` starts another in the same run), and when the
-/// limit ended the turn (the next prompt starts another turn in the same
-/// rollout). The Codex adapter compares both with the run record under its
-/// lock (`applies_to`).
-enum CodexUsageLimitReport {
+/// that failed. It names what the watcher observed, so the runtime applies
+/// it only while the run is still there: the session whose rollout it read
+/// (`/new` starts another in the same run), and when the turn failed (the
+/// next prompt starts another turn in the same rollout). The Codex adapter
+/// compares both with the run record under its lock (`applies_to`).
+enum CodexTurnFailureReport {
     /// This is the event the Codex adapter reads the rollout for.
-    static let eventName = "LimpidUsageLimitReached"
-    /// This key holds the reset read from Codex's message, in Unix seconds,
-    /// for when the rollout's rate limits gave none.
+    static let eventName = "LimpidTurnFailed"
+    /// This key holds the kind of failure the watcher read, for when the
+    /// rollout cannot be read again.
+    static let errorKindKey = "limpid_error_kind"
+    /// This key holds, for a usage limit, the reset read from Codex's
+    /// message, in Unix seconds, for when the rollout's rate limits gave
+    /// none.
     static let messageResetKey = "limpid_message_resets_at"
-    /// This key holds when the turn ended at the limit, in Unix seconds.
-    static let reachedAtKey = "limpid_limit_reached_at"
+    /// This key holds when the turn failed, in Unix seconds.
+    static let failedAtKey = "limpid_failed_at"
 
     /// Builds the payload for `line` in `rollout`, which session `sessionID`
     /// writes. A line with no time of its own was written no later than the
@@ -177,7 +196,7 @@ enum CodexUsageLimitReport {
     static func payload(
         rollout: String,
         sessionID: String,
-        line: RolloutReader.UsageLimitLine,
+        line: RolloutReader.FailureLine,
         readAt: Date,
         messageResetAt: Date?
     ) -> [String: Any] {
@@ -185,8 +204,11 @@ enum CodexUsageLimitReport {
             "hook_event_name": eventName,
             "transcript_path": rollout,
             "session_id": sessionID,
-            reachedAtKey: Int((line.writtenAt ?? readAt).timeIntervalSince1970.rounded(.down))
+            failedAtKey: Int((line.writtenAt ?? readAt).timeIntervalSince1970.rounded(.down))
         ]
+        if let kind = line.kind {
+            payload[errorKindKey] = kind
+        }
         if let messageResetAt {
             payload[messageResetKey] = Int(messageResetAt.timeIntervalSince1970)
         }

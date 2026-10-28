@@ -8,8 +8,8 @@
 // connection, so lifecycle hooks remain independent of approval-service
 // availability. `question-turn-ended` records a Claude turn end without XPC
 // so a terminal answer remains observable across controller startup delays.
-// `watch-codex-usage <codex pid> <offset> <session> <rollout>` runs the watcher a Codex
-// session start leaves (`CodexUsageLimitWatch`).
+// `watch-codex-failures <codex pid> <offset> <session> <rollout>` runs the watcher a Codex
+// session start leaves (`CodexTurnFailureWatch`).
 
 import Foundation
 
@@ -81,7 +81,7 @@ func runLifecycleHook(provider: String, kind: RustProviderBridge.HookKind) -> Ne
             FileHandle.standardError.write(Data((message + "\n").utf8))
         }
         if provider == "codex", kind == .lifecycle, outcome.outcome == "applied" {
-            CodexUsageLimitWatch.start(
+            CodexTurnFailureWatch.start(
                 after: input,
                 environment: ProcessInfo.processInfo.environment,
                 helper: URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
@@ -207,8 +207,8 @@ func publishCodexLifecycleFallback(input: Data) {
     )
 }
 
-if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == CodexUsageLimitWatch.subcommand {
-    CodexUsageLimitWatch.run(arguments: CommandLine.arguments.dropFirst(2), environment: ProcessInfo.processInfo.environment)
+if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == CodexTurnFailureWatch.subcommand {
+    CodexTurnFailureWatch.run(arguments: CommandLine.arguments.dropFirst(2), environment: ProcessInfo.processInfo.environment)
     exit(0)
 }
 

@@ -5,12 +5,12 @@
 
 mod approval;
 mod descriptor;
+mod failure;
 mod json;
 mod normalize;
 mod rollouts;
 mod titles;
 mod tokens;
-mod usage;
 
 use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe, ListDirectory,

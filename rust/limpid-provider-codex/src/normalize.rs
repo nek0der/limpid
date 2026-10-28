@@ -21,6 +21,7 @@
 //! A subagent the person's agent spawns is marked, and only its tool calls
 //! and permission requests count as the pane's (`is_subagents_own`).
 
+use crate::failure::{RolloutFailure, USAGE_LIMIT_KIND, rollout_failure};
 use crate::json::string;
 use limpid_agent_model::{
     AgentEvent, HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, RawHookInput, RunRecord,
@@ -93,23 +94,18 @@ pub(crate) fn normalize(
         "PostCompact" => AgentEvent::CompactionFinished,
         "Interrupt" => AgentEvent::Interrupted,
         // Not Codex's own event: the helper's watcher reports it when the
-        // rollout shows a turn ended at the plan's usage limit, since Codex
-        // runs no hook then (`crate::usage`). What the rollout says of the
-        // limit is read here; the reset the watcher read from Codex's
+        // rollout shows a turn failed, since Codex runs no hook then
+        // (`crate::failure`). What the rollout says of the failure is read
+        // here; for a usage limit, the reset the watcher read from Codex's
         // message (in Codex's time zone) times it when the rate limits did
         // not.
-        LIMPID_USAGE_LIMIT_EVENT => {
-            let message_reset = object
-                .get(MESSAGE_RESET_KEY)
-                .and_then(Value::as_u64)
-                .and_then(|seconds| UNIX_EPOCH.checked_add(Duration::from_secs(seconds)))
-                .map(format_utc_seconds);
-            let found = match input.transcript {
-                // The rollout says what the turn ended at. A turn that did
-                // not end at the limit (one the person began meanwhile, or a
-                // line only quoting the words) is no failure at all.
-                Some(rollout) => match crate::usage::rollout_usage_limit(rollout) {
-                    Some(found) => found,
+        LIMPID_TURN_FAILED_EVENT => {
+            let failure = match input.transcript {
+                // The rollout says what the turn ended in. A turn that did
+                // not fail (one the person began meanwhile) is no failure at
+                // all.
+                Some(rollout) => match rollout_failure(rollout) {
+                    Some(failure) => failure,
                     None => {
                         return Ok(vec![AgentEvent::Extension {
                             name: event_name.clone(),
@@ -117,16 +113,23 @@ pub(crate) fn normalize(
                         }]);
                     }
                 },
-                // Unread, the watcher's word stands, with no time of its own.
-                None => (UsageLimit::default(), None),
+                // Unread, the kind the watcher read stands; a limit has no
+                // time of its own.
+                None => watched_failure(&object),
             };
-            let (mut limit, message) = found;
-            if limit.resets_at.is_none() {
-                limit.resets_at = message_reset;
-            }
+            let message_reset = object
+                .get(MESSAGE_RESET_KEY)
+                .and_then(Value::as_u64)
+                .and_then(|seconds| UNIX_EPOCH.checked_add(Duration::from_secs(seconds)))
+                .map(format_utc_seconds);
             AgentEvent::Failed {
-                error: message.unwrap_or_else(|| "usage_limit_exceeded".to_owned()),
-                usage_limit: Some(limit),
+                error: failure.error,
+                usage_limit: failure.usage_limit.map(|mut limit| {
+                    if limit.resets_at.is_none() {
+                        limit.resets_at = message_reset;
+                    }
+                    limit
+                }),
             }
         }
         // Codex's Stop schema carries no error today; the branch stays for a
@@ -154,30 +157,45 @@ pub(crate) fn normalize(
 }
 
 /// The event the helper's watcher reports for a turn the rollout shows
-/// ended at the usage limit (see the arm in `normalize`).
-pub(crate) const LIMPID_USAGE_LIMIT_EVENT: &str = "LimpidUsageLimitReached";
-/// The watcher's reading of Codex's message, in Unix seconds.
+/// failed (see the arm in `normalize`).
+pub(crate) const LIMPID_TURN_FAILED_EVENT: &str = "LimpidTurnFailed";
+/// This key holds the kind of failure the watcher read (Codex's
+/// `codex_error_info`), for a report whose rollout cannot be read again.
+const ERROR_KIND_KEY: &str = "limpid_error_kind";
+/// For a usage limit, the watcher's reading of Codex's message, in Unix
+/// seconds.
 const MESSAGE_RESET_KEY: &str = "limpid_message_resets_at";
 /// This key names the session whose rollout the watcher reads, from the
 /// `SessionStart` it began on.
 const WATCHED_SESSION_KEY: &str = "session_id";
-/// This key holds when the rollout says the turn ended at the limit, in Unix
-/// seconds.
-const REACHED_AT_KEY: &str = "limpid_limit_reached_at";
+/// This key holds when the rollout says the turn failed, in Unix seconds.
+const FAILED_AT_KEY: &str = "limpid_failed_at";
+
+/// The failure the watcher read, for a report whose rollout could not be
+/// read again: its kind, and a usage limit with no time when that is the
+/// kind.
+fn watched_failure(object: &Map<String, Value>) -> RolloutFailure {
+    let error = string(object, ERROR_KIND_KEY)
+        .filter(|kind| !kind.is_empty())
+        .unwrap_or("error")
+        .to_owned();
+    let usage_limit = (error == USAGE_LIMIT_KIND).then(UsageLimit::default);
+    RolloutFailure { error, usage_limit }
+}
 
 /// Returns whether the watcher's report is about the run as `record` shows it
 /// now. The watcher reads every ten seconds and the hook runtime prepares the
 /// turn's end before it takes the record lock, so by the time the report is
 /// applied the person may have started another conversation (`/new`) or the
-/// next prompt in this one; applied there, the old limit would put the new
+/// next prompt in this one; applied there, the old failure would put the new
 /// work in error and end it. So the report applies only to the session it
 /// watched, and only while the run is still in a turn that began no later
-/// than the limit ended it. Codex's own hooks are always current.
+/// than the failure ended it. Codex's own hooks are always current.
 pub(crate) fn applies_to(input: RawHookInput<'_>, record: Option<&RunRecord>) -> bool {
     let Ok(object) = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES) else {
         return true;
     };
-    if string(&object, "hook_event_name") != Some(LIMPID_USAGE_LIMIT_EVENT) {
+    if string(&object, "hook_event_name") != Some(LIMPID_TURN_FAILED_EVENT) {
         return true;
     }
     let Some(record) = record else {
@@ -190,29 +208,29 @@ pub(crate) fn applies_to(input: RawHookInput<'_>, record: Option<&RunRecord>) ->
     {
         return false;
     }
-    // A run in no turn has no turn for the limit to have ended: a new
+    // A run in no turn has no turn for the failure to have ended: a new
     // session clears the start, and so does every other end.
     let Some(started) = record.run_started_at.as_deref().and_then(parse_utc_seconds) else {
         return false;
     };
-    // Both are whole seconds, and a request the limit refuses can end its
-    // turn in the second it began, so a reach in the start's own second
-    // counts. Nothing tells a turn the person began later in that same
-    // second from the one the limit ended, so that turn would count too.
+    // Both are whole seconds, and a request that fails can end its turn in
+    // the second it began, so a failure in the start's own second counts.
+    // Nothing tells a turn the person began later in that same second from
+    // the one that failed, so that turn would count too.
     object
-        .get(REACHED_AT_KEY)
+        .get(FAILED_AT_KEY)
         .and_then(Value::as_u64)
-        .is_none_or(|reached| started <= reached)
+        .is_none_or(|failed| started <= failed)
 }
 
-/// The watcher's event reads the rollout for the limit, and the events that
+/// The watcher's event reads the rollout for the failure, and the events that
 /// end a turn for what the turn used and the commands it ran (`tokens`).
 pub(crate) fn transcript_path(input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {
     let path = transcript_path_for_events(input, &TURN_END_EVENTS)?;
     if path.is_some() {
         return Ok(path);
     }
-    transcript_path_for_events(input, &[LIMPID_USAGE_LIMIT_EVENT])
+    transcript_path_for_events(input, &[LIMPID_TURN_FAILED_EVENT])
 }
 
 /// Whether the payload comes from Codex's own memory agent rather than the
@@ -539,11 +557,12 @@ mod tests {
     }
 
     #[test]
-    fn the_watchers_report_is_a_usage_limit_failure_read_from_the_rollout() {
+    fn the_watchers_report_of_a_usage_limit_is_read_from_the_rollout() {
         let rollout = br#"{"type":"event_msg","payload":{"type":"task_started"}}
 {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":100.0,"window_minutes":300,"resets_at":1791352800}}}}
 {"type":"event_msg","payload":{"type":"task_complete","error":{"message":"Try again at 10:29 AM.","codex_error_info":"usage_limit_exceeded"}}}"#;
-        let payload = br#"{"hook_event_name":"LimpidUsageLimitReached","transcript_path":"/tmp/rollout.jsonl"}"#;
+        let payload =
+            br#"{"hook_event_name":"LimpidTurnFailed","transcript_path":"/tmp/rollout.jsonl"}"#;
         let input = RawHookInput {
             bytes: payload,
             transcript: Some(rollout),
@@ -565,7 +584,7 @@ mod tests {
         // Without the rollout the limit still stands, timed by the message.
         assert_eq!(
             events(
-                r#"{"hook_event_name":"LimpidUsageLimitReached","limpid_message_resets_at":1791352800}"#
+                r#"{"hook_event_name":"LimpidTurnFailed","limpid_error_kind":"usage_limit_exceeded","limpid_message_resets_at":1791352800}"#
             ),
             vec![AgentEvent::Failed {
                 error: "usage_limit_exceeded".into(),
@@ -573,6 +592,46 @@ mod tests {
                     resets_at: Some("2026-10-07T06:00:00Z".into()),
                     window: None,
                 }),
+            }]
+        );
+    }
+
+    #[test]
+    fn the_watchers_report_of_any_other_failure_names_its_kind() {
+        // Taken from what Codex CLI 0.165.0 wrote for a model it does not have.
+        let rollout = br#"{"type":"event_msg","payload":{"type":"task_started"}}
+{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":null,"error":{"message":"The 'no-such-model' model is not supported when using Codex with a ChatGPT account.","codex_error_info":"model_not_found"}}}"#;
+        let payload =
+            br#"{"hook_event_name":"LimpidTurnFailed","transcript_path":"/tmp/rollout.jsonl"}"#;
+        assert_eq!(
+            normalize(
+                RawHookInput {
+                    bytes: payload,
+                    transcript: Some(rollout),
+                },
+                &HookContext::fixture()
+            )
+            .unwrap(),
+            vec![AgentEvent::Failed {
+                error: "model_not_found".into(),
+                usage_limit: None,
+            }]
+        );
+        // Without the rollout the watcher's word stands.
+        assert_eq!(
+            events(
+                r#"{"hook_event_name":"LimpidTurnFailed","limpid_error_kind":"server_overloaded"}"#
+            ),
+            vec![AgentEvent::Failed {
+                error: "server_overloaded".into(),
+                usage_limit: None,
+            }]
+        );
+        assert_eq!(
+            events(r#"{"hook_event_name":"LimpidTurnFailed"}"#),
+            vec![AgentEvent::Failed {
+                error: "error".into(),
+                usage_limit: None,
             }]
         );
     }
@@ -591,10 +650,10 @@ mod tests {
             )
             .expect("record")
         };
-        // The limit was reached at 2026-10-07T06:00:00Z.
+        // The turn failed at 2026-10-07T06:00:00Z.
         let report = |session: &str| {
             format!(
-                r#"{{"hook_event_name":"LimpidUsageLimitReached","session_id":"{session}","limpid_limit_reached_at":1791352800}}"#
+                r#"{{"hook_event_name":"LimpidTurnFailed","session_id":"{session}","limpid_failed_at":1791352800}}"#
             )
         };
         let applies = |payload: &str, record: Option<&RunRecord>| {
@@ -613,7 +672,7 @@ mod tests {
                 &report("a"),
                 Some(&record("a", Some("2026-10-07T06:00:00Z")))
             ),
-            "a turn the limit refused in the second it began"
+            "a turn that failed in the second it began"
         );
         assert!(
             !applies(&report("b"), Some(&in_turn)),
@@ -636,11 +695,12 @@ mod tests {
     }
 
     #[test]
-    fn a_report_for_a_turn_that_did_not_end_at_the_limit_is_no_failure() {
+    fn a_report_for_a_turn_that_did_not_fail_is_no_failure() {
         // The person began another turn before the watcher read the line.
         let rollout = br#"{"type":"event_msg","payload":{"type":"task_complete","error":{"codex_error_info":"usage_limit_exceeded"}}}
 {"type":"event_msg","payload":{"type":"task_started"}}"#;
-        let payload = br#"{"hook_event_name":"LimpidUsageLimitReached","transcript_path":"/tmp/rollout.jsonl"}"#;
+        let payload =
+            br#"{"hook_event_name":"LimpidTurnFailed","transcript_path":"/tmp/rollout.jsonl"}"#;
         let events = normalize(
             RawHookInput {
                 bytes: payload,
@@ -656,7 +716,8 @@ mod tests {
     fn the_messages_reset_times_a_limit_the_rate_limits_did_not() {
         let rollout = br#"{"type":"event_msg","payload":{"type":"task_started"}}
 {"type":"event_msg","payload":{"type":"task_complete","error":{"message":"Try again at 10:29 AM.","codex_error_info":"usage_limit_exceeded"}}}"#;
-        let payload = br#"{"hook_event_name":"LimpidUsageLimitReached","limpid_message_resets_at":1791352800}"#;
+        let payload =
+            br#"{"hook_event_name":"LimpidTurnFailed","limpid_message_resets_at":1791352800}"#;
         let events = normalize(
             RawHookInput {
                 bytes: payload,

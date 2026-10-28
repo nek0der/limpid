@@ -155,6 +155,10 @@ as they are fixed or confirmed.
 
 ## Codex
 
+- **A failed Codex turn shows as failed up to ten seconds late.** Codex runs
+  no hook when a turn fails (an error from the server, a model it does not
+  have, the plan's usage limit), so Limpid reads the failure from the
+  session's rollout, which it checks every ten seconds.
 - **A moved Codex home (`CODEX_HOME`) gets no Limpid hooks.** Codex runs a
   hook only when its own `config.toml` records that the hook is trusted, and
   Limpid writes that record only into `~/.codex/config.toml`. A Codex
