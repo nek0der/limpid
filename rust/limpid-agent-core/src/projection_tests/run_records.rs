@@ -292,3 +292,40 @@ fn a_record_that_disagrees_with_its_file_name_is_ignored() {
     misnamed.name = "SOMETHING-ELSE".to_owned();
     assert!(accept(&ProjectionState::default(), vec![misnamed]).is_empty());
 }
+
+/// A badge is named by the provider's title for the session, else the one it
+/// generated, else the opening prompt, whichever provider it is, and only
+/// once the run has reported its conversation.
+#[test]
+fn a_badge_is_named_only_with_its_conversation() {
+    let titled = |session_id: &str| {
+        let json = format!(
+            r#"{{"schemaVersion":3,"paneId":"{PANE}","runId":"{RUN}","revision":1,
+               "state":"finished","updatedAt":"2026-10-28T00:00:00Z",{session_id}
+               "providerSessionTitle":"Renamed","providerGeneratedTitle":"Generated",
+               "firstPrompt":"Opening prompt"}}"#
+        );
+        let record = RunRecord::decode(json.as_bytes()).expect("record");
+        badge_from(&record, Some(&descriptor()))
+    };
+    let known = titled(r#""sessionId":"c","#);
+    assert_eq!(known.conversation_id.as_deref(), Some("c"));
+    assert_eq!(badge_title(&known), Ok(Some("Renamed".to_owned())));
+    let generated = Badge {
+        provider_session_title: None,
+        ..known
+    };
+    assert_eq!(badge_title(&generated), Ok(Some("Generated".to_owned())));
+
+    let prompt = Badge {
+        provider_generated_title: None,
+        ..generated
+    };
+    assert_eq!(badge_title(&prompt), Ok(Some("Opening prompt".to_owned())));
+
+    // A record without a conversation may be left from a session that has
+    // ended, its opening prompt with it, so it names nothing.
+    let unknown = titled("");
+    assert_eq!(unknown.conversation_id, None);
+    assert_eq!(badge_title(&unknown), Ok(None));
+}

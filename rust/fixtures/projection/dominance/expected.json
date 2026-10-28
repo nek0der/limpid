@@ -43,6 +43,7 @@
           "updatedAt": "2026-09-14T12:08:00Z",
           "lastPrompt": "<prompt for permission-request>",
           "firstPrompt": "<prompt for permission-request>",
+          "conversationId": "00000000-0000-4000-8000-000000000001",
           "sessionStartedAt": "2026-09-14T12:05:00Z",
           "hasPrompt": true
         },
@@ -81,6 +82,7 @@
           "updatedAt": "2026-09-14T12:08:00Z",
           "lastPrompt": "<prompt for permission-request>",
           "firstPrompt": "<prompt for permission-request>",
+          "conversationId": "00000000-0000-4000-8000-000000000001",
           "sessionStartedAt": "2026-09-14T12:05:00Z",
           "hasPrompt": true
         }

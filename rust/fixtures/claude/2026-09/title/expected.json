@@ -70,7 +70,8 @@
   [
     {
       "titles": {
-        "generated_title": "Fixture generated title"
+        "generated_title": "Fixture generated title",
+        "session_title": "Fixture custom title"
       },
       "type": "turn_finished"
     }

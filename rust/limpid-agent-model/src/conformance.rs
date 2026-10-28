@@ -3,7 +3,8 @@
 //! A provider crate's `tests/conformance.rs` calls these functions with its
 //! adapter and the fixture directories under `rust/fixtures`. The driver
 //! walks `<provider>/<schema-date>/<case>/`, feeds each recorded payload to
-//! `normalize` and `approval_request`, and compares the result with the
+//! `normalize` (with the titles its title index gives, as the hook runtime
+//! adds them) and `approval_request`, and compares the result with the
 //! case's `expected.json` and `approval.expected.json`. The negative set is
 //! shared by all providers: every adapter must reject oversized or
 //! non-object input and pass unknown events through as one `Extension`.
@@ -99,13 +100,14 @@ pub fn run_normalize(
             let bytes = fs::read(payload).expect("payload is readable");
             let transcript = transcript_for(payload);
             let context = HookContext::fixture_for(adapter.descriptor());
-            let actual = adapter.normalize(
-                RawHookInput {
-                    bytes: &bytes,
-                    transcript: transcript.as_deref(),
-                },
-                &context,
-            );
+            let input = RawHookInput {
+                bytes: &bytes,
+                transcript: transcript.as_deref(),
+            };
+            let actual = adapter.normalize(input, &context).map(|mut events| {
+                add_indexed_titles(adapter, input, &context, payload, &mut events);
+                events
+            });
             let wanted = expected.get(index);
             let matches = matches!((&actual, wanted), (Ok(events), Some(want)) if events == want);
             if !matches {
@@ -255,6 +257,34 @@ fn transcript_for(payload: &Path) -> Option<Vec<u8>> {
     let stem = name.strip_suffix(".json")?;
     let transcript = payload.with_file_name(format!("{stem}.transcript.jsonl"));
     fs::read(transcript).ok()
+}
+
+/// Adds the titles the payload's title index gives, as the hook runtime does:
+/// only for a payload the adapter names an index for, read from the case's
+/// `NNNN-<Event>.title-index.jsonl`, which holds the index as it was at that
+/// call.
+fn add_indexed_titles(
+    adapter: &dyn ProviderAdapter,
+    input: RawHookInput<'_>,
+    context: &HookContext,
+    payload: &Path,
+    events: &mut [AgentEvent],
+) {
+    if !matches!(adapter.title_index_path(input, context), Ok(Some(_))) {
+        return;
+    }
+    let name = file_name(payload);
+    let Some(stem) = name.strip_suffix(".json") else {
+        return;
+    };
+    let Ok(index) = fs::read(payload.with_file_name(format!("{stem}.title-index.jsonl"))) else {
+        return;
+    };
+    if let Some(titles) = adapter.indexed_titles(input, &index) {
+        for event in events {
+            event.add_titles(&titles);
+        }
+    }
 }
 
 fn sorted_entries(directory: &Path) -> Vec<PathBuf> {

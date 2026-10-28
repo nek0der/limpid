@@ -443,6 +443,58 @@ fn codex_memory_agent_hooks_leave_the_persons_session_alone() {
     }
 }
 
+/// Codex keeps a session's name in `session_index.jsonl` under its home,
+/// apart from the payloads, and the runtime reads it beside each prompt and
+/// stop. The first turn ended before Codex named the thread, so the run has
+/// no name until the next prompt, which finds the one `/rename` gave.
+#[test]
+fn codex_takes_its_session_name_from_its_title_index() {
+    let scratch = Scratch::new("codex-thread-name");
+    let home = scratch.root.join("codex-home");
+    fs::create_dir_all(&home).expect("home");
+    let case = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/codex/2026-10/thread-name");
+    // One call with `payload`, beside the index the case recorded at
+    // `index_at`, or with no index at all.
+    let call_with = |payload: &[u8], index_at: Option<&str>| {
+        let index = home.join("session_index.jsonl");
+        match index_at.map(|stem| fs::read(case.join(format!("{stem}.title-index.jsonl")))) {
+            Some(Ok(bytes)) => fs::write(&index, bytes).expect("index"),
+            _ => drop(fs::remove_file(&index)),
+        }
+        let mut pairs = scratch.pairs("codex");
+        pairs.push(("CODEX_HOME".to_owned(), home.display().to_string()));
+        pairs.push(("LIMPID_HOOK_INVOCATION_ID".to_owned(), new_call()));
+        let env = HookEnv::from_pairs(pairs);
+        assert_eq!(
+            run_hook("codex", payload, &HookRuntime::new(&env, &NoSnapshots)),
+            HookOutcome::Applied
+        );
+    };
+    let payload = |stem: &str| fs::read(case.join(format!("{stem}.json"))).expect("payload");
+    let call = |stem: &str| call_with(&payload(stem), Some(stem));
+    let title = || scratch.record().expect("record").provider_session_title;
+    for stem in ["0000-SessionStart", "0001-UserPromptSubmit", "0002-Stop"] {
+        call(stem);
+    }
+    assert_eq!(title(), None);
+    call("0015-UserPromptSubmit");
+    assert_eq!(title().as_deref(), Some("Fixture thread name"));
+    call("0019-Stop");
+    // The session's end reads no index, and keeps the name without one.
+    call_with(&payload("0022-SessionEnd"), None);
+    assert_eq!(title().as_deref(), Some("Fixture thread name"));
+
+    // A resume starts the session again, and a start replaces the titles:
+    // the name a resumed session has is the one the index gives it.
+    let mut start: Value = serde_json::from_slice(&payload("0000-SessionStart")).expect("start");
+    start["source"] = Value::from("resume");
+    let resume = serde_json::to_vec(&start).expect("resume");
+    call_with(&resume, None);
+    assert_eq!(title(), None);
+    call_with(&resume, Some("0019-Stop"));
+    assert_eq!(title().as_deref(), Some("Fixture thread name"));
+}
+
 #[test]
 fn a_tmux_hosted_pane_records_the_endpoint_and_withholds_the_hint() {
     let scratch = Scratch::new("tmux");

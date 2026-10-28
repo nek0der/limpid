@@ -242,31 +242,26 @@ struct PaneHeaderTests {
 
     // MARK: - Agent title
 
-    @Test func agentTitle_titledProvider_followsTabTitlePrecedence() {
+    @Test func agentTitle_followsTabTitlePrecedence() {
         let all = Self.badge(
             conversationID: "c1",
             sessionTitle: "Session title",
             generatedTitle: "Generated title",
             firstPrompt: "First prompt"
         )
-        #expect(PaneHeaderRules.agentTitle(for: all, hasSessionTitles: true) == "Session title")
+        #expect(PaneHeaderRules.agentTitle(for: all) == "Session title")
 
         let generated = Self.badge(conversationID: "c1", generatedTitle: "Generated title", firstPrompt: "First prompt")
-        #expect(PaneHeaderRules.agentTitle(for: generated, hasSessionTitles: true) == "Generated title")
+        #expect(PaneHeaderRules.agentTitle(for: generated) == "Generated title")
 
         let prompt = Self.badge(conversationID: "c1", firstPrompt: "  First\nprompt ")
-        #expect(PaneHeaderRules.agentTitle(for: prompt, hasSessionTitles: true) == "First prompt")
+        #expect(PaneHeaderRules.agentTitle(for: prompt) == "First prompt")
     }
 
-    @Test func agentTitle_titledProviderWithoutConversation_hasNoTitle() {
-        let stale = Self.badge(sessionTitle: "Left over", firstPrompt: "Old prompt")
-        #expect(PaneHeaderRules.agentTitle(for: stale, hasSessionTitles: true) == nil)
-    }
-
-    @Test func agentTitle_untitledProvider_usesFirstPromptOnly() {
-        let badge = Self.badge(sessionTitle: "Ignored", firstPrompt: "Refactor the store")
-        #expect(PaneHeaderRules.agentTitle(for: badge, hasSessionTitles: false) == "Refactor the store")
-        #expect(PaneHeaderRules.agentTitle(for: Self.badge(), hasSessionTitles: false) == nil)
+    @Test func agentTitle_withoutConversation_hasNoTitle() {
+        let stale = Self.badge(sessionTitle: "Left over", generatedTitle: "Also left", firstPrompt: "Old prompt")
+        #expect(PaneHeaderRules.agentTitle(for: stale) == nil)
+        #expect(PaneHeaderRules.agentTitle(for: Self.badge(conversationID: "c1")) == nil)
     }
 
     // MARK: - State mark

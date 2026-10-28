@@ -27,11 +27,6 @@ struct ConversationNameTests {
         )
     }
 
-    /// Claude has session titles; Codex is named by its opening prompt.
-    private static func hasSessionTitles(_ kind: AgentKind) -> Bool {
-        kind == .claude
-    }
-
     private static func remembered(
         _ current: ConversationName?,
         _ badges: [AgentKind: [UUID: AgentBadge]]
@@ -40,7 +35,7 @@ struct ConversationNameTests {
         var tab = Tab.newWithSinglePane(title: "zsh", container: .loose).tab
         tab.conversationName = current
         tab.agentBadges = badges
-        tab.rememberConversationName(hasSessionTitles: hasSessionTitles)
+        tab.rememberConversationName()
         return tab.conversationName
     }
 
@@ -58,12 +53,41 @@ struct ConversationNameTests {
         #expect(titled?.conversationID == "c")
     }
 
-    @Test func aClaudeRunBeforeItsSessionIsKnown_namesNothingYet() {
+    @Test func aRunBeforeItsSessionIsKnown_namesNothingYet() {
         #expect(Self.remembered(nil, [.claude: [Self.claudePane: Self.badge(firstPrompt: "Add tests")]]) == nil)
+        #expect(Self.remembered(nil, [.codex: [Self.codexPane: Self.badge(
+            sessionTitle: "Left over",
+            firstPrompt: "Fix the build"
+        )]]) == nil)
+    }
+
+    /// A Codex conversation an earlier build named, when Codex badges
+    /// carried no id: what a tab restored after an update holds.
+    private static func savedWithoutID(_ name: String, startedAt seconds: TimeInterval? = 0) -> ConversationName {
+        ConversationName(
+            name: name,
+            provider: .codex,
+            paneID: codexPane,
+            conversationID: nil,
+            startedAt: seconds.map { Date(timeIntervalSince1970: $0) }
+        )
+    }
+
+    @Test func aNameSavedWithoutAnID_followsItsSession_andTakesItsID() {
+        // The same session in the same pane reports its id now: it is the
+        // same conversation, so its title follows and its id is kept.
+        let known = Self.remembered(Self.savedWithoutID("Fix the build"), [.codex: [Self.codexPane: Self.badge(
+            conversationID: "thread",
+            sessionTitle: "Fix the CI build",
+            firstPrompt: "Fix the build"
+        )]])
+        #expect(known?.name == "Fix the CI build")
+        #expect(known?.conversationID == "thread")
     }
 
     @Test func theName_isKept_whenTheConversationEnds() {
-        let named = Self.remembered(nil, [.codex: [Self.codexPane: Self.badge(firstPrompt: "Fix the build")]])
+        let named = Self.remembered(nil, [.codex: [Self.codexPane: Self.badge(conversationID: "t", firstPrompt: "Fix the build")]])
+        #expect(named?.name == "Fix the build")
         #expect(Self.remembered(named, [:]) == named)
     }
 
@@ -77,16 +101,23 @@ struct ConversationNameTests {
         )]])
         #expect(next?.name == "First task")
 
-        // A new Codex session in the same pane has no id, but a new start.
-        let codex = Self.remembered(nil, [.codex: [Self.codexPane: Self.badge(firstPrompt: "Codex task")]])
-        let again = Self.remembered(codex, [.codex: [Self.codexPane: Self.badge(firstPrompt: "Another", startedAt: 60)]])
+        // A name saved without an id is told from the next session in its
+        // pane by the start.
+        let again = Self.remembered(Self.savedWithoutID("Codex task"), [.codex: [Self.codexPane: Self.badge(
+            conversationID: "n",
+            firstPrompt: "Another",
+            startedAt: 60
+        )]])
         #expect(again?.name == "Codex task")
     }
 
-    @Test func aConversationWithNeitherIDNorStart_isNeverTakenForTheNext() {
-        let first = Self.remembered(nil, [.codex: [Self.codexPane: Self.badge(firstPrompt: "First", startedAt: nil)]])
-        let next = Self.remembered(first, [.codex: [Self.codexPane: Self.badge(firstPrompt: "Second", startedAt: nil)]])
-        #expect(first?.name == "First")
+    @Test func aNameSavedWithNeitherIDNorStart_isNeverTakenForTheNext() {
+        let first = Self.savedWithoutID("First", startedAt: nil)
+        let next = Self.remembered(first, [.codex: [Self.codexPane: Self.badge(
+            conversationID: "n",
+            firstPrompt: "Second",
+            startedAt: nil
+        )]])
         #expect(next?.name == "First")
     }
 
@@ -196,7 +227,7 @@ struct ConversationNameTests {
     @Test func twoConversationsAtOnce_nameTheTabByTheEarlier() {
         let named = Self.remembered(nil, [
             .claude: [Self.claudePane: Self.badge(conversationID: "c", firstPrompt: "Later", startedAt: 20)],
-            .codex: [Self.codexPane: Self.badge(firstPrompt: "Earlier", startedAt: 10)]
+            .codex: [Self.codexPane: Self.badge(conversationID: "x", firstPrompt: "Earlier", startedAt: 10)]
         ])
         #expect(named?.name == "Earlier")
     }
@@ -250,12 +281,5 @@ struct ConversationNameTests {
         let decoded = try JSONDecoder().decode(Tab.self, from: JSONSerialization.data(withJSONObject: object))
         #expect(decoded.conversationName == nil)
         #expect(decoded.id == tab.id)
-    }
-
-    /// Which providers name their sessions, which decides what names a
-    /// row and a pane header.
-    @Test func providerRegistry_sessionTitleCapabilityMatchesProviders() {
-        #expect(AgentProviderRegistry.hasSessionTitles(.claude))
-        #expect(!AgentProviderRegistry.hasSessionTitles(.codex))
     }
 }

@@ -39,24 +39,25 @@ def transcript_titles(path):
         return None
     with open(path, encoding="utf-8") as handle:
         lines = handle.read().split("\n")
+    titles = {}
+    kinds = {
+        "custom-title": ("session_title", "customTitle"),
+        "ai-title": ("generated_title", "aiTitle"),
+    }
     for line in reversed(lines):
         try:
             record = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if not isinstance(record, dict):
+        if not isinstance(record, dict) or record.get("type") not in kinds:
             continue
-        if record.get("type") != "ai-title":
-            continue
-        titles = {}
-        session = string(record, "customTitle")
-        generated = string(record, "aiTitle")
-        if session is not None:
-            titles["session_title"] = session
-        if generated is not None:
-            titles["generated_title"] = generated
-        return titles or None
-    return None
+        field, key = kinds[record["type"]]
+        value = string(record, key)
+        if field not in titles and value is not None:
+            titles[field] = value
+        if len(titles) == len(kinds):
+            break
+    return titles or None
 
 
 INTERRUPT_PREFIX = "[Request interrupted by user"
@@ -248,7 +249,11 @@ def claude_event(obj, transcript_path):
         return event
     if name == "UserPromptSubmit":
         event = {"type": "prompt_submitted", "prompt": string(obj, "prompt") or ""}
-        optional(event, "titles", transcript_titles(transcript_path))
+        titles = transcript_titles(transcript_path) or {}
+        name = string(obj, "session_title")
+        if name and name.strip():
+            titles["session_title"] = name
+        optional(event, "titles", titles or None)
         optional(event, "cwd", cwd)
         return event
     if name == "PreToolUse":
@@ -397,12 +402,53 @@ def codex_event(obj, _transcript_path):
     return {"type": "extension", "name": name, "payload": obj}
 
 
-RULES = {"claude": claude_event, "codex": codex_event}
+CODEX_TITLE_INDEX_EVENTS = {"SessionStart", "UserPromptSubmit", "Stop"}
+
+
+def codex_indexed_titles(obj, path):
+    """Mirrors `limpid-provider-codex`'s `titles`: the latest non-blank
+    `thread_name` the index gives the payload's session."""
+    if string(obj, "hook_event_name") not in CODEX_TITLE_INDEX_EVENTS:
+        return None
+    session = string(obj, "session_id")
+    if not session or not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        lines = handle.read().split("\n")
+    for line in reversed(lines):
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict) or string(entry, "id") != session:
+            continue
+        name = (string(entry, "thread_name") or "").strip()
+        if name:
+            return {"session_title": name}
+    return None
+
+
+def add_titles(event, titles):
+    """Mirrors `AgentEvent::add_titles`: fills what the payload left empty."""
+    if event is None or not titles:
+        return
+    if event["type"] == "session_started":
+        if "session_title" not in event and "session_title" in titles:
+            event["session_title"] = titles["session_title"]
+        return
+    if event["type"] not in ("prompt_submitted", "turn_finished"):
+        return
+    current = event.setdefault("titles", {})
+    for key, value in titles.items():
+        current.setdefault(key, value)
+
+
+RULES = {"claude": (claude_event, None), "codex": (codex_event, codex_indexed_titles)}
 
 
 def main(argv):
     root = argv[1] if len(argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "rust", "fixtures")
-    for provider, rule in RULES.items():
+    for provider, (rule, indexed_titles) in RULES.items():
         provider_root = os.path.join(root, provider)
         if not os.path.isdir(provider_root):
             continue
@@ -425,6 +471,9 @@ def main(argv):
                     transcript = os.path.join(case_dir, name[: -len(".json")] + ".transcript.jsonl")
                     # `None` is a payload that yields no event at all.
                     event = rule(obj, transcript)
+                    if indexed_titles is not None:
+                        index = os.path.join(case_dir, name[: -len(".json")] + ".title-index.jsonl")
+                        add_titles(event, indexed_titles(obj, index))
                     expected.append([] if event is None else [event])
                 with open(os.path.join(case_dir, "expected.json"), "w", encoding="utf-8") as handle:
                     json.dump(expected, handle, indent=2, ensure_ascii=False, sort_keys=True)

@@ -7,9 +7,8 @@ extension Tab {
     /// Remembers the tab's first conversation from the badges on it
     /// (`ConversationName.remembered`). The title is the pane header's
     /// (`PaneHeaderRules.agentTitle`), so the row and the header agree on
-    /// what a running conversation is called; `hasSessionTitles` is the
-    /// capability the rules chose the tab's title by.
-    mutating func rememberConversationName(hasSessionTitles: (AgentKind) -> Bool) {
+    /// what a running conversation is called.
+    mutating func rememberConversationName() {
         let badges = agentBadges
         let observed = badges.flatMap { provider, panes in
             panes.map { paneID, badge in
@@ -23,7 +22,7 @@ extension Tab {
         }
         let next = ConversationName.remembered(conversationName, observed: observed) { session in
             badges[session.provider]?[session.paneID].flatMap { badge in
-                PaneHeaderRules.agentTitle(for: badge, hasSessionTitles: hasSessionTitles(session.provider))
+                PaneHeaderRules.agentTitle(for: badge)
             }
         }
         if next != conversationName {
@@ -42,9 +41,9 @@ extension Tab {
     /// one the pane held before is not on record. It runs on every pass;
     /// a named tab reads nothing, and an unnamed one reads the badges the
     /// previous pass already read, so the result is the same each time.
-    mutating func rememberSavedConversationName(hasSessionTitles: (AgentKind) -> Bool) {
+    mutating func rememberSavedConversationName() {
         guard conversationName == nil else { return }
-        rememberConversationName(hasSessionTitles: hasSessionTitles)
+        rememberConversationName()
     }
 
     /// The name of the first conversation among `tabs` to start: what names

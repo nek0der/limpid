@@ -42,7 +42,8 @@ struct ClaudeHookScriptTests {
         try withTempDir { dir in
             let transcript = dir.appendingPathComponent("transcript.jsonl")
             try """
-            {"type": "ai-title", "aiTitle": "Generated title", "customTitle": "Renamed title"}
+            {"type": "ai-title", "aiTitle": "Generated title"}
+            {"type": "custom-title", "customTitle": "Renamed title"}
             """.write(to: transcript, atomically: true, encoding: .utf8)
 
             let record = try runHooks([

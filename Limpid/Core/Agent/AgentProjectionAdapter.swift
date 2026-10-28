@@ -680,12 +680,10 @@ final class AgentProjectionAdapter {
         let sessionsByPane = projection.sessionsByPane
         let titlesByTab = projection.titlesByTab
         let candidatesByPane = projection.resumeCandidatesByPane
-        let descriptors = self.descriptors
-        let hasSessionTitles = { (kind: AgentKind) in AgentProviderRegistry.hasSessionTitles(kind, in: descriptors) }
         session.applyAcrossTabs { tab in
             // Before the badges are replaced: a tab restored without a name
             // is named by the ones it was saved with.
-            tab.rememberSavedConversationName(hasSessionTitles: hasSessionTitles)
+            tab.rememberSavedConversationName()
             let leaves = tab.splitTree.allLeafIDs()
             // Every provider the interface can key by, not only the ones the
             // registry answered for. A provider with no descriptor this run —
@@ -724,10 +722,10 @@ final class AgentProjectionAdapter {
             if let title = titlesByTab[tab.id], tab.title != title {
                 tab.title = title
             }
-            // Read from the badges just applied, with the same capability
-            // the rules chose the tab's title by, so the row's name and the
-            // pane header's agree while the agent runs.
-            tab.rememberConversationName(hasSessionTitles: hasSessionTitles)
+            // Read from the badges just applied, by the rule the tab's title
+            // is chosen by, so the row's name and the pane header's agree
+            // while the agent runs.
+            tab.rememberConversationName()
         }
         onProjectionApplied?(session)
     }

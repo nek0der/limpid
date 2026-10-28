@@ -1,8 +1,9 @@
 //! Maps Codex CLI hook payloads to neutral events.
 //!
 //! The mapping mirrors what `codex-shim/limpid-hook` did and is checked
-//! against the recorded fixtures under `rust/fixtures/codex`. Codex has no
-//! session titles, so prompt and stop events carry none.
+//! against the recorded fixtures under `rust/fixtures/codex`. The payloads
+//! carry no session title; the runtime adds the one Codex keeps apart from
+//! them (see `titles`).
 //!
 //! Not every hook call is the person's agent. Codex's memory feature runs a
 //! "Memory Writing Agent" in the same process after a session starts, and

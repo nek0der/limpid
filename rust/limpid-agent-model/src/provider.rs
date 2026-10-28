@@ -85,8 +85,6 @@ impl fmt::Display for ProviderId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Capability {
-    /// The provider supplies session titles.
-    SessionTitle,
     /// `SessionEnded` may delete the resume hint.
     SessionEndDropsSession,
     /// A resume command can be generated for a stored session.

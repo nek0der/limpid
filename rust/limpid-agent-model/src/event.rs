@@ -73,10 +73,13 @@ impl EventId {
 /// observation", never "cleared": the rules keep the previous value.
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Titles {
-    /// A title the provider or the user set explicitly.
+    /// The name the provider keeps for the session: one the person gave it
+    /// (Claude's `/rename`), or Codex's thread name, which does not say who
+    /// chose it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_title: Option<String>,
-    /// A title the provider generated.
+    /// A title the provider generated (Claude's `ai-title`), below the
+    /// session's name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generated_title: Option<String>,
 }
@@ -227,9 +230,6 @@ pub enum AgentEvent {
         worktree_path: String,
         branch: String,
     },
-    TitleChanged {
-        titles: Titles,
-    },
     /// A payload the adapter recognized as an event but the vocabulary does
     /// not name. Kept whole so a new provider feature is visible before the
     /// core understands it.
@@ -237,6 +237,36 @@ pub enum AgentEvent {
         name: String,
         payload: serde_json::Value,
     },
+}
+
+impl AgentEvent {
+    /// Adds titles read from outside the payload (`indexed_titles`) to an
+    /// event that carries titles. A title the payload's own normalization
+    /// found stays: it was read for this very call. A session start carries
+    /// only the session title, which names a resumed session from its first
+    /// hook. Other events carry none and are left as they are.
+    pub fn add_titles(&mut self, added: &Titles) {
+        if let Self::SessionStarted { session_title, .. } = self {
+            if session_title.is_none() {
+                session_title.clone_from(&added.session_title);
+            }
+            return;
+        }
+        let (Self::PromptSubmitted { titles, .. } | Self::TurnFinished { titles, .. }) = self
+        else {
+            return;
+        };
+        if added.session_title.is_none() && added.generated_title.is_none() {
+            return;
+        }
+        let titles = titles.get_or_insert_with(Titles::default);
+        if titles.session_title.is_none() {
+            titles.session_title.clone_from(&added.session_title);
+        }
+        if titles.generated_title.is_none() {
+            titles.generated_title.clone_from(&added.generated_title);
+        }
+    }
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // serde passes the field by reference.
@@ -307,6 +337,68 @@ mod tests {
         assert!(json.contains("\"type\":\"compacting\""));
         let back: Vec<AgentEvent> = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, events);
+    }
+
+    #[test]
+    fn added_titles_fill_only_what_the_payload_left_empty() {
+        let added = Titles {
+            session_title: Some("Indexed".into()),
+            generated_title: None,
+        };
+        let mut finished = AgentEvent::TurnFinished {
+            continues_after_stop_hook: false,
+            titles: Some(Titles {
+                session_title: Some("From the payload".into()),
+                generated_title: None,
+            }),
+            cache: None,
+        };
+        finished.add_titles(&added);
+        assert!(matches!(
+            finished,
+            AgentEvent::TurnFinished { titles: Some(Titles { ref session_title, .. }), .. }
+                if session_title.as_deref() == Some("From the payload")
+        ));
+
+        let mut prompt = AgentEvent::PromptSubmitted {
+            prompt: "p".into(),
+            titles: None,
+            cwd: None,
+        };
+        prompt.add_titles(&added);
+        assert!(matches!(
+            prompt,
+            AgentEvent::PromptSubmitted { titles: Some(ref titles), .. } if *titles == added
+        ));
+        // Nothing added leaves the event as it was, not with empty titles.
+        let mut untouched = AgentEvent::PromptSubmitted {
+            prompt: "p".into(),
+            titles: None,
+            cwd: None,
+        };
+        untouched.add_titles(&Titles::default());
+        assert!(matches!(
+            untouched,
+            AgentEvent::PromptSubmitted { titles: None, .. }
+        ));
+
+        let mut started = AgentEvent::SessionStarted {
+            compact: false,
+            source: Some(SessionSource::Resume),
+            session_id: Some("s".into()),
+            session_title: None,
+            cwd: None,
+        };
+        started.add_titles(&added);
+        assert!(matches!(
+            started,
+            AgentEvent::SessionStarted { ref session_title, .. }
+                if session_title.as_deref() == Some("Indexed")
+        ));
+
+        let mut tool = AgentEvent::ToolFinished { tool: None };
+        tool.add_titles(&added);
+        assert_eq!(tool, AgentEvent::ToolFinished { tool: None });
     }
 
     #[test]

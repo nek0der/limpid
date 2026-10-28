@@ -2,7 +2,7 @@
 
 use crate::{
     AgentEvent, ApprovalDecision, ApprovalRequest, EventId, InstallRecipe, ProviderDescriptor,
-    TurnUsage, WorktreeIntent,
+    Titles, TurnUsage, WorktreeIntent,
 };
 use serde_json::{Map, Value};
 use std::path::PathBuf;
@@ -157,6 +157,32 @@ pub trait ProviderAdapter: Send + Sync {
     fn transcript_path(&self, input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {
         let _ = input;
         Ok(None)
+    }
+
+    /// Names the file where the provider keeps its session titles, when it
+    /// keeps them apart from the transcript (Codex's `session_index.jsonl`)
+    /// and this event's normalization carries titles. The runtime reads the
+    /// file's tail under its own limit and hands it to `indexed_titles`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NormalizeError` only for input that is too large or is not a
+    /// JSON object.
+    fn title_index_path(
+        &self,
+        input: RawHookInput<'_>,
+        context: &HookContext,
+    ) -> Result<Option<PathBuf>, NormalizeError> {
+        let _ = (input, context);
+        Ok(None)
+    }
+
+    /// The titles the file `title_index_path` named gives this call's
+    /// session. The runtime adds them to the events that carry titles
+    /// (`AgentEvent::add_titles`). `None` means the file names none.
+    fn indexed_titles(&self, input: RawHookInput<'_>, index: &[u8]) -> Option<Titles> {
+        let _ = (input, index);
+        None
     }
 
     /// Names the transcript of the turn this call begins, or the one that

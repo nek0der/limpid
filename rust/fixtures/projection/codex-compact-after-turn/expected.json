@@ -11,6 +11,7 @@
           "updatedAt": "2026-09-14T12:04:00Z",
           "lastPrompt": "<prompt for compact>",
           "firstPrompt": "<prompt for compact>",
+          "conversationId": "00000000-0000-4000-8000-000000000001",
           "sessionStartedAt": "2026-09-14T12:00:00Z",
           "hasPrompt": true
         },
@@ -36,6 +37,7 @@
           "updatedAt": "2026-09-14T12:04:00Z",
           "lastPrompt": "<prompt for compact>",
           "firstPrompt": "<prompt for compact>",
+          "conversationId": "00000000-0000-4000-8000-000000000001",
           "sessionStartedAt": "2026-09-14T12:00:00Z",
           "hasPrompt": true
         }

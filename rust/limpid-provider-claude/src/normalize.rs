@@ -2,12 +2,15 @@
 //!
 //! The mapping mirrors what `claude-shim/limpid-hook` did and is checked
 //! against the recorded fixtures under `rust/fixtures/claude`. Titles come
-//! from two places: `SessionStart` carries `session_title`, and the
-//! transcript's latest `ai-title` line carries the observed titles that this
-//! adapter reads on prompt submit and stop, because Claude has no live title
-//! event. Stop also reads the transcript for the prompt cache window the turn
-//! left behind (see `cache`), and the idle prompt for whether the tool call
-//! the run waited on has ended (see `awaited`).
+//! from two places. `SessionStart` and `UserPromptSubmit` carry
+//! `session_title` once the session has a name of the person's (`/rename`,
+//! recorded in `fixtures/claude/2026-10/rename`). The transcript's
+//! `custom-title` and `ai-title` lines carry that name and the one Claude
+//! generates, which this adapter reads on prompt submit and stop, because
+//! no hook reports a title as it changes. Stop also reads the transcript for
+//! the prompt cache window the turn left behind (see `cache`), and the idle
+//! prompt for whether the tool call the run waited on has ended (see
+//! `awaited`).
 
 use limpid_agent_model::{
     AgentEvent, CommandRun, EventId, HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderId,
@@ -35,7 +38,7 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
         },
         "UserPromptSubmit" => AgentEvent::PromptSubmitted {
             prompt: string(&object, "prompt").unwrap_or_default().to_owned(),
-            titles: input.transcript.and_then(transcript_titles),
+            titles: prompt_titles(&object, input.transcript),
             cwd,
         },
         "PreToolUse" => pre_tool_use(&object),
@@ -121,8 +124,8 @@ fn usage_limit(object: &Map<String, Value>, transcript: Option<&[u8]>) -> Option
     }
 }
 
-/// Titles are read from the transcript on the two events the shell receiver
-/// read it on: prompt submit and stop. Stop reads it for the cache window too,
+/// Titles are read from the transcript on prompt submit and stop, since no
+/// hook reports a title as it changes. Stop reads it for the cache window too,
 /// which needs no extra file read, and a failed stop for the usage limit it
 /// hit. The idle prompt reads it for whether the call the run waited on has
 /// ended; the other notifications do not, since each one named costs a file
@@ -199,30 +202,45 @@ fn pre_tool_use(object: &Map<String, Value>) -> AgentEvent {
     }
 }
 
-/// The latest `ai-title` line of a transcript. The legacy receiver used that
-/// one record for both title fields, so a separate `custom-title` record must
-/// not change the result while the shell remains the rollback backend.
+/// The titles a transcript holds: the latest `custom-title` line, which
+/// `/rename` writes, and the latest `ai-title` line, which Claude writes as it
+/// names the session. Claude Code 2.1.312 writes each on its own line, and
+/// writes `ai-title` only where it sets the terminal's title, so not inside
+/// tmux.
 fn transcript_titles(transcript: &[u8]) -> Option<Titles> {
+    let mut titles = Titles::default();
     for line in transcript.split(|byte| *byte == b'\n').rev() {
         // Most lines are conversation records; a substring check keeps the
         // JSON parse for the few that can carry a title.
-        if !contains(line, br#"ai-title""#) {
+        if !contains(line, br#"-title""#) {
             continue;
         }
         let Ok(Value::Object(record)) = serde_json::from_slice::<Value>(line) else {
             continue;
         };
-        if string(&record, "type") != Some("ai-title") {
-            continue;
-        }
-        let titles = Titles {
-            session_title: string(&record, "customTitle").map(str::to_owned),
-            generated_title: string(&record, "aiTitle").map(str::to_owned),
+        let (field, key) = match string(&record, "type") {
+            Some("custom-title") => (&mut titles.session_title, "customTitle"),
+            Some("ai-title") => (&mut titles.generated_title, "aiTitle"),
+            _ => continue,
         };
-        return (titles.session_title.is_some() || titles.generated_title.is_some())
-            .then_some(titles);
+        if field.is_none() {
+            *field = string(&record, key).map(str::to_owned);
+        }
+        if titles.session_title.is_some() && titles.generated_title.is_some() {
+            break;
+        }
     }
-    None
+    (titles.session_title.is_some() || titles.generated_title.is_some()).then_some(titles)
+}
+
+/// A prompt's titles: the session's name as the payload carries it, which
+/// a transcript Claude does not keep cannot give, else the transcript's.
+fn prompt_titles(object: &Map<String, Value>, transcript: Option<&[u8]>) -> Option<Titles> {
+    let mut titles = transcript.and_then(transcript_titles);
+    if let Some(name) = string(object, "session_title").filter(|it| !it.trim().is_empty()) {
+        titles.get_or_insert_with(Titles::default).session_title = Some(name.to_owned());
+    }
+    titles
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
@@ -432,9 +450,10 @@ mod tests {
     }
 
     #[test]
-    fn transcript_titles_use_only_the_latest_ai_title_record() {
+    fn transcript_titles_take_the_latest_line_of_each_kind() {
         let transcript = concat!(
-            "{\"type\":\"ai-title\",\"aiTitle\":\"first\",\"customTitle\":\"first custom\"}\n",
+            "{\"type\":\"custom-title\",\"customTitle\":\"old name\"}\n",
+            "{\"type\":\"ai-title\",\"aiTitle\":\"first\"}\n",
             "not json\n",
             "{\"type\":\"custom-title\",\"customTitle\":\"mine\"}\n",
             "{\"type\":\"ai-title\",\"aiTitle\":\"second\"}\n",
@@ -445,7 +464,7 @@ mod tests {
             vec![AgentEvent::TurnFinished {
                 continues_after_stop_hook: false,
                 titles: Some(Titles {
-                    session_title: None,
+                    session_title: Some("mine".into()),
                     generated_title: Some("second".into()),
                 }),
                 cache: None,
@@ -458,7 +477,10 @@ mod tests {
             ),
             vec![AgentEvent::TurnFinished {
                 continues_after_stop_hook: false,
-                titles: None,
+                titles: Some(Titles {
+                    session_title: Some("mine".into()),
+                    generated_title: None,
+                }),
                 cache: None
             }]
         );
@@ -473,6 +495,39 @@ mod tests {
                 cache: None
             }]
         );
+    }
+
+    #[test]
+    fn a_prompt_takes_the_sessions_name_from_its_payload_before_the_transcript() {
+        let renamed =
+            r#"{"hook_event_name":"UserPromptSubmit","prompt":"p","session_title":"Payload name"}"#;
+        let titles = |transcript: Option<&str>| match events(renamed, transcript).as_slice() {
+            [AgentEvent::PromptSubmitted { titles, .. }] => titles.clone(),
+            other => panic!("{other:?}"),
+        };
+        // A Claude that keeps no transcript still names its session.
+        assert_eq!(
+            titles(None),
+            Some(Titles {
+                session_title: Some("Payload name".into()),
+                generated_title: None,
+            })
+        );
+        assert_eq!(
+            titles(Some(concat!(
+                "{\"type\":\"custom-title\",\"customTitle\":\"Older name\"}\n",
+                "{\"type\":\"ai-title\",\"aiTitle\":\"Generated\"}\n",
+            ))),
+            Some(Titles {
+                session_title: Some("Payload name".into()),
+                generated_title: Some("Generated".into()),
+            })
+        );
+        let blank = r#"{"hook_event_name":"UserPromptSubmit","prompt":"p","session_title":"  "}"#;
+        assert!(matches!(
+            events(blank, None).as_slice(),
+            [AgentEvent::PromptSubmitted { titles: None, .. }]
+        ));
     }
 
     #[test]

@@ -34,26 +34,28 @@ struct ConversationName: Codable, Equatable, Sendable {
     /// The pane the conversation runs in, or last ran in: what a pane
     /// moved to another tab takes the name with.
     let paneID: UUID
-    /// The provider's conversation id, for a provider with session titles;
-    /// `nil` for one without, whose conversation is told apart by its pane
-    /// and the moment it started instead.
+    /// The provider's conversation id; `nil` only in a name a build before
+    /// Codex's ids counted saved for a Codex conversation, which is told
+    /// apart by its pane and the moment it started instead. A name taken
+    /// now always has one, since a badge without one names nothing.
     let conversationID: String?
     /// When the conversation's session began, which orders a row's tabs by
     /// whose conversation came first; `nil` when its record did not say.
     let startedAt: Date?
 
     /// Whether `observed` is this conversation: the same id, or, without
-    /// one, the same session in the same pane. A resumed session
-    /// (`claude --continue`) keeps its id, so it keeps its name too. Without
-    /// an id or a start there is nothing to tell the next conversation in
-    /// the pane from this one, so it is taken as another: the name then
-    /// stays as it was rather than move to the next conversation's.
+    /// one, the same session in the same pane, whatever id the session now
+    /// reports. A resumed session (`claude --continue`) keeps its id, so it
+    /// keeps its name too. Without an id or a start there is nothing to tell
+    /// the next conversation in the pane from this one, so it is taken as
+    /// another: the name then stays as it was rather than move to the next
+    /// conversation's.
     func isSame(_ observed: Observed) -> Bool {
         guard observed.provider == provider else { return false }
         if let conversationID {
             return observed.conversationID == conversationID
         }
-        guard let startedAt, observed.conversationID == nil, observed.paneID == paneID else { return false }
+        guard let startedAt, observed.paneID == paneID else { return false }
         return observed.startedAt == startedAt
     }
 
@@ -79,13 +81,15 @@ struct ConversationName: Codable, Equatable, Sendable {
         if let current {
             // The name and the pane follow the conversation, which may have
             // resumed in another pane; its first start stays what orders it.
+            // A name taken without an id keeps the one its session reports
+            // now, which follows the conversation from then on.
             for candidate in ordered where current.isSame(candidate) {
                 if let name = title(candidate) {
                     return ConversationName(
                         name: name,
                         provider: current.provider,
                         paneID: candidate.paneID,
-                        conversationID: current.conversationID,
+                        conversationID: current.conversationID ?? candidate.conversationID,
                         startedAt: current.startedAt
                     )
                 }

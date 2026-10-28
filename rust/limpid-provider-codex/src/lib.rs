@@ -7,15 +7,17 @@ mod approval;
 mod descriptor;
 mod json;
 mod normalize;
+mod titles;
 mod tokens;
 mod usage;
 
 use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe,
     MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, ProviderDescriptor, ProviderOutput,
-    RawHookInput, RunRecord, TurnReading, WorktreeIntent, parse_object,
+    RawHookInput, RunRecord, Titles, TurnReading, WorktreeIntent, parse_object,
 };
 use serde_json::Value;
+use std::path::PathBuf;
 
 /// The Codex CLI provider.
 #[derive(Debug, Default, Clone, Copy)]
@@ -65,6 +67,18 @@ impl ProviderAdapter for CodexAdapter {
 
     fn transcript_path(&self, input: RawHookInput<'_>) -> Result<Option<String>, NormalizeError> {
         normalize::transcript_path(input)
+    }
+
+    fn title_index_path(
+        &self,
+        input: RawHookInput<'_>,
+        context: &HookContext,
+    ) -> Result<Option<PathBuf>, NormalizeError> {
+        titles::title_index_path(input, context)
+    }
+
+    fn indexed_titles(&self, input: RawHookInput<'_>, index: &[u8]) -> Option<Titles> {
+        titles::indexed_titles(input, index)
     }
 
     fn applies_to(&self, input: RawHookInput<'_>, record: Option<&RunRecord>) -> bool {

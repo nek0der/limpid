@@ -84,16 +84,18 @@ struct AgentBadge: Codable, Equatable {
     var firstPrompt: String?
 
     /// Provider conversation ID associated with the title observations.
-    /// Missing for runs that started before formal title integration.
+    /// Missing for a run whose session start was not seen, which names
+    /// nothing (`PaneHeaderRules.agentTitle`), and in a Codex badge saved
+    /// by a build before Codex's ids counted.
     var conversationID: String?
 
-    /// Latest explicit provider title. For Claude this is the documented
-    /// `SessionStart.session_title` or a later transcript compatibility
-    /// observation of `customTitle`.
+    /// The name the provider keeps for the session: Claude's
+    /// `session_title` or `custom-title` (`/rename`), or Codex's thread
+    /// name from its `session_index.jsonl`.
     var providerSessionTitle: String?
 
-    /// Latest provider-generated title. Claude transcript parsing supplies
-    /// this only as a compatibility fallback.
+    /// The title the provider generated, below the session's name: Claude's
+    /// `ai-title`.
     var providerGeneratedTitle: String?
 
     /// Wall-clock instant the agent session began (`SessionStart`).

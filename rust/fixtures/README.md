@@ -131,9 +131,11 @@ Cases that could not be recorded as planned:
   an `ai-title` line by the time the session ended. The last two lines of its
   final `Stop` transcript were added by hand with the shape observed in real
   transcripts (`{"type":"ai-title","aiTitle":...,"sessionId":...}` and the
-  `custom-title` equivalent). Title extraction uses only the latest
-  `ai-title` record, as the shell receiver of earlier builds did. The
-  separate `custom-title` line remains here to guard that rule.
+  `custom-title` equivalent). The adapter reads the latest line of each kind:
+  `custom-title` is the name `/rename` gives the session, and `ai-title` the
+  one Claude generates. Claude Code 2.1.312 writes `ai-title` only where it
+  sets the terminal's title, which it does not inside the recorder's tmux
+  session, so a recording has that line only when it is added by hand.
 - `claude/cache-window` reuses the `session-basic` payloads. Its transcripts
   were written by hand in the shape of real Claude Code assistant lines, then
   passed through the scrubber. They had to be written by hand because the
@@ -177,6 +179,24 @@ Cases that could not be recorded as planned:
   mode then asked whether to implement the plan, and the `/exit` typed to
   end the session answered that instead, so the payloads after it were
   dropped.
+- `codex/2026-10/thread-name` records how Codex CLI 0.164.0 names a session:
+  two prompts, with `/rename` between them. Codex keeps the name in
+  `session_index.jsonl` under its home, not in a payload, and the recorder
+  does not copy that file. Each `NNNN-<Event>.title-index.jsonl` was
+  therefore written by hand: the two lines Codex appended for the session
+  (its generated name, then the `/rename`), kept at each payload whose
+  recorded time came after them, with the session id scrubbed, beside a
+  made-up line for another session. The name Codex generated was written
+  two seconds after the first `Stop`, so that `Stop` finds none. The memory
+  agent's calls (0003 to 0014, 0016 to 0018, 0020, 0021) were dropped, and
+  the remaining files keep the recorder's sequence numbers.
+- `claude/2026-10/rename` records Claude Code 2.1.312's `/rename` between two
+  prompts: the transcripts from then on hold a `custom-title` line. It was
+  recorded with `--env CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`, since a
+  Claude started from another Claude session saves no transcript otherwise.
+  The `SessionEnd` of an earlier attempt, recorded as `0000`, was dropped,
+  and `.claude-work` in the transcript paths, the developer's own
+  configuration directory, became `.claude`.
 - `transcripts/claude-2.1.309-question-declined.jsonl` is the tail of a real
   Claude Code 2.1.309 transcript: an `AskUserQuestion` call, then the Esc
   that declined it (the rejected `tool_result`, a `prompt_snapshot`
