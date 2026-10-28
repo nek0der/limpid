@@ -35,20 +35,6 @@ enum AgentProviderRegistry {
         descriptors[kind.rawValue]?.displayName ?? kind.rawValue
     }
 
-    /// Whether a provider supplies session titles. The tab title rule
-    /// branches on this capability, and a pane header naming the same
-    /// conversation has to branch the same way. The spelling is Rust's
-    /// serialized `Capability::SessionTitle`; an unreadable registry
-    /// answers false, which names a pane by its opening prompt at worst.
-    /// `descriptors` is the registry's own unless a caller holds the set
-    /// its rules run with (`AgentProjectionAdapter`).
-    static func hasSessionTitles(
-        _ kind: AgentKind,
-        in descriptors: [String: AgentProviderDescriptor] = AgentProviderRegistry.descriptors
-    ) -> Bool {
-        descriptors[kind.rawValue]?.capabilities.contains("session_title") == true
-    }
-
     /// The executable names a provider runs as, as its descriptor declares.
     /// Empty for an unknown provider, so nothing matches it.
     static func processNames(for kind: AgentKind) -> [String] {

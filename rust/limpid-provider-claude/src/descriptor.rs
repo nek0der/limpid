@@ -23,7 +23,6 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
         id: ProviderId::new(PROVIDER_ID).expect("static id is valid"),
         display_name: "Claude Code".to_owned(),
         capabilities: BTreeSet::from([
-            Capability::SessionTitle,
             Capability::SessionEndDropsSession,
             Capability::Resume,
             Capability::CwdEvents,
@@ -94,7 +93,6 @@ mod tests {
     fn descriptor_declares_the_claude_capabilities_and_legacy_directories() {
         let descriptor = descriptor();
         assert_eq!(descriptor.id.as_str(), "claude");
-        assert!(descriptor.has(Capability::SessionTitle));
         assert!(descriptor.has(Capability::CwdEvents));
         assert!(!descriptor.has(Capability::ResumeDefersToOtherLiveSession));
         assert!(descriptor.has(Capability::CacheWindow));

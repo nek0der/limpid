@@ -108,7 +108,6 @@ mod tests {
         let descriptor = descriptor();
         assert_eq!(descriptor.id.as_str(), "codex");
         assert!(descriptor.has(Capability::ResumeDefersToOtherLiveSession));
-        assert!(!descriptor.has(Capability::SessionTitle));
         assert!(!descriptor.has(Capability::SessionEndDropsSession));
         // Codex reports no cache expiry today; its adapter fills the same
         // window once it does.

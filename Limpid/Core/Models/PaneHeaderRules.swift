@@ -225,29 +225,24 @@ enum PaneHeaderRules {
     }
 
     /// The agent title for one pane's badge, chosen the way the projection
-    /// chooses a tab's title (`tab_titles` in `limpid-agent-core`), so a
+    /// chooses a tab's title (`badge_title` in `limpid-agent-core`), so a
     /// pane and the tab it names agree on what the conversation is called.
     ///
-    /// A provider that supplies session titles must also have reported a
-    /// conversation id before its titles count: without one the record may
-    /// be left over from a session that has ended. A provider without
-    /// session titles is named by its opening prompt alone. `resolve` is
-    /// the same Rust resolver the tab rule runs, so the sanitizing and the
-    /// length limits stay in one place.
+    /// A badge names nothing until the run has reported its conversation:
+    /// without one the record may be left over from a session that has
+    /// ended, its opening prompt with it. `resolve` is the same Rust
+    /// resolver the tab rule runs, so the sanitizing and the length limits
+    /// stay in one place.
     static func agentTitle(
         for badge: AgentBadge,
-        hasSessionTitles: Bool,
         resolve: (String?, String?, String?) -> String? = LimpidRustTitleResolver.resolve
     ) -> String? {
-        if hasSessionTitles {
-            guard badge.conversationID != nil else { return nil }
-            return normalizedName(resolve(
-                badge.providerSessionTitle,
-                badge.providerGeneratedTitle,
-                badge.firstPrompt
-            ))
-        }
-        return normalizedName(resolve(nil, nil, badge.firstPrompt))
+        guard badge.conversationID != nil else { return nil }
+        return normalizedName(resolve(
+            badge.providerSessionTitle,
+            badge.providerGeneratedTitle,
+            badge.firstPrompt
+        ))
     }
 
     /// The last component of a directory, or `~` for the home directory

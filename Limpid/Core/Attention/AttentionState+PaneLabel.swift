@@ -26,10 +26,7 @@ extension AttentionState {
         let agent = headerRuntime(inPane: paneID).map { runtime in
             PaneHeaderAgent(
                 providerName: AgentProviderRegistry.displayName(for: runtime.kind),
-                title: PaneHeaderRules.agentTitle(
-                    for: runtime.badge,
-                    hasSessionTitles: AgentProviderRegistry.hasSessionTitles(runtime.kind)
-                )
+                title: PaneHeaderRules.agentTitle(for: runtime.badge)
             )
         } ?? tab?.agentKind(inPane: paneID).map { kind in
             PaneHeaderAgent(providerName: AgentProviderRegistry.displayName(for: kind), title: nil)

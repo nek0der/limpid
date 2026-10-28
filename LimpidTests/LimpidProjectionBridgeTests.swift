@@ -15,8 +15,8 @@ struct LimpidProjectionBridgeTests {
         #expect(registry["codex"]?.stateDirectory == "codex-agent-states")
         // The rules branch on capabilities, so the host must be able to read
         // them rather than holding a list of its own.
-        #expect(registry["claude"]?.capabilities.contains("session_title") == true)
-        #expect(registry["codex"]?.capabilities.contains("session_title") == false)
+        #expect(registry["claude"]?.capabilities.contains("cache_window") == true)
+        #expect(registry["codex"]?.capabilities.contains("cache_window") == false)
     }
 
     /// The host hands the descriptors back to the rules in every pass. A

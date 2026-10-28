@@ -448,12 +448,6 @@ fn turn_transition(
                 }
             }
         }
-        AgentEvent::TitleChanged { titles } => {
-            observe_titles(next, Some(titles));
-            // The state does not change, so neither does what it is about:
-            // a wait renamed mid-way is still that wait.
-            carry_wait(prev, next);
-        }
         _ => {}
     }
 }
@@ -647,12 +641,11 @@ fn approval_wait(prev: Option<&RunRecord>, detail: Option<&str>, next: &mut RunR
 
 /// Returns the transcript the record names: the one the call that began the
 /// turn or opened or renewed the wait named, else the one the record already
-/// had (a tool's hook, a title change, or Claude's permission prompt after
-/// its question tool, whose path the question already gave). Only a run in a
-/// turn or in `NeedsInput` keeps one: a wait is read from it, and so is what
-/// a turn the person stopped used, which no hook brings. A path longer than
-/// any record text is dropped rather than cut, because a cut path names
-/// another file.
+/// had (a tool's hook, or Claude's permission prompt after its question
+/// tool, whose path the question already gave). Only a run in a turn or in
+/// `NeedsInput` keeps one: a wait is read from it, and so is what a turn the
+/// person stopped used, which no hook brings. A path longer than any record
+/// text is dropped rather than cut, because a cut path names another file.
 fn turn_transcript(
     prev: Option<&RunRecord>,
     context: &ApplyContext,
@@ -744,7 +737,7 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
                 .unwrap_or_default()
         }),
         // Carried through the events that neither start nor end work, such
-        // as a title change after the turn ended. The idle prompt reaches
+        // as a question asked after the turn ended. The idle prompt reaches
         // here only when it ends work, which clears it.
         cache_window: prev.and_then(|record| record.cache_window.clone()),
         usage_limit: prev.and_then(|record| record.usage_limit.clone()),
@@ -787,7 +780,6 @@ fn event_name(event: &AgentEvent) -> &'static str {
         AgentEvent::Interrupted => "interrupted",
         AgentEvent::CwdChanged { .. } => "cwd_changed",
         AgentEvent::WorktreeCreated { .. } => "worktree_created",
-        AgentEvent::TitleChanged { .. } => "title_changed",
         AgentEvent::Extension { .. } => "extension",
     }
 }

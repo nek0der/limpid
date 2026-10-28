@@ -12,7 +12,7 @@
 //! accepted, which attention episode each run is in — and the bridge's engine
 //! keeps it for the next pass; the host never sees it.
 
-use crate::title::{TitleCandidates, resolve_title};
+use crate::title::{TitleCandidates, TitleError, resolve_title};
 use crate::turn_rules::conversation_of;
 use limpid_agent_model::{
     AcceptedRun, AttachmentResolution, AttentionMarks, Badge, Capability, Command, CommandOp,
@@ -508,13 +508,10 @@ fn episode_token(state: &ProjectionState, id: &str, record: &RunRecord) -> Strin
     }
 }
 
-/// Turns a record into what a badge shows. The session title fields only reach
-/// the badge for providers that have session titles; carrying them for one that
-/// does not would let a stale value name a tab. The cache window is gated the
-/// same way, so the interface can trust that a window it is handed came from a
-/// provider that declared it can describe one.
+/// Turns a record into what a badge shows. The cache window reaches the badge
+/// only for providers that declared they can describe one, so the interface
+/// can trust that a window it is handed came from such a provider.
 fn badge_from(record: &RunRecord, descriptor: Option<&ProviderDescriptor>) -> Badge {
-    let titled = descriptor.is_some_and(|it| it.has(Capability::SessionTitle));
     let caches = descriptor.is_some_and(|it| it.has(Capability::CacheWindow));
     let present = |value: &Option<String>| value.clone().filter(|it| !it.is_empty());
     let waits = record.state == RunState::NeedsInput;
@@ -533,13 +530,9 @@ fn badge_from(record: &RunRecord, descriptor: Option<&ProviderDescriptor>) -> Ba
         turn_base_tree: present(&record.turn_base_tree),
         turn_root: present(&record.turn_root),
         worktree_root: present(&record.worktree_root),
-        conversation_id: titled.then(|| present(&record.session_id)).flatten(),
-        provider_session_title: titled
-            .then(|| present(&record.provider_session_title))
-            .flatten(),
-        provider_generated_title: titled
-            .then(|| present(&record.provider_generated_title))
-            .flatten(),
+        conversation_id: present(&record.session_id),
+        provider_session_title: present(&record.provider_session_title),
+        provider_generated_title: present(&record.provider_generated_title),
         session_started_at: present(&record.session_started_at),
         cache_window: caches.then(|| record.cache_window.clone()).flatten(),
         // The record keeps the last failure's limit through what follows;
@@ -897,46 +890,41 @@ fn session_infos(
     sessions
 }
 
-/// Names each tab after the agent session that started most recently in it.
+/// Names each tab after the agent session that started most recently in it
+/// (`badge_title`).
 ///
 /// Without that rule an older pane typing a new turn would re-emit its own
-/// opening prompt and overwrite a newer pane's label. A provider with session
-/// titles must also carry a conversation id before its titles are used, so a
-/// record left over from a session that has ended cannot name the tab.
+/// opening prompt and overwrite a newer pane's label.
 fn tab_titles(
     input: &ProjectionInput,
     badges: &BTreeMap<Uuid, BTreeMap<ProviderId, Badge>>,
 ) -> BTreeMap<Uuid, String> {
     let mut resolved = BTreeMap::new();
     for tab in &input.tabs {
-        let Some((provider, badge)) = latest_session_badge(tab.panes.iter().copied(), badges)
-        else {
+        let Some((_, badge)) = latest_session_badge(tab.panes.iter().copied(), badges) else {
             continue;
         };
-        let has_session_titles = input
-            .providers
-            .get(provider)
-            .is_some_and(|it| it.has(Capability::SessionTitle));
-        if has_session_titles && badge.conversation_id.is_none() {
-            continue;
-        }
-        let candidates = if has_session_titles {
-            TitleCandidates {
-                provider_session: badge.provider_session_title.as_deref(),
-                provider_generated: badge.provider_generated_title.as_deref(),
-                first_prompt: badge.first_prompt.as_deref(),
-            }
-        } else {
-            TitleCandidates {
-                first_prompt: badge.first_prompt.as_deref(),
-                ..TitleCandidates::default()
-            }
-        };
-        if let Ok(Some(title)) = resolve_title(candidates) {
+        if let Ok(Some(title)) = badge_title(badge) {
             resolved.insert(tab.id, title);
         }
     }
     resolved
+}
+
+/// What a badge names its agent: the provider's title for the session, else
+/// the one it generated, else the opening prompt. A badge names nothing until
+/// the run has reported its conversation, since a record without one may be
+/// left from a session that has ended, its opening prompt with it. The app
+/// names a pane header by the same rule (`PaneHeaderRules.agentTitle`).
+fn badge_title(badge: &Badge) -> Result<Option<String>, TitleError> {
+    if badge.conversation_id.is_none() {
+        return Ok(None);
+    }
+    resolve_title(TitleCandidates {
+        provider_session: badge.provider_session_title.as_deref(),
+        provider_generated: badge.provider_generated_title.as_deref(),
+        first_prompt: badge.first_prompt.as_deref(),
+    })
 }
 
 fn latest_session_badge(

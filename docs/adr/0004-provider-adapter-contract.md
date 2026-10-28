@@ -83,9 +83,12 @@ pub trait ProviderAdapter: Send + Sync {
         -> Result<Option<ApprovalRequest>, NormalizeError>;
     fn approval_output(&self, decision: &ApprovalDecision, request: &Value) -> ProviderOutput;
 
-    // Optional; both have a default implementation returning `Ok(None)`.
+    // Optional; each has a default implementation returning nothing.
     fn transcript_path(&self, input: RawHookInput<'_>)
         -> Result<Option<String>, NormalizeError>;
+    fn title_index_path(&self, input: RawHookInput<'_>, ctx: &HookContext)
+        -> Result<Option<PathBuf>, NormalizeError>;
+    fn indexed_titles(&self, input: RawHookInput<'_>, index: &[u8]) -> Option<Titles>;
     fn worktree_intent(&self, input: RawHookInput<'_>)
         -> Result<Option<WorktreeIntent>, NormalizeError>;
 }
@@ -118,6 +121,12 @@ pub trait ProviderAdapter: Send + Sync {
 - `transcript_path` names the transcript the runtime should read alongside a
   payload, so a provider that keeps one pays the extra file read only on the
   events whose normalization uses it.
+- `title_index_path` names the file where a provider keeps its session titles
+  apart from the transcript (Codex's `session_index.jsonl` under its home).
+  The runtime reads that file's tail, `indexed_titles` reads the titles of
+  the payload's session out of it, and the runtime adds them to the events
+  that carry titles (`AgentEvent::add_titles`). Claude keeps its titles in
+  its transcript, which `normalize` already reads.
 - `worktree_intent` reports a `git worktree add` the agent is about to run, so
   the runtime can intercept it before the tool runs; it is separate from the
   neutral events because it is a request to act, not an observation.
@@ -142,7 +151,6 @@ The core and the UI branch on capabilities, never on provider ids.
 
 | Capability | Meaning | Claude | Codex |
 | --- | --- | --- | --- |
-| `session_title` | The provider supplies session titles. | yes | no |
 | `session_end_drops_session` | `SessionEnd` may delete the resume hint. | yes | no |
 | `resume` | A resume command can be generated. | yes | yes |
 | `resume_defers_to_other_live_session` | Resume yields to another provider's live session in the pane. | no | yes |
@@ -159,8 +167,14 @@ The core and the UI branch on capabilities, never on provider ids.
 `SessionStarted`, `SessionEnded`, `PromptSubmitted`, `ToolStarted`,
 `ToolFinished`, `WaitingForInput`, `ApprovalRequested`, `Compacting`,
 `CompactionFinished`, `AwaitingPrompt`, `TurnFinished`, `Failed`,
-`Interrupted`, `CwdChanged`, `WorktreeCreated`, `TitleChanged`, and
-`Extension`.
+`Interrupted`, `CwdChanged`, `WorktreeCreated`, and `Extension`.
+
+Titles are no event of their own: no provider reports a title as it
+changes, so they ride on the session start, the prompt, and the turn's end,
+where the adapter or the runtime observed them. A tab and a pane header are
+named by the provider's title for the session, else the one it generated,
+else the opening prompt, and only once the run has reported its
+conversation id.
 
 An extension is promoted to a named event only when two providers emit the same
 thing. `CompactionFinished` is the recorded exception: only Codex emits it, but
@@ -367,8 +381,8 @@ step differs, or if the run's episode, `runStartedAt`, or `outsideTurnRest`
 changed, even when the state reads the same again (a `Stop`, then another late
 tool). A real `Stop` or a prompt that arrived during the snapshot changed what
 the run shows, and the end prepared for the idle prompt would replace the
-real one. The revision is not compared: a title change moves it and changes
-nothing the idle prompt ends.
+real one. The revision is not compared: every write moves it, and a write
+within the same stretch changes nothing the idle prompt ends.
 
 In the recorded payloads, the idle prompt comes only once the turn has ended
 (after its `Stop` or `StopFailure`), never during a permission prompt, but

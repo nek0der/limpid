@@ -193,8 +193,8 @@ fn a_turn_keeps_the_transcript_its_prompt_named_until_it_ends() {
     .expect("record");
     assert_eq!(waiting.transcript_path.as_deref(), Some("/t/session.jsonl"));
 
-    // The permission prompt after the question, and a title change, name
-    // no path of their own; the wait keeps the question's.
+    // The permission prompt after the question names no path of its own;
+    // the wait keeps the question's.
     let prompt_shown = apply(
         Some(&waiting),
         &AgentEvent::ApprovalRequested { detail: None },
@@ -208,26 +208,11 @@ fn a_turn_keeps_the_transcript_its_prompt_named_until_it_ends() {
         prompt_shown.transcript_path.as_deref(),
         Some("/t/session.jsonl")
     );
-    let titled = apply(
-        Some(&prompt_shown),
-        &AgentEvent::TitleChanged {
-            titles: Titles {
-                session_title: Some("Renamed".into()),
-                generated_title: None,
-            },
-        },
-        &context(),
-        &claude(),
-        NOW,
-    )
-    .run
-    .expect("record");
-    assert_eq!(titled.transcript_path.as_deref(), Some("/t/session.jsonl"));
 
     // The answer moves the run on in the same turn, which keeps the path,
     // and the turn's end lets it go.
     let answered = apply(
-        Some(&titled),
+        Some(&prompt_shown),
         &AgentEvent::ToolFinished {
             tool: Some("AskUserQuestion".into()),
         },
@@ -298,34 +283,6 @@ fn a_permission_prompt_takes_only_a_tool_events_words() {
         Some("Claude needs your permission to use Bash")
     );
     assert_eq!(record.tool, None);
-}
-
-#[test]
-fn an_event_that_keeps_the_state_keeps_what_the_wait_is_about() {
-    let titled = AgentEvent::TitleChanged {
-        titles: Titles {
-            session_title: Some("Renamed".into()),
-            generated_title: None,
-        },
-    };
-    let (record, _, _) = run(
-        &claude(),
-        &[
-            started(None),
-            prompt("go"),
-            AgentEvent::ToolStarted {
-                tool: "Bash".into(),
-                detail: Some("Bash: swift test".into()),
-            },
-            titled.clone(),
-            AgentEvent::ApprovalRequested { detail: None },
-            titled,
-        ],
-    );
-    assert_eq!(record.state, RunState::NeedsInput);
-    assert_eq!(record.wait_kind, Some(WaitKind::Approval));
-    assert_eq!(record.tool.as_deref(), Some("Bash"));
-    assert_eq!(record.detail.as_deref(), Some("Bash: swift test"));
 }
 
 #[test]
@@ -434,15 +391,9 @@ fn a_finished_turn_records_its_cache_window_and_quiet_events_keep_it() {
             started(None),
             prompt("first"),
             finished_with(NOW),
-            // A waiting-for-input event and a late title neither start
-            // nor end work, so the window still describes the cache.
+            // A waiting-for-input event neither starts nor ends work, so
+            // the window still describes the cache.
             AgentEvent::WaitingForInput { detail: None },
-            AgentEvent::TitleChanged {
-                titles: Titles {
-                    session_title: None,
-                    generated_title: Some("Title".into()),
-                },
-            },
         ],
     );
     assert_eq!(record.cache_window, Some(window(NOW)));
@@ -810,11 +761,13 @@ fn titles_are_sanitized_and_absent_observations_keep_the_previous_value() {
                 titles: None,
                 cache: None,
             },
-            AgentEvent::TitleChanged {
-                titles: Titles {
+            AgentEvent::TurnFinished {
+                continues_after_stop_hook: false,
+                titles: Some(Titles {
                     session_title: None,
                     generated_title: Some("Gen\u{7}erated".into()),
-                },
+                }),
+                cache: None,
             },
         ],
     );

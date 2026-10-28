@@ -236,7 +236,12 @@ key skips it:
   ran in it, names the tab's session row (`Tab.swift`). A file without it
   reads as a tab no agent has named. A build without it skips the key, and
   drops it if that build saves the session. This release then names the tab
-  again only while its agent still runs.
+  again only while its agent still runs. A Codex conversation's name, and
+  its agent badge, now carry Codex's `conversationId`, which earlier builds
+  left out. A name saved without one still follows its conversation, by its
+  pane and start, and takes the id from then on. An earlier build reading a
+  name with one keeps it, but stops updating it, since its own Codex badges
+  carry no id.
 - A worktree's `gitRef` still writes `ahead`, `behind`, and `isDirty` as 0, 0,
   and `false`, although nothing here reads them (`GitRef.encode(to:)` in
   `SidebarItem.swift`). An older build requires them, and without them it

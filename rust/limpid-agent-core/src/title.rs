@@ -33,10 +33,10 @@ pub enum TitleError {
 
 /// Selects and normalizes the best available automatic title.
 ///
-/// A provider session title includes both Claude's documented
-/// `SessionStart.session_title` and a later explicit provider rename. The
-/// caller collapses observations from the same conversation to their latest
-/// value before invoking this reducer.
+/// A provider session title is the name the provider keeps for the session:
+/// Claude's `session_title` or `/rename`, or Codex's thread name, which Codex
+/// may have generated. The caller collapses observations from the same
+/// conversation to their latest value before invoking this reducer.
 ///
 /// # Errors
 ///

@@ -178,11 +178,12 @@ struct SessionSidebarModelTests {
             state: .running,
             updatedAt: Date(),
             firstPrompt: "Run sleep 15 with a timer",
+            conversationID: "thread",
             sessionStartedAt: Date(timeIntervalSince1970: 0)
         )
         session.update(tab.id) {
             $0.agentBadges[.codex] = [pane: running]
-            $0.rememberConversationName { _ in false }
+            $0.rememberConversationName()
         }
         #expect(Self.model(session, project).rows.last?.name == "Run sleep 15 with a timer")
 
@@ -190,7 +191,7 @@ struct SessionSidebarModelTests {
         session.update(tab.id) {
             $0.agentBadges = [:]
             $0.title = "~/projects/sample-reviews/demo-repos/alpha"
-            $0.rememberConversationName { _ in false }
+            $0.rememberConversationName()
         }
         #expect(Self.model(session, project).rows.last?.name == "Run sleep 15 with a timer")
     }

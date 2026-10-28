@@ -43,7 +43,7 @@ use limpid_agent_core::{
 };
 use limpid_agent_model::{
     Capability, CheckResult, EventId, HookContext, InstallRecipe, ProviderAdapter,
-    ProviderDescriptor, ProviderId, RawHookInput, RunRecord, SnapshotStatus, TmuxEndpoint,
+    ProviderDescriptor, ProviderId, RawHookInput, RunRecord, SnapshotStatus, Titles, TmuxEndpoint,
     TurnReading, TurnUsage, cwd_event_file_name, parse_utc_seconds, run_record_file_name,
     session_hint_file_name,
 };
@@ -62,6 +62,11 @@ const PROMPT_RECORD_LOCK_ATTEMPTS: u32 = 200;
 /// Longest transcript slice the runtime hands an adapter. Title lines sit
 /// near the end, so a longer transcript is read from its tail.
 pub const MAX_TRANSCRIPT_BYTES: usize = 4 * 1024 * 1024;
+
+/// Longest slice of a provider's title index the runtime reads. The index is
+/// appended to as sessions are named, so the running session's latest name
+/// lies near its end; a mebibyte holds several thousand names.
+const MAX_TITLE_INDEX_BYTES: usize = 1024 * 1024;
 
 /// How the helper should finish after one hook call.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -214,13 +219,18 @@ pub fn run_hook(provider: &str, stdin: &[u8], runtime: &HookRuntime<'_>) -> Hook
     // costs no read.
     apply_context.transcript_path = adapter.turn_transcript_path(input).ok().flatten();
 
-    let events = match adapter.normalize(input, &context) {
+    let mut events = match adapter.normalize(input, &context) {
         Ok(events) => events,
         Err(error) => {
             log.line(&format!("payload rejected: {error}"));
             return HookOutcome::Rejected(error.to_string());
         }
     };
+    if let Some(titles) = indexed_titles(adapter, input, &context) {
+        for event in &mut events {
+            event.add_titles(&titles);
+        }
+    }
     // The payload already normalized, so it cannot fail here; an id that
     // cannot be had only keeps the call out of the turn records.
     let call_id = adapter.event_id(input, &context).ok().flatten();
@@ -517,6 +527,19 @@ fn subagent_usage(adapter: &dyn ProviderAdapter, path: &Path, budget: &mut usize
     usage
 }
 
+/// The titles a provider keeps apart from its transcript give this call's
+/// session (`title_index_path`). A file that cannot be read names none, and
+/// the call goes on without them.
+fn indexed_titles(
+    adapter: &dyn ProviderAdapter,
+    input: RawHookInput<'_>,
+    context: &HookContext,
+) -> Option<Titles> {
+    let path = adapter.title_index_path(input, context).ok().flatten()?;
+    let index = records::read_bounded_tail(&path, MAX_TITLE_INDEX_BYTES)?;
+    adapter.indexed_titles(input, &index)
+}
+
 /// The identity fields every record carries, resolved from the environment.
 fn identity(
     env: &HookEnv,
@@ -763,8 +786,8 @@ fn begin_time(called: &str, clock: SystemTime) -> String {
 /// same episode, turn, and rest outside a turn. A run that left and came
 /// back to the same state between the reads (a `Stop`, then another late
 /// tool) differs here though its state reads the same. The revision is not
-/// compared: every write moves it, a title change too, and that does not
-/// change what the idle prompt ends.
+/// compared: every write moves it, and a write within the same stretch
+/// does not change what the idle prompt ends.
 fn is_same_stretch(before: Option<&RunRecord>, now: Option<&RunRecord>) -> bool {
     let stretch = |record: Option<&RunRecord>| {
         record.map(|record| {
