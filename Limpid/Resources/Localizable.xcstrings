@@ -13908,36 +13908,36 @@
         }
       }
     },
-    "macOS notifications are off for Limpid.": {
+    "macOS notifications are off.": {
       "comment": "Notification history: Limpid's notification permission is turned off in macOS",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS notifications are off for Limpid."
+            "value": "macOS notifications are off."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Limpid の macOS の通知はオフです。"
+            "value": "macOS の通知はオフです。"
           }
         }
       }
     },
-    "macOS shows no banners for Limpid.": {
+    "macOS shows no banners.": {
       "comment": "Notification history: notifications are allowed, but set to show no banner or alert",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS shows no banners for Limpid."
+            "value": "macOS shows no banners."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS は Limpid のバナーを表示しない設定です。"
+            "value": "macOS のバナー表示がオフです。"
           }
         }
       }
@@ -20256,13 +20256,13 @@
         }
       }
     },
-    "macOS hasn’t asked yet whether Limpid may notify you.": {
+    "macOS hasn’t asked yet whether to allow notifications.": {
       "comment": "Notification history: macOS has not asked for Limpid's notification permission",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS は Limpid に通知を許可するかどうかをまだ確認していません。"
+            "value": "macOS で通知の許可がまだ確認されていません。"
           }
         }
       }

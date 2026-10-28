@@ -14,15 +14,15 @@ enum NotificationDeliveryStatusText {
     static func notice(_ status: NotificationDeliveryStatus, locale: Locale) -> String? {
         let resource: LocalizedStringResource? = switch (status.permission, status.focus) {
         case (.denied, _): LocalizedStringResource(
-                "macOS notifications are off for Limpid.",
+                "macOS notifications are off.",
                 comment: "Notification history: Limpid's notification permission is turned off in macOS"
             )
         case (.notAsked, _): LocalizedStringResource(
-                "macOS hasn’t asked yet whether Limpid may notify you.",
+                "macOS hasn’t asked yet whether to allow notifications.",
                 comment: "Notification history: macOS has not asked for Limpid's notification permission"
             )
         case (.allowedWithoutBanners, _): LocalizedStringResource(
-                "macOS shows no banners for Limpid.",
+                "macOS shows no banners.",
                 comment: "Notification history: notifications are allowed, but set to show no banner or alert"
             )
         case (.allowed, .on): LocalizedStringResource(

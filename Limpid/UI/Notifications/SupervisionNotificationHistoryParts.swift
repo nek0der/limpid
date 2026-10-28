@@ -96,25 +96,30 @@ struct SupervisionHistoryDeliveryNotice: View {
 
     var body: some View {
         if let notice = status.flatMap({ NotificationDeliveryStatusText.notice($0, locale: locale) }) {
-            HStack(alignment: .firstTextBaseline, spacing: LimpidLayout.Supervision.spaceS) {
-                Image(systemName: "bell.slash")
-                    .font(.supervision(.caption, weight: .medium))
-                    .foregroundStyle(SupervisionTokens.waiting.color)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: LimpidLayout.Supervision.spaceXS) {
+            // One line while the notice and its button fit side by side; a
+            // longer notice, or a narrower panel, puts the button under it.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: LimpidLayout.Supervision.spaceS) {
+                    icon
                     Text(verbatim: notice)
                         .font(.supervision(.row))
                         .foregroundStyle(SupervisionTokens.text.color)
-                        .fixedSize(horizontal: false, vertical: true)
-                    // Edged, as a banner's way to fix it is, not a link:
-                    // blue marks only unread and unviewed.
-                    Button("Notification Settings…") {
-                        guard let url = NotificationSettingsPane.url else { return }
-                        openURL(url)
-                    }
-                    .buttonStyle(.supervisionSecondary(size: .compact))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: LimpidLayout.Supervision.spaceS)
+                    settingsButton
                 }
-                Spacer(minLength: 0)
+                HStack(alignment: .firstTextBaseline, spacing: LimpidLayout.Supervision.spaceS) {
+                    icon
+                    VStack(alignment: .leading, spacing: LimpidLayout.Supervision.spaceXS) {
+                        Text(verbatim: notice)
+                            .font(.supervision(.row))
+                            .foregroundStyle(SupervisionTokens.text.color)
+                            .fixedSize(horizontal: false, vertical: true)
+                        settingsButton
+                    }
+                    Spacer(minLength: 0)
+                }
             }
             .padding(LimpidLayout.Supervision.notificationNoticeInsets)
             .background(
@@ -123,6 +128,23 @@ struct SupervisionHistoryDeliveryNotice: View {
             )
             .padding(.top, LimpidLayout.Supervision.spaceS)
         }
+    }
+
+    private var icon: some View {
+        Image(systemName: "bell.slash")
+            .font(.supervision(.caption, weight: .medium))
+            .foregroundStyle(SupervisionTokens.waiting.color)
+            .accessibilityHidden(true)
+    }
+
+    /// Edged, as a banner's way to fix it is, not a link: blue marks only
+    /// unread and unviewed.
+    private var settingsButton: some View {
+        Button("Notification Settings…") {
+            guard let url = NotificationSettingsPane.url else { return }
+            openURL(url)
+        }
+        .buttonStyle(.supervisionSecondary(size: .compact))
     }
 }
 
