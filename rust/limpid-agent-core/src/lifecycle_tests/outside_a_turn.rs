@@ -8,6 +8,7 @@ fn stop() -> AgentEvent {
         continues_after_stop_hook: false,
         titles: None,
         cache: None,
+        reply: None,
     }
 }
 
@@ -226,6 +227,7 @@ fn a_stop_a_stop_hook_held_back_begins_an_episode_after_the_late_work() {
                 continues_after_stop_hook: true,
                 titles: None,
                 cache: None,
+                reply: None,
             },
             &claude(),
         );

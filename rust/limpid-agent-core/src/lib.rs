@@ -31,6 +31,6 @@ pub use title::{
 };
 pub use turn_retention::turns_taken_by_change;
 pub use turn_rules::{
-    PROMPT_HEAD_CHARS, SnapshotTaken, TurnEnd, TurnStart, TurnStep, begin_record, conversation_of,
-    end_only_record, end_record, event_id_for, prompt_head, turn_step,
+    PROMPT_HEAD_CHARS, REPLY_HEAD_CHARS, SnapshotTaken, TurnEnd, TurnStart, TurnStep, begin_record,
+    conversation_of, end_only_record, end_record, event_id_for, prompt_head, reply_head, turn_step,
 };

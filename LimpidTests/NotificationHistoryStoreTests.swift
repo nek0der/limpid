@@ -328,12 +328,19 @@ struct NotificationHistoryStoreTests {
         let events: [NotificationEvent] = [
             .wait(agent: .claude, wait: .approval, fact: "notes.txt"),
             .wait(agent: .codex, wait: .response, fact: nil),
-            .turnFinished(agent: .claude, turn: turn, prompt: "Add the tests", promptKind: .text),
+            .turnFinished(
+                agent: .claude,
+                turn: turn,
+                prompt: "Add the tests",
+                promptKind: .text,
+                reply: "Added two tests; one still fails."
+            ),
             .turnFinished(
                 agent: .codex,
                 turn: .init(number: 1, changes: .unavailable(reason: "endMissing"), check: nil),
                 prompt: nil,
-                promptKind: .subagentMessage
+                promptKind: .subagentMessage,
+                reply: nil
             ),
             .stopped(agent: .claude, reason: "Rate limited")
         ]

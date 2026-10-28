@@ -65,7 +65,7 @@ struct AgentNotificationEmitterTests {
             #expect(entry.kind == .agentFinished)
             #expect(entry.paneID == pane)
             // With no turn handed over, the history keeps the prompt alone.
-            #expect(entry.event == .turnFinished(agent: .claude, turn: nil, prompt: "ran the tests", promptKind: .text))
+            #expect(entry.event == .turnFinished(agent: .claude, turn: nil, prompt: "ran the tests", promptKind: .text, reply: nil))
         }
     }
 

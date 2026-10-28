@@ -15,6 +15,11 @@ use std::collections::BTreeMap;
 /// the turn in a list, short enough that a pasted file is not copied.
 pub const PROMPT_HEAD_CHARS: usize = 80;
 
+/// Longest reply head kept on a turn record, in characters: longer than the
+/// prompt's, since a reply's first paragraph says what came of the turn and
+/// is shown whole where there is room for it.
+pub const REPLY_HEAD_CHARS: usize = 400;
+
 /// What an event does to the run's turn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TurnStep {
@@ -146,6 +151,167 @@ pub fn prompt_head(prompt: &str) -> (Option<PromptKind>, Option<String>) {
     )
 }
 
+/// The first paragraph of the agent's last reply that has words, on one
+/// line, without the Markdown that marks it up. The stop carries only the
+/// message the agent ended on, after the tools it ran, which tends to open
+/// with what came of the turn; a heading over it, a code block, or a rule
+/// says nothing on its own and is passed over. A list reads as its items,
+/// joined with " · ". A paragraph that ends in a colon only leads into the
+/// next ("Three problems, most serious first:"), so the next follows it.
+/// `None` when no paragraph has words (a reply of code alone).
+#[must_use]
+pub fn reply_head(reply: &str) -> Option<String> {
+    let mut paragraph: Vec<String> = Vec::new();
+    let mut is_list = false;
+    let mut fence: Option<&str> = None;
+    // A paragraph that ends in a colon, waiting for the one it leads into.
+    let mut lead: Option<String> = None;
+    for line in reply.lines().chain(std::iter::once("")) {
+        let trimmed = line.trim();
+        if let Some(marker) = fence {
+            if trimmed.starts_with(marker) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(marker) = ["```", "~~~"]
+            .into_iter()
+            .find(|marker| trimmed.starts_with(marker))
+        {
+            fence = Some(marker);
+            // A code block ends the paragraph before it, as a blank line does.
+            if let Some(head) = joined(&paragraph, is_list) {
+                match lead.take() {
+                    None if head.ends_with([':', '：']) => lead = Some(head),
+                    None => return Some(head),
+                    Some(lead) => return Some(capped(&format!("{lead} {head}"))),
+                }
+            }
+            paragraph.clear();
+            is_list = false;
+            continue;
+        }
+        if trimmed.is_empty() {
+            if let Some(head) = joined(&paragraph, is_list) {
+                match lead.take() {
+                    None if head.ends_with([':', '：']) => lead = Some(head),
+                    None => return Some(head),
+                    Some(lead) => return Some(capped(&format!("{lead} {head}"))),
+                }
+            }
+            paragraph.clear();
+            is_list = false;
+            continue;
+        }
+        if is_heading(trimmed) || is_rule(trimmed) || trimmed.starts_with('|') {
+            continue;
+        }
+        let quoted = trimmed.trim_start_matches('>').trim_start();
+        match list_item(quoted) {
+            Some(item) => {
+                is_list = true;
+                paragraph.push(item.to_owned());
+            }
+            // A line under an item goes on with that item.
+            None if is_list => {
+                if let Some(last) = paragraph.last_mut() {
+                    last.push(' ');
+                    last.push_str(quoted);
+                }
+            }
+            None => paragraph.push(quoted.to_owned()),
+        }
+    }
+    lead
+}
+
+/// The paragraph's lines as one line, or its items joined; `None` when no
+/// words are left once the markup is taken out.
+fn joined(paragraph: &[String], is_list: bool) -> Option<String> {
+    let lines: Vec<String> = paragraph
+        .iter()
+        .map(|line| plain(line))
+        .filter(|line| !line.is_empty())
+        .collect();
+    if lines.is_empty() {
+        return None;
+    }
+    Some(capped(&lines.join(if is_list { " · " } else { " " })))
+}
+
+/// `text` cut to what a record keeps (`REPLY_HEAD_CHARS`).
+fn capped(text: &str) -> String {
+    text.chars().take(REPLY_HEAD_CHARS).collect()
+}
+
+/// A line's words without inline markup: strong emphasis, code spans, and a
+/// link's or image's address, which leave their text. A single `_` or `*`
+/// stays, since it is as often part of a name (`model_not_found`) as a mark.
+fn plain(line: &str) -> String {
+    let mut text = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(open) = rest.find('[') {
+        let label_start = if rest[..open].ends_with('!') {
+            open - 1
+        } else {
+            open
+        };
+        text.push_str(&rest[..label_start]);
+        let after = &rest[open + 1..];
+        // `[text](address)`: the text stays. A `[` that opens no link is
+        // only a character.
+        let target = after.find("](").and_then(|close| {
+            after[close + 2..]
+                .find(')')
+                .map(|end| (close, close + 2 + end))
+        });
+        if let Some((close, end)) = target {
+            text.push_str(&after[..close]);
+            rest = &after[end + 1..];
+        } else {
+            text.push_str(&rest[label_start..=open]);
+            rest = after;
+        }
+    }
+    text.push_str(rest);
+    let text = text.replace("**", "").replace("__", "").replace('`', "");
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A list item's text without its marker (`-`, `*`, `+`, `1.`, `1)`).
+fn list_item(line: &str) -> Option<&str> {
+    if let Some(item) = ["- ", "* ", "+ "]
+        .into_iter()
+        .find_map(|marker| line.strip_prefix(marker))
+    {
+        return Some(item.trim_start());
+    }
+    let digits = line.chars().take_while(char::is_ascii_digit).count();
+    if digits == 0 {
+        return None;
+    }
+    line[digits..]
+        .strip_prefix(". ")
+        .or_else(|| line[digits..].strip_prefix(") "))
+        .map(str::trim_start)
+}
+
+/// An ATX heading: `#` to `######`, then a space or nothing. `#123` alone
+/// is words.
+fn is_heading(line: &str) -> bool {
+    let marks = line.chars().take_while(|c| *c == '#').count();
+    (1..=6).contains(&marks) && line[marks..].chars().next().is_none_or(char::is_whitespace)
+}
+
+/// A thematic break: three or more of one of `-`, `*`, `_`, spaces aside.
+fn is_rule(line: &str) -> bool {
+    let marks: Vec<char> = line.chars().filter(|c| !c.is_whitespace()).collect();
+    marks.len() >= 3
+        && ['-', '*', '_']
+            .into_iter()
+            .any(|mark| marks.iter().all(|c| *c == mark))
+}
+
 /// A snapshot as the runtime took it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SnapshotTaken {
@@ -183,6 +349,7 @@ pub fn begin_record(start: TurnStart<'_>) -> TurnRecord {
         display_number: start.display_number,
         prompt_head,
         prompt_kind: prompt_kind.map(RecordedPromptKind::Known),
+        reply_head: None,
         started_at: start.now.to_owned(),
         finished_at: None,
         phase: TurnPhase::Started,
@@ -236,6 +403,12 @@ pub struct TurnEnd<'a> {
     /// Whether `checks` may leave out the turn's first runs, the turn's
     /// start gone from the part of the transcript read.
     pub are_checks_partial: bool,
+    /// The reply the stop that ended the turn sent, whole, which the record
+    /// keeps the head of (`reply_head`); empty for a stop that sent none,
+    /// which leaves the turn with no reply. `None` for an end that is no
+    /// stop (a failure, an interrupt, a retake), which has nothing to say
+    /// over what the record held.
+    pub reply: Option<&'a str>,
 }
 
 /// The record with its ending filled in, judged from both snapshots.
@@ -254,6 +427,9 @@ pub fn end_record(previous: &TurnRecord, end: TurnEnd<'_>) -> TurnRecord {
         seconds_between(&record.started_at, end.now)
     };
     record.added_bytes = end.diff.and_then(|diff| diff.added_bytes);
+    if let Some(reply) = end.reply {
+        record.reply_head = reply_head(reply);
+    }
     // A later end of the same turn reads again from where the turn began,
     // so a whole reading holds the earlier one. A partial one may hold
     // less: the turn went on past the first end, and its start left the
@@ -356,6 +532,7 @@ mod tests {
                     continues_after_stop_hook: true,
                     titles: None,
                     cache: None,
+                    reply: None,
                 },
                 &records,
                 None,
@@ -504,6 +681,7 @@ mod tests {
                 usage: None,
                 checks: None,
                 are_checks_partial: false,
+                reply: None,
             },
         );
         assert_eq!(ended.phase, TurnPhase::Interrupted);
@@ -556,6 +734,60 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_reply_head_is_the_first_paragraph_with_words() {
+        // Recorded from Codex CLI 0.165.0.
+        assert_eq!(
+            reply_head("Lighthouses guide ships safely through the night.").as_deref(),
+            Some("Lighthouses guide ships safely through the night.")
+        );
+        assert_eq!(
+            reply_head(
+                "## Summary\n\nFixed the off-by-one in `add()`;\n**make test** passes.\n\n- calc.py\n- tests\n\nI did not touch divide()."
+            )
+            .as_deref(),
+            Some("Fixed the off-by-one in add(); make test passes.")
+        );
+        assert_eq!(
+            reply_head("- Renamed the watcher\n- Updated the\n  docs\n1. Tests pass").as_deref(),
+            Some("Renamed the watcher · Updated the docs · Tests pass")
+        );
+        assert_eq!(
+            reply_head("```bash\nmake test\n```\nThe [test](https://example.com/t) passes.\n")
+                .as_deref(),
+            Some("The test passes.")
+        );
+        assert_eq!(
+            reply_head("> Note: model_not_found stays as *is*\n---\n").as_deref(),
+            Some("Note: model_not_found stays as *is*")
+        );
+        assert_eq!(
+            reply_head("#\n#123 is fixed.").as_deref(),
+            Some("#123 is fixed.")
+        );
+        // Taken from the demo's pull request review.
+        assert_eq!(
+            reply_head("Three problems, most serious first:\n\n1. Major: credits apply twice.\n2. Nit: two tests share a name.").as_deref(),
+            Some("Three problems, most serious first: Major: credits apply twice. · Nit: two tests share a name.")
+        );
+        assert_eq!(
+            reply_head("修正しました：").as_deref(),
+            Some("修正しました："),
+            "a colon with nothing after it stands alone"
+        );
+        assert_eq!(reply_head("```\nonly code\n```"), None);
+        assert_eq!(reply_head(" \n\n---\n"), None);
+    }
+
+    #[test]
+    fn the_reply_head_keeps_at_most_four_hundred_characters() {
+        let long = "あ".repeat(REPLY_HEAD_CHARS + 10);
+        assert_eq!(
+            reply_head(&long).map(|head| head.chars().count()),
+            Some(REPLY_HEAD_CHARS)
+        );
+    }
+
     /// A turn whose begin left nothing to diff against still finishes, and
     /// says why its changes are unknown: the begin never landed
     /// (`beginMissing`), or the turn ran outside a repository (`notGit`).
@@ -587,6 +819,7 @@ mod tests {
                     usage: None,
                     checks: None,
                     are_checks_partial: false,
+                    reply: None,
                 },
             );
             assert_eq!(ended.phase, TurnPhase::Finished, "{reason}");
@@ -602,6 +835,34 @@ mod tests {
     /// A continued stop reads the turn again: a whole reading replaces what
     /// the turn held; a partial one keeps the larger of each count and says
     /// it is short; a partial list of checks does not replace a longer one.
+    /// A stop says what the turn ended on, even when it says nothing: the
+    /// stop that ends a turn after a stop hook replaces the earlier stop's
+    /// reply. An end that is no stop keeps the reply it found.
+    #[test]
+    fn the_last_stop_says_the_reply_and_another_end_keeps_it() {
+        let event =
+            EventId::invocation(&ProviderId::new("claude").expect("id"), Uuid::from_u128(1));
+        let end = |reply| TurnEnd {
+            phase: TurnPhase::Finished,
+            now: "2026-10-12T00:00:10Z",
+            end: captured("b"),
+            diff: None,
+            usage: None,
+            checks: None,
+            are_checks_partial: false,
+            reply,
+        };
+        let stopped = end_record(
+            &start(captured("a"), &event),
+            end(Some("## Done\n\nAll set.")),
+        );
+        assert_eq!(stopped.reply_head.as_deref(), Some("All set."));
+        let retaken = end_record(&stopped, end(None));
+        assert_eq!(retaken.reply_head.as_deref(), Some("All set."));
+        let continued = end_record(&stopped, end(Some("```\nonly code\n```")));
+        assert_eq!(continued.reply_head, None);
+    }
+
     #[test]
     fn a_later_end_keeps_the_fuller_reading() {
         let event =
@@ -625,6 +886,7 @@ mod tests {
             usage,
             checks,
             are_checks_partial,
+            reply: None,
         };
         let begun = start(captured("a"), &event);
         let first = end_record(

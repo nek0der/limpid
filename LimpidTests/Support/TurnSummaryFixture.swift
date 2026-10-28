@@ -28,6 +28,8 @@ enum TurnSummaryFixture {
         var usage: String?
         /// The prompt's first characters, as the record keeps them.
         var promptHead: String?
+        /// The reply's first paragraph, as the record keeps it.
+        var replyHead: String?
         /// Who wrote the prompt, as the projection says it; `nil` leaves
         /// the key out, as a projection from before it was kept does.
         var promptKind: TurnPromptKind?
@@ -90,12 +92,8 @@ enum TurnSummaryFixture {
         if let seconds = extras.durationSeconds {
             fields += #","durationSeconds":\#(seconds)"#
         }
-        if let promptHead = extras.promptHead {
-            guard let encoded = try String(bytes: JSONEncoder().encode(promptHead), encoding: .utf8) else {
-                throw CocoaError(.coderInvalidValue)
-            }
-            fields += #","promptHead":\#(encoded)"#
-        }
+        fields += try stringField("promptHead", extras.promptHead)
+        fields += try stringField("replyHead", extras.replyHead)
         if let promptKind = extras.promptKindJSON ?? extras.promptKind.map({ #""\#($0.rawValue)""# }) {
             fields += #","promptKind":\#(promptKind)"#
         }
@@ -183,5 +181,15 @@ enum TurnSummaryFixture {
         sourceLocation: SourceLocation = #_sourceLocation
     ) throws -> ReviewTurnRange {
         try #require(ReviewTurnRange(turns: [recordedTurn(id, number: number)]), sourceLocation: sourceLocation)
+    }
+
+    /// `,"key":"value"` with the value escaped as JSON, or nothing for
+    /// `nil`, which leaves the key out as the projection does.
+    private static func stringField(_ key: String, _ value: String?) throws -> String {
+        guard let value else { return "" }
+        guard let encoded = try String(bytes: JSONEncoder().encode(value), encoding: .utf8) else {
+            throw CocoaError(.coderInvalidValue)
+        }
+        return #","\#(key)":\#(encoded)"#
     }
 }

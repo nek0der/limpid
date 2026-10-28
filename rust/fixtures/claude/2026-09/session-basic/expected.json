@@ -24,6 +24,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for session-basic>",
       "type": "turn_finished"
     }
   ],

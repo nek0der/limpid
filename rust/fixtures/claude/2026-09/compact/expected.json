@@ -17,6 +17,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for compact>",
       "type": "turn_finished"
     }
   ],

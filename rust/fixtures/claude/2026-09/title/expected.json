@@ -24,6 +24,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for title>",
       "type": "turn_finished"
     }
   ],
@@ -50,6 +51,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for title>",
       "type": "turn_finished"
     }
   ],
@@ -69,6 +71,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for title>",
       "titles": {
         "generated_title": "Fixture generated title",
         "session_title": "Fixture custom title"

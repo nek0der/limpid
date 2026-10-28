@@ -48,6 +48,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for permission-request>",
       "type": "turn_finished"
     }
   ],

@@ -448,6 +448,11 @@ enum ChangesPanelText {
         if let times = times(row.turn, locale: locale, timeZone: timeZone) {
             lines.append(times)
         }
+        // Last and set apart, as the card's own third line is: the rest of
+        // a reply the card cut at two lines.
+        if let reply = row.turn.reply {
+            lines += ["", TurnReplyText.labeled(reply, locale: locale)]
+        }
         return lines.joined(separator: "\n")
     }
 
@@ -494,7 +499,8 @@ enum ChangesPanelText {
                 row.turn.lastCheck.map { ReceiptText.check($0, locale: locale) } ?? "",
                 row.turn.usage.map { tokenTotal($0, isExact: false, locale: locale) } ?? "",
                 row.turn.durationSeconds.map { took($0, locale: locale) } ?? "",
-                time(row.turn, locale: locale, timeZone: timeZone) ?? ""
+                time(row.turn, locale: locale, timeZone: timeZone) ?? "",
+                row.turn.reply.map { TurnReplyText.labeled($0, locale: locale) } ?? ""
             ],
             locale: locale
         )

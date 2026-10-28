@@ -483,6 +483,7 @@ fn end_reading(
         usage,
         checks,
         are_checks_partial: reading.are_commands_partial,
+        reply: None,
     }
 }
 

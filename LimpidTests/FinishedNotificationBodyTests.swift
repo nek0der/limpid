@@ -1,5 +1,5 @@
 // FinishedNotificationBodyTests.swift
-// Limpid — a finished turn's notification leads with its receipt.
+// Limpid — a finished turn's notification leads with its receipt, then its reply or prompt.
 
 import Foundation
 import Testing
@@ -29,14 +29,41 @@ struct FinishedNotificationBodyTests {
     @Test func theRunsEndedTurn_leadsWithItsReceipt_aboveThePrompt() throws {
         let history = try [Fixture.conversation: [Fixture.turn("T7", changes: Fixture.changedFiles, number: 7)]]
 
-        let body = try AppState.finishedBody(
+        let text = try AppState.finishedText(
             Self.payload(body: "Add the tests"),
             runtimes: [Self.runtime(currentTurn: "T7")],
             history: history,
             locale: Locale(identifier: "en")
         )
 
-        #expect(body == "T7 · 2 files +3 −1\nAdd the tests")
+        #expect(text.body == "T7 · 2 files +3 −1\nAdd the tests")
+        #expect(text.answered == nil, "the body quotes the prompt itself")
+    }
+
+    @Test func aTurnThatReplied_saysTheReply_andItsSubtitleTheReplysPrompt() throws {
+        let turn = try Fixture.turn(
+            "T7",
+            changes: Fixture.changedFiles,
+            number: 7,
+            extras: .init(promptHead: "Add the tests", replyHead: "Added two tests; one still fails.")
+        )
+        let history = [Fixture.conversation: [turn]]
+        let payload = try Self.payload(body: "Add the tests")
+
+        let text = AppState.finishedText(
+            payload,
+            runtimes: [Self.runtime(currentTurn: "T7")],
+            history: history,
+            locale: Locale(identifier: "en")
+        )
+        #expect(text.body == "T7 · 2 files +3 −1\nAdded two tests; one still fails.")
+        #expect(text.answered == "Add the tests")
+
+        // The prompt the body no longer quotes goes beside the place.
+        #expect(AgentNotificationEmitter.subtitle(forContainerLabel: "limpid", answered: text.answered, locale: Locale(identifier: "en"))
+            == "limpid · Add the tests")
+        #expect(AgentNotificationEmitter.subtitle(forContainerLabel: "limpid", answered: nil, locale: Locale(identifier: "en"))
+            == "limpid")
     }
 
     @Test func aTurnTheHarnessPrompted_isWordedByItsKind_underTheReceipt() throws {
@@ -52,12 +79,12 @@ struct FinishedNotificationBodyTests {
             ("en", "T7 · No file changes\nBackground work done"),
             ("ja", "T7 · ファイルの変更なし\nバックグラウンド作業の完了")
         ] {
-            #expect(try AppState.finishedBody(
+            #expect(try AppState.finishedText(
                 Self.payload(body: nil),
                 runtimes: [Self.runtime(currentTurn: "T7")],
                 history: history,
                 locale: Locale(identifier: locale)
-            ) == expected)
+            ).body == expected)
         }
     }
 
@@ -66,17 +93,17 @@ struct FinishedNotificationBodyTests {
             Fixture.turn("T7", phase: "started", changes: #"{"kind":"pending"}"#, number: 7)
         ]]
 
-        #expect(try AppState.finishedBody(
+        #expect(try AppState.finishedText(
             Self.payload(body: "Add the tests"),
             runtimes: [Self.runtime(currentTurn: "T7")],
             history: running,
             locale: Locale(identifier: "en")
-        ) == "Add the tests")
-        #expect(try AppState.finishedBody(
+        ).body == "Add the tests")
+        #expect(try AppState.finishedText(
             Self.payload(body: nil),
             runtimes: [Self.runtime(currentTurn: nil)],
             history: running,
             locale: Locale(identifier: "en")
-        ) == nil)
+        ).body == nil)
     }
 }

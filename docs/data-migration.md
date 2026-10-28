@@ -656,6 +656,11 @@ does not know is kept as it came and written back, and reads as the person's
 words; the record stays writable. A build that does not know the field keeps
 it through the record's unknown fields.
 
+A record keeps the agent's last reply's first paragraph in `replyHead`,
+another optional field of schema 1. A record written before the field
+existed has none, and its turn shows no reply; nothing is read again to fill
+it. A build that does not know the field keeps it the same way.
+
 Retention (`TurnRetentionLimits`, Settings → Advanced):
 
 - A turn goes, with its refs, once it started longer ago than the days set

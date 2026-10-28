@@ -31,6 +31,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for worktree-create>",
       "type": "turn_finished"
     }
   ],

@@ -17,6 +17,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for session-end-reasons>",
       "type": "turn_finished"
     }
   ],
@@ -45,6 +46,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for session-end-reasons>",
       "type": "turn_finished"
     }
   ],

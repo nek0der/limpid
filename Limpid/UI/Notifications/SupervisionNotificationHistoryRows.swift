@@ -133,6 +133,12 @@ struct SupervisionHistoryRow: View {
                             .supervisionTruncation(lines.isDetailASubject ? .subject : .sentence)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    // One line, as the detail above it is: the tooltip has
+                    // the rest.
+                    if let reply = lines.reply {
+                        TurnReplyLine(reply: reply, size: .row, lineLimit: 1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
             .padding(LimpidLayout.Supervision.notificationRowInsets)
@@ -236,10 +242,10 @@ struct SupervisionHistoryRow: View {
         }
     }
 
-    /// Both lines whole, which the row may cut; a closed source's says so
+    /// The row's lines whole (`Lines.help`); a closed source's says so
     /// first, as clicking it only marks it read.
     private var help: String {
-        let text = [lines.firstLine, lines.detail].compactMap(\.self).joined(separator: "\n")
+        let text = lines.help(locale: locale)
         guard isClosed else { return text }
         return NotificationHistoryHeading.paneClosed.resolved(in: locale) + "\n" + text
     }

@@ -25,6 +25,11 @@ struct TurnSummary: Equatable, Sendable, Decodable {
     /// Who wrote the prompt; `text` when the projection did not say, as an
     /// older one does not.
     let promptKind: TurnPromptKind
+    /// What the agent said as the turn ended: its reply's first paragraph
+    /// on one line, which the writer cuts to 400 characters. Optional
+    /// because a turn no stop ended has none, nor does a reply of code
+    /// alone or a record from before it was kept; read it through `reply`.
+    let replyHead: String?
     let startedAt: String
     let finishedAt: String?
     /// `unknown` also for a turn whose end never came (a later turn
@@ -73,8 +78,8 @@ struct TurnSummary: Equatable, Sendable, Decodable {
         case conversation
         case runID = "runId"
         case paneID = "paneId"
-        case displayNumber, promptHead, promptKind, startedAt, finishedAt, phase, changes, durationSeconds, lastCheck, checks, checkCount,
-             failureCount, areChecksPartial, usage, hasPrompt, begin, end
+        case displayNumber, promptHead, promptKind, replyHead, startedAt, finishedAt, phase, changes, durationSeconds, lastCheck, checks,
+             checkCount, failureCount, areChecksPartial, usage, hasPrompt, begin, end
     }
 
     private enum ChangeKeys: String, CodingKey {
@@ -93,6 +98,7 @@ struct TurnSummary: Equatable, Sendable, Decodable {
         // A kind of a shape this build cannot read costs the kind, not the
         // turn.
         promptKind = (try? container.decodeIfPresent(TurnPromptKind.self, forKey: .promptKind)) ?? .text
+        replyHead = try container.decodeIfPresent(String.self, forKey: .replyHead)
         startedAt = try container.decode(String.self, forKey: .startedAt)
         finishedAt = try container.decodeIfPresent(String.self, forKey: .finishedAt)
         phase = try container.decode(TurnPhase.self, forKey: .phase)
@@ -137,6 +143,14 @@ struct TurnSummary: Equatable, Sendable, Decodable {
     /// The prompt the turn began from, as `TurnPromptText` words it.
     var prompt: TurnPrompt {
         TurnPrompt(kind: promptKind, head: promptHead)
+    }
+
+    /// The reply the turn ended with, only while it reads as finished: a
+    /// turn that then failed or was overtaken ended on something else, and
+    /// its reply would not say what came of it.
+    var reply: String? {
+        guard phase == .finished, let replyHead, !replyHead.isEmpty else { return nil }
+        return replyHead
     }
 }
 

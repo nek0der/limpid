@@ -17,6 +17,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for thread-name>",
       "type": "turn_finished"
     }
   ],
@@ -32,6 +33,7 @@
   ],
   [
     {
+      "reply": "<last_assistant_message for thread-name>",
       "titles": {
         "session_title": "Fixture thread name"
       },

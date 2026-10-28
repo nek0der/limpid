@@ -39,8 +39,9 @@ enum NotificationHistoryRowText {
     /// What happened, as an entry tells it.
     enum Happening: Equatable {
         case wait(NotificationEvent.Wait, fact: String?)
-        /// `receipt` is the turn's facts, empty when none were kept.
-        case turn(receipt: [ReceiptRun], instruction: String?)
+        /// `receipt` is the turn's facts, empty when none were kept;
+        /// `reply` is what the agent said as it ended.
+        case turn(receipt: [ReceiptRun], instruction: String?, reply: String?)
         case stopped(reason: String?)
         case command(exitCode: Int?, durationSeconds: Double?, tabTitle: String?)
         /// An OSC 9/777 alert or a bell, in its own words.
@@ -58,10 +59,20 @@ enum NotificationHistoryRowText {
         /// Whether the detail is a file's name or a command, which the line
         /// cuts in the middle so both ends stay; prose is cut at its end.
         let isDetailASubject: Bool
+        /// A finished turn's reply, under the detail; `nil` for anything
+        /// else, and for a turn that kept none.
+        let reply: String?
 
         /// The first line whole, for the tooltip and VoiceOver.
         var firstLine: String {
             facts.reduce(headline) { $0 + $1.text }
+        }
+
+        /// Every line whole, for the tooltip, which the row may cut; the
+        /// reply said as one, as VoiceOver says it.
+        func help(locale: Locale) -> String {
+            let reply = reply.map { TurnReplyText.labeled($0, locale: locale) }
+            return [firstLine, detail, reply].compactMap(\.self).joined(separator: "\n")
         }
     }
 
@@ -77,8 +88,8 @@ enum NotificationHistoryRowText {
         let separator = ReceiptRun(text: AgentStatusText.separator(locale: locale), role: .quiet)
         switch happening {
         case let .wait(wait, fact):
-            return Lines(headline: waitName(wait, locale: locale), facts: [], detail: fact, isDetailASubject: wait == .approval)
-        case let .turn(receipt, instruction):
+            return Lines(headline: waitName(wait, locale: locale), facts: [], detail: fact, isDetailASubject: wait == .approval, reply: nil)
+        case let .turn(receipt, instruction, reply):
             return Lines(
                 headline: LocalizedStringResource(
                     "Turn finished",
@@ -86,14 +97,16 @@ enum NotificationHistoryRowText {
                 ).resolved(in: locale),
                 facts: receipt.isEmpty ? [] : [separator] + receipt,
                 detail: instruction,
-                isDetailASubject: false
+                isDetailASubject: false,
+                reply: reply
             )
         case let .stopped(reason):
             return Lines(
                 headline: LocalizedStringResource("Stopped").resolved(in: locale),
                 facts: [],
                 detail: reason,
-                isDetailASubject: false
+                isDetailASubject: false,
+                reply: nil
             )
         case let .command(exitCode, durationSeconds, tabTitle):
             let hasFailed = (exitCode ?? 0) != 0
@@ -112,15 +125,16 @@ enum NotificationHistoryRowText {
                 headline: headline.resolved(in: locale),
                 facts: facts,
                 detail: detail.isEmpty ? nil : detail,
-                isDetailASubject: false
+                isDetailASubject: false,
+                reply: nil
             )
         case let .alert(title, body):
             let message = message(body, locale: locale)
             let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty else {
-                return Lines(headline: message, facts: [], detail: nil, isDetailASubject: false)
+                return Lines(headline: message, facts: [], detail: nil, isDetailASubject: false, reply: nil)
             }
-            return Lines(headline: title, facts: [], detail: message.isEmpty ? nil : message, isDetailASubject: false)
+            return Lines(headline: title, facts: [], detail: message.isEmpty ? nil : message, isDetailASubject: false, reply: nil)
         }
     }
 
@@ -180,6 +194,7 @@ enum NotificationHistoryRowText {
             [
                 AgentStatusText.spokenList(first, locale: locale),
                 AgentStatusText.spoken(lines.detail ?? "", locale: locale),
+                lines.reply.map { TurnReplyText.labeled($0, locale: locale) } ?? "",
                 timeLabel,
                 isUnread ? LocalizedStringResource("Unread").resolved(in: locale) : ""
             ],
@@ -253,7 +268,7 @@ enum NotificationHistoryRowText {
             return .wait(wait, fact: fact)
         case .agentFinished:
             let (receipt, instruction) = LegacyText.turn(entry.body)
-            return .turn(receipt: receipt.map { [ReceiptRun(text: $0, role: .plain)] } ?? [], instruction: instruction)
+            return .turn(receipt: receipt.map { [ReceiptRun(text: $0, role: .plain)] } ?? [], instruction: instruction, reply: nil)
         case .agentError:
             return .stopped(reason: LegacyText.stopReason(entry.body))
         case .commandFinished:
@@ -267,9 +282,9 @@ enum NotificationHistoryRowText {
         switch event {
         case let .wait(_, wait, fact):
             return .wait(wait, fact: words(fact))
-        case let .turnFinished(_, turn, prompt, promptKind):
+        case let .turnFinished(_, turn, prompt, promptKind, reply):
             let instruction = TurnPromptText.instruction(TurnPrompt(kind: promptKind, head: prompt), locale: locale)
-            return .turn(receipt: turn.map { receiptRuns($0, locale: locale) } ?? [], instruction: instruction)
+            return .turn(receipt: turn.map { receiptRuns($0, locale: locale) } ?? [], instruction: instruction, reply: reply)
         case let .stopped(_, reason):
             return .stopped(reason: words(reason))
         }

@@ -1,0 +1,33 @@
+// TurnReplyLine.swift
+// Limpid — what the agent said as a turn ended, under what the turn did.
+
+import SwiftUI
+
+/// A turn's reply, led by a mark that says it is the agent's answer to the
+/// prompt above it. The changes panel's card and the notification
+/// history's row draw it here, so the two read as the same thing; each
+/// keeps its own size and how many lines it gives the reply. The words are
+/// muted, as the facts above them are, and the mark is held to 3:1 as
+/// marks are.
+struct TurnReplyLine: View {
+    let reply: String
+    let size: LimpidFont.Supervision.Size
+    let lineLimit: Int
+    /// Struck out with the prompt, for a turn a restore took back.
+    var isStruckOut = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: LimpidLayout.Supervision.spaceXS) {
+            Image(systemName: "arrow.turn.down.right")
+                .font(.supervision(.glyph))
+                .foregroundStyle(SupervisionTokens.closedMark.color)
+            Text(verbatim: reply)
+                .font(.supervision(size))
+                .foregroundStyle(SupervisionTokens.muted.color)
+                .strikethrough(isStruckOut)
+                .lineLimit(lineLimit)
+                .supervisionTruncation(.sentence)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}

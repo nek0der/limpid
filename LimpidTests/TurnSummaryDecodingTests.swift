@@ -1,5 +1,5 @@
 // TurnSummaryDecodingTests.swift
-// Limpid — reading a turn as the projection sends it: who wrote its prompt, and the tree it ended at.
+// Limpid — reading a turn as the projection sends it: who wrote its prompt, the tree it ended at, and its reply.
 
 import Foundation
 import Testing
@@ -99,5 +99,18 @@ struct TurnSummaryDecodingTests {
         // A record that kept the runs but not the count counts the runs.
         extras.failureCount = nil
         #expect(try Fixture.turn("c", extras: extras).failureCount == 1)
+    }
+
+    /// Only a turn that still reads as finished says its reply: one that
+    /// failed after, or that an end never came for, ended on something else.
+    @Test func theReply_isSaidOnlyWhileTheTurnReadsAsFinished() throws {
+        var extras = Fixture.Extras()
+        extras.replyHead = "Added two tests."
+        #expect(try Fixture.turn("a", extras: extras).reply == "Added two tests.")
+        #expect(try Fixture.turn("b", phase: "failed", extras: extras).reply == nil)
+        #expect(try Fixture.turn("c", phase: "started", extras: extras).reply == nil)
+        extras.replyHead = ""
+        #expect(try Fixture.turn("d", extras: extras).reply == nil)
+        #expect(try Fixture.turn("e").reply == nil, "a record from before the reply was kept")
     }
 }
