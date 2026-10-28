@@ -1,0 +1,9 @@
+{
+  "cwd": "/tmp/example",
+  "hook_event_name": "Interrupt",
+  "model": "gpt-6.1-sol",
+  "permission_mode": "bypassPermissions",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/Users/example/.codex/sessions/2026/10/28/rollout-2026-10-28T14-15-54-00000000-0000-4000-8000-0000000000ff.jsonl",
+  "turn_id": "00000000-0000-4000-8000-000000000013"
+}

@@ -1311,6 +1311,52 @@ fn a_claude_turn_reads_what_it_and_its_subagents_used_at_its_stop() {
     );
 }
 
+/// Codex runs `Interrupt` when the person stops a turn with Esc, and has
+/// written what the turn used by then (`fixtures/codex/2026-10/
+/// interrupted-turn`, with its rollout reduced in `fixtures/transcripts/
+/// codex-0.164.0-interrupted-turn.jsonl`). The turn stopped while its
+/// command ran had made two requests; the one stopped while Codex was still
+/// reasoning had made none. The command never finished, so no check counts.
+#[test]
+fn an_interrupted_codex_turn_reads_what_it_used_from_the_rollout() {
+    let scratch = Scratch::new("codex-interrupted-turn");
+    let rollout = scratch.root.join("rollout.jsonl");
+    fs::write(
+        &rollout,
+        include_bytes!("../../fixtures/transcripts/codex-0.164.0-interrupted-turn.jsonl"),
+    )
+    .expect("rollout");
+    for payload in dated_fixture_case("codex", "2026-10", "interrupted-turn") {
+        let mut payload: Value = serde_json::from_slice(&payload).expect("payload");
+        payload["transcript_path"] = Value::from(rollout.display().to_string());
+        let payload = serde_json::to_vec(&payload).expect("payload");
+        assert_eq!(
+            scratch.call_as("codex", RUN, Some(&new_call()), &payload),
+            HookOutcome::Applied
+        );
+    }
+
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 2);
+    assert!(
+        turns
+            .iter()
+            .all(|turn| turn.phase == TurnPhase::Interrupted)
+    );
+    assert_eq!(
+        turns[0].usage,
+        Some(TurnUsage {
+            input_tokens: 25_514,
+            cache_write_tokens: 0,
+            cache_read_tokens: 25_216,
+            output_tokens: 97,
+            is_partial: false,
+        })
+    );
+    assert_eq!(turns[0].check_count, 0);
+    assert_eq!(turns[1].usage, None);
+}
+
 #[test]
 fn a_codex_turn_reads_its_usage_and_checks_from_the_rollout_at_its_stop() {
     let scratch = Scratch::new("turn-usage-codex");

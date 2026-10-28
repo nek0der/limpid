@@ -211,6 +211,18 @@ Cases that could not be recorded as planned:
   the hook runtime's `declined_waits` and `stopped_turn` tests, the
   bridge's projection engine tests, and the app's `AgentStoppedTurnTests`
   read both.
+- `codex/2026-10/interrupted-turn` records two turns of Codex CLI 0.164.0
+  stopped with Esc: the first while its `sleep 60` ran, the second while
+  Codex was still reasoning on a long essay. Both end with `Interrupt`. The
+  second turn's `turn_id` was given its own placeholder (`…0013`), since the
+  scrubber gives every `turn_id` the same one.
+  `transcripts/codex-0.164.0-interrupted-turn.jsonl` is that session's
+  rollout reduced by hand to the lines the turn reading uses: each turn's
+  `task_started`, the first turn's two `token_usage_record` lines, and each
+  `turn_aborted`. The ids became the fixture placeholders and the response
+  ids `resp_0001` and `resp_0002`. Codex had written the first turn's usage
+  before its `Interrupt` ran, and never wrote any for the second. The hook
+  runtime's replay test reads both.
 
 ## Scrubbing
 
