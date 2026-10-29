@@ -42,6 +42,7 @@ fn started(title: Option<&str>) -> AgentEvent {
 fn prompt(text: &str) -> AgentEvent {
     AgentEvent::PromptSubmitted {
         prompt: text.into(),
+        kind: None,
         titles: None,
         cwd: Some("/repo".into()),
     }

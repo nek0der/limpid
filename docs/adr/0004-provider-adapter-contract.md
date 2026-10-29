@@ -462,7 +462,18 @@ counts as an end it is done with, so it is not announced either. While the
 stretch runs, the run shows its tool, and a permission prompt in it names that
 tool, never the earlier error.
 
-Tool events open no turn record, inside a turn or outside one.
+Tool events open no turn record, inside a turn or outside one, with one
+exception: a Codex hook of a turn Codex began itself, which no prompt opened.
+Every hook inside a Codex turn names the turn (`turn_id`), so the runtime
+begins such a turn at the first of them, while the run is in no turn and the
+hook names a turn other than the run's last one. It applies a
+`PromptSubmitted` before the hook's own events, under an id of its own
+(`<call>#turn`) so a retry of the hook applies its events once, and takes the
+begin snapshot before the hook's tool runs. A turn first seen at its end (a
+`Stop` with no tool before it) takes none: whatever it changed happened
+before the hook, so its begin is missing, as an end-only turn's is. A hook of
+the run's last turn after that turn's `Stop` is the late work this section
+describes, and begins nothing.
 
 ### Prompt cache window
 

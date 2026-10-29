@@ -693,8 +693,11 @@ back. A reminder that closes within the head leaves the person's words after
 it as the instruction. A prompt led by a reminder longer than the head reads
 as an automatic message rather than as the person's words. A kind this build
 does not know is kept as it came and written back, and reads as the person's
-words; the record stays writable. A build that does not know the field keeps
-it through the record's unknown fields.
+words; the record stays writable. The kind `goal`, of a turn Codex began
+itself for the person's `/goal`, is new: the previous release reads it as
+the person's words and shows the goal's objective without saying it is a
+goal. A build that does not know the field keeps it through the record's
+unknown fields.
 
 A record keeps the agent's last reply's first paragraph in `replyHead`,
 another optional field of schema 1. A record written before the field

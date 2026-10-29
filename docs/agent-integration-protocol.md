@@ -340,12 +340,29 @@ events, and those decide what is written (`turn_step` in
 
 | Provider hook | Event | Effect on the turn |
 |---|---|---|
-| `UserPromptSubmit` | `PromptSubmitted` | begins a turn: a begin snapshot, the counter's next number, a new record with the provider's own id for the turn (`providerTurnId`: Claude's `prompt_id`, Codex's `turn_id`) |
+| `UserPromptSubmit`, and the first Codex hook of a turn Codex began itself (below) | `PromptSubmitted` | begins a turn: a begin snapshot, the counter's next number, a new record with the provider's own id for the turn (`providerTurnId`: Claude's `prompt_id`, Codex's `turn_id`) |
 | `Stop` | `TurnFinished` | ends the turn as `finished` with an end snapshot and the difference, and the tokens it used read from the transcript (`usage`); for Codex, also every check it ran (`checks`, `checkCount`, `lastCheck`) |
-| Claude `StopFailure`, a Codex `Stop` that carries an error (none does today), a failed Codex turn Limpid's watcher reports from the rollout (the usage limit among others) | `Failed` | ends it as `failed`; Claude's reads `usage` as `Stop` does |
+| Claude `StopFailure`, a failed Codex turn Limpid's watcher reports from the rollout (the usage limit among others) | `Failed` | ends it as `failed`; Claude's reads `usage` as `Stop` does |
 | Codex `Interrupt` | `Interrupted` | ends it as `interrupted`, with `usage` and the checks read from the rollout as `Stop` reads them; a command still running when the turn stopped is not counted |
 | Claude `Notification` (`idle_prompt`) | `AwaitingPrompt` | for a run working after its turn's `Stop`, takes that turn's end snapshot and difference again and keeps how it ended; for a turn open at least 55 seconds, ends it as `interrupted`, a turn waiting on a question or permission only when the transcript shows the awaited call ended: every call of the latest assistant message has a result, or an interrupt line follows it (`awaited_call_ended`); otherwise nothing (docs/adr/0004-provider-adapter-contract.md, "Work outside a turn") |
 | Claude `PostToolUse` / `PostToolUseFailure` of a check command | — | sets the turn's `lastCheck`, adds a mark to `checks`, and counts it in `checkCount` (and in `failureCount` when it failed) |
+
+Codex begins some turns itself, with no `UserPromptSubmit`: those its `/goal`
+starts and continues. Every hook inside a Codex turn names it (`turn_id` on
+`PreToolUse`, `PostToolUse`, `PermissionRequest`, `Stop`, and `Interrupt`),
+so the runtime begins the turn at the first of them that comes while the run
+is in no turn and names a turn other than the run's last one (`turn_marker`).
+It applies a `PromptSubmitted` before the call's own events, under an id of
+its own (`<call>#turn`), so the begin snapshot is taken before the call's
+tool runs; a turn first seen at its `Stop` or `Interrupt` takes none and
+shows its begin missing. Of two hooks of one turn that run at once, the first
+to take the record lock begins the turn. The rollout says what began the turn
+(`unprompted_prompt`): its `task_started` names the trigger, and for a goal,
+the `thread_goal_updated` before it holds the objective, which becomes the
+turn's prompt with `promptKind` `goal`. A call of the run's last turn after
+that turn's `Stop` is that turn's late work and begins nothing, and a
+subagent's tool, which names the subagent's turn (`agent_id`), begins nothing
+either.
 
 Not every hook call comes from the pane's agent. Codex's memory feature runs a
 "Memory Writing Agent" thread in the same process after a session starts.
@@ -417,9 +434,11 @@ The files live in the provider's state directory, under `turns/`:
   background task's end (`<task-notification>`), a subagent's hand-back
   (`<agent-message`), and reminders before the person's words
   (`<system-reminder>`, `<local-command-caveat>`). `promptKind` (`text`,
-  `backgroundTask`, `subagentMessage`, `injected`) says who wrote the
-  prompt. It is judged from the whole prompt when the turn begins
-  (`classify_prompt`). `promptHead` is the prompt's first 80 characters on
+  `backgroundTask`, `subagentMessage`, `injected`, `goal`) says who wrote
+  the prompt. It is judged from the whole prompt when the turn begins
+  (`classify_prompt`), except for a turn Codex began itself, whose kind the
+  rollout gives: `goal`, with the goal's objective as the prompt, for a turn
+  of the person's `/goal`. `promptHead` is the prompt's first 80 characters on
   one line. For `text`, it holds the person's words, with the leading
   reminders left out however long they were. For any other kind, it holds
   the prompt as it came, which the application never shows.

@@ -1,0 +1,15 @@
+{
+  "cwd": "/tmp/example",
+  "hook_event_name": "PostToolUse",
+  "model": "gpt-6.1-terra",
+  "permission_mode": "bypassPermissions",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "tool_input": {
+    "command": "test \"$(cat a.txt)\" = a && test \"$(wc -c < a.txt | tr -d ' ')\" = 1 && printf b > b.txt && python3 -c 'from pathlib import Path; assert Path(\"a.txt\").read_bytes() == b\"a\"; assert Path(\"b.txt\").read_bytes() == b\"b\"; print(\"a.txt and b.txt verified\")'"
+  },
+  "tool_name": "Bash",
+  "tool_response": "a.txt and b.txt verified\n",
+  "tool_use_id": "toolu_00000000000000000000000",
+  "transcript_path": "/Users/example/.codex/sessions/2026/10/29/rollout-2026-10-29T16-34-28-00000000-0000-4000-8000-0000000000ff.jsonl",
+  "turn_id": "00000000-0000-4000-8000-000000000013"
+}

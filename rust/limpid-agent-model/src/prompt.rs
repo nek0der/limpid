@@ -10,6 +10,10 @@
 //! person's words; only a record from before the kind was kept is judged
 //! again from its head when it is summarized. The same judgment keeps
 //! these prompts out of notification bodies and tab titles.
+//!
+//! Codex begins some turns with no prompt at all: those its `/goal` starts
+//! and continues. The provider names their kind itself (`Goal`), since no
+//! text says it.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -28,6 +32,9 @@ pub enum PromptKind {
     /// Another message the harness added, with none of the person's words
     /// left to show.
     Injected,
+    /// A turn the agent began on its own to work toward the goal the person
+    /// set (Codex's `/goal`). The head is the goal's objective.
+    Goal,
 }
 
 /// A record's `promptKind` as it was read. The kind only words the turn,

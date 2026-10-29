@@ -167,12 +167,22 @@ struct TurnSummary: Equatable, Sendable, Decodable {
 /// end, a subagent's hand-back, a reminder). The hook judges it from the
 /// whole prompt when the turn begins (`classify_prompt` in
 /// `limpid-agent-model`); the projection judges a record from before it was
-/// kept again from its head.
+/// kept again from its head. A turn Codex began itself for the goal the
+/// person set (`/goal`) has no prompt; the hook names it `goal`, with the
+/// goal's objective as its head.
 enum TurnPromptKind: String, Equatable, Sendable, Decodable {
     case text
     case backgroundTask
     case subagentMessage
     case injected
+    case goal
+
+    /// The head is the person's own words: what they typed, or the goal
+    /// they set. They name a conversation and are cut for a menu line; the
+    /// harness's prompts do neither.
+    var isThePersonsWords: Bool {
+        self == .text || self == .goal
+    }
 
     /// A kind this build does not know reads as the person's words: its
     /// head is then shown as it came, which is what a build before the kind

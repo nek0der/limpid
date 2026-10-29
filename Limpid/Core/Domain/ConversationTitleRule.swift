@@ -24,7 +24,7 @@ enum ConversationTitleRule {
     ) -> String? {
         // A prompt the harness wrote is no name: worded by its kind, it
         // would name every conversation a background task woke alike.
-        let prompt = firstPrompt.flatMap { $0.kind == .text ? $0.head : nil }
+        let prompt = firstPrompt.flatMap { $0.kind.isThePersonsWords ? $0.head : nil }
         return [tabName, rememberedTabName, liveTitle, recordedTitle, prompt].lazy.compactMap(firstLine).first
     }
 

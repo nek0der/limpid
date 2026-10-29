@@ -2,7 +2,7 @@
 
 use crate::{
     AgentEvent, ApprovalDecision, ApprovalRequest, EventId, InstallRecipe, PlanUsage,
-    PlanUsageAnswer, ProviderDescriptor, Titles, TurnUsage, WorktreeIntent,
+    PlanUsageAnswer, PromptKind, ProviderDescriptor, Titles, TurnUsage, WorktreeIntent,
 };
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
@@ -329,13 +329,42 @@ pub trait ProviderAdapter: Send + Sync {
         true
     }
 
-    /// The provider's own id for the turn a prompt payload begins, which its
-    /// transcript tags the turn's lines with. The runtime keeps it on the
-    /// turn record so the turn's end can find where the turn began.
-    /// Providers that name no turn keep the default.
+    /// The provider's own id for the turn a payload belongs to, which its
+    /// transcript tags the turn's lines with: the turn a prompt begins, and
+    /// for a provider that names it on them, the turn a tool, a permission
+    /// request, or an end is part of. The runtime keeps it on the turn record
+    /// so the turn's end can find where the turn began, and a call outside a
+    /// turn whose id is not the last turn's begins a turn of its own
+    /// (`unprompted_prompt`). Providers that name no turn keep the default.
     fn turn_marker(&self, input: RawHookInput<'_>) -> Option<String> {
         let _ = input;
         None
+    }
+
+    /// The transcript to read for what began the turn `turn_marker` names,
+    /// for a call that begins a turn no prompt began. Only then is it read,
+    /// as `unprompted_prompt` needs it; providers whose every turn begins
+    /// with a prompt keep the default.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NormalizeError` only for input that is too large or is not a
+    /// JSON object.
+    fn unprompted_turn_transcript_path(
+        &self,
+        input: RawHookInput<'_>,
+    ) -> Result<Option<String>, NormalizeError> {
+        let _ = input;
+        Ok(None)
+    }
+
+    /// What began the turn `marker` names, which no prompt began (Codex's
+    /// goal turns), read from `input.transcript`: the words to show for it,
+    /// who wrote them, and the folder the payload names. The default, and a
+    /// turn the transcript says nothing of, has no words and no kind.
+    fn unprompted_prompt(&self, input: RawHookInput<'_>, marker: &str) -> UnpromptedPrompt {
+        let _ = (input, marker);
+        UnpromptedPrompt::default()
     }
 
     /// What the turn a payload ends used and ran, read from
@@ -388,6 +417,20 @@ pub trait ProviderAdapter: Send + Sync {
         let _ = (transcript, is_whole, marker);
         None
     }
+}
+
+/// What began a turn no prompt began, for the record of that turn
+/// (`ProviderAdapter::unprompted_prompt`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UnpromptedPrompt {
+    /// The words the turn shows in place of a prompt: a goal's objective.
+    /// Empty when there are none.
+    pub prompt: String,
+    /// Who they come from; `None` when the transcript does not say.
+    pub kind: Option<PromptKind>,
+    /// The folder the turn runs in, as the payload names it, where its
+    /// begin snapshot is taken (`PromptSubmitted`'s `cwd`).
+    pub cwd: Option<String>,
 }
 
 /// What a provider's transcript says of the turn a payload ends. Each part

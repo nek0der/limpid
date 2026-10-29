@@ -39,6 +39,7 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
         },
         "UserPromptSubmit" => AgentEvent::PromptSubmitted {
             prompt: string(&object, "prompt").unwrap_or_default().to_owned(),
+            kind: None,
             titles: prompt_titles(&object, input.transcript),
             cwd,
         },

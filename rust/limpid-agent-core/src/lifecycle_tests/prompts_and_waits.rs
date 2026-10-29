@@ -585,6 +585,7 @@ fn compaction_keeps_the_opening_prompt_and_generated_title() {
             started(Some("Formal")),
             AgentEvent::PromptSubmitted {
                 prompt: "first".into(),
+                kind: None,
                 titles: Some(Titles {
                     session_title: None,
                     generated_title: Some("Generated".into()),
