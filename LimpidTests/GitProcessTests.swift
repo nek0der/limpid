@@ -130,7 +130,11 @@ struct GitProcessDeadlineTests {
             } catch {
                 thrown = error
             }
-            #expect(clock.now - started < .seconds(5), "the deadline, the grace, and no more")
+            // The run gives up 1 second for the deadline plus twice the
+            // 2-second grace, 5 seconds, when something of the group outlives
+            // SIGKILL. The bound is well short of the 30 the script sleeps
+            // and leaves room for a busy CI runner.
+            #expect(clock.now - started < .seconds(15), "the deadline and the grace, not the script's own end")
             guard case let .timedOut(seconds, _)? = thrown as? GitProcessError else {
                 Issue.record("expected a timeout, got \(String(describing: thrown))")
                 return
@@ -167,7 +171,7 @@ struct GitProcessDeadlineTests {
             }
             #expect(!hasProcessesLeft)
             let pid = try #require(pid_t(String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
-            #expect(kill(pid, 0) == -1 && errno == ESRCH, "the hook is gone once the run returns")
+            #expect(!ProcessLiveness.isLive(pid), "the hook is gone once the run returns")
         }
     }
 

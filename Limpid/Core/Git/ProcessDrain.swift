@@ -201,9 +201,7 @@ final class GroupedProcess: DrainedChild {
     /// child itself, exited but not reaped, is still in the group.
     var hasGroupMembersLeft: Bool {
         guard isReaped else { return true }
-        // EPERM means something is there that is no longer ours to signal
-        // (it changed its user), which is still something left.
-        return kill(-pid, 0) == 0 || errno == EPERM
+        return ProcessLiveness.hasLiveMembers(group: pid)
     }
 
     /// Whether the child has exited, reaping it if so.

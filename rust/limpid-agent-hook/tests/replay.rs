@@ -1631,7 +1631,7 @@ fn a_codex_goal_turn_first_seen_at_its_stop_shows_its_begin_missing() {
         include_bytes!("../../fixtures/transcripts/codex-0.165.0-goal.jsonl"),
     )
     .expect("rollout");
-    let path = rollout.display().to_string();
+    let path = json_text(&rollout);
     let codex = |payload: String| {
         scratch.call_as("codex", RUN, Some(&new_call()), payload.as_bytes());
     };

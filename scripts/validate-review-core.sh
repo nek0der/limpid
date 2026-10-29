@@ -20,7 +20,7 @@ swiftc -Xfrontend -disable-sandbox -emit-module -emit-library \
     -enable-upcoming-feature ExistentialAny \
     -module-cache-path "$review_output/modules" \
     Limpid/Core/Review/ReviewTerminalProbe.swift \
-    Limpid/Core/Process/ProcessNames.swift \
+    Limpid/Core/Process/ProcessNames.swift Limpid/Core/Process/ProcessLiveness.swift \
     Limpid/Core/Tmux/TmuxBinding.swift Limpid/Core/Tmux/TmuxClientProbe.swift \
     Limpid/Core/Tmux/TmuxTopology.swift \
     Limpid/Core/Tmux/TmuxSocketPath.swift \

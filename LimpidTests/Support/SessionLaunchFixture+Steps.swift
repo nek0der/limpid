@@ -52,9 +52,10 @@ extension SessionLaunchFixture {
         return (fixture, pid)
     }
 
-    /// Whether the process is still there.
+    /// Whether the process is still there. A killed process not yet reaped
+    /// writes nothing, so it is not.
     static func isRunning(_ pid: pid_t) -> Bool {
-        kill(pid, 0) == 0
+        ProcessLiveness.isLive(pid)
     }
 
     struct StepDidNotStart: Error {}
