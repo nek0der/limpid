@@ -439,7 +439,6 @@ mod tests {
                 wait_kind: None,
                 tool: None,
                 run_started_at: None,
-                context_tokens: None,
                 is_tmux_hosted: None,
                 updated_at: "2026-09-14T12:00:00Z".to_owned(),
                 last_prompt: Some("list the files".to_owned()),

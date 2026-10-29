@@ -490,8 +490,6 @@ pub struct Badge {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_started_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_tokens: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_tmux_hosted: Option<bool>,
     pub updated_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

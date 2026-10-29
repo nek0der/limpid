@@ -522,7 +522,6 @@ fn badge_from(record: &RunRecord, descriptor: Option<&ProviderDescriptor>) -> Ba
         wait_kind: record.wait_kind.filter(|_| waits),
         tool: waits.then(|| present(&record.tool)).flatten(),
         run_started_at: present(&record.run_started_at),
-        context_tokens: record.context_tokens,
         is_tmux_hosted: record.is_tmux_hosted,
         updated_at: record.updated_at.clone(),
         last_prompt: present(&record.last_prompt),

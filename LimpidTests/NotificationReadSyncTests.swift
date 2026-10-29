@@ -27,7 +27,7 @@ struct NotificationReadSyncTests {
             kind: .codex,
             runID: runID,
             revision: revision,
-            badge: AgentBadge(state: state, detail: nil, runStartedAt: nil, contextTokens: nil, updatedAt: Date(), lastPrompt: nil),
+            badge: AgentBadge(state: state, detail: nil, runStartedAt: nil, updatedAt: Date(), lastPrompt: nil),
             paneIDs: [paneID]
         )
         runtime.stateEpisodeToken = stateEpisodeToken

@@ -407,9 +407,8 @@ fn turn_transition(
                 approval_wait(prev, detail.as_deref(), next);
             }
         }
-        AgentEvent::Compacting { context_tokens } => {
+        AgentEvent::Compacting => {
             next.state = RunState::Compacting;
-            next.context_tokens = *context_tokens;
             next.cache_window = None;
         }
         AgentEvent::ToolFinished { .. } => {
@@ -749,8 +748,6 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
         run_started_at: prev.and_then(|record| record.run_started_at.clone()),
         updated_at: now.to_owned(),
         last_hook_event: None,
-        // The shell wrote the token count only on the event that carried it.
-        context_tokens: None,
         pid: context.pid.map(|pid| pid.to_string()),
         is_tmux_hosted: context.is_tmux_hosted.then_some(true),
         // A previous record may come from the unbounded shell writer. Apply
@@ -830,7 +827,7 @@ fn event_name(event: &AgentEvent) -> &'static str {
         AgentEvent::ToolFinished { .. } => "tool_finished",
         AgentEvent::WaitingForInput { .. } => "waiting_for_input",
         AgentEvent::ApprovalRequested { .. } => "approval_requested",
-        AgentEvent::Compacting { .. } => "compacting",
+        AgentEvent::Compacting => "compacting",
         AgentEvent::CompactionFinished => "compaction_finished",
         AgentEvent::AwaitingPrompt { .. } => "awaiting_prompt",
         AgentEvent::TurnFinished { .. } => "turn_finished",

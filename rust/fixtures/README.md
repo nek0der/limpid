@@ -126,9 +126,8 @@ Cases that could not be recorded as planned:
   comes from the rollout instead: the helper's watcher reports the turn's
   `task_complete` with an `error` (`LimpidTurnFailed`), which the adapter's
   tests and the hook runtime's replay tests cover.
-- `claude/stop-failure` carries the error under `error`, not under
-  `error_type` as the shell receiver of earlier builds expected. The fixture
-  keeps the real key.
+- `claude/stop-failure` carries the error under `error`, the only key the
+  adapter reads; the shell receiver of earlier builds expected `error_type`.
 - `claude/title` was recorded over three turns, but Claude Code had not written
   an `ai-title` line by the time the session ended. The last two lines of its
   final `Stop` transcript were added by hand with the shape observed in real

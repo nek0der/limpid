@@ -183,12 +183,7 @@ pub enum AgentEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
     },
-    Compacting {
-        /// The provider's context size at the moment it compacts, when it
-        /// reports one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        context_tokens: Option<u64>,
-    },
+    Compacting,
     CompactionFinished,
     /// The agent sits at its prompt with nothing running (Claude's idle
     /// `Notification`). Only Claude says so; it is named rather than left an
@@ -329,9 +324,7 @@ mod tests {
                 session_title: None,
                 cwd: Some("/tmp".into()),
             },
-            AgentEvent::Compacting {
-                context_tokens: Some(12),
-            },
+            AgentEvent::Compacting,
             AgentEvent::TurnFinished {
                 continues_after_stop_hook: false,
                 titles: Some(Titles {
@@ -363,6 +356,14 @@ mod tests {
         assert!(json.contains("\"type\":\"compacting\""));
         let back: Vec<AgentEvent> = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, events);
+    }
+
+    #[test]
+    fn a_compacting_event_an_earlier_build_wrote_with_a_token_count_still_decodes() {
+        let event: AgentEvent =
+            serde_json::from_str(r#"{"type":"compacting","context_tokens":120000}"#)
+                .expect("decodes");
+        assert_eq!(event, AgentEvent::Compacting);
     }
 
     #[test]

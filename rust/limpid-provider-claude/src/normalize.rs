@@ -62,9 +62,7 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
             },
             _ => extension(&event_name, object),
         },
-        "PreCompact" => AgentEvent::Compacting {
-            context_tokens: object.get("current_token_count").and_then(Value::as_u64),
-        },
+        "PreCompact" => AgentEvent::Compacting,
         "Stop" => AgentEvent::TurnFinished {
             continues_after_stop_hook: object
                 .get("stop_hook_active")
@@ -80,11 +78,7 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
             background_work: background_work(&object),
         },
         "StopFailure" => {
-            // Recorded payloads carry the reason under `error`; the shell
-            // receiver expected `error_type`, kept as a fallback.
-            let error = string(&object, "error")
-                .or_else(|| string(&object, "error_type"))
-                .unwrap_or("error");
+            let error = string(&object, "error").unwrap_or("error");
             AgentEvent::Failed {
                 usage_limit: if error == "rate_limit" {
                     usage_limit(&object, input.transcript)
@@ -94,20 +88,10 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
                 error: error.to_owned(),
             }
         }
-        "CwdChanged" => {
-            let new_cwd = ["new_cwd", "newCwd", "cwd"]
-                .iter()
-                .find_map(|key| string(&object, key))
-                .unwrap_or_default()
-                .to_owned();
-            AgentEvent::CwdChanged {
-                new_cwd,
-                old_cwd: ["old_cwd", "oldCwd", "previous_cwd"]
-                    .iter()
-                    .find_map(|key| string(&object, key))
-                    .map(str::to_owned),
-            }
-        }
+        "CwdChanged" => AgentEvent::CwdChanged {
+            new_cwd: string(&object, "new_cwd").unwrap_or_default().to_owned(),
+            old_cwd: string(&object, "old_cwd").map(str::to_owned),
+        },
         _ => extension(&event_name, object),
     };
     Ok(vec![event])
@@ -864,7 +848,7 @@ mod tests {
     }
 
     #[test]
-    fn stop_failure_reads_error_then_error_type() {
+    fn stop_failure_reads_its_error_or_says_error() {
         let payload = r#"{"hook_event_name":"StopFailure","error":"server_error"}"#;
         assert_eq!(
             events(payload, None),
@@ -873,12 +857,24 @@ mod tests {
                 usage_limit: None,
             }]
         );
-        let payload = r#"{"hook_event_name":"StopFailure","error_type":"rate_limit"}"#;
+        let payload = r#"{"hook_event_name":"StopFailure"}"#;
         assert_eq!(
             events(payload, None),
             vec![AgentEvent::Failed {
-                error: "rate_limit".into(),
-                usage_limit: Some(UsageLimit::default()),
+                error: "error".into(),
+                usage_limit: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn cwd_changed_reads_the_new_and_the_old_folder() {
+        let payload = r#"{"hook_event_name":"CwdChanged","cwd":"/repo/src","old_cwd":"/repo","new_cwd":"/repo/src"}"#;
+        assert_eq!(
+            events(payload, None),
+            vec![AgentEvent::CwdChanged {
+                new_cwd: "/repo/src".into(),
+                old_cwd: Some("/repo".into()),
             }]
         );
     }

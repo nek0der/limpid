@@ -28,7 +28,6 @@ struct AgentStateRecordFixture: Codable, Equatable {
     var runStartedAt: String?
     var updatedAt: String
     var lastHookEvent: String?
-    var contextTokens: Int?
     var pid: String?
     var lastPrompt: String?
     var turnBaseTree: String?

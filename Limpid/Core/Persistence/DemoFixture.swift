@@ -675,7 +675,6 @@ enum DemoFixture {
             state: state,
             detail: detail,
             runStartedAt: runningFor.map { Date(timeIntervalSinceNow: -TimeInterval($0)) },
-            contextTokens: nil,
             updatedAt: Date(timeIntervalSinceNow: -TimeInterval(secondsAgo)),
             lastPrompt: prompt,
             worktreeRoot: root.path,

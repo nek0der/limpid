@@ -280,9 +280,7 @@ fn a_compaction_mid_turn_keeps_the_turn_open_and_one_after_it_rests() {
         &[
             started(None),
             prompt("first"),
-            AgentEvent::Compacting {
-                context_tokens: None,
-            },
+            AgentEvent::Compacting,
             compact_start(),
         ],
     );
@@ -297,9 +295,7 @@ fn a_compaction_mid_turn_keeps_the_turn_open_and_one_after_it_rests() {
             started(None),
             prompt("first"),
             stop(),
-            AgentEvent::Compacting {
-                context_tokens: None,
-            },
+            AgentEvent::Compacting,
             compact_start(),
         ],
     );
@@ -328,9 +324,7 @@ fn the_idle_prompt_ends_a_turn_that_stopped_without_a_stop_as_an_interrupt() {
             started(None),
             prompt("first"),
             bash("cargo test"),
-            AgentEvent::Compacting {
-                context_tokens: None,
-            },
+            AgentEvent::Compacting,
             compact_start(),
         ],
     );
@@ -346,13 +340,7 @@ fn the_idle_prompt_ends_a_turn_that_stopped_without_a_stop_as_an_interrupt() {
     // A turn left compacting ends the same way.
     let (compacting, _, _) = run(
         &claude(),
-        &[
-            started(None),
-            prompt("first"),
-            AgentEvent::Compacting {
-                context_tokens: None,
-            },
-        ],
+        &[started(None), prompt("first"), AgentEvent::Compacting],
     );
     let ended = idle_at(&compacting, A_MINUTE_LATER).expect("record");
     assert_eq!(ended.state, RunState::Finished);
@@ -486,9 +474,7 @@ fn a_codex_compaction_after_the_turn_rests_at_the_prompt() {
             started(None),
             prompt("first"),
             stop(),
-            AgentEvent::Compacting {
-                context_tokens: None,
-            },
+            AgentEvent::Compacting,
             AgentEvent::CompactionFinished,
         ],
     );
