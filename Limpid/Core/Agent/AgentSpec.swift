@@ -30,9 +30,9 @@ struct AgentBadge: Codable, Equatable {
     var state: AgentState
 
     /// Free-form tag used by the hover tooltip: `tool_name`
-    /// (PreToolUse), `error_type` (StopFailure), `"permission"` /
-    /// permission-request message (Notification / PermissionRequest),
-    /// etc. Empty / nil when there is nothing to add.
+    /// (PreToolUse), `error` (StopFailure), Claude's permission-prompt
+    /// message (Notification) or `"permission"`, etc. Empty / nil when
+    /// there is nothing to add.
     var detail: String?
 
     /// Wall-clock instant `UserPromptSubmit` was observed: set while a
@@ -45,10 +45,6 @@ struct AgentBadge: Codable, Equatable {
     /// time as `Date().timeIntervalSince(runStartedAt)` so it never goes
     /// stale.
     var runStartedAt: Date?
-
-    /// `current_token_count` from the most recent `PreCompact`. Used
-    /// for the compacting tooltip; not load-bearing for icon choice.
-    var contextTokens: Int?
 
     /// `true` while the agent runs inside a tmux session Limpid hosts for
     /// it, so the pane strip's tab can mark the pane as one that outlives a quit.

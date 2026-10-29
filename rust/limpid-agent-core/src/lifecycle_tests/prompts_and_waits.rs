@@ -483,9 +483,7 @@ fn every_event_that_starts_or_ends_work_clears_the_cache_window() {
             reason: Some("exit".into()),
             session_id: Some("session-1".into()),
         },
-        AgentEvent::Compacting {
-            context_tokens: Some(1),
-        },
+        AgentEvent::Compacting,
         AgentEvent::CompactionFinished,
         AgentEvent::Failed {
             error: "server_error".into(),
@@ -593,13 +591,10 @@ fn compaction_keeps_the_opening_prompt_and_generated_title() {
                 }),
                 cwd: None,
             },
-            AgentEvent::Compacting {
-                context_tokens: Some(120_000),
-            },
+            AgentEvent::Compacting,
         ],
     );
     assert_eq!(record.state, RunState::Compacting);
-    assert_eq!(record.context_tokens, Some(120_000));
     assert_eq!(record.run_started_at.as_deref(), Some(NOW));
 
     let restarted = apply(
@@ -628,8 +623,6 @@ fn compaction_keeps_the_opening_prompt_and_generated_title() {
         Some("Generated")
     );
     assert_eq!(restarted.session_started_at.as_deref(), Some(LATER));
-    // The token count is not carried; only the event that reports it sets it.
-    assert_eq!(restarted.context_tokens, None);
 
     let fresh = apply(
         Some(&restarted),
@@ -652,9 +645,7 @@ fn codex_compaction_and_interrupt_return_to_a_settled_state() {
         &[
             started(None),
             prompt("first"),
-            AgentEvent::Compacting {
-                context_tokens: None,
-            },
+            AgentEvent::Compacting,
             AgentEvent::CompactionFinished,
         ],
     );
@@ -830,9 +821,7 @@ fn detail_belongs_to_one_event_only() {
     );
     let compacting = apply(
         Some(&record),
-        &AgentEvent::Compacting {
-            context_tokens: None,
-        },
+        &AgentEvent::Compacting,
         &context(),
         &claude(),
         LATER,

@@ -311,11 +311,7 @@ def claude_event(obj, transcript_path):
             return event
         return {"type": "extension", "name": name, "payload": obj}
     if name == "PreCompact":
-        event = {"type": "compacting"}
-        tokens = obj.get("current_token_count")
-        if isinstance(tokens, int) and not isinstance(tokens, bool) and tokens >= 0:
-            event["context_tokens"] = tokens
-        return event
+        return {"type": "compacting"}
     if name == "Stop":
         event = {"type": "turn_finished"}
         optional(event, "titles", transcript_titles(transcript_path))
@@ -326,11 +322,10 @@ def claude_event(obj, transcript_path):
         optional(event, "background_work", background_work(obj))
         return event
     if name == "StopFailure":
-        return {"type": "failed", "error": string(obj, "error") or string(obj, "error_type") or "error"}
+        return {"type": "failed", "error": string(obj, "error") or "error"}
     if name == "CwdChanged":
-        new_cwd = string(obj, "new_cwd") or string(obj, "newCwd") or cwd or ""
-        event = {"type": "cwd_changed", "new_cwd": new_cwd}
-        optional(event, "old_cwd", string(obj, "old_cwd") or string(obj, "oldCwd") or string(obj, "previous_cwd"))
+        event = {"type": "cwd_changed", "new_cwd": string(obj, "new_cwd") or ""}
+        optional(event, "old_cwd", string(obj, "old_cwd"))
         return event
     return {"type": "extension", "name": name, "payload": obj}
 
@@ -409,23 +404,14 @@ def codex_event(obj, _transcript_path):
         optional(event, "tool", string(obj, "tool_name"))
         return event
     if name == "PermissionRequest":
-        event = {"type": "approval_requested"}
-        optional(event, "detail", string(obj, "message"))
-        return event
+        return {"type": "approval_requested"}
     if name == "PreCompact":
-        event = {"type": "compacting"}
-        tokens = obj.get("current_token_count")
-        if isinstance(tokens, int) and not isinstance(tokens, bool) and tokens >= 0:
-            event["context_tokens"] = tokens
-        return event
+        return {"type": "compacting"}
     if name == "PostCompact":
         return {"type": "compaction_finished"}
     if name == "Interrupt":
         return {"type": "interrupted"}
     if name == "Stop":
-        error = string(obj, "error_type")
-        if error:
-            return {"type": "failed", "error": error}
         event = {"type": "turn_finished"}
         if obj.get("stop_hook_active") is True:
             event["continues_after_stop_hook"] = True

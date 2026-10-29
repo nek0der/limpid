@@ -297,9 +297,7 @@ fn a_compaction_after_the_turn_clears_it() {
             started(None),
             prompt("go"),
             stop(Some(SHELL)),
-            AgentEvent::Compacting {
-                context_tokens: None,
-            },
+            AgentEvent::Compacting,
             compacted,
         ],
     );

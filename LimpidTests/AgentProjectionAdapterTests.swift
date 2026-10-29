@@ -615,7 +615,6 @@ struct AgentProjectionAdapterTests {
             runStartedAt: nil,
             updatedAt: "2026-09-09T00:00:00Z",
             lastHookEvent: nil,
-            contextTokens: nil,
             pid: pid,
             lastPrompt: nil
         )

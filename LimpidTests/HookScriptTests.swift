@@ -362,9 +362,6 @@ struct HookScriptTests {
             for (key, expected) in step.texts {
                 #expect(optionalText(record, key) == expected, "step \(index) \(event): \(key)")
             }
-            if let contextTokens = step.contextTokens {
-                #expect(record["contextTokens"] as? Int == contextTokens, "step \(index) \(event)")
-            }
         }
         // Every start refreshes `sessionStartedAt`, so across the final
         // SessionStart the value can only move forward; equality would hold
@@ -490,7 +487,6 @@ private struct LifecycleStep {
     /// Text fields the record should hold after this event; a nil value
     /// means the field is absent.
     var texts: [String: String?] = [:]
-    var contextTokens: Int?
 }
 
 private extension HookAgent {
@@ -523,8 +519,8 @@ private extension HookAgent {
                     state: "needsInput", lastHookEvent: "waiting_for_input", episodeToken: 3
                 ),
                 LifecycleStep(
-                    payload: payload("PreCompact", extra: ["current_token_count": 42]),
-                    state: "compacting", lastHookEvent: "compacting", episodeToken: 4, contextTokens: 42
+                    payload: payload("PreCompact"),
+                    state: "compacting", lastHookEvent: "compacting", episodeToken: 4
                 ),
                 LifecycleStep(
                     payload: payload("Stop"),
@@ -574,13 +570,19 @@ private extension HookAgent {
                     texts: ["firstPrompt": "Opening prompt", "lastPrompt": "Opening prompt"]
                 ),
                 LifecycleStep(
-                    payload: payload("PermissionRequest", extra: ["message": "Approval required"]),
+                    // Codex's request carries the tool and its input but no
+                    // message, so the lifecycle words the wait: with no tool
+                    // before it, by its default.
+                    payload: payload("PermissionRequest", extra: [
+                        "tool_name": "Bash",
+                        "tool_input": ["command": "make test"]
+                    ]),
                     state: "needsInput", lastHookEvent: "approval_requested", episodeToken: 3,
-                    texts: ["detail": "Approval required"]
+                    texts: ["detail": "permission"]
                 ),
                 LifecycleStep(
-                    payload: payload("PreCompact", extra: ["current_token_count": 42]),
-                    state: "compacting", lastHookEvent: "compacting", episodeToken: 4, contextTokens: 42
+                    payload: payload("PreCompact"),
+                    state: "compacting", lastHookEvent: "compacting", episodeToken: 4
                 ),
                 LifecycleStep(
                     payload: payload("Stop"),
@@ -682,7 +684,7 @@ private extension HookAgent {
         case "Notification": ["notification_type": "permission_prompt", "message": "needs permission"]
         case "PreToolUse": ["tool_name": "Bash"]
         case "PostToolUse", "PostToolUseFailure": ["tool_name": "AskUserQuestion"]
-        case "StopFailure": ["error_type": "overloaded"]
+        case "StopFailure": ["error": "overloaded"]
         case "SessionEnd": ["reason": "other"]
         default: [:]
         }

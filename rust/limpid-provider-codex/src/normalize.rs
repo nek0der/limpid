@@ -86,12 +86,10 @@ pub(crate) fn normalize(
             tool: string(&object, "tool_name").map(str::to_owned),
             by_subagent: false,
         },
-        "PermissionRequest" => AgentEvent::ApprovalRequested {
-            detail: string(&object, "message").map(str::to_owned),
-        },
-        "PreCompact" => AgentEvent::Compacting {
-            context_tokens: object.get("current_token_count").and_then(Value::as_u64),
-        },
+        // Codex's request carries the tool and its input but no message, so
+        // the lifecycle words the wait.
+        "PermissionRequest" => AgentEvent::ApprovalRequested { detail: None },
+        "PreCompact" => AgentEvent::Compacting,
         "PostCompact" => AgentEvent::CompactionFinished,
         "Interrupt" => AgentEvent::Interrupted,
         // Not Codex's own event: the helper's watcher reports it when the
@@ -133,29 +131,21 @@ pub(crate) fn normalize(
                 }),
             }
         }
-        // Codex's Stop schema carries no error today; the branch stays for a
-        // future schema that does, matching the receiver it replaces.
-        "Stop" => match string(&object, "error_type") {
-            Some(error) if !error.is_empty() => AgentEvent::Failed {
-                error: error.to_owned(),
-                usage_limit: None,
-            },
-            _ => AgentEvent::TurnFinished {
-                continues_after_stop_hook: object
-                    .get("stop_hook_active")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-                titles: None,
-                cache: None,
-                reply: string(&object, "last_assistant_message")
-                    .filter(|reply| !reply.is_empty())
-                    .map(str::to_owned),
-                // Codex keeps background terminals running after a turn, but
-                // its `Stop` does not list them and no hook reports their
-                // end, so a count read elsewhere would stay until the next
-                // stop. It reports none rather than one that may be stale.
-                background_work: None,
-            },
+        "Stop" => AgentEvent::TurnFinished {
+            continues_after_stop_hook: object
+                .get("stop_hook_active")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            titles: None,
+            cache: None,
+            reply: string(&object, "last_assistant_message")
+                .filter(|reply| !reply.is_empty())
+                .map(str::to_owned),
+            // Codex keeps background terminals running after a turn, but
+            // its `Stop` does not list them and no hook reports their
+            // end, so a count read elsewhere would stay until the next
+            // stop. It reports none rather than one that may be stale.
+            background_work: None,
         },
         _ => AgentEvent::Extension {
             name: event_name.clone(),
@@ -547,7 +537,7 @@ mod tests {
         );
         assert!(matches!(
             events(&format!(
-                r#"{{"hook_event_name":"PermissionRequest","message":"run ls",{marker}}}"#
+                r#"{{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{{"command":"ls"}},{marker}}}"#
             ))
             .as_slice(),
             [AgentEvent::ApprovalRequested { .. }]
@@ -787,16 +777,11 @@ mod tests {
     }
 
     #[test]
-    fn stop_with_an_error_type_fails_and_without_one_finishes() {
+    fn stop_finishes_the_turn() {
+        // Codex runs `Stop` only after a turn that succeeded; a failed one is
+        // the rollout watcher's (`LimpidTurnFailed`).
         assert_eq!(
-            events(r#"{"hook_event_name":"Stop","error_type":"timeout"}"#),
-            vec![AgentEvent::Failed {
-                error: "timeout".into(),
-                usage_limit: None,
-            }]
-        );
-        assert_eq!(
-            events(r#"{"hook_event_name":"Stop","error_type":""}"#),
+            events(r#"{"hook_event_name":"Stop","stop_hook_active":false}"#),
             vec![AgentEvent::TurnFinished {
                 continues_after_stop_hook: false,
                 titles: None,

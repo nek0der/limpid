@@ -24,7 +24,6 @@ struct AgentRuntimeProjectionTests {
             runStartedAt: nil,
             updatedAt: "2026-09-09T00:00:00Z",
             lastHookEvent: "UserPromptSubmit",
-            contextTokens: nil,
             pid: nil,
             lastPrompt: nil,
             firstPrompt: nil,

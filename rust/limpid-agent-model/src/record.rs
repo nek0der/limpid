@@ -159,8 +159,6 @@ pub struct RunRecord {
     pub updated_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_hook_event: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_tokens: Option<u64>,
     /// Decimal process id as the shell wrote it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<String>,
@@ -344,8 +342,6 @@ pub struct RunRecordV2 {
     #[serde(default)]
     pub last_hook_event: Option<String>,
     #[serde(default)]
-    pub context_tokens: Option<u64>,
-    #[serde(default)]
     pub pid: Option<String>,
     #[serde(default)]
     pub is_tmux_hosted: Option<bool>,
@@ -400,7 +396,6 @@ impl From<RunRecordV2> for RunRecord {
             run_started_at: record.run_started_at.filter(|value| !value.is_empty()),
             updated_at: record.updated_at,
             last_hook_event: record.last_hook_event,
-            context_tokens: record.context_tokens,
             pid: record.pid,
             is_tmux_hosted: record.is_tmux_hosted,
             last_prompt: record.last_prompt,
@@ -495,6 +490,18 @@ mod tests {
         assert!(text.contains("\"schemaVersion\":3"));
         let value: Value = serde_json::from_str(&text).expect("json");
         assert_eq!(value["runStartedAt"], Value::Null);
+    }
+
+    /// Earlier builds wrote `contextTokens`, from a field no agent sends;
+    /// one still on disk is carried as any unknown field is.
+    #[test]
+    fn a_record_with_the_retired_token_count_still_decodes() {
+        let json = V2.replace("\"pid\":\"123\"", "\"pid\":\"123\",\"contextTokens\":42");
+        let record = RunRecord::decode(json.as_bytes()).expect("decodes");
+        assert_eq!(
+            record.extra.get("contextTokens"),
+            Some(&serde_json::json!(42))
+        );
     }
 
     #[test]

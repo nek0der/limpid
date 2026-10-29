@@ -457,7 +457,6 @@ struct AgentProjectedBadge: Decodable, Sendable {
     var state: String
     var detail: String?
     var runStartedAt: String?
-    var contextTokens: Int?
     var isTmuxHosted: Bool?
     var updatedAt: String
     var lastPrompt: String?
@@ -478,7 +477,7 @@ struct AgentProjectedBadge: Decodable, Sendable {
     var backgroundWork: AgentProjectedBackgroundWork?
 
     private enum CodingKeys: String, CodingKey {
-        case state, detail, runStartedAt, contextTokens, isTmuxHosted, updatedAt
+        case state, detail, runStartedAt, isTmuxHosted, updatedAt
         case lastPrompt, firstPrompt, turnBaseTree, turnRoot, worktreeRoot
         case conversationID = "conversationId"
         case providerSessionTitle, providerGeneratedTitle, sessionStartedAt
@@ -494,7 +493,6 @@ struct AgentProjectedBadge: Decodable, Sendable {
             state: AgentState(rawValue: state) ?? .unknown,
             detail: detail,
             runStartedAt: AgentDateParsing.parseOptional(runStartedAt),
-            contextTokens: contextTokens,
             isTmuxHosted: isTmuxHosted,
             updatedAt: AgentDateParsing.parseISO8601(updatedAt) ?? Date(),
             lastPrompt: lastPrompt,

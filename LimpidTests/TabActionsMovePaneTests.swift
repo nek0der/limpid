@@ -100,7 +100,6 @@ struct TabActionsMovePaneTests {
             state: .running,
             detail: "claude-detail",
             runStartedAt: now,
-            contextTokens: 1234,
             updatedAt: now,
             lastPrompt: "claude prompt"
         )
@@ -108,7 +107,6 @@ struct TabActionsMovePaneTests {
             state: .running,
             detail: "codex-detail",
             runStartedAt: now,
-            contextTokens: 5678,
             updatedAt: now,
             lastPrompt: "codex prompt"
         )

@@ -16,7 +16,6 @@ struct AttentionStateTests {
             detail: nil,
             // A run at work is in a turn here, as one that took a prompt is.
             runStartedAt: state.isMidTurn ? Date(timeIntervalSince1970: epoch) : nil,
-            contextTokens: nil,
             updatedAt: Date(timeIntervalSince1970: epoch),
             lastPrompt: nil
         )
