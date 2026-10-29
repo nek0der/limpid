@@ -417,6 +417,10 @@ pub struct TurnSummary {
     /// What the agent said as the turn ended (`TurnRecord::reply_head`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_head: Option<String>,
+    /// The conversation's title as the turn last knew it
+    /// (`TurnRecord::conversation_title`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation_title: Option<String>,
     pub started_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<String>,
@@ -495,6 +499,7 @@ impl TurnSummary {
             prompt_head,
             prompt_kind,
             reply_head: record.reply_head.clone(),
+            conversation_title: record.conversation_title.clone(),
             started_at: record.started_at.clone(),
             finished_at: record.finished_at.clone(),
             phase: record.phase,
@@ -577,6 +582,13 @@ pub struct TurnRecord {
     /// before it was kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_head: Option<String>,
+    /// The conversation's title when the turn began or last ended: the
+    /// provider's session title, else its generated one. Kept on the turn,
+    /// not only on the run, so the app can still name a closed conversation
+    /// whose run record is gone. `None` before the provider names the
+    /// conversation, or in a record from before it was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation_title: Option<String>,
     pub started_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<String>,
@@ -816,6 +828,7 @@ mod tests {
             prompt_head: Some("add tests".into()),
             prompt_kind: Some(RecordedPromptKind::Known(PromptKind::Text)),
             reply_head: None,
+            conversation_title: None,
             started_at: "2026-10-12T00:00:00Z".into(),
             finished_at: None,
             phase: TurnPhase::Started,
@@ -1334,5 +1347,26 @@ mod tests {
             assert!(value.get(key).is_none(), "{key} is left out when empty");
         }
         assert!(TurnRecord::decode(&older).expect("decode").is_writable());
+    }
+
+    #[test]
+    fn turn_record_without_conversation_title_decodes_as_none() {
+        let mut value = serde_json::to_value(record()).expect("serialize");
+        assert!(value.get("conversationTitle").is_none());
+        value
+            .as_object_mut()
+            .expect("object")
+            .remove("conversationTitle");
+        let back = TurnRecord::decode(value.to_string().as_bytes()).expect("decode");
+        assert_eq!(back.conversation_title, None);
+        assert!(!back.was_decoded_lossily);
+    }
+
+    #[test]
+    fn conversation_title_reaches_the_summary_as_conversation_title() {
+        let mut titled = record();
+        titled.conversation_title = Some("Review the fork".into());
+        let value = serde_json::to_value(TurnSummary::of(&titled)).expect("serialize");
+        assert_eq!(value["conversationTitle"], "Review the fork");
     }
 }

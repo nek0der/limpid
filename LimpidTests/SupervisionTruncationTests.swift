@@ -24,6 +24,43 @@ struct SupervisionTruncationTests {
         }
     }
 
+    /// A menu cannot cut its own lines, so a long name is cut by count:
+    /// its first 32 characters and an ellipsis. A short one is left whole.
+    @Test func aNameInAMenu_isCutTo32CharactersAndAnEllipsis() {
+        let long = "Review every libghostty patch on the fork and list the ones upstream took"
+        let cut = SupervisionTruncation.menuName(long)
+        #expect(cut == String(long.prefix(32)) + "…")
+        #expect(cut.count == SupervisionTruncation.menuNameLimit + 1)
+        #expect(SupervisionTruncation.menuName("Fix tests") == "Fix tests")
+        let exact = String(repeating: "a", count: SupervisionTruncation.menuNameLimit)
+        #expect(SupervisionTruncation.menuName(exact) == exact, "32 fits whole")
+        #expect(SupervisionTruncation.end("Fix the flaky tests", keeping: 8) == "Fix the…", "no space before the ellipsis")
+    }
+
+    /// A conversation's menu name cuts its title before its number, so two
+    /// of one long title still read apart; the whole name is kept for the
+    /// tooltip and VoiceOver.
+    @Test func aConversationsMenuName_cutsItsTitle_andKeepsItsNumber() {
+        let title = "Review every libghostty patch on the fork and list the ones upstream took"
+        let choice = ConversationChoice(
+            conversation: TurnSummaryFixture.conversation("a"),
+            title: title,
+            ordinal: 2,
+            unviewedCount: 0
+        )
+        let english = Locale(identifier: "en")
+        #expect(ConversationText.menuName(choice, locale: english) == String(title.prefix(32)) + "… #2")
+        #expect(ConversationText.name(choice, locale: english) == "\(title) #2")
+        #expect(ConversationText.spokenName(choice, locale: english) == "Claude, \(title) #2")
+        let short = ConversationChoice(
+            conversation: TurnSummaryFixture.conversation("b"),
+            title: "Fix tests",
+            ordinal: nil,
+            unviewedCount: 0
+        )
+        #expect(ConversationText.menuName(short, locale: english) == "Fix tests")
+    }
+
     @Test(arguments: [
         "…/sample-reviews/demo-repos/alpha",
         ".../repos/beta",

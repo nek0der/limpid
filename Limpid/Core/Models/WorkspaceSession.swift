@@ -88,6 +88,15 @@ final class WorkspaceSession {
     /// else changes.
     var projectViews: [UUID: ProjectView] = [:]
 
+    /// The name the person gave a tab, by the conversation the tab's title
+    /// stood for then (`ConversationTabs`), so the conversation is
+    /// still called by it once the tab is closed or runs another
+    /// (`ConversationTitleRule`). Kept only for a name the person typed,
+    /// which is rare, so it is never trimmed. Saved at the root of
+    /// `state.json` (`SessionSnapshot.conversationTabNames`), so it is
+    /// observed.
+    var conversationTabNames: [ConversationKey: String] = [:]
+
     /// Records whether `window` is hidden. Written only on a change: what
     /// is shown is read by the attention list.
     func setWindow(_ window: WindowID, isHidden: Bool) {

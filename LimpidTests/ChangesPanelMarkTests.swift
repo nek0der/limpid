@@ -139,3 +139,35 @@ struct ChangesPanelMarkTests {
         )
     }
 }
+
+extension ChangesPanelMarkTests {
+    /// Grouped by conversation, a row's move reaches its own conversation's
+    /// line alone, where on the timeline it reaches every line up to
+    /// the row's place; the label never says it moves the others.
+    @Test func make_byConversation_markViewedThrough_movesOnlyOwnLine() throws {
+        let codex1 = try TurnSummaryFixture.timed(1, conversation: "codex", start: 0, end: 50)
+        let claude1 = try TurnSummaryFixture.timed(1, conversation: "claude", start: 10, end: 60)
+        let codex2 = try TurnSummaryFixture.timed(2, conversation: "codex", start: 70, end: 80)
+        let timeline = ChangesPanelModel.timeline([codex1, claude1, codex2])
+        var input = Panel.input(Panel.agents(timeline))
+        let flat = try Panel.list(ChangesPanelModel.make(input))
+        input.grouping = .byConversation
+
+        let grouped = try Panel.list(ChangesPanelModel.make(input))
+
+        let row = try #require(grouped.rows.first { $0.id == codex2.turnID })
+        #expect(row.action == .markViewedThrough)
+        #expect(row.movesOnlyItsOwnLine)
+        #expect(grouped.rows.allSatisfy { !$0.movesOtherLines })
+        #expect(ChangesPanelModel.turnsMoved(by: .markViewedThrough, at: codex2, in: timeline, movesOnlyItsOwnLine: true) == [codex2])
+        #expect(ChangesPanelModel.turnsMoved(by: .markUnviewedFrom, at: codex1, in: timeline, movesOnlyItsOwnLine: true) == [codex1])
+        // On the timeline the same row reaches Claude's line too.
+        let flatRow = try #require(flat.rows.first { $0.id == codex2.turnID })
+        #expect(flatRow.movesOtherLines)
+        #expect(!flatRow.movesOnlyItsOwnLine)
+        #expect(
+            ChangesPanelModel.turnsMoved(by: .markViewedThrough, at: codex2, in: timeline, movesOnlyItsOwnLine: false)
+                == WorktreeTimeline.marksThrough(codex2, in: timeline)
+        )
+    }
+}

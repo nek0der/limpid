@@ -77,6 +77,11 @@ enum LimpidMotion {
     /// such as a turn card's moves: quick, as they answer the pointer.
     static let hoverReveal: Animation = paced(.easeOut(duration: 0.12))
 
+    /// A conversation's tab and turn cards marking each other under the
+    /// pointer (`ConversationHoverRule`): as quick as a hover reveal, so
+    /// the mark follows the pointer from tab to tab.
+    static let conversationHover: Animation = paced(.easeOut(duration: 0.12))
+
     /// The Changes panel unfolding or folding its older turns. SwiftUI's
     /// default curve, which the fold has always moved with; a token of its
     /// own so the fold follows the pace as every other motion does.

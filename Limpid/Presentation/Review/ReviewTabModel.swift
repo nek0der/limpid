@@ -531,10 +531,11 @@ enum ReviewTabModel {
         /// Its place among the other panes of that name (two shells in one
         /// worktree), from 1; `nil` for a name only it has.
         var place: Int?
-        /// The conversation the pane runs, where the changes panel numbers
-        /// it ("Claude #2"): the pane is named as the scope menu's heading
-        /// names the conversation, so the two read as one. Optional, as a shell or a lone agent of its kind has its
-        /// pane's name.
+        /// The conversation the pane runs, where the changes panel names it
+        /// by its title or number ("Claude #2"): the pane is named as the
+        /// scope menu's heading names the conversation, so the two read as
+        /// one. Optional, as a shell or an untitled lone agent of its kind
+        /// has its pane's name.
         var agent: ConversationChoice?
         /// What tells the pane apart from another pane running the same
         /// conversation; `nil` when it is the conversation's one pane.
@@ -553,19 +554,19 @@ enum ReviewTabModel {
     }
 
     /// The destination menu's entries, in the session's order. A pane
-    /// running a conversation the changes panel numbers is named after it
-    /// (`agent`), and told apart from another pane of the same
-    /// conversation by its tab's title (`tabTitle`), or by its place where
-    /// the titles are the same too. Two other panes with the same name (two
-    /// shells in one worktree) get the place they sit at among those, since
-    /// a list of identical names is not a choice.
+    /// running a conversation the changes panel names apart from its kind
+    /// is named after it (`agent`), and told apart from another pane of the
+    /// same conversation by its tab's title (`tabTitle`), or by its place
+    /// where the titles are the same too. Two other panes with the same
+    /// name (two shells in one worktree) get the place they sit at among
+    /// those, since a list of identical names is not a choice.
     static func destinationChoices(
         _ destinations: [ReviewDestination],
         agent: (UUID) -> ConversationChoice? = { _ in nil },
         tabTitle: (UUID) -> String = { _ in "" }
     ) -> [DestinationChoice] {
         let agents = destinations.map { destination in
-            agent(destination.paneID).flatMap { $0.ordinal == nil ? nil : $0 }
+            agent(destination.paneID).flatMap { $0.hasOwnName ? $0 : nil }
         }
         struct Pane: Hashable {
             let conversation: ConversationKey

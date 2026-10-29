@@ -68,9 +68,34 @@ struct ChangesPanelTextTests {
             "a workspace whose project is gone is not said to be the scratch tabs"
         )
         #expect(
-            ConversationText.menuLine(run(in: .scratch), locale: Self.japanese) == "スクラッチの「claude」タブで実行中",
+            ConversationText.detail(run(in: .scratch), locale: Self.japanese) == "スクラッチの「claude」タブで実行中",
             "the menus say where it runs; under Viewed, where a run elsewhere is listed, the heading says the count"
         )
+    }
+
+    /// VoiceOver reads the filter's trigger as its menu item reads: a
+    /// titled conversation with its agent, so a Claude and a Codex
+    /// conversation of one title read apart.
+    @Test func theFilter_spokenLabel_namesATitledConversationWithItsAgent() {
+        var titled = Self.codex
+        titled.title = "Fix tests"
+        let conversations = [Self.first, titled]
+
+        #expect(ChangesPanelText.filterLabel(titled.conversation, among: conversations, locale: Self.english) == "Fix tests")
+        #expect(ChangesPanelText.filterSpokenLabel(titled.conversation, among: conversations, locale: Self.english) == "Codex, Fix tests")
+        #expect(ChangesPanelText.filterSpokenLabel(titled.conversation, among: conversations, locale: Self.japanese) == "Codex、Fix tests")
+        #expect(ChangesPanelText.filterSpokenLabel(Self.first.conversation, among: conversations, locale: Self.english) == "Claude #1")
+        #expect(ChangesPanelText.filterSpokenLabel(nil, among: conversations, locale: Self.english) == "All")
+    }
+
+    /// A section heading says whether it is folded and its conversation's
+    /// facts in its value, which VoiceOver always reads, not in a hint.
+    @Test func theSectionValue_saysTheFoldAndTheCount() {
+        #expect(
+            ConversationText.sectionValue(Self.first, isCollapsed: true, locale: Self.english)
+                == "Collapsed, 1 unviewed turn, Running in the “claude” tab"
+        )
+        #expect(ConversationText.sectionValue(Self.second, isCollapsed: false, locale: Self.japanese) == "展開済み、未確認のターン 2、終了")
     }
 
     @Test func theTooltip_countsAsTheRailDoes_andVoiceOverReadsTheTurns() {
@@ -100,19 +125,87 @@ struct ChangesPanelTextTests {
         #expect(ConversationText.section(.unviewed, locale: Self.japanese) == "未確認")
         #expect(ConversationText.section(.viewed, locale: Self.japanese) == "確認済み")
         #expect(ConversationText.section(.unviewed, locale: Self.english) == "Unviewed")
-        // The menu's second line is the count with its unit. A conversation
-        // this session runs is under "Running", and its tab's name repeats
-        // its prompt, so the line leaves both to the heading and the tooltip.
-        // An ended one says no more, because its section already says so.
-        #expect(ConversationText.menuLine(Self.first, locale: Self.japanese) == "未確認 1")
-        #expect(ConversationText.menuLine(Self.second, locale: Self.english) == "2 unviewed")
-        #expect(ConversationText.menuLine(Self.untitled, locale: Self.japanese).isEmpty, "no 未確認 0, no 実行中 under 実行中")
+        // The menu's second line is the count with its unit, after the tab
+        // where it has one to say. A tab with no place says nothing of it.
+        #expect(ConversationText.detail(Self.first, locale: Self.japanese) == "未確認 1")
+        #expect(ConversationText.detail(Self.second, locale: Self.english) == "No tab · 2 unviewed")
+        #expect(ConversationText.detail(Self.untitled, locale: Self.japanese).isEmpty, "no 未確認 0, no 実行中 under 実行中")
     }
 
-    /// Fourteen ended conversations named "Claude #1" to "Claude #14" read
-    /// apart by what each was last asked and when, the newest first; the
-    /// same line heads each in the review's scope menu.
-    @Test func manyConversations_readApartByTheirLatestPromptAndTime_newestFirst() {
+    /// 2026-10-12 21:06 UTC, and a minute later.
+    private static let evening = Date(timeIntervalSince1970: 1_791_839_160)
+    private static let utc = TimeZone(identifier: "UTC") ?? .current
+
+    /// A conversation this session runs leads with its tab's place, as the
+    /// pane strip counts the tabs, so the menu says which tab to look in.
+    @Test func detail_liveTabInSession_leadsWithTabPosition() {
+        let choice = ConversationChoice(
+            conversation: TurnSummaryFixture.conversation,
+            title: "Review the fork",
+            ordinal: nil,
+            unviewedCount: 3,
+            liveTab: ConversationChoice.LiveTab(title: "claude", isInSession: true, position: 3),
+            lastActivity: Self.evening
+        )
+        let now = Self.evening.addingTimeInterval(60)
+
+        #expect(
+            ChangesPanelFixture.plainSpaces(ConversationText.detail(choice, now: now, locale: Self.english, timeZone: Self.utc))
+                == "Tab 3 · 9:06 PM · 3 unviewed"
+        )
+        #expect(ConversationText.detail(choice, now: now, locale: Self.japanese, timeZone: Self.utc) == "タブ 3 · 21:06 · 未確認 3")
+    }
+
+    /// One no pane runs any more has no tab to name, and says so first; one
+    /// run in another workspace names where, as the tooltip does.
+    @Test func detail_endedConversation_saysNoTab() {
+        let ended = ConversationChoice(
+            conversation: TurnSummaryFixture.conversation("s2"),
+            title: "Fix tests",
+            ordinal: nil,
+            unviewedCount: 0,
+            lastActivity: Self.evening
+        )
+        let now = Self.evening.addingTimeInterval(60)
+        var away = ended
+        away.liveTab = ConversationChoice.LiveTab(title: "claude", isInSession: false, checkoutPlace: .named("beta"))
+
+        #expect(
+            ChangesPanelFixture.plainSpaces(ConversationText.detail(ended, now: now, locale: Self.english, timeZone: Self.utc))
+                == "No tab · 9:06 PM",
+            "no 0 unviewed"
+        )
+        #expect(ConversationText.detail(ended, now: now, locale: Self.japanese, timeZone: Self.utc) == "タブなし · 21:06")
+        #expect(
+            ConversationText.detail(away, now: now, locale: Self.japanese, timeZone: Self.utc) == "beta の「claude」タブで実行中 · 21:06"
+        )
+    }
+
+    /// The card's tooltip names its conversation as the menus do, and
+    /// VoiceOver says the kind before the title, which the badge shows.
+    @Test func turnHelp_titledConversation_namesItByTitle() throws {
+        var extras = TurnSummaryFixture.Extras()
+        extras.conversationID = "s2"
+        extras.promptHead = "Save the order setting"
+        let turn = try TurnSummaryFixture.turn("T4-s2", changes: TurnSummaryFixture.changedFiles, number: 4, extras: extras)
+        var row = ChangesPanelModel.Row(turn: turn, status: .unviewed, isViewed: false, isSelectable: true, action: .markViewedThrough)
+        row.conversation = ConversationChoice(
+            conversation: TurnSummaryFixture.conversation("s2"),
+            title: "Review the fork",
+            ordinal: nil,
+            unviewedCount: 1
+        )
+
+        #expect(ChangesPanelText.help(row, locale: Self.english, timeZone: Self.utc).contains("\nTurn of Review the fork\n"))
+        #expect(ChangesPanelText.help(row, locale: Self.japanese, timeZone: Self.utc).contains("\nReview the fork のターン\n"))
+        #expect(ChangesPanelText.rowSpoken(row, locale: Self.english, timeZone: Self.utc).hasPrefix("Turn 4 of Claude, Review the fork, "))
+        #expect(ChangesPanelText.rowSpoken(row, locale: Self.japanese, timeZone: Self.utc).hasPrefix("Claude、Review the fork のターン 4、"))
+    }
+
+    /// Fourteen ended conversations list the newest first, each line
+    /// saying it has no tab, when it last did something, and its count;
+    /// the same line heads each in the review's scope menu.
+    @Test func manyConversations_listNewestFirst_eachSayingWhenItLastWorked() {
         let utc = TimeZone(identifier: "UTC") ?? .current
         let now = Date(timeIntervalSince1970: 1_791_800_000) // 2026-10-12 10:13:20 UTC
         let conversations = (1...14).map { number in
@@ -129,16 +222,13 @@ struct ChangesPanelTextTests {
         #expect(ordered.map(\.lastActivity) == conversations.map(\.lastActivity).sorted { ($0 ?? .distantPast) > ($1 ?? .distantPast) })
         #expect(ordered.first?.ordinal == 14, "the latest activity first, whatever its number")
 
-        let line = ConversationText.menuLine(conversations[3], now: now, locale: Self.japanese, timeZone: utc)
-        #expect(line == "Save the order set… · 10:07 · 未確認 1", "what it was for, when, and its count with its unit")
+        let line = ConversationText.detail(conversations[3], now: now, locale: Self.japanese, timeZone: utc)
+        #expect(line == "タブなし · 10:07 · 未確認 1", "no tab, when, and its count with its unit")
         #expect(!line.contains("終了"), "an ended conversation's section says it ended")
-        let lines = Set(conversations.map { ConversationText.menuLine($0, now: now, locale: Self.english, timeZone: utc) })
-        #expect(lines.count == conversations.count, "no two lines read the same")
         // Under "Viewed" the heading says the count: the line does not.
         #expect(conversations[2].section == .viewed)
         #expect(
-            ConversationText.menuLine(conversations[2], now: now, locale: Self.japanese, timeZone: utc)
-                == "Save the order set… · 10:12",
+            ConversationText.detail(conversations[2], now: now, locale: Self.japanese, timeZone: utc) == "タブなし · 10:12",
             "no 未確認 0 under 確認済み"
         )
         let yesterday = ConversationText.activityTime(now.addingTimeInterval(-86400), now: now, locale: Self.english, timeZone: utc)
@@ -160,8 +250,6 @@ struct ChangesPanelTextTests {
         row.conversation = Self.second
         let utc = try #require(TimeZone(identifier: "UTC"))
 
-        #expect(ChangesPanelText.ordinal(Self.second) == "#2")
-        #expect(ChangesPanelText.ordinal(Self.codex) == nil, "the badge alone names the one Codex")
         #expect(ChangesPanelText.turnOf(Self.second, locale: Self.english) == "Turn of Claude #2")
         #expect(ChangesPanelText.turnOf(Self.second, locale: Self.japanese) == "Claude #2 のターン")
         #expect(ChangesPanelText.help(row, locale: Self.japanese, timeZone: utc)
@@ -231,5 +319,14 @@ struct ChangesPanelTextTests {
             "one agent's count is the total"
         )
         #expect(ChangesPanelText.railHelp(shortcut: "⌥⌘I", unviewed: 0, agents: agents, locale: Self.english) == "Changes (⌥⌘I)")
+    }
+
+    @Test func groupingLabels_areLocalized() {
+        #expect(ChangesPanelText.grouping(.timeline, locale: Self.english) == "Timeline")
+        #expect(ChangesPanelText.grouping(.byConversation, locale: Self.english) == "By Conversation")
+        #expect(ChangesPanelText.grouping(.timeline, locale: Self.japanese) == "時系列")
+        #expect(ChangesPanelText.grouping(.byConversation, locale: Self.japanese) == "会話別")
+        #expect(ChangesPanelText.groupingLabel(locale: Self.english) == "Arrange Turns")
+        #expect(ChangesPanelText.groupingLabel(locale: Self.japanese) == "ターンの並べ方")
     }
 }

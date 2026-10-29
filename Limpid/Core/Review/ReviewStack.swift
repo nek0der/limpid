@@ -42,18 +42,25 @@ enum ReviewFileMark: Hashable, Sendable, CaseIterable {
 }
 
 /// A conversation whose turns changed a file within the range read, on the
-/// file's header in the stacked diff: "Cl #4", with the turns in its
-/// tooltip. That the file changed during those turns, not that the
+/// file's header in the stacked diff: its identity bar and badge, with the
+/// turns in its tooltip. That the file changed during those turns, not that the
 /// conversation wrote it: a turn's diff is what changed in the worktree
 /// while it ran, whoever made the change.
 struct ReviewFileTag: Hashable, Sendable {
     let provider: AgentKind
+    /// The conversation's title, as the changes panel names it
+    /// (`ConversationChoice.title`); `nil` for one with none.
+    var title: String?
     /// Its place among the worktree's conversations of the kind, from 1,
-    /// when there is more than one ("Claude #2"); `nil` when the kind alone
-    /// names it.
+    /// where its name alone does not tell it apart
+    /// (`ConversationChoice.ordinal`); `nil` when the title, or the kind
+    /// alone, names it.
     let ordinal: Int?
     /// The numbers of its turns that changed the file, in order.
     let turns: [Int]
+    /// Its identity color, as the changes panel shows it
+    /// (`ConversationChoice.identity`); `nil` for one that has none.
+    var identity: Int?
 }
 
 /// The file headers' tags for a range: each file's, by path, and the

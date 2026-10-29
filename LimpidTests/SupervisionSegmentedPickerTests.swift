@@ -2,7 +2,8 @@
 // Limpid — the segmented choice's pill: it moves only on a change of the choice, sideways at one width, eased without overshoot; and its
 // arrow keys.
 
-import Foundation
+import AppKit
+import SwiftUI
 import Testing
 @testable import Limpid
 
@@ -110,5 +111,20 @@ struct SupervisionSegmentedPickerTests {
             next: nil,
             isHandled: true
         ))
+    }
+
+    /// At its ideal size each segment is as wide as the widest segment's
+    /// words, so a long label is never cut under the pill beside it; given
+    /// a width, the segments share it evenly, as the pill does.
+    @Test func theSegments_atTheirIdealSize_areEachAsWideAsTheWidest() {
+        let short = Text(verbatim: "Timeline")
+        let long = Text(verbatim: "By Conversation")
+        let longWidth = NSHostingView(rootView: long.fixedSize()).fittingSize.width
+        let row = NSHostingView(rootView: EqualSegmentsLayout {
+            short.frame(maxWidth: .infinity)
+            long.frame(maxWidth: .infinity)
+        }.fixedSize())
+
+        #expect(abs(row.fittingSize.width - 2 * longWidth) < 0.5, "\(row.fittingSize.width) against \(longWidth)")
     }
 }

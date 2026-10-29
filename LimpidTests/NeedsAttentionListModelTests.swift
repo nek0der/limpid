@@ -331,7 +331,7 @@ struct NeedsAttentionListModelTests {
         let (session, project) = WorkspaceSessionFixture.withProject(name: "limpid")
         let worktree = try WorkspaceSessionFixture.appendWorktree(to: project.id, in: session, admission: .created)
         let container = ContainerID.worktree(projectID: project.id, worktreeID: worktree.id)
-        session.renameRow(container, to: "Login work")
+        session.renameRow(container, to: "Login work", runtimes: [])
         let tab = session.openTab(container: container)
         let paneID = try #require(tab.splitTree.allLeafIDs().first)
         let item = Self.queue([

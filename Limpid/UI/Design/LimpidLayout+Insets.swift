@@ -80,7 +80,7 @@ extension LimpidLayout.Supervision {
     // MARK: Changes panel
 
     /// "T7" on a turn's card: monospaced, so the numbers stand in one
-    /// column down the list, and measured against `turnNumberColumnWidth`.
+    /// column down the list, and measured for `turnFirstColumnWidth(hasConversation:digits:)`.
     /// Made on each ask: `NSFont` is not `Sendable`, so it cannot be kept.
     static var turnNumberFont: NSFont {
         NSFont.monospacedSystemFont(ofSize: LimpidFont.Supervision.Size.caption.rawValue, weight: .bold)
@@ -100,11 +100,14 @@ extension LimpidLayout.Supervision {
     static let turnCardInsets = EdgeInsets(top: spaceSnug, leading: spaceM, bottom: spaceSnug, trailing: spaceM)
     /// The note under a card's facts (`RestoreBlockerNote`), from where
     /// its prompt starts: past the wider first column where the row
-    /// carries its conversation's badge.
-    static func turnNoteInsets(hasConversation: Bool) -> EdgeInsets {
+    /// carries its conversation's badge. On the main actor, as the column
+    /// is measured there.
+    @MainActor
+    static func turnNoteInsets(hasConversation: Bool, digits: Int) -> EdgeInsets {
         EdgeInsets(
             top: 0,
-            leading: turnCardInsets.leading + turnFirstColumnWidth(hasConversation: hasConversation) + turnColumnSpacing,
+            leading: turnCardInsets.leading + turnFirstColumnWidth(hasConversation: hasConversation, digits: digits)
+                + turnColumnSpacing,
             bottom: turnCardInsets.bottom,
             trailing: turnCardInsets.trailing
         )

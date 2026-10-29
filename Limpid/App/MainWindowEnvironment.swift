@@ -48,6 +48,7 @@ extension View {
         .environment(\.surfaceRegistry, state.registry)
         .environment(\.reviewWriters, state.reviewWriters)
         .environment(\.agentProjection, state.agentProjection)
+        .environment(\.conversationIdentities, state.conversationIdentities)
         .environment(\.frecencyStore, state.frecencyStore)
         .environment(\.notificationManager, state.notificationManager)
         .environment(\.sparkleUpdater, updaterStack.updater)

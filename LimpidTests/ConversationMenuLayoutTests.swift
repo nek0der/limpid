@@ -96,10 +96,41 @@ struct ConversationMenuLayoutTests {
         }
     }
 
-    private func filterFrame(summary: String, selected: String?, width: CGFloat) async throws -> CGRect {
+    /// A title has no length cap (a whole first prompt, a long rename): the
+    /// chosen conversation's name stays on one line and inside the panel
+    /// at its narrowest, cut rather than run past its edge.
+    @Test func panelFilter_longTitle_staysOnOneLineInsideThePanel() async throws {
+        let title = "Review every libghostty patch on the fork and list the ones upstream has since taken in full"
+        let width = LimpidLayout.Supervision.changesPanelWidthRange.lowerBound
+        let edge = width - LimpidLayout.Supervision.changesHeadInsets.trailing
+        for identifier in ["en", "ja"] {
+            let locale = Locale(identifier: identifier)
+            let summary = ChangesPanelText.summary(turns: 12, unviewed: 3, locale: locale)
+            let short = try await filterFrame(summary: summary, selected: "a", width: width, locale: locale)
+            let long = try await filterFrame(summary: summary, selected: "b", width: width, title: title, locale: locale)
+            #expect(long.maxX <= edge + 0.5, "\(identifier): \(long.maxX) past \(edge)")
+            #expect(long.height == short.height, "\(identifier): one line")
+        }
+    }
+
+    private func filterFrame(
+        summary: String,
+        selected: String?,
+        width: CGFloat,
+        title: String = "Review the fork’s libghostty patches",
+        locale: Locale = Locale(identifier: "en")
+    ) async throws -> CGRect {
         let agents = [
             ConversationChoice(conversation: Self.key("a"), ordinal: 1, unviewedCount: 1),
-            ConversationChoice(conversation: Self.key("b"), ordinal: 2, unviewedCount: 0)
+            // A long title, the name the label shows once it is chosen.
+            ConversationChoice(
+                conversation: Self.key("b"),
+                title: title,
+                ordinal: nil,
+                unviewedCount: 0,
+                // With its color, so the label measured is the widest it draws.
+                identity: 1
+            )
         ]
         let recorder = FrameRecorder()
         let view = ChangesPanelHeadLayout(summary: summary, hasFilter: true) {
@@ -117,7 +148,7 @@ struct ConversationMenuLayoutTests {
         // At the top of the window, as the panel draws its head.
         .frame(width: width, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .top)
-        .environment(\.locale, Locale(identifier: "en"))
+        .environment(\.locale, locale)
 
         let (window, host) = hostedInWindow(view, width: width, height: 240)
         defer { window.close() }

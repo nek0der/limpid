@@ -180,11 +180,11 @@ parts top to bottom and left to right. View paths are under
 | Title bar: project ▾, worktree ▾, back and forward, palette field, Needs Attention n | `TitleBar/SupervisionTitleBar.swift`, `TitleBarHistoryButtons`, `NeedsAttentionPill`, `NeedsAttentionListView`, `TitleBarMenuHost` | `ProjectMenuModel`, `WorktreeDropdownEntry`, `TitleBarHistoryModel`, `NeedsAttentionPillModel`, `NeedsAttentionListModel` |
 | Left rail: worktrees, all projects, history; update, shortcuts, Settings | `LeftRail/LeftRailView.swift` | `ProjectWindowState` |
 | Sidebar: every project under its header (folded or open, in the window's order), each open one's working rows and the folds for the missing worktrees, the worktrees ready to clean up, and the other worktrees, then the scratch row | `Sidebar/SessionSidebarView.swift`, `SidebarProjectHeaderView`, `SidebarProjectActions`, `SessionRowView`, `SidebarSectionFoldRow` | `SidebarListModel`, `SidebarProjectHeader`, `SessionSidebarModel`, `SidebarPresentedSections`, `SidebarKeyboardCursor`, `SidebarKeyRoute`, `SidebarArrangement`, `ProjectOrder`, `SidebarSectionRule`, `SidebarSectionHold`, `RowName` |
-| Session area: header, pane strip and its Open Tabs list, terminal | `SessionAreaView.swift`, `PaneStrip/SessionHeaderView.swift`, `PaneStrip/PaneStripView.swift`, `PaneStrip/OpenTabsMenu.swift`, `SessionTerminalView.swift` | `SessionHeaderModel`, `PaneStripModel`, `OpenTabsModel` |
+| Session area: header, pane strip and its Open Tabs list, terminal | `SessionAreaView.swift`, `PaneStrip/SessionHeaderView.swift`, `PaneStrip/PaneStripView.swift`, `PaneStrip/OpenTabsMenu.swift`, `SessionTerminalView.swift` | `SessionHeaderModel`, `PaneStripModel`, `OpenTabsModel`, `ConversationTabs`, `ConversationIdentityStore` |
 | Panes and splits inside the terminal region | `UI/Pane/PaneAreaView.swift`, `PaneContainerView`, `PaneHostView` | `WorkspaceSession`, `SurfaceRegistry` |
 | Decision bar under each agent pane | `DecisionBar/DecisionBarView.swift` (placed by `PaneContainerView`) | `DecisionBarModel` |
 | Review tab, drawn where the terminal was, with its one scope menu (the worktree's unviewed turns, each conversation's, the worktree's own comparisons) | `ReviewTab/ReviewTabView.swift` (placed by `PaneAreaView`), `ReviewTab/ReviewTabScopeMenu.swift` | `ReviewTabModel`, `ReviewScopeMenu`, `ReviewFileTags`, `ReviewSession`, `WorktreeTimeline`, `ConversationChoice` |
-| Changes panel (the worktree's turns as one timeline, filtered by conversation) and the right rail | `Changes/ChangesPanelView.swift`, `RightRail/RightRailView.swift` | `ChangesPanelModel`, `WorktreeTimeline`, `ConversationChoice`, `ChangesPanelLayoutRule`, `CommitAndPRModel` |
+| Changes panel (the worktree's turns as one timeline, filtered by conversation) and the right rail | `Changes/ChangesPanelView.swift`, `RightRail/RightRailView.swift` | `ChangesPanelModel`, `WorktreeTimeline`, `ConversationChoice`, `ConversationTabs`, `ConversationIdentityStore`, `ConversationHoverPresentation`, `ChangesPanelLayoutRule`, `CommitAndPRModel` |
 | Status band along the bottom | `StatusBand/StatusBandView.swift` | `StatusBandModel` |
 | A window that shows nothing yet | `EmptyWindowView.swift` | `EmptyWindowModel` |
 
@@ -334,7 +334,11 @@ the turns, and the commands for the app to perform.
   never disagree on what comes after what. Both name a conversation, and
   sort a menu of conversations, with `ConversationChoice`
   (`Presentation/Conversation`). `UnreadTurnRules` builds the unread items
-  from the two stores.
+  from the two stores. Every surface reads a conversation's identity color
+  from one store, `ConversationIdentityStore`, which works the colors out
+  again only when the turns, the lines, the running set, the restored
+  turns, or the path spellings change, and reads which tab runs which
+  conversation from one mapping, `ConversationTabs`.
 - **Approvals.** The signed Hook Helper submits a request to the Agent
   Integration Service (`docs/agent-integration-protocol.md`).
   `ApprovalPresentationStore` (`Core/Agent/ApprovalPresentationStore.swift`)

@@ -393,12 +393,13 @@ The files live in the provider's state directory, under `turns/`:
 - `<turn-id>.turn.json`, schema 1: `turnId`, `provider`, `conversation` (the
   provider's session ID, or the run ID marked `isFallback` when the provider
   reported none), `runId`, `paneId`, `displayNumber`, `promptHead`,
-  `promptKind`, `replyHead`, `startedAt`, `finishedAt`, `phase`,
-  `gitContext`, the `begin` and `end` snapshot states, the untracked files
-  each snapshot left out for their size (`skippedBegin`, `skippedEnd`),
-  `changes`, `durationSeconds`, `addedBytes`, `lastCheck`, the turn's last
-  16 check runs (`checks`, each an `exitCode` and `isFiltered`), how many it ran
-  in all (`checkCount`) and how many of those failed (`failureCount`),
+  `promptKind`, `replyHead`, `conversationTitle`, `startedAt`,
+  `finishedAt`, `phase`, `gitContext`, the `begin` and `end` snapshot
+  states, the untracked files each snapshot left out for their size
+  (`skippedBegin`, `skippedEnd`), `changes`, `durationSeconds`,
+  `addedBytes`, `lastCheck`, the turn's last 16 check runs (`checks`, each
+  an `exitCode` and `isFiltered`), how many it ran in all (`checkCount`)
+  and how many of those failed (`failureCount`),
   `areChecksPartial` when the turn may have run checks those leave out,
   `providerTurnId`, `usage` (`inputTokens`,
   `cacheWriteTokens`, `cacheReadTokens`, `outputTokens`, and `isPartial`
@@ -433,6 +434,11 @@ The files live in the provider's state directory, under `turns/`:
   it, and clears it when its own reply has no words. Any other end (a
   failure, an interrupt, an idle prompt's retake) keeps it, and a turn no
   stop ended has none.
+
+  `conversationTitle` is the conversation's title when the turn began or
+  last ended: the provider's session title, else the title it generated.
+  An end that knows no title keeps the one the record has. It is absent
+  until the provider names the conversation.
 
   A record without `promptKind` (from before the field was kept) is judged
   again from its head when it is summarized. A reminder that closes within

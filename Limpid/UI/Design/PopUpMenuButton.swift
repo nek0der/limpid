@@ -61,7 +61,7 @@ struct PopUpMenuItem {
     /// filter. `nil` for the one-line item most menus have.
     var subtitle: String?
     var systemImage: String?
-    /// An image before the title drawn once the menu opens, in place of
+    /// An image drawn into the title once the menu opens, in place of
     /// `systemImage`: a conversation's badge before its name, as its
     /// heading in the review's scope menu carries it. `nil` for none.
     var image: (@MainActor () -> NSImage?)?
@@ -286,7 +286,13 @@ enum PopUpMenu {
         let item = NSMenuItem.sectionHeader(title: heading.title)
         let image = heading.image?()
         if image != nil || heading.subtitle != nil {
-            item.attributedTitle = headingTitle(heading.title, subtitle: heading.subtitle, image: image)
+            item.attributedTitle = title(
+                heading.title,
+                subtitle: heading.subtitle,
+                after: image,
+                font: .boldSystemFont(ofSize: NSFont.smallSystemFontSize),
+                color: .labelColor
+            )
         }
         if let label = heading.accessibilityLabel {
             item.setAccessibilityLabel(label)
@@ -294,12 +300,18 @@ enum PopUpMenu {
         return item
     }
 
-    /// The heading's words in the face the system gives a heading, after
-    /// `image`, with the second line under the name rather than under the
-    /// image: a line separator keeps both lines one paragraph, so the
-    /// second takes the indent the image and its space leave.
-    private static func headingTitle(_ title: String, subtitle: String?, image: NSImage?) -> NSAttributedString {
-        let font = NSFont.boldSystemFont(ofSize: NSFont.smallSystemFontSize)
+    /// `title` in `font` after `image`, with the second line under the
+    /// name rather than under the image: a line separator keeps both lines
+    /// one paragraph, so the second takes the indent the image and its
+    /// space leave. `color` `nil` leaves the title to the menu's own color,
+    /// which fades it on a disabled item.
+    static func title(
+        _ title: String,
+        subtitle: String?,
+        after image: NSImage?,
+        font: NSFont,
+        color: NSColor?
+    ) -> NSAttributedString {
         let lines = NSMutableAttributedString()
         if let image {
             let attachment = NSTextAttachment()
@@ -316,7 +328,9 @@ enum PopUpMenu {
             lines.append(NSAttributedString(string: " ", attributes: [.font: font]))
         }
         let indent = lines.size().width
-        lines.append(NSAttributedString(string: title, attributes: [.font: font, .foregroundColor: NSColor.labelColor]))
+        var titleAttributes: [NSAttributedString.Key: Any] = [.font: font]
+        titleAttributes[.foregroundColor] = color
+        lines.append(NSAttributedString(string: title, attributes: titleAttributes))
         if let subtitle {
             lines.append(NSAttributedString(string: "\u{2028}" + subtitle, attributes: [
                 .font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
@@ -514,7 +528,18 @@ final class PopUpMenuActionItem: NSMenuItem {
         isDestructive = item.isDestructive
         super.init(title: item.name.resolved(in: locale), action: #selector(run(_:)), keyEquivalent: "")
         target = self
-        if let subtitle = item.subtitle {
+        // A drawn image goes inside the title, as a heading's does: AppKit
+        // draws no image set on an item of this menu, so a conversation's
+        // badge and identity bar would not show.
+        if let drawn = item.image?() {
+            attributedTitle = PopUpMenu.title(
+                item.name.resolved(in: locale),
+                subtitle: item.subtitle,
+                after: drawn,
+                font: .menuFont(ofSize: 0),
+                color: nil
+            )
+        } else if let subtitle = item.subtitle {
             attributedTitle = Self.twoLines(item.name.resolved(in: locale), subtitle)
         }
         isEnabled = item.isEnabled
@@ -526,7 +551,7 @@ final class PopUpMenuActionItem: NSMenuItem {
         if let value = item.accessibilityValue {
             setAccessibilityValue(value)
         }
-        image = item.image?() ?? item.systemImage.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
+        image = item.systemImage.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
         showShortcut(item.shortcut)
     }
 

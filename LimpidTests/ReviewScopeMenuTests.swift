@@ -332,6 +332,26 @@ struct ReviewScopeMenuTests {
         #expect(alone.isEmpty, "one conversation: no tag would tell anything apart")
     }
 
+    /// A tag carries its conversation's identity color, which its face
+    /// shows, and its title, which its tooltip names it by; so does a turn
+    /// whose files could not be read.
+    @Test func theFileTags_keepEachConversationsIdentity() throws {
+        let worktree = try Worktree()
+        var conversations = worktree.context.conversations
+        conversations[0].identity = 1
+        conversations[0].title = "Fix tests"
+
+        let tags = ReviewFileTags.tags(turns: [worktree.claude3], paths: { _ in ["a.swift"] }, conversations: conversations)
+        let unreadable = ReviewFileTags.unreadable(turns: [worktree.claude3], isUnreadable: { _ in true }, conversations: conversations)
+
+        #expect(tags["a.swift"]?.map(\.identity) == [1])
+        #expect(unreadable.map(\.identity) == [1])
+        // The title goes with the tag, so its tooltip and VoiceOver name the
+        // conversation as the menus do.
+        #expect(tags["a.swift"]?.map(\.title) == ["Fix tests"])
+        #expect(unreadable.map(\.title) == ["Fix tests"])
+    }
+
     /// A file five conversations touched shows two tags and "3 more", so its
     /// path keeps the header's room; the tooltip and VoiceOver name every
     /// one, and say when a turn's files could not be read, which a tag may

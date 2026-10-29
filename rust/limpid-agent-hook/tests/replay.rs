@@ -477,9 +477,23 @@ fn codex_takes_its_session_name_from_its_title_index() {
         call(stem);
     }
     assert_eq!(title(), None);
+    // Each turn's title as the run knew it when the turn was written.
+    let titles = || {
+        scratch
+            .turns()
+            .into_iter()
+            .map(|turn| turn.conversation_title)
+            .collect::<Vec<_>>()
+    };
     call("0015-UserPromptSubmit");
     assert_eq!(title().as_deref(), Some("Fixture thread name"));
+    // The turn begun before the index named the thread records no title;
+    // the one begun at the prompt that read it records it at once, from
+    // the run that prompt wrote, not the one before it.
+    let named = [None, Some("Fixture thread name".to_owned())];
+    assert_eq!(titles(), named, "at the prompt that read the name");
     call("0019-Stop");
+    assert_eq!(titles(), named, "kept at its stop");
     // The session's end reads no index, and keeps the name without one.
     call_with(&payload("0022-SessionEnd"), None);
     assert_eq!(title().as_deref(), Some("Fixture thread name"));
@@ -1338,6 +1352,46 @@ fn transcript_line(line: &str) -> String {
 fn json_text(path: &Path) -> String {
     let quoted = serde_json::to_string(&path.display().to_string()).expect("path");
     quoted[1..quoted.len() - 1].to_owned()
+}
+
+/// A title Claude first writes during a turn reaches that turn at its
+/// stop: the record ends with the name the run learned from the same
+/// event, not the one the run had before it.
+#[test]
+fn a_claude_turn_records_the_title_its_stop_reads() {
+    let scratch = Scratch::new("turn-title-claude");
+    let session = scratch.root.join("session.jsonl");
+    let prompt =
+        r#"{"type":"user","isSidechain":false,"promptId":"p1","message":{"content":"add tests"}}"#;
+    fs::write(&session, transcript_line(prompt)).expect("transcript");
+    let path = json_text(&session);
+    scratch.call(RUN, Some(&new_call()), SESSION_START);
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(
+            r#"{{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"add tests","prompt_id":"p1","transcript_path":"{path}"}}"#
+        )
+        .as_bytes(),
+    );
+    assert_eq!(scratch.turns()[0].conversation_title, None, "no title yet");
+
+    let titled = [
+        prompt,
+        r#"{"type":"ai-title","aiTitle":"Add the missing tests","sessionId":"s1"}"#,
+    ];
+    fs::write(&session, titled.map(transcript_line).concat()).expect("transcript");
+    scratch.call(
+        RUN,
+        Some(&new_call()),
+        format!(r#"{{"hook_event_name":"Stop","session_id":"s1","transcript_path":"{path}"}}"#)
+            .as_bytes(),
+    );
+
+    assert_eq!(
+        scratch.turns()[0].conversation_title.as_deref(),
+        Some("Add the missing tests")
+    );
 }
 
 #[test]

@@ -121,15 +121,15 @@ struct SidebarRowFolderTests {
         )
         session.projects[index].worktrees = [worktree]
         let row = ContainerID.worktree(projectID: project.id, worktreeID: worktree.id)
-        session.renameRow(row, to: "Tax rounding")
+        session.renameRow(row, to: "Tax rounding", runtimes: [])
         #expect(session.rowFolder(of: row) == RowFolder(name: "\(repository)-fix-tax-rounding", shown: "fix-tax-rounding"))
-        session.renameRow(row, to: "fix-tax-rounding")
+        session.renameRow(row, to: "fix-tax-rounding", runtimes: [])
         #expect(session.rowFolder(of: row) == nil, "a name that is the shortened folder")
 
         // The project's folder row shows its folder whole, unless it is the
         // project's name, which the header says.
         let root = ContainerID.project(project.id)
-        session.renameRow(root, to: "Main checkout")
+        session.renameRow(root, to: "Main checkout", runtimes: [])
         session.projects[index].name = "Duesmith App"
         #expect(session.rowFolder(of: root) == RowFolder(name: "duesmith", shown: "duesmith"))
         session.projects[index].name = "DUESMITH"
@@ -145,11 +145,11 @@ struct SidebarRowFolderTests {
         #expect(session.rowFolder(of: worktree) == nil, "a row named by its branch")
         #expect(session.rowFolder(of: .loose) == nil)
 
-        session.renameRow(worktree, to: "Login work")
+        session.renameRow(worktree, to: "Login work", runtimes: [])
         #expect(session.rowFolder(of: worktree)?.shown == "login-redesign")
-        session.renameRow(worktree, to: "LOGIN-REDESIGN")
+        session.renameRow(worktree, to: "LOGIN-REDESIGN", runtimes: [])
         #expect(session.rowFolder(of: worktree) == nil, "a name that is the folder's")
-        session.renameRow(worktree, to: "")
+        session.renameRow(worktree, to: "", runtimes: [])
 
         let tab = session.openTab(container: worktree)
         session.update(tab.id) { $0.titleOverride = "Tab name" }
@@ -157,7 +157,7 @@ struct SidebarRowFolderTests {
 
         let root = ContainerID.project(project.id)
         #expect(session.rowFolder(of: root) == nil)
-        session.renameRow(root, to: "Main checkout")
+        session.renameRow(root, to: "Main checkout", runtimes: [])
         #expect(session.rowFolder(of: root)?.shown == project.rootURL.lastPathComponent)
     }
 
@@ -226,7 +226,7 @@ struct SidebarRowFolderTests {
     @Test func aNameThatIsTheFolder_showsNoFolder() throws {
         let fixture = Self.project()
         let (session, project, worktree) = (fixture.session, fixture.project, fixture.worktree)
-        session.renameRow(worktree, to: "Login-Redesign")
+        session.renameRow(worktree, to: "Login-Redesign", runtimes: [])
         let row = try #require(Self.model(session, project).rows.first { $0.id == worktree })
         #expect(row.folder == nil)
         #expect(Self.lineTwo(row) == "Idle")
@@ -241,7 +241,7 @@ struct SidebarRowFolderTests {
         let unnamed = try #require(Self.model(session, project).rows.first { $0.id == root })
         #expect(Self.lineTwo(unnamed) == "Folder")
 
-        session.renameRow(root, to: "Main checkout")
+        session.renameRow(root, to: "Main checkout", runtimes: [])
         let named = try #require(Self.model(session, project).rows.first { $0.id == root })
         let folder = project.rootURL.lastPathComponent
         #expect(named.name == "Main checkout")

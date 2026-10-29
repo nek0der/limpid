@@ -1,5 +1,5 @@
 // ConversationChoice.swift
-// Limpid — one conversation of a worktree, named as the changes panel and the review name it ("Claude #2"), with what it has left to read.
+// Limpid — one conversation of a worktree, named as the changes panel and the review name it, with what it has left to read.
 
 import Foundation
 
@@ -10,24 +10,44 @@ import Foundation
 /// panel's model to name a conversation.
 struct ConversationChoice: Equatable, Sendable {
     let conversation: ConversationKey
-    /// Its place among the conversations of the same kind, from 1, when
-    /// there is more than one ("Claude #2"); `nil` when the kind alone
-    /// names it.
+    /// What names it (`ConversationTitleRule`). Optional because a
+    /// conversation nobody named, whose first prompt was not kept, has
+    /// none, and is named by its kind and number instead.
+    var title: String?
+    /// Its place among the worktree's conversations of the same kind, from
+    /// 1, where its name alone does not tell it apart: an untitled one
+    /// beside another of its kind ("Claude #2"), or a titled one whose
+    /// title another of its kind has too ("Fix tests #2"). `nil` when the
+    /// title, or the kind alone, names it.
     let ordinal: Int?
     let unviewedCount: Int
     /// The tab whose pane runs it, here or in another workspace.
     /// Optional because a conversation the filter lists may have no
     /// pane left: it ended, or its pane closed.
     var liveTab: LiveTab?
-    /// What its latest turn was asked, which tells one conversation of a
-    /// kind from another where their names are only numbers. `nil`
-    /// before its first turn is recorded.
+    /// What its latest turn was asked, which VoiceOver reads in full after
+    /// its name in a menu (`ConversationText.value`); the menu's line
+    /// leaves it out, as a prompt would widen the whole menu. `nil` before
+    /// its first turn is recorded.
     var latestPrompt: TurnPrompt?
     /// When it last did something: its latest turn's end, or its start
     /// while that turn runs. What the menus order conversations by, newest
     /// first, and the time they show. `nil` before its first turn, or when
     /// the record's times cannot be read.
     var lastActivity: Date?
+    /// Its identity color, an index into
+    /// `SupervisionTokens.conversationIdentity`, which it keeps while it
+    /// runs here or has turns to read (`ConversationIdentityRule`). Optional
+    /// because a worktree with one such conversation shows none, and a
+    /// conversation that ended with every turn viewed gives its color back.
+    var identity: Int?
+
+    /// Whether it has a name of its own, beyond its kind: a title or a
+    /// number. Where it has none, a pane running it is named after the
+    /// pane instead.
+    var hasOwnName: Bool {
+        title != nil || ordinal != nil
+    }
 
     /// Whether a pane of the session the panel reads runs it, the same
     /// fact the panel's `running` reads.
@@ -73,6 +93,24 @@ struct ConversationChoice: Equatable, Sendable {
         /// Optional, as a tab in the session needs no place said, and a
         /// worktree whose project is gone has no name to say.
         var checkoutPlace: CheckoutName.Place?
+        /// The name the person gave the tab (`Tab.titleOverride`), only
+        /// for the conversation the tab's title stands for: the one in
+        /// `Tab.latestAgentSessionPaneID`'s pane, or with none, the tab's one
+        /// conversation (`ConversationTabs`). Another conversation
+        /// split beside it is not what they named, and has `nil`, as has
+        /// a tab they never renamed.
+        var titleOverride: String?
+        /// The tab's place among the session's tabs, from 1, in the
+        /// order the pane strip shows them. `nil` for a tab outside the
+        /// session, whose place is said by `checkoutPlace` instead.
+        var position: Int?
+        /// The provider's title for the conversation the pane runs, read
+        /// live from the pane's agent: its session's name (Claude's
+        /// `/rename`, Codex's thread name), else the title it generated
+        /// (Claude's `ai-title`), cleaned as the tab's title is, by the one
+        /// rule on the Rust side (`LimpidRustTitleResolver`). `nil` until
+        /// the provider names it.
+        var providerTitle: String?
     }
 
     /// Where a conversation goes in a menu of them.

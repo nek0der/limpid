@@ -37,20 +37,34 @@ enum AgentBadgeMenuImage {
         /// `nil` for the shell's mark.
         let kind: AgentKind?
         let size: SessionAgentBadge.Size
+        /// The conversation's identity color drawn before the badge, `nil`
+        /// for none.
+        var identity: Int?
         let appearance: Appearance
     }
 
-    /// A handful at most: two appearances, a scale or two, two sizes, each
-    /// agent and the shell.
+    /// A hundred or so at most: two appearances, a scale or two, two sizes,
+    /// each agent with no bar or one of the identity colors, and the shell.
     private static var cache: [Key: NSImage] = [:]
 
     /// `kind`'s badge at `size`: `.regular` beside a field's choice (the new
-    /// workspace's agent), `.row` beside a conversation's name.
-    static func image(for kind: AgentKind, size: SessionAgentBadge.Size, in appearance: Appearance) -> NSImage {
+    /// workspace's agent), `.row` beside a conversation's name. With an
+    /// `identity`, the conversation's bar stands before the badge in the
+    /// one image, as `ConversationIdentityLead` draws it in a view: a menu
+    /// item carries a single image, and the bar drawn into it keeps the
+    /// same side and gap as everywhere else.
+    static func image(
+        for kind: AgentKind,
+        size: SessionAgentBadge.Size,
+        identity: Int? = nil,
+        in appearance: Appearance
+    ) -> NSImage {
         let badge = SessionRowFact.Badge.agent(kind)
-        return image(Key(kind: kind, size: size, appearance: appearance)) {
-            // The badge's letters are the same in every language.
-            SessionAgentBadge(badge: badge, text: SessionRowFactText.badge(badge, locale: .english), size: size)
+        return image(Key(kind: kind, size: size, identity: identity, appearance: appearance)) {
+            ConversationIdentityLead(identity: identity) {
+                // The badge's letters are the same in every language.
+                SessionAgentBadge(badge: badge, text: SessionRowFactText.badge(badge, locale: .english), size: size)
+            }
         }
     }
 

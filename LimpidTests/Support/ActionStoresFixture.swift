@@ -14,13 +14,26 @@ final class ActionStoresFixture {
     let session: WorkspaceSession
     let project: Project
     let windows: WindowRegistry
-    let repositoryRoots = RepositoryRoots.staged()
+    let repositoryRoots: RepositoryRoots
     let worktreeChanges = WorktreeChanges(git: .inert(counts: nil))
     let turnHistory = TurnHistory()
     let viewedLines = ViewedLineStore(directory: URL(fileURLWithPath: "/nonexistent"), writesFiles: false)
     let attention = AttentionState()
     let attentionQueue = AttentionQueueStore()
     let toasts = ToastCenter()
+    /// The colors, read from this fixture's own stores, with no turn
+    /// restored.
+    lazy var conversationIdentities = ConversationIdentityStore(
+        paletteCount: SupervisionTokens.conversationIdentity.count,
+        sources: ConversationIdentityStore.Sources(
+            session: session,
+            repositoryRoots: repositoryRoots,
+            turnHistory: turnHistory,
+            viewedLines: viewedLines,
+            attention: attention,
+            restoredTurnIDs: { [] }
+        )
+    )
     let registry = RecordingSurfaceRegistry()
     let reviewWriters = ReviewDraftWriterPool(shouldPersist: false)
     let restores = RestoreCoordinator(stateDirectories: [])
@@ -42,7 +55,10 @@ final class ActionStoresFixture {
 
     /// `opensTab`: whether the project's folder has a tab open, which the
     /// panel's turns do not need but the panes its actions find do.
-    init(opensTab: Bool = true) {
+    /// `repositoryRoots` answers each folder's top level: the folder
+    /// itself unless a test hands one that says otherwise.
+    init(opensTab: Bool = true, repositoryRoots: RepositoryRoots = .staged()) {
+        self.repositoryRoots = repositoryRoots
         let (session, project) = WorkspaceSessionFixture.withProject()
         self.session = session
         self.project = project
@@ -72,13 +88,16 @@ final class ActionStoresFixture {
             attention: attention,
             attentionQueue: attentionQueue,
             toasts: toasts,
+            conversationIdentities: conversationIdentities,
             isAppActive: { [unowned self] in isAppActive },
             restoredTurnIDs: { [] },
             restoreGateLookup: { RestoreGateLookup(tabs: [], runtimes: [], waitingPanes: [], isBusy: { _ in false }) },
             restoreRecord: { _ in nil },
             openReview: { [unowned self] request, pane, conversation, _ in
                 opened.append(Opened(request: request, pane: pane, conversation: conversation))
-            }
+            },
+            registry: registry,
+            paneVisibility: { _ in PaneVisibilityReporter() }
         )
     }
 

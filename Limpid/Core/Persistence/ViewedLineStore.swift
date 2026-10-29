@@ -75,7 +75,14 @@ final class ViewedLineStore {
         steps: []
     )
 
-    private(set) var lines: [ConversationKey: ViewedLine] = [:]
+    private(set) var lines: [ConversationKey: ViewedLine] = [:] {
+        didSet { revision &+= 1 }
+    }
+
+    /// Counts each write of `lines`, so a value derived from every line
+    /// (`ConversationIdentityStore`) is worked out again only when one
+    /// moved, without comparing every line to tell.
+    private(set) var revision = 0
     /// What was viewed of the changes outside turns, by worktree top level:
     /// each path's contents then.
     private(set) var outsideTurns: [String: [String: String]] = [:]

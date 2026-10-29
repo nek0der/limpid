@@ -776,3 +776,46 @@ struct WindowRecordTests {
         #expect(notified.value)
     }
 }
+
+// MARK: - The turn list's grouping
+
+/// Kept apart from the suite's body, which is at its length limit.
+extension WindowRecordTests {
+    /// A window that grouped its turn list by conversation comes back
+    /// grouped, and one left on the timeline comes back on it.
+    @Test func windowRecord_grouping_roundTrips() throws {
+        let fixture = Fixture()
+        fixture.session.selection(fixture.other)?.changesPanelGrouping = .byConversation
+
+        let restored = try fixture.relaunched()
+
+        let other = try #require(restored.windowIDs.last)
+        #expect(restored.selection(other)?.changesPanelGrouping == .byConversation)
+        #expect(restored.primarySelection.changesPanelGrouping == .timeline)
+    }
+
+    /// A record written before the grouping was saved opens on the timeline.
+    @Test func windowRecord_missingGrouping_decodesAsTimeline() throws {
+        let fixture = Fixture()
+        fixture.session.selection(fixture.other)?.changesPanelGrouping = .byConversation
+
+        let read = try fixture.otherRecord { $0.removeValue(forKey: "changesPanelGrouping") }
+
+        #expect(read.changesPanelGrouping == .timeline)
+        #expect(read.projectID == fixture.second.id)
+    }
+
+    /// A grouping a later build knows and this one does not opens on the
+    /// timeline, and costs nothing else in the record.
+    @Test func windowRecord_unknownGrouping_decodesAsTimeline() throws {
+        let fixture = Fixture()
+
+        let read = try fixture.otherRecord { $0["changesPanelGrouping"] = "byWorktree" }
+        let mistyped = try fixture.otherRecord { $0["changesPanelGrouping"] = 3 }
+
+        #expect(read.changesPanelGrouping == .timeline)
+        #expect(read.projectID == fixture.second.id)
+        #expect(mistyped.changesPanelGrouping == .timeline)
+        #expect(mistyped.changesPanelWidth == 444)
+    }
+}

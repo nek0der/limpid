@@ -155,7 +155,7 @@ struct AllProjectsModelTests {
         fixture.session.projects[index].worktrees = [worktree]
         let worktreeRow = ContainerID.worktree(projectID: fixture.b.id, worktreeID: worktree.id)
         fixture.session.openTab(container: worktreeRow, in: fixture.session.primaryWindowID, intent: .person, selects: false)
-        fixture.session.renameRow(worktreeRow, to: "Login work")
+        fixture.session.renameRow(worktreeRow, to: "Login work", runtimes: [])
 
         let card = try #require(Self.cards(fixture.session, registry: fixture.registry).first { $0.id == worktreeRow })
         #expect(card.name == "Login work")

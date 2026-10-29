@@ -35,6 +35,9 @@ struct WindowRecord: Codable, Equatable, Sendable {
     /// The changes panel's width as the person last dragged it; `nil`
     /// for the default.
     var changesPanelWidth: Double?
+    /// How the changes panel listed the turns. A build before reads past
+    /// it and drops it on its next save.
+    var changesPanelGrouping = ChangesPanelGrouping.timeline
     /// How the sidebar listed the projects; `nil` in a record written
     /// before arrangements, which lists them in the projects' order with
     /// the default folds. A build before reads past it and drops it on its
@@ -88,6 +91,7 @@ struct WindowRecord: Codable, Equatable, Sendable {
         sidebarHidden = selection.sidebarHidden
         isChangesPanelPresented = selection.isChangesPanelPresented
         changesPanelWidth = selection.changesPanelWidth.map(Double.init)
+        changesPanelGrouping = selection.changesPanelGrouping
         sidebar = selection.sidebarArrangement == SidebarArrangement() ? nil : selection.sidebarArrangement
         self.isHidden = isHidden
         self.isFront = isFront
@@ -105,6 +109,10 @@ struct WindowRecord: Codable, Equatable, Sendable {
         sidebarHidden = try c.decodeIfPresent(Bool.self, forKey: .sidebarHidden) ?? false
         isChangesPanelPresented = try c.decodeIfPresent(Bool.self, forKey: .isChangesPanelPresented) ?? false
         changesPanelWidth = try c.decodeIfPresent(Double.self, forKey: .changesPanelWidth)
+        // A grouping a later build added, or one that does not read, is the
+        // timeline, not a window lost.
+        changesPanelGrouping = (try? c.decodeIfPresent(ChangesPanelGrouping.self, forKey: .changesPanelGrouping))
+            ?? .timeline
         // A sidebar that does not read is the default one, not a window
         // lost.
         sidebar = try? c.decodeIfPresent(SidebarArrangement.self, forKey: .sidebar)
@@ -123,13 +131,14 @@ struct WindowRecord: Codable, Equatable, Sendable {
         selection.isFullScreen = isFullScreen
         selection.isChangesPanelPresented = isChangesPanelPresented
         selection.changesPanelWidth = changesPanelWidth.map { CGFloat($0) }
+        selection.changesPanelGrouping = changesPanelGrouping
         selection.sidebarArrangement = sidebar ?? SidebarArrangement()
     }
 
     private enum CodingKeys: String, CodingKey {
         case projectID, activeTabID, activeContainerID, frame, isFullScreen
         case sidebarWidth, sidebarHidden
-        case isChangesPanelPresented, changesPanelWidth
+        case isChangesPanelPresented, changesPanelWidth, changesPanelGrouping
         case sidebar
         case isHidden, isFront
     }

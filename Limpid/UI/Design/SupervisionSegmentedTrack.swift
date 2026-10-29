@@ -150,7 +150,9 @@ struct SupervisionSegmentedTrack<Segment: View, SelectedLabel: View>: View {
 
     /// Draws the segments with the pill at `position` under them.
     private func layers(position: Double) -> some View {
-        HStack(spacing: 0) {
+        // One width each, the widest's at the ideal size, as the pill is
+        // one segment wide (`EqualSegmentsLayout`).
+        EqualSegmentsLayout {
             ForEach(0..<count, id: \.self) { index in
                 segment(index)
                     .frame(maxWidth: .infinity)
@@ -176,7 +178,7 @@ struct SupervisionSegmentedTrack<Segment: View, SelectedLabel: View>: View {
             )
         }
         .overlay {
-            HStack(spacing: 0) {
+            EqualSegmentsLayout {
                 ForEach(0..<count, id: \.self) { index in
                     selectedLabel(index, colors.label)
                         .frame(maxWidth: .infinity)

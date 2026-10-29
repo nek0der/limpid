@@ -107,6 +107,23 @@ struct PaneStripModel: Equatable {
         /// How many panes the tab is split into. The strip does not show
         /// it; Open Tabs says it for a split tab ("Shell · 2 panes").
         let paneCount: Int
+        /// The conversation the tab's title stands for: the one in
+        /// `Tab.latestAgentSessionPaneID`'s pane, or with none, the tab's one
+        /// conversation (`ConversationTabs`). Optional because a
+        /// shell's tab runs none, and a scratch tab's has no worktree whose
+        /// cards it could be matched with.
+        var conversation: ConversationKey?
+        /// That conversation's identity color, as the changes panel hands
+        /// it out (`ConversationIdentityStore`), so the tab and the
+        /// conversation's cards can be matched. Optional because a
+        /// worktree with one active conversation shows none, and a scratch
+        /// tab has no worktree to hand one out in.
+        var identity: Int?
+        /// Every conversation the tab's panes run that holds an identity
+        /// color, with it (`ConversationTabs.TabConversations.all`): a card
+        /// of any of them outlines the tab, in that conversation's color,
+        /// so a split tab answers for its second pane too.
+        var runningIdentities: [ConversationKey: Int] = [:]
 
         /// Where the tab's title is cut: a name's end, but a path's start,
         /// as a shell's OSC 2 title for its folder is ("…/projects/alpha").
@@ -136,6 +153,11 @@ struct PaneStripModel: Equatable {
         /// How many panes the tab is split into; one for a tab read without
         /// its split.
         var paneCount = 1
+        /// The conversation the tab's title stands for, and its color.
+        var conversation: ConversationKey?
+        var identity: Int?
+        /// Each conversation the tab runs that holds a color, with it.
+        var runningIdentities: [ConversationKey: Int] = [:]
     }
 
     /// Whether the window has a review tab, and whether it is the one in
@@ -169,7 +191,10 @@ struct PaneStripModel: Equatable {
                 hasUnread: input.hasUnread,
                 isInTmux: input.isInTmux,
                 failedExitCode: input.exitCodes.first { $0 != 0 },
-                paneCount: input.paneCount
+                paneCount: input.paneCount,
+                conversation: input.conversation,
+                identity: input.identity,
+                runningIdentities: input.runningIdentities
             )
         }
         self.reviewTab = reviewTab

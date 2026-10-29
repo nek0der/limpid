@@ -27,7 +27,8 @@ pub use limpid_agent_model::{ApprovalQuestion, ProviderId};
 pub use projection::{DeclinedWait, project, project_with};
 pub use session_lifecycle::{on_launch, on_terminate};
 pub use title::{
-    MAX_FIRST_PROMPT_BYTES, MAX_TITLE_BYTES, TitleCandidates, TitleError, resolve_title,
+    MAX_FIRST_PROMPT_BYTES, MAX_TITLE_BYTES, TitleCandidates, TitleError, conversation_title,
+    resolve_title,
 };
 pub use turn_retention::turns_taken_by_change;
 pub use turn_rules::{

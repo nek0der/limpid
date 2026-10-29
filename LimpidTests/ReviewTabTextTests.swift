@@ -96,13 +96,46 @@ struct ReviewTabTextTests {
         #expect(ReviewTabText.scope(option, conversation: claude4, locale: Self.en) == "Claude #4: Unviewed Turns (None)")
         #expect(ReviewTabText.scope(option, conversation: claude4, locale: Self.ja) == "Claude #4：未確認のターン（なし）")
         #expect(ReviewTabText.scope(option, conversation: nil, locale: Self.en) == "Unviewed Turns (None)")
+        // Only ever spoken: a titled conversation is named with its agent.
+        var titled = claude4
+        titled.title = "Fix tests"
+        #expect(ReviewTabText.scope(option, conversation: titled, locale: Self.en) == "Claude, Fix tests #4: Unviewed Turns (None)")
+        #expect(ReviewTabText.conversationsChoice("Turns", conversation: titled, locale: Self.ja) == "Claude、Fix tests #4：Turns")
 
         let tag = ReviewFileTag(provider: .claude, ordinal: 4, turns: [4, 6])
         #expect(ReviewTabText.fileTag(tag, locale: Self.en) == "Changed during Claude #4’s T4, T6")
         #expect(ReviewTabText.fileTag(tag, locale: Self.ja) == "Claude #4 の T4、T6 の間に変更されました")
-        #expect(ReviewTabText.fileTagOrdinal(tag) == "#4")
-        #expect(ReviewTabText.fileTagOrdinal(ReviewFileTag(provider: .codex, ordinal: nil, turns: [1])) == nil)
+        #expect(ReviewTabText.fileTagNumber(ReviewFileTag(provider: .claude, ordinal: 4, turns: [4, 6])) == "#4")
+        #expect(ReviewTabText.fileTagNumber(ReviewFileTag(provider: .codex, ordinal: nil, turns: [1])) == nil)
         #expect(ReviewTabText
             .fileTag(ReviewFileTag(provider: .codex, ordinal: nil, turns: [1]), locale: Self.en) == "Changed during Codex’s T1")
+    }
+
+    /// A tag names its conversation by title, as the changes panel does,
+    /// with the number only where another conversation has the title too.
+    @Test func fileTag_titledConversation_namesItByTitle() {
+        let titled = ReviewFileTag(provider: .claude, title: "Review the fork", ordinal: nil, turns: [2])
+        #expect(ReviewTabText.fileTag(titled, locale: Self.en) == "Changed during Review the fork’s T2")
+        let shared = ReviewFileTag(provider: .claude, title: "Fix tests", ordinal: 2, turns: [3])
+        #expect(ReviewTabText.fileTag(shared, locale: Self.en) == "Changed during Fix tests #2’s T3")
+        #expect(ReviewTabText.unreadableNote([shared], locale: Self.en)
+            == "Couldn’t read the files changed during Fix tests #2’s T3, so a tag may be missing")
+    }
+
+    /// A tag whose title alone names it shows no number, its identity bar
+    /// telling it apart; one whose title another has too keeps its number.
+    /// VoiceOver hears the kind before the title, which the badge shows and
+    /// the tooltip leaves to it.
+    @Test func fileTag_titledConversation_showsNoNumber_andIsSpokenWithItsKind() {
+        let titled = ReviewFileTag(provider: .claude, title: "Review the fork", ordinal: nil, turns: [2], identity: 1)
+        #expect(ReviewTabText.fileTagNumber(titled) == nil)
+        #expect(ReviewTabText.fileTagNumber(ReviewFileTag(provider: .claude, title: "Fix tests", ordinal: 2, turns: [3])) == "#2")
+        #expect(ReviewTabText.fileTagsHelp([titled], unreadable: [], locale: Self.en) == "Changed during Review the fork’s T2")
+        #expect(ReviewTabText.fileTagsSpoken([titled], unreadable: [], locale: Self.en) == "Changed during Claude, Review the fork’s T2")
+        #expect(ReviewTabText.fileTagsSpoken([titled], unreadable: [], locale: Self.ja)
+            == "Claude、Review the fork の T2 の間に変更されました")
+        let untitled = ReviewFileTag(provider: .codex, ordinal: nil, turns: [1])
+        #expect(ReviewTabText.fileTagsSpoken([untitled], unreadable: [titled], locale: Self.en)
+            == "Changed during Codex’s T1\nCouldn’t read the files changed during Claude, Review the fork’s T2, so a tag may be missing")
     }
 }

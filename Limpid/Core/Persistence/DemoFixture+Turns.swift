@@ -67,16 +67,40 @@ extension DemoFixture {
     static func conversations(now: Date = Date()) -> [ConversationTurns] {
         [
             ConversationTurns(key: remindersConversation, turns: remindersTurns.compactMap {
-                $0.summary(in: remindersConversation, pane: Slot.reminders.paneID, root: selectedWorktreeRoot, now: now)
+                $0.summary(
+                    in: remindersConversation,
+                    pane: Slot.reminders.paneID,
+                    title: conversationTitle(of: .reminders),
+                    root: selectedWorktreeRoot,
+                    now: now
+                )
             }),
             ConversationTurns(key: remindersCodexConversation, turns: remindersCodexTurns.compactMap {
-                $0.summary(in: remindersCodexConversation, pane: Slot.remindersCodex.paneID, root: selectedWorktreeRoot, now: now)
+                $0.summary(
+                    in: remindersCodexConversation,
+                    pane: Slot.remindersCodex.paneID,
+                    title: conversationTitle(of: .remindersCodex),
+                    root: selectedWorktreeRoot,
+                    now: now
+                )
             }),
             ConversationTurns(key: prReviewConversation, turns: prReviewTurns.compactMap {
-                $0.summary(in: prReviewConversation, pane: Slot.prReview.paneID, root: duesmithRoot, now: now)
+                $0.summary(
+                    in: prReviewConversation,
+                    pane: Slot.prReview.paneID,
+                    title: conversationTitle(of: .prReview),
+                    root: duesmithRoot,
+                    now: now
+                )
             }),
             ConversationTurns(key: webhookConversation, turns: webhookTurns.compactMap {
-                $0.summary(in: webhookConversation, pane: Slot.webhook.paneID, root: folder("duesmith-fix-webhook-timeout"), now: now)
+                $0.summary(
+                    in: webhookConversation,
+                    pane: Slot.webhook.paneID,
+                    title: conversationTitle(of: .webhook),
+                    root: folder("duesmith-fix-webhook-timeout"),
+                    now: now
+                )
             })
         ]
     }
@@ -239,8 +263,10 @@ extension DemoFixture {
         var phase: TurnPhase = .finished
 
         /// Read through the same decoder a pass's turns go through, so the
-        /// scene shows what a real turn would.
-        func summary(in conversation: ConversationKey, pane paneID: UUID, root: URL, now: Date) -> TurnSummary? {
+        /// scene shows what a real turn would. `title` is the conversation's,
+        /// as the hook records it on each turn once the provider has named
+        /// the conversation, which it has by every staged turn's end.
+        func summary(in conversation: ConversationKey, pane paneID: UUID, title: String?, root: URL, now: Date) -> TurnSummary? {
             let format = ISO8601DateFormatter()
             let finished = now.addingTimeInterval(TimeInterval(-endedSecondsAgo))
             let started = finished.addingTimeInterval(TimeInterval(-seconds))
@@ -286,6 +312,9 @@ extension DemoFixture {
             }
             if let reply {
                 fields["replyHead"] = reply
+            }
+            if let title {
+                fields["conversationTitle"] = title
             }
             if let usage {
                 fields["usage"] = [

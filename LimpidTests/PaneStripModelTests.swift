@@ -337,4 +337,150 @@ struct PaneStripModelTests {
         #expect(model.items.filter(\.isActive).map(\.id) == [first.id])
         #expect(session.primarySelection.activeTabID == elsewhereTab.id)
     }
+
+    // MARK: Conversation identity
+
+    /// A run of conversation `id` in `pane`, its session started at
+    /// `seconds`, and the tab badge that says so.
+    private static func run(
+        _ id: String,
+        in pane: UUID,
+        startedAt seconds: TimeInterval = 0
+    ) -> (badge: AgentBadge, runtime: AgentRuntimePresentation) {
+        let badge = AgentBadge(
+            state: .running,
+            updatedAt: Date(),
+            conversationID: id,
+            sessionStartedAt: Date(timeIntervalSince1970: seconds)
+        )
+        let runtime = AgentRuntimePresentation.test(
+            runID: id,
+            badge: badge,
+            paneIDs: [pane],
+            conversation: TurnSummaryFixture.conversation(id)
+        )
+        return (badge, runtime)
+    }
+
+    /// The strip of the fixture's project, with the colors the changes
+    /// panel hands out for its worktree.
+    private static func strip(_ fixture: ActionStoresFixture) -> PaneStripModel {
+        let container = ContainerID.project(fixture.project.id)
+        return PaneStripModel(
+            container: container,
+            session: fixture.session,
+            window: fixture.session.primaryWindowID,
+            queue: AttentionQueue(),
+            runtimes: fixture.attention.allRuntimes,
+            identities: fixture.conversationIdentities.identities(in: container),
+            mountedTmuxPaneIDs: [],
+            reviewTab: .none
+        )
+    }
+
+    @Test func items_tabRunningConversation_carriesItsKeyAndIdentity() async throws {
+        let fixture = ActionStoresFixture()
+        let container = ContainerID.project(fixture.project.id)
+        fixture.session.openTab(container: container)
+        let tabs = fixture.session.tabs(in: container)
+        try #require(tabs.count == 2)
+        let first = try Self.run("a", in: #require(tabs[0].splitTree.allLeafIDs().first))
+        let second = try Self.run("b", in: #require(tabs[1].splitTree.allLeafIDs().first))
+        fixture.session.update(tabs[0].id) { $0.agentBadges[.claude] = [first.runtime.paneIDs.first ?? UUID(): first.badge] }
+        fixture.session.update(tabs[1].id) { $0.agentBadges[.claude] = [second.runtime.paneIDs.first ?? UUID(): second.badge] }
+        fixture.attention.replaceRuntimes([first.runtime, second.runtime], kind: .claude)
+        await ChangesPanelActions.resolveRoot(window: fixture.window, stores: fixture.changes)
+
+        let strip = Self.strip(fixture)
+
+        #expect(strip.item(for: tabs[0])?.conversation == TurnSummaryFixture.conversation("a"))
+        #expect(strip.item(for: tabs[0])?.identity == 0)
+        #expect(strip.item(for: tabs[1])?.conversation == TurnSummaryFixture.conversation("b"))
+        #expect(strip.item(for: tabs[1])?.identity == 1)
+    }
+
+    /// One conversation in the worktree needs no color to tell it apart.
+    @Test func items_singleConversationWorktree_hasNoIdentity() async throws {
+        let fixture = ActionStoresFixture()
+        let container = ContainerID.project(fixture.project.id)
+        let tab = try #require(fixture.session.tabs(in: container).first)
+        let pane = try #require(tab.splitTree.allLeafIDs().first)
+        let only = Self.run("a", in: pane)
+        fixture.session.update(tab.id) { $0.agentBadges[.claude] = [pane: only.badge] }
+        fixture.attention.replaceRuntimes([only.runtime], kind: .claude)
+        await ChangesPanelActions.resolveRoot(window: fixture.window, stores: fixture.changes)
+
+        let item = Self.strip(fixture).item(for: tab)
+
+        #expect(item?.conversation == TurnSummaryFixture.conversation("a"))
+        #expect(item?.identity == nil)
+    }
+
+    /// A split tab running two conversations is the one its title stands
+    /// for: the session that started last.
+    @Test func items_splitTabWithTwoConversations_usesLatestSession() async throws {
+        let fixture = ActionStoresFixture()
+        PaneActions.split(fixture.session, direction: .horizontal)
+        let container = ContainerID.project(fixture.project.id)
+        let tab = try #require(fixture.session.tabs(in: container).first)
+        let panes = tab.splitTree.allLeafIDs()
+        try #require(panes.count == 2)
+        let older = Self.run("older", in: panes[0], startedAt: 0)
+        let newer = Self.run("newer", in: panes[1], startedAt: 60)
+        fixture.session.update(tab.id) { $0.agentBadges[.claude] = [panes[0]: older.badge, panes[1]: newer.badge] }
+        fixture.attention.replaceRuntimes([older.runtime, newer.runtime], kind: .claude)
+        await ChangesPanelActions.resolveRoot(window: fixture.window, stores: fixture.changes)
+        let identities = fixture.conversationIdentities.identities(in: container)
+
+        let item = Self.strip(fixture).item(for: tab)
+
+        let key = TurnSummaryFixture.conversation("newer")
+        #expect(item?.conversation == key)
+        #expect(item?.identity != nil)
+        #expect(item?.identity == identities[key])
+        // The second pane's conversation still finds the tab: a card of
+        // either outlines it, each in its own color.
+        let olderKey = TurnSummaryFixture.conversation("older")
+        #expect(item?.runningIdentities == [olderKey: identities[olderKey], key: identities[key]].compactMapValues(\.self))
+        #expect(item?.runningIdentities.count == 2)
+    }
+
+    /// A tab with only a shell, beside two running conversations, has no
+    /// conversation and no color.
+    @Test func items_shellTab_hasNoConversation() async throws {
+        let fixture = ActionStoresFixture()
+        let container = ContainerID.project(fixture.project.id)
+        fixture.session.openTab(container: container)
+        fixture.session.openTab(container: container)
+        let tabs = fixture.session.tabs(in: container)
+        try #require(tabs.count == 3)
+        let first = try Self.run("a", in: #require(tabs[0].splitTree.allLeafIDs().first))
+        let second = try Self.run("b", in: #require(tabs[1].splitTree.allLeafIDs().first))
+        fixture.attention.replaceRuntimes([first.runtime, second.runtime], kind: .claude)
+        await ChangesPanelActions.resolveRoot(window: fixture.window, stores: fixture.changes)
+
+        let shell = Self.strip(fixture).item(for: tabs[2])
+
+        #expect(shell?.conversation == nil)
+        #expect(shell?.identity == nil)
+    }
+
+    /// A scratch tab has no worktree to match its conversation's cards in.
+    @Test func items_scratchTab_hasNoConversation() {
+        let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
+        let scratch = Self.run("a", in: pane)
+        session.update(tab.id) { $0.agentBadges[.claude] = [pane: scratch.badge] }
+        let item = PaneStripModel(
+            container: tab.container,
+            session: session,
+            window: session.primaryWindowID,
+            queue: AttentionQueue(),
+            runtimes: [scratch.runtime],
+            identities: [TurnSummaryFixture.conversation("a"): 0],
+            mountedTmuxPaneIDs: [],
+            reviewTab: .none
+        ).item(for: tab)
+        #expect(item?.conversation == nil)
+        #expect(item?.identity == nil)
+    }
 }

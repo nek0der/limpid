@@ -111,13 +111,51 @@ timeline, with the unviewed count and range and a **Conversation** filter.
   agent's reply, on two lines at most; the tooltip has more of it. A
   finished turn's notification says the reply too, with the prompt beside
   the project.
+- Each conversation is named by its title: the name you gave its tab
+  (kept after the tab closes; clear the tab's name to drop it), else the
+  agent's own (Claude's `/rename` or the title Claude generates,
+  Codex's thread name), else its first prompt. An untitled conversation
+  beside another of its agent is numbered ("Claude #2"), and so are two of
+  one agent with the same title ("Fix tests #2"). The
+  **Conversation** filter and the review's scope menu list each by name.
+  The line under the name says the tab that runs it, counted as the pane
+  strip shows the tabs ("Tab 3"), where it runs when that is another
+  worktree, or "No tab" once it ended. When it last worked and its
+  unviewed turns follow. The tooltip and VoiceOver name the conversation.
+- While a worktree has two or more conversations running or with turns to
+  read, each of them gets a color, drawn as a short vertical bar just left
+  of its agent badge: on its pane strip tab and its **Open Tabs** row, under
+  the turn number on its cards, in the **Conversation** filter and its
+  menu, in the review's scope menu, and on the review's file tags. A
+  conversation keeps its color while it runs or has turns to read, so a tab
+  and its cards can be matched at a glance. Rest the pointer on a tab and
+  its conversation's cards are outlined in its color while the others
+  fade; point at a card and its tab is outlined. A worktree with one such
+  conversation, and a scratch tab, show no bar. A file tag still shows the
+  number ("#2") when the conversation's name carries one.
+- An unviewed turn's number ("T7") stands in a blue pill; a viewed turn's
+  number is gray. The card open in the review is ringed in blue.
 - A card's moves stand where its time is: **Mark as Viewed up to Here**
   (**Mark as Unviewed from Here** on a viewed turn) and **Restore Code to
-  Before This Turn…**. They show on the last card that has them and on the
-  card that says why a restore has to wait, and on any other while you
-  point at it, move the keyboard onto it, or open it in the review; a
-  running turn has none. Both are also in the card's context menu
-  and its VoiceOver actions.
+  Before This Turn…**. They show on the last card that has them (in each
+  section, by conversation) and on the card that says why a restore has to
+  wait, and on any other while you point at it, move the keyboard onto it,
+  or open it in the review; a running turn has none. Both are also in the
+  card's context menu and its VoiceOver actions; the context menu also
+  offers **Show Tab** while a tab of this worktree runs the conversation.
+- With two or more conversations with turns and the filter on **All**, **Timeline** and
+  **By Conversation** above the list choose how the turns are listed; each
+  window keeps its choice. **By Conversation** gives each conversation a
+  section, the running ones first, then those with unviewed turns, then
+  those viewed, the latest first in each. A section's heading shows the
+  conversation's color, badge, and name, the same line as the filter's
+  menu, its unviewed count, and **Show Tab** while a tab of this worktree
+  runs it. Click the heading to collapse the section; it opens again when
+  you switch worktrees, change the grouping, or reopen the panel. Its cards
+  leave out the badge, which the heading carries. A card's moves reach its
+  own conversation's line only, and **Unmark as Viewed** under a section
+  takes back that conversation's line alone. Pointing at a heading outlines
+  the conversation's tab, as a card does.
 - **Review All Unviewed** opens the review.
 - **Commit & PR** at the bottom shows what is not yet in the base branch or
   not yet pushed, and offers **Create PR** (with `gh`) and **Clean Up

@@ -176,8 +176,8 @@ struct ReviewFileMarkTag: View {
 }
 
 /// The conversations whose turns changed the file within the range, on its
-/// header: the first two as their badges, each with its place ("#4")
-/// where the kind alone does not name it, then "2 more" for the rest, so a
+/// header: the first two as their identity bars and badges, each with its
+/// number ("#4") where its name carries one, then "2 more" for the rest, so a
 /// file many conversations touched keeps the header's room for its path.
 /// Every one with its turns is in the tooltip and in what VoiceOver reads
 /// ("Changed during Claude #4's T4, T6"), never "by": a turn's diff is what
@@ -190,7 +190,8 @@ struct ReviewFileConversationTags: View {
 
     var body: some View {
         let (shown, more) = ReviewFileTags.shown(tags)
-        let said = ReviewTabText.fileTagsHelp(tags, unreadable: unreadable, locale: locale) ?? ""
+        let help = ReviewTabText.fileTagsHelp(tags, unreadable: unreadable, locale: locale) ?? ""
+        let spoken = ReviewTabText.fileTagsSpoken(tags, unreadable: unreadable, locale: locale) ?? ""
         HStack(spacing: LimpidLayout.Supervision.spaceS) {
             ForEach(shown, id: \.self) { tag in
                 face(tag)
@@ -203,17 +204,19 @@ struct ReviewFileConversationTags: View {
         }
         .fixedSize()
         .contentShape(Rectangle())
-        .help(Text(verbatim: said))
+        .help(Text(verbatim: help))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: said))
+        .accessibilityLabel(Text(verbatim: spoken))
     }
 
     private func face(_ tag: ReviewFileTag) -> some View {
         let badge = SessionRowFact.Badge.agent(tag.provider)
         return HStack(spacing: LimpidLayout.Supervision.spaceXS) {
-            SessionAgentBadge(badge: badge, text: SessionRowFactText.badge(badge, locale: locale))
-            if let ordinal = ReviewTabText.fileTagOrdinal(tag) {
-                Text(verbatim: ordinal)
+            ConversationIdentityLead(identity: tag.identity) {
+                SessionAgentBadge(badge: badge, text: SessionRowFactText.badge(badge, locale: locale))
+            }
+            if let number = ReviewTabText.fileTagNumber(tag) {
+                Text(verbatim: number)
                     .font(.supervision(.micro).monospacedDigit())
                     .foregroundStyle(SupervisionTokens.muted.color)
             }

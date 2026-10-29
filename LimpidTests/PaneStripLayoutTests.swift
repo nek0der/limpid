@@ -321,6 +321,30 @@ struct PaneStripTabsLayoutTests {
         }
     }
 
+    /// A tab of one of several conversations carries its color's bar
+    /// before the badge: the tab widens by the bar and its gap, and by
+    /// nothing more, while a tab with no color keeps the width of a tab
+    /// with no bar.
+    @Test func tabWidth_withIdentityBar_addsBarAndSpacing() throws {
+        try withTempDir { directory in
+            let settings = SettingsStore(directory: directory)
+            let window = ProjectWindowState(selection: WindowSelection())
+            func item(_ identity: Int?) -> PaneStripModel.Item {
+                var item = PaneStripModel.Item(
+                    id: UUID(), title: "claude", paletteIndex: nil, isActive: true, agent: .claude,
+                    stateGlyph: nil, hasUnread: false, isInTmux: false, failedExitCode: nil, paneCount: 1
+                )
+                item.identity = identity
+                return item
+            }
+            let plain = Self.measure(Self.tab(item(nil)), settings: settings, window: window)
+            let colored = Self.measure(Self.tab(item(2)), settings: settings, window: window)
+            let added = LimpidLayout.Supervision.conversationIdentityBarWidth + LimpidLayout.Supervision.conversationIdentityBarSpacing
+            #expect(abs(colored.ideal - plain.ideal - added) < 0.5, "\(colored.ideal) against \(plain.ideal)")
+            #expect(abs(colored.bare - plain.bare - added) < 0.5, "\(colored.bare) against \(plain.bare)")
+        }
+    }
+
     /// With room, each tab, the review's too, is as wide as its whole title.
     @Test func withRoom_eachTabTakesItsWholeTitle() async throws {
         try await withTempDir { directory in

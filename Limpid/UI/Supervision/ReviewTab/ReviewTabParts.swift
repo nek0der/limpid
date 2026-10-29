@@ -521,9 +521,12 @@ struct ReviewTabDestinationMenu: View {
         // The menu's own name for it, so two panes of one name read apart
         // here as they do in the menu, and a conversation's pane by the
         // name its chip has.
-        let name = choices.first { $0.destination.paneID == selectedPaneID && status.isReady }
-            .map { ReviewTabText.destinationLabel($0, locale: locale) }
+        let chosen = choices.first { $0.destination.paneID == selectedPaneID && status.isReady }
+        let name = chosen.map { ReviewTabText.destinationLabel($0, locale: locale) }
             ?? ReviewTabText.destinationName(status, locale: locale)
+        // VoiceOver names a titled conversation with its agent, as the
+        // menu's items do.
+        let spokenName = chosen.map { ReviewTabText.destinationLabel($0, form: .spoken, locale: locale) } ?? name
         let foreground = ReviewTabText.destinationForeground(status)
         HStack(spacing: LimpidLayout.Supervision.spaceXS) {
             if fit.showsDestinationHeading {
@@ -542,12 +545,12 @@ struct ReviewTabDestinationMenu: View {
                 WidthCap(max: Layout.reviewDestinationMaxWidth) {
                     menu(
                         label: Self.joined(name: name, foreground: foreground),
-                        value: AgentStatusText.spokenList([name, foreground].compactMap(\.self), locale: locale)
+                        value: AgentStatusText.spokenList([spokenName, foreground].compactMap(\.self), locale: locale)
                     )
                 }
                 .help(Text(verbatim: whole))
             } else {
-                menu(label: Text(verbatim: name).font(.supervision(.row, weight: .medium)), value: name)
+                menu(label: Text(verbatim: name).font(.supervision(.row, weight: .medium)), value: spokenName)
                     .fixedSize()
                 if let foreground {
                     Text(verbatim: "·")
@@ -575,11 +578,15 @@ struct ReviewTabDestinationMenu: View {
             } else {
                 foregrounds[paneID]
             }
-            let title = ReviewTabText.destinationChoice(choice, foreground: foreground, locale: locale)
+            let title = ReviewTabText.destinationChoice(choice, foreground: foreground, form: .menu, locale: locale)
+            let whole = ReviewTabText.destinationChoice(choice, foreground: foreground, locale: locale)
+            let spoken = ReviewTabText.destinationChoice(choice, foreground: foreground, form: .spoken, locale: locale)
             // The menu's own checkmark, as the scope menu's (`ReviewTabScopeMenu`).
             Toggle(isOn: Binding(get: { isChosen }, set: { _ in onChoose(paneID) })) {
                 Text(verbatim: title)
             }
+            .help(Text(verbatim: whole))
+            .accessibilityLabel(Text(verbatim: spoken))
         }
     }
 

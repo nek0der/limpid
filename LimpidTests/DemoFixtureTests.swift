@@ -324,4 +324,26 @@ struct DemoFixtureTests {
             #expect(badge.lastPrompt == conversation.turns.last?.promptHead)
         }
     }
+
+    /// Each staged conversation is called one name everywhere, as a real
+    /// run's is: its tab, its badge's conversation and title as the
+    /// provider keeps it, its pane header, every turn's recorded title, and
+    /// the changes panel, which names it from those turns.
+    @Test func everyStagedConversation_isCalledOneName() throws {
+        let session = WorkspaceSession()
+        _ = session.restore(from: DemoFixture.snapshot)
+        for conversation in DemoFixture.conversations() {
+            let pane = try #require(conversation.turns.last.flatMap { UUID(uuidString: $0.paneID) })
+            let tab = try #require(session.tab(containing: pane))
+            let badge = try #require(tab.agentBadges[conversation.key.provider]?[pane])
+            let name = tab.title
+
+            #expect(badge.conversationID == conversation.key.conversationID)
+            #expect(PaneHeaderRules.agentTitle(for: badge) == name)
+            #expect(tab.conversationName?.name == name)
+            #expect(conversation.turns.allSatisfy { $0.conversationTitle == name }, "\(name)")
+            let agent = ChangesPanelModel.Agent(conversation: conversation.key, turns: conversation.turns)
+            #expect(ChangesPanelModel.title(of: agent, liveTab: nil, rememberedTabName: nil) == name)
+        }
+    }
 }

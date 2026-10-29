@@ -72,6 +72,29 @@ enum SupervisionTruncation: Equatable, Sendable {
         return String(text.prefix(head)) + "…" + String(text.suffix(tail))
     }
 
+    /// `text` cut to its first `limit` characters and an ellipsis once it
+    /// is longer, read from its start as a name is: for a line an AppKit
+    /// menu draws, which cannot cut a line itself and widens the whole menu
+    /// to its longest item, so the cut is made by count before the menu is
+    /// built.
+    static func end(_ text: String, keeping limit: Int) -> String {
+        guard text.count > limit, limit > 0 else { return text }
+        // A cut that falls after a space would leave "Fix the …".
+        let kept = String(text.prefix(limit)).trimmingCharacters(in: .whitespaces)
+        return kept + "…"
+    }
+
+    /// How many characters of a name a menu shows: a conversation's title
+    /// can be a whole first prompt or a long rename, which would otherwise
+    /// make every item of its menu as wide.
+    static let menuNameLimit = 32
+
+    /// A name as an AppKit menu shows it (`menuNameLimit`); its tooltip and
+    /// VoiceOver keep it whole.
+    static func menuName(_ name: String) -> String {
+        end(name, keeping: menuNameLimit)
+    }
+
     // MARK: - Titles
 
     /// A title that may be a path (a terminal tab's, which the person, the

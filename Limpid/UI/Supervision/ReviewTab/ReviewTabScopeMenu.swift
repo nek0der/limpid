@@ -122,16 +122,18 @@ struct ReviewTabScopeMenu: View {
         }
     }
 
-    /// A conversation's heading: its badge, its name, and under it its
-    /// unviewed turns and where it runs, as the changes panel's filter
-    /// says them.
+    /// A conversation's heading: its identity bar where it has one and its
+    /// badge, its name cut as a menu cuts it, and under it the line the
+    /// changes panel's filter gives each conversation
+    /// (`ConversationText.detail`). VoiceOver reads the whole name with its
+    /// agent.
     private func heading(_ agent: ConversationChoice) -> PopUpMenuHeading {
         let locale = locale
         return PopUpMenuHeading(
-            title: ConversationText.name(agent, locale: locale),
-            subtitle: ConversationText.menuLine(agent, locale: locale),
-            image: { AgentBadgeMenuImage.image(for: agent.conversation.provider, size: .row, in: .current) },
-            accessibilityLabel: ConversationText.help(agent, locale: locale)
+            title: ConversationText.menuName(agent, locale: locale),
+            subtitle: ConversationText.detail(agent, locale: locale),
+            image: { AgentBadgeMenuImage.image(for: agent.conversation.provider, size: .row, identity: agent.identity, in: .current) },
+            accessibilityLabel: ConversationText.spokenHelp(agent, locale: locale)
         )
     }
 }
@@ -207,7 +209,9 @@ struct ReviewTabScopePicker: View {
             BorderedMenuTriggerLabel {
                 if let conversation {
                     let badge = SessionRowFact.Badge.agent(conversation.conversation.provider)
-                    SessionAgentBadge(badge: badge, text: SessionRowFactText.badge(badge, locale: locale), size: .regular)
+                    ConversationIdentityLead(identity: conversation.identity) {
+                        SessionAgentBadge(badge: badge, text: SessionRowFactText.badge(badge, locale: locale), size: .regular)
+                    }
                     if showsName {
                         Text(verbatim: ConversationText.name(conversation, locale: locale))
                             .font(.supervision(.row, weight: .semibold))

@@ -12,7 +12,7 @@
 //! accepted, which attention episode each run is in — and the bridge's engine
 //! keeps it for the next pass; the host never sees it.
 
-use crate::title::{TitleCandidates, TitleError, resolve_title};
+use crate::title::{TitleCandidates, TitleError, conversation_title, resolve_title};
 use crate::turn_rules::conversation_of;
 use limpid_agent_model::{
     AcceptedRun, AttachmentResolution, AttentionMarks, Badge, Capability, Command, CommandOp,
@@ -921,14 +921,21 @@ fn tab_titles(
 /// the run has reported its conversation, since a record without one may be
 /// left from a session that has ended, its opening prompt with it. The app
 /// names a pane header by the same rule (`PaneHeaderRules.agentTitle`).
+/// The provider's two titles are taken in the order every surface takes
+/// them (`conversation_title`), so the tab and the turns it records agree.
 fn badge_title(badge: &Badge) -> Result<Option<String>, TitleError> {
     if badge.conversation_id.is_none() {
         return Ok(None);
     }
+    if let Some(title) = conversation_title(
+        badge.provider_session_title.as_deref(),
+        badge.provider_generated_title.as_deref(),
+    )? {
+        return Ok(Some(title));
+    }
     resolve_title(TitleCandidates {
-        provider_session: badge.provider_session_title.as_deref(),
-        provider_generated: badge.provider_generated_title.as_deref(),
         first_prompt: badge.first_prompt.as_deref(),
+        ..TitleCandidates::default()
     })
 }
 

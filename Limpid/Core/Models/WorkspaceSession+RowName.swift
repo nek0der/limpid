@@ -83,7 +83,7 @@ extension WorkspaceSession {
     /// kept a row's name there), and that name is the one the person
     /// cleared: left on the tab, it would name the row again at once. The
     /// scratch row has no name to give.
-    func renameRow(_ container: ContainerID, to name: String) {
+    func renameRow(_ container: ContainerID, to name: String, runtimes: [AgentRuntimePresentation]) {
         let given: String? = name.isEmpty ? nil : name
         switch container {
         case .loose:
@@ -91,7 +91,7 @@ extension WorkspaceSession {
         case let .project(projectID):
             guard let pi = projects.firstIndex(where: { $0.id == projectID }) else { return }
             if given == nil, projects[pi].rootDisplayName.map({ !$0.isEmpty }) != true {
-                clearTabNameNamingRow(container)
+                clearTabNameNamingRow(container, runtimes: runtimes)
             }
             projects[pi].rootDisplayName = given
         case let .worktree(projectID, worktreeID):
@@ -99,16 +99,18 @@ extension WorkspaceSession {
                   let wi = projects[pi].worktrees.firstIndex(where: { $0.id == worktreeID })
             else { return }
             if given == nil, projects[pi].worktrees[wi].displayName.map({ !$0.isEmpty }) != true {
-                clearTabNameNamingRow(container)
+                clearTabNameNamingRow(container, runtimes: runtimes)
             }
             projects[pi].worktrees[wi].displayName = given
         }
     }
 
     /// Clears the tab name `rowName(of:)` names the row by when the row has
-    /// no name of its own: the first one given, as that reads it.
-    private func clearTabNameNamingRow(_ container: ContainerID) {
+    /// no name of its own: the first one given, as that reads it. As the
+    /// person clearing the tab's own name would (`renameTab`), so the
+    /// conversation the tab stands for lets go of the name too.
+    private func clearTabNameNamingRow(_ container: ContainerID, runtimes: [AgentRuntimePresentation]) {
         guard let tab = tabs(in: container).first(where: { $0.titleOverride.map { !$0.isEmpty } == true }) else { return }
-        update(tab.id) { $0.titleOverride = nil }
+        renameTab(tab.id, to: "", runtimes: runtimes)
     }
 }

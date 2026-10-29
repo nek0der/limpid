@@ -82,6 +82,19 @@ pub(crate) struct EndReading {
     pub reply: Option<String>,
 }
 
+/// The title a turn keeps for its conversation: the session title the
+/// provider gave, else the one it generated, as the projection names the
+/// tab (`limpid_agent_core::conversation_title`). A title too long to be one
+/// is recorded as none, as the tab shows none for it.
+fn conversation_title(run: &RunRecord) -> Option<String> {
+    limpid_agent_core::conversation_title(
+        run.provider_session_title.as_deref(),
+        run.provider_generated_title.as_deref(),
+    )
+    .ok()
+    .flatten()
+}
+
 impl EndReading {
     /// The reading with the reply the event ended the turn with: a stop's,
     /// whole, or empty for a stop that sent none. Any other end has none,
@@ -401,6 +414,9 @@ impl Turns<'_> {
         previous: Option<&RunRecord>,
         run: Option<&mut RunRecord>,
     ) -> Option<Pin> {
+        // `run` is the record about to be written, so it already holds the
+        // title this event gave; the previous record would lag by one event.
+        let title = run.as_deref().and_then(conversation_title);
         match prepared {
             Prepared::Skip(reason) => {
                 self.log.line(&format!("turn not written: {reason}"));
@@ -434,6 +450,7 @@ impl Turns<'_> {
                     checks: reading.checks,
                     are_checks_partial: reading.are_checks_partial,
                     reply: reading.reply.as_deref(),
+                    title: title.as_deref(),
                 },
                 continues_ended_turn,
                 keeps_phase,
@@ -494,6 +511,7 @@ impl Turns<'_> {
             begin: taken,
             event: &event,
             provider_turn_id,
+            title: conversation_title(run).as_deref(),
         });
         if !self.write(&record) {
             return None;
@@ -585,6 +603,9 @@ impl Turns<'_> {
             return;
         };
         let turn_id = uuid::Uuid::new_v4().hyphenated().to_string().to_uppercase();
+        // Read once for both halves, which name one conversation, rather than
+        // normalizing the run's titles twice.
+        let title = conversation_title(run);
         let record = end_only_record(
             TurnStart {
                 turn_id: turn_id.clone(),
@@ -601,6 +622,7 @@ impl Turns<'_> {
                 },
                 event,
                 provider_turn_id: None,
+                title: title.as_deref(),
             },
             TurnEnd {
                 phase,
@@ -611,6 +633,7 @@ impl Turns<'_> {
                 checks: reading.checks,
                 are_checks_partial: reading.are_checks_partial,
                 reply: reading.reply.as_deref(),
+                title: title.as_deref(),
             },
         );
         if self.write(&record) {

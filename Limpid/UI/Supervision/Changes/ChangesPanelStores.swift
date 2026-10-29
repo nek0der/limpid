@@ -20,6 +20,10 @@ struct ChangesPanelStores {
     let attention: AttentionState
     let attentionQueue: AttentionQueueStore
     let toasts: ToastCenter
+    /// The identity colors of each session container's conversations,
+    /// which the panel, the rail, and the review read here and the pane
+    /// strip through the environment, the same store.
+    let conversationIdentities: ConversationIdentityStore
     /// Whether Limpid is in front, where someone may read the panel.
     let isAppActive: () -> Bool
     /// The turns a restore took back, read once per call.
@@ -32,4 +36,9 @@ struct ChangesPanelStores {
     /// Opens the review tab: a row's turn, or the worktree's unviewed turns
     /// (`ReviewTabActions.open`).
     let openReview: (ReviewTabRequest, _ agentPaneID: UUID?, ConversationKey?, ProjectWindowState) async -> Void
+    /// The terminals, which "Show Tab" hands the keyboard to.
+    let registry: any SurfaceViewProviding
+    /// Where a window reports the panes it shows, for "Show Tab" putting
+    /// the review behind the tab it brings forward.
+    let paneVisibility: (ProjectWindowState) -> PaneVisibilityReporter
 }
