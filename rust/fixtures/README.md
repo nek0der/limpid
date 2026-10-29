@@ -265,6 +265,22 @@ Cases that could not be recorded as planned:
   after the first `Stop` carry the subagent's `agent_id` and `agent_type`. The
   subagent's id, its transcript's session folder, and the project folder in
   the transcript paths became placeholders.
+- `claude/2026-10/mcp-elicitation-*` were recorded with Claude Code 2.1.312
+  in its interactive TUI, driven through a pseudo-terminal, against a
+  minimal stdio MCP server whose one tool answers a call with
+  `elicitation/create`, and with a user `--settings` value that saved each
+  payload. Only the events the shipped template subscribes to were kept, so
+  the MCP tool's `PostToolUse` is left out. `form`
+  accepts the form; `url-dismissed` asks to open a URL and is dismissed with
+  Esc, after the six seconds that send the `elicitation_url_dialog`
+  notification; `background-subagent` asks from a subagent Claude ran in the
+  background, whose request came after the turn's `Stop` and without
+  `agent_id`; `answered-by-hook` adds a second `Elicitation` hook that
+  answers the request, after which Claude drew no dialog and sent neither
+  `ElicitationResult` nor a notification, only the MCP tool's `PostToolUse`.
+  The hand-back's message became a placeholder with the other conversation
+  text. In the same recordings, a hook that took six seconds held the dialog
+  back for those six seconds, and Ctrl+C left the form open.
 
 ## Scrubbing
 

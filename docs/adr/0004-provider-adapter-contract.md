@@ -224,7 +224,12 @@ events are the one sign that work goes on; they reopen the run as any tool
 does until the subagent ends. Its end starts a turn of Claude's, whose stop
 settles the run; Claude holds the idle prompt back while a subagent runs
 (see "Work outside a turn"). A wait that the subagent's permission prompt
-opened is not a rest either, and its next tool event ends it. The agent's
+opened is not a rest either, and its next tool event ends it. So is a
+question the subagent asks after the stop (its `AskUserQuestion`, or its MCP
+server's request for input): its answer leaves the run `running` until the
+subagent's hand-back opens a turn whose stop settles it. Returning to the
+rest instead needs a wait that records whose it is, since the answer of an
+MCP server's request carries no `agent_id`. The agent's
 own tools after a stop carry no `agent_id`, so a stop hook's continuation
 still reopens the run as "Work outside a turn" below describes.
 
@@ -425,7 +430,19 @@ report carries the kind it waits on (`kind=permission|question|auth`), which
 the fork forwards and the app hands on as `ProgramStatus::kind`. Both agents
 report `question` for an MCP server's request for input (an elicitation), and
 Codex also for a question it asked without stopping that is still open once
-its turn is over; both report `auth` when the person has to sign in again. A
+its turn is over; both report `auth` when the person has to sign in again.
+Claude Code also announces an MCP server's request with its `Elicitation`
+hook (added in 2.1.76, per its changelog; recorded in 2.1.312), which the
+adapter records as a question in the request's `message`, and ends it with
+`ElicitationResult`, sent for an answer, a refusal, and an Esc alike. The
+hook runs before the dialog is drawn, and the dialog waits for it, so the
+template gives it a short timeout. A hook of the person's own that answers
+the request draws no dialog and sends no `ElicitationResult`; the question
+then stays until the run's next tool or stop. A request from a subagent
+carries no `agent_id`, and a background subagent's comes after the turn's
+`Stop`; its result likewise ends whatever the run waits on then. A record waiting on that
+question keeps it over the report, as below, so the report decides a Claude
+elicitation only where the hook did not run. A
 run whose pane last reported such a block, in or after the second its record
 last changed, waits (`NeedsInput`) on a question or a sign-in
 (`WaitKind::SignIn`), with no words of its own: the report carries the MCP

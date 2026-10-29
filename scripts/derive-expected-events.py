@@ -310,6 +310,13 @@ def claude_event(obj, transcript_path):
                 event["awaited_call_ended"] = True
             return event
         return {"type": "extension", "name": name, "payload": obj}
+    if name == "Elicitation":
+        event = {"type": "waiting_for_input"}
+        message = string(obj, "message")
+        optional(event, "detail", message if message and message.strip() else None)
+        return event
+    if name == "ElicitationResult":
+        return {"type": "tool_finished"}
     if name == "PreCompact":
         return {"type": "compacting"}
     if name == "Stop":

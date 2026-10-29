@@ -1,0 +1,13 @@
+{
+  "cwd": "/tmp/example",
+  "elicitation_id": "probe-1",
+  "hook_event_name": "Elicitation",
+  "mcp_server_name": "probe",
+  "message": "Sign in to Probe",
+  "mode": "url",
+  "prompt_id": "00000000-0000-4000-8000-000000000002",
+  "scratchpad_dir": "/tmp/example",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl",
+  "url": "https://example.com/login"
+}

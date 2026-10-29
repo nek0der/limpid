@@ -391,8 +391,10 @@ the turns, and the commands for the app to perform.
   prompt would, with what the transcript says the turn used, so the Changes
   panel and a restore read the turn as stopped too. The decision bar then
   says a wait was declined, not answered.
-- **A wait only the agent reports.** An MCP server's request for input, a
-  Codex question left open after its turn, and a sign-in send no hook. Both
+- **A wait only the agent reports.** An MCP server's request for input
+  under Codex, a Codex question left open after its turn, and a sign-in send
+  no hook. (Claude Code announces an MCP server's request with its
+  `Elicitation` hook, and its `ElicitationResult` ends the wait.) Both
   agents report them over OSC 7501 as `blocked` with a kind (`question`,
   `auth`), which `PaneProgramStatusStore` keeps with the state. The
   projection shows the run waiting on a question or a sign-in until the next

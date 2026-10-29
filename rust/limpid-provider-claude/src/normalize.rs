@@ -63,6 +63,23 @@ pub(crate) fn normalize(input: RawHookInput<'_>) -> Result<Vec<AgentEvent>, Norm
             },
             _ => extension(&event_name, object),
         },
+        // An MCP server's request for input (an elicitation), recorded in
+        // 2.1.312. The hook runs before Claude Code draws its dialog, which
+        // waits for the hook to return, so the hook answers nothing and
+        // only the wait is recorded. A subagent's request carries no
+        // `agent_id`, and a background subagent's comes after the turn's
+        // `Stop`; it is a wait all the same, as the subagent's question is.
+        "Elicitation" => AgentEvent::WaitingForInput {
+            detail: string(&object, "message")
+                .filter(|message| !message.trim().is_empty())
+                .map(str::to_owned),
+        },
+        // The person answered, declined, or dismissed the request with Esc;
+        // each ends the wait, and the tool call that asked goes on.
+        "ElicitationResult" => AgentEvent::ToolFinished {
+            tool: None,
+            by_subagent: false,
+        },
         "PreCompact" => AgentEvent::Compacting,
         "Stop" => AgentEvent::TurnFinished {
             continues_after_stop_hook: object
@@ -666,6 +683,34 @@ mod tests {
             events(payload, None),
             vec![AgentEvent::WaitingForInput { detail: None }]
         );
+    }
+
+    #[test]
+    fn mcp_elicitation_waits_with_its_message_until_its_result() {
+        let payload = r#"{"hook_event_name":"Elicitation","mcp_server_name":"probe","message":"Pick a color","mode":"form"}"#;
+        assert_eq!(
+            events(payload, None),
+            vec![AgentEvent::WaitingForInput {
+                detail: Some("Pick a color".into())
+            }]
+        );
+        let payload = r#"{"hook_event_name":"Elicitation","mcp_server_name":"probe","message":" ","mode":"url","url":"https://example.com"}"#;
+        assert_eq!(
+            events(payload, None),
+            vec![AgentEvent::WaitingForInput { detail: None }]
+        );
+        for action in ["accept", "decline", "cancel"] {
+            let payload = format!(
+                r#"{{"hook_event_name":"ElicitationResult","mcp_server_name":"probe","action":"{action}"}}"#
+            );
+            assert_eq!(
+                events(&payload, None),
+                vec![AgentEvent::ToolFinished {
+                    tool: None,
+                    by_subagent: false,
+                }]
+            );
+        }
     }
 
     #[test]

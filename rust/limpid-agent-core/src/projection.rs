@@ -699,7 +699,8 @@ fn pane_agents<'a>(
 }
 
 /// The wait the agent's own status report shows and no hook announced: an
-/// MCP server's request for input, a question left after the turn, a
+/// MCP server's request for input (Codex's; Claude's `Elicitation` hook
+/// announces its own), a question left after the turn, a
 /// sign-in. `None` for a block that asks the person's leave, which the
 /// agents announce with a hook (`PermissionRequest`), and while the record
 /// waits on a question its hook announced, which says more and keeps its

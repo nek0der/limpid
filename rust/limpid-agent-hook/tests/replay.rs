@@ -240,6 +240,73 @@ fn answered_claude_question_resumes_before_the_next_tool_or_stop() {
     }
 }
 
+/// An MCP server's request for input waits as a question in the server's
+/// words, and its result, whatever the person chose, puts the turn back to
+/// work until its stop.
+#[test]
+fn an_mcp_elicitation_waits_in_its_words_until_its_result() {
+    for case in ["mcp-elicitation-form", "mcp-elicitation-url-dismissed"] {
+        let scratch = Scratch::new(case);
+        let payloads = dated_fixture_case("claude", "2026-10", case);
+        let named = |name: &str| {
+            payloads
+                .iter()
+                .position(|payload| {
+                    serde_json::from_slice::<Value>(payload).expect("payload")["hook_event_name"]
+                        == name
+                })
+                .expect("recorded event")
+        };
+        let (asked, answered) = (named("Elicitation"), named("ElicitationResult"));
+        let message =
+            serde_json::from_slice::<Value>(&payloads[asked]).expect("payload")["message"]
+                .as_str()
+                .expect("message")
+                .to_owned();
+
+        replay(&scratch, "claude", &payloads[..=asked]);
+        let waiting = scratch.record().expect("waiting record");
+        assert_eq!(waiting.state, RunState::NeedsInput, "{case}");
+        assert_eq!(
+            waiting.wait_kind,
+            Some(limpid_agent_model::WaitKind::Question)
+        );
+        assert_eq!(waiting.detail.as_deref(), Some(message.as_str()));
+
+        replay(&scratch, "claude", &payloads[asked + 1..=answered]);
+        let answered = scratch.record().expect("answered record");
+        assert_eq!(answered.state, RunState::Running, "{case}");
+        assert_eq!(answered.wait_kind, None);
+
+        replay(&scratch, "claude", &payloads[named("Stop")..=named("Stop")]);
+        assert_eq!(scratch.record().expect("record").state, RunState::Finished);
+    }
+}
+
+/// A background subagent's request for input comes after the turn that
+/// launched it has stopped, and without `agent_id`: the finished run waits
+/// on the person all the same.
+#[test]
+fn a_background_subagents_mcp_elicitation_waits_after_the_stop() {
+    let scratch = Scratch::new("claude-elicitation-subagent");
+    let payloads = dated_fixture_case("claude", "2026-10", "mcp-elicitation-background-subagent");
+    replay(&scratch, "claude", &payloads[..5]);
+    assert_eq!(
+        scratch.record().expect("record").state,
+        RunState::Finished,
+        "the subagent's own tool leaves the run at its rest"
+    );
+    replay(&scratch, "claude", &payloads[5..6]);
+    let waiting = scratch.record().expect("waiting record");
+    assert_eq!(waiting.state, RunState::NeedsInput);
+    assert_eq!(
+        waiting.detail.as_deref(),
+        Some("Pick a color for the probe")
+    );
+    replay(&scratch, "claude", &payloads[6..]);
+    assert_eq!(scratch.record().expect("record").state, RunState::Finished);
+}
+
 /// A question declined with Esc sends no hook after the permission prompt;
 /// the idle prompt a minute later reads the transcript, which shows the
 /// call rejected and interrupted, and ends the wait and the turn with it.

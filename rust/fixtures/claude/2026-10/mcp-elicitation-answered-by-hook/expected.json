@@ -1,0 +1,35 @@
+[
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for mcp-elicitation-answered-by-hook>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "ToolSearch",
+      "tool": "ToolSearch",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "detail": "mcp__probe__ask",
+      "tool": "mcp__probe__ask",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "detail": "Pick a color for the probe",
+      "type": "waiting_for_input"
+    }
+  ],
+  [
+    {
+      "reply": "<last_assistant_message for mcp-elicitation-answered-by-hook>",
+      "type": "turn_finished"
+    }
+  ]
+]

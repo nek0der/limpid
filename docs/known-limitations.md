@@ -39,14 +39,23 @@ as they are fixed or confirmed.
   progress: the turn goes on, and the question is answered in Codex's own
   prompt. If it is still open when the turn ends, Limpid shows "Needs
   answer" without its words.
-- **Some waits show only outside tmux, and without their words.** An MCP
-  server's request for input and a sign-in the agent needs send no hook.
-  Limpid reads them from the status the agent reports to the terminal (OSC
-  7501), which does not reach Limpid from inside tmux, and which Claude Code
-  does not report with `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set. There the row shows the turn as
-  running, or at rest. Elsewhere it shows "Needs answer" or "Needs sign-in"
-  without the server's name or the request's words, and they are answered
-  in the terminal.
+- **Some waits show only outside tmux, and without their words.** A sign-in
+  the agent needs, and an MCP server's request for input under Codex, send
+  no hook. Limpid reads them from the status the agent reports to the
+  terminal (OSC 7501), which does not reach Limpid from inside tmux, and
+  which Claude Code does not report with `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`
+  set. There the row shows the turn as running, or at rest. Elsewhere it
+  shows "Needs answer" or "Needs sign-in" without the server's name or the
+  request's words. Under Claude Code, an MCP server's request comes through
+  its `Elicitation` hook, so it shows with its words, inside tmux too. Every
+  one of these waits is answered in the terminal.
+- **An MCP server's request under Claude Code can be shown longer than it
+  lasts.** A hook of your own that answers the request leaves no sign of the
+  answer, so "Needs answer" stays until Claude Code's next tool or the end of
+  its turn. The answer to a request from a background subagent shows the
+  agent as working until the subagent reports back, and it also ends any
+  wait the agent itself was in at that moment, because the answer does not
+  say whose request it was.
 - **An approval refused in Claude Code's own dialog can stay listed for a
   while inside tmux.** Claude Code sends no hook when you choose "No" in the
   terminal. Limpid reads the answer from the status Claude Code reports to

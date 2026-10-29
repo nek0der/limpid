@@ -648,6 +648,8 @@ private extension HookAgent {
         switch self {
         case .claude:
             [
+                "Elicitation": "waiting_for_input",
+                "ElicitationResult": "tool_finished",
                 "Notification": "approval_requested",
                 "PostToolUse": "tool_finished",
                 "PostToolUseFailure": "tool_finished",

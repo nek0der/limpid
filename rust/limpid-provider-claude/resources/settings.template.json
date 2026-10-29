@@ -29,6 +29,12 @@
     "PermissionRequest": [
       { "hooks": [{ "type": "command", "command": "@@APPROVAL_HELPER@@ permission-request claude", "timeout": 600 }] }
     ],
+    "Elicitation": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@", "timeout": 10 }] }
+    ],
+    "ElicitationResult": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@", "timeout": 10 }] }
+    ],
     "PreCompact": [
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ],
