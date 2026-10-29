@@ -93,8 +93,8 @@ as they are fixed or confirmed.
   7501), which it does not report inside tmux or with
   `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set. There the turn shows as running
   until your next prompt in that pane, or until Claude's idle notification
-  if one comes a minute later, and a turn your next prompt ends shows no
-  tokens.
+  if one comes a minute later; none comes while one of Claude's subagents
+  runs in the background. A turn your next prompt ends shows no tokens.
 - **A Codex turn is read when it ends.** Its checks are read from its
   rollout at that moment, so they appear together rather than as each one
   finishes. A Codex turn interrupted before its first response arrives
@@ -167,10 +167,11 @@ as they are fixed or confirmed.
   the tasks keep running. The compaction restarts Claude's session, and
   nothing says so again until a later turn ends.
 - **After a failed turn or `/compact`, a Claude subagent still running shows
-  the pane working while it uses tools,** until Claude's idle notification
-  about a minute later. No stop counted the subagent then, so its tools are
-  the only sign that it is still at work. After a turn that ended normally,
-  the stop counts it and its tools leave the pane finished.
+  the pane working while it uses tools,** until it ends: its end starts a
+  turn of Claude's, whose stop leaves the pane finished. Neither the failure
+  nor the compaction came with a stop that counted the subagent, so its
+  tools are the only sign that it is still at work. After a turn that ended
+  normally, the stop counts it and its tools leave the pane finished.
 - **Codex's background terminals are not shown.** Codex keeps them running
   after a turn, but its `Stop` does not list them and no hook reports their
   end.

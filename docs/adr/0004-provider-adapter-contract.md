@@ -221,11 +221,12 @@ stop already counted the subagent, and its tools are not the agent at work.
 The guard covers only `finished`. At `idle` and `error` no stop counted the
 subagent, because a session start and a failure clear the count, so its tool
 events are the one sign that work goes on; they reopen the run as any tool
-does, and the idle prompt returns it to that rest. A wait that the
-subagent's permission prompt opened is not a rest either, and its next tool
-event ends it. The agent's own tools after a stop carry no `agent_id`, so a
-stop hook's continuation still reopens the run as "Work outside a turn"
-below describes.
+does until the subagent ends. Its end starts a turn of Claude's, whose stop
+settles the run; Claude holds the idle prompt back while a subagent runs
+(see "Work outside a turn"). A wait that the subagent's permission prompt
+opened is not a rest either, and its next tool event ends it. The agent's
+own tools after a stop carry no `agent_id`, so a stop hook's continuation
+still reopens the run as "Work outside a turn" below describes.
 
 `project` passes the count to the badge only while the run rests `finished`.
 Codex keeps its background terminals running after a turn too, but its
@@ -394,24 +395,24 @@ and sends no clear does not keep the shell's titles off the tab.
 
 Esc or Ctrl+C while Claude works sends no hook either, and the transcript
 says nothing of an Esc before the turn's first response. The record kept
-saying the run worked until the next prompt, or the idle prompt a minute
-later. The report is the evidence here too. On Claude Code 2.1.312, Esc
-before the first response, Esc while it wrote one, Esc while a tool ran, and
-Ctrl+C each brought `idle` within 50 ms; a turn that ends on its own reports
-`done`, an answer at the permission prompt goes straight from `blocked` to
-`working`, and an Esc at a subagent's permission prompt that lets the turn go
-on reports `working`. So a run at work inside a turn (`running` or
-`compacting`) whose pane last reported idle under the provider's name, in or
-after the second its record last changed, was stopped by the person. Claude
-reports `working` as the prompt is sent, before its hook writes the record,
-so the idle before a turn is never the latest report once the record says
-the turn runs. The badge shows the turn stopped with the stop reason
-`interrupted`, and the pass returns the same `endStoppedTurn` command with
-`byProgramStatus`; the writer ends the run record (`lastHookEvent`
-`interrupted`) and the turn as it ends a declined wait. Its finish is not
-announced, since the person stopped it with their own key, and the record
-keeps the episode, so it is not announced once written either. Work is never
-read from the transcript: inside tmux, or with
+saying the run worked until the next prompt, or an idle prompt if one came a
+minute later. The report is the evidence here too. On Claude Code 2.1.312,
+Esc before the first response, Esc while it wrote one, Esc while a tool ran,
+and Ctrl+C each brought `idle` within 50 ms; a turn that ends on its own
+reports `done`, an answer at the permission prompt goes straight from
+`blocked` to `working`, and an Esc at a subagent's permission prompt that
+lets the turn go on reports `working`. So a run at work inside a turn
+(`running` or `compacting`) whose pane last reported idle under the
+provider's name, in or after the second its record last changed, was stopped
+by the person. Claude reports `working` as the prompt is sent, before its
+hook writes the record, so the idle before a turn is never the latest report
+once the record says the turn runs. The badge shows the turn stopped with the
+stop reason `interrupted`, and the pass returns the same `endStoppedTurn`
+command with `byProgramStatus`; the writer ends the run record
+(`lastHookEvent` `interrupted`) and the turn as it ends a declined wait. Its
+finish is not announced, since the person stopped it with their own key, and
+the record keeps the episode, so it is not announced once written either.
+Work is never read from the transcript: inside tmux, or with
 `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set, it ends with the idle prompt as
 before.
 
@@ -426,22 +427,31 @@ real one. The revision is not compared: every write moves it, and a write
 within the same stretch changes nothing the idle prompt ends.
 
 In the recorded payloads, the idle prompt comes only once the turn has ended
-(after its `Stop` or `StopFailure`), never during a permission prompt, but
-none of them waited long enough to prove that it cannot; the declined
-question case (`claude/2026-10/ask-user-question-declined`) is written from
-the transcript lines Claude leaves, not recorded. Should an idle prompt come
-while the prompt is still open, the call has no result yet and the wait
-stays. A wait that outlives
-its approval is a visible failure; a wait settled while the person still had
-to answer would hide the request and return the request the app holds to the
-TUI. The rare case that remains is a request the app holds whose run
-the idle prompt settles from `running` before the run reports the wait: the
-settled run reads as past its turn, and the app gives the request back to the
-TUI, which still asks. Codex sends no idle signal, and no recorded Codex case
-has a tool after its `Stop`, so a Codex stretch ends at the next `Stop` or
-prompt. The shell receivers, while they were the rollback path, had none of
-this: they reopened the run on a late tool and left it running until the next
-prompt.
+(after its `Stop` or `StopFailure`), never during a permission prompt; the
+declined question case (`claude/2026-10/ask-user-question-declined`) is
+written from the transcript lines Claude leaves, not recorded. Claude Code
+2.1.312 sends no idle prompt if a dialog is on screen when the minute is up,
+so a permission or question prompt never gets one, and it sends none at all
+once the person has typed something after the response. Since 2.1.288 it also
+holds the idle prompt back while a subagent runs in the background (a
+background shell does not count), and counts the minute again once the
+subagent ends. On a real 2.1.312 run, the minute after a turn's `Stop` passed
+without an idle prompt while its background subagent worked; the subagent's
+end started a turn of Claude's, and the idle prompt came a minute after that
+turn's `Stop`. With only a background shell left, it came a minute after the
+`Stop`. An idle prompt held back comes later, never sooner, so the rule that
+it ends only a turn open for at least 55 seconds still holds. Should an idle
+prompt come while the prompt is still open, the call has no result yet and
+the wait stays. A wait that outlives its approval is a visible failure; a
+wait settled while the person still had to answer would hide the request and
+return the request the app holds to the TUI. The rare case that remains is a
+request the app holds whose run the idle prompt settles from `running` before
+the run reports the wait: the settled run reads as past its turn, and the app
+gives the request back to the TUI, which still asks. Codex sends no idle
+signal, and no recorded Codex case has a tool after its `Stop`, so a Codex
+stretch ends at the next `Stop` or prompt. The shell receivers, while they
+were the rollback path, had none of this: they reopened the run on a late
+tool and left it running until the next prompt.
 
 A stretch that began in `error` settles as `finished`, not back in `error`.
 The agent went on working after the failure, and that work ended without a

@@ -656,11 +656,11 @@ the record itself, under the record lock: `finished`, with `runStartedAt`,
 `wait_declined` or `interrupted`, and the episode token kept, and it ends the
 turn record `interrupted` with what the transcript says the turn used. Codex
 records never have the field. A record without it keeps its wait or its
-work until the next hook moves it, as before, and the idle prompt a minute
-later ends work the person stopped. The previous release carries the field
-through its unknown fields past the turn, but this release reads the path
-only for a run in a turn or one that waits, and the transcript is the same
-session's, so a carried path names the right file.
+work until the next hook moves it, as before, and an idle prompt, if one
+comes a minute later, ends work the person stopped. The previous release
+carries the field through its unknown fields past the turn, but this release
+reads the path only for a run in a turn or one that waits, and the transcript
+is the same session's, so a carried path names the right file.
 
 The ninth, `backgroundWork`, counts what the agent left running when its last
 turn ended (`shells`, `subagents`, `others`), as Claude's `Stop` lists it.

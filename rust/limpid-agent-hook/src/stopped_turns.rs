@@ -3,17 +3,17 @@
 //!
 //! Claude sends no hook when its question or permission prompt is declined
 //! with Esc or "No", nor when its work is stopped with Esc or Ctrl+C, so the
-//! record keeps saying the run waits or works until the next prompt or the
-//! idle prompt a minute later. A projection pass reads the stop sooner, from
-//! the agent's own status report or from the transcript the record names
-//! (`declined_waits`), shows the turn stopped on its badge, and asks the app
-//! to write the end (`CommandOp::EndStoppedTurn`). The app does that through
-//! `end_stopped_turn` off its main thread: the run record ends as an
-//! interrupt ends it, and the turn ends `interrupted`, with its end snapshot
-//! and difference taken as the hook takes them and what the transcript says
-//! it used and ran. Until then only the badge says so, while the Changes
-//! panel would show the turn running and a restore would refuse the
-//! worktree as at work.
+//! record keeps saying the run waits or works until the next prompt or an
+//! idle prompt, if one comes a minute later. A projection pass reads the
+//! stop sooner, from the agent's own status report or from the transcript
+//! the record names (`declined_waits`), shows the turn stopped on its badge,
+//! and asks the app to write the end (`CommandOp::EndStoppedTurn`). The app
+//! does that through `end_stopped_turn` off its main thread: the run record
+//! ends as an interrupt ends it, and the turn ends `interrupted`, with its
+//! end snapshot and difference taken as the hook takes them and what the
+//! transcript says it used and ran. Until then only the badge says so, while
+//! the Changes panel would show the turn running and a restore would refuse
+//! the worktree as at work.
 
 use crate::declined_waits::{is_transcript_path, reads_declined};
 use crate::git::SnapshotRunner;

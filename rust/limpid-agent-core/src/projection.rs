@@ -585,8 +585,8 @@ enum StoppedBy {
 /// after an answer at its prompt, so `idle` in a turn is the person's Esc,
 /// Ctrl+C, or "No". Otherwise the transcript the record names is asked, for
 /// a wait only: a declined wait leaves its interrupt line there. Work the
-/// person stopped where no report comes (inside tmux) ends with the idle
-/// prompt a minute later (`idle_outcome`), as before.
+/// person stopped where no report comes (inside tmux) ends with an idle
+/// prompt, if one comes a minute later (`idle_outcome`), as before.
 fn stopped_turn(
     run: &AcceptedRun,
     input: &ProjectionInput,

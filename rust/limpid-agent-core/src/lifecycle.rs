@@ -179,9 +179,10 @@ pub fn apply(
         // finished rest. At `idle` and `error` no stop counted the subagent
         // (a session start and a failure clear the count), so its tools are
         // the one sign that work goes on, and they still show the run
-        // working until the idle prompt returns it to that rest. A wait the
-        // subagent's permission prompt opened is ended by its next tool as
-        // any wait is.
+        // working until the subagent ends: its end starts a turn of Claude's,
+        // whose stop settles the run, and Claude holds the idle prompt back
+        // while a subagent runs. A wait the subagent's permission prompt
+        // opened is ended by its next tool as any wait is.
         AgentEvent::ToolStarted {
             by_subagent: true, ..
         }

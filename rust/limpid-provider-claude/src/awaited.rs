@@ -7,9 +7,9 @@
 //! `Stop` for a stop the user interrupted. The transcript is the only place
 //! that says so. It gains a `tool_result` for the call (`is_error`, "User
 //! rejected tool use") and then a user line that reads
-//! "[Request interrupted by user for tool use]". The idle prompt a minute
-//! later is the first hook after that, so it carries what the transcript
-//! shows and the record rules decide what it ends.
+//! "[Request interrupted by user for tool use]". An idle prompt, if one
+//! comes a minute later, is the first hook after that, so it carries what
+//! the transcript shows and the record rules decide what it ends.
 //!
 //! A call still waiting on the person has neither line after it. One that is
 //! answered or approved has its result; its `PostToolUse` (or the next tool's
