@@ -391,6 +391,14 @@ the turns, and the commands for the app to perform.
   prompt would, with what the transcript says the turn used, so the Changes
   panel and a restore read the turn as stopped too. The decision bar then
   says a wait was declined, not answered.
+- **A wait only the agent reports.** An MCP server's request for input, a
+  Codex question left open after its turn, and a sign-in send no hook. Both
+  agents report them over OSC 7501 as `blocked` with a kind (`question`,
+  `auth`), which `PaneProgramStatusStore` keeps with the state. The
+  projection shows the run waiting on a question or a sign-in until the next
+  report, without writing its record, and leaves a wait a hook announced as
+  it is. A sign-in reads "Needs sign-in" in the row, the list, the decision
+  bar, and the notification, and is counted on its own.
 - **Restore Code** ("Restore Code to Before This Turn…" on a changes panel
   row and in the decision bar's ⋯ menu) runs through `RestoreCoordinator` into
   Rust (`LimpidRestoreBridge`). Rust journals each operation under the

@@ -120,7 +120,9 @@ struct DecisionBarModelTests {
         (PromptWait(detail: "WebFetch"), .claude, "en", "Approval", "Claude is asking for approval."),
         (PromptWait(detail: "Edit: /a/b.swift"), .claude, "ja", "承認", "Claude がファイルの変更を求めています。"),
         (PromptWait(detail: "Read"), .claude, "ja", "承認", "Claude が承認を求めています。"),
-        (PromptWait(detail: nil), .claude, "ja", "応答", "Claude が応答を待っています。")
+        (PromptWait(detail: nil), .claude, "ja", "応答", "Claude が応答を待っています。"),
+        (PromptWait.signIn, .codex, "en", "Sign-in", "Codex needs you to sign in."),
+        (PromptWait.signIn, .claude, "ja", "サインイン", "Claude のサインインが必要です。")
     ])
     func aWaitLimpidDoesNotHold_isTaggedAndWorded_byItsKindAndTool(
         wait: PromptWait,
@@ -171,6 +173,13 @@ struct DecisionBarModelTests {
         #expect(prompt.shortInstruction == "Answer in terminal")
         #expect(prompt.text == "Codex is waiting for a response.")
         #expect(prompt.instruction == "Answer in the terminal")
+        // A sign-in is not answered, so the bar says where to sign in, in
+        // full even when short of room.
+        let signIn = Self.model(.init(items: Self.items([.prompt(.signIn)], provider: .codex)))
+        #expect(signIn.tone == .waiting)
+        #expect(signIn.instruction == "Sign in in the terminal")
+        #expect(signIn.shortInstruction == "Sign in in the terminal")
+        #expect(signIn.textHelp == nil)
         let worded = Self.model(.init(items: Self.items([.prompt(PromptWait(detail: "Allow network access?"))])))
         #expect(worded.text == "Allow network access?")
         #expect(worded.textHelp == "Allow network access?")

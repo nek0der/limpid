@@ -19,6 +19,8 @@ enum NotificationEvent: Equatable, Sendable {
         case question
         /// A wait we cannot name as either.
         case response
+        /// The agent waits for the person to sign in again.
+        case signIn
     }
 
     /// A finished turn's receipt: its number, what it changed, and its
@@ -55,6 +57,7 @@ enum NotificationEvent: Equatable, Sendable {
         case let .approval(approval): .wait(agent: agent, wait: .approval, fact: approval.fact)
         case let .question(detail): .wait(agent: agent, wait: .question, fact: detail)
         case let .unclassified(detail): .wait(agent: agent, wait: .response, fact: detail)
+        case .signIn: .wait(agent: agent, wait: .signIn, fact: nil)
         }
     }
 

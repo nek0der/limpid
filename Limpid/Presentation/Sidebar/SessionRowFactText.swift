@@ -242,6 +242,7 @@ enum SessionRowFactText {
         case .needsAnswer: "Needs answer"
         case .needsApproval: "Needs approval"
         case .needsResponse: "Needs response"
+        case .needsSignIn: "Needs sign-in"
         case .stopped: "Stopped"
         case .unread: "Unread"
         case .unreadWorkingAfterTurn: "Unread, working in the background"

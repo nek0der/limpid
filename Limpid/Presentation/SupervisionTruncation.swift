@@ -155,7 +155,7 @@ enum SupervisionTruncation: Equatable, Sendable {
         switch wait {
         case let .approval(approval): approval.fact == nil ? .sentence : .subject
         case .unclassified(.some): .subject
-        case .question, .unclassified(nil): .sentence
+        case .question, .signIn, .unclassified(nil): .sentence
         }
     }
 }

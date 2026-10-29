@@ -32,6 +32,7 @@ enum NotificationHistoryRowText {
         case approval
         case question
         case response
+        case signIn
         case stopped
         case idle
     }
@@ -172,12 +173,14 @@ enum NotificationHistoryRowText {
     }
 
     /// The wait's name, as the glyph's own label and the decision bar name
-    /// it: "Needs approval", "Needs answer", "Needs response".
+    /// it: "Needs approval", "Needs answer", "Needs response", "Needs
+    /// sign-in".
     static func waitName(_ wait: NotificationEvent.Wait, locale: Locale) -> String {
         let glyph: SessionRowFact.Glyph = switch wait {
         case .approval: .needsApproval
         case .question: .needsAnswer
         case .response: .needsResponse
+        case .signIn: .needsSignIn
         }
         return SessionRowFactText.stateName(glyph, locale: locale)
     }
@@ -242,6 +245,7 @@ enum NotificationHistoryRowText {
             case .approval: .approval
             case .question: .question
             case .response: .response
+            case .signIn: .signIn
             }
         case .stopped: .stopped
         case let .command(exitCode, _, _): (exitCode ?? 0) != 0 ? .stopped : nil
@@ -388,13 +392,14 @@ private enum LegacyText {
     private static let bareWaits: [String: NotificationEvent.Wait] = {
         var bare: [String: NotificationEvent.Wait] = [:]
         for locale in locales {
-            for wait in [NotificationEvent.Wait.approval, .question, .response] {
+            for wait in [NotificationEvent.Wait.approval, .question, .response, .signIn] {
                 bare[NotificationHistoryRowText.waitName(wait, locale: locale)] = wait
             }
             for agent in AgentKind.allCases {
                 bare[agent.waitTitle(for: .approval(PromptApproval(tool: nil, action: .other, subject: nil, detail: nil)))
                     .resolved(in: locale)] = .approval
                 bare[agent.waitTitle(for: .question(detail: nil)).resolved(in: locale)] = .question
+                bare[agent.waitTitle(for: .signIn).resolved(in: locale)] = .signIn
                 bare[agent.waitTitle(for: nil).resolved(in: locale)] = .response
             }
         }
@@ -432,6 +437,7 @@ private enum LegacyText {
         case let .approval(approval): (.approval, approval.fact)
         case let .question(detail): (.question, detail)
         case let .unclassified(detail): (.response, detail)
+        case .signIn: (.signIn, nil)
         }
     }
 

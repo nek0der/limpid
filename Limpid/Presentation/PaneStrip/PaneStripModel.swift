@@ -13,6 +13,9 @@ enum PaneAttention: Equatable {
     /// A wait at the agent's prompt we cannot name as an approval or a
     /// question; it ranks with approvals.
     case needsResponse
+    /// The agent waits for the person to sign in again; it ranks with
+    /// approvals.
+    case needsSignIn
     case stopped
 
     /// The one that ranks first among `items`, in the app's one order.
@@ -21,12 +24,13 @@ enum PaneAttention: Equatable {
         case .question, .prompt(.question): .needsAnswer
         case .approval, .prompt(.approval): .needsApproval
         case .prompt(.unclassified): .needsResponse
+        case .prompt(.signIn): .needsSignIn
         case .stop: .stopped
         case .unread, nil: nil
         }
     }
 
-    /// Both waits are amber; only a stop is red.
+    /// Every wait is amber; only a stop is red.
     var isWaiting: Bool {
         self != .stopped
     }

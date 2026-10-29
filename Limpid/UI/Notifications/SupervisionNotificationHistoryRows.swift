@@ -237,6 +237,7 @@ struct SupervisionHistoryRow: View {
         case .approval: .needsApproval
         case .question: .needsAnswer
         case .response: .needsResponse
+        case .signIn: .needsSignIn
         case .stopped: .stopped
         case .idle: .idle
         }

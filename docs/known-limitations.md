@@ -37,7 +37,16 @@ as they are fixed or confirmed.
   no Codex hook can answer it, so there is no card. A question Codex asks
   without stopping, as it does in its default mode, shows as work in
   progress: the turn goes on, and the question is answered in Codex's own
-  prompt.
+  prompt. If it is still open when the turn ends, Limpid shows "Needs
+  answer" without its words.
+- **Some waits show only outside tmux, and without their words.** An MCP
+  server's request for input and a sign-in the agent needs send no hook.
+  Limpid reads them from the status the agent reports to the terminal (OSC
+  7501), which does not reach Limpid from inside tmux, and which Claude Code
+  does not report with `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set. There the row shows the turn as
+  running, or at rest. Elsewhere it shows "Needs answer" or "Needs sign-in"
+  without the server's name or the request's words, and they are answered
+  in the terminal.
 - **An approval refused in Claude Code's own dialog can stay listed for a
   while inside tmux.** Claude Code sends no hook when you choose "No" in the
   terminal. Limpid reads the answer from the status Claude Code reports to

@@ -22512,6 +22512,138 @@
           }
         }
       }
+    },
+    "Needs sign-in": {
+      "comment": "State: the agent cannot go on until the person signs in again",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs sign-in"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインイン待ち"
+          }
+        }
+      }
+    },
+    "%@ needs you to sign in": {
+      "comment": "Notification title; the agent's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ needs you to sign in"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のサインインが必要です"
+          }
+        }
+      }
+    },
+    "%@ needs you to sign in.": {
+      "comment": "Decision bar: the agent's sign-in was refused or ran out",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ needs you to sign in."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のサインインが必要です。"
+          }
+        }
+      }
+    },
+    "Sign-in": {
+      "comment": "Decision bar tag: the agent waits for the person to sign in",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインイン"
+          }
+        }
+      }
+    },
+    "Sign in in the terminal": {
+      "comment": "Decision bar: where the person signs the agent in again",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in in the terminal"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルでサインインしてください"
+          }
+        }
+      }
+    },
+    "Sign-in also pending": {
+      "comment": "Decision bar: a higher-ranked wait for the person to sign the agent in again waits in this pane",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in also pending"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインイン待ちもあります"
+          }
+        }
+      }
+    },
+    "%lld Sign-in": {
+      "comment": "Attention count by kind: agents waiting for the person to sign in again",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Sign-in"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Sign-ins"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインイン %lld"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

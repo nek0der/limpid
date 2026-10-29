@@ -106,6 +106,12 @@ pub enum Capability {
     /// The provider reports when its prompt cache expires, on the event that
     /// ends a turn.
     CacheWindow,
+    /// An `idle` status report during a turn means the person stopped it
+    /// (Esc, Ctrl+C, a "No" at the agent's own prompt), as no hook says so.
+    /// A provider whose every stop already ends with a hook leaves it out:
+    /// its `idle` can arrive before the hook that ends the turn, and would
+    /// mark a finished turn as stopped.
+    ProgramStatusIdleStopsTurn,
 }
 
 /// What the platform needs to know about a provider without linking its

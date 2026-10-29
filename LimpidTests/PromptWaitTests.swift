@@ -114,6 +114,14 @@ struct PromptWaitTests {
             == .question(detail: "Which color?"))
     }
 
+    /// Only the agent's status report says a sign-in, and it carries no
+    /// words: the wait is the sign-in alone, whatever the record holds.
+    @Test func aRecordedSignIn_isOne_withNoWords() {
+        let wait = PromptWait(detail: "mcp__docs__search", kind: .signIn, tool: "mcp__docs__search")
+        #expect(wait == .signIn)
+        #expect(wait.detail == nil)
+    }
+
     @Test func aRecordedApproval_ofAToolNoListKnows_namesTheTool() throws {
         let wait = PromptWait(detail: "Monitor", kind: .approval, tool: "Monitor")
         guard case let .approval(approval) = wait else {

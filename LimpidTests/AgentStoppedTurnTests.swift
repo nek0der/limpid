@@ -357,4 +357,32 @@ struct AgentStoppedTurnTests {
             #expect(record["stateEpisodeToken"] as? String == token, "the finish the badge showed is no new episode")
         }
     }
+
+    /// An MCP server's request for input sends no hook, only Claude's
+    /// report that it is blocked on a question. The work is not stopped:
+    /// the row waits on the answer, and the record is left as it is.
+    @Test(.disabled(if: !RepoFixture.hasLocalRepo))
+    func aQuestionClaudeReportsDuringWork_isListedAsOne_andStopsNothing() async throws {
+        let requests = Requests(answering: .ended)
+        let closer = requests.closer()
+        try await withScene(.working, transcript: "claude-2.1.309-question-open.jsonl", stoppedTurns: closer) { scene in
+            let changed = try #require(scene.record()["updatedAt"] as? String)
+            let report = [scene.pane.uuidString: AgentProjectionProgramStatus(
+                app: "claude-code",
+                state: "blocked",
+                kind: "question",
+                observedAt: changed
+            )]
+            scene.adapter.programStatus = { report }
+            scene.adapter.refresh()
+            await closer.writesSettled()
+            let pass = scene.pass()
+            #expect(pass.runtime?.badge.state == .needsInput)
+            #expect(pass.runtime?.badge.promptWaitKind == .question)
+            #expect(pass.tabState == .needsInput)
+            #expect(pass.items.map(\.kind) == [.prompt(.question(detail: nil))])
+            #expect(requests.all.isEmpty)
+            #expect(try scene.record()["state"] as? String == "running")
+        }
+    }
 }

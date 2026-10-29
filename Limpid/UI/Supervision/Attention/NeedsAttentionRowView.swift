@@ -170,6 +170,7 @@ struct NeedsAttentionRowView: View {
         case .approval: .needsApproval
         case .question: .needsAnswer
         case .response: .needsResponse
+        case .signIn: .needsSignIn
         case .stopped: .stopped
         case .unread: .unread
         }
@@ -177,7 +178,7 @@ struct NeedsAttentionRowView: View {
 
     private var factColor: Color {
         switch row.state {
-        case .approval, .question, .response: SupervisionTokens.waitingText.color
+        case .approval, .question, .response, .signIn: SupervisionTokens.waitingText.color
         case .stopped: SupervisionTokens.stoppedText.color
         case .unread: ink.muted
         }

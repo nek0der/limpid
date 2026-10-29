@@ -101,6 +101,9 @@ struct DecisionBarModel: Equatable {
     private static func shortInstruction(_ instruction: String?, for body: DecisionBarContent.Body, locale: Locale) -> String? {
         guard let instruction else { return nil }
         let short: LocalizedStringResource? = switch body {
+        // A sign-in is not answered; its instruction has no shorter form.
+        case .prompt(_, .signIn):
+            nil
         case .prompt, .approval(_, _, .terminal), .question(_, .terminal):
             LocalizedStringResource("Answer in terminal")
         // Still says the time ran out, which is why the terminal answers it.
@@ -481,8 +484,9 @@ struct DecisionBarModel: Equatable {
 
     /// A wait Limpid does not hold, answered at the agent's own prompt. An
     /// approval and a question read as held ones do, their words in
-    /// the tooltip (`textHelp`); a wait we cannot name is the agent's own
-    /// words, else that it waits for a response.
+    /// the tooltip (`textHelp`); a sign-in says the agent needs one; a wait
+    /// we cannot name is the agent's own words, else that it waits for a
+    /// response.
     private static func promptWords(_ wait: PromptWait, provider: AgentKind?, locale: Locale) -> Words {
         let agent = provider.map { SessionRowFactText.agentName(.agent($0), locale: locale) }
         let instruction = instruction(for: .terminal, locale: locale)
@@ -504,6 +508,25 @@ struct DecisionBarModel: Equatable {
                 tone: .waiting,
                 text: text.resolved(in: locale),
                 instruction: Self.instruction(for: .terminal, locale: locale)
+            )
+        case .signIn:
+            let text = agent.map {
+                LocalizedStringResource(
+                    "\($0) needs you to sign in.",
+                    comment: "Decision bar: the agent's sign-in was refused or ran out"
+                )
+            } ?? LocalizedStringResource("Needs sign-in")
+            return Words(
+                tag: LocalizedStringResource(
+                    "Sign-in",
+                    comment: "Decision bar tag: the agent waits for the person to sign in"
+                ).resolved(in: locale),
+                tone: .waiting,
+                text: text.resolved(in: locale),
+                instruction: LocalizedStringResource(
+                    "Sign in in the terminal",
+                    comment: "Decision bar: where the person signs the agent in again"
+                ).resolved(in: locale)
             )
         case let .unclassified(detail):
             let waiting = agent.map {
@@ -593,6 +616,10 @@ struct DecisionBarModel: Equatable {
         case .response: LocalizedStringResource(
                 "Response also pending",
                 comment: "Decision bar: a higher-ranked wait at the agent's prompt, as neither approval nor question, waits in this pane"
+            )
+        case .signIn: LocalizedStringResource(
+                "Sign-in also pending",
+                comment: "Decision bar: a higher-ranked wait for the person to sign the agent in again waits in this pane"
             )
         case .stop: LocalizedStringResource("Stop also pending", comment: "Decision bar: a higher-ranked stop waits in this pane")
         case nil: nil

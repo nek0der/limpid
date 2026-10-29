@@ -19,6 +19,9 @@ struct SessionRowFact: Equatable, Sendable {
         /// question: the state's own neutral name ("Needs response"). It ranks with
         /// approvals.
         case needsResponse
+        /// The agent waits for the person to sign in again. It ranks with
+        /// approvals.
+        case needsSignIn
         case stopped
         case unread
         /// An unread turn whose run still has work running after it
@@ -80,6 +83,8 @@ struct SessionRowFact: Equatable, Sendable {
             switch wait {
             case let .approval(approval): approval.fact == nil
             case let .question(detail), let .unclassified(detail): detail == nil
+            // "Needs sign-in" is all there is to say.
+            case .signIn: true
             }
         case let .stopped(.error(text)):
             text?.isEmpty ?? true
@@ -283,6 +288,7 @@ struct SessionRowFact: Equatable, Sendable {
         case .question, .prompt(.question): .needsAnswer
         case .approval, .prompt(.approval): .needsApproval
         case .prompt(.unclassified): .needsResponse
+        case .prompt(.signIn): .needsSignIn
         case .stop: .stopped
         case .unread: .unread
         }

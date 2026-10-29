@@ -93,6 +93,7 @@ struct AttentionQueue: Equatable, Sendable {
             case .approval, .prompt(.approval): counts.approvals += 1
             case .question, .prompt(.question): counts.questions += 1
             case .prompt(.unclassified): counts.prompts += 1
+            case .prompt(.signIn): counts.signIns += 1
             case .stop: counts.stops += 1
             case .unread: counts.unread += 1
             }
@@ -111,17 +112,19 @@ struct AttentionCounts: Equatable, Sendable {
     /// question ("Needs response"); the ones we can are counted with
     /// `approvals` and `questions`. All show in one amber glyph.
     var prompts = 0
+    /// Agents waiting for the person to sign in again ("Needs sign-in").
+    var signIns = 0
     var stops = 0
     var unread = 0
 
     var total: Int {
-        approvals + questions + prompts + stops + unread
+        approvals + questions + prompts + signIns + stops + unread
     }
 
     /// Whether anything is blocked on the person. The title bar pill is
     /// filled amber for these and only outlined blue for unread turns.
     var hasBlockingItems: Bool {
-        approvals + questions + prompts + stops > 0
+        approvals + questions + prompts + signIns + stops > 0
     }
 }
 

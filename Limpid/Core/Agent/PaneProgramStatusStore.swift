@@ -12,12 +12,21 @@ struct ProgramStatusReport: Equatable {
         case clear
     }
 
+    /// What a blocked program waits on, as the protocol names it.
+    enum Kind: String {
+        case permission, question, auth
+    }
+
     /// The program's own name for itself (`claude-code`), empty when it sent
     /// none.
     var app: String
     /// The record the report is about; empty for the program itself.
     var recordID: String
     var state: State
+    /// What a blocked program waits on. Optional because only a block
+    /// carries one, and a block may leave it out (a dialog of the agent's
+    /// own).
+    var kind: Kind?
 }
 
 /// The latest report each pane's program made about itself, which the agent
@@ -31,6 +40,8 @@ final class PaneProgramStatusStore {
     struct Status: Equatable {
         var app: String
         var state: ProgramStatusReport.State
+        /// What a blocked program waits on; `nil` for any other state.
+        var kind: ProgramStatusReport.Kind?
         var observedAt: Date
     }
 
@@ -64,9 +75,12 @@ final class PaneProgramStatusStore {
             }
             return
         }
-        statuses[pane] = Status(app: report.app, state: report.state, observedAt: now())
+        let kind = report.state == .blocked ? report.kind : nil
+        statuses[pane] = Status(app: report.app, state: report.state, kind: kind, observedAt: now())
         panesAgentLeft.remove(pane)
-        if agentApps.contains(report.app), previous?.app != report.app || previous?.state != report.state {
+        if agentApps.contains(report.app),
+           previous?.app != report.app || previous?.state != report.state || previous?.kind != kind
+        {
             onChange?()
         }
     }
@@ -107,6 +121,7 @@ final class PaneProgramStatusStore {
             result[pane.uuidString] = AgentProjectionProgramStatus(
                 app: status.app,
                 state: status.state.rawValue,
+                kind: status.kind?.rawValue,
                 observedAt: AgentDateParsing.formatISO8601(status.observedAt)
             )
         }

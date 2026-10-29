@@ -22,8 +22,16 @@ struct PaneProgramStatusStoreTests {
             store.onChange = { [unowned self] in changes += 1 }
         }
 
-        func report(_ state: ProgramStatusReport.State, app: String = "claude-code", recordID: String = "") {
-            store.receive(ProgramStatusReport(app: app, recordID: recordID, state: state), in: PaneProgramStatusStoreTests.pane)
+        func report(
+            _ state: ProgramStatusReport.State,
+            kind: ProgramStatusReport.Kind? = nil,
+            app: String = "claude-code",
+            recordID: String = ""
+        ) {
+            store.receive(
+                ProgramStatusReport(app: app, recordID: recordID, state: state, kind: kind),
+                in: PaneProgramStatusStoreTests.pane
+            )
         }
     }
 
@@ -45,6 +53,26 @@ struct PaneProgramStatusStoreTests {
         scene.report(.idle)
         #expect(scene.store.statuses[Self.pane]?.state == .idle)
         #expect(scene.changes == 2)
+    }
+
+    @Test func aBlocksKind_isWhatTheProjectionReads_andAnotherKindRequestsAPass() {
+        let scene = Scene()
+        scene.report(.blocked, kind: .question)
+        #expect(scene.store.projectionInput[Self.pane.uuidString]?.kind == "question")
+        #expect(scene.changes == 1)
+
+        scene.report(.blocked, kind: .auth)
+        #expect(scene.store.projectionInput[Self.pane.uuidString]?.kind == "auth")
+        #expect(scene.changes == 2)
+    }
+
+    /// The protocol sends a kind only with a block; one on any other state
+    /// says nothing the rules read.
+    @Test func aKindOnAnotherState_isNotKept() {
+        let scene = Scene()
+        scene.report(.working, kind: .question)
+        #expect(scene.store.statuses[Self.pane]?.kind == nil)
+        #expect(scene.store.projectionInput[Self.pane.uuidString]?.kind == nil)
     }
 
     @Test func aReportAboutPartOfTheWork_isNotKept() {

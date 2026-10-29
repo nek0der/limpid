@@ -32,6 +32,9 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
             Capability::TurnSnapshot,
             // Estimated from the transcript on Stop; see `cache`.
             Capability::CacheWindow,
+            // No hook reports an Esc, a Ctrl+C, or a "No" at Claude Code's
+            // own prompt; its status report going idle does.
+            Capability::ProgramStatusIdleStopsTurn,
         ]),
         // The Claude receiver historically ran a slow sweep; Codex needs a
         // faster one because it emits no Stop when killed mid-turn.

@@ -60,9 +60,12 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
             // own, which runs the person's hooks with its own session id and
             // no marker (`normalize`).
             internal_agent_directories: vec!["memories".to_owned(), "memories_v2".to_owned()],
-            // Codex reports OSC 7501 too, but every wait of its own ends
-            // with a hook, so nothing reads its reports yet.
-            program_status_app: None,
+            // Codex reports OSC 7501 from its terminal interface. Its waits
+            // that no hook announces (an MCP server's request for input, a
+            // question left after the turn, a sign-in) show only there. Its
+            // stops all end with a hook (`Interrupt`, `Stop`), so its idle
+            // reports end no turn (no `ProgramStatusIdleStopsTurn`).
+            program_status_app: Some("codex".to_owned()),
             id,
         }
     })

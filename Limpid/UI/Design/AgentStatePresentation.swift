@@ -14,6 +14,7 @@ extension StateGlyph.Kind {
         case .needsAnswer: .needsAnswer
         case .needsApproval: .needsApproval
         case .needsResponse: .needsResponse
+        case .needsSignIn: .needsSignIn
         case .stopped: .stopped
         case .unread: .unread
         case .unreadWorkingAfterTurn: .unreadWorkingAfterTurn

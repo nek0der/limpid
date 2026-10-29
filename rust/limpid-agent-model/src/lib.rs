@@ -51,7 +51,7 @@ pub use layout::{
     session_hint_file_name,
 };
 pub use projection::{
-    AcceptedRun, AttachmentResolution, AttentionMarks, Badge, EpisodeStamp,
+    AcceptedRun, AttachmentResolution, AttentionMarks, Badge, BlockedKind, EpisodeStamp,
     FINISHED_NOTICE_HOLD_MS, Focus, Instants, LifecycleInput, MAX_TURN_DELETIONS_PER_PASS,
     NOTIFICATION_BODY_CHARS, NOTIFICATION_PENDING_LIFETIME_MS, ObservedRuntime, OutboxState,
     PaneLocation, PanePresence, PendingNotification, PidStatus, ProgramState, ProgramStatus,
